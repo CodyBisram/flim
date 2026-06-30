@@ -19,45 +19,53 @@ struct RollDetailView: View {
         ZStack {
             FlimTheme.bg.ignoresSafeArea()
 
-            if vm.isLoading && vm.photos.isEmpty {
-                ProgressView().tint(.white)
-            } else if vm.photos.isEmpty {
-                VStack(spacing: 10) {
-                    Image(systemName: "photo.on.rectangle.angled")
-                        .font(.system(size: 36, weight: .ultraLight))
-                        .foregroundStyle(Color(white: 0.3))
-                    Text("No photos in this roll yet.")
-                        .font(.system(size: 14))
-                        .foregroundStyle(Color(white: 0.4))
-                    Text("Take a photo and send it to \"\(roll.name)\".")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Color(white: 0.3))
-                }
-            } else {
-                ScrollView {
-                    LazyVGrid(columns: columns, spacing: 2) {
-                        ForEach(vm.photos) { photo in
-                            PhotoGridCell(photo: photo, signedURL: vm.signedURLCache[photo.id])
-                                .onTapGesture {
-                                    selectedURL = vm.signedURLCache[photo.id]
-                                    selectedPhoto = photo
+            VStack(spacing: 0) {
+                FlimNavTitle(roll.name)
+
+                Group {
+                    if vm.isLoading && vm.photos.isEmpty {
+                        ProgressView().tint(.white)
+                    } else if vm.photos.isEmpty {
+                        VStack(spacing: 10) {
+                            Image(systemName: "photo.on.rectangle.angled")
+                                .font(.system(size: 36, weight: .ultraLight))
+                                .foregroundStyle(FlimTheme.accent.opacity(0.8))
+                            Text("No photos in this roll yet.")
+                                .font(.system(size: 15, weight: .light))
+                                .foregroundStyle(FlimTheme.textSecondary)
+                            Text("Take a photo and send it to \"\(roll.name)\".")
+                                .font(.system(size: 13))
+                                .foregroundStyle(FlimTheme.textTertiary)
+                                .multilineTextAlignment(.center)
+                                .padding(.horizontal, 40)
+                        }
+                    } else {
+                        ScrollView {
+                            LazyVGrid(columns: columns, spacing: 2) {
+                                ForEach(vm.photos) { photo in
+                                    PhotoGridCell(photo: photo, signedURL: vm.signedURLCache[photo.id])
+                                        .onTapGesture {
+                                            selectedURL = vm.signedURLCache[photo.id]
+                                            selectedPhoto = photo
+                                        }
+                                        .task {
+                                            if photo.isReady, vm.signedURLCache[photo.id] == nil {
+                                                _ = await vm.signedURL(for: photo, photoService: photoService)
+                                            }
+                                        }
                                 }
-                                .task {
-                                    if photo.isReady, vm.signedURLCache[photo.id] == nil {
-                                        _ = await vm.signedURL(for: photo, photoService: photoService)
-                                    }
-                                }
+                            }
+                            .padding(.horizontal, 2)
+                        }
+                        .refreshable {
+                            await vm.loadRoll(photoService: photoService, rollId: roll.id)
                         }
                     }
-                    .padding(.horizontal, 2)
                 }
-                .refreshable {
-                    await vm.loadRoll(photoService: photoService, rollId: roll.id)
-                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .navigationTitle(roll.name)
-        .navigationBarTitleDisplayMode(.large)
+        .navigationBarTitleDisplayMode(.inline)
         .toolbarColorScheme(.dark, for: .navigationBar)
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {

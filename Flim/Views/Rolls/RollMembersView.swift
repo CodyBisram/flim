@@ -13,7 +13,7 @@ struct RollMembersView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                Color(red: 0.04, green: 0.04, blue: 0.04).ignoresSafeArea()
+                FlimTheme.bg.ignoresSafeArea()
 
                 VStack(spacing: 0) {
                     // Invite code banner
@@ -91,8 +91,8 @@ struct RollMembersView: View {
                     }
                 }
             }
-            .navigationTitle("Members (\(members.count)/10)")
             .navigationBarTitleDisplayMode(.inline)
+            .flimInlineTitle("Members (\(members.count)/10)")
             .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -100,7 +100,7 @@ struct RollMembersView: View {
                 }
             }
         }
-        .presentationBackground(Color(red: 0.04, green: 0.04, blue: 0.04))
+        .presentationBackground(FlimTheme.bg)
         .task {
             isLoading = true
             members = (try? await rollService.fetchMembers(for: roll.id)) ?? []

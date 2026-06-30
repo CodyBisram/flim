@@ -89,8 +89,8 @@ struct ProfileView: View {
                     .padding(.bottom, 40)
                 }
             }
-            .navigationTitle("Profile")
             .navigationBarTitleDisplayMode(.inline)
+            .flimInlineTitle("Profile")
             .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {

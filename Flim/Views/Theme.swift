@@ -38,6 +38,22 @@ struct FlimNavTitle: View {
     }
 }
 
+extension View {
+    /// Replaces a sheet/pushed screen's small inline nav title with one in FLIM's light
+    /// type. Uses a `.principal` toolbar item (a custom view), so it isn't subject to the
+    /// iOS 26 large-title font limitation. Remove the screen's `.navigationTitle(...)`.
+    func flimInlineTitle(_ text: String) -> some View {
+        toolbar {
+            ToolbarItem(placement: .principal) {
+                Text(text)
+                    .font(.system(size: 17, weight: .light))
+                    .tracking(0.5)
+                    .foregroundStyle(FlimTheme.textPrimary)
+            }
+        }
+    }
+}
+
 // MARK: - Glass helpers
 
 private struct GlassCardModifier: ViewModifier {

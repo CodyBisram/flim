@@ -13,7 +13,7 @@ struct JoinRollView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                Color(red: 0.04, green: 0.04, blue: 0.04).ignoresSafeArea()
+                FlimTheme.bg.ignoresSafeArea()
 
                 VStack(alignment: .leading, spacing: 0) {
                     if let roll = joinedRoll {
@@ -25,8 +25,8 @@ struct JoinRollView: View {
                 .padding(.horizontal, 28)
                 .padding(.bottom, 40)
             }
-            .navigationTitle("Join a Roll")
             .navigationBarTitleDisplayMode(.inline)
+            .flimInlineTitle("Join a Roll")
             .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -35,7 +35,7 @@ struct JoinRollView: View {
                 }
             }
         }
-        .presentationBackground(Color(red: 0.04, green: 0.04, blue: 0.04))
+        .presentationBackground(FlimTheme.bg)
         .presentationDetents([.medium])
     }
 
