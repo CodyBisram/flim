@@ -10,18 +10,22 @@ struct RollsView: View {
         ZStack {
             FlimTheme.bg.ignoresSafeArea()
 
-            Group {
-                if rolls.isLoading && rolls.rolls.isEmpty {
-                    ProgressView().tint(.white)
-                } else if rolls.rolls.isEmpty {
-                    emptyState
-                } else {
-                    rollList
+            VStack(spacing: 0) {
+                FlimNavTitle("Rolls")
+
+                Group {
+                    if rolls.isLoading && rolls.rolls.isEmpty {
+                        ProgressView().tint(.white)
+                    } else if rolls.rolls.isEmpty {
+                        emptyState
+                    } else {
+                        rollList
+                    }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .navigationTitle("Rolls")
-        .navigationBarTitleDisplayMode(.large)
+        .navigationBarTitleDisplayMode(.inline)
         .toolbarColorScheme(.dark, for: .navigationBar)
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {

@@ -17,6 +17,27 @@ enum FlimTheme {
     static let textTertiary = Color(white: 0.44)    // faint, but now actually readable
 }
 
+// MARK: - Page title
+
+/// A large page title in FLIM's light, lightly-tracked SF Pro. We render our own instead
+/// of using `.navigationTitle` because iOS 26's redesigned nav bar ignores custom fonts on
+/// the system large title. Drop this at the top of a screen and hide the system title.
+struct FlimNavTitle: View {
+    let text: String
+    init(_ text: String) { self.text = text }
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 34, weight: .light))
+            .tracking(0.5)
+            .foregroundStyle(FlimTheme.textPrimary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 20)
+            .padding(.top, 6)
+            .padding(.bottom, 10)
+    }
+}
+
 // MARK: - Glass helpers
 
 private struct GlassCardModifier: ViewModifier {

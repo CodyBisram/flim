@@ -19,20 +19,26 @@ struct DarkroomView: View {
         ZStack {
             FlimTheme.bg.ignoresSafeArea()
 
-            if vm.isLoading && vm.photos.isEmpty {
-                ProgressView().tint(.white)
-            } else if vm.photos.isEmpty {
-                emptyState
-            } else {
-                ScrollView {
-                    photoGrid
-                        .padding(.horizontal, 2)
+            VStack(spacing: 0) {
+                FlimNavTitle("Darkroom")
+
+                Group {
+                    if vm.isLoading && vm.photos.isEmpty {
+                        ProgressView().tint(.white)
+                    } else if vm.photos.isEmpty {
+                        emptyState
+                    } else {
+                        ScrollView {
+                            photoGrid
+                                .padding(.horizontal, 2)
+                        }
+                        .refreshable { await reload() }
+                    }
                 }
-                .refreshable { await reload() }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .navigationTitle("Darkroom")
-        .navigationBarTitleDisplayMode(.large)
+        .navigationBarTitleDisplayMode(.inline)
         .toolbarColorScheme(.dark, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
