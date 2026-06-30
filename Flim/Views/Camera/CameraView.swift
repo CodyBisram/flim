@@ -19,6 +19,9 @@ struct CameraView: View {
     @AppStorage("selectedFilmID") private var selectedFilmID: String = FilmStock.original.id
     private var selectedStock: FilmStock { FilmStock.stock(id: selectedFilmID) }
 
+    // One-time intro that teaches the shoot → develop → darkroom loop.
+    @AppStorage("hasSeenCameraCoach") private var hasSeenCoach = false
+
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
@@ -43,6 +46,8 @@ struct CameraView: View {
                 }
                 .padding(.bottom, 8)
             }
+
+            coachOverlay
         }
         .onAppear {
             camera.configure()
@@ -144,11 +149,18 @@ struct CameraView: View {
     @ViewBuilder
     private func filmChip(_ stock: FilmStock) -> some View {
         let isSelected = stock.id == selectedFilmID
-        let label = Text(stock.name)
-            .font(.system(size: 13, weight: isSelected ? .semibold : .medium))
-            .foregroundStyle(isSelected ? .black : .white)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 9)
+        let label = HStack(spacing: 7) {
+            // A tiny preview of the film's look, so the pick is visual not just a name.
+            Circle()
+                .fill(LinearGradient(colors: stock.swatch, startPoint: .topLeading, endPoint: .bottomTrailing))
+                .frame(width: 14, height: 14)
+                .overlay(Circle().strokeBorder(.white.opacity(0.3), lineWidth: 0.5))
+            Text(stock.name)
+                .font(.system(size: 13, weight: isSelected ? .semibold : .medium))
+        }
+        .foregroundStyle(isSelected ? .black : .white)
+        .padding(.horizontal, 13)
+        .padding(.vertical, 9)
 
         Button {
             Haptics.tap()
@@ -215,6 +227,49 @@ struct CameraView: View {
         }
     }
 
+    // MARK: - First-run coachmark
+
+    @ViewBuilder
+    private var coachOverlay: some View {
+        if !hasSeenCoach {
+            ZStack {
+                Color.black.opacity(0.74).ignoresSafeArea()
+
+                VStack(spacing: 16) {
+                    Image(systemName: "camera.aperture")
+                        .font(.system(size: 38, weight: .ultraLight))
+                        .foregroundStyle(FlimTheme.accent)
+
+                    Text("Shoot now.\nSee it later.")
+                        .font(.system(size: 24, weight: .light))
+                        .multilineTextAlignment(.center)
+                        .foregroundStyle(.white)
+
+                    Text("Tap the shutter to take a photo. It stays hidden, then develops in a few minutes — your shots appear in the Darkroom.")
+                        .font(.system(size: 15))
+                        .foregroundStyle(FlimTheme.textSecondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 40)
+                        .padding(.top, 2)
+
+                    Button {
+                        Haptics.tap()
+                        withAnimation(.easeInOut(duration: 0.3)) { hasSeenCoach = true }
+                    } label: {
+                        Text("Got it")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(.black)
+                            .padding(.horizontal, 40)
+                            .padding(.vertical, 13)
+                            .background(FlimTheme.accent, in: Capsule())
+                    }
+                    .padding(.top, 10)
+                }
+            }
+            .transition(.opacity)
+        }
+    }
+
     // MARK: - Wire capture → film filter → upload
 
     private func bindCapture() {
@@ -247,10 +302,17 @@ struct CameraView: View {
 private struct ShutterButton: View {
     let isCapturing: Bool
     let action: () -> Void
+    @State private var pulse = false
 
     var body: some View {
         Button(action: action) {
             ZStack {
+                // A slow breathing halo that quietly invites the tap.
+                Circle()
+                    .stroke(.white.opacity(0.18), lineWidth: 2)
+                    .frame(width: 84, height: 84)
+                    .scaleEffect(pulse ? 1.14 : 0.94)
+                    .opacity(pulse ? 0 : 0.9)
                 Circle()
                     .stroke(.white.opacity(0.6), lineWidth: 3)
                     .frame(width: 70, height: 70)
@@ -262,6 +324,11 @@ private struct ShutterButton: View {
         }
         .animation(.spring(duration: 0.2, bounce: 0.4), value: isCapturing)
         .disabled(isCapturing)
+        .onAppear {
+            withAnimation(.easeOut(duration: 1.9).repeatForever(autoreverses: false)) {
+                pulse = true
+            }
+        }
     }
 }
 

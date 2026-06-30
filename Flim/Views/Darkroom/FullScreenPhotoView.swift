@@ -7,6 +7,7 @@ struct FullScreenPhotoView: View {
 
     @State private var scale: CGFloat = 1
     @State private var offset: CGSize = .zero
+    @State private var revealed = false
 
     var body: some View {
         ZStack {
@@ -19,10 +20,18 @@ struct FullScreenPhotoView: View {
                         image
                             .resizable()
                             .scaledToFit()
+                            .saturation(revealed ? 1 : 0.3)
+                            .blur(radius: revealed ? 0 : 8)
+                            .overlay(GrainOverlay().opacity(revealed ? 0 : 1))
                             .scaleEffect(scale)
                             .offset(offset)
                             .gesture(dragToDismiss)
                             .gesture(pinchToZoom)
+                            .onAppear {
+                                // The intentional reveal moment — one satisfying beat + haptic.
+                                Haptics.reveal()
+                                withAnimation(.easeOut(duration: 1.0)) { revealed = true }
+                            }
                     default:
                         ProgressView().tint(.white)
                     }

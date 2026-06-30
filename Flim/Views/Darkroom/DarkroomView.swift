@@ -17,7 +17,7 @@ struct DarkroomView: View {
 
     var body: some View {
         ZStack {
-            Color(red: 0.04, green: 0.04, blue: 0.04).ignoresSafeArea()
+            FlimTheme.bg.ignoresSafeArea()
 
             if vm.isLoading && vm.photos.isEmpty {
                 ProgressView().tint(.white)
@@ -116,13 +116,15 @@ struct DarkroomView: View {
         VStack(spacing: 12) {
             Image(systemName: "camera.aperture")
                 .font(.system(size: 40, weight: .ultraLight))
-                .foregroundStyle(Color(white: 0.3))
-            Text("No photos yet.")
-                .font(.system(size: 15, weight: .light))
-                .foregroundStyle(Color(white: 0.4))
-            Text("Take one — it'll develop in a few minutes.")
+                .foregroundStyle(FlimTheme.accent.opacity(0.8))
+            Text("Your darkroom's empty.")
+                .font(.system(size: 17, weight: .light))
+                .foregroundStyle(FlimTheme.textSecondary)
+            Text("Take a shot — it'll quietly develop, then show up here.")
                 .font(.system(size: 13))
-                .foregroundStyle(Color(white: 0.3))
+                .foregroundStyle(FlimTheme.textTertiary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 40)
         }
     }
 

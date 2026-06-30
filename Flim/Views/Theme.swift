@@ -9,10 +9,12 @@ enum FlimTheme {
 
     /// Warm amber — the "film" accent.
     static let accent = Color(red: 0.98, green: 0.74, blue: 0.36)
+    /// A soft amber wash for backgrounds/gradients that want warmth without shouting.
+    static let accentSoft = Color(red: 0.98, green: 0.74, blue: 0.36).opacity(0.16)
 
     static let textPrimary = Color.white
-    static let textSecondary = Color(white: 0.55)
-    static let textTertiary = Color(white: 0.35)
+    static let textSecondary = Color(white: 0.62)   // nudged up for legibility
+    static let textTertiary = Color(white: 0.44)    // faint, but now actually readable
 }
 
 // MARK: - Glass helpers

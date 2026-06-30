@@ -78,13 +78,15 @@ struct RollsView: View {
         VStack(spacing: 12) {
             Image(systemName: "film.stack")
                 .font(.system(size: 40, weight: .ultraLight))
-                .foregroundStyle(Color(white: 0.3))
-            Text("No rolls yet.")
-                .font(.system(size: 15, weight: .light))
-                .foregroundStyle(Color(white: 0.4))
-            Text("Create one or join a friend's.")
+                .foregroundStyle(FlimTheme.accent.opacity(0.8))
+            Text("Better with friends.")
+                .font(.system(size: 17, weight: .light))
+                .foregroundStyle(FlimTheme.textSecondary)
+            Text("Start a roll and share the code, or join one a friend sent you.")
                 .font(.system(size: 13))
-                .foregroundStyle(Color(white: 0.3))
+                .foregroundStyle(FlimTheme.textTertiary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 40)
 
             HStack(spacing: 12) {
                 Button("Create") { showCreate = true }
@@ -101,15 +103,66 @@ private struct RollRow: View {
     let roll: Roll
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(roll.name)
-                .font(.system(size: 16, weight: .medium))
-                .foregroundStyle(.white)
-            Text("Code: \(roll.inviteCode)")
-                .font(.system(size: 12, weight: .regular, design: .monospaced))
-                .foregroundStyle(Color(white: 0.45))
+        HStack(spacing: 14) {
+            RollCover(roll: roll)
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text(roll.name)
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(.white)
+
+                HStack(spacing: 5) {
+                    Image(systemName: "number")
+                        .font(.system(size: 9, weight: .bold))
+                    Text(roll.inviteCode)
+                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                        .tracking(1)
+                }
+                .foregroundStyle(FlimTheme.accent)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 4)
+                .background(FlimTheme.accentSoft, in: Capsule())
+            }
+
+            Spacer()
+
+            Image(systemName: "chevron.right")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(FlimTheme.textTertiary)
         }
-        .padding(.vertical, 6)
+        .padding(.vertical, 8)
+    }
+}
+
+/// A film-frame style cover that gives each roll a stable identity colour + initial.
+private struct RollCover: View {
+    let roll: Roll
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: 13, style: .continuous)
+            .fill(LinearGradient(colors: Self.gradient(for: roll),
+                                 startPoint: .topLeading, endPoint: .bottomTrailing))
+            .frame(width: 54, height: 54)
+            .overlay(
+                Text(roll.name.prefix(1).uppercased())
+                    .font(.system(size: 22, weight: .light))
+                    .foregroundStyle(.white.opacity(0.95))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                    .strokeBorder(.white.opacity(0.14), lineWidth: 1)
+            )
+    }
+
+    /// Deterministic hue from the roll's UUID bytes — stable across launches.
+    static func gradient(for roll: Roll) -> [Color] {
+        let bytes = withUnsafeBytes(of: roll.id.uuid) { Array($0) }
+        let sum = bytes.reduce(0) { $0 + Int($1) }
+        let h = Double(sum % 360) / 360.0
+        return [
+            Color(hue: h, saturation: 0.52, brightness: 0.5),
+            Color(hue: (h + 0.07).truncatingRemainder(dividingBy: 1), saturation: 0.62, brightness: 0.26)
+        ]
     }
 }
 

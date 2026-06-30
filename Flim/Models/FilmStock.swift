@@ -1,4 +1,4 @@
-import CoreGraphics
+import SwiftUI
 
 /// The Core Image recipe that defines a film look. Tweak these to taste.
 struct FilmParams: Hashable {
@@ -23,6 +23,23 @@ struct FilmStock: Identifiable, Hashable {
     let name: String
     let tagline: String
     let params: FilmParams
+
+    // MARK: - Swatch
+
+    /// A two-stop gradient that previews the look on a film chip — derived from the
+    /// recipe (warmth, saturation, monochrome) so it stays honest if params are tweaked.
+    var swatch: [Color] {
+        if params.monochrome {
+            return [Color(white: 0.16), Color(white: 0.78)]
+        }
+        // <6500K reads warm (amber), >6500K reads cool (cyan/blue).
+        let warm = params.temperature < 6500
+        let hue = warm ? 0.08 : 0.55
+        let sat = min(0.85, max(0.25, params.saturation * 0.55))
+        let shadow = Color(hue: hue, saturation: sat, brightness: 0.32)
+        let highlight = Color(hue: hue, saturation: sat * 0.55, brightness: 0.92)
+        return [shadow, highlight]
+    }
 
     // MARK: - Catalog
 

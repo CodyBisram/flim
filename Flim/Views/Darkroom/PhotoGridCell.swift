@@ -10,10 +10,7 @@ struct PhotoGridCell: View {
                 AsyncImage(url: url) { phase in
                     switch phase {
                     case .success(let image):
-                        image
-                            .resizable()
-                            .scaledToFill()
-                            .transition(.opacity.animation(.easeIn(duration: 0.6)))
+                        RevealImage(image: image)
                     case .failure:
                         errorPlaceholder
                     default:
@@ -67,6 +64,33 @@ struct PhotoGridCell: View {
         let m = (seconds % 3600) / 60
         let s = seconds % 60
         return String(format: "%02d:%02d:%02d", h, m, s)
+    }
+}
+
+// MARK: - Reveal
+
+/// Plays a short "developing → developed" dissolve as a photo resolves: grain lifts,
+/// the image sharpens and regains colour. Used by the grid and the full-screen view.
+struct RevealImage: View {
+    let image: Image
+    var duration: Double = 0.7
+
+    @State private var revealed = false
+
+    var body: some View {
+        image
+            .resizable()
+            .scaledToFill()
+            .saturation(revealed ? 1 : 0.35)
+            .blur(radius: revealed ? 0 : 5)
+            .overlay(
+                Color(red: 0.08, green: 0.06, blue: 0.05)
+                    .opacity(revealed ? 0 : 0.55)
+            )
+            .overlay(GrainOverlay().opacity(revealed ? 0 : 1))
+            .onAppear {
+                withAnimation(.easeOut(duration: duration)) { revealed = true }
+            }
     }
 }
 
