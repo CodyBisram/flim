@@ -1,0 +1,553 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		05E99EC9B050D51173C5B157 /* RollDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54CD52378D31EEDB7D7BE6EF /* RollDetailView.swift */; };
+		0A8F3F3E94D6039F6537E14A /* SplashView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 121F65D393ABD1CC13DA0186 /* SplashView.swift */; };
+		1986128F060D36EEB13FF786 /* AuthService.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFC0C65109A81467AB59472B /* AuthService.swift */; };
+		1A636EF87FB2E349B9F555DC /* SupabaseClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0EABF568B1F50179364FE91 /* SupabaseClient.swift */; };
+		203A74E3F739D03F1FCD6248 /* DarkroomView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AACFEBE63C392489A62B63C /* DarkroomView.swift */; };
+		287023347895E167ECC91920 /* Haptics.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA04DBB3261C344B5DD64806 /* Haptics.swift */; };
+		322A5492683DD8B6D58B77C6 /* RollsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33D109A1C315CD466659A10F /* RollsView.swift */; };
+		34533239665E36002D2C3006 /* FilmStock.swift in Sources */ = {isa = PBXBuildFile; fileRef = 870990313A19750FDF37E235 /* FilmStock.swift */; };
+		3B9C5D883F61F8F4D2587186 /* PhoneAuthView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C14C96ED4A714B7DD3274C7E /* PhoneAuthView.swift */; };
+		410927C61580C55C921D591F /* AppUser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44986F8867E5B522EBEABEE8 /* AppUser.swift */; };
+		46BB284536C9EFB9CB87A36C /* OTPView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2CA2F6DA98A04777C3D3C23 /* OTPView.swift */; };
+		501F195F7187429C965AE299 /* Photo.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF062148240A383A260E8EE3 /* Photo.swift */; };
+		56F026E4C4E1E30F19E98152 /* CameraViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2541CCDED4898D0604DB64EA /* CameraViewModel.swift */; };
+		58C00DA36934A8DF0C2C833B /* CameraPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1AF74B1882B2963B0A26004E /* CameraPreview.swift */; };
+		5AD497FC90DCDC3592EA12FE /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7148B48A915D24BFBDEB23E0 /* NotificationService.swift */; };
+		5E2974194C8828B625B4F7F4 /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = DBEC3FD4AF48540B14AE6BD2 /* Supabase */; };
+		6013474B6F35E06F049139DD /* JoinRollView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35A42EF6E37ED2ED362069BA /* JoinRollView.swift */; };
+		6B14829E6DD63477E932FEDC /* FullScreenPhotoView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B7DE28ED82A77117E85EBE0 /* FullScreenPhotoView.swift */; };
+		6FDE9DF7E6D1E48B36B0FFCC /* UsernameView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF49F2D3C9EF346AAD3F41BF /* UsernameView.swift */; };
+		94D54440B811F938257FD796 /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC34A455324DEE2A431A7720 /* ProfileView.swift */; };
+		967633695FA8F00A8A3010DA /* DarkroomViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 060BA5995DD93E64A494A2E4 /* DarkroomViewModel.swift */; };
+		A00F0B3005322C2FBEB54BB9 /* PrimaryButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BE06A9CEC95AF492BDBD575 /* PrimaryButton.swift */; };
+		AB3249CE1029C5382B7C55A6 /* PhotoGridCell.swift in Sources */ = {isa = PBXBuildFile; fileRef = A34B801CAAD6D2C6557DD581 /* PhotoGridCell.swift */; };
+		B09880D2185738A73550E7C6 /* RollService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 633F60D6D348ADEA4D94D263 /* RollService.swift */; };
+		B5E40248AEAEF1C69C495751 /* CameraView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BF0928EB05A780C49AC79C8 /* CameraView.swift */; };
+		BC9339EF423E0344336A96EF /* RemotePush.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE6E3DB97398A385FA3C9489 /* RemotePush.swift */; };
+		C4599B50B1699E2971A353FF /* MainTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A093E4509E9F7972F5B26E7 /* MainTabView.swift */; };
+		C539D0CE6C29A43C779AA265 /* PhotoService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01ECCD46517220EBFD0EC621 /* PhotoService.swift */; };
+		D1044E118206CD6EDF9692B3 /* Roll.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A0B87FE1069C71306456DFF /* Roll.swift */; };
+		EECAD4AB8FC87AFACD4A5A80 /* RollMembersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1AA5EF66C46272F42891AF4 /* RollMembersView.swift */; };
+		F28BA958FD55FFA0EE8BDA41 /* FlimApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01F7C56CF5A21FB71964CFEB /* FlimApp.swift */; };
+		F3492DCB0D6D8A98FBE699B2 /* CreateRollView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA95E5BB427471DF71E11E56 /* CreateRollView.swift */; };
+		F5701A740A6BFD822B551A03 /* InstantFilmProcessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14C863F6302D9B2BFBA71B6C /* InstantFilmProcessor.swift */; };
+		F8B7B0BD9EA2812E69282C03 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8118D8FA0343F18F835415D3 /* Theme.swift */; };
+		FD944ED3A07EC2925623D43B /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BFE9FBCA04098DC6F972D9A /* ContentView.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		01ECCD46517220EBFD0EC621 /* PhotoService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoService.swift; sourceTree = "<group>"; };
+		01F7C56CF5A21FB71964CFEB /* FlimApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlimApp.swift; sourceTree = "<group>"; };
+		060BA5995DD93E64A494A2E4 /* DarkroomViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DarkroomViewModel.swift; sourceTree = "<group>"; };
+		0A093E4509E9F7972F5B26E7 /* MainTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabView.swift; sourceTree = "<group>"; };
+		121F65D393ABD1CC13DA0186 /* SplashView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplashView.swift; sourceTree = "<group>"; };
+		14C863F6302D9B2BFBA71B6C /* InstantFilmProcessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InstantFilmProcessor.swift; sourceTree = "<group>"; };
+		1AF74B1882B2963B0A26004E /* CameraPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPreview.swift; sourceTree = "<group>"; };
+		2541CCDED4898D0604DB64EA /* CameraViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraViewModel.swift; sourceTree = "<group>"; };
+		2841F63BB7020F90D16433C0 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		2AACFEBE63C392489A62B63C /* DarkroomView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DarkroomView.swift; sourceTree = "<group>"; };
+		2BF0928EB05A780C49AC79C8 /* CameraView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraView.swift; sourceTree = "<group>"; };
+		33D109A1C315CD466659A10F /* RollsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollsView.swift; sourceTree = "<group>"; };
+		35A42EF6E37ED2ED362069BA /* JoinRollView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JoinRollView.swift; sourceTree = "<group>"; };
+		44986F8867E5B522EBEABEE8 /* AppUser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppUser.swift; sourceTree = "<group>"; };
+		4B7DE28ED82A77117E85EBE0 /* FullScreenPhotoView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FullScreenPhotoView.swift; sourceTree = "<group>"; };
+		54CD52378D31EEDB7D7BE6EF /* RollDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollDetailView.swift; sourceTree = "<group>"; };
+		5FE59742B6CDB9699448F677 /* Flim.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Flim.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		633F60D6D348ADEA4D94D263 /* RollService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollService.swift; sourceTree = "<group>"; };
+		7148B48A915D24BFBDEB23E0 /* NotificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationService.swift; sourceTree = "<group>"; };
+		7A0B87FE1069C71306456DFF /* Roll.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Roll.swift; sourceTree = "<group>"; };
+		8118D8FA0343F18F835415D3 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
+		870990313A19750FDF37E235 /* FilmStock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilmStock.swift; sourceTree = "<group>"; };
+		8BFE9FBCA04098DC6F972D9A /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		9BE06A9CEC95AF492BDBD575 /* PrimaryButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrimaryButton.swift; sourceTree = "<group>"; };
+		A0EABF568B1F50179364FE91 /* SupabaseClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseClient.swift; sourceTree = "<group>"; };
+		A34B801CAAD6D2C6557DD581 /* PhotoGridCell.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoGridCell.swift; sourceTree = "<group>"; };
+		AAB338D99E6E3C7278DE9CFA /* Flim.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Flim.entitlements; sourceTree = "<group>"; };
+		BA95E5BB427471DF71E11E56 /* CreateRollView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateRollView.swift; sourceTree = "<group>"; };
+		BF49F2D3C9EF346AAD3F41BF /* UsernameView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsernameView.swift; sourceTree = "<group>"; };
+		C14C96ED4A714B7DD3274C7E /* PhoneAuthView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhoneAuthView.swift; sourceTree = "<group>"; };
+		CF062148240A383A260E8EE3 /* Photo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Photo.swift; sourceTree = "<group>"; };
+		DC34A455324DEE2A431A7720 /* ProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileView.swift; sourceTree = "<group>"; };
+		EFC0C65109A81467AB59472B /* AuthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthService.swift; sourceTree = "<group>"; };
+		F1AA5EF66C46272F42891AF4 /* RollMembersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollMembersView.swift; sourceTree = "<group>"; };
+		F2CA2F6DA98A04777C3D3C23 /* OTPView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OTPView.swift; sourceTree = "<group>"; };
+		FA04DBB3261C344B5DD64806 /* Haptics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Haptics.swift; sourceTree = "<group>"; };
+		FE6E3DB97398A385FA3C9489 /* RemotePush.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemotePush.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		AB4DA97B4206F193CFDACE75 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				5E2974194C8828B625B4F7F4 /* Supabase in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		01ED5D5DF69FB20B7D2CBE52 /* Darkroom */ = {
+			isa = PBXGroup;
+			children = (
+				2AACFEBE63C392489A62B63C /* DarkroomView.swift */,
+				060BA5995DD93E64A494A2E4 /* DarkroomViewModel.swift */,
+				4B7DE28ED82A77117E85EBE0 /* FullScreenPhotoView.swift */,
+				A34B801CAAD6D2C6557DD581 /* PhotoGridCell.swift */,
+			);
+			path = Darkroom;
+			sourceTree = "<group>";
+		};
+		2B3850968D32DA22C72DA0B2 /* Main */ = {
+			isa = PBXGroup;
+			children = (
+				0A093E4509E9F7972F5B26E7 /* MainTabView.swift */,
+			);
+			path = Main;
+			sourceTree = "<group>";
+		};
+		2BD73808C59340731B731131 /* Components */ = {
+			isa = PBXGroup;
+			children = (
+				9BE06A9CEC95AF492BDBD575 /* PrimaryButton.swift */,
+			);
+			path = Components;
+			sourceTree = "<group>";
+		};
+		38520D38033334240FFE644F /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				44986F8867E5B522EBEABEE8 /* AppUser.swift */,
+				870990313A19750FDF37E235 /* FilmStock.swift */,
+				CF062148240A383A260E8EE3 /* Photo.swift */,
+				7A0B87FE1069C71306456DFF /* Roll.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		55F410877B333B2DFC41DA1E /* Config */ = {
+			isa = PBXGroup;
+			children = (
+				A0EABF568B1F50179364FE91 /* SupabaseClient.swift */,
+			);
+			path = Config;
+			sourceTree = "<group>";
+		};
+		59442940A66724C5875B4D6C /* Auth */ = {
+			isa = PBXGroup;
+			children = (
+				F2CA2F6DA98A04777C3D3C23 /* OTPView.swift */,
+				C14C96ED4A714B7DD3274C7E /* PhoneAuthView.swift */,
+				121F65D393ABD1CC13DA0186 /* SplashView.swift */,
+				BF49F2D3C9EF346AAD3F41BF /* UsernameView.swift */,
+			);
+			path = Auth;
+			sourceTree = "<group>";
+		};
+		65E89728796BB8EE12A233ED /* Profile */ = {
+			isa = PBXGroup;
+			children = (
+				DC34A455324DEE2A431A7720 /* ProfileView.swift */,
+			);
+			path = Profile;
+			sourceTree = "<group>";
+		};
+		7AFE745FFAAA6D76BD279CA0 = {
+			isa = PBXGroup;
+			children = (
+				B5B7E330A2CBC1193A9C6767 /* Flim */,
+				87013E4995F7580E6228E580 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		87013E4995F7580E6228E580 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				5FE59742B6CDB9699448F677 /* Flim.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		A60A3CCAF91E354F3C3D1F78 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				FA04DBB3261C344B5DD64806 /* Haptics.swift */,
+				8118D8FA0343F18F835415D3 /* Theme.swift */,
+				59442940A66724C5875B4D6C /* Auth */,
+				C01D7301DE4DAAF31EF5976E /* Camera */,
+				2BD73808C59340731B731131 /* Components */,
+				01ED5D5DF69FB20B7D2CBE52 /* Darkroom */,
+				2B3850968D32DA22C72DA0B2 /* Main */,
+				65E89728796BB8EE12A233ED /* Profile */,
+				EBC7BEE9B4E31B2CC6860B2E /* Rolls */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		AC05434A8F7DF581D43AF6AD /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				EFC0C65109A81467AB59472B /* AuthService.swift */,
+				14C863F6302D9B2BFBA71B6C /* InstantFilmProcessor.swift */,
+				7148B48A915D24BFBDEB23E0 /* NotificationService.swift */,
+				01ECCD46517220EBFD0EC621 /* PhotoService.swift */,
+				FE6E3DB97398A385FA3C9489 /* RemotePush.swift */,
+				633F60D6D348ADEA4D94D263 /* RollService.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		B5B7E330A2CBC1193A9C6767 /* Flim */ = {
+			isa = PBXGroup;
+			children = (
+				8BFE9FBCA04098DC6F972D9A /* ContentView.swift */,
+				AAB338D99E6E3C7278DE9CFA /* Flim.entitlements */,
+				01F7C56CF5A21FB71964CFEB /* FlimApp.swift */,
+				2841F63BB7020F90D16433C0 /* Info.plist */,
+				55F410877B333B2DFC41DA1E /* Config */,
+				38520D38033334240FFE644F /* Models */,
+				AC05434A8F7DF581D43AF6AD /* Services */,
+				A60A3CCAF91E354F3C3D1F78 /* Views */,
+			);
+			path = Flim;
+			sourceTree = "<group>";
+		};
+		C01D7301DE4DAAF31EF5976E /* Camera */ = {
+			isa = PBXGroup;
+			children = (
+				1AF74B1882B2963B0A26004E /* CameraPreview.swift */,
+				2BF0928EB05A780C49AC79C8 /* CameraView.swift */,
+				2541CCDED4898D0604DB64EA /* CameraViewModel.swift */,
+			);
+			path = Camera;
+			sourceTree = "<group>";
+		};
+		EBC7BEE9B4E31B2CC6860B2E /* Rolls */ = {
+			isa = PBXGroup;
+			children = (
+				BA95E5BB427471DF71E11E56 /* CreateRollView.swift */,
+				35A42EF6E37ED2ED362069BA /* JoinRollView.swift */,
+				54CD52378D31EEDB7D7BE6EF /* RollDetailView.swift */,
+				F1AA5EF66C46272F42891AF4 /* RollMembersView.swift */,
+				33D109A1C315CD466659A10F /* RollsView.swift */,
+			);
+			path = Rolls;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		7419C4EF5A09315366044E25 /* Flim */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 02CDD09274CC45285F318146 /* Build configuration list for PBXNativeTarget "Flim" */;
+			buildPhases = (
+				46FAAB3D3297C8421FF6DEB7 /* Sources */,
+				AB4DA97B4206F193CFDACE75 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = Flim;
+			packageProductDependencies = (
+				DBEC3FD4AF48540B14AE6BD2 /* Supabase */,
+			);
+			productName = Flim;
+			productReference = 5FE59742B6CDB9699448F677 /* Flim.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		D76C2429EDC169EF7AD0B4E8 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1600;
+				TargetAttributes = {
+					7419C4EF5A09315366044E25 = {
+						DevelopmentTeam = "";
+					};
+				};
+			};
+			buildConfigurationList = B40C9E8EC033BF143197E0D6 /* Build configuration list for PBXProject "Flim" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 7AFE745FFAAA6D76BD279CA0;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				E5EC46F93A91308A30033549 /* XCRemoteSwiftPackageReference "supabase-swift" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 87013E4995F7580E6228E580 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				7419C4EF5A09315366044E25 /* Flim */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXSourcesBuildPhase section */
+		46FAAB3D3297C8421FF6DEB7 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				410927C61580C55C921D591F /* AppUser.swift in Sources */,
+				1986128F060D36EEB13FF786 /* AuthService.swift in Sources */,
+				58C00DA36934A8DF0C2C833B /* CameraPreview.swift in Sources */,
+				B5E40248AEAEF1C69C495751 /* CameraView.swift in Sources */,
+				56F026E4C4E1E30F19E98152 /* CameraViewModel.swift in Sources */,
+				FD944ED3A07EC2925623D43B /* ContentView.swift in Sources */,
+				F3492DCB0D6D8A98FBE699B2 /* CreateRollView.swift in Sources */,
+				203A74E3F739D03F1FCD6248 /* DarkroomView.swift in Sources */,
+				967633695FA8F00A8A3010DA /* DarkroomViewModel.swift in Sources */,
+				34533239665E36002D2C3006 /* FilmStock.swift in Sources */,
+				F28BA958FD55FFA0EE8BDA41 /* FlimApp.swift in Sources */,
+				6B14829E6DD63477E932FEDC /* FullScreenPhotoView.swift in Sources */,
+				287023347895E167ECC91920 /* Haptics.swift in Sources */,
+				F5701A740A6BFD822B551A03 /* InstantFilmProcessor.swift in Sources */,
+				6013474B6F35E06F049139DD /* JoinRollView.swift in Sources */,
+				C4599B50B1699E2971A353FF /* MainTabView.swift in Sources */,
+				5AD497FC90DCDC3592EA12FE /* NotificationService.swift in Sources */,
+				46BB284536C9EFB9CB87A36C /* OTPView.swift in Sources */,
+				3B9C5D883F61F8F4D2587186 /* PhoneAuthView.swift in Sources */,
+				501F195F7187429C965AE299 /* Photo.swift in Sources */,
+				AB3249CE1029C5382B7C55A6 /* PhotoGridCell.swift in Sources */,
+				C539D0CE6C29A43C779AA265 /* PhotoService.swift in Sources */,
+				A00F0B3005322C2FBEB54BB9 /* PrimaryButton.swift in Sources */,
+				94D54440B811F938257FD796 /* ProfileView.swift in Sources */,
+				BC9339EF423E0344336A96EF /* RemotePush.swift in Sources */,
+				D1044E118206CD6EDF9692B3 /* Roll.swift in Sources */,
+				05E99EC9B050D51173C5B157 /* RollDetailView.swift in Sources */,
+				EECAD4AB8FC87AFACD4A5A80 /* RollMembersView.swift in Sources */,
+				B09880D2185738A73550E7C6 /* RollService.swift in Sources */,
+				322A5492683DD8B6D58B77C6 /* RollsView.swift in Sources */,
+				0A8F3F3E94D6039F6537E14A /* SplashView.swift in Sources */,
+				1A636EF87FB2E349B9F555DC /* SupabaseClient.swift in Sources */,
+				F8B7B0BD9EA2812E69282C03 /* Theme.swift in Sources */,
+				6FDE9DF7E6D1E48B36B0FFCC /* UsernameView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		05D8D0DEE9956006AEB57606 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		6A89858BBCD2BAD1B23965C1 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		8F6E1372D4ED84283FA54DFB /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Flim/Flim.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = "";
+				ENABLE_PREVIEWS = YES;
+				INFOPLIST_FILE = Flim/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.flim.app;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.9;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		F6C725FFE499D8440C83D49D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Flim/Flim.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = "";
+				ENABLE_PREVIEWS = YES;
+				INFOPLIST_FILE = Flim/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.flim.app;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.9;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		02CDD09274CC45285F318146 /* Build configuration list for PBXNativeTarget "Flim" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				8F6E1372D4ED84283FA54DFB /* Debug */,
+				F6C725FFE499D8440C83D49D /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		B40C9E8EC033BF143197E0D6 /* Build configuration list for PBXProject "Flim" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				6A89858BBCD2BAD1B23965C1 /* Debug */,
+				05D8D0DEE9956006AEB57606 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		E5EC46F93A91308A30033549 /* XCRemoteSwiftPackageReference "supabase-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/supabase/supabase-swift";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.0.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		DBEC3FD4AF48540B14AE6BD2 /* Supabase */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = E5EC46F93A91308A30033549 /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Supabase;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = D76C2429EDC169EF7AD0B4E8 /* Project object */;
+}

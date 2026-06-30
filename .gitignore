@@ -1,0 +1,32 @@
+# macOS
+.DS_Store
+
+# Xcode / build artifacts
+.build/
+DerivedData/
+build/
+*.xcuserstate
+xcuserdata/
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Swift Package Manager
+.swiftpm/
+Package.resolved
+
+# CocoaPods / Carthage (unused, but safe to ignore)
+Pods/
+Carthage/Build/
+
+# Editor / tooling
+.claude/
+*.swp
+*~
+
+# Secrets (none committed today, but keep them out)
+*.p8
+*.env
+.env*

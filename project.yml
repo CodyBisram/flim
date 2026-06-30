@@ -1,0 +1,65 @@
+name: Flim
+
+options:
+  bundleIdPrefix: com.flim
+  deploymentTarget:
+    iOS: "26.0"
+  xcodeVersion: "16"
+  generateEmptyDirectories: true
+
+packages:
+  supabase-swift:
+    url: https://github.com/supabase/supabase-swift
+    from: 2.0.0
+
+targets:
+  Flim:
+    type: application
+    platform: iOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: Flim
+    entitlements:
+      path: Flim/Flim.entitlements
+      properties:
+        aps-environment: development
+    info:
+      path: Flim/Info.plist
+      properties:
+        CFBundleDisplayName: FLIM
+        CFBundleShortVersionString: "1.0"
+        CFBundleVersion: "1"
+        UILaunchStoryboardName: LaunchScreen
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        NSCameraUsageDescription: "FLIM uses your camera to take disposable photos that develop over time."
+        UIUserInterfaceStyle: Dark
+        CFBundleURLTypes:
+          - CFBundleURLSchemes:
+              # Kept as com.lapse.app to match the Supabase auth redirect allowlist.
+              - com.lapse.app
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.flim.app
+        SWIFT_VERSION: "5.9"
+        DEVELOPMENT_TEAM: ""
+        ENABLE_PREVIEWS: YES
+    dependencies:
+      - package: supabase-swift
+        product: Supabase
+
+schemes:
+  Flim:
+    build:
+      targets:
+        Flim: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+    profile:
+      config: Release
+    analyze:
+      config: Debug
+    archive:
+      config: Release

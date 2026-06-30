@@ -1,0 +1,97 @@
+import Foundation
+import Observation
+
+@Observable
+final class DarkroomViewModel {
+    var photos: [Photo] = []
+    var signedURLCache: [UUID: URL] = [:]
+    var isLoading = false
+    var error: String?
+
+    var developingPhotos: [Photo] { photos.filter { !$0.isReady } }
+    var developedPhotos: [Photo] { photos.filter(\.isReady) }
+
+    // Tracks when each cached URL expires so we can refresh before they 404
+    private var urlExpiry: [UUID: Date] = [:]
+    private var refreshTask: Task<Void, Never>?
+
+    deinit { refreshTask?.cancel() }
+
+    // MARK: - Load
+
+    func load(photoService: PhotoService, userId: UUID) async {
+        isLoading = true
+        error = nil
+        do {
+            try await photoService.fetchPersonalPhotos(userId: userId)
+            photos = photoService.photos
+            await markReadyPhotos(photoService: photoService)
+            await prefetchSignedURLs(photoService: photoService)
+        } catch {
+            self.error = error.localizedDescription
+        }
+        isLoading = false
+        startRefreshLoop(photoService: photoService)
+    }
+
+    func loadRoll(photoService: PhotoService, rollId: UUID) async {
+        isLoading = true
+        error = nil
+        do {
+            try await photoService.fetchRollPhotos(rollId: rollId)
+            photos = photoService.photos
+            await markReadyPhotos(photoService: photoService)
+            await prefetchSignedURLs(photoService: photoService)
+        } catch {
+            self.error = error.localizedDescription
+        }
+        isLoading = false
+    }
+
+    // MARK: - Signed URLs (with expiry tracking)
+
+    func signedURL(for photo: Photo, photoService: PhotoService) async -> URL? {
+        // Return cached URL if it won't expire in the next 5 minutes
+        if let url = signedURLCache[photo.id],
+           let expiry = urlExpiry[photo.id],
+           Date.now < expiry.addingTimeInterval(-300) {
+            return url
+        }
+
+        guard let url = try? await photoService.signedURL(for: photo.storagePath) else { return nil }
+        signedURLCache[photo.id] = url
+        urlExpiry[photo.id] = Date.now.addingTimeInterval(3600)
+        return url
+    }
+
+    // MARK: - Private
+
+    private func markReadyPhotos(photoService: PhotoService, notify: Bool = false) async {
+        let before = developedPhotos.count
+        await photoService.markDevelopedIfReady()
+        photos = photoService.photos
+        // Celebrate photos that develop while you're watching (not on initial load).
+        if notify, developedPhotos.count > before {
+            await MainActor.run { Haptics.reveal() }
+        }
+    }
+
+    private func prefetchSignedURLs(photoService: PhotoService) async {
+        for photo in developedPhotos {
+            _ = await signedURL(for: photo, photoService: photoService)
+        }
+    }
+
+    // Polls every 60s to reveal newly developed photos and refresh expiring URLs
+    private func startRefreshLoop(photoService: PhotoService) {
+        refreshTask?.cancel()
+        refreshTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(60))
+                guard let self, !Task.isCancelled else { return }
+                await self.markReadyPhotos(photoService: photoService, notify: true)
+                await self.prefetchSignedURLs(photoService: photoService)
+            }
+        }
+    }
+}

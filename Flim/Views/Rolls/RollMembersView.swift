@@ -1,0 +1,110 @@
+import SwiftUI
+
+struct RollMembersView: View {
+    let roll: Roll
+    @Environment(RollService.self) private var rollService
+    @Environment(AuthService.self) private var auth
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var members: [AppUser] = []
+    @State private var isLoading = false
+    @State private var codeCopied = false
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                Color(red: 0.04, green: 0.04, blue: 0.04).ignoresSafeArea()
+
+                VStack(spacing: 0) {
+                    // Invite code banner
+                    VStack(spacing: 6) {
+                        Text("INVITE CODE")
+                            .font(.system(size: 11, weight: .medium))
+                            .tracking(2)
+                            .foregroundStyle(Color(white: 0.4))
+                        Button {
+                            UIPasteboard.general.string = roll.inviteCode
+                            withAnimation { codeCopied = true }
+                            Task {
+                                try? await Task.sleep(for: .seconds(2))
+                                withAnimation { codeCopied = false }
+                            }
+                        } label: {
+                            HStack(spacing: 10) {
+                                Text(roll.inviteCode)
+                                    .font(.system(size: 28, weight: .thin, design: .monospaced))
+                                    .tracking(6)
+                                    .foregroundStyle(.white)
+                                Image(systemName: codeCopied ? "checkmark" : "doc.on.doc")
+                                    .font(.system(size: 14))
+                                    .foregroundStyle(codeCopied ? FlimTheme.accent : Color(white: 0.5))
+                            }
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 20)
+                    .background(Color(white: 0.08))
+
+                    if isLoading {
+                        Spacer()
+                        ProgressView().tint(.white)
+                        Spacer()
+                    } else {
+                        List {
+                            ForEach(members) { member in
+                                HStack(spacing: 12) {
+                                    Circle()
+                                        .fill(Color(white: 0.15))
+                                        .frame(width: 36, height: 36)
+                                        .overlay(
+                                            Text(String((member.username ?? "?").prefix(1)).uppercased())
+                                                .font(.system(size: 14, weight: .medium))
+                                                .foregroundStyle(Color(white: 0.7))
+                                        )
+
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("@\(member.username ?? "unknown")")
+                                            .font(.system(size: 15, weight: .medium))
+                                            .foregroundStyle(.white)
+                                        if member.id == roll.createdBy {
+                                            Text("Creator")
+                                                .font(.system(size: 11))
+                                                .foregroundStyle(Color(white: 0.4))
+                                        }
+                                    }
+
+                                    Spacer()
+
+                                    if member.id == auth.currentUser?.id {
+                                        Text("You")
+                                            .font(.system(size: 12))
+                                            .foregroundStyle(Color(white: 0.4))
+                                    }
+                                }
+                                .padding(.vertical, 4)
+                                .listRowBackground(Color(white: 0.08))
+                                .listRowSeparatorTint(Color(white: 0.12))
+                            }
+                        }
+                        .listStyle(.plain)
+                        .scrollContentBackground(.hidden)
+                    }
+                }
+            }
+            .navigationTitle("Members (\(members.count)/10)")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarColorScheme(.dark, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }.foregroundStyle(.white)
+                }
+            }
+        }
+        .presentationBackground(Color(red: 0.04, green: 0.04, blue: 0.04))
+        .task {
+            isLoading = true
+            members = (try? await rollService.fetchMembers(for: roll.id)) ?? []
+            isLoading = false
+        }
+    }
+}

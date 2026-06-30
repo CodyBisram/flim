@@ -1,0 +1,133 @@
+import SwiftUI
+
+struct DarkroomView: View {
+    @Environment(AuthService.self) private var auth
+    @Environment(PhotoService.self) private var photoService
+
+    @State private var vm = DarkroomViewModel()
+    @State private var selectedPhoto: Photo?
+    @State private var selectedURL: URL?
+    @State private var showProfile = false
+
+    private let columns = [
+        GridItem(.flexible(), spacing: 2),
+        GridItem(.flexible(), spacing: 2),
+        GridItem(.flexible(), spacing: 2)
+    ]
+
+    var body: some View {
+        ZStack {
+            Color(red: 0.04, green: 0.04, blue: 0.04).ignoresSafeArea()
+
+            if vm.isLoading && vm.photos.isEmpty {
+                ProgressView().tint(.white)
+            } else if vm.photos.isEmpty {
+                emptyState
+            } else {
+                ScrollView {
+                    photoGrid
+                        .padding(.horizontal, 2)
+                }
+                .refreshable { await reload() }
+            }
+        }
+        .navigationTitle("Darkroom")
+        .navigationBarTitleDisplayMode(.large)
+        .toolbarColorScheme(.dark, for: .navigationBar)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { showProfile = true } label: {
+                    Image(systemName: "person.circle")
+                        .foregroundStyle(FlimTheme.accent)
+                }
+            }
+        }
+        .onAppear { Task { await reload() } }
+        .fullScreenCover(item: $selectedPhoto) { photo in
+            FullScreenPhotoView(photo: photo, url: selectedURL)
+        }
+        .sheet(isPresented: $showProfile) {
+            ProfileView()
+        }
+    }
+
+    // MARK: - Grid
+
+    @ViewBuilder
+    private var photoGrid: some View {
+        if !vm.developingPhotos.isEmpty {
+            developingSection
+        }
+        if !vm.developedPhotos.isEmpty {
+            developedSection
+        }
+    }
+
+    private var developingSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("\(vm.developingPhotos.count) DEVELOPING")
+                    .font(.system(size: 11, weight: .medium))
+                    .tracking(2)
+                    .foregroundStyle(Color(white: 0.4))
+                Spacer()
+            }
+            .padding(.horizontal, 4)
+            .padding(.top, 16)
+
+            LazyVGrid(columns: columns, spacing: 2) {
+                ForEach(vm.developingPhotos) { photo in
+                    PhotoGridCell(photo: photo, signedURL: nil)
+                }
+            }
+        }
+    }
+
+    private var developedSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("DEVELOPED")
+                    .font(.system(size: 11, weight: .medium))
+                    .tracking(2)
+                    .foregroundStyle(Color(white: 0.4))
+                Spacer()
+            }
+            .padding(.horizontal, 4)
+            .padding(.top, 16)
+
+            LazyVGrid(columns: columns, spacing: 2) {
+                ForEach(vm.developedPhotos) { photo in
+                    PhotoGridCell(photo: photo, signedURL: vm.signedURLCache[photo.id])
+                        .onTapGesture {
+                            selectedURL = vm.signedURLCache[photo.id]
+                            selectedPhoto = photo
+                        }
+                        .task {
+                            if vm.signedURLCache[photo.id] == nil {
+                                _ = await vm.signedURL(for: photo, photoService: photoService)
+                            }
+                        }
+                }
+            }
+        }
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "camera.aperture")
+                .font(.system(size: 40, weight: .ultraLight))
+                .foregroundStyle(Color(white: 0.3))
+            Text("No photos yet.")
+                .font(.system(size: 15, weight: .light))
+                .foregroundStyle(Color(white: 0.4))
+            Text("Take one — it'll develop in a few minutes.")
+                .font(.system(size: 13))
+                .foregroundStyle(Color(white: 0.3))
+        }
+    }
+
+    private func reload() async {
+        guard let userId = auth.currentUser?.id else { return }
+        await vm.load(photoService: photoService, userId: userId)
+    }
+}
