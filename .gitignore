@@ -26,7 +26,15 @@ Carthage/Build/
 *.swp
 *~
 
+# fastlane
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/test_output/
+fastlane/*.log
+
 # Secrets (none committed today, but keep them out)
 *.p8
+*.p12
+*.mobileprovision
 *.env
 .env*
