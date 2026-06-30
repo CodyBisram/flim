@@ -47,8 +47,33 @@ struct DarkroomView: View {
                         .foregroundStyle(FlimTheme.accent)
                 }
             }
+            #if DEBUG
+            ToolbarItem(placement: .topBarLeading) {
+                Button {
+                    Task {
+                        guard let uid = auth.currentUser?.id else { return }
+                        await photoService.seedDemoPhotos(userId: uid)
+                        await reload()
+                    }
+                } label: {
+                    Image(systemName: "ladybug")
+                        .foregroundStyle(FlimTheme.accent)
+                }
+            }
+            #endif
         }
-        .onAppear { Task { await reload() } }
+        .onAppear {
+            Task {
+                await reload()
+                #if DEBUG
+                if ProcessInfo.processInfo.arguments.contains("-seedDemo"), vm.photos.isEmpty,
+                   let uid = auth.currentUser?.id {
+                    await photoService.seedDemoPhotos(userId: uid)
+                    await reload()
+                }
+                #endif
+            }
+        }
         .fullScreenCover(item: $selectedPhoto) { photo in
             FullScreenPhotoView(photo: photo, url: selectedURL)
         }

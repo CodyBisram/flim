@@ -20,5 +20,12 @@ struct MainTabView: View {
             }
         }
         .tint(FlimTheme.accent)
+        .onAppear {
+            #if DEBUG
+            // Deterministic Simulator verification: launch with `-seedDemo` to jump
+            // straight to the Darkroom (which then auto-seeds — see DarkroomView).
+            if ProcessInfo.processInfo.arguments.contains("-seedDemo") { selected = 1 }
+            #endif
+        }
     }
 }

@@ -137,7 +137,7 @@ enum RollError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .notFound: "No roll found with that invite code."
-        case .full: "This roll is full (max 10 members)."
+        case .full: "This roll is full (max \(Roll.memberCap) members)."
         }
     }
 }

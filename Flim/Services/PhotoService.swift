@@ -24,7 +24,9 @@ final class PhotoService {
         defer { isUploading = false }
 
         let photoId = UUID()
-        let path = "\(userId.uuidString)/\(photoId.uuidString).jpg"
+        // Lowercased to match Postgres `auth.uid()::text` (lowercase) in the storage RLS
+        // policy — Swift's uuidString is uppercase, which would 403 the upload otherwise.
+        let path = "\(userId.uuidString.lowercased())/\(photoId.uuidString.lowercased()).jpg"
         let developsAt = Date.now.addingTimeInterval(developDelay)
 
         do {
@@ -131,3 +133,71 @@ struct FailedUpload {
     let userId: UUID
     let rollId: UUID?
 }
+
+#if DEBUG
+import UIKit
+
+extension PhotoService {
+    /// Debug-only: seeds the signed-in user's Darkroom with placeholder photos so the grid
+    /// + reveal animation can be exercised in the Simulator (which has no camera). Generates
+    /// gradient images, uploads them through the real storage path, and inserts rows with a
+    /// mix of already-developed and still-developing timestamps. Never compiled for release.
+    func seedDemoPhotos(userId: UUID, rollId: UUID? = nil) async {
+        // Negative = already developed (shows the reveal); positive = still developing.
+        let offsets: [TimeInterval] = [-86_400, -3_600, -600, -120, 60, 150]
+        for (i, offset) in offsets.enumerated() {
+            guard let data = Self.makeDemoImage(seed: i) else { continue }
+            let photoId = UUID()
+            let path = "\(userId.uuidString.lowercased())/\(photoId.uuidString.lowercased()).jpg"
+            do {
+                try await supabase.storage
+                    .from("photos")
+                    .upload(path, data: data, options: FileOptions(contentType: "image/jpeg"))
+
+                let payload = InsertPhoto(
+                    id: photoId, userId: userId, rollId: rollId,
+                    storagePath: path,
+                    developsAt: Date.now.addingTimeInterval(offset)
+                )
+                let inserted: Photo = try await supabase
+                    .from("photos")
+                    .insert(payload).select().single().execute().value
+                photos.insert(inserted, at: 0)
+                print("[seed] inserted photo \(i + 1) at \(path)")
+            } catch {
+                uploadError = error.localizedDescription
+                print("[seed] FAILED photo \(i + 1): \(error)")
+            }
+        }
+        print("[seed] done — userId=\(userId)")
+    }
+
+    private static func makeDemoImage(seed: Int) -> Data? {
+        let size = CGSize(width: 900, height: 1200)
+        let hues: [CGFloat] = [0.06, 0.55, 0.85, 0.33, 0.0, 0.70]
+        let h = hues[seed % hues.count]
+        let renderer = UIGraphicsImageRenderer(size: size)
+        let image = renderer.image { ctx in
+            let cg = ctx.cgContext
+            let colors = [
+                UIColor(hue: h, saturation: 0.55, brightness: 0.85, alpha: 1).cgColor,
+                UIColor(hue: h, saturation: 0.70, brightness: 0.32, alpha: 1).cgColor
+            ] as CFArray
+            if let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                                         colors: colors, locations: [0, 1]) {
+                cg.drawLinearGradient(gradient, start: .zero,
+                                      end: CGPoint(x: size.width, y: size.height), options: [])
+            }
+            let text = "\(seed + 1)" as NSString
+            let attrs: [NSAttributedString.Key: Any] = [
+                .font: UIFont.systemFont(ofSize: 240, weight: .thin),
+                .foregroundColor: UIColor.white.withAlphaComponent(0.85)
+            ]
+            let ts = text.size(withAttributes: attrs)
+            text.draw(at: CGPoint(x: (size.width - ts.width) / 2, y: (size.height - ts.height) / 2),
+                      withAttributes: attrs)
+        }
+        return image.jpegData(compressionQuality: 0.85)
+    }
+}
+#endif

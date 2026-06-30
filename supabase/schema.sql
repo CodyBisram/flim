@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS public.rolls (
     created_at  TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Roll membership (max 10 enforced in the join function)
+-- Roll membership (max 50 enforced in the join function — keep in sync with Roll.memberCap)
 CREATE TABLE IF NOT EXISTS public.roll_members (
     roll_id     UUID NOT NULL REFERENCES public.rolls(id) ON DELETE CASCADE,
     user_id     UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
@@ -96,7 +96,7 @@ $$;
 
 -- ============================================================
 -- Join-by-code RPC. Looks up a roll by invite code, enforces the
--- 10-member cap, and inserts membership atomically — all with definer
+-- 50-member cap, and inserts membership atomically — all with definer
 -- rights so a not-yet-member can join without being able to read every
 -- roll in the table. Call from the client via supabase.rpc("join_roll").
 -- ============================================================
@@ -122,7 +122,7 @@ BEGIN
 
     IF NOT already_member THEN
         SELECT COUNT(*) INTO member_count FROM public.roll_members WHERE roll_id = r.id;
-        IF member_count >= 10 THEN
+        IF member_count >= 50 THEN
             RAISE EXCEPTION 'roll_full' USING ERRCODE = 'P0001';
         END IF;
         INSERT INTO public.roll_members (roll_id, user_id)
@@ -221,18 +221,35 @@ CREATE POLICY "photos: can update own"
     WITH CHECK (auth.uid() = user_id);
 
 -- ============================================================
--- Storage
--- Create a PRIVATE bucket named "photos" in the Supabase dashboard:
---   Storage → New bucket → name: "photos", Public: OFF
---
--- Then add these storage policies (Dashboard → Storage → photos → Policies):
---   SELECT: authenticated users can download if (storage.foldername(name))[1] = auth.uid()::text
---   INSERT: authenticated users can upload   if (storage.foldername(name))[1] = auth.uid()::text
---
--- NOTE: photos are stored under "<owner_uid>/<photo_id>.jpg". Roll-mates read
--- shared photos through short-lived signed URLs minted by the owner's client,
--- so the per-user storage policy above is sufficient for the MVP.
+-- Storage — private "photos" bucket + per-user RLS policies.
+-- Photos are stored under "<owner_uid>/<photo_id>.jpg"; roll-mates read shared
+-- photos via short-lived signed URLs minted by the owner's client, so a per-user
+-- policy is sufficient. Without these policies, uploads fail with a 403
+-- "new row violates row-level security policy" — i.e. capture won't work.
 -- ============================================================
+
+-- Create the private bucket if it doesn't exist (Public OFF).
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('photos', 'photos', false)
+ON CONFLICT (id) DO NOTHING;
+
+-- Authenticated users may upload only into their own "<auth.uid()>/…" folder.
+DROP POLICY IF EXISTS "photos: insert own folder" ON storage.objects;
+CREATE POLICY "photos: insert own folder"
+    ON storage.objects FOR INSERT TO authenticated
+    WITH CHECK (
+        bucket_id = 'photos'
+        AND (storage.foldername(name))[1] = auth.uid()::text
+    );
+
+-- …and read/update/delete only their own objects.
+DROP POLICY IF EXISTS "photos: read own folder" ON storage.objects;
+CREATE POLICY "photos: read own folder"
+    ON storage.objects FOR SELECT TO authenticated
+    USING (
+        bucket_id = 'photos'
+        AND (storage.foldername(name))[1] = auth.uid()::text
+    );
 
 -- ============================================================
 -- Optional cron: auto-mark developed photos server-side.

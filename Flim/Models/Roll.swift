@@ -1,6 +1,9 @@
 import Foundation
 
 struct Roll: Codable, Identifiable, Hashable {
+    /// Max members per roll. Must match the cap in the `join_roll` RPC (supabase/schema.sql).
+    static let memberCap = 50
+
     let id: UUID
     let name: String
     let inviteCode: String

@@ -92,7 +92,7 @@ struct RollMembersView: View {
                 }
             }
             .navigationBarTitleDisplayMode(.inline)
-            .flimInlineTitle("Members (\(members.count)/10)")
+            .flimInlineTitle("Members (\(members.count)/\(Roll.memberCap))")
             .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
