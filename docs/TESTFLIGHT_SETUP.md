@@ -65,6 +65,18 @@ identity (no "works on my machine" cert chaos).
 Pick a strong passphrase and remember it — it encrypts the certs. This becomes
 `MATCH_PASSWORD`.
 
+## Steps 6–8 the easy way — guided script
+
+Once you've finished Steps 1–4 (Apple) and have your `.p8` downloaded, you can do the
+rest in one shot. From the repo root:
+
+```bash
+./scripts/setup-testflight.sh
+```
+
+It asks for each value (secrets are typed hidden, never echoed), seeds match, and sets
+all 7 GitHub secrets. If you'd rather do it by hand, the individual steps follow.
+
 ## Step 6 — Seed the signing assets (run once, locally)
 
 From the repo root, with the `.p8` you downloaded in Step 3:
