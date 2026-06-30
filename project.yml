@@ -22,13 +22,15 @@ targets:
     entitlements:
       path: Flim/Flim.entitlements
       properties:
-        aps-environment: development
+        # Resolved per build config: development (Debug) / production (Release).
+        # Distribution/TestFlight builds require production, so this must vary.
+        aps-environment: $(APS_ENVIRONMENT)
     info:
       path: Flim/Info.plist
       properties:
         CFBundleDisplayName: FLIM
-        CFBundleShortVersionString: "1.0"
-        CFBundleVersion: "1"
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         UILaunchStoryboardName: LaunchScreen
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
@@ -42,8 +44,18 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.flim.app
         SWIFT_VERSION: "5.9"
+        # Set this to your 10-char Apple Team ID for local on-device runs.
+        # CI overrides it at build time, so leaving it empty is fine for CI.
         DEVELOPMENT_TEAM: ""
         ENABLE_PREVIEWS: YES
+        # Versioning — CI passes CURRENT_PROJECT_VERSION=<next TestFlight build>.
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
+      configs:
+        Debug:
+          APS_ENVIRONMENT: development
+        Release:
+          APS_ENVIRONMENT: production
     dependencies:
       - package: supabase-swift
         product: Supabase

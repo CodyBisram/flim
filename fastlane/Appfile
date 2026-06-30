@@ -1,0 +1,11 @@
+# App identity. Most values are pulled from the environment so nothing secret
+# lives in the repo. See docs/TESTFLIGHT_SETUP.md for where each value comes from.
+
+app_identifier("com.flim.app")
+
+# Optional — only used for password-based (non-API-key) auth. With the App Store
+# Connect API key we use in CI these are not required, but they don't hurt.
+apple_id(ENV["APPLE_ID"]) if ENV["APPLE_ID"]
+
+team_id(ENV["APPLE_TEAM_ID"])       # 10-char Developer Portal team id
+itc_team_id(ENV["APPLE_TEAM_ID"])   # App Store Connect team id (same for most accounts)

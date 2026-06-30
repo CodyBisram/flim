@@ -1,0 +1,12 @@
+# fastlane match — stores the App Store distribution certificate + provisioning
+# profile, encrypted, in a SEPARATE private git repo so both collaborators and CI
+# share one signing identity. See docs/TESTFLIGHT_SETUP.md → "Code signing".
+
+git_url(ENV["MATCH_GIT_URL"])       # e.g. https://github.com/<owner>/flim-certificates.git
+storage_mode("git")
+
+type("appstore")                    # App Store distribution assets
+app_identifier(["com.flim.app"])
+
+# Never let CI try to create/regen certs — it only reads what was seeded locally.
+readonly(ENV["CI"] == "true")
