@@ -1,0 +1,83 @@
+# FLIM
+
+A native iOS instant/disposable-camera app. Shoot now, see it later — photos hide and
+"develop" over time, then reveal with an instant-film look baked in at capture. Invite-only.
+
+## Stack
+
+- **SwiftUI** (iOS 26 target), `@Observable` throughout — no `ObservableObject`
+- **AVFoundation** for capture, **Core Image** for the instant-film processing
+- **Supabase** — Postgres + Row Level Security, email OTP auth, private Storage bucket
+- iOS 26 **Liquid Glass** styling app-wide
+- **xcodegen**-managed project (`project.yml` is the source of truth)
+
+## Features
+
+- Email OTP sign-in, gated by an invite allowlist
+- Full-screen camera with a film-strip picker and instant-film look baked in at capture
+- **Darkroom** — developing placeholders, countdown, and reveal moment
+- **Rolls** — shared friend groups via 6-char invite codes (max 10 members)
+- Local "your photo developed" notifications (remote push scaffolded)
+- Free film packs: FLIM Original, Noir, Sunwash, '88 Faded
+
+## Project layout
+
+```
+Flim/
+  Config/        Supabase client
+  Models/        AppUser, Roll, Photo, FilmStock
+  Services/      Auth, Photo, Roll, Notification, RemotePush, InstantFilmProcessor
+  Views/         Auth, Camera, Darkroom, Rolls, Profile, Main, Components
+supabase/
+  schema.sql     Tables, RLS policies, and RPCs (run in the SQL editor)
+  push/          Remote push backend (device_tokens migration + Edge Function)
+project.yml      xcodegen project definition
+```
+
+## Getting started
+
+### Requirements
+
+- macOS with full **Xcode 26.x** (Command Line Tools alone is not enough)
+- [`xcodegen`](https://github.com/yonaskolb/XcodeGen) — `brew install xcodegen`
+
+### Build
+
+```bash
+# Generate the Xcode project from project.yml
+xcodegen generate
+
+# Build for the simulator
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
+  xcodebuild -project Flim.xcodeproj -scheme Flim \
+  -destination 'generic/platform=iOS Simulator' build
+```
+
+Then open `Flim.xcodeproj` in Xcode and run on an iOS 26 simulator or device.
+
+### Supabase setup
+
+1. Run `supabase/schema.sql` in the Supabase SQL editor (idempotent — safe to re-run).
+   It creates the tables, RLS policies, and RPCs.
+2. Create a **private** Storage bucket named `photos` and add the per-user policies
+   documented in `schema.sql`.
+3. Add the project URL and publishable key to `Flim/Config/SupabaseClient.swift`.
+
+### Invite allowlist
+
+FLIM is invite-only — only allow-listed emails can request a sign-in code:
+
+```sql
+INSERT INTO public.allowed_emails (email, note) VALUES ('them@example.com', 'Name');
+```
+
+### Remote push (optional)
+
+Local develop notifications work with no backend. For push when roll-mates' photos
+develop, deploy the pieces in `supabase/push/` (needs an APNs auth key) — see
+`supabase/push/README.md`.
+
+## Roadmap
+
+- Deploy the remote push backend
+- Broader social features
