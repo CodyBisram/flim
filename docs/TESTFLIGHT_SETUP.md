@@ -60,9 +60,7 @@ This is how CI authenticates — no passwords, no 2FA prompts.
 in a **separate private git repo**, so you, your cousin, and CI all share one signing
 identity (no "works on my machine" cert chaos).
 
-```bash
-gh repo create flim-certificates --private --description "FLIM signing assets (fastlane match)"
-```
+✅ Already created for you: **<https://github.com/wiggapony0925/flim-certificates>** (private).
 
 Pick a strong passphrase and remember it — it encrypts the certs. This becomes
 `MATCH_PASSWORD`.
@@ -79,7 +77,7 @@ export ASC_KEY_ID="XXXXXXXXXX"                          # Step 3
 export ASC_ISSUER_ID="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxx" # Step 3
 export ASC_KEY_P8="$(base64 -i ~/Downloads/AuthKey_XXXXXX.p8)"   # the .p8, base64'd
 export MATCH_PASSWORD="the-passphrase-you-chose"        # Step 5
-export MATCH_GIT_URL="https://github.com/CodyBisram/flim-certificates.git"
+export MATCH_GIT_URL="https://github.com/wiggapony0925/flim-certificates.git"
 
 bundle exec fastlane certificates
 ```
@@ -93,7 +91,8 @@ this if the cert expires or you add a device/capability.
 CI needs read access to the private `flim-certificates` repo.
 
 1. Create a fine-grained PAT: <https://github.com/settings/personal-access-tokens/new>
-   — Repository access: **only** `flim-certificates`; Permission: **Contents → Read-only**.
+   — Resource owner **wiggapony0925**; Repository access: **only** `flim-certificates`;
+   Permission: **Contents → Read-only**.
 2. Build the basic-auth value:
 
 ```bash
