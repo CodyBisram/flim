@@ -23,12 +23,20 @@ platform :ios do
   end
 
   def asc_api_key
+    require "base64"
+    require "tmpdir"
+    # Accept the ASC_KEY_P8 secret as either the raw .p8 PEM or a base64 blob of it
+    # (line-wrapped or not), then hand fastlane a real file. This sidesteps the
+    # strict base64 decoding in fastlane 2.236.x that raises "invalid curve name".
+    raw = ENV.fetch("ASC_KEY_P8").strip
+    pem = raw.include?("BEGIN") ? raw : Base64.decode64(raw)
+    path = File.join(Dir.mktmpdir, "AuthKey.p8")
+    File.write(path, pem)
     app_store_connect_api_key(
-      key_id:                  ENV.fetch("ASC_KEY_ID"),
-      issuer_id:               ENV.fetch("ASC_ISSUER_ID"),
-      key_content:             ENV.fetch("ASC_KEY_P8"),
-      is_key_content_base64:   true,
-      in_house:                false
+      key_id:       ENV.fetch("ASC_KEY_ID").strip,
+      issuer_id:    ENV.fetch("ASC_ISSUER_ID").strip,
+      key_filepath: path,
+      in_house:     false
     )
   end
 
