@@ -24,7 +24,8 @@ struct DarkroomView: View {
 
                 Group {
                     if vm.isLoading && vm.photos.isEmpty {
-                        ProgressView().tint(.white)
+                        ScrollView { LoadingGrid().padding(.top, 8) }
+                            .scrollDisabled(true)
                     } else if let error = vm.error, vm.photos.isEmpty {
                         ErrorState(message: error) { await reload() }
                     } else if vm.photos.isEmpty {
@@ -48,6 +49,7 @@ struct DarkroomView: View {
                     Image(systemName: "person.circle")
                         .foregroundStyle(FlimTheme.accent)
                 }
+                .accessibilityLabel("Profile")
             }
         }
         .onAppear {

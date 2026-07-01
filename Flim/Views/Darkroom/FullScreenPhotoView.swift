@@ -52,6 +52,7 @@ struct FullScreenPhotoView: View {
                             .padding(12)
                             .glassCapsule(interactive: true)
                     }
+                    .accessibilityLabel("Close")
                     Spacer()
                     Text(photo.takenAt.formatted(date: .abbreviated, time: .shortened))
                         .font(.system(size: 12, weight: .medium))
@@ -79,6 +80,7 @@ struct FullScreenPhotoView: View {
                             .padding(12)
                             .glassCapsule(interactive: true)
                     }
+                    .accessibilityLabel(isOwnPhoto ? "Delete photo" : "Report photo")
                     .disabled(isDeleting || reportSent)
                 }
                 .padding(.horizontal, 20)

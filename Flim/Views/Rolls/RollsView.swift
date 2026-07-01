@@ -40,12 +40,14 @@ struct RollsView: View {
                     Image(systemName: "person.badge.plus")
                         .foregroundStyle(FlimTheme.accent)
                 }
+                .accessibilityLabel("Join a roll")
                 Button {
                     showCreate = true
                 } label: {
                     Image(systemName: "plus")
                         .foregroundStyle(FlimTheme.accent)
                 }
+                .accessibilityLabel("New roll")
             }
         }
         .sheet(isPresented: $showCreate) {

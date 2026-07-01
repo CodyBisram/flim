@@ -6,6 +6,7 @@ struct EmailAuthView: View {
     @State private var isSending = false
     @State private var error: String?
     @State private var showOTP = false
+    @ScaledMetric private var subtitleSize = 15
 
     var body: some View {
         ZStack {
@@ -20,7 +21,7 @@ struct EmailAuthView: View {
                         .tracking(12)
                         .foregroundStyle(.white)
                     Text("Shoot now. See it later. Enter your email to get started.")
-                        .font(.system(size: 15))
+                        .font(.system(size: subtitleSize))
                         .foregroundStyle(Color(white: 0.5))
                 }
                 .padding(.bottom, 40)

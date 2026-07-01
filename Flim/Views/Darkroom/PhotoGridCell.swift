@@ -55,6 +55,33 @@ struct PhotoGridCell: View {
     }
 }
 
+// MARK: - Loading skeleton
+
+/// A shimmering placeholder grid shown while the Darkroom loads — feels faster and more
+/// finished than a bare spinner.
+struct LoadingGrid: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var shimmer = false
+    private let columns = Array(repeating: GridItem(.flexible(), spacing: 2), count: 3)
+
+    var body: some View {
+        LazyVGrid(columns: columns, spacing: 2) {
+            ForEach(0..<12, id: \.self) { _ in
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(Color(white: 0.1))
+                    .aspectRatio(1, contentMode: .fill)
+                    .opacity(shimmer ? 0.45 : 1)
+            }
+        }
+        .padding(.horizontal, 2)
+        .onAppear {
+            guard !reduceMotion else { return }
+            withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) { shimmer = true }
+        }
+        .accessibilityHidden(true)
+    }
+}
+
 // MARK: - Cached image
 
 /// Drop-in async image that caches the decoded `UIImage` in memory. Scrolling back to a
@@ -75,6 +102,7 @@ struct CachedImage<Content: View, Placeholder: View>: View {
 
     @State private var uiImage: UIImage?
     @State private var shown = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ZStack {
@@ -103,7 +131,11 @@ struct CachedImage<Content: View, Placeholder: View>: View {
               let image = UIImage(data: data) else { return }
         ImageCache.shared.setObject(image, forKey: key)
         uiImage = image
-        withAnimation(.easeIn(duration: 0.3)) { shown = true }   // first load → gentle fade
+        if reduceMotion {
+            shown = true
+        } else {
+            withAnimation(.easeIn(duration: 0.3)) { shown = true }   // first load → gentle fade
+        }
     }
 }
 

@@ -112,6 +112,8 @@ struct CameraView: View {
                     .padding(.vertical, 9)
                 }
                 .glassCapsule(interactive: true)
+                .accessibilityLabel("Send photos to")
+                .accessibilityValue(selectedRoll?.name ?? "Personal")
 
                 // Flash toggle (Off → Auto → On)
                 Button {
@@ -372,6 +374,7 @@ private struct ShutterButton: View {
     let isCapturing: Bool
     let action: () -> Void
     @State private var pulse = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Button(action: action) {
@@ -395,6 +398,7 @@ private struct ShutterButton: View {
         .disabled(isCapturing)
         .accessibilityLabel("Take photo")
         .onAppear {
+            guard !reduceMotion else { return }
             withAnimation(.easeOut(duration: 1.9).repeatForever(autoreverses: false)) {
                 pulse = true
             }

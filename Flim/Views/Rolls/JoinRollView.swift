@@ -104,6 +104,7 @@ struct JoinRollView: View {
         error = nil
         do {
             joinedRoll = try await rolls.joinRoll(inviteCode: code, userId: userId)
+            Haptics.reveal()
         } catch {
             self.error = error.localizedDescription
         }

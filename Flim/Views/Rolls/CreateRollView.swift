@@ -111,6 +111,7 @@ struct CreateRollView: View {
         error = nil
         do {
             createdRoll = try await rolls.createRoll(name: name.trimmingCharacters(in: .whitespaces), createdBy: userId)
+            Haptics.reveal()
         } catch {
             self.error = error.localizedDescription
         }

@@ -64,17 +64,22 @@ struct ErrorState: View {
     let retry: () async -> Void
 
     @State private var retrying = false
+    // @ScaledMetric ties these to the user's Dynamic Type setting so the text scales.
+    @ScaledMetric private var iconSize = 38
+    @ScaledMetric private var titleSize = 17
+    @ScaledMetric private var messageSize = 13
+    @ScaledMetric private var buttonSize = 14
 
     var body: some View {
         VStack(spacing: 12) {
             Image(systemName: "wifi.exclamationmark")
-                .font(.system(size: 38, weight: .ultraLight))
+                .font(.system(size: iconSize, weight: .ultraLight))
                 .foregroundStyle(FlimTheme.accent.opacity(0.8))
             Text(title)
-                .font(.system(size: 17, weight: .light))
+                .font(.system(size: titleSize, weight: .light))
                 .foregroundStyle(FlimTheme.textSecondary)
             Text(message)
-                .font(.system(size: 13))
+                .font(.system(size: messageSize))
                 .foregroundStyle(FlimTheme.textTertiary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 40)
@@ -83,7 +88,7 @@ struct ErrorState: View {
                 Task { await retry(); retrying = false }
             } label: {
                 Text(retrying ? "Retrying…" : "Try Again")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.system(size: buttonSize, weight: .semibold))
                     .foregroundStyle(FlimTheme.accent)
                     .padding(.horizontal, 22)
                     .padding(.vertical, 11)

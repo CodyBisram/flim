@@ -83,6 +83,7 @@ struct RollDetailView: View {
                     Image(systemName: "person.2")
                         .foregroundStyle(FlimTheme.accent)
                 }
+                .accessibilityLabel("Members")
                 Button {
                     UIPasteboard.general.string = roll.inviteCode
                     Haptics.tap()
@@ -90,6 +91,7 @@ struct RollDetailView: View {
                     Image(systemName: "square.and.arrow.up")
                         .foregroundStyle(FlimTheme.accent)
                 }
+                .accessibilityLabel("Copy invite code")
             }
         }
         .onAppear {
