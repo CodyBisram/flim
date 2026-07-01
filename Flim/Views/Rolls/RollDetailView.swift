@@ -22,6 +22,16 @@ struct RollDetailView: View {
             VStack(spacing: 0) {
                 FlimNavTitle(roll.name)
 
+                if let count = rollService.memberCounts[roll.id] {
+                    Label("\(count) member\(count == 1 ? "" : "s")", systemImage: "person.2.fill")
+                        .font(.system(size: 13, weight: .medium))
+                        .imageScale(.small)
+                        .foregroundStyle(FlimTheme.textSecondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 8)
+                }
+
                 Group {
                     if vm.isLoading && vm.photos.isEmpty {
                         ProgressView().tint(.white)

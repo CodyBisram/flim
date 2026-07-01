@@ -5,6 +5,7 @@ import Supabase
 @Observable
 final class RollService {
     var rolls: [Roll] = []
+    var memberCounts: [UUID: Int] = [:]
     var isLoading = false
     var error: String?
 
@@ -81,7 +82,7 @@ final class RollService {
             .value
 
         let rollIds = memberRows.map(\.rollId.uuidString)
-        guard !rollIds.isEmpty else { rolls = []; return }
+        guard !rollIds.isEmpty else { rolls = []; memberCounts = [:]; return }
 
         rolls = try await supabase
             .from("rolls")
@@ -90,6 +91,24 @@ final class RollService {
             .order("created_at", ascending: false)
             .execute()
             .value
+
+        await loadMemberCounts(rollIds: rollIds)
+    }
+
+    /// Populates `memberCounts` for the given rolls in a single query. RLS lets a member
+    /// read every membership row of a roll they belong to, so the grouped count is exact.
+    private func loadMemberCounts(rollIds: [String]) async {
+        struct CountRow: Decodable { let roll_id: UUID }
+        let rows: [CountRow] = (try? await supabase
+            .from("roll_members")
+            .select("roll_id")
+            .in("roll_id", values: rollIds)
+            .execute()
+            .value) ?? []
+
+        var counts: [UUID: Int] = [:]
+        for row in rows { counts[row.roll_id, default: 0] += 1 }
+        memberCounts = counts
     }
 
     // MARK: - Fetch members of a roll

@@ -64,7 +64,7 @@ struct RollsView: View {
         List {
             ForEach(rolls.rolls) { roll in
                 NavigationLink(value: roll) {
-                    RollRow(roll: roll)
+                    RollRow(roll: roll, memberCount: rolls.memberCounts[roll.id])
                 }
                 .listRowBackground(Color(white: 0.08))
                 .listRowSeparatorTint(Color(white: 0.15))
@@ -105,6 +105,7 @@ struct RollsView: View {
 
 private struct RollRow: View {
     let roll: Roll
+    var memberCount: Int?
 
     var body: some View {
         HStack(spacing: 14) {
@@ -115,24 +116,30 @@ private struct RollRow: View {
                     .font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(.white)
 
-                HStack(spacing: 5) {
-                    Image(systemName: "number")
-                        .font(.system(size: 9, weight: .bold))
-                    Text(roll.inviteCode)
-                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                        .tracking(1)
+                HStack(spacing: 8) {
+                    if let memberCount {
+                        Label("\(memberCount)", systemImage: "person.2.fill")
+                            .font(.system(size: 12, weight: .medium))
+                            .labelStyle(.titleAndIcon)
+                            .imageScale(.small)
+                            .foregroundStyle(FlimTheme.textSecondary)
+                    }
+
+                    HStack(spacing: 5) {
+                        Image(systemName: "number")
+                            .font(.system(size: 9, weight: .bold))
+                        Text(roll.inviteCode)
+                            .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                            .tracking(1)
+                    }
+                    .foregroundStyle(FlimTheme.accent)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 4)
+                    .background(FlimTheme.accentSoft, in: Capsule())
                 }
-                .foregroundStyle(FlimTheme.accent)
-                .padding(.horizontal, 9)
-                .padding(.vertical, 4)
-                .background(FlimTheme.accentSoft, in: Capsule())
             }
 
             Spacer()
-
-            Image(systemName: "chevron.right")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(FlimTheme.textTertiary)
         }
         .padding(.vertical, 8)
     }
