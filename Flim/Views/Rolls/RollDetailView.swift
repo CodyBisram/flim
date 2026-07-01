@@ -4,6 +4,7 @@ struct RollDetailView: View {
     let roll: Roll
     @Environment(PhotoService.self) private var photoService
     @Environment(RollService.self) private var rollService
+    @Environment(AuthService.self) private var auth
     @State private var vm = DarkroomViewModel()
     @State private var showMembers = false
     @State private var selectedPhoto: Photo?
@@ -90,6 +91,17 @@ struct RollDetailView: View {
                     Image(systemName: "square.and.arrow.up")
                         .foregroundStyle(FlimTheme.accent)
                 }
+                #if DEBUG
+                Button {
+                    Task {
+                        guard let uid = auth.currentUser?.id else { return }
+                        await photoService.seedDemoPhotos(userId: uid, rollId: roll.id)
+                        await vm.loadRoll(photoService: photoService, rollId: roll.id)
+                    }
+                } label: {
+                    Image(systemName: "ladybug").foregroundStyle(FlimTheme.accent)
+                }
+                #endif
             }
         }
         .onAppear {

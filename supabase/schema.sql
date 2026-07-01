@@ -251,6 +251,22 @@ CREATE POLICY "photos: read own folder"
         AND (storage.foldername(name))[1] = auth.uid()::text
     );
 
+-- Roll members can read a photo that belongs to a roll they're in — this is what
+-- lets shared-roll photos (and roll cover thumbnails) load for everyone, not just
+-- the photo's owner. Joins the storage object back to its photos row by path.
+DROP POLICY IF EXISTS "photos: roll members can read shared" ON storage.objects;
+CREATE POLICY "photos: roll members can read shared"
+    ON storage.objects FOR SELECT TO authenticated
+    USING (
+        bucket_id = 'photos'
+        AND EXISTS (
+            SELECT 1 FROM public.photos p
+            WHERE p.storage_path = storage.objects.name
+              AND p.roll_id IS NOT NULL
+              AND public.is_roll_member(p.roll_id)
+        )
+    );
+
 -- ============================================================
 -- Optional cron: auto-mark developed photos server-side.
 -- Supabase Dashboard → Database → Functions (or schedule via pg_cron).

@@ -6,6 +6,7 @@ import Supabase
 final class RollService {
     var rolls: [Roll] = []
     var memberCounts: [UUID: Int] = [:]
+    var coverPaths: [UUID: String] = [:]   // roll id → latest developed photo's storage path
     var isLoading = false
     var error: String?
 
@@ -93,6 +94,28 @@ final class RollService {
             .value
 
         await loadMemberCounts(rollIds: rollIds)
+        await loadCovers(rollIds: rollIds)
+    }
+
+    /// Latest developed photo per roll → its storage path, for the roll cover thumbnail.
+    /// "Developed" = develops_at has passed (independent of the is_developed flag sync).
+    private func loadCovers(rollIds: [String]) async {
+        struct CoverRow: Decodable { let roll_id: UUID; let storage_path: String }
+        let nowISO = ISO8601DateFormatter().string(from: Date.now)
+        let rows: [CoverRow] = (try? await supabase
+            .from("photos")
+            .select("roll_id,storage_path")
+            .in("roll_id", values: rollIds)
+            .lte("develops_at", value: nowISO)
+            .order("taken_at", ascending: false)
+            .execute()
+            .value) ?? []
+
+        var covers: [UUID: String] = [:]
+        for row in rows where covers[row.roll_id] == nil {
+            covers[row.roll_id] = row.storage_path   // first per roll = latest (desc order)
+        }
+        coverPaths = covers
     }
 
     /// Populates `memberCounts` for the given rolls in a single query. RLS lets a member

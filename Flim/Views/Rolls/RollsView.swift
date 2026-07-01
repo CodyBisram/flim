@@ -3,8 +3,10 @@ import SwiftUI
 struct RollsView: View {
     @Environment(AuthService.self) private var auth
     @Environment(RollService.self) private var rolls
+    @Environment(PhotoService.self) private var photos
     @State private var showCreate = false
     @State private var showJoin = false
+    @State private var coverURLs: [UUID: URL] = [:]
 
     var body: some View {
         ZStack {
@@ -53,10 +55,23 @@ struct RollsView: View {
             Task {
                 guard let userId = auth.currentUser?.id else { return }
                 try? await rolls.fetchRolls(for: userId)
+                await resolveCovers()
             }
+        }
+        .onChange(of: rolls.coverPaths) {
+            Task { await resolveCovers() }
         }
         .navigationDestination(for: Roll.self) { roll in
             RollDetailView(roll: roll)
+        }
+    }
+
+    /// Mints signed URLs for each roll's cover path (skips ones already resolved).
+    private func resolveCovers() async {
+        for (rollId, path) in rolls.coverPaths where coverURLs[rollId] == nil {
+            if let url = try? await photos.signedURL(for: path) {
+                coverURLs[rollId] = url
+            }
         }
     }
 
@@ -64,7 +79,9 @@ struct RollsView: View {
         List {
             ForEach(rolls.rolls) { roll in
                 NavigationLink(value: roll) {
-                    RollRow(roll: roll, memberCount: rolls.memberCounts[roll.id])
+                    RollRow(roll: roll,
+                            memberCount: rolls.memberCounts[roll.id],
+                            coverURL: coverURLs[roll.id])
                 }
                 .listRowBackground(Color(white: 0.08))
                 .listRowSeparatorTint(Color(white: 0.15))
@@ -75,6 +92,7 @@ struct RollsView: View {
         .refreshable {
             guard let userId = auth.currentUser?.id else { return }
             try? await rolls.fetchRolls(for: userId)
+            await resolveCovers()
         }
     }
 
@@ -106,10 +124,11 @@ struct RollsView: View {
 private struct RollRow: View {
     let roll: Roll
     var memberCount: Int?
+    var coverURL: URL?
 
     var body: some View {
         HStack(spacing: 14) {
-            RollCover(roll: roll)
+            RollCover(roll: roll, coverURL: coverURL)
 
             VStack(alignment: .leading, spacing: 6) {
                 Text(roll.name)
@@ -145,20 +164,31 @@ private struct RollRow: View {
     }
 }
 
-/// A film-frame style cover that gives each roll a stable identity colour + initial.
+/// A film-frame cover: the roll's latest photo when there is one, otherwise a stable
+/// identity gradient + initial.
 private struct RollCover: View {
     let roll: Roll
+    var coverURL: URL?
 
     var body: some View {
         RoundedRectangle(cornerRadius: 13, style: .continuous)
             .fill(LinearGradient(colors: Self.gradient(for: roll),
                                  startPoint: .topLeading, endPoint: .bottomTrailing))
             .frame(width: 54, height: 54)
-            .overlay(
-                Text(roll.name.prefix(1).uppercased())
-                    .font(.system(size: 22, weight: .light))
-                    .foregroundStyle(.white.opacity(0.95))
-            )
+            .overlay {
+                if let coverURL {
+                    AsyncImage(url: coverURL) { image in
+                        image.resizable().scaledToFill()
+                    } placeholder: {
+                        Color.clear
+                    }
+                } else {
+                    Text(roll.name.prefix(1).uppercased())
+                        .font(.system(size: 22, weight: .light))
+                        .foregroundStyle(.white.opacity(0.95))
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 13, style: .continuous)
                     .strokeBorder(.white.opacity(0.14), lineWidth: 1)
