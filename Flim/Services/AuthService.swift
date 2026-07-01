@@ -24,6 +24,9 @@ final class AuthService {
     var currentUser: AppUser?
     var isAuthenticated = false
     var isLoading = true
+    /// True while we're fetching the profile right after sign-in, so the router shows the
+    /// splash instead of briefly flashing the "pick a username" screen for existing users.
+    var isResolvingProfile = false
     var error: String?
 
     private(set) var pendingEmail: String?
@@ -71,8 +74,10 @@ final class AuthService {
         guard let email = pendingEmail else { return }
         try await supabase.auth.verifyOTP(email: email, token: token, type: .email)
         let session = try await supabase.auth.session
+        isResolvingProfile = true
         isAuthenticated = true
         currentUser = try? await fetchUserProfile(id: session.user.id)
+        isResolvingProfile = false
         pendingEmail = nil
     }
 
@@ -210,8 +215,10 @@ final class AuthService {
             switch event {
             case .signedIn:
                 if let session = try? await supabase.auth.session {
+                    isResolvingProfile = true
                     isAuthenticated = true
                     currentUser = try? await fetchUserProfile(id: session.user.id)
+                    isResolvingProfile = false
                 }
             case .signedOut:
                 currentUser = nil

@@ -12,6 +12,10 @@ struct ContentView: View {
                     EmailAuthView()
                 }
                 .transition(.opacity)
+            } else if auth.isResolvingProfile {
+                // Signed in, still fetching the profile — hold on the splash so existing
+                // users never see a flash of the username screen.
+                SplashView()
             } else if auth.currentUser?.username == nil {
                 NavigationStack {
                     UsernameView()
@@ -25,5 +29,6 @@ struct ContentView: View {
         .animation(.easeInOut(duration: 0.35), value: auth.currentUser?.id)
         .animation(.easeInOut(duration: 0.35), value: auth.currentUser?.username)
         .animation(.easeInOut(duration: 0.35), value: auth.isLoading)
+        .animation(.easeInOut(duration: 0.35), value: auth.isResolvingProfile)
     }
 }
