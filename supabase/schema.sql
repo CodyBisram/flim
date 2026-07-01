@@ -198,6 +198,19 @@ CREATE POLICY "roll_members: can join"
     ON public.roll_members FOR INSERT
     WITH CHECK (auth.uid() = user_id);
 
+-- Leave a roll (delete own membership), and the roll's creator can remove anyone
+-- (moderation). The creator check reads public.rolls, not roll_members, so no recursion.
+DROP POLICY IF EXISTS "roll_members: leave or creator removes" ON public.roll_members;
+CREATE POLICY "roll_members: leave or creator removes"
+    ON public.roll_members FOR DELETE
+    USING (
+        user_id = auth.uid()
+        OR EXISTS (
+            SELECT 1 FROM public.rolls r
+            WHERE r.id = roll_members.roll_id AND r.created_by = auth.uid()
+        )
+    );
+
 -- PHOTOS -----------------------------------------------------
 DROP POLICY IF EXISTS "photos: own photos" ON public.photos;
 CREATE POLICY "photos: own photos"
@@ -280,6 +293,45 @@ CREATE POLICY "photos: roll members can read shared"
               AND public.is_roll_member(p.roll_id)
         )
     );
+
+-- ============================================================
+-- Account deletion (App Store Guideline 5.1.1(v) requires in-app account deletion).
+-- Deleting the auth.users row cascades to public.users (ON DELETE CASCADE), which
+-- cascades to that user's rolls, memberships, photos, and reports. SECURITY DEFINER
+-- runs as the function owner (postgres), which can delete from the auth schema.
+-- The client calls supabase.rpc("delete_account") then signs out.
+-- ============================================================
+CREATE OR REPLACE FUNCTION public.delete_account()
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth
+AS $$
+BEGIN
+    DELETE FROM auth.users WHERE id = auth.uid();
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.delete_account() TO authenticated;
+
+-- ============================================================
+-- Content reports (UGC safety — Guideline 1.2). A user can report a photo they can
+-- see; the row is write-only from the client (no SELECT policy) and reviewed out-of-band.
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.photo_reports (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    photo_id    UUID NOT NULL REFERENCES public.photos(id) ON DELETE CASCADE,
+    reporter_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+    reason      TEXT,
+    created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.photo_reports ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "photo_reports: can file own" ON public.photo_reports;
+CREATE POLICY "photo_reports: can file own"
+    ON public.photo_reports FOR INSERT
+    WITH CHECK (auth.uid() = reporter_id);
 
 -- ============================================================
 -- Optional cron: auto-mark developed photos server-side.

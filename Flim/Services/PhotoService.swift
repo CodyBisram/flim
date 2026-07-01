@@ -2,8 +2,15 @@ import Foundation
 import Observation
 import Supabase
 
-// Demo develop time. Bump back to `8 * 3600` (8 hours) for the real launch experience.
-private let developDelay: TimeInterval = 3 * 60
+// Personal "instants" develop fast (~1 min). Shared rolls develop TOGETHER: every shot in
+// a roll reveals at one time, set by the roll's first contribution + 12h. (Debug shortens
+// the roll delay so the group-reveal loop is testable without waiting half a day.)
+private let personalDevelopDelay: TimeInterval = 60
+#if DEBUG
+private let rollDevelopDelay: TimeInterval = 2 * 60
+#else
+private let rollDevelopDelay: TimeInterval = 12 * 3600
+#endif
 
 @Observable
 final class PhotoService {
@@ -44,7 +51,7 @@ final class PhotoService {
         // Lowercased to match Postgres `auth.uid()::text` (lowercase) in the storage RLS
         // policy — Swift's uuidString is uppercase, which would 403 the upload otherwise.
         let path = "\(userId.uuidString.lowercased())/\(photoId.uuidString.lowercased()).jpg"
-        let developsAt = Date.now.addingTimeInterval(developDelay)
+        let developsAt = await developDate(forRoll: rollId)
 
         do {
             try await supabase.storage
@@ -93,6 +100,36 @@ final class PhotoService {
         }
     }
 
+    // MARK: - Develop timing
+
+    /// When a freshly captured shot should develop. Personal shots use the short "instant"
+    /// delay. Roll shots develop TOGETHER: they inherit the reveal time set by the roll's
+    /// first contribution, so everyone's photos unlock at the same moment (12h after the
+    /// roll's first shot). The first shot in a roll starts that clock.
+    private func developDate(forRoll rollId: UUID?) async -> Date {
+        guard let rollId else {
+            return Date.now.addingTimeInterval(personalDevelopDelay)
+        }
+        if let shared = try? await rollRevealDate(rollId: rollId) {
+            return shared
+        }
+        return Date.now.addingTimeInterval(rollDevelopDelay)
+    }
+
+    /// The develop time already set for a roll (from its first photo), or nil if empty.
+    private func rollRevealDate(rollId: UUID) async throws -> Date? {
+        struct Row: Decodable { let develops_at: Date }
+        let rows: [Row] = try await supabase
+            .from("photos")
+            .select("develops_at")
+            .eq("roll_id", value: rollId.uuidString)
+            .order("taken_at", ascending: true)
+            .limit(1)
+            .execute()
+            .value
+        return rows.first?.develops_at
+    }
+
     // MARK: - Delete
 
     /// Deletes a photo the current user owns — removes the storage object and the row,
@@ -110,6 +147,20 @@ final class PhotoService {
         } catch {
             await MainActor.run { uploadError = error.localizedDescription }
         }
+    }
+
+    /// Files a content report against a photo (UGC safety). Write-only from the client.
+    func reportPhoto(_ photo: Photo, reason: String? = nil) async {
+        guard let session = try? await supabase.auth.session else { return }
+        struct Report: Encodable {
+            let photo_id: UUID
+            let reporter_id: UUID
+            let reason: String?
+        }
+        _ = try? await supabase
+            .from("photo_reports")
+            .insert(Report(photo_id: photo.id, reporter_id: session.user.id, reason: reason))
+            .execute()
     }
 
     // MARK: - Fetch

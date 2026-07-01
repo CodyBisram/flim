@@ -10,6 +10,19 @@ struct RollMembersView: View {
     @State private var isLoading = false
     @State private var codeCopied = false
 
+    private var isCreator: Bool { auth.currentUser?.id == roll.createdBy }
+
+    private func remove(_ member: AppUser, leaving: Bool = false) {
+        Task {
+            try? await rollService.removeMember(rollId: roll.id, userId: member.id)
+            if leaving {
+                dismiss()
+            } else {
+                members.removeAll { $0.id == member.id }
+            }
+        }
+    }
+
     var body: some View {
         NavigationStack {
             ZStack {
@@ -84,6 +97,19 @@ struct RollMembersView: View {
                                 .padding(.vertical, 4)
                                 .listRowBackground(Color(white: 0.08))
                                 .listRowSeparatorTint(Color(white: 0.12))
+                                .swipeActions(edge: .trailing) {
+                                    // Creator can remove anyone but themselves; anyone else
+                                    // can leave their own roll.
+                                    if isCreator, member.id != roll.createdBy {
+                                        Button(role: .destructive) {
+                                            remove(member)
+                                        } label: { Label("Remove", systemImage: "person.fill.xmark") }
+                                    } else if member.id == auth.currentUser?.id, member.id != roll.createdBy {
+                                        Button(role: .destructive) {
+                                            remove(member, leaving: true)
+                                        } label: { Label("Leave", systemImage: "rectangle.portrait.and.arrow.right") }
+                                    }
+                                }
                             }
                         }
                         .listStyle(.plain)

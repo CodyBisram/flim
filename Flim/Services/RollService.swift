@@ -155,6 +155,17 @@ final class RollService {
             .value
     }
 
+    /// Removes a member from a roll. RLS allows this only for the member themselves
+    /// (leaving) or the roll's creator (moderation).
+    func removeMember(rollId: UUID, userId: UUID) async throws {
+        try await supabase
+            .from("roll_members")
+            .delete()
+            .eq("roll_id", value: rollId.uuidString)
+            .eq("user_id", value: userId.uuidString)
+            .execute()
+    }
+
     // MARK: - Helpers
 
     private func joinRollDirect(rollId: UUID, userId: UUID) async throws {

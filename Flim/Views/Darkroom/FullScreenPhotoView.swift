@@ -6,12 +6,17 @@ struct FullScreenPhotoView: View {
     /// Called after the photo is deleted so the parent can refresh its grid.
     var onDelete: () -> Void = {}
     @Environment(PhotoService.self) private var photoService
+    @Environment(AuthService.self) private var auth
     @Environment(\.dismiss) private var dismiss
 
     @State private var scale: CGFloat = 1
     @State private var offset: CGSize = .zero
     @State private var showDeleteConfirm = false
     @State private var isDeleting = false
+    @State private var showReportConfirm = false
+    @State private var reportSent = false
+
+    private var isOwnPhoto: Bool { photo.userId == auth.currentUser?.id }
 
     var body: some View {
         ZStack {
@@ -49,16 +54,17 @@ struct FullScreenPhotoView: View {
                     Text(photo.takenAt.formatted(date: .abbreviated, time: .shortened))
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(Color(white: 0.7))
+                    // Your own photo → delete; someone else's → report (UGC safety).
                     Button {
-                        showDeleteConfirm = true
+                        if isOwnPhoto { showDeleteConfirm = true } else { showReportConfirm = true }
                     } label: {
-                        Image(systemName: "trash")
+                        Image(systemName: isOwnPhoto ? "trash" : (reportSent ? "flag.fill" : "flag"))
                             .font(.system(size: 15, weight: .medium))
                             .foregroundStyle(.white)
                             .padding(12)
                             .glassCapsule(interactive: true)
                     }
-                    .disabled(isDeleting)
+                    .disabled(isDeleting || reportSent)
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 60)
@@ -79,6 +85,18 @@ struct FullScreenPhotoView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This can't be undone.")
+        }
+        .confirmationDialog("Report this photo?", isPresented: $showReportConfirm, titleVisibility: .visible) {
+            Button("Report", role: .destructive) {
+                Task {
+                    await photoService.reportPhoto(photo)
+                    reportSent = true
+                    Haptics.tap()
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Flag this for review. Thanks for keeping FLIM safe.")
         }
     }
 

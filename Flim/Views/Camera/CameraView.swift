@@ -120,6 +120,8 @@ struct CameraView: View {
                 }
                 .glassCapsule(interactive: true)
                 .padding(.leading, 8)
+                .accessibilityLabel("Flash")
+                .accessibilityValue(flashMode == .off ? "Off" : (flashMode == .auto ? "Auto" : "On"))
 
                 Spacer()
 
@@ -354,6 +356,7 @@ private struct ShutterButton: View {
         }
         .animation(.spring(duration: 0.2, bounce: 0.4), value: isCapturing)
         .disabled(isCapturing)
+        .accessibilityLabel("Take photo")
         .onAppear {
             withAnimation(.easeOut(duration: 1.9).repeatForever(autoreverses: false)) {
                 pulse = true

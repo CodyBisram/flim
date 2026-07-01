@@ -117,6 +117,16 @@ final class AuthService {
         isAuthenticated = false
     }
 
+    /// Permanently deletes the account + all associated data (App Store Guideline 5.1.1(v)).
+    /// The `delete_account` RPC removes the auth user, which cascades to the profile, rolls,
+    /// memberships, photos, and reports. Then we clear the local session.
+    func deleteAccount() async throws {
+        try await supabase.rpc("delete_account").execute()
+        try? await supabase.auth.signOut()
+        currentUser = nil
+        isAuthenticated = false
+    }
+
     // MARK: - Helpers
 
     private func fetchUserProfile(id: UUID) async throws -> AppUser? {

@@ -54,6 +54,47 @@ extension View {
     }
 }
 
+// MARK: - Error state
+
+/// Shown when a load fails and there's nothing cached to display — a friendly message plus
+/// a Retry button, so a flaky network doesn't leave the user staring at a blank screen.
+struct ErrorState: View {
+    var title: String = "Couldn't load"
+    let message: String
+    let retry: () async -> Void
+
+    @State private var retrying = false
+
+    var body: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "wifi.exclamationmark")
+                .font(.system(size: 38, weight: .ultraLight))
+                .foregroundStyle(FlimTheme.accent.opacity(0.8))
+            Text(title)
+                .font(.system(size: 17, weight: .light))
+                .foregroundStyle(FlimTheme.textSecondary)
+            Text(message)
+                .font(.system(size: 13))
+                .foregroundStyle(FlimTheme.textTertiary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 40)
+            Button {
+                retrying = true
+                Task { await retry(); retrying = false }
+            } label: {
+                Text(retrying ? "Retrying…" : "Try Again")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(FlimTheme.accent)
+                    .padding(.horizontal, 22)
+                    .padding(.vertical, 11)
+                    .glassCapsule(interactive: true)
+            }
+            .disabled(retrying)
+            .padding(.top, 4)
+        }
+    }
+}
+
 // MARK: - Glass helpers
 
 private struct GlassCardModifier: ViewModifier {

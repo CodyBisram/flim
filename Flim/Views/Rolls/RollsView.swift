@@ -7,6 +7,7 @@ struct RollsView: View {
     @State private var showCreate = false
     @State private var showJoin = false
     @State private var coverURLs: [UUID: URL] = [:]
+    @State private var loadError: String?
 
     var body: some View {
         ZStack {
@@ -18,6 +19,8 @@ struct RollsView: View {
                 Group {
                     if rolls.isLoading && rolls.rolls.isEmpty {
                         ProgressView().tint(.white)
+                    } else if let error = loadError, rolls.rolls.isEmpty {
+                        ErrorState(message: error) { await load() }
                     } else if rolls.rolls.isEmpty {
                         emptyState
                     } else {
@@ -51,18 +54,24 @@ struct RollsView: View {
         .sheet(isPresented: $showJoin) {
             JoinRollView()
         }
-        .onAppear {
-            Task {
-                guard let userId = auth.currentUser?.id else { return }
-                try? await rolls.fetchRolls(for: userId)
-                await resolveCovers()
-            }
-        }
+        .onAppear { Task { await load() } }
         .onChange(of: rolls.coverPaths) {
             Task { await resolveCovers() }
         }
         .navigationDestination(for: Roll.self) { roll in
             RollDetailView(roll: roll)
+        }
+    }
+
+    /// Fetches the user's rolls, surfacing a network error for the retry state.
+    private func load() async {
+        guard let userId = auth.currentUser?.id else { return }
+        do {
+            try await rolls.fetchRolls(for: userId)
+            loadError = nil
+            await resolveCovers()
+        } catch {
+            loadError = error.localizedDescription
         }
     }
 
@@ -89,11 +98,7 @@ struct RollsView: View {
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
-        .refreshable {
-            guard let userId = auth.currentUser?.id else { return }
-            try? await rolls.fetchRolls(for: userId)
-            await resolveCovers()
-        }
+        .refreshable { await load() }
     }
 
     private var emptyState: some View {

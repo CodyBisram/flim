@@ -25,6 +25,8 @@ struct DarkroomView: View {
                 Group {
                     if vm.isLoading && vm.photos.isEmpty {
                         ProgressView().tint(.white)
+                    } else if let error = vm.error, vm.photos.isEmpty {
+                        ErrorState(message: error) { await reload() }
                     } else if vm.photos.isEmpty {
                         emptyState
                     } else {
