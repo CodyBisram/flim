@@ -27,7 +27,6 @@ struct FullScreenPhotoView: View {
     @State private var shareCaptionDraft = ""
     @FocusState private var captionFocused: Bool
 
-    private let reactionEmojis = ["❤️", "🔥", "😂", "👀"]
     private var isOwnPhoto: Bool { photo.userId == auth.currentUser?.id }
 
     var body: some View {
@@ -197,27 +196,11 @@ struct FullScreenPhotoView: View {
     }
 
     private var reactionBar: some View {
-        HStack(spacing: 8) {
-            ForEach(reactionEmojis, id: \.self) { emoji in
-                let count = reactions.filter { $0.emoji == emoji }.count
-                let mine = reactions.contains { $0.emoji == emoji && $0.userId == auth.currentUser?.id }
-                Button { toggleReaction(emoji) } label: {
-                    HStack(spacing: 4) {
-                        Text(emoji).font(.system(size: 16))
-                        if count > 0 {
-                            Text("\(count)")
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundStyle(.white)
-                        }
-                    }
-                    .padding(.horizontal, 11)
-                    .padding(.vertical, 7)
-                    .background(mine ? FlimTheme.accent.opacity(0.28) : Color.white.opacity(0.12), in: Capsule())
-                    .overlay(Capsule().strokeBorder(mine ? FlimTheme.accent : .clear, lineWidth: 1))
-                }
-                .accessibilityLabel("React \(emoji)")
-            }
-        }
+        ReactionBar(
+            defaults: PostEmoji.all,
+            counts: Dictionary(grouping: reactions, by: \.emoji).mapValues(\.count),
+            mine: Set(reactions.filter { $0.userId == auth.currentUser?.id }.map(\.emoji))
+        ) { toggleReaction($0) }
     }
 
     /// Inline caption composer, shown at the bottom when publishing a photo to your page.

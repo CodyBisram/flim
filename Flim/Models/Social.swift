@@ -73,7 +73,15 @@ struct FeedItem: Identifiable {
     var id: UUID { post.id }
 }
 
-/// Emoji a user can react to a post with.
+/// Emoji reactions. `all` is the default quick row; `palette` is the fuller set revealed
+/// when you slide open the picker to react with your own.
 enum PostEmoji {
     static let all = ["❤️", "🔥", "😂", "😮", "🙌"]
+
+    static let palette = [
+        "❤️", "🔥", "😂", "😮", "🙌", "😍", "🥹", "😭", "😅", "🥰",
+        "😎", "🤩", "🤯", "🥳", "👏", "🙏", "💯", "✨", "👀", "💀",
+        "🫶", "😤", "🤔", "😬", "🥲", "🤣", "🙃", "😉", "🤗", "🫡",
+        "👍", "👎", "🤙", "✌️", "💪", "🌟", "💥", "🎉", "📸", "🌈"
+    ]
 }
