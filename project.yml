@@ -44,9 +44,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.flim.app
         SWIFT_VERSION: "5.9"
-        # Set this to your 10-char Apple Team ID for local on-device runs.
-        # CI overrides it at build time, so leaving it empty is fine for CI.
-        DEVELOPMENT_TEAM: ""
+        DEVELOPMENT_TEAM: DCU7GHRVUQ
         ENABLE_PREVIEWS: YES
         # Versioning — CI passes CURRENT_PROJECT_VERSION=<next TestFlight build>.
         MARKETING_VERSION: "1.0"
@@ -54,8 +52,14 @@ targets:
       configs:
         Debug:
           APS_ENVIRONMENT: development
+          CODE_SIGN_STYLE: Automatic
         Release:
           APS_ENVIRONMENT: production
+          # Signing lives on the APP TARGET (not global xcargs) so it doesn't
+          # leak onto SPM package targets, which reject provisioning profiles.
+          CODE_SIGN_STYLE: Manual
+          CODE_SIGN_IDENTITY: "Apple Distribution"
+          PROVISIONING_PROFILE_SPECIFIER: "match AppStore com.flim.app"
     dependencies:
       - package: supabase-swift
         product: Supabase
