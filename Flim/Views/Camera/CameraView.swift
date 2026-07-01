@@ -50,6 +50,13 @@ struct CameraView: View {
 
             CameraPreview(session: camera.session)
                 .ignoresSafeArea()
+                // Double-tap anywhere on the preview to flip between front and back.
+                .onTapGesture(count: 2) {
+                    guard camera.permission == .authorized else { return }
+                    camera.flipCamera()
+                    Haptics.tap()
+                    wakeFilmStrip()
+                }
 
             // Shutter flash overlay
             Color.white
