@@ -1,0 +1,200 @@
+import Foundation
+import Observation
+import Supabase
+
+/// Backs the social layer: the follow graph, shared posts, the home feed, and
+/// reactions + comments on posts.
+@Observable
+final class FeedService {
+    var feed: [FeedItem] = []
+    var followingIds: Set<UUID> = []
+    var isLoadingFeed = false
+
+    // MARK: - Follows
+
+    func loadFollowing(userId: UUID) async {
+        followingIds = await fetchFollowingIds(userId: userId)
+    }
+
+    private func fetchFollowingIds(userId: UUID) async -> Set<UUID> {
+        struct Row: Decodable { let following_id: UUID }
+        let rows: [Row] = (try? await supabase
+            .from("follows").select("following_id")
+            .eq("follower_id", value: userId.uuidString)
+            .execute().value) ?? []
+        return Set(rows.map(\.following_id))
+    }
+
+    func isFollowing(_ id: UUID) -> Bool { followingIds.contains(id) }
+
+    func follow(_ targetId: UUID, from userId: UUID) async {
+        struct F: Encodable { let follower_id: UUID; let following_id: UUID }
+        followingIds.insert(targetId)   // optimistic
+        _ = try? await supabase.from("follows")
+            .insert(F(follower_id: userId, following_id: targetId)).execute()
+    }
+
+    func unfollow(_ targetId: UUID, from userId: UUID) async {
+        followingIds.remove(targetId)   // optimistic
+        _ = try? await supabase.from("follows").delete()
+            .eq("follower_id", value: userId.uuidString)
+            .eq("following_id", value: targetId.uuidString)
+            .execute()
+    }
+
+    func followerCount(_ userId: UUID) async -> Int {
+        (try? await supabase.from("follows")
+            .select("follower_id", head: true, count: .exact)
+            .eq("following_id", value: userId.uuidString)
+            .execute().count) ?? 0
+    }
+
+    func followingCount(_ userId: UUID) async -> Int {
+        (try? await supabase.from("follows")
+            .select("following_id", head: true, count: .exact)
+            .eq("follower_id", value: userId.uuidString)
+            .execute().count) ?? 0
+    }
+
+    // MARK: - Profiles
+
+    func fetchProfile(id: UUID) async -> UserProfile? {
+        let list: [UserProfile] = (try? await supabase
+            .from("profiles").select().eq("id", value: id.uuidString).limit(1)
+            .execute().value) ?? []
+        return list.first
+    }
+
+    func fetchProfiles(ids: [UUID]) async -> [UUID: UserProfile] {
+        guard !ids.isEmpty else { return [:] }
+        let list: [UserProfile] = (try? await supabase
+            .from("profiles").select()
+            .in("id", values: ids.map(\.uuidString))
+            .execute().value) ?? []
+        return Dictionary(list.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+    }
+
+    /// Everyone with a page (for discovery / who-to-follow), excluding the current user.
+    func discoverProfiles(excluding userId: UUID) async -> [UserProfile] {
+        let list: [UserProfile] = (try? await supabase
+            .from("profiles").select()
+            .neq("id", value: userId.uuidString)
+            .order("created_at", ascending: false)
+            .limit(50)
+            .execute().value) ?? []
+        return list
+    }
+
+    // MARK: - Feed
+
+    func loadFeed(currentUserId: UUID) async {
+        isLoadingFeed = true
+        defer { isLoadingFeed = false }
+        followingIds = await fetchFollowingIds(userId: currentUserId)
+
+        var authorIds = Array(followingIds)
+        authorIds.append(currentUserId)   // your own posts show in your feed too
+
+        let posts: [Post] = (try? await supabase
+            .from("posts").select()
+            .in("user_id", values: authorIds.map(\.uuidString))
+            .order("created_at", ascending: false)
+            .limit(60)
+            .execute().value) ?? []
+
+        let profiles = await fetchProfiles(ids: Array(Set(posts.map(\.userId))))
+        feed = posts.compactMap { post in
+            profiles[post.userId].map { FeedItem(post: post, author: $0) }
+        }
+    }
+
+    // MARK: - Posts
+
+    func createPost(photo: Photo, caption: String?, userId: UUID) async throws {
+        struct Insert: Encodable {
+            let user_id: UUID
+            let photo_id: UUID
+            let storage_path: String
+            let taken_at: Date
+            let caption: String?
+        }
+        let trimmed = caption?.trimmingCharacters(in: .whitespacesAndNewlines)
+        try await supabase.from("posts").insert(Insert(
+            user_id: userId,
+            photo_id: photo.id,
+            storage_path: photo.storagePath,
+            taken_at: photo.takenAt,
+            caption: (trimmed?.isEmpty ?? true) ? nil : trimmed
+        )).execute()
+    }
+
+    func deletePost(id: UUID) async {
+        _ = try? await supabase.from("posts").delete().eq("id", value: id.uuidString).execute()
+        feed.removeAll { $0.post.id == id }
+    }
+
+    /// Whether the user has already shared this photo (to toggle the share affordance).
+    func hasPosted(photoId: UUID, userId: UUID) async -> Bool {
+        struct Row: Decodable { let id: UUID }
+        let rows: [Row] = (try? await supabase
+            .from("posts").select("id")
+            .eq("user_id", value: userId.uuidString)
+            .eq("photo_id", value: photoId.uuidString)
+            .limit(1).execute().value) ?? []
+        return !rows.isEmpty
+    }
+
+    func fetchUserPosts(userId: UUID) async -> [Post] {
+        (try? await supabase
+            .from("posts").select()
+            .eq("user_id", value: userId.uuidString)
+            .order("taken_at", ascending: false)
+            .execute().value) ?? []
+    }
+
+    // MARK: - Reactions
+
+    func fetchReactions(postId: UUID) async -> [PostReaction] {
+        (try? await supabase.from("post_reactions").select()
+            .eq("post_id", value: postId.uuidString).execute().value) ?? []
+    }
+
+    func addReaction(postId: UUID, emoji: String, userId: UUID) async {
+        struct R: Encodable { let post_id: UUID; let user_id: UUID; let emoji: String }
+        _ = try? await supabase.from("post_reactions")
+            .insert(R(post_id: postId, user_id: userId, emoji: emoji)).execute()
+    }
+
+    func removeReaction(postId: UUID, emoji: String, userId: UUID) async {
+        _ = try? await supabase.from("post_reactions").delete()
+            .eq("post_id", value: postId.uuidString)
+            .eq("user_id", value: userId.uuidString)
+            .eq("emoji", value: emoji).execute()
+    }
+
+    // MARK: - Comments
+
+    func fetchComments(postId: UUID) async -> [PostComment] {
+        (try? await supabase.from("post_comments").select()
+            .eq("post_id", value: postId.uuidString)
+            .order("created_at", ascending: true)
+            .execute().value) ?? []
+    }
+
+    func addComment(postId: UUID, body: String, userId: UUID) async -> PostComment? {
+        struct C: Encodable { let post_id: UUID; let user_id: UUID; let body: String }
+        return try? await supabase.from("post_comments")
+            .insert(C(post_id: postId, user_id: userId, body: body))
+            .select().single().execute().value
+    }
+
+    func deleteComment(id: UUID) async {
+        _ = try? await supabase.from("post_comments").delete().eq("id", value: id.uuidString).execute()
+    }
+
+    // MARK: - Storage
+
+    func signedURL(for path: String) async -> URL? {
+        try? await supabase.storage.from("photos").createSignedURL(path: path, expiresIn: 3600)
+    }
+}

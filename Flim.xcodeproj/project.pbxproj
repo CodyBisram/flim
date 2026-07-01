@@ -15,7 +15,9 @@
 		203A74E3F739D03F1FCD6248 /* DarkroomView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AACFEBE63C392489A62B63C /* DarkroomView.swift */; };
 		24C89EABBAFF98261AEB3ABB /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 6D3CAAA6097E82270360343F /* Assets.xcassets */; };
 		287023347895E167ECC91920 /* Haptics.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA04DBB3261C344B5DD64806 /* Haptics.swift */; };
+		2EDCE64ACD1C1B9060F4B36B /* UserPageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 799578BF49AD244204751AC0 /* UserPageView.swift */; };
 		322A5492683DD8B6D58B77C6 /* RollsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33D109A1C315CD466659A10F /* RollsView.swift */; };
+		34335710BA3509481452C7AA /* FeedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4016CE892900287C20E82E97 /* FeedView.swift */; };
 		34533239665E36002D2C3006 /* FilmStock.swift in Sources */ = {isa = PBXBuildFile; fileRef = 870990313A19750FDF37E235 /* FilmStock.swift */; };
 		3B9C5D883F61F8F4D2587186 /* PhoneAuthView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C14C96ED4A714B7DD3274C7E /* PhoneAuthView.swift */; };
 		40156F83DC4D83217CB2DED5 /* AuthHelpersTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9927EBDE8E7056C4DA31EF2 /* AuthHelpersTests.swift */; };
@@ -32,6 +34,7 @@
 		94D54440B811F938257FD796 /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC34A455324DEE2A431A7720 /* ProfileView.swift */; };
 		967633695FA8F00A8A3010DA /* DarkroomViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 060BA5995DD93E64A494A2E4 /* DarkroomViewModel.swift */; };
 		A00F0B3005322C2FBEB54BB9 /* PrimaryButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BE06A9CEC95AF492BDBD575 /* PrimaryButton.swift */; };
+		A14025FE14C116AF28430EC0 /* PostDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F609967CE45299259DA37AC /* PostDetailView.swift */; };
 		AB3249CE1029C5382B7C55A6 /* PhotoGridCell.swift in Sources */ = {isa = PBXBuildFile; fileRef = A34B801CAAD6D2C6557DD581 /* PhotoGridCell.swift */; };
 		AD24F3CB906A687FED7FE687 /* DevelopTimingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F61787FFCEE49A74368FF8C /* DevelopTimingTests.swift */; };
 		B09880D2185738A73550E7C6 /* RollService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 633F60D6D348ADEA4D94D263 /* RollService.swift */; };
@@ -39,6 +42,8 @@
 		BC9339EF423E0344336A96EF /* RemotePush.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE6E3DB97398A385FA3C9489 /* RemotePush.swift */; };
 		C4599B50B1699E2971A353FF /* MainTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A093E4509E9F7972F5B26E7 /* MainTabView.swift */; };
 		C539D0CE6C29A43C779AA265 /* PhotoService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01ECCD46517220EBFD0EC621 /* PhotoService.swift */; };
+		C8709C9620D5940B8626F149 /* FeedService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9817482FE2AB125EC4FC2FB /* FeedService.swift */; };
+		CBD8476D316567B4404ECBA9 /* Social.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0FA5444D3CDCB4379BF00F72 /* Social.swift */; };
 		D1044E118206CD6EDF9692B3 /* Roll.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A0B87FE1069C71306456DFF /* Roll.swift */; };
 		E924D1944FA4475B4E383A61 /* PhotoReadinessTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BAF7FE72763EB709B93E5BA4 /* PhotoReadinessTests.swift */; };
 		EECAD4AB8FC87AFACD4A5A80 /* RollMembersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1AA5EF66C46272F42891AF4 /* RollMembersView.swift */; };
@@ -65,6 +70,7 @@
 		060BA5995DD93E64A494A2E4 /* DarkroomViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DarkroomViewModel.swift; sourceTree = "<group>"; };
 		0A093E4509E9F7972F5B26E7 /* MainTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabView.swift; sourceTree = "<group>"; };
 		0F61787FFCEE49A74368FF8C /* DevelopTimingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevelopTimingTests.swift; sourceTree = "<group>"; };
+		0FA5444D3CDCB4379BF00F72 /* Social.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Social.swift; sourceTree = "<group>"; };
 		121F65D393ABD1CC13DA0186 /* SplashView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplashView.swift; sourceTree = "<group>"; };
 		14C863F6302D9B2BFBA71B6C /* InstantFilmProcessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InstantFilmProcessor.swift; sourceTree = "<group>"; };
 		1AF74B1882B2963B0A26004E /* CameraPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPreview.swift; sourceTree = "<group>"; };
@@ -75,6 +81,7 @@
 		33D109A1C315CD466659A10F /* RollsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollsView.swift; sourceTree = "<group>"; };
 		34743DB97B9809C5C81D7E30 /* FlimTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = FlimTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		35A42EF6E37ED2ED362069BA /* JoinRollView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JoinRollView.swift; sourceTree = "<group>"; };
+		4016CE892900287C20E82E97 /* FeedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedView.swift; sourceTree = "<group>"; };
 		44986F8867E5B522EBEABEE8 /* AppUser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppUser.swift; sourceTree = "<group>"; };
 		4B7DE28ED82A77117E85EBE0 /* FullScreenPhotoView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FullScreenPhotoView.swift; sourceTree = "<group>"; };
 		54CD52378D31EEDB7D7BE6EF /* RollDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollDetailView.swift; sourceTree = "<group>"; };
@@ -82,11 +89,13 @@
 		633F60D6D348ADEA4D94D263 /* RollService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollService.swift; sourceTree = "<group>"; };
 		6D3CAAA6097E82270360343F /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		7148B48A915D24BFBDEB23E0 /* NotificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationService.swift; sourceTree = "<group>"; };
+		799578BF49AD244204751AC0 /* UserPageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserPageView.swift; sourceTree = "<group>"; };
 		7A0B87FE1069C71306456DFF /* Roll.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Roll.swift; sourceTree = "<group>"; };
 		8118D8FA0343F18F835415D3 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		870990313A19750FDF37E235 /* FilmStock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilmStock.swift; sourceTree = "<group>"; };
 		8BFE9FBCA04098DC6F972D9A /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		9BE06A9CEC95AF492BDBD575 /* PrimaryButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrimaryButton.swift; sourceTree = "<group>"; };
+		9F609967CE45299259DA37AC /* PostDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PostDetailView.swift; sourceTree = "<group>"; };
 		A0EABF568B1F50179364FE91 /* SupabaseClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseClient.swift; sourceTree = "<group>"; };
 		A34B801CAAD6D2C6557DD581 /* PhotoGridCell.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoGridCell.swift; sourceTree = "<group>"; };
 		AAB338D99E6E3C7278DE9CFA /* Flim.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Flim.entitlements; sourceTree = "<group>"; };
@@ -94,6 +103,7 @@
 		BAF7FE72763EB709B93E5BA4 /* PhotoReadinessTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoReadinessTests.swift; sourceTree = "<group>"; };
 		BF49F2D3C9EF346AAD3F41BF /* UsernameView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsernameView.swift; sourceTree = "<group>"; };
 		C14C96ED4A714B7DD3274C7E /* PhoneAuthView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhoneAuthView.swift; sourceTree = "<group>"; };
+		C9817482FE2AB125EC4FC2FB /* FeedService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedService.swift; sourceTree = "<group>"; };
 		CF062148240A383A260E8EE3 /* Photo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Photo.swift; sourceTree = "<group>"; };
 		D9927EBDE8E7056C4DA31EF2 /* AuthHelpersTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthHelpersTests.swift; sourceTree = "<group>"; };
 		DB2A4DF8A1879B929C3C4CB4 /* FilmStockTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilmStockTests.swift; sourceTree = "<group>"; };
@@ -128,6 +138,16 @@
 			path = Darkroom;
 			sourceTree = "<group>";
 		};
+		0CDA1572355E660453980F26 /* Feed */ = {
+			isa = PBXGroup;
+			children = (
+				4016CE892900287C20E82E97 /* FeedView.swift */,
+				9F609967CE45299259DA37AC /* PostDetailView.swift */,
+				799578BF49AD244204751AC0 /* UserPageView.swift */,
+			);
+			path = Feed;
+			sourceTree = "<group>";
+		};
 		2B3850968D32DA22C72DA0B2 /* Main */ = {
 			isa = PBXGroup;
 			children = (
@@ -151,6 +171,7 @@
 				870990313A19750FDF37E235 /* FilmStock.swift */,
 				CF062148240A383A260E8EE3 /* Photo.swift */,
 				7A0B87FE1069C71306456DFF /* Roll.swift */,
+				0FA5444D3CDCB4379BF00F72 /* Social.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -209,6 +230,7 @@
 				C01D7301DE4DAAF31EF5976E /* Camera */,
 				2BD73808C59340731B731131 /* Components */,
 				01ED5D5DF69FB20B7D2CBE52 /* Darkroom */,
+				0CDA1572355E660453980F26 /* Feed */,
 				2B3850968D32DA22C72DA0B2 /* Main */,
 				65E89728796BB8EE12A233ED /* Profile */,
 				EBC7BEE9B4E31B2CC6860B2E /* Rolls */,
@@ -220,6 +242,7 @@
 			isa = PBXGroup;
 			children = (
 				EFC0C65109A81467AB59472B /* AuthService.swift */,
+				C9817482FE2AB125EC4FC2FB /* FeedService.swift */,
 				14C863F6302D9B2BFBA71B6C /* InstantFilmProcessor.swift */,
 				7148B48A915D24BFBDEB23E0 /* NotificationService.swift */,
 				01ECCD46517220EBFD0EC621 /* PhotoService.swift */,
@@ -392,6 +415,8 @@
 				F3492DCB0D6D8A98FBE699B2 /* CreateRollView.swift in Sources */,
 				203A74E3F739D03F1FCD6248 /* DarkroomView.swift in Sources */,
 				967633695FA8F00A8A3010DA /* DarkroomViewModel.swift in Sources */,
+				C8709C9620D5940B8626F149 /* FeedService.swift in Sources */,
+				34335710BA3509481452C7AA /* FeedView.swift in Sources */,
 				34533239665E36002D2C3006 /* FilmStock.swift in Sources */,
 				F28BA958FD55FFA0EE8BDA41 /* FlimApp.swift in Sources */,
 				6B14829E6DD63477E932FEDC /* FullScreenPhotoView.swift in Sources */,
@@ -405,6 +430,7 @@
 				501F195F7187429C965AE299 /* Photo.swift in Sources */,
 				AB3249CE1029C5382B7C55A6 /* PhotoGridCell.swift in Sources */,
 				C539D0CE6C29A43C779AA265 /* PhotoService.swift in Sources */,
+				A14025FE14C116AF28430EC0 /* PostDetailView.swift in Sources */,
 				A00F0B3005322C2FBEB54BB9 /* PrimaryButton.swift in Sources */,
 				94D54440B811F938257FD796 /* ProfileView.swift in Sources */,
 				BC9339EF423E0344336A96EF /* RemotePush.swift in Sources */,
@@ -413,9 +439,11 @@
 				EECAD4AB8FC87AFACD4A5A80 /* RollMembersView.swift in Sources */,
 				B09880D2185738A73550E7C6 /* RollService.swift in Sources */,
 				322A5492683DD8B6D58B77C6 /* RollsView.swift in Sources */,
+				CBD8476D316567B4404ECBA9 /* Social.swift in Sources */,
 				0A8F3F3E94D6039F6537E14A /* SplashView.swift in Sources */,
 				1A636EF87FB2E349B9F555DC /* SupabaseClient.swift in Sources */,
 				F8B7B0BD9EA2812E69282C03 /* Theme.swift in Sources */,
+				2EDCE64ACD1C1B9060F4B36B /* UserPageView.swift in Sources */,
 				6FDE9DF7E6D1E48B36B0FFCC /* UsernameView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

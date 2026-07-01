@@ -10,8 +10,10 @@ struct FullScreenPhotoView: View {
     var onDelete: () -> Void = {}
     @Environment(PhotoService.self) private var photoService
     @Environment(AuthService.self) private var auth
+    @Environment(FeedService.self) private var feed
     @Environment(\.dismiss) private var dismiss
 
+    @State private var shared = false
     @State private var scale: CGFloat = 1
     @State private var offset: CGSize = .zero
     @State private var showDeleteConfirm = false
@@ -90,6 +92,13 @@ struct FullScreenPhotoView: View {
                     if isOwnPhoto {
                         Menu {
                             Button {
+                                shareToPage()
+                            } label: {
+                                Label(shared ? "Shared to your page" : "Share to my page",
+                                      systemImage: shared ? "checkmark.circle" : "square.and.arrow.up.on.square")
+                            }
+                            .disabled(shared)
+                            Button {
                                 Haptics.tap()
                                 Task { await auth.setAvatar(path: photo.storagePath) }
                             } label: { Label("Set as profile photo", systemImage: "person.crop.circle") }
@@ -134,6 +143,9 @@ struct FullScreenPhotoView: View {
         .task {
             reactions = await photoService.fetchReactions(photoId: photo.id)
             localCaption = photo.caption
+            if isOwnPhoto, let uid = auth.currentUser?.id {
+                shared = await feed.hasPosted(photoId: photo.id, userId: uid)
+            }
             // Use the URL the grid already resolved; otherwise mint one so the photo always
             // loads (the grid resolves URLs lazily now, so the tapped one may not be ready).
             if let url {
@@ -268,6 +280,13 @@ struct FullScreenPhotoView: View {
         }
         .presentationDetents([.medium])
         .presentationBackground(FlimTheme.bg)
+    }
+
+    private func shareToPage() {
+        guard let uid = auth.currentUser?.id else { return }
+        Haptics.tap()
+        shared = true
+        Task { try? await feed.createPost(photo: photo, caption: localCaption, userId: uid) }
     }
 
     private func toggleReaction(_ emoji: String) {

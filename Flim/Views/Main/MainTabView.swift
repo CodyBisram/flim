@@ -23,6 +23,11 @@ struct MainTabView: View {
                     RollsView()
                 }
             }
+            Tab("Feed", systemImage: "house", value: 3) {
+                NavigationStack {
+                    FeedView()
+                }
+            }
         }
         .tint(FlimTheme.accent)
         .onReceive(NotificationCenter.default.publisher(for: .openDarkroom)) { _ in

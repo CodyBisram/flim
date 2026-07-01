@@ -393,6 +393,122 @@ CREATE POLICY "reactions: remove own"
     USING (auth.uid() = user_id);
 
 -- ============================================================
+-- Social layer: public profiles, a follow graph, shared posts (photos a user
+-- publishes to their page/feed), and reactions + comments on those posts.
+-- ============================================================
+
+-- Public profile view — exposes only safe fields (NO email / invite code), readable
+-- by any signed-in user so you can browse pages, follow people, and see comment authors.
+CREATE OR REPLACE VIEW public.profiles AS
+    SELECT id, username, avatar_path, bio, created_at
+    FROM public.users;
+
+GRANT SELECT ON public.profiles TO authenticated, anon;
+
+-- FOLLOWS ----------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.follows (
+    follower_id  UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+    following_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+    created_at   TIMESTAMPTZ DEFAULT NOW(),
+    PRIMARY KEY (follower_id, following_id),
+    CHECK (follower_id <> following_id)
+);
+ALTER TABLE public.follows ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "follows: readable by authenticated" ON public.follows;
+CREATE POLICY "follows: readable by authenticated"
+    ON public.follows FOR SELECT TO authenticated USING (true);
+
+DROP POLICY IF EXISTS "follows: create own" ON public.follows;
+CREATE POLICY "follows: create own"
+    ON public.follows FOR INSERT WITH CHECK (auth.uid() = follower_id);
+
+DROP POLICY IF EXISTS "follows: delete own" ON public.follows;
+CREATE POLICY "follows: delete own"
+    ON public.follows FOR DELETE USING (auth.uid() = follower_id);
+
+-- POSTS ------------------------------------------------------
+-- storage_path + taken_at are denormalized from the photo so the feed needs no
+-- cross-user access to the photos table; posts themselves are public to signed-in users.
+CREATE TABLE IF NOT EXISTS public.posts (
+    id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id      UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+    photo_id     UUID NOT NULL REFERENCES public.photos(id) ON DELETE CASCADE,
+    storage_path TEXT NOT NULL,
+    taken_at     TIMESTAMPTZ NOT NULL,
+    caption      TEXT,
+    created_at   TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE (user_id, photo_id)
+);
+ALTER TABLE public.posts ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "posts: readable by authenticated" ON public.posts;
+CREATE POLICY "posts: readable by authenticated"
+    ON public.posts FOR SELECT TO authenticated USING (true);
+
+DROP POLICY IF EXISTS "posts: create own" ON public.posts;
+CREATE POLICY "posts: create own"
+    ON public.posts FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "posts: update own" ON public.posts;
+CREATE POLICY "posts: update own"
+    ON public.posts FOR UPDATE USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "posts: delete own" ON public.posts;
+CREATE POLICY "posts: delete own"
+    ON public.posts FOR DELETE USING (auth.uid() = user_id);
+
+-- A photo shared to a post is readable in Storage by any signed-in user.
+DROP POLICY IF EXISTS "photos: readable when shared to a post" ON storage.objects;
+CREATE POLICY "photos: readable when shared to a post"
+    ON storage.objects FOR SELECT TO authenticated
+    USING (
+        bucket_id = 'photos'
+        AND EXISTS (SELECT 1 FROM public.posts po WHERE po.storage_path = storage.objects.name)
+    );
+
+-- POST REACTIONS ---------------------------------------------
+CREATE TABLE IF NOT EXISTS public.post_reactions (
+    id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    post_id    UUID NOT NULL REFERENCES public.posts(id) ON DELETE CASCADE,
+    user_id    UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+    emoji      TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE (post_id, user_id, emoji)
+);
+ALTER TABLE public.post_reactions ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "post_reactions: readable" ON public.post_reactions;
+CREATE POLICY "post_reactions: readable"
+    ON public.post_reactions FOR SELECT TO authenticated USING (true);
+DROP POLICY IF EXISTS "post_reactions: add own" ON public.post_reactions;
+CREATE POLICY "post_reactions: add own"
+    ON public.post_reactions FOR INSERT WITH CHECK (auth.uid() = user_id);
+DROP POLICY IF EXISTS "post_reactions: remove own" ON public.post_reactions;
+CREATE POLICY "post_reactions: remove own"
+    ON public.post_reactions FOR DELETE USING (auth.uid() = user_id);
+
+-- POST COMMENTS ----------------------------------------------
+CREATE TABLE IF NOT EXISTS public.post_comments (
+    id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    post_id    UUID NOT NULL REFERENCES public.posts(id) ON DELETE CASCADE,
+    user_id    UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+    body       TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE public.post_comments ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "post_comments: readable" ON public.post_comments;
+CREATE POLICY "post_comments: readable"
+    ON public.post_comments FOR SELECT TO authenticated USING (true);
+DROP POLICY IF EXISTS "post_comments: add own" ON public.post_comments;
+CREATE POLICY "post_comments: add own"
+    ON public.post_comments FOR INSERT WITH CHECK (auth.uid() = user_id);
+DROP POLICY IF EXISTS "post_comments: delete own" ON public.post_comments;
+CREATE POLICY "post_comments: delete own"
+    ON public.post_comments FOR DELETE USING (auth.uid() = user_id);
+
+-- ============================================================
 -- Optional cron: auto-mark developed photos server-side.
 -- Supabase Dashboard → Database → Functions (or schedule via pg_cron).
 -- ============================================================

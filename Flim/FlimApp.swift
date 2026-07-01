@@ -10,6 +10,7 @@ struct FlimApp: App {
     @State private var photos = PhotoService()
     @State private var rolls = RollService()
     @State private var notifications = NotificationService()
+    @State private var feed = FeedService()
 
     var body: some Scene {
         WindowGroup {
@@ -18,6 +19,7 @@ struct FlimApp: App {
                 .environment(photos)
                 .environment(rolls)
                 .environment(notifications)
+                .environment(feed)
                 .preferredColorScheme(.dark)
                 .onOpenURL { url in
                     Task { await auth.handle(url: url) }

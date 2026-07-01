@@ -70,6 +70,20 @@ struct ProfileView: View {
                                 .multilineTextAlignment(.center)
                                 .padding(.horizontal, 40)
                         }
+
+                        if let uid = auth.currentUser?.id {
+                            NavigationLink {
+                                UserPageView(userId: uid)
+                            } label: {
+                                Label("View my page", systemImage: "square.grid.2x2")
+                                    .font(.system(size: 14, weight: .medium))
+                                    .foregroundStyle(FlimTheme.accent)
+                                    .padding(.horizontal, 20)
+                                    .padding(.vertical, 10)
+                                    .glassCapsule(interactive: true)
+                            }
+                            .padding(.top, 4)
+                        }
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 28)
