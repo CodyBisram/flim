@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct FullScreenPhotoView: View {
     let photo: Photo
@@ -15,6 +16,7 @@ struct FullScreenPhotoView: View {
     @State private var isDeleting = false
     @State private var showReportConfirm = false
     @State private var reportSent = false
+    @State private var shareItem: ShareImage?
 
     private var isOwnPhoto: Bool { photo.userId == auth.currentUser?.id }
 
@@ -54,6 +56,19 @@ struct FullScreenPhotoView: View {
                     Text(photo.takenAt.formatted(date: .abbreviated, time: .shortened))
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(Color(white: 0.7))
+                    // Share / save to Camera Roll.
+                    Button {
+                        if let url, let image = ImageCache.shared.object(forKey: url as NSURL) {
+                            shareItem = ShareImage(image: image)
+                        }
+                    } label: {
+                        Image(systemName: "square.and.arrow.up")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundStyle(.white)
+                            .padding(12)
+                            .glassCapsule(interactive: true)
+                    }
+                    .accessibilityLabel("Share photo")
                     // Your own photo → delete; someone else's → report (UGC safety).
                     Button {
                         if isOwnPhoto { showDeleteConfirm = true } else { showReportConfirm = true }
@@ -98,6 +113,9 @@ struct FullScreenPhotoView: View {
         } message: {
             Text("Flag this for review. Thanks for keeping FLIM safe.")
         }
+        .sheet(item: $shareItem) { item in
+            ActivityView(items: [item.image])
+        }
     }
 
     // MARK: - Gestures
@@ -128,4 +146,19 @@ struct FullScreenPhotoView: View {
                 }
             }
     }
+}
+
+/// Identifiable wrapper so a shared image can drive `.sheet(item:)`.
+struct ShareImage: Identifiable {
+    let id = UUID()
+    let image: UIImage
+}
+
+/// Bridges UIKit's share sheet (Save to Photos, AirDrop, Messages, …) into SwiftUI.
+struct ActivityView: UIViewControllerRepresentable {
+    let items: [Any]
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: items, applicationActivities: nil)
+    }
+    func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}
 }

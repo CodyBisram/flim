@@ -19,7 +19,27 @@ final class CameraViewModel: NSObject {
     /// Whether this device/camera actually has a flash to toggle.
     var isFlashSupported: Bool { output.supportedFlashModes.contains(.on) }
 
+    enum Permission { case unknown, authorized, denied }
+    var permission: Permission = .unknown
+
     // MARK: - Setup
+
+    /// Requests camera access (if needed), then configures + starts the session. Sets
+    /// `permission` so the UI can show a "grant access" state instead of a black screen.
+    @MainActor
+    func start() async {
+        switch AVCaptureDevice.authorizationStatus(for: .video) {
+        case .authorized:
+            permission = .authorized
+        case .notDetermined:
+            permission = await AVCaptureDevice.requestAccess(for: .video) ? .authorized : .denied
+        default:
+            permission = .denied
+        }
+        guard permission == .authorized else { return }
+        configure()
+        startRunning()
+    }
 
     func configure() {
         guard session.inputs.isEmpty else { return }

@@ -1,11 +1,13 @@
 import SwiftUI
 import AVFoundation
+import UIKit
 
 struct CameraView: View {
     @Environment(AuthService.self) private var auth
     @Environment(PhotoService.self) private var photos
     @Environment(RollService.self) private var rolls
     @Environment(NotificationService.self) private var notifications
+    @Environment(\.openURL) private var openURL
 
     @State private var camera = CameraViewModel()
     @State private var selectedRoll: Roll? = nil
@@ -53,29 +55,32 @@ struct CameraView: View {
                 .ignoresSafeArea()
                 .allowsHitTesting(false)
 
-            // Controls respect the safe area so they sit ABOVE the tab bar — only the
-            // camera preview / flash bleed full-screen (they ignore safe area individually).
-            VStack(spacing: 0) {
-                topBar
-                Spacer()
-                VStack(spacing: 22) {
-                    filmStrip
-                    bottomBar
+            if camera.permission == .denied {
+                cameraDeniedOverlay
+            } else {
+                // Controls respect the safe area so they sit ABOVE the tab bar — only the
+                // camera preview / flash bleed full-screen (they ignore safe area individually).
+                VStack(spacing: 0) {
+                    topBar
+                    Spacer()
+                    VStack(spacing: 22) {
+                        filmStrip
+                        bottomBar
+                    }
+                    // Lifts the shutter off the tab bar so it sits ~centered between the film
+                    // pills and the bottom bar, rather than hugging the tabs.
+                    .padding(.bottom, 34)
                 }
-                // Lifts the shutter off the tab bar so it sits ~centered between the film
-                // pills and the bottom bar, rather than hugging the tabs.
-                .padding(.bottom, 34)
-            }
 
-            coachOverlay
+                coachOverlay
+            }
         }
         .onAppear {
-            camera.configure()
             camera.flashMode = flashMode
-            camera.startRunning()
             bindCapture()
             wakeFilmStrip()
             Task {
+                await camera.start()
                 if let userId = auth.currentUser?.id {
                     try? await rolls.fetchRolls(for: userId)
                 }
@@ -261,6 +266,38 @@ struct CameraView: View {
         } else {
             content()
         }
+    }
+
+    // MARK: - Camera permission denied
+
+    private var cameraDeniedOverlay: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "camera.fill")
+                .font(.system(size: 40, weight: .ultraLight))
+                .foregroundStyle(FlimTheme.accent)
+            Text("Camera access needed")
+                .font(.system(size: 20, weight: .light))
+                .foregroundStyle(.white)
+            Text("FLIM needs your camera to take photos. Turn it on in Settings.")
+                .font(.system(size: 14))
+                .foregroundStyle(FlimTheme.textSecondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 44)
+            Button {
+                if let url = URL(string: UIApplication.openSettingsURLString) {
+                    openURL(url)
+                }
+            } label: {
+                Text("Open Settings")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(.black)
+                    .padding(.horizontal, 32)
+                    .padding(.vertical, 13)
+                    .background(FlimTheme.accent, in: Capsule())
+            }
+            .padding(.top, 8)
+        }
+        .padding(.bottom, 60)
     }
 
     // MARK: - First-run coachmark

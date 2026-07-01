@@ -1,5 +1,6 @@
 import Supabase
 import UIKit
+import UserNotifications
 
 /// Remote (APNs) push.
 ///
@@ -40,9 +41,22 @@ enum RemotePush {
     }
 }
 
-/// Minimal app delegate that forwards the APNs token to `RemotePush`. Wired via
-/// `@UIApplicationDelegateAdaptor` in `FlimApp`; harmless until registration is requested.
-final class FlimAppDelegate: NSObject, UIApplicationDelegate {
+extension Notification.Name {
+    /// Posted when a develop notification is tapped, so the UI can jump to the Darkroom.
+    static let openDarkroom = Notification.Name("openDarkroom")
+}
+
+/// App delegate: forwards the APNs token to `RemotePush`, and handles notification
+/// presentation (show develop reminders even while the app is open) + taps (open Darkroom).
+final class FlimAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
+    func application(
+        _ application: UIApplication,
+        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
+    ) -> Bool {
+        UNUserNotificationCenter.current().delegate = self
+        return true
+    }
+
     func application(
         _ application: UIApplication,
         didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
@@ -55,5 +69,24 @@ final class FlimAppDelegate: NSObject, UIApplicationDelegate {
         didFailToRegisterForRemoteNotificationsWithError error: Error
     ) {
         print("APNs registration failed: \(error.localizedDescription)")
+    }
+
+    // Show develop notifications as a banner even when the app is in the foreground.
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        completionHandler([.banner, .sound])
+    }
+
+    // Tapping a develop notification jumps to the Darkroom.
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        NotificationCenter.default.post(name: .openDarkroom, object: nil)
+        completionHandler()
     }
 }

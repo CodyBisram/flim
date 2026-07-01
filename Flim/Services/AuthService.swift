@@ -7,11 +7,14 @@ private let redirectURL = URL(string: "com.lapse.app://login-callback")!
 /// Auth failures we surface to the user with a friendly message.
 enum AuthError: LocalizedError {
     case notInvited
+    case usernameTaken
 
     var errorDescription: String? {
         switch self {
         case .notInvited:
             return "This email isn’t on the invite list yet. FLIM is invite-only — ask whoever invited you to add you."
+        case .usernameTaken:
+            return "That username’s taken — try another."
         }
     }
 }
@@ -102,13 +105,22 @@ final class AuthService {
             }
         }
 
-        currentUser = try await supabase
-            .from("users")
-            .upsert(UpsertUser(id: userId, email: email, username: username, inviteCode: Self.randomCode()))
-            .select()
-            .single()
-            .execute()
-            .value
+        do {
+            currentUser = try await supabase
+                .from("users")
+                .upsert(UpsertUser(id: userId, email: email, username: username, inviteCode: Self.randomCode()))
+                .select()
+                .single()
+                .execute()
+                .value
+        } catch {
+            // Postgres unique_violation (23505) → the username is taken by someone else.
+            let desc = "\(error)".lowercased()
+            if desc.contains("23505") || desc.contains("duplicate") {
+                throw AuthError.usernameTaken
+            }
+            throw error
+        }
     }
 
     func signOut() async throws {
@@ -121,6 +133,22 @@ final class AuthService {
     /// The `delete_account` RPC removes the auth user, which cascades to the profile, rolls,
     /// memberships, photos, and reports. Then we clear the local session.
     func deleteAccount() async throws {
+        // Remove the user's stored image files first — the RPC cascades the DB rows but
+        // not the physical objects in Storage, which would otherwise be orphaned.
+        if let session = try? await supabase.auth.session {
+            struct PathRow: Decodable { let storage_path: String }
+            let rows: [PathRow] = (try? await supabase
+                .from("photos")
+                .select("storage_path")
+                .eq("user_id", value: session.user.id.uuidString)
+                .execute()
+                .value) ?? []
+            let paths = rows.map(\.storage_path)
+            if !paths.isEmpty {
+                _ = try? await supabase.storage.from("photos").remove(paths: paths)
+            }
+        }
+
         try await supabase.rpc("delete_account").execute()
         try? await supabase.auth.signOut()
         currentUser = nil

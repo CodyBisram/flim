@@ -25,6 +25,9 @@ struct MainTabView: View {
             }
         }
         .tint(FlimTheme.accent)
+        .onReceive(NotificationCenter.default.publisher(for: .openDarkroom)) { _ in
+            selected = 1
+        }
         .onAppear {
             #if DEBUG
             let args = ProcessInfo.processInfo.arguments
