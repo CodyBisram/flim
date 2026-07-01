@@ -127,6 +127,10 @@ struct DarkroomView: View {
                             if vm.signedURLCache[photo.id] == nil {
                                 _ = await vm.signedURL(for: photo, photoService: photoService)
                             }
+                            // Load the next page as the last photo scrolls into view.
+                            if photo.id == vm.developedPhotos.last?.id, let uid = auth.currentUser?.id {
+                                await vm.loadMore(photoService: photoService, userId: uid)
+                            }
                         }
                 }
             }

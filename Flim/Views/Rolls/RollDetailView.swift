@@ -62,6 +62,9 @@ struct RollDetailView: View {
                                             if photo.isReady, vm.signedURLCache[photo.id] == nil {
                                                 _ = await vm.signedURL(for: photo, photoService: photoService)
                                             }
+                                            if photo.id == vm.photos.last?.id {
+                                                await vm.loadMoreRoll(photoService: photoService, rollId: roll.id)
+                                            }
                                         }
                                 }
                             }

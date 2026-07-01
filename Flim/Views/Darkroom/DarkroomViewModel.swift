@@ -26,7 +26,6 @@ final class DarkroomViewModel {
             try await photoService.fetchPersonalPhotos(userId: userId)
             photos = photoService.photos
             await markReadyPhotos(photoService: photoService)
-            await prefetchSignedURLs(photoService: photoService)
         } catch {
             self.error = error.localizedDescription
         }
@@ -41,11 +40,26 @@ final class DarkroomViewModel {
             try await photoService.fetchRollPhotos(rollId: rollId)
             photos = photoService.photos
             await markReadyPhotos(photoService: photoService)
-            await prefetchSignedURLs(photoService: photoService)
         } catch {
             self.error = error.localizedDescription
         }
         isLoading = false
+    }
+
+    // MARK: - Pagination (load next page when the last cell appears)
+
+    func loadMore(photoService: PhotoService, userId: UUID) async {
+        guard photoService.hasMore, !photoService.isLoading else { return }
+        try? await photoService.fetchPersonalPhotos(userId: userId, reset: false)
+        photos = photoService.photos
+        await markReadyPhotos(photoService: photoService)
+    }
+
+    func loadMoreRoll(photoService: PhotoService, rollId: UUID) async {
+        guard photoService.hasMore, !photoService.isLoading else { return }
+        try? await photoService.fetchRollPhotos(rollId: rollId, reset: false)
+        photos = photoService.photos
+        await markReadyPhotos(photoService: photoService)
     }
 
     // MARK: - Signed URLs (with expiry tracking)
@@ -76,13 +90,7 @@ final class DarkroomViewModel {
         }
     }
 
-    private func prefetchSignedURLs(photoService: PhotoService) async {
-        for photo in developedPhotos {
-            _ = await signedURL(for: photo, photoService: photoService)
-        }
-    }
-
-    // Polls every 60s to reveal newly developed photos and refresh expiring URLs
+    // Polls every 60s to reveal newly developed photos (signed URLs load lazily per cell).
     private func startRefreshLoop(photoService: PhotoService) {
         refreshTask?.cancel()
         refreshTask = Task { [weak self] in
@@ -90,7 +98,6 @@ final class DarkroomViewModel {
                 try? await Task.sleep(for: .seconds(60))
                 guard let self, !Task.isCancelled else { return }
                 await self.markReadyPhotos(photoService: photoService, notify: true)
-                await self.prefetchSignedURLs(photoService: photoService)
             }
         }
     }

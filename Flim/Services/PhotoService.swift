@@ -163,32 +163,52 @@ final class PhotoService {
             .execute()
     }
 
-    // MARK: - Fetch
+    // MARK: - Fetch (paginated)
 
-    func fetchPersonalPhotos(userId: UUID) async throws {
-        isLoading = true
-        defer { isLoading = false }
+    private let pageSize = 30
+    /// Whether another page is available for the current feed.
+    private(set) var hasMore = true
+    private var loadedCount = 0
 
-        photos = try await supabase
-            .from("photos")
-            .select()
-            .eq("user_id", value: userId.uuidString)
-            .order("develops_at", ascending: false)
-            .execute()
-            .value
+    func fetchPersonalPhotos(userId: UUID, reset: Bool = true) async throws {
+        try await fetchPage(reset: reset) {
+            $0.eq("user_id", value: userId.uuidString)
+        }
     }
 
-    func fetchRollPhotos(rollId: UUID) async throws {
+    func fetchRollPhotos(rollId: UUID, reset: Bool = true) async throws {
+        try await fetchPage(reset: reset) {
+            $0.eq("roll_id", value: rollId.uuidString)
+        }
+    }
+
+    /// Loads one page of photos (newest develop-time first), appending to `photos`. `reset`
+    /// starts a fresh feed; otherwise it continues from where the last page left off. Only
+    /// the visible pages are ever fetched, and signed URLs are resolved lazily per cell.
+    private func fetchPage(
+        reset: Bool,
+        filter: (PostgrestFilterBuilder) -> PostgrestFilterBuilder
+    ) async throws {
+        if reset {
+            loadedCount = 0
+            hasMore = true
+            photos = []
+        }
+        guard hasMore else { return }
+
         isLoading = true
         defer { isLoading = false }
 
-        photos = try await supabase
-            .from("photos")
-            .select()
-            .eq("roll_id", value: rollId.uuidString)
+        let base = supabase.from("photos").select()
+        let page: [Photo] = try await filter(base)
             .order("develops_at", ascending: false)
+            .range(from: loadedCount, to: loadedCount + pageSize - 1)
             .execute()
             .value
+
+        photos.append(contentsOf: page)
+        loadedCount += page.count
+        if page.count < pageSize { hasMore = false }
     }
 
     // MARK: - Signed URLs
