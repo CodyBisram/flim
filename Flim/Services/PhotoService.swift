@@ -107,13 +107,25 @@ final class PhotoService {
     /// first contribution, so everyone's photos unlock at the same moment (12h after the
     /// roll's first shot). The first shot in a roll starts that clock.
     private func developDate(forRoll rollId: UUID?) async -> Date {
-        guard let rollId else {
-            return Date.now.addingTimeInterval(personalDevelopDelay)
+        var existing: Date?
+        if let rollId {
+            existing = (try? await rollRevealDate(rollId: rollId)) ?? nil
         }
-        if let shared = try? await rollRevealDate(rollId: rollId) {
-            return shared
-        }
-        return Date.now.addingTimeInterval(rollDevelopDelay)
+        return Self.developDate(
+            rollId: rollId, existingRollReveal: existing, now: .now,
+            personalDelay: personalDevelopDelay, rollDelay: rollDevelopDelay
+        )
+    }
+
+    /// Pure develop-time policy (unit-tested): personal shots develop after `personalDelay`;
+    /// a roll's first shot starts a `rollDelay` clock, and every later shot inherits that
+    /// same reveal time so the whole roll unlocks together.
+    static func developDate(
+        rollId: UUID?, existingRollReveal: Date?, now: Date,
+        personalDelay: TimeInterval, rollDelay: TimeInterval
+    ) -> Date {
+        guard rollId != nil else { return now.addingTimeInterval(personalDelay) }
+        return existingRollReveal ?? now.addingTimeInterval(rollDelay)
     }
 
     /// The develop time already set for a roll (from its first photo), or nil if empty.

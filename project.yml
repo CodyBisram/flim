@@ -71,6 +71,20 @@ targets:
       - package: supabase-swift
         product: Supabase
 
+  FlimTests:
+    type: bundle.unit-test
+    platform: iOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: FlimTests
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.flim.app.tests
+        SWIFT_VERSION: "5.9"
+    dependencies:
+      - target: Flim
+
 schemes:
   Flim:
     build:
@@ -80,6 +94,8 @@ schemes:
       config: Debug
     test:
       config: Debug
+      targets:
+        - FlimTests
     profile:
       config: Release
     analyze:
