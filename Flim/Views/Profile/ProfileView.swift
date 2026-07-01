@@ -32,14 +32,14 @@ struct ProfileView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 32)
 
-                    Divider().background(Color(white: 0.15))
+                    Divider().background(FlimTheme.stroke)
 
                     // Personal invite code
                     VStack(spacing: 8) {
                         Text("YOUR INVITE CODE")
                             .font(.system(size: 11, weight: .medium))
                             .tracking(2)
-                            .foregroundStyle(Color(white: 0.4))
+                            .foregroundStyle(FlimTheme.textTertiary)
 
                         Button {
                             UIPasteboard.general.string = auth.currentUser?.inviteCode
@@ -57,16 +57,16 @@ struct ProfileView: View {
 
                                 Image(systemName: codeCopied ? "checkmark.circle.fill" : "doc.on.doc")
                                     .font(.system(size: 18))
-                                    .foregroundStyle(codeCopied ? FlimTheme.accent : Color(white: 0.4))
+                                    .foregroundStyle(codeCopied ? FlimTheme.accent : FlimTheme.textSecondary)
                             }
                             .padding(.vertical, 20)
                             .padding(.horizontal, 24)
                             .glassCard(cornerRadius: 14, interactive: true)
                         }
 
-                        Text("Share this so friends can find you on FLIM.")
+                        Text("Share this code so friends can add you on FLIM.")
                             .font(.system(size: 12))
-                            .foregroundStyle(Color(white: 0.35))
+                            .foregroundStyle(FlimTheme.textTertiary)
                             .multilineTextAlignment(.center)
                     }
                     .padding(.horizontal, 28)
