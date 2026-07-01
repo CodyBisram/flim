@@ -31,7 +31,8 @@ targets:
         CFBundleDisplayName: FLIM
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
-        UILaunchStoryboardName: LaunchScreen
+        # Modern launch screen (no storyboard file needed on iOS 14+).
+        UILaunchScreen: {}
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
         NSCameraUsageDescription: "FLIM uses your camera to take disposable photos that develop over time."
@@ -46,6 +47,8 @@ targets:
         SWIFT_VERSION: "5.9"
         DEVELOPMENT_TEAM: DCU7GHRVUQ
         ENABLE_PREVIEWS: YES
+        # iPhone only — a portrait camera app; avoids iPad multitasking requirements.
+        TARGETED_DEVICE_FAMILY: "1"
         # Versioning — CI passes CURRENT_PROJECT_VERSION=<next TestFlight build>.
         MARKETING_VERSION: "1.0"
         CURRENT_PROJECT_VERSION: "1"

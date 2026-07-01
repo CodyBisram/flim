@@ -12,6 +12,7 @@
 		1986128F060D36EEB13FF786 /* AuthService.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFC0C65109A81467AB59472B /* AuthService.swift */; };
 		1A636EF87FB2E349B9F555DC /* SupabaseClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0EABF568B1F50179364FE91 /* SupabaseClient.swift */; };
 		203A74E3F739D03F1FCD6248 /* DarkroomView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AACFEBE63C392489A62B63C /* DarkroomView.swift */; };
+		24C89EABBAFF98261AEB3ABB /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 6D3CAAA6097E82270360343F /* Assets.xcassets */; };
 		287023347895E167ECC91920 /* Haptics.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA04DBB3261C344B5DD64806 /* Haptics.swift */; };
 		322A5492683DD8B6D58B77C6 /* RollsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33D109A1C315CD466659A10F /* RollsView.swift */; };
 		34533239665E36002D2C3006 /* FilmStock.swift in Sources */ = {isa = PBXBuildFile; fileRef = 870990313A19750FDF37E235 /* FilmStock.swift */; };
@@ -63,6 +64,7 @@
 		54CD52378D31EEDB7D7BE6EF /* RollDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollDetailView.swift; sourceTree = "<group>"; };
 		5FE59742B6CDB9699448F677 /* Flim.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Flim.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		633F60D6D348ADEA4D94D263 /* RollService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollService.swift; sourceTree = "<group>"; };
+		6D3CAAA6097E82270360343F /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		7148B48A915D24BFBDEB23E0 /* NotificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationService.swift; sourceTree = "<group>"; };
 		7A0B87FE1069C71306456DFF /* Roll.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Roll.swift; sourceTree = "<group>"; };
 		8118D8FA0343F18F835415D3 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
@@ -209,6 +211,7 @@
 		B5B7E330A2CBC1193A9C6767 /* Flim */ = {
 			isa = PBXGroup;
 			children = (
+				6D3CAAA6097E82270360343F /* Assets.xcassets */,
 				8BFE9FBCA04098DC6F972D9A /* ContentView.swift */,
 				AAB338D99E6E3C7278DE9CFA /* Flim.entitlements */,
 				01F7C56CF5A21FB71964CFEB /* FlimApp.swift */,
@@ -251,6 +254,7 @@
 			buildConfigurationList = 02CDD09274CC45285F318146 /* Build configuration list for PBXNativeTarget "Flim" */;
 			buildPhases = (
 				46FAAB3D3297C8421FF6DEB7 /* Sources */,
+				BAEA4E32BD8CFF4AEB3A98AE /* Resources */,
 				AB4DA97B4206F193CFDACE75 /* Frameworks */,
 			);
 			buildRules = (
@@ -300,6 +304,17 @@
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		BAEA4E32BD8CFF4AEB3A98AE /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				24C89EABBAFF98261AEB3ABB /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		46FAAB3D3297C8421FF6DEB7 /* Sources */ = {
@@ -486,7 +501,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.flim.app;
 				SDKROOT = iphoneos;
 				SWIFT_VERSION = 5.9;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Debug;
 		};
@@ -512,7 +527,7 @@
 				PROVISIONING_PROFILE_SPECIFIER = "match AppStore com.flim.app";
 				SDKROOT = iphoneos;
 				SWIFT_VERSION = 5.9;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Release;
 		};
