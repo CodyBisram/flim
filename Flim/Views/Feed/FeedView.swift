@@ -6,6 +6,7 @@ struct FeedView: View {
     @Environment(PhotoService.self) private var photos
 
     @State private var showDiscover = false
+    @State private var myAvatarURL: URL?
 
     var body: some View {
         ZStack {
@@ -31,14 +32,17 @@ struct FeedView: View {
             }
         }
         .navigationBarHidden(true)
-        .task { if feed.feed.isEmpty { await reload() } }
+        .task {
+            if let path = auth.currentUser?.avatarPath { myAvatarURL = await feed.signedURL(for: path) }
+            if feed.feed.isEmpty { await reload() }
+        }
         .sheet(isPresented: $showDiscover) {
             DiscoverPeopleView()
         }
     }
 
     private var header: some View {
-        HStack {
+        HStack(spacing: 6) {
             FlimNavTitle("Feed")
             Spacer()
             #if DEBUG
@@ -56,9 +60,31 @@ struct FeedView: View {
                 Image(systemName: "person.badge.plus")
                     .font(.system(size: 17, weight: .medium))
                     .foregroundStyle(FlimTheme.accent)
-                    .padding(.trailing, 20)
             }
-            .accessibilityLabel("Find people")
+            .accessibilityLabel("Find friends")
+
+            // Your avatar → your own page.
+            if let uid = auth.currentUser?.id {
+                NavigationLink {
+                    UserPageView(userId: uid)
+                } label: {
+                    Circle()
+                        .fill(FlimTheme.accent.opacity(0.18))
+                        .frame(width: 30, height: 30)
+                        .overlay {
+                            if let myAvatarURL {
+                                CachedImage(url: myAvatarURL, maxPixel: 90) { $0.resizable().scaledToFill() } placeholder: { Color.clear }
+                            } else {
+                                Text(String((auth.currentUser?.username ?? "?").prefix(1)).uppercased())
+                                    .font(.system(size: 13, weight: .thin)).foregroundStyle(FlimTheme.accent)
+                            }
+                        }
+                        .clipShape(Circle())
+                        .overlay(Circle().stroke(FlimTheme.accent.opacity(0.4), lineWidth: 1))
+                }
+                .accessibilityLabel("Your page")
+                .padding(.trailing, 20)
+            }
         }
     }
 
@@ -104,6 +130,7 @@ struct FeedView: View {
     private func reload() async {
         guard let uid = auth.currentUser?.id else { return }
         await feed.loadFeed(currentUserId: uid)
+        if let path = auth.currentUser?.avatarPath { myAvatarURL = await feed.signedURL(for: path) }
     }
 }
 

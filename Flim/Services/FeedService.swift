@@ -85,6 +85,19 @@ final class FeedService {
         return list
     }
 
+    /// Server-side username search (scales past a scrollable list). Case-insensitive prefix/substring.
+    func searchProfiles(query: String, excluding userId: UUID) async -> [UserProfile] {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return [] }
+        let list: [UserProfile] = (try? await supabase
+            .from("profiles").select()
+            .ilike("username", pattern: "%\(q)%")
+            .neq("id", value: userId.uuidString)
+            .limit(30)
+            .execute().value) ?? []
+        return list
+    }
+
     // MARK: - Feed
 
     func loadFeed(currentUserId: UUID) async {

@@ -14,6 +14,7 @@ struct FullScreenPhotoView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var shared = false
+    @State private var showSharedToast = false
     @State private var scale: CGFloat = 1
     @State private var offset: CGSize = .zero
     @State private var showDeleteConfirm = false
@@ -91,13 +92,6 @@ struct FullScreenPhotoView: View {
                     if isOwnPhoto {
                         Menu {
                             Button {
-                                shareToPage()
-                            } label: {
-                                Label(shared ? "Shared to your page" : "Share to my page",
-                                      systemImage: shared ? "checkmark.circle" : "square.and.arrow.up.on.square")
-                            }
-                            .disabled(shared)
-                            Button {
                                 Haptics.tap()
                                 Task { await auth.setAvatar(path: photo.storagePath) }
                             } label: { Label("Set as profile photo", systemImage: "person.crop.circle") }
@@ -139,6 +133,18 @@ struct FullScreenPhotoView: View {
         }
         .ignoresSafeArea()
         .statusBarHidden()
+        .overlay(alignment: .top) {
+            if showSharedToast {
+                Label("Shared to your page", systemImage: "checkmark.circle.fill")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 11)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .padding(.top, 64)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
         .task {
             reactions = await photoService.fetchReactions(photoId: photo.id)
             if isOwnPhoto, let uid = auth.currentUser?.id {
@@ -189,9 +195,24 @@ struct FullScreenPhotoView: View {
 
     @ViewBuilder
     private var bottomBar: some View {
-        if photo.rollId != nil {
-            reactionBar
-                .frame(maxWidth: .infinity, alignment: .leading)
+        VStack(spacing: 14) {
+            if photo.rollId != nil {
+                reactionBar
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            // Prominent share-to-page action for your own photos.
+            if isOwnPhoto && !showShareComposer {
+                Button { shareToPage() } label: {
+                    Label(shared ? "Shared to your page" : "Share to your page",
+                          systemImage: shared ? "checkmark.circle.fill" : "square.and.arrow.up")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(shared ? .white : .black)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(shared ? Color.white.opacity(0.15) : FlimTheme.accent, in: Capsule())
+                }
+                .disabled(shared)
+            }
         }
     }
 
@@ -248,7 +269,12 @@ struct FullScreenPhotoView: View {
         shared = true
         showShareComposer = false
         captionFocused = false
-        Task { try? await feed.createPost(photo: photo, caption: caption, userId: uid) }
+        Task {
+            try? await feed.createPost(photo: photo, caption: caption, userId: uid)
+            withAnimation { showSharedToast = true }
+            try? await Task.sleep(for: .seconds(2))
+            withAnimation { showSharedToast = false }
+        }
     }
 
     private func toggleReaction(_ emoji: String) {

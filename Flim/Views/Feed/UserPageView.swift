@@ -198,32 +198,50 @@ struct DiscoverPeopleView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var profiles: [UserProfile] = []
+    @State private var results: [UserProfile] = []
+    @State private var searchText = ""
     @State private var loaded = false
+
+    private var shown: [UserProfile] { searchText.isEmpty ? profiles : results }
 
     var body: some View {
         NavigationStack {
             ZStack {
                 FlimTheme.bg.ignoresSafeArea()
-                if profiles.isEmpty && loaded {
-                    Text("No one else here yet — invite some friends!")
-                        .font(.system(size: 14)).foregroundStyle(FlimTheme.textTertiary)
-                        .multilineTextAlignment(.center).padding(40)
-                } else {
-                    ScrollView {
-                        LazyVStack(spacing: 4) {
-                            ForEach(profiles) { profile in
-                                NavigationLink { UserPageView(userId: profile.id) } label: {
-                                    personRow(profile)
+                VStack(spacing: 0) {
+                    searchField
+
+                    if shown.isEmpty && loaded {
+                        Spacer()
+                        Text(searchText.isEmpty
+                             ? "No one else here yet — invite some friends!"
+                             : "No one matches “\(searchText)”")
+                            .font(.system(size: 14)).foregroundStyle(FlimTheme.textTertiary)
+                            .multilineTextAlignment(.center).padding(40)
+                        Spacer()
+                    } else {
+                        ScrollView {
+                            LazyVStack(alignment: .leading, spacing: 4) {
+                                if searchText.isEmpty && !profiles.isEmpty {
+                                    Text("SUGGESTED")
+                                        .font(.system(size: 11, weight: .medium)).tracking(2)
+                                        .foregroundStyle(FlimTheme.textTertiary)
+                                        .padding(.horizontal, 20).padding(.top, 10).padding(.bottom, 2)
                                 }
-                                .buttonStyle(.plain)
+                                ForEach(shown) { profile in
+                                    NavigationLink { UserPageView(userId: profile.id) } label: {
+                                        personRow(profile)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
                             }
+                            .padding(.vertical, 8)
                         }
-                        .padding(.vertical, 8)
                     }
                 }
             }
             .navigationBarTitleDisplayMode(.inline)
-            .flimInlineTitle("Find people")
+            .flimInlineTitle("Find friends")
             .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -237,8 +255,34 @@ struct DiscoverPeopleView: View {
                 }
                 loaded = true
             }
+            .task(id: searchText) {
+                // Debounced server-side search so it scales past a scrollable list.
+                try? await Task.sleep(for: .milliseconds(300))
+                guard !Task.isCancelled, !searchText.isEmpty, let uid = auth.currentUser?.id else { return }
+                results = await feed.searchProfiles(query: searchText, excluding: uid)
+            }
         }
         .presentationBackground(FlimTheme.bg)
+    }
+
+    private var searchField: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass").foregroundStyle(FlimTheme.textTertiary)
+            TextField("", text: $searchText, prompt: Text("Search by username").foregroundStyle(FlimTheme.textTertiary))
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.never)
+                .foregroundStyle(.white)
+                .tint(FlimTheme.accent)
+            if !searchText.isEmpty {
+                Button { searchText = "" } label: {
+                    Image(systemName: "xmark.circle.fill").foregroundStyle(FlimTheme.textTertiary)
+                }
+            }
+        }
+        .font(.system(size: 15))
+        .padding(.horizontal, 14).padding(.vertical, 11)
+        .background(FlimTheme.bgElevated, in: Capsule())
+        .padding(.horizontal, 18).padding(.top, 10).padding(.bottom, 4)
     }
 
     private func personRow(_ profile: UserProfile) -> some View {
