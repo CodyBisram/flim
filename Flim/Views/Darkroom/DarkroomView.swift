@@ -3,6 +3,7 @@ import SwiftUI
 struct DarkroomView: View {
     @Environment(AuthService.self) private var auth
     @Environment(PhotoService.self) private var photoService
+    @Environment(RollService.self) private var rolls
 
     @State private var vm = DarkroomViewModel()
     @State private var selectedPhoto: Photo?
@@ -98,10 +99,16 @@ struct DarkroomView: View {
 
             LazyVGrid(columns: columns, spacing: 2) {
                 ForEach(vm.developingPhotos) { photo in
-                    PhotoGridCell(photo: photo, signedURL: nil)
+                    PhotoGridCell(photo: photo, signedURL: nil, rollName: rollName(for: photo.rollId))
                 }
             }
         }
+    }
+
+    /// The name of the roll a photo belongs to (for labeling roll shots in the Darkroom).
+    private func rollName(for rollId: UUID?) -> String? {
+        guard let rollId else { return nil }
+        return rolls.rolls.first { $0.id == rollId }?.name
     }
 
     private var developedSection: some View {
@@ -118,7 +125,7 @@ struct DarkroomView: View {
 
             LazyVGrid(columns: columns, spacing: 2) {
                 ForEach(vm.developedPhotos) { photo in
-                    PhotoGridCell(photo: photo, signedURL: vm.signedURLCache[photo.id])
+                    PhotoGridCell(photo: photo, signedURL: vm.signedURLCache[photo.id], rollName: rollName(for: photo.rollId))
                         .onTapGesture {
                             selectedURL = vm.signedURLCache[photo.id]
                             selectedPhoto = photo
@@ -156,5 +163,6 @@ struct DarkroomView: View {
     private func reload() async {
         guard let userId = auth.currentUser?.id else { return }
         await vm.load(photoService: photoService, userId: userId)
+        if rolls.rolls.isEmpty { try? await rolls.fetchRolls(for: userId) }   // for roll labels
     }
 }

@@ -5,6 +5,8 @@ import ImageIO
 struct PhotoGridCell: View {
     let photo: Photo
     let signedURL: URL?
+    /// The roll this shot belongs to (shown so roll photos are distinguishable in the Darkroom).
+    var rollName: String? = nil
 
     var body: some View {
         // A clear square anchor sizes each cell to exactly 1/3 of the grid width; the image
@@ -24,6 +26,19 @@ struct PhotoGridCell: View {
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: 4))
+            // A small roll tag on developed roll shots, so you know which are shared.
+            .overlay(alignment: .bottomLeading) {
+                if photo.isReady, let rollName {
+                    Label(rollName, systemImage: "film.stack")
+                        .font(.system(size: 9, weight: .semibold))
+                        .lineLimit(1)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(.black.opacity(0.45), in: Capsule())
+                        .padding(5)
+                }
+            }
             .contentShape(Rectangle())
     }
 
@@ -43,10 +58,19 @@ struct PhotoGridCell: View {
                         .foregroundStyle(Color(white: 0.35))
                 }
 
-                Text("DEVELOPING")
-                    .font(.system(size: 8, weight: .medium))
-                    .tracking(2)
-                    .foregroundStyle(Color(white: 0.25))
+                // Tell the user which roll this shot is developing for (or just "DEVELOPING").
+                if let rollName {
+                    Label(rollName, systemImage: "film.stack")
+                        .font(.system(size: 8, weight: .semibold))
+                        .lineLimit(1)
+                        .foregroundStyle(FlimTheme.accent.opacity(0.9))
+                        .padding(.horizontal, 6)
+                } else {
+                    Text("DEVELOPING")
+                        .font(.system(size: 8, weight: .medium))
+                        .tracking(2)
+                        .foregroundStyle(Color(white: 0.25))
+                }
             }
         }
     }
