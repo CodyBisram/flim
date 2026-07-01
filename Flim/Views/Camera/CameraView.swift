@@ -117,20 +117,37 @@ struct CameraView: View {
                 .accessibilityLabel("Send photos to")
                 .accessibilityValue(selectedRoll?.name ?? "Personal")
 
-                // Flash toggle (Off → Auto → On)
+                // Flash toggle (Off → Auto → On) — hidden on the front camera (no flash).
+                if camera.isFlashSupported {
+                    Button {
+                        cycleFlash()
+                        wakeFilmStrip()
+                    } label: {
+                        Image(systemName: flashIcon)
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(flashMode == .off ? .white : FlimTheme.accent)
+                            .frame(width: 38, height: 38)
+                    }
+                    .glassCapsule(interactive: true)
+                    .padding(.leading, 8)
+                    .accessibilityLabel("Flash")
+                    .accessibilityValue(flashMode == .off ? "Off" : (flashMode == .auto ? "Auto" : "On"))
+                }
+
+                // Flip between back and front cameras.
                 Button {
-                    cycleFlash()
+                    camera.flipCamera()
+                    Haptics.tap()
                     wakeFilmStrip()
                 } label: {
-                    Image(systemName: flashIcon)
+                    Image(systemName: "arrow.triangle.2.circlepath")
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(flashMode == .off ? .white : FlimTheme.accent)
+                        .foregroundStyle(.white)
                         .frame(width: 38, height: 38)
                 }
                 .glassCapsule(interactive: true)
                 .padding(.leading, 8)
-                .accessibilityLabel("Flash")
-                .accessibilityValue(flashMode == .off ? "Off" : (flashMode == .auto ? "Auto" : "On"))
+                .accessibilityLabel("Flip camera")
 
                 Spacer()
 

@@ -22,6 +22,10 @@ final class CameraViewModel: NSObject {
     enum Permission { case unknown, authorized, denied }
     var permission: Permission = .unknown
 
+    /// Which camera is active. Front has no hardware flash, so the UI hides the flash toggle.
+    var cameraPosition: AVCaptureDevice.Position = .back
+    var isFront: Bool { cameraPosition == .front }
+
     // MARK: - Setup
 
     /// Requests camera access (if needed), then configures + starts the session. Sets
@@ -46,17 +50,27 @@ final class CameraViewModel: NSObject {
 
         session.beginConfiguration()
         session.sessionPreset = .photo
+        addVideoInput()
+        if session.canAddOutput(output) {
+            session.addOutput(output)
+        }
+        session.commitConfiguration()
+    }
 
-        if let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back),
+    private func addVideoInput() {
+        if let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: cameraPosition),
            let input = try? AVCaptureDeviceInput(device: device),
            session.canAddInput(input) {
             session.addInput(input)
         }
+    }
 
-        if session.canAddOutput(output) {
-            session.addOutput(output)
-        }
-
+    /// Switches between the back and front cameras.
+    func flipCamera() {
+        cameraPosition = isFront ? .back : .front
+        session.beginConfiguration()
+        session.inputs.forEach { session.removeInput($0) }
+        addVideoInput()
         session.commitConfiguration()
     }
 
@@ -90,6 +104,11 @@ final class CameraViewModel: NSObject {
         let settings = AVCapturePhotoSettings()
         if output.supportedFlashModes.contains(flashMode) {
             settings.flashMode = flashMode
+        }
+        // Mirror front-camera shots so the saved photo matches the (mirrored) preview.
+        if let connection = output.connection(with: .video), connection.isVideoMirroringSupported {
+            connection.automaticallyAdjustsVideoMirroring = false
+            connection.isVideoMirrored = isFront
         }
         output.capturePhoto(with: settings, delegate: self)
     }

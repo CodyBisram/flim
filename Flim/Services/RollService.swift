@@ -155,6 +155,33 @@ final class RollService {
             .value
     }
 
+    /// Renames a roll (creator only, enforced by RLS) and updates the local copy.
+    func renameRoll(rollId: UUID, name: String) async throws {
+        struct Update: Encodable { let name: String }
+        try await supabase
+            .from("rolls")
+            .update(Update(name: name))
+            .eq("id", value: rollId.uuidString)
+            .execute()
+        if let i = rolls.firstIndex(where: { $0.id == rollId }) {
+            let r = rolls[i]
+            rolls[i] = Roll(id: r.id, name: name, inviteCode: r.inviteCode,
+                            createdBy: r.createdBy, createdAt: r.createdAt)
+        }
+    }
+
+    /// Deletes a roll (creator only, enforced by RLS) and removes it locally.
+    func deleteRoll(rollId: UUID) async throws {
+        try await supabase
+            .from("rolls")
+            .delete()
+            .eq("id", value: rollId.uuidString)
+            .execute()
+        rolls.removeAll { $0.id == rollId }
+        memberCounts[rollId] = nil
+        coverPaths[rollId] = nil
+    }
+
     /// Removes a member from a roll. RLS allows this only for the member themselves
     /// (leaving) or the roll's creator (moderation).
     func removeMember(rollId: UUID, userId: UUID) async throws {

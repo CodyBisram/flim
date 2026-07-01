@@ -181,6 +181,19 @@ CREATE POLICY "rolls: authenticated can create"
     ON public.rolls FOR INSERT
     WITH CHECK (auth.uid() = created_by);
 
+-- The creator can rename or delete their roll. Deleting cascades memberships; each
+-- photo's roll_id is set NULL (ON DELETE SET NULL) so owners keep their shots personally.
+DROP POLICY IF EXISTS "rolls: creator can update" ON public.rolls;
+CREATE POLICY "rolls: creator can update"
+    ON public.rolls FOR UPDATE
+    USING (created_by = auth.uid())
+    WITH CHECK (created_by = auth.uid());
+
+DROP POLICY IF EXISTS "rolls: creator can delete" ON public.rolls;
+CREATE POLICY "rolls: creator can delete"
+    ON public.rolls FOR DELETE
+    USING (created_by = auth.uid());
+
 -- ROLL MEMBERS ----------------------------------------------
 DROP POLICY IF EXISTS "roll_members: own membership" ON public.roll_members;
 CREATE POLICY "roll_members: own membership"
