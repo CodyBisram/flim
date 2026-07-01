@@ -12,6 +12,9 @@ struct DarkroomView: View {
     @State private var isSelecting = false
     @State private var selectedIDs: Set<UUID> = []
     @State private var showDeleteConfirm = false
+    @AppStorage("lastRevealCheck") private var lastRevealCheck: Double = 0
+    @State private var showReveal = false
+    @State private var revealCount = 0
 
     private let columns = [
         GridItem(.flexible(), spacing: 2),
@@ -44,6 +47,9 @@ struct DarkroomView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+        }
+        .overlay {
+            if showReveal { revealOverlay }
         }
         .navigationBarTitleDisplayMode(.inline)
         .toolbarColorScheme(.dark, for: .navigationBar)
@@ -232,5 +238,52 @@ struct DarkroomView: View {
         guard let userId = auth.currentUser?.id else { return }
         await vm.load(photoService: photoService, userId: userId)
         if rolls.rolls.isEmpty { try? await rolls.fetchRolls(for: userId) }   // for roll labels
+        checkForReveal()
+    }
+
+    /// Celebrate shots that have finished developing since the last time the Darkroom was open.
+    private func checkForReveal() {
+        let now = Date().timeIntervalSince1970
+        if lastRevealCheck > 0, !showReveal, !isSelecting {
+            let newlyReady = vm.developedPhotos.filter {
+                $0.developsAt.timeIntervalSince1970 > lastRevealCheck && $0.isReady
+            }
+            if !newlyReady.isEmpty {
+                revealCount = newlyReady.count
+                Haptics.reveal()
+                withAnimation(.spring(response: 0.5, dampingFraction: 0.7)) { showReveal = true }
+            }
+        }
+        lastRevealCheck = now
+    }
+
+    private var revealOverlay: some View {
+        ZStack {
+            Color.black.opacity(0.92).ignoresSafeArea()
+            VStack(spacing: 16) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 56, weight: .ultraLight))
+                    .foregroundStyle(FlimTheme.accent)
+                    .symbolEffect(.pulse)
+                Text("Your photos are ready")
+                    .font(.system(size: 26, weight: .thin))
+                    .foregroundStyle(.white)
+                Text("\(revealCount) new \(revealCount == 1 ? "shot" : "shots") developed")
+                    .font(.system(size: 14))
+                    .foregroundStyle(FlimTheme.textSecondary)
+                Button {
+                    withAnimation { showReveal = false }
+                } label: {
+                    Text("Reveal")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(.black)
+                        .padding(.horizontal, 30).padding(.vertical, 13)
+                        .background(FlimTheme.accent, in: Capsule())
+                }
+                .padding(.top, 6)
+            }
+        }
+        .transition(.opacity)
+        .onTapGesture { withAnimation { showReveal = false } }
     }
 }
