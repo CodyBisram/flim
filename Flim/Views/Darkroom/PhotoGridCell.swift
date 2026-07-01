@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct PhotoGridCell: View {
     let photo: Photo
@@ -7,15 +8,10 @@ struct PhotoGridCell: View {
     var body: some View {
         ZStack {
             if photo.isReady, let url = signedURL {
-                AsyncImage(url: url) { phase in
-                    switch phase {
-                    case .success(let image):
-                        RevealImage(image: image)
-                    case .failure:
-                        errorPlaceholder
-                    default:
-                        developingPlaceholder
-                    }
+                CachedImage(url: url) { image in
+                    image.resizable().scaledToFill()
+                } placeholder: {
+                    Color(red: 0.08, green: 0.06, blue: 0.05)
                 }
                 .clipped()
             } else {
@@ -50,14 +46,6 @@ struct PhotoGridCell: View {
         }
     }
 
-    private var errorPlaceholder: some View {
-        Color(white: 0.1)
-            .overlay(
-                Image(systemName: "exclamationmark.triangle")
-                    .foregroundStyle(Color(white: 0.3))
-            )
-    }
-
     private func countdown(at date: Date) -> String {
         let seconds = max(0, Int(photo.developsAt.timeIntervalSince(date)))
         let h = seconds / 3600
@@ -67,30 +55,55 @@ struct PhotoGridCell: View {
     }
 }
 
-// MARK: - Reveal
+// MARK: - Cached image
 
-/// Plays a short "developing → developed" dissolve as a photo resolves: grain lifts,
-/// the image sharpens and regains colour. Used by the grid and the full-screen view.
-struct RevealImage: View {
-    let image: Image
-    var duration: Double = 0.7
+/// Drop-in async image that caches the decoded `UIImage` in memory. Scrolling back to a
+/// cell — or opening a photo full-screen — becomes instant instead of re-downloading and
+/// re-decoding the JPEG every time. First load fades in; cache hits appear immediately.
+enum ImageCache {
+    static let shared: NSCache<NSURL, UIImage> = {
+        let cache = NSCache<NSURL, UIImage>()
+        cache.countLimit = 250
+        return cache
+    }()
+}
 
-    @State private var revealed = false
+struct CachedImage<Content: View, Placeholder: View>: View {
+    let url: URL?
+    @ViewBuilder var content: (Image) -> Content
+    @ViewBuilder var placeholder: () -> Placeholder
+
+    @State private var uiImage: UIImage?
+    @State private var shown = false
 
     var body: some View {
-        image
-            .resizable()
-            .scaledToFill()
-            .saturation(revealed ? 1 : 0.35)
-            .blur(radius: revealed ? 0 : 5)
-            .overlay(
-                Color(red: 0.08, green: 0.06, blue: 0.05)
-                    .opacity(revealed ? 0 : 0.55)
-            )
-            .overlay(GrainOverlay().opacity(revealed ? 0 : 1))
-            .onAppear {
-                withAnimation(.easeOut(duration: duration)) { revealed = true }
+        ZStack {
+            if let uiImage {
+                content(Image(uiImage: uiImage)).opacity(shown ? 1 : 0)
+            } else {
+                placeholder()
             }
+        }
+        .task(id: url) { await load() }
+    }
+
+    private func load() async {
+        guard let url else { uiImage = nil; return }
+        let key = url as NSURL
+
+        if let cached = ImageCache.shared.object(forKey: key) {
+            uiImage = cached
+            shown = true                     // cache hit → instant
+            return
+        }
+
+        uiImage = nil
+        shown = false
+        guard let (data, _) = try? await URLSession.shared.data(from: url),
+              let image = UIImage(data: data) else { return }
+        ImageCache.shared.setObject(image, forKey: key)
+        uiImage = image
+        withAnimation(.easeIn(duration: 0.3)) { shown = true }   // first load → gentle fade
     }
 }
 

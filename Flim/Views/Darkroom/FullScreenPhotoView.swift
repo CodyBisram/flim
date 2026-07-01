@@ -18,22 +18,18 @@ struct FullScreenPhotoView: View {
             Color.black.ignoresSafeArea()
 
             if let url {
-                AsyncImage(url: url) { phase in
-                    switch phase {
-                    case .success(let image):
-                        // Show the tapped photo immediately — the develop "reveal" already
-                        // happened in the grid; re-revealing here just made opening feel slow.
-                        image
-                            .resizable()
-                            .scaledToFit()
-                            .scaleEffect(scale)
-                            .offset(offset)
-                            .gesture(dragToDismiss)
-                            .gesture(pinchToZoom)
-                            .transition(.opacity)
-                    default:
-                        ProgressView().tint(.white)
-                    }
+                // CachedImage serves the already-decoded thumbnail from memory, so opening a
+                // photo you can see in the grid is instant (no re-download, no reveal delay).
+                CachedImage(url: url) { image in
+                    image
+                        .resizable()
+                        .scaledToFit()
+                        .scaleEffect(scale)
+                        .offset(offset)
+                        .gesture(dragToDismiss)
+                        .gesture(pinchToZoom)
+                } placeholder: {
+                    ProgressView().tint(.white)
                 }
             }
 

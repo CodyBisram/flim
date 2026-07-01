@@ -58,11 +58,13 @@ struct CameraView: View {
             VStack(spacing: 0) {
                 topBar
                 Spacer()
-                VStack(spacing: 26) {
+                VStack(spacing: 22) {
                     filmStrip
                     bottomBar
                 }
-                .padding(.bottom, 8)
+                // Lifts the shutter off the tab bar so it sits ~centered between the film
+                // pills and the bottom bar, rather than hugging the tabs.
+                .padding(.bottom, 34)
             }
 
             coachOverlay
