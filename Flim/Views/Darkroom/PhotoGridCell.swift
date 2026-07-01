@@ -1,25 +1,30 @@
 import SwiftUI
 import UIKit
+import ImageIO
 
 struct PhotoGridCell: View {
     let photo: Photo
     let signedURL: URL?
 
     var body: some View {
-        ZStack {
-            if photo.isReady, let url = signedURL {
-                CachedImage(url: url) { image in
-                    image.resizable().scaledToFill()
-                } placeholder: {
-                    Color(red: 0.08, green: 0.06, blue: 0.05)
+        // A clear square anchor sizes each cell to exactly 1/3 of the grid width; the image
+        // fills it as an overlay and is clipped, so a `scaledToFill` photo can never overflow
+        // its slot and overlap neighbours.
+        Color.clear
+            .aspectRatio(1, contentMode: .fit)
+            .overlay {
+                if photo.isReady, let url = signedURL {
+                    CachedImage(url: url, maxPixel: 400) { image in
+                        image.resizable().scaledToFill()
+                    } placeholder: {
+                        Color(red: 0.08, green: 0.06, blue: 0.05)
+                    }
+                } else {
+                    developingPlaceholder
                 }
-                .clipped()
-            } else {
-                developingPlaceholder
             }
-        }
-        .aspectRatio(1, contentMode: .fill)
-        .clipShape(RoundedRectangle(cornerRadius: 4))
+            .clipShape(RoundedRectangle(cornerRadius: 4))
+            .contentShape(Rectangle())
     }
 
     private var developingPlaceholder: some View {
@@ -84,25 +89,29 @@ struct LoadingGrid: View {
 
 // MARK: - Cached image
 
-/// Drop-in async image that caches the decoded `UIImage` in memory. Scrolling back to a
-/// cell — or opening a photo full-screen — becomes instant instead of re-downloading and
-/// re-decoding the JPEG every time. First load fades in; cache hits appear immediately.
+/// In-memory cache of *downsampled* decoded images, keyed by URL + target size. Full-res
+/// camera photos are many megabytes decoded; caching a screen-sized (or thumbnail-sized)
+/// version keeps memory low so entries aren't evicted — which is what made opening a photo
+/// slow (the full image had to be re-downloaded and re-decoded every time).
 enum ImageCache {
-    static let shared: NSCache<NSURL, UIImage> = {
-        let cache = NSCache<NSURL, UIImage>()
-        cache.countLimit = 250
+    static let shared: NSCache<NSString, UIImage> = {
+        let cache = NSCache<NSString, UIImage>()
+        cache.countLimit = 300
         return cache
     }()
 }
 
 struct CachedImage<Content: View, Placeholder: View>: View {
     let url: URL?
+    /// Longest-edge target in points; the image is downsampled to this (× screen scale).
+    var maxPixel: CGFloat = 1600
     @ViewBuilder var content: (Image) -> Content
     @ViewBuilder var placeholder: () -> Placeholder
 
     @State private var uiImage: UIImage?
     @State private var shown = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.displayScale) private var displayScale
 
     var body: some View {
         ZStack {
@@ -117,7 +126,7 @@ struct CachedImage<Content: View, Placeholder: View>: View {
 
     private func load() async {
         guard let url else { uiImage = nil; return }
-        let key = url as NSURL
+        let key = "\(url.absoluteString)|\(Int(maxPixel))" as NSString
 
         if let cached = ImageCache.shared.object(forKey: key) {
             uiImage = cached
@@ -127,8 +136,9 @@ struct CachedImage<Content: View, Placeholder: View>: View {
 
         uiImage = nil
         shown = false
-        guard let (data, _) = try? await URLSession.shared.data(from: url),
-              let image = UIImage(data: data) else { return }
+        guard let (data, _) = try? await URLSession.shared.data(from: url) else { return }
+        // Downsample off the main actor; ImageIO decodes straight to the target size.
+        guard let image = await Self.downsample(data: data, maxPixel: maxPixel, scale: displayScale) else { return }
         ImageCache.shared.setObject(image, forKey: key)
         uiImage = image
         if reduceMotion {
@@ -136,6 +146,27 @@ struct CachedImage<Content: View, Placeholder: View>: View {
         } else {
             withAnimation(.easeIn(duration: 0.3)) { shown = true }   // first load → gentle fade
         }
+    }
+
+    /// Decodes `data` directly to a thumbnail no larger than `maxPixel` (× scale) on its
+    /// longest edge — fast and low-memory, without ever fully decoding the original.
+    private static func downsample(data: Data, maxPixel: CGFloat, scale: CGFloat) async -> UIImage? {
+        await Task.detached(priority: .userInitiated) {
+            let srcOptions = [kCGImageSourceShouldCache: false] as CFDictionary
+            guard let source = CGImageSourceCreateWithData(data as CFData, srcOptions) else {
+                return UIImage(data: data)
+            }
+            let options: [CFString: Any] = [
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                kCGImageSourceCreateThumbnailWithTransform: true,
+                kCGImageSourceShouldCacheImmediately: true,
+                kCGImageSourceThumbnailMaxPixelSize: maxPixel * scale
+            ]
+            guard let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
+                return UIImage(data: data)
+            }
+            return UIImage(cgImage: cg)
+        }.value
     }
 }
 

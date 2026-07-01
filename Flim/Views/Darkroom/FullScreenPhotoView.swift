@@ -17,6 +17,7 @@ struct FullScreenPhotoView: View {
     @State private var showReportConfirm = false
     @State private var reportSent = false
     @State private var shareItem: ShareImage?
+    @State private var resolvedURL: URL?
 
     private var isOwnPhoto: Bool { photo.userId == auth.currentUser?.id }
 
@@ -24,10 +25,10 @@ struct FullScreenPhotoView: View {
         ZStack {
             Color.black.ignoresSafeArea()
 
-            if let url {
-                // CachedImage serves the already-decoded thumbnail from memory, so opening a
-                // photo you can see in the grid is instant (no re-download, no reveal delay).
-                CachedImage(url: url) { image in
+            if let resolvedURL {
+                // CachedImage serves a screen-sized, already-decoded image from memory, so
+                // opening a photo you can see in the grid is instant.
+                CachedImage(url: resolvedURL, maxPixel: 1600) { image in
                     image
                         .resizable()
                         .scaledToFit()
@@ -57,9 +58,10 @@ struct FullScreenPhotoView: View {
                     Text(photo.takenAt.formatted(date: .abbreviated, time: .shortened))
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(Color(white: 0.7))
-                    // Share / save to Camera Roll.
+                    // Share / save to Camera Roll (the on-screen, screen-sized image).
                     Button {
-                        if let url, let image = ImageCache.shared.object(forKey: url as NSURL) {
+                        if let resolvedURL,
+                           let image = ImageCache.shared.object(forKey: "\(resolvedURL.absoluteString)|1600" as NSString) {
                             shareItem = ShareImage(image: image)
                         }
                     } label: {
@@ -90,6 +92,15 @@ struct FullScreenPhotoView: View {
         }
         .ignoresSafeArea()
         .statusBarHidden()
+        .task {
+            // Use the URL the grid already resolved; otherwise mint one so the photo always
+            // loads (the grid resolves URLs lazily now, so the tapped one may not be ready).
+            if let url {
+                resolvedURL = url
+            } else {
+                resolvedURL = try? await photoService.signedURL(for: photo.storagePath)
+            }
+        }
         .confirmationDialog("Delete this photo?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
             Button("Delete", role: .destructive) {
                 isDeleting = true
