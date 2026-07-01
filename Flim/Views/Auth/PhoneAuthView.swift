@@ -7,6 +7,9 @@ struct EmailAuthView: View {
     @State private var error: String?
     @State private var showOTP = false
     @ScaledMetric private var subtitleSize = 15
+    #if DEBUG
+    @State private var debugPassword = ""
+    #endif
 
     var body: some View {
         ZStack {
@@ -51,6 +54,30 @@ struct EmailAuthView: View {
                         .foregroundStyle(Color(red: 1, green: 0.4, blue: 0.4))
                         .padding(.top, 8)
                 }
+
+                #if DEBUG
+                VStack(alignment: .leading, spacing: 6) {
+                    SecureField("", text: $debugPassword, prompt: Text("password (DEBUG sign-in)").foregroundStyle(Color(white: 0.3)))
+                        .textContentType(.password)
+                        .autocorrectionDisabled()
+                        .font(.system(size: 15))
+                        .foregroundStyle(.white)
+                        .tint(.white)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
+                        .background(Color(white: 0.08), in: RoundedRectangle(cornerRadius: 12))
+                    Button("DEBUG sign in →") {
+                        Task {
+                            error = nil
+                            do { try await auth.debugSignIn(email: email, password: debugPassword) }
+                            catch { self.error = error.localizedDescription }
+                        }
+                    }
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(Color(white: 0.5))
+                }
+                .padding(.top, 20)
+                #endif
 
                 Spacer()
 
