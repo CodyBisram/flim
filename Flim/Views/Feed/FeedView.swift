@@ -6,6 +6,7 @@ struct FeedView: View {
     @Environment(PhotoService.self) private var photos
 
     @State private var showDiscover = false
+    @State private var showActivity = false
     @State private var myAvatarURL: URL?
 
     var body: some View {
@@ -39,6 +40,9 @@ struct FeedView: View {
         .sheet(isPresented: $showDiscover) {
             DiscoverPeopleView()
         }
+        .sheet(isPresented: $showActivity) {
+            ActivityFeedView()
+        }
     }
 
     private var header: some View {
@@ -56,6 +60,13 @@ struct FeedView: View {
             }
             .accessibilityLabel("Seed demo feed")
             #endif
+            Button { showActivity = true } label: {
+                Image(systemName: "bell")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(FlimTheme.accent)
+            }
+            .accessibilityLabel("Activity")
+
             Button { showDiscover = true } label: {
                 Image(systemName: "person.badge.plus")
                     .font(.system(size: 17, weight: .medium))

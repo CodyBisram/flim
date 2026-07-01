@@ -73,6 +73,20 @@ struct FeedItem: Identifiable {
     var id: UUID { post.id }
 }
 
+/// One line in the Activity screen — something someone did involving you.
+struct ActivityItem: Identifiable {
+    enum Kind {
+        case like(String)      // emoji
+        case comment(String)   // body
+        case follow
+    }
+    let id = UUID()
+    let kind: Kind
+    let actor: UserProfile
+    let date: Date
+    let postId: UUID?
+}
+
 /// Emoji reactions. `all` is the default quick row; `palette` is the fuller set revealed
 /// when you slide open the picker to react with your own.
 enum PostEmoji {

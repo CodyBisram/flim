@@ -230,6 +230,49 @@ final class FeedService {
         try? await supabase.storage.from("photos").createSignedURL(path: path, expiresIn: 3600)
     }
 
+    // MARK: - Activity
+
+    /// Recent things others did involving you: reactions + comments on your posts, and new
+    /// followers. Merged and sorted newest-first.
+    func fetchActivity(userId: UUID) async -> [ActivityItem] {
+        struct Raw { let kind: ActivityItem.Kind; let actorId: UUID; let date: Date; let postId: UUID? }
+        var raws: [Raw] = []
+
+        let postIds = await fetchUserPosts(userId: userId).map(\.id.uuidString)
+        if !postIds.isEmpty {
+            struct R: Decodable { let user_id: UUID; let emoji: String; let created_at: Date; let post_id: UUID }
+            let rs: [R] = (try? await supabase.from("post_reactions")
+                .select("user_id,emoji,created_at,post_id")
+                .in("post_id", values: postIds)
+                .neq("user_id", value: userId.uuidString)
+                .order("created_at", ascending: false).limit(40).execute().value) ?? []
+            raws += rs.map { Raw(kind: .like($0.emoji), actorId: $0.user_id, date: $0.created_at, postId: $0.post_id) }
+
+            struct C: Decodable { let user_id: UUID; let body: String; let created_at: Date; let post_id: UUID }
+            let cs: [C] = (try? await supabase.from("post_comments")
+                .select("user_id,body,created_at,post_id")
+                .in("post_id", values: postIds)
+                .neq("user_id", value: userId.uuidString)
+                .order("created_at", ascending: false).limit(40).execute().value) ?? []
+            raws += cs.map { Raw(kind: .comment($0.body), actorId: $0.user_id, date: $0.created_at, postId: $0.post_id) }
+        }
+
+        struct F: Decodable { let follower_id: UUID; let created_at: Date }
+        let fs: [F] = (try? await supabase.from("follows")
+            .select("follower_id,created_at")
+            .eq("following_id", value: userId.uuidString)
+            .order("created_at", ascending: false).limit(40).execute().value) ?? []
+        raws += fs.map { Raw(kind: .follow, actorId: $0.follower_id, date: $0.created_at, postId: nil) }
+
+        let profiles = await fetchProfiles(ids: Array(Set(raws.map(\.actorId))))
+        return raws
+            .compactMap { raw -> ActivityItem? in
+                guard let actor = profiles[raw.actorId] else { return nil }
+                return ActivityItem(kind: raw.kind, actor: actor, date: raw.date, postId: raw.postId)
+            }
+            .sorted { $0.date > $1.date }
+    }
+
     #if DEBUG
     /// DEBUG-only: publishes several of the signed-in user's photos to their page and adds
     /// reactions + a comment, so the whole feed / post-detail / reaction / comment pipeline
