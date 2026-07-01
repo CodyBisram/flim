@@ -15,13 +15,30 @@ final class PhotoService {
 
     var hasFailedUploads: Bool { !failedUploads.isEmpty }
 
+    // Serial capture pipeline. Chaining each shot onto the previous one keeps bursts from
+    // racing on the shared Core Image context or on `photos`/`failedUploads` — the race
+    // that was making rapid multi-shot capture fail and prompt a retry.
+    private var pipeline: Task<Void, Never>?
+
     // MARK: - Capture & Upload
+
+    /// Enqueues a captured frame to be processed with the chosen film look and uploaded.
+    /// Shots are handled strictly one-at-a-time; `onFinish` runs after a successful save.
+    func enqueueCapture(rawData: Data, stock: FilmStock, userId: UUID, rollId: UUID?,
+                        onFinish: @escaping (Photo) async -> Void) {
+        let previous = pipeline
+        pipeline = Task {
+            await previous?.value
+            let processed = await InstantFilmProcessor.process(rawData, stock: stock) ?? rawData
+            if let photo = await captureAndUpload(imageData: processed, userId: userId, rollId: rollId) {
+                await onFinish(photo)
+            }
+        }
+    }
 
     @discardableResult
     func captureAndUpload(imageData: Data, userId: UUID, rollId: UUID?) async -> Photo? {
-        isUploading = true
-        uploadError = nil
-        defer { isUploading = false }
+        await MainActor.run { isUploading = true; uploadError = nil }
 
         let photoId = UUID()
         // Lowercased to match Postgres `auth.uid()::text` (lowercase) in the storage RLS
@@ -50,20 +67,48 @@ final class PhotoService {
                 .execute()
                 .value
 
-            photos.insert(inserted, at: 0)
+            await MainActor.run {
+                photos.insert(inserted, at: 0)
+                isUploading = false
+            }
             return inserted
         } catch {
-            uploadError = error.localizedDescription
-            failedUploads.append(FailedUpload(data: imageData, userId: userId, rollId: rollId))
+            await MainActor.run {
+                uploadError = error.localizedDescription
+                failedUploads.append(FailedUpload(data: imageData, userId: userId, rollId: rollId))
+                isUploading = false
+            }
             return nil
         }
     }
 
     func retryFailedUploads() async {
-        let pending = failedUploads
-        failedUploads = []
+        let pending = await MainActor.run { () -> [FailedUpload] in
+            let p = failedUploads
+            failedUploads = []
+            return p
+        }
         for upload in pending {
             await captureAndUpload(imageData: upload.data, userId: upload.userId, rollId: upload.rollId)
+        }
+    }
+
+    // MARK: - Delete
+
+    /// Deletes a photo the current user owns — removes the storage object and the row,
+    /// then drops it from the in-memory list. Best-effort on storage (the row is the
+    /// source of truth the grid reads from).
+    func deletePhoto(_ photo: Photo) async {
+        _ = try? await supabase.storage.from("photos").remove(paths: [photo.storagePath])
+        do {
+            try await supabase
+                .from("photos")
+                .delete()
+                .eq("id", value: photo.id.uuidString)
+                .execute()
+            await MainActor.run { photos.removeAll { $0.id == photo.id } }
+        } catch {
+            await MainActor.run { uploadError = error.localizedDescription }
         }
     }
 

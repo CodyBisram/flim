@@ -220,6 +220,11 @@ CREATE POLICY "photos: can update own"
     USING (auth.uid() = user_id)
     WITH CHECK (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "photos: can delete own" ON public.photos;
+CREATE POLICY "photos: can delete own"
+    ON public.photos FOR DELETE
+    USING (auth.uid() = user_id);
+
 -- ============================================================
 -- Storage — private "photos" bucket + per-user RLS policies.
 -- Photos are stored under "<owner_uid>/<photo_id>.jpg"; roll-mates read shared
@@ -242,10 +247,19 @@ CREATE POLICY "photos: insert own folder"
         AND (storage.foldername(name))[1] = auth.uid()::text
     );
 
--- …and read/update/delete only their own objects.
+-- …and read their own objects.
 DROP POLICY IF EXISTS "photos: read own folder" ON storage.objects;
 CREATE POLICY "photos: read own folder"
     ON storage.objects FOR SELECT TO authenticated
+    USING (
+        bucket_id = 'photos'
+        AND (storage.foldername(name))[1] = auth.uid()::text
+    );
+
+-- …and delete their own objects (used when a user deletes a photo).
+DROP POLICY IF EXISTS "photos: delete own folder" ON storage.objects;
+CREATE POLICY "photos: delete own folder"
+    ON storage.objects FOR DELETE TO authenticated
     USING (
         bucket_id = 'photos'
         AND (storage.foldername(name))[1] = auth.uid()::text

@@ -279,19 +279,15 @@ struct CameraView: View {
             let rollId = selectedRoll?.id
             let rollName = selectedRoll?.name
             let stock = selectedStock
-            Task {
-                // Bake the instant-film look in, then upload. Fall back to the raw bytes
-                // if processing ever fails so a photo is never lost.
-                let processed = await InstantFilmProcessor.process(data, stock: stock) ?? data
-                if let photo = await photos.captureAndUpload(imageData: processed, userId: userId, rollId: rollId) {
-                    // Remind the user when this shot develops (local — no backend needed).
-                    await notifications.requestAuthorizationIfNeeded()
-                    notifications.scheduleDevelopNotification(
-                        photoID: photo.id,
-                        developsAt: photo.developsAt,
-                        rollName: rollName
-                    )
-                }
+            // Serial pipeline: bakes the film look in + uploads one shot at a time, so a
+            // rapid burst can't race and fail. Fires a local develop reminder on success.
+            photos.enqueueCapture(rawData: data, stock: stock, userId: userId, rollId: rollId) { photo in
+                await notifications.requestAuthorizationIfNeeded()
+                await notifications.scheduleDevelopNotification(
+                    photoID: photo.id,
+                    developsAt: photo.developsAt,
+                    rollName: rollName
+                )
             }
         }
     }

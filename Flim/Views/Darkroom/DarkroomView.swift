@@ -47,20 +47,6 @@ struct DarkroomView: View {
                         .foregroundStyle(FlimTheme.accent)
                 }
             }
-            #if DEBUG
-            ToolbarItem(placement: .topBarLeading) {
-                Button {
-                    Task {
-                        guard let uid = auth.currentUser?.id else { return }
-                        await photoService.seedDemoPhotos(userId: uid)
-                        await reload()
-                    }
-                } label: {
-                    Image(systemName: "ladybug")
-                        .foregroundStyle(FlimTheme.accent)
-                }
-            }
-            #endif
         }
         .onAppear {
             Task {
@@ -75,7 +61,7 @@ struct DarkroomView: View {
             }
         }
         .fullScreenCover(item: $selectedPhoto) { photo in
-            FullScreenPhotoView(photo: photo, url: selectedURL)
+            FullScreenPhotoView(photo: photo, url: selectedURL, onDelete: { Task { await reload() } })
         }
         .sheet(isPresented: $showProfile) {
             ProfileView()

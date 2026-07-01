@@ -3,11 +3,15 @@ import SwiftUI
 struct FullScreenPhotoView: View {
     let photo: Photo
     let url: URL?
+    /// Called after the photo is deleted so the parent can refresh its grid.
+    var onDelete: () -> Void = {}
+    @Environment(PhotoService.self) private var photoService
     @Environment(\.dismiss) private var dismiss
 
     @State private var scale: CGFloat = 1
     @State private var offset: CGSize = .zero
-    @State private var revealed = false
+    @State private var showDeleteConfirm = false
+    @State private var isDeleting = false
 
     var body: some View {
         ZStack {
@@ -17,21 +21,16 @@ struct FullScreenPhotoView: View {
                 AsyncImage(url: url) { phase in
                     switch phase {
                     case .success(let image):
+                        // Show the tapped photo immediately — the develop "reveal" already
+                        // happened in the grid; re-revealing here just made opening feel slow.
                         image
                             .resizable()
                             .scaledToFit()
-                            .saturation(revealed ? 1 : 0.3)
-                            .blur(radius: revealed ? 0 : 8)
-                            .overlay(GrainOverlay().opacity(revealed ? 0 : 1))
                             .scaleEffect(scale)
                             .offset(offset)
                             .gesture(dragToDismiss)
                             .gesture(pinchToZoom)
-                            .onAppear {
-                                // The intentional reveal moment — one satisfying beat + haptic.
-                                Haptics.reveal()
-                                withAnimation(.easeOut(duration: 1.0)) { revealed = true }
-                            }
+                            .transition(.opacity)
                     default:
                         ProgressView().tint(.white)
                     }
@@ -40,7 +39,7 @@ struct FullScreenPhotoView: View {
 
             // Metadata bar
             VStack {
-                HStack {
+                HStack(spacing: 12) {
                     Button {
                         dismiss()
                     } label: {
@@ -51,11 +50,19 @@ struct FullScreenPhotoView: View {
                             .glassCapsule(interactive: true)
                     }
                     Spacer()
-                    VStack(alignment: .trailing, spacing: 2) {
-                        Text(photo.takenAt.formatted(date: .abbreviated, time: .shortened))
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(Color(white: 0.7))
+                    Text(photo.takenAt.formatted(date: .abbreviated, time: .shortened))
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Color(white: 0.7))
+                    Button {
+                        showDeleteConfirm = true
+                    } label: {
+                        Image(systemName: "trash")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundStyle(.white)
+                            .padding(12)
+                            .glassCapsule(interactive: true)
                     }
+                    .disabled(isDeleting)
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 60)
@@ -64,6 +71,19 @@ struct FullScreenPhotoView: View {
         }
         .ignoresSafeArea()
         .statusBarHidden()
+        .confirmationDialog("Delete this photo?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
+            Button("Delete", role: .destructive) {
+                isDeleting = true
+                Task {
+                    await photoService.deletePhoto(photo)
+                    onDelete()
+                    dismiss()
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This can't be undone.")
+        }
     }
 
     // MARK: - Gestures
