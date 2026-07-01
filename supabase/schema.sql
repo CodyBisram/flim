@@ -467,6 +467,16 @@ CREATE POLICY "photos: readable when shared to a post"
         AND EXISTS (SELECT 1 FROM public.posts po WHERE po.storage_path = storage.objects.name)
     );
 
+-- A photo used as someone's avatar is readable by any signed-in user (so avatars load
+-- on pages, feed cards, etc. even when that photo was never shared as a post).
+DROP POLICY IF EXISTS "photos: readable when set as avatar" ON storage.objects;
+CREATE POLICY "photos: readable when set as avatar"
+    ON storage.objects FOR SELECT TO authenticated
+    USING (
+        bucket_id = 'photos'
+        AND EXISTS (SELECT 1 FROM public.users u WHERE u.avatar_path = storage.objects.name)
+    );
+
 -- POST REACTIONS ---------------------------------------------
 CREATE TABLE IF NOT EXISTS public.post_reactions (
     id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),

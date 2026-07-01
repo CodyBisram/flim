@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 // Supabase generates 8-digit email OTP codes by default
 private let otpLength = 8
@@ -30,6 +31,19 @@ struct OTPView: View {
                     .onChange(of: code) { _, new in
                         if new.count == otpLength { Task { await verify() } }
                     }
+
+                // The hidden field can't surface the system paste menu, so offer paste directly.
+                if UIPasteboard.general.hasStrings {
+                    Button {
+                        let digits = String((UIPasteboard.general.string ?? "").filter(\.isNumber).prefix(otpLength))
+                        if !digits.isEmpty { code = digits }
+                    } label: {
+                        Label("Paste code", systemImage: "doc.on.clipboard")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(Color(white: 0.6))
+                    }
+                    .padding(.top, 16)
+                }
 
                 if let error {
                     Text(error)
