@@ -3,6 +3,7 @@ import SwiftUI
 struct FeedView: View {
     @Environment(AuthService.self) private var auth
     @Environment(FeedService.self) private var feed
+    @Environment(PhotoService.self) private var photos
 
     @State private var showDiscover = false
 
@@ -40,6 +41,17 @@ struct FeedView: View {
         HStack {
             FlimNavTitle("Feed")
             Spacer()
+            #if DEBUG
+            Button {
+                Task { if let uid = auth.currentUser?.id { await feed.seedFeedDemo(userId: uid, photoService: photos) } }
+            } label: {
+                Image(systemName: "ladybug")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(FlimTheme.textTertiary)
+                    .padding(.trailing, 14)
+            }
+            .accessibilityLabel("Seed demo feed")
+            #endif
             Button { showDiscover = true } label: {
                 Image(systemName: "person.badge.plus")
                     .font(.system(size: 17, weight: .medium))
@@ -73,6 +85,17 @@ struct FeedView: View {
                     .background(FlimTheme.accent, in: Capsule())
             }
             .padding(.top, 4)
+            #if DEBUG
+            Button {
+                Task { if let uid = auth.currentUser?.id { await feed.seedFeedDemo(userId: uid, photoService: photos) } }
+            } label: {
+                Text(feed.isSeeding ? "Seeding…" : "Seed demo feed (DEBUG)")
+                    .font(.system(size: 13))
+                    .foregroundStyle(FlimTheme.textTertiary)
+            }
+            .disabled(feed.isSeeding)
+            .padding(.top, 8)
+            #endif
             Spacer()
             Spacer()
         }

@@ -197,4 +197,44 @@ final class FeedService {
     func signedURL(for path: String) async -> URL? {
         try? await supabase.storage.from("photos").createSignedURL(path: path, expiresIn: 3600)
     }
+
+    #if DEBUG
+    /// DEBUG-only: publishes several of the signed-in user's photos to their page and adds
+    /// reactions + a comment, so the whole feed / post-detail / reaction / comment pipeline
+    /// can be eyeballed in the simulator on real data. (Cross-user *follows* still require a
+    /// second real account — public.users FKs auth.users, so fake followable users can't be
+    /// created client-side.)
+    var isSeeding = false
+
+    func seedFeedDemo(userId: UUID, photoService: PhotoService) async {
+        isSeeding = true
+        defer { isSeeding = false }
+
+        // Make sure there are some photos to publish.
+        try? await photoService.fetchPersonalPhotos(userId: userId)
+        if photoService.photos.isEmpty {
+            await photoService.seedDemoPhotos(userId: userId)
+        }
+
+        let captions = [
+            "golden hour on the roof 🌅", "downtown, 35mm", "she said cheese",
+            "sunday morning", "keepers only", "roll #3"
+        ]
+        for (i, photo) in photoService.photos.prefix(6).enumerated() {
+            if await hasPosted(photoId: photo.id, userId: userId) { continue }
+            try? await createPost(photo: photo, caption: captions[i % captions.count], userId: userId)
+        }
+
+        // Populate reactions + a comment on the newest post so those UIs show data.
+        let mine = await fetchUserPosts(userId: userId)
+        if let newest = mine.first {
+            for emoji in ["❤️", "🔥", "😍"] {
+                await addReaction(postId: newest.id, emoji: emoji, userId: userId)
+            }
+            _ = await addComment(postId: newest.id, body: "this one's my favorite 🔥", userId: userId)
+        }
+
+        await loadFeed(currentUserId: userId)
+    }
+    #endif
 }
