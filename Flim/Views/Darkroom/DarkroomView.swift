@@ -9,6 +9,9 @@ struct DarkroomView: View {
     @State private var selectedPhoto: Photo?
     @State private var selectedURL: URL?
     @State private var showProfile = false
+    @State private var isSelecting = false
+    @State private var selectedIDs: Set<UUID> = []
+    @State private var showDeleteConfirm = false
 
     private let columns = [
         GridItem(.flexible(), spacing: 2),
@@ -45,6 +48,15 @@ struct DarkroomView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbarColorScheme(.dark, for: .navigationBar)
         .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                if !vm.photos.isEmpty {
+                    Button(isSelecting ? "Cancel" : "Select") {
+                        isSelecting.toggle()
+                        selectedIDs = []
+                    }
+                    .foregroundStyle(.white)
+                }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { showProfile = true } label: {
                     Image(systemName: "person.circle")
@@ -52,6 +64,27 @@ struct DarkroomView: View {
                 }
                 .accessibilityLabel("Profile")
             }
+        }
+        .safeAreaInset(edge: .bottom) {
+            if isSelecting {
+                Button(role: .destructive) { showDeleteConfirm = true } label: {
+                    Text(selectedIDs.isEmpty ? "Select photos to delete" : "Delete \(selectedIDs.count)")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(selectedIDs.isEmpty ? FlimTheme.textTertiary : .white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(selectedIDs.isEmpty ? Color.white.opacity(0.08) : Color.red.opacity(0.85), in: Capsule())
+                }
+                .disabled(selectedIDs.isEmpty)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 10)
+                .background(.ultraThinMaterial)
+            }
+        }
+        .confirmationDialog("Delete \(selectedIDs.count) photo\(selectedIDs.count == 1 ? "" : "s")?",
+                            isPresented: $showDeleteConfirm, titleVisibility: .visible) {
+            Button("Delete", role: .destructive) { Task { await deleteSelected() } }
+            Button("Cancel", role: .cancel) {}
         }
         .onAppear {
             Task {
@@ -100,9 +133,39 @@ struct DarkroomView: View {
             LazyVGrid(columns: columns, spacing: 2) {
                 ForEach(vm.developingPhotos) { photo in
                     PhotoGridCell(photo: photo, signedURL: nil, rollName: rollName(for: photo.rollId))
+                        .overlay { if isSelecting { selectionMark(photo.id) } }
+                        .onTapGesture { if isSelecting { toggleSelect(photo.id) } }
                 }
             }
         }
+    }
+
+    private func selectionMark(_ id: UUID) -> some View {
+        let selected = selectedIDs.contains(id)
+        return ZStack(alignment: .topTrailing) {
+            RoundedRectangle(cornerRadius: 4).fill(Color.black.opacity(selected ? 0.4 : 0.001))
+            Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                .font(.system(size: 18))
+                .foregroundStyle(selected ? FlimTheme.accent : .white.opacity(0.85))
+                .padding(6)
+                .shadow(radius: 2)
+        }
+        .allowsHitTesting(false)
+    }
+
+    private func toggleSelect(_ id: UUID) {
+        if selectedIDs.contains(id) { selectedIDs.remove(id) } else { selectedIDs.insert(id) }
+        Haptics.tap()
+    }
+
+    private func deleteSelected() async {
+        let all = vm.developedPhotos + vm.developingPhotos
+        for photo in all where selectedIDs.contains(photo.id) {
+            await photoService.deletePhoto(photo)
+        }
+        selectedIDs = []
+        isSelecting = false
+        await reload()
     }
 
     /// The name of the roll a photo belongs to (for labeling roll shots in the Darkroom).
@@ -126,9 +189,14 @@ struct DarkroomView: View {
             LazyVGrid(columns: columns, spacing: 2) {
                 ForEach(vm.developedPhotos) { photo in
                     PhotoGridCell(photo: photo, signedURL: vm.signedURLCache[photo.id], rollName: rollName(for: photo.rollId))
+                        .overlay { if isSelecting { selectionMark(photo.id) } }
                         .onTapGesture {
-                            selectedURL = vm.signedURLCache[photo.id]
-                            selectedPhoto = photo
+                            if isSelecting {
+                                toggleSelect(photo.id)
+                            } else {
+                                selectedURL = vm.signedURLCache[photo.id]
+                                selectedPhoto = photo
+                            }
                         }
                         .task {
                             if vm.signedURLCache[photo.id] == nil {
