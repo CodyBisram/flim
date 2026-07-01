@@ -175,6 +175,65 @@ final class PhotoService {
             .execute()
     }
 
+    // MARK: - Captions & reactions (personalization)
+
+    /// Sets (or clears, with empty text) the caption on a photo you own.
+    func setCaption(photoId: UUID, caption: String) async {
+        let value = caption.trimmingCharacters(in: .whitespacesAndNewlines)
+        struct Update: Encodable { let caption: String }
+        do {
+            try await supabase
+                .from("photos")
+                .update(Update(caption: value))
+                .eq("id", value: photoId.uuidString)
+                .execute()
+            await MainActor.run {
+                if let i = photos.firstIndex(where: { $0.id == photoId }) {
+                    photos[i].caption = value.isEmpty ? nil : value
+                }
+            }
+        } catch {
+            await MainActor.run { uploadError = error.localizedDescription }
+        }
+    }
+
+    /// Total number of photos the user has taken (for profile stats).
+    func photoCount(userId: UUID) async -> Int {
+        (try? await supabase
+            .from("photos")
+            .select("id", head: true, count: .exact)
+            .eq("user_id", value: userId.uuidString)
+            .execute()
+            .count) ?? 0
+    }
+
+    func fetchReactions(photoId: UUID) async -> [PhotoReaction] {
+        (try? await supabase
+            .from("photo_reactions")
+            .select()
+            .eq("photo_id", value: photoId.uuidString)
+            .execute()
+            .value) ?? []
+    }
+
+    func addReaction(photoId: UUID, emoji: String, userId: UUID) async {
+        struct R: Encodable { let photo_id: UUID; let user_id: UUID; let emoji: String }
+        _ = try? await supabase
+            .from("photo_reactions")
+            .insert(R(photo_id: photoId, user_id: userId, emoji: emoji))
+            .execute()
+    }
+
+    func removeReaction(photoId: UUID, emoji: String, userId: UUID) async {
+        _ = try? await supabase
+            .from("photo_reactions")
+            .delete()
+            .eq("photo_id", value: photoId.uuidString)
+            .eq("user_id", value: userId.uuidString)
+            .eq("emoji", value: emoji)
+            .execute()
+    }
+
     // MARK: - Fetch (paginated)
 
     private let pageSize = 30

@@ -89,6 +89,13 @@ final class AuthService {
 
     // MARK: - Username Setup
 
+    /// Valid usernames: 3–20 chars, letters/numbers/underscore only.
+    static func isValidUsername(_ username: String) -> Bool {
+        let chars = CharacterSet.alphanumerics.union(.init(charactersIn: "_"))
+        return (3...20).contains(username.count)
+            && username.unicodeScalars.allSatisfy(chars.contains)
+    }
+
     func setUsername(_ username: String) async throws {
         let session = try await supabase.auth.session
         let userId = session.user.id
@@ -120,6 +127,36 @@ final class AuthService {
                 throw AuthError.usernameTaken
             }
             throw error
+        }
+    }
+
+    /// Updates the profile bio and refreshes `currentUser`.
+    func setBio(_ bio: String) async throws {
+        let session = try await supabase.auth.session
+        struct Update: Encodable { let bio: String }
+        currentUser = try await supabase
+            .from("users")
+            .update(Update(bio: bio.trimmingCharacters(in: .whitespacesAndNewlines)))
+            .eq("id", value: session.user.id.uuidString)
+            .select()
+            .single()
+            .execute()
+            .value
+    }
+
+    /// Sets the profile avatar to one of the user's own photos (its storage path).
+    func setAvatar(path: String) async {
+        guard let session = try? await supabase.auth.session else { return }
+        struct Update: Encodable { let avatar_path: String }
+        if let updated: AppUser = try? await supabase
+            .from("users")
+            .update(Update(avatar_path: path))
+            .eq("id", value: session.user.id.uuidString)
+            .select()
+            .single()
+            .execute()
+            .value {
+            currentUser = updated
         }
     }
 

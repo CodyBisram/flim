@@ -27,6 +27,8 @@ struct CameraView: View {
 
     // Persisted hardware-flash mode (AVCaptureDevice.FlashMode rawValue: off=0, on=1, auto=2).
     @AppStorage("flashModeRaw") private var flashModeRaw = 0
+    // Whether to schedule a local "your photo developed" reminder (toggled in Profile).
+    @AppStorage("developNotificationsEnabled") private var notificationsEnabled = true
     private var flashMode: AVCaptureDevice.FlashMode { AVCaptureDevice.FlashMode(rawValue: flashModeRaw) ?? .off }
     private var flashIcon: String {
         switch flashMode {
@@ -357,6 +359,7 @@ struct CameraView: View {
             // Serial pipeline: bakes the film look in + uploads one shot at a time, so a
             // rapid burst can't race and fail. Fires a local develop reminder on success.
             photos.enqueueCapture(rawData: data, stock: stock, userId: userId, rollId: rollId) { photo in
+                guard notificationsEnabled else { return }
                 await notifications.requestAuthorizationIfNeeded()
                 await notifications.scheduleDevelopNotification(
                     photoID: photo.id,
@@ -451,6 +454,14 @@ private struct RollPickerSheet: View {
                             }
                         }
                         .listRowBackground(FlimTheme.bgElevated)
+                    }
+
+                    if rolls.isEmpty {
+                        Text("Start a roll in the Rolls tab to share photos with friends — they'll all develop together.")
+                            .font(.system(size: 13))
+                            .foregroundStyle(FlimTheme.textTertiary)
+                            .padding(.vertical, 8)
+                            .listRowBackground(Color.clear)
                     }
                 }
                 .listStyle(.plain)

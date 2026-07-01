@@ -8,6 +8,7 @@ struct RollDetailView: View {
     @State private var showMembers = false
     @State private var selectedPhoto: Photo?
     @State private var selectedURL: URL?
+    @State private var memberNames: [UUID: String] = [:]   // userId → username, for attribution
 
     private let columns = [
         GridItem(.flexible(), spacing: 2),
@@ -99,9 +100,16 @@ struct RollDetailView: View {
         }
         .onAppear {
             Task { await vm.loadRoll(photoService: photoService, rollId: roll.id) }
+            Task {
+                if let members = try? await rollService.fetchMembers(for: roll.id) {
+                    memberNames = Dictionary(members.map { ($0.id, $0.username ?? "unknown") },
+                                             uniquingKeysWith: { first, _ in first })
+                }
+            }
         }
         .fullScreenCover(item: $selectedPhoto) { photo in
             FullScreenPhotoView(photo: photo, url: selectedURL,
+                                photographer: memberNames[photo.userId],
                                 onDelete: { Task { await vm.loadRoll(photoService: photoService, rollId: roll.id) } })
         }
         .sheet(isPresented: $showMembers) {

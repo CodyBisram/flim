@@ -334,6 +334,52 @@ CREATE POLICY "photo_reports: can file own"
     WITH CHECK (auth.uid() = reporter_id);
 
 -- ============================================================
+-- Personalization: photo captions, profile bio/avatar, and reactions.
+-- ============================================================
+
+-- A caption on your own photo (owner-editable via the existing "photos: can update own").
+ALTER TABLE public.photos ADD COLUMN IF NOT EXISTS caption TEXT;
+
+-- Profile bio + avatar (avatar_path points at one of the user's own photos in Storage).
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS bio TEXT;
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS avatar_path TEXT;
+
+-- Reactions to photos (mainly for shared rolls). One row per (photo, user, emoji).
+CREATE TABLE IF NOT EXISTS public.photo_reactions (
+    id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    photo_id   UUID NOT NULL REFERENCES public.photos(id) ON DELETE CASCADE,
+    user_id    UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+    emoji      TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE (photo_id, user_id, emoji)
+);
+
+ALTER TABLE public.photo_reactions ENABLE ROW LEVEL SECURITY;
+
+-- See reactions on any photo you can see (your own, or one in a roll you belong to).
+DROP POLICY IF EXISTS "reactions: visible on visible photos" ON public.photo_reactions;
+CREATE POLICY "reactions: visible on visible photos"
+    ON public.photo_reactions FOR SELECT
+    USING (
+        EXISTS (
+            SELECT 1 FROM public.photos p
+            WHERE p.id = photo_reactions.photo_id
+              AND (p.user_id = auth.uid()
+                   OR (p.roll_id IS NOT NULL AND public.is_roll_member(p.roll_id)))
+        )
+    );
+
+DROP POLICY IF EXISTS "reactions: add own" ON public.photo_reactions;
+CREATE POLICY "reactions: add own"
+    ON public.photo_reactions FOR INSERT
+    WITH CHECK (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "reactions: remove own" ON public.photo_reactions;
+CREATE POLICY "reactions: remove own"
+    ON public.photo_reactions FOR DELETE
+    USING (auth.uid() = user_id);
+
+-- ============================================================
 -- Optional cron: auto-mark developed photos server-side.
 -- Supabase Dashboard → Database → Functions (or schedule via pg_cron).
 -- ============================================================

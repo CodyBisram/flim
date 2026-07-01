@@ -6,11 +6,7 @@ struct UsernameView: View {
     @State private var isSaving = false
     @State private var error: String?
 
-    var isValid: Bool {
-        let count = username.count
-        let chars = CharacterSet.alphanumerics.union(.init(charactersIn: "_"))
-        return count >= 3 && count <= 20 && username.unicodeScalars.allSatisfy { chars.contains($0) }
-    }
+    var isValid: Bool { AuthService.isValidUsername(username) }
 
     var body: some View {
         ZStack {

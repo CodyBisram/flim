@@ -6,6 +6,8 @@ struct AppUser: Codable, Identifiable, Equatable {
     var username: String?
     let inviteCode: String
     let createdAt: Date
+    var bio: String?
+    var avatarPath: String?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -13,5 +15,7 @@ struct AppUser: Codable, Identifiable, Equatable {
         case username
         case inviteCode = "invite_code"
         case createdAt = "created_at"
+        case bio
+        case avatarPath = "avatar_path"
     }
 }
