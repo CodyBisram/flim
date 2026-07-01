@@ -75,6 +75,8 @@ struct RollDetailView: View {
                                 ForEach(vm.photos) { photo in
                                     PhotoGridCell(photo: photo, signedURL: vm.signedURLCache[photo.id])
                                         .onTapGesture {
+                                            // Can't peek before it develops — only open ready shots.
+                                            guard photo.isReady else { return }
                                             selectedURL = vm.signedURLCache[photo.id]
                                             selectedPhoto = photo
                                         }
