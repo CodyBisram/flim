@@ -29,6 +29,9 @@ targets:
       path: Flim/Info.plist
       properties:
         CFBundleDisplayName: FLIM
+        # App uses only standard HTTPS (exempt encryption) — declaring this skips
+        # the per-build export-compliance prompt so builds reach testers automatically.
+        ITSAppUsesNonExemptEncryption: false
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         # Modern launch screen (no storyboard file needed on iOS 14+).
