@@ -23,9 +23,9 @@ struct FullScreenPhotoView: View {
     @State private var shareItem: ShareImage?
     @State private var resolvedURL: URL?
     @State private var reactions: [PhotoReaction] = []
-    @State private var localCaption: String?
-    @State private var showCaptionEditor = false
-    @State private var captionDraft = ""
+    @State private var showShareComposer = false
+    @State private var shareCaptionDraft = ""
+    @FocusState private var captionFocused: Bool
 
     private let reactionEmojis = ["❤️", "🔥", "😂", "👀"]
     private var isOwnPhoto: Bool { photo.userId == auth.currentUser?.id }
@@ -142,7 +142,6 @@ struct FullScreenPhotoView: View {
         .statusBarHidden()
         .task {
             reactions = await photoService.fetchReactions(photoId: photo.id)
-            localCaption = photo.caption
             if isOwnPhoto, let uid = auth.currentUser?.id {
                 shared = await feed.hasPosted(photoId: photo.id, userId: uid)
             }
@@ -182,22 +181,19 @@ struct FullScreenPhotoView: View {
         .sheet(item: $shareItem) { item in
             ActivityView(items: [item.image])
         }
-        .sheet(isPresented: $showCaptionEditor) {
-            captionEditor
+        .safeAreaInset(edge: .bottom) {
+            if showShareComposer { shareComposer }
         }
     }
 
-    // MARK: - Caption + reactions
+    // MARK: - Reactions + share composer
 
     @ViewBuilder
     private var bottomBar: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            if photo.rollId != nil {
-                reactionBar
-            }
-            captionView
+        if photo.rollId != nil {
+            reactionBar
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var reactionBar: some View {
@@ -224,69 +220,52 @@ struct FullScreenPhotoView: View {
         }
     }
 
-    @ViewBuilder
-    private var captionView: some View {
-        let text = localCaption ?? ""
-        if isOwnPhoto {
-            Button {
-                captionDraft = text
-                showCaptionEditor = true
-            } label: {
-                Text(text.isEmpty ? "Add a caption…" : text)
-                    .font(.system(size: 14))
-                    .foregroundStyle(text.isEmpty ? Color(white: 0.55) : .white)
-                    .multilineTextAlignment(.leading)
-            }
-        } else if !text.isEmpty {
-            Text(text)
-                .font(.system(size: 14))
+    /// Inline caption composer, shown at the bottom when publishing a photo to your page.
+    private var shareComposer: some View {
+        HStack(spacing: 10) {
+            TextField("Add a caption…", text: $shareCaptionDraft, axis: .vertical)
+                .lineLimit(1...3)
+                .focused($captionFocused)
+                .font(.system(size: 15))
                 .foregroundStyle(.white)
-        }
-    }
-
-    private var captionEditor: some View {
-        NavigationStack {
-            ZStack {
-                FlimTheme.bg.ignoresSafeArea()
-                VStack(alignment: .leading, spacing: 16) {
-                    TextField("Add a caption…", text: $captionDraft, axis: .vertical)
-                        .lineLimit(1...4)
-                        .font(.system(size: 17))
-                        .foregroundStyle(.white)
-                        .tint(.white)
-                        .padding(16)
-                        .background(Color(white: 0.1), in: RoundedRectangle(cornerRadius: 12))
-                    Spacer()
-                }
-                .padding(20)
+                .tint(FlimTheme.accent)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(Color.white.opacity(0.14), in: Capsule())
+            Button {
+                showShareComposer = false
+                captionFocused = false
+            } label: {
+                Text("Cancel").font(.system(size: 13)).foregroundStyle(.white.opacity(0.6))
             }
-            .navigationBarTitleDisplayMode(.inline)
-            .flimInlineTitle("Caption")
-            .toolbarColorScheme(.dark, for: .navigationBar)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Cancel") { showCaptionEditor = false }.foregroundStyle(.white)
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Save") {
-                        let value = captionDraft
-                        localCaption = value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : value
-                        showCaptionEditor = false
-                        Task { await photoService.setCaption(photoId: photo.id, caption: value) }
-                    }
-                    .foregroundStyle(FlimTheme.accent)
-                }
+            Button { confirmShare() } label: {
+                Text("Share")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.black)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 9)
+                    .background(FlimTheme.accent, in: Capsule())
             }
         }
-        .presentationDetents([.medium])
-        .presentationBackground(FlimTheme.bg)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(.ultraThinMaterial)
     }
 
     private func shareToPage() {
+        shareCaptionDraft = ""
+        showShareComposer = true
+        captionFocused = true
+    }
+
+    private func confirmShare() {
         guard let uid = auth.currentUser?.id else { return }
+        let caption = shareCaptionDraft
         Haptics.tap()
         shared = true
-        Task { try? await feed.createPost(photo: photo, caption: localCaption, userId: uid) }
+        showShareComposer = false
+        captionFocused = false
+        Task { try? await feed.createPost(photo: photo, caption: caption, userId: uid) }
     }
 
     private func toggleReaction(_ emoji: String) {

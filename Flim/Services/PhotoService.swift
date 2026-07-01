@@ -175,27 +175,7 @@ final class PhotoService {
             .execute()
     }
 
-    // MARK: - Captions & reactions (personalization)
-
-    /// Sets (or clears, with empty text) the caption on a photo you own.
-    func setCaption(photoId: UUID, caption: String) async {
-        let value = caption.trimmingCharacters(in: .whitespacesAndNewlines)
-        struct Update: Encodable { let caption: String }
-        do {
-            try await supabase
-                .from("photos")
-                .update(Update(caption: value))
-                .eq("id", value: photoId.uuidString)
-                .execute()
-            await MainActor.run {
-                if let i = photos.firstIndex(where: { $0.id == photoId }) {
-                    photos[i].caption = value.isEmpty ? nil : value
-                }
-            }
-        } catch {
-            await MainActor.run { uploadError = error.localizedDescription }
-        }
-    }
+    // MARK: - Reactions & stats
 
     /// Total number of photos the user has taken (for profile stats).
     func photoCount(userId: UUID) async -> Int {
