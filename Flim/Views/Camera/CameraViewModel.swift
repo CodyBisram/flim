@@ -12,6 +12,13 @@ final class CameraViewModel: NSObject {
     var capturedData: Data?
     var onPhotoCapture: ((Data) -> Void)?
 
+    /// Hardware flash mode for the LED (distinct from `flashOpacity`, the on-screen
+    /// shutter blink). Off by default; the camera UI cycles Off → Auto → On.
+    var flashMode: AVCaptureDevice.FlashMode = .off
+
+    /// Whether this device/camera actually has a flash to toggle.
+    var isFlashSupported: Bool { output.supportedFlashModes.contains(.on) }
+
     // MARK: - Setup
 
     func configure() {
@@ -61,6 +68,9 @@ final class CameraViewModel: NSObject {
         }
 
         let settings = AVCapturePhotoSettings()
+        if output.supportedFlashModes.contains(flashMode) {
+            settings.flashMode = flashMode
+        }
         output.capturePhoto(with: settings, delegate: self)
     }
 }

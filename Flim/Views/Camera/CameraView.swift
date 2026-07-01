@@ -1,4 +1,5 @@
 import SwiftUI
+import AVFoundation
 
 struct CameraView: View {
     @Environment(AuthService.self) private var auth
@@ -21,6 +22,23 @@ struct CameraView: View {
 
     // One-time intro that teaches the shoot → develop → darkroom loop.
     @AppStorage("hasSeenCameraCoach") private var hasSeenCoach = false
+
+    // Persisted hardware-flash mode (AVCaptureDevice.FlashMode rawValue: off=0, on=1, auto=2).
+    @AppStorage("flashModeRaw") private var flashModeRaw = 0
+    private var flashMode: AVCaptureDevice.FlashMode { AVCaptureDevice.FlashMode(rawValue: flashModeRaw) ?? .off }
+    private var flashIcon: String {
+        switch flashMode {
+        case .on: return "bolt.fill"
+        case .auto: return "bolt.badge.a.fill"
+        default: return "bolt.slash.fill"
+        }
+    }
+    private func cycleFlash() {
+        let next: AVCaptureDevice.FlashMode = flashMode == .off ? .auto : (flashMode == .auto ? .on : .off)
+        flashModeRaw = next.rawValue
+        camera.flashMode = next
+        Haptics.tap()
+    }
 
     var body: some View {
         ZStack {
@@ -51,6 +69,7 @@ struct CameraView: View {
         }
         .onAppear {
             camera.configure()
+            camera.flashMode = flashMode
             camera.startRunning()
             bindCapture()
             wakeFilmStrip()
@@ -86,6 +105,19 @@ struct CameraView: View {
                     .padding(.vertical, 9)
                 }
                 .glassCapsule(interactive: true)
+
+                // Flash toggle (Off → Auto → On)
+                Button {
+                    cycleFlash()
+                    wakeFilmStrip()
+                } label: {
+                    Image(systemName: flashIcon)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(flashMode == .off ? .white : FlimTheme.accent)
+                        .frame(width: 38, height: 38)
+                }
+                .glassCapsule(interactive: true)
+                .padding(.leading, 8)
 
                 Spacer()
 
