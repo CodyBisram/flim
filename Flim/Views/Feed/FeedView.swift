@@ -146,6 +146,7 @@ struct FeedPostCard: View {
     @State private var reactions: [PostReaction] = []
     @State private var showDetail = false
     @State private var showPage = false
+    @State private var heartBurst = false
 
     private var post: Post { item.post }
     private var likeCount: Int { reactions.filter { $0.emoji == "❤️" }.count }
@@ -169,25 +170,34 @@ struct FeedPostCard: View {
                 }
             }
 
-            // The print
-            Button { showDetail = true } label: {
-                Color.clear
-                    .aspectRatio(1, contentMode: .fit)
-                    .overlay {
-                        if let url {
-                            CachedImage(url: url, maxPixel: 1200) { image in
-                                image.resizable().scaledToFill()
-                            } placeholder: {
-                                FlimTheme.bg
-                            }
-                        } else {
+            // The print — single tap opens it, double tap likes it (with a heart burst).
+            Color.clear
+                .aspectRatio(1, contentMode: .fit)
+                .overlay {
+                    if let url {
+                        CachedImage(url: url, maxPixel: 1200) { image in
+                            image.resizable().scaledToFill()
+                        } placeholder: {
                             FlimTheme.bg
                         }
+                    } else {
+                        FlimTheme.bg
                     }
-                    .overlay { GrainOverlay().opacity(0.5) }
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-            }
-            .buttonStyle(.plain)
+                }
+                .overlay { GrainOverlay().opacity(0.5) }
+                .overlay {
+                    Image(systemName: "heart.fill")
+                        .font(.system(size: 90))
+                        .foregroundStyle(.white)
+                        .shadow(radius: 8)
+                        .scaleEffect(heartBurst ? 1 : 0.4)
+                        .opacity(heartBurst ? 0.9 : 0)
+                        .animation(.spring(response: 0.3, dampingFraction: 0.55), value: heartBurst)
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .contentShape(Rectangle())
+                .onTapGesture(count: 2) { doubleTapLike() }
+                .onTapGesture { showDetail = true }
 
             if let caption = post.caption, !caption.isEmpty {
                 Text(caption)
@@ -245,6 +255,20 @@ struct FeedPostCard: View {
                 }
             }
             .clipShape(Circle())
+    }
+
+    private func doubleTapLike() {
+        guard let uid = auth.currentUser?.id else { return }
+        Haptics.tap()
+        heartBurst = true
+        Task { try? await Task.sleep(for: .milliseconds(650)); heartBurst = false }
+        if !iLiked {
+            reactions.append(PostReaction(id: UUID(), postId: post.id, userId: uid, emoji: "❤️"))
+            Task {
+                await feed.addReaction(postId: post.id, emoji: "❤️", userId: uid)
+                reactions = await feed.fetchReactions(postId: post.id)
+            }
+        }
     }
 
     private func toggleLike() {

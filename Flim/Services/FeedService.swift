@@ -42,6 +42,25 @@ final class FeedService {
             .execute()
     }
 
+    func fetchFollowers(of userId: UUID) async -> [UserProfile] {
+        struct Row: Decodable { let follower_id: UUID }
+        let rows: [Row] = (try? await supabase.from("follows").select("follower_id")
+            .eq("following_id", value: userId.uuidString).execute().value) ?? []
+        return await orderedProfiles(rows.map(\.follower_id))
+    }
+
+    func fetchFollowingProfiles(of userId: UUID) async -> [UserProfile] {
+        struct Row: Decodable { let following_id: UUID }
+        let rows: [Row] = (try? await supabase.from("follows").select("following_id")
+            .eq("follower_id", value: userId.uuidString).execute().value) ?? []
+        return await orderedProfiles(rows.map(\.following_id))
+    }
+
+    private func orderedProfiles(_ ids: [UUID]) async -> [UserProfile] {
+        let map = await fetchProfiles(ids: ids)
+        return ids.compactMap { map[$0] }
+    }
+
     func followerCount(_ userId: UUID) async -> Int {
         (try? await supabase.from("follows")
             .select("follower_id", head: true, count: .exact)

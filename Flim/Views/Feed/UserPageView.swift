@@ -12,6 +12,7 @@ struct UserPageView: View {
     @State private var followers = 0
     @State private var following = 0
     @State private var loaded = false
+    @State private var followList: FollowList?
 
     private var isSelf: Bool { userId == auth.currentUser?.id }
     private var isFollowing: Bool { feed.isFollowing(userId) }
@@ -38,6 +39,9 @@ struct UserPageView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbarColorScheme(.dark, for: .navigationBar)
         .task { await load() }
+        .sheet(item: $followList) { list in
+            FollowListView(userId: userId, mode: list)
+        }
     }
 
     private var pageHeader: some View {
@@ -67,8 +71,8 @@ struct UserPageView: View {
 
             HStack(spacing: 26) {
                 stat("\(posts.count)", "shared")
-                stat("\(followers)", "followers")
-                stat("\(following)", "following")
+                Button { followList = .followers } label: { stat("\(followers)", "followers") }
+                Button { followList = .following } label: { stat("\(following)", "following") }
             }
 
             if !isSelf {
@@ -230,7 +234,7 @@ struct DiscoverPeopleView: View {
                                 }
                                 ForEach(shown) { profile in
                                     NavigationLink { UserPageView(userId: profile.id) } label: {
-                                        personRow(profile)
+                                        PersonRow(profile: profile)
                                     }
                                     .buttonStyle(.plain)
                                 }
@@ -285,7 +289,13 @@ struct DiscoverPeopleView: View {
         .padding(.horizontal, 18).padding(.top, 10).padding(.bottom, 4)
     }
 
-    private func personRow(_ profile: UserProfile) -> some View {
+}
+
+/// A reusable person row (avatar + handle + bio + follow button) for people lists.
+struct PersonRow: View {
+    let profile: UserProfile
+
+    var body: some View {
         HStack(spacing: 12) {
             Circle()
                 .fill(FlimTheme.accent.opacity(0.18))
@@ -302,6 +312,64 @@ struct DiscoverPeopleView: View {
             FollowButton(userId: profile.id)
         }
         .padding(.horizontal, 18).padding(.vertical, 8)
+    }
+}
+
+// MARK: - Followers / following list
+
+enum FollowList: Identifiable {
+    case followers, following
+    var id: Int { self == .followers ? 0 : 1 }
+}
+
+struct FollowListView: View {
+    let userId: UUID
+    let mode: FollowList
+    @Environment(\.dismiss) private var dismiss
+    @Environment(FeedService.self) private var feed
+    @Environment(AuthService.self) private var auth
+
+    @State private var profiles: [UserProfile] = []
+    @State private var loaded = false
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                FlimTheme.bg.ignoresSafeArea()
+                if profiles.isEmpty && loaded {
+                    Text(mode == .followers ? "No followers yet" : "Not following anyone yet")
+                        .font(.system(size: 14)).foregroundStyle(FlimTheme.textTertiary).padding(40)
+                } else {
+                    ScrollView {
+                        LazyVStack(spacing: 4) {
+                            ForEach(profiles) { profile in
+                                NavigationLink { UserPageView(userId: profile.id) } label: {
+                                    PersonRow(profile: profile)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .padding(.vertical, 8)
+                    }
+                }
+            }
+            .navigationBarTitleDisplayMode(.inline)
+            .flimInlineTitle(mode == .followers ? "Followers" : "Following")
+            .toolbarColorScheme(.dark, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }.foregroundStyle(.white)
+                }
+            }
+            .task {
+                if let uid = auth.currentUser?.id { await feed.loadFollowing(userId: uid) }
+                profiles = mode == .followers
+                    ? await feed.fetchFollowers(of: userId)
+                    : await feed.fetchFollowingProfiles(of: userId)
+                loaded = true
+            }
+        }
+        .presentationBackground(FlimTheme.bg)
     }
 }
 
