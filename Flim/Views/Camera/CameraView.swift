@@ -29,6 +29,7 @@ struct CameraView: View {
     @AppStorage("flashModeRaw") private var flashModeRaw = 0
     // Whether to schedule a local "your photo developed" reminder (toggled in Profile).
     @AppStorage("developNotificationsEnabled") private var notificationsEnabled = true
+    @State private var showCapturedCue = false
     private var flashMode: AVCaptureDevice.FlashMode { AVCaptureDevice.FlashMode(rawValue: flashModeRaw) ?? .off }
     private var flashIcon: String {
         switch flashMode {
@@ -84,6 +85,18 @@ struct CameraView: View {
                 coachOverlay
             }
         }
+        .overlay(alignment: .top) {
+            if showCapturedCue {
+                Label("Developing — check your Darkroom", systemImage: "hourglass")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .padding(.top, 8)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
         .onAppear {
             camera.flashMode = flashMode
             bindCapture()
@@ -98,6 +111,14 @@ struct CameraView: View {
         .onDisappear { camera.stopRunning() }
         .sheet(isPresented: $showRollPicker) {
             RollPickerSheet(rolls: rolls.rolls, selected: $selectedRoll)
+        }
+    }
+
+    private func flashCapturedCue() {
+        withAnimation { showCapturedCue = true }
+        Task {
+            try? await Task.sleep(for: .seconds(1.8))
+            withAnimation { showCapturedCue = false }
         }
     }
 
@@ -279,6 +300,7 @@ struct CameraView: View {
             ShutterButton(isCapturing: camera.isCapturing) {
                 Haptics.shutter()
                 camera.capturePhoto()
+                flashCapturedCue()
             }
         }
     }

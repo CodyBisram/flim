@@ -2,6 +2,7 @@ import SwiftUI
 
 struct MainTabView: View {
     @State private var selected = 0
+    @AppStorage("hasOnboarded") private var hasOnboarded = false
     #if DEBUG
     @Environment(AuthService.self) private var auth
     @Environment(RollService.self) private var rolls
@@ -30,6 +31,9 @@ struct MainTabView: View {
             }
         }
         .tint(FlimTheme.accent)
+        .fullScreenCover(isPresented: Binding(get: { !hasOnboarded }, set: { _ in })) {
+            OnboardingView()
+        }
         .onReceive(NotificationCenter.default.publisher(for: .openDarkroom)) { _ in
             selected = 1
         }

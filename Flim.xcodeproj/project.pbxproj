@@ -17,6 +17,7 @@
 		287023347895E167ECC91920 /* Haptics.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA04DBB3261C344B5DD64806 /* Haptics.swift */; };
 		2EDCE64ACD1C1B9060F4B36B /* UserPageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 799578BF49AD244204751AC0 /* UserPageView.swift */; };
 		322A5492683DD8B6D58B77C6 /* RollsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33D109A1C315CD466659A10F /* RollsView.swift */; };
+		3329F6BEB76AA76B288DE250 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49A4B9AB5111472363BE0ECF /* OnboardingView.swift */; };
 		34335710BA3509481452C7AA /* FeedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4016CE892900287C20E82E97 /* FeedView.swift */; };
 		34533239665E36002D2C3006 /* FilmStock.swift in Sources */ = {isa = PBXBuildFile; fileRef = 870990313A19750FDF37E235 /* FilmStock.swift */; };
 		3B9C5D883F61F8F4D2587186 /* PhoneAuthView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C14C96ED4A714B7DD3274C7E /* PhoneAuthView.swift */; };
@@ -85,6 +86,7 @@
 		35A42EF6E37ED2ED362069BA /* JoinRollView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JoinRollView.swift; sourceTree = "<group>"; };
 		4016CE892900287C20E82E97 /* FeedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedView.swift; sourceTree = "<group>"; };
 		44986F8867E5B522EBEABEE8 /* AppUser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppUser.swift; sourceTree = "<group>"; };
+		49A4B9AB5111472363BE0ECF /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
 		4B7DE28ED82A77117E85EBE0 /* FullScreenPhotoView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FullScreenPhotoView.swift; sourceTree = "<group>"; };
 		54CD52378D31EEDB7D7BE6EF /* RollDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollDetailView.swift; sourceTree = "<group>"; };
 		5FE59742B6CDB9699448F677 /* Flim.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Flim.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -235,6 +237,7 @@
 				01ED5D5DF69FB20B7D2CBE52 /* Darkroom */,
 				0CDA1572355E660453980F26 /* Feed */,
 				2B3850968D32DA22C72DA0B2 /* Main */,
+				D67919F228B4852176CB9EC7 /* Onboarding */,
 				65E89728796BB8EE12A233ED /* Profile */,
 				EBC7BEE9B4E31B2CC6860B2E /* Rolls */,
 			);
@@ -279,6 +282,14 @@
 				2541CCDED4898D0604DB64EA /* CameraViewModel.swift */,
 			);
 			path = Camera;
+			sourceTree = "<group>";
+		};
+		D67919F228B4852176CB9EC7 /* Onboarding */ = {
+			isa = PBXGroup;
+			children = (
+				49A4B9AB5111472363BE0ECF /* OnboardingView.swift */,
+			);
+			path = Onboarding;
 			sourceTree = "<group>";
 		};
 		EAAFC9FCEE6F9F480847295A /* FlimTests */ = {
@@ -429,6 +440,7 @@
 				C4599B50B1699E2971A353FF /* MainTabView.swift in Sources */,
 				5AD497FC90DCDC3592EA12FE /* NotificationService.swift in Sources */,
 				46BB284536C9EFB9CB87A36C /* OTPView.swift in Sources */,
+				3329F6BEB76AA76B288DE250 /* OnboardingView.swift in Sources */,
 				3B9C5D883F61F8F4D2587186 /* PhoneAuthView.swift in Sources */,
 				501F195F7187429C965AE299 /* Photo.swift in Sources */,
 				AB3249CE1029C5382B7C55A6 /* PhotoGridCell.swift in Sources */,
