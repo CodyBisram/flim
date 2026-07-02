@@ -29,3 +29,10 @@ CREATE INDEX IF NOT EXISTS device_tokens_user_idx ON public.device_tokens (user_
 -- Track which developed photos have already triggered a remote push so the
 -- scheduled Edge Function doesn't notify the same shot twice.
 ALTER TABLE public.photos ADD COLUMN IF NOT EXISTS push_sent BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- Social push: notify a post's owner when someone comments or reacts. Same "poll +
+-- push_sent flag" pattern as develop push (see send-social-push Edge Function).
+ALTER TABLE public.post_comments  ADD COLUMN IF NOT EXISTS push_sent BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE public.post_reactions ADD COLUMN IF NOT EXISTS push_sent BOOLEAN NOT NULL DEFAULT FALSE;
+CREATE INDEX IF NOT EXISTS post_comments_unpushed_idx  ON public.post_comments (push_sent) WHERE push_sent = FALSE;
+CREATE INDEX IF NOT EXISTS post_reactions_unpushed_idx ON public.post_reactions (push_sent) WHERE push_sent = FALSE;

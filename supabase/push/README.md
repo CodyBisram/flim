@@ -43,3 +43,14 @@ when someone *else's* photo develops in a shared roll.
 
 That's it — local notifications keep working regardless; remote push lights up once the
 above is in place.
+
+## Social push (comments + reactions)
+
+`send-social-push/index.ts` notifies a post's **owner** when someone else comments or
+reacts. Reactions are **batched per person** (one push listing that friend's emoji), the
+Lapse way — not one notification per emoji.
+
+Setup (in addition to the develop-push steps above — same APNs secrets):
+1. Run the updated `device_tokens.sql` (adds `push_sent` to `post_comments` / `post_reactions`).
+2. `supabase functions deploy send-social-push --no-verify-jwt`
+3. Schedule it every 1 minute (Dashboard → Edge Functions → Schedules, or pg_cron).
