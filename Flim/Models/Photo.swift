@@ -9,6 +9,7 @@ struct Photo: Codable, Identifiable {
     let developsAt: Date
     var isDeveloped: Bool
     var caption: String?
+    var isSorted: Bool = true
 
     var isReady: Bool { Date.now >= developsAt }
 
@@ -23,6 +24,7 @@ struct Photo: Codable, Identifiable {
         case developsAt = "develops_at"
         case isDeveloped = "is_developed"
         case caption
+        case isSorted = "is_sorted"
     }
 }
 
@@ -47,6 +49,7 @@ struct InsertPhoto: Encodable {
     let rollId: UUID?
     let storagePath: String
     let developsAt: Date
+    var isSorted: Bool = true
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -54,5 +57,6 @@ struct InsertPhoto: Encodable {
         case rollId = "roll_id"
         case storagePath = "storage_path"
         case developsAt = "develops_at"
+        case isSorted = "is_sorted"
     }
 }

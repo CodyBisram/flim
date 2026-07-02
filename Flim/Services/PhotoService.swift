@@ -2,10 +2,11 @@ import Foundation
 import Observation
 import Supabase
 
-// Personal "instants" develop fast (~1 min). Shared rolls develop TOGETHER: every shot in
-// a roll reveals at one time, set by the roll's first contribution + 12h. (Debug shortens
+// Personal "instants" are ready immediately — they land unsorted and are triaged in the sort
+// deck (archive → Darkroom, publish → Feed). Shared rolls still develop TOGETHER: every shot
+// in a roll reveals at one time, set by the roll's first contribution + 12h. (Debug shortens
 // the roll delay so the group-reveal loop is testable without waiting half a day.)
-private let personalDevelopDelay: TimeInterval = 60
+private let personalDevelopDelay: TimeInterval = 0
 #if DEBUG
 private let rollDevelopDelay: TimeInterval = 2 * 60
 #else
@@ -63,7 +64,9 @@ final class PhotoService {
                 userId: userId,
                 rollId: rollId,
                 storagePath: path,
-                developsAt: developsAt
+                developsAt: developsAt,
+                // Roll shots skip the deck; personal instants start unsorted for triage.
+                isSorted: rollId != nil
             )
 
             let inserted: Photo = try await supabase
@@ -222,9 +225,27 @@ final class PhotoService {
     private var loadedCount = 0
 
     func fetchPersonalPhotos(userId: UUID, reset: Bool = true) async throws {
+        // Only sorted photos live in the Darkroom; unsorted instants wait in the sort deck.
         try await fetchPage(reset: reset) {
-            $0.eq("user_id", value: userId.uuidString)
+            $0.eq("user_id", value: userId.uuidString).eq("is_sorted", value: true)
         }
+    }
+
+    /// Personal instants that haven't been sorted yet (shown in the swipe deck), newest first.
+    func fetchUnsorted(userId: UUID) async -> [Photo] {
+        (try? await supabase
+            .from("photos").select()
+            .eq("user_id", value: userId.uuidString)
+            .eq("is_sorted", value: false)
+            .order("taken_at", ascending: false)
+            .execute().value) ?? []
+    }
+
+    /// Marks a photo sorted (archived to the Darkroom or published). Removes it from the deck.
+    func markSorted(photoId: UUID) async {
+        struct U: Encodable { let is_sorted: Bool }
+        _ = try? await supabase.from("photos").update(U(is_sorted: true))
+            .eq("id", value: photoId.uuidString).execute()
     }
 
     func fetchRollPhotos(rollId: UUID, reset: Bool = true) async throws {

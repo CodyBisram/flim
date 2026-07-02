@@ -87,7 +87,8 @@ struct CameraView: View {
         }
         .overlay(alignment: .top) {
             if showCapturedCue {
-                Label("Developing — check your Darkroom", systemImage: "hourglass")
+                Label(selectedRoll == nil ? "Saved — sort it in your Darkroom" : "Added to the roll — reveals together",
+                      systemImage: selectedRoll == nil ? "square.stack.3d.up" : "hourglass")
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(.white)
                     .padding(.horizontal, 16)

@@ -15,6 +15,8 @@ struct DarkroomView: View {
     @AppStorage("lastRevealCheck") private var lastRevealCheck: Double = 0
     @State private var showReveal = false
     @State private var revealCount = 0
+    @State private var unsortedCount = 0
+    @State private var showSortDeck = false
 
     private let columns = [
         GridItem(.flexible(), spacing: 2),
@@ -28,6 +30,22 @@ struct DarkroomView: View {
 
             VStack(spacing: 0) {
                 FlimNavTitle("Darkroom")
+
+                if unsortedCount > 0 {
+                    Button { showSortDeck = true } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: "square.stack.3d.up.fill")
+                            Text("\(unsortedCount) shot\(unsortedCount == 1 ? "" : "s") to sort")
+                            Spacer()
+                            Image(systemName: "chevron.right").font(.system(size: 12))
+                        }
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(FlimTheme.accent)
+                        .padding(.horizontal, 16).padding(.vertical, 12)
+                        .background(FlimTheme.accentSoft, in: RoundedRectangle(cornerRadius: 12))
+                        .padding(.horizontal, 16).padding(.bottom, 4)
+                    }
+                }
 
                 Group {
                     if vm.isLoading && vm.photos.isEmpty {
@@ -64,11 +82,25 @@ struct DarkroomView: View {
                 }
             }
             ToolbarItem(placement: .topBarTrailing) {
-                Button { showProfile = true } label: {
-                    Image(systemName: "person.circle")
-                        .foregroundStyle(FlimTheme.accent)
+                HStack(spacing: 12) {
+                    if unsortedCount > 0 {
+                        Button { showSortDeck = true } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "square.stack.3d.up.fill").font(.system(size: 11))
+                                Text("\(unsortedCount)").font(.system(size: 13, weight: .semibold))
+                            }
+                            .foregroundStyle(.black)
+                            .padding(.horizontal, 10).padding(.vertical, 5)
+                            .background(FlimTheme.accent, in: Capsule())
+                        }
+                        .accessibilityLabel("\(unsortedCount) to sort")
+                    }
+                    Button { showProfile = true } label: {
+                        Image(systemName: "person.circle")
+                            .foregroundStyle(FlimTheme.accent)
+                    }
+                    .accessibilityLabel("Profile")
                 }
-                .accessibilityLabel("Profile")
             }
         }
         .safeAreaInset(edge: .bottom) {
@@ -106,6 +138,9 @@ struct DarkroomView: View {
         }
         .fullScreenCover(item: $selectedPhoto) { photo in
             FullScreenPhotoView(photo: photo, url: selectedURL, onDelete: { Task { await reload() } })
+        }
+        .fullScreenCover(isPresented: $showSortDeck, onDismiss: { Task { await reload() } }) {
+            SortDeckView(onFinish: {})
         }
         .sheet(isPresented: $showProfile) {
             ProfileView()
@@ -238,6 +273,7 @@ struct DarkroomView: View {
         guard let userId = auth.currentUser?.id else { return }
         await vm.load(photoService: photoService, userId: userId)
         if rolls.rolls.isEmpty { try? await rolls.fetchRolls(for: userId) }   // for roll labels
+        unsortedCount = await photoService.fetchUnsorted(userId: userId).count
         checkForReveal()
     }
 
@@ -245,8 +281,9 @@ struct DarkroomView: View {
     private func checkForReveal() {
         let now = Date().timeIntervalSince1970
         if lastRevealCheck > 0, !showReveal, !isSelecting {
+            // Roll shots only — personal instants get the sort deck as their reveal moment.
             let newlyReady = vm.developedPhotos.filter {
-                $0.developsAt.timeIntervalSince1970 > lastRevealCheck && $0.isReady
+                $0.rollId != nil && $0.developsAt.timeIntervalSince1970 > lastRevealCheck && $0.isReady
             }
             if !newlyReady.isEmpty {
                 revealCount = newlyReady.count
