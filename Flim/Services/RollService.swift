@@ -115,6 +115,10 @@ final class RollService {
         for row in rows where covers[row.roll_id] == nil {
             covers[row.roll_id] = row.storage_path   // first per roll = latest (desc order)
         }
+        // A creator-chosen cover overrides the latest-developed default.
+        for roll in rolls where roll.coverPath != nil {
+            covers[roll.id] = roll.coverPath
+        }
         coverPaths = covers
     }
 
@@ -166,7 +170,20 @@ final class RollService {
         if let i = rolls.firstIndex(where: { $0.id == rollId }) {
             let r = rolls[i]
             rolls[i] = Roll(id: r.id, name: name, inviteCode: r.inviteCode,
-                            createdBy: r.createdBy, createdAt: r.createdAt)
+                            createdBy: r.createdBy, createdAt: r.createdAt, coverPath: r.coverPath)
+        }
+    }
+
+    /// The creator picks a specific photo as the roll's cover (RLS: creator-only update).
+    func setRollCover(rollId: UUID, path: String) async {
+        struct U: Encodable { let cover_path: String }
+        _ = try? await supabase.from("rolls").update(U(cover_path: path))
+            .eq("id", value: rollId.uuidString).execute()
+        coverPaths[rollId] = path
+        if let i = rolls.firstIndex(where: { $0.id == rollId }) {
+            let r = rolls[i]
+            rolls[i] = Roll(id: r.id, name: r.name, inviteCode: r.inviteCode,
+                            createdBy: r.createdBy, createdAt: r.createdAt, coverPath: path)
         }
     }
 

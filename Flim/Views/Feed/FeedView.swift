@@ -8,6 +8,8 @@ struct FeedView: View {
     @State private var showDiscover = false
     @State private var showActivity = false
     @State private var myAvatarURL: URL?
+    @State private var pendingFeed: [FeedItem] = []
+    @State private var hasNewPosts = false
 
     var body: some View {
         ZStack {
@@ -29,23 +31,47 @@ struct FeedView: View {
                         emptyState
                     }
                 } else {
-                    ScrollView {
-                        LazyVStack(spacing: 20) {
-                            ForEach(feed.feed) { item in
-                                FeedPostCard(item: item)
+                    ScrollViewReader { proxy in
+                        ScrollView {
+                            LazyVStack(spacing: 20) {
+                                Color.clear.frame(height: 0).id("top")
+                                ForEach(feed.feed) { item in
+                                    FeedPostCard(item: item)
+                                }
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 16)
+                        }
+                        .refreshable { await reload() }
+                        .overlay(alignment: .top) {
+                            if hasNewPosts {
+                                Button {
+                                    withAnimation {
+                                        feed.feed = pendingFeed
+                                        hasNewPosts = false
+                                        proxy.scrollTo("top", anchor: .top)
+                                    }
+                                    Haptics.tap()
+                                } label: {
+                                    Label("New posts", systemImage: "arrow.up")
+                                        .font(.system(size: 13, weight: .semibold))
+                                        .foregroundStyle(.black)
+                                        .padding(.horizontal, 16).padding(.vertical, 8)
+                                        .background(FlimTheme.accent, in: Capsule())
+                                        .shadow(color: .black.opacity(0.3), radius: 6, y: 3)
+                                }
+                                .padding(.top, 8)
+                                .transition(.move(edge: .top).combined(with: .opacity))
                             }
                         }
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 16)
                     }
-                    .refreshable { await reload() }
                 }
             }
         }
         .navigationBarHidden(true)
         .task {
             if let path = auth.currentUser?.avatarPath { myAvatarURL = await feed.signedURL(for: path) }
-            if feed.feed.isEmpty { await reload() }
+            if feed.feed.isEmpty { await reload() } else { await checkNewPosts() }
         }
         .sheet(isPresented: $showDiscover) {
             DiscoverPeopleView()
@@ -153,7 +179,17 @@ struct FeedView: View {
     private func reload() async {
         guard let uid = auth.currentUser?.id else { return }
         await feed.loadFeed(currentUserId: uid)
+        hasNewPosts = false
         if let path = auth.currentUser?.avatarPath { myAvatarURL = await feed.signedURL(for: path) }
+    }
+
+    private func checkNewPosts() async {
+        guard let uid = auth.currentUser?.id else { return }
+        let fresh = await feed.peekFeed(currentUserId: uid)
+        if let newTop = fresh.first?.id, newTop != feed.feed.first?.id {
+            pendingFeed = fresh
+            withAnimation { hasNewPosts = true }
+        }
     }
 }
 

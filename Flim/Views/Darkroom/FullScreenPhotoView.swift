@@ -17,6 +17,7 @@ struct FullScreenPhotoView: View {
     @State private var showSharedToast = false
     @State private var scale: CGFloat = 1
     @State private var offset: CGSize = .zero
+    @State private var lastOffset: CGSize = .zero
     @State private var showDeleteConfirm = false
     @State private var isDeleting = false
     @State private var showReportConfirm = false
@@ -45,6 +46,15 @@ struct FullScreenPhotoView: View {
                         .offset(offset)
                         .gesture(dragToDismiss)
                         .gesture(pinchToZoom)
+                        .onTapGesture(count: 2) {
+                            withAnimation(.spring(duration: 0.3)) {
+                                if scale > 1 {
+                                    scale = 1; offset = .zero; lastOffset = .zero
+                                } else {
+                                    scale = 2.5
+                                }
+                            }
+                        }
                 } placeholder: {
                     ProgressView().tint(.white)
                 }
@@ -298,11 +308,18 @@ struct FullScreenPhotoView: View {
     private var dragToDismiss: some Gesture {
         DragGesture()
             .onChanged { value in
-                guard scale <= 1 else { return }
-                offset = value.translation
+                if scale > 1 {
+                    // Pan the zoomed image.
+                    offset = CGSize(width: lastOffset.width + value.translation.width,
+                                    height: lastOffset.height + value.translation.height)
+                } else {
+                    offset = value.translation
+                }
             }
             .onEnded { value in
-                if abs(value.translation.height) > 120 {
+                if scale > 1 {
+                    lastOffset = offset
+                } else if abs(value.translation.height) > 120 {
                     dismiss()
                 } else {
                     withAnimation(.spring(duration: 0.3)) { offset = .zero }
@@ -317,7 +334,7 @@ struct FullScreenPhotoView: View {
             }
             .onEnded { _ in
                 withAnimation(.spring(duration: 0.3)) {
-                    if scale < 1.2 { scale = 1; offset = .zero }
+                    if scale < 1.2 { scale = 1; offset = .zero; lastOffset = .zero }
                 }
             }
     }

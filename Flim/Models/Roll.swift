@@ -9,6 +9,7 @@ struct Roll: Codable, Identifiable, Hashable {
     let inviteCode: String
     let createdBy: UUID
     let createdAt: Date
+    var coverPath: String? = nil
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -16,6 +17,7 @@ struct Roll: Codable, Identifiable, Hashable {
         case inviteCode = "invite_code"
         case createdBy = "created_by"
         case createdAt = "created_at"
+        case coverPath = "cover_path"
     }
 }
 

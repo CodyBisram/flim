@@ -44,6 +44,8 @@ enum RemotePush {
 extension Notification.Name {
     /// Posted when a develop notification is tapped, so the UI can jump to the Darkroom.
     static let openDarkroom = Notification.Name("openDarkroom")
+    /// Posted to jump to the Camera tab (e.g. from the empty-Darkroom CTA).
+    static let openCamera = Notification.Name("openCamera")
 }
 
 /// App delegate: forwards the APNs token to `RemotePush`, and handles notification

@@ -14,6 +14,9 @@ struct SortDeckView: View {
     @State private var urls: [UUID: URL] = [:]
     @State private var drag: CGSize = .zero
     @State private var loaded = false
+    // The last swipe, held un-committed so it can be undone (even a delete).
+    @State private var lastPhoto: Photo?
+    @State private var lastAction: SortAction?
 
     private enum SortAction { case archive, publish, trash }
     private let threshold: CGFloat = 110
@@ -41,6 +44,7 @@ struct SortDeckView: View {
             }
         }
         .task { await load() }
+        .onDisappear { commitPending() }
     }
 
     // MARK: - Header
@@ -56,7 +60,15 @@ struct SortDeckView: View {
                     .font(.system(size: 13, weight: .medium)).foregroundStyle(FlimTheme.textSecondary)
             }
             Spacer()
-            Color.clear.frame(width: 16)
+            if lastPhoto != nil {
+                Button { undo() } label: {
+                    Label("Undo", systemImage: "arrow.uturn.backward")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(FlimTheme.accent)
+                }
+            } else {
+                Color.clear.frame(width: 44, height: 1)
+            }
         }
         .padding(.horizontal, 20).padding(.top, 16).padding(.bottom, 8)
     }
@@ -155,7 +167,7 @@ struct SortDeckView: View {
     }
 
     private func performSwipe(_ action: SortAction) {
-        guard let photo = cards.first, let uid = auth.currentUser?.id else { return }
+        guard let photo = cards.first else { return }
         Haptics.tap()
 
         switch action {
@@ -164,7 +176,36 @@ struct SortDeckView: View {
         case .trash:   withAnimation(.easeIn(duration: 0.25)) { drag = CGSize(width: 0, height: 900) }
         }
 
-        // Backend (fire and forget).
+        // Commit the previous action (it can no longer be undone) and hold this one.
+        commitPending()
+        lastPhoto = photo
+        lastAction = action
+
+        // Advance the deck after the card flies off.
+        Task {
+            try? await Task.sleep(for: .milliseconds(280))
+            if !cards.isEmpty { cards.removeFirst() }
+            drag = .zero
+            if cards.isEmpty { onFinish() }
+        }
+    }
+
+    private func undo() {
+        guard let photo = lastPhoto else { return }
+        Haptics.select()
+        lastPhoto = nil
+        lastAction = nil
+        drag = .zero
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+            cards.insert(photo, at: 0)
+        }
+    }
+
+    /// Actually applies the held action to the backend.
+    private func commitPending() {
+        guard let photo = lastPhoto, let action = lastAction, let uid = auth.currentUser?.id else { return }
+        lastPhoto = nil
+        lastAction = nil
         Task {
             switch action {
             case .archive:
@@ -175,14 +216,6 @@ struct SortDeckView: View {
             case .trash:
                 await photoService.deletePhoto(photo)
             }
-        }
-
-        // Advance the deck after the card flies off.
-        Task {
-            try? await Task.sleep(for: .milliseconds(280))
-            if !cards.isEmpty { cards.removeFirst() }
-            drag = .zero
-            if cards.isEmpty { onFinish() }
         }
     }
 

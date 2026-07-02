@@ -101,7 +101,7 @@ final class FeedService {
             .order("created_at", ascending: false)
             .limit(50)
             .execute().value) ?? []
-        return list
+        return list.filter { !blockedIds.contains($0.id) }
     }
 
     /// Server-side username search (scales past a scrollable list). Case-insensitive prefix/substring.
@@ -114,7 +114,41 @@ final class FeedService {
             .neq("id", value: userId.uuidString)
             .limit(30)
             .execute().value) ?? []
-        return list
+        return list.filter { !blockedIds.contains($0.id) }
+    }
+
+    // MARK: - Blocking & reports
+
+    var blockedIds: Set<UUID> = []
+
+    func loadBlocked(userId: UUID) async {
+        struct Row: Decodable { let blocked_id: UUID }
+        let rows: [Row] = (try? await supabase.from("blocks").select("blocked_id")
+            .eq("blocker_id", value: userId.uuidString).execute().value) ?? []
+        blockedIds = Set(rows.map(\.blocked_id))
+    }
+
+    func isBlocked(_ id: UUID) -> Bool { blockedIds.contains(id) }
+
+    func block(_ targetId: UUID, from userId: UUID) async {
+        struct B: Encodable { let blocker_id: UUID; let blocked_id: UUID }
+        blockedIds.insert(targetId)
+        _ = try? await supabase.from("blocks").insert(B(blocker_id: userId, blocked_id: targetId)).execute()
+        await unfollow(targetId, from: userId)          // blocking implies unfollow
+        feed.removeAll { $0.author.id == targetId }      // drop their posts from the current feed
+    }
+
+    func unblock(_ targetId: UUID, from userId: UUID) async {
+        blockedIds.remove(targetId)
+        _ = try? await supabase.from("blocks").delete()
+            .eq("blocker_id", value: userId.uuidString)
+            .eq("blocked_id", value: targetId.uuidString).execute()
+    }
+
+    func reportUser(_ targetId: UUID, from userId: UUID, reason: String? = nil) async {
+        struct R: Encodable { let reporter_id: UUID; let reported_id: UUID; let reason: String? }
+        _ = try? await supabase.from("user_reports")
+            .insert(R(reporter_id: userId, reported_id: targetId, reason: reason)).execute()
     }
 
     // MARK: - Feed
@@ -122,8 +156,14 @@ final class FeedService {
     func loadFeed(currentUserId: UUID) async {
         isLoadingFeed = true
         defer { isLoadingFeed = false }
-        followingIds = await fetchFollowingIds(userId: currentUserId)
+        feed = await peekFeed(currentUserId: currentUserId)
+    }
 
+    /// Fetches the feed without assigning it — used to check for new posts without disturbing
+    /// the current scroll position.
+    func peekFeed(currentUserId: UUID) async -> [FeedItem] {
+        followingIds = await fetchFollowingIds(userId: currentUserId)
+        await loadBlocked(userId: currentUserId)
         var authorIds = Array(followingIds)
         authorIds.append(currentUserId)   // your own posts show in your feed too
 
@@ -134,8 +174,9 @@ final class FeedService {
             .limit(60)
             .execute().value) ?? []
 
-        let profiles = await fetchProfiles(ids: Array(Set(posts.map(\.userId))))
-        feed = posts.compactMap { post in
+        let visible = posts.filter { !blockedIds.contains($0.userId) }
+        let profiles = await fetchProfiles(ids: Array(Set(visible.map(\.userId))))
+        return visible.compactMap { post in
             profiles[post.userId].map { FeedItem(post: post, author: $0) }
         }
     }

@@ -20,6 +20,7 @@ struct RollDetailView: View {
     @State private var showShareAll = false
     @State private var displayName = ""
     @State private var showInviteShare = false
+    @State private var coverToast = false
 
     private var isCreator: Bool { auth.currentUser?.id == roll.createdBy }
 
@@ -89,6 +90,16 @@ struct RollDetailView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .overlay(alignment: .top) {
+            if coverToast {
+                Label("Roll cover updated", systemImage: "checkmark.circle.fill")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 16).padding(.vertical, 10)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
         .navigationBarTitleDisplayMode(.inline)
@@ -214,6 +225,13 @@ struct RollDetailView: View {
                         guard photo.isReady else { return }
                         selectedURL = vm.signedURLCache[photo.id]
                         selectedPhoto = photo
+                    }
+                    .onLongPressGesture {
+                        guard isCreator, photo.isReady else { return }
+                        Haptics.select()
+                        Task { await rollService.setRollCover(rollId: roll.id, path: photo.storagePath) }
+                        withAnimation { coverToast = true }
+                        Task { try? await Task.sleep(for: .seconds(1.6)); withAnimation { coverToast = false } }
                     }
                     .task {
                         if photo.isReady, vm.signedURLCache[photo.id] == nil {

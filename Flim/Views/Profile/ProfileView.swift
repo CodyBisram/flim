@@ -16,6 +16,7 @@ struct ProfileView: View {
     @State private var deleteError: String?
     @State private var showEditUsername = false
     @AppStorage("developNotificationsEnabled") private var notificationsEnabled = true
+    @AppStorage("hasOnboarded") private var hasOnboarded = false
 
     var body: some View {
         NavigationStack {
@@ -125,6 +126,20 @@ struct ProfileView: View {
                     .padding(.horizontal, 28)
                     .padding(.vertical, 14)
                     .background(FlimTheme.bgElevated)
+
+                    // Replay the intro
+                    Button {
+                        hasOnboarded = false
+                        dismiss()
+                    } label: {
+                        HStack {
+                            Text("Replay intro").font(.system(size: 15)).foregroundStyle(.white)
+                            Spacer()
+                            Image(systemName: "play.circle").foregroundStyle(FlimTheme.textTertiary)
+                        }
+                        .padding(.horizontal, 28).padding(.vertical, 14)
+                        .background(FlimTheme.bgElevated)
+                    }
 
                     Spacer()
 

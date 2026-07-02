@@ -37,6 +37,9 @@ struct MainTabView: View {
         .onReceive(NotificationCenter.default.publisher(for: .openDarkroom)) { _ in
             selected = 1
         }
+        .onReceive(NotificationCenter.default.publisher(for: .openCamera)) { _ in
+            selected = 0
+        }
         .onAppear {
             #if DEBUG
             let args = ProcessInfo.processInfo.arguments

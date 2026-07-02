@@ -181,6 +181,9 @@ CREATE POLICY "rolls: authenticated can create"
     ON public.rolls FOR INSERT
     WITH CHECK (auth.uid() = created_by);
 
+-- Creator-chosen roll cover (a photo's storage_path); falls back to the latest developed shot.
+ALTER TABLE public.rolls ADD COLUMN IF NOT EXISTS cover_path TEXT;
+
 -- The creator can rename or delete their roll. Deleting cascades memberships; each
 -- photo's roll_id is set NULL (ON DELETE SET NULL) so owners keep their shots personally.
 DROP POLICY IF EXISTS "rolls: creator can update" ON public.rolls;
@@ -523,6 +526,39 @@ CREATE POLICY "post_comments: add own"
 DROP POLICY IF EXISTS "post_comments: delete own" ON public.post_comments;
 CREATE POLICY "post_comments: delete own"
     ON public.post_comments FOR DELETE USING (auth.uid() = user_id);
+
+-- BLOCKS + USER REPORTS (UGC safety) --------------------------
+CREATE TABLE IF NOT EXISTS public.blocks (
+    blocker_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+    blocked_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    PRIMARY KEY (blocker_id, blocked_id),
+    CHECK (blocker_id <> blocked_id)
+);
+ALTER TABLE public.blocks ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "blocks: readable own" ON public.blocks;
+CREATE POLICY "blocks: readable own"
+    ON public.blocks FOR SELECT TO authenticated USING (auth.uid() = blocker_id);
+DROP POLICY IF EXISTS "blocks: create own" ON public.blocks;
+CREATE POLICY "blocks: create own"
+    ON public.blocks FOR INSERT WITH CHECK (auth.uid() = blocker_id);
+DROP POLICY IF EXISTS "blocks: delete own" ON public.blocks;
+CREATE POLICY "blocks: delete own"
+    ON public.blocks FOR DELETE USING (auth.uid() = blocker_id);
+
+CREATE TABLE IF NOT EXISTS public.user_reports (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    reporter_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+    reported_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+    reason      TEXT,
+    created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE public.user_reports ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "user_reports: file own" ON public.user_reports;
+CREATE POLICY "user_reports: file own"
+    ON public.user_reports FOR INSERT WITH CHECK (auth.uid() = reporter_id);
 
 -- ============================================================
 -- Optional cron: auto-mark developed photos server-side.

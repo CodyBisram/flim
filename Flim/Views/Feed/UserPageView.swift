@@ -14,6 +14,10 @@ struct UserPageView: View {
     @State private var loaded = false
     @State private var followList: FollowList?
     @State private var showSettings = false
+    @State private var showBlockConfirm = false
+    @State private var showReportConfirm = false
+    @State private var reportedToast = false
+    @Environment(\.dismiss) private var dismiss
 
     private var isSelf: Bool { userId == auth.currentUser?.id }
     private var isFollowing: Bool { feed.isFollowing(userId) }
@@ -40,14 +44,51 @@ struct UserPageView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbarColorScheme(.dark, for: .navigationBar)
         .toolbar {
-            if isSelf {
-                ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItem(placement: .topBarTrailing) {
+                if isSelf {
                     Button { showSettings = true } label: {
                         Image(systemName: "gearshape").foregroundStyle(FlimTheme.accent)
                     }
                     .accessibilityLabel("Settings")
+                } else {
+                    Menu {
+                        Button { showReportConfirm = true } label: { Label("Report", systemImage: "flag") }
+                        Button(role: .destructive) { showBlockConfirm = true } label: { Label("Block", systemImage: "hand.raised") }
+                    } label: {
+                        Image(systemName: "ellipsis").foregroundStyle(FlimTheme.accent)
+                    }
+                    .accessibilityLabel("More")
                 }
             }
+        }
+        .overlay(alignment: .top) {
+            if reportedToast {
+                Label("Reported — thanks for keeping FLIM safe", systemImage: "checkmark.circle.fill")
+                    .font(.system(size: 13, weight: .medium)).foregroundStyle(.white)
+                    .padding(.horizontal, 16).padding(.vertical, 10)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+        .confirmationDialog("Block \(profile?.handle ?? "this user")?", isPresented: $showBlockConfirm, titleVisibility: .visible) {
+            Button("Block", role: .destructive) {
+                guard let uid = auth.currentUser?.id else { return }
+                Task { await feed.block(userId, from: uid); dismiss() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("You won't see each other's posts, and they'll be unfollowed.")
+        }
+        .confirmationDialog("Report \(profile?.handle ?? "this user")?", isPresented: $showReportConfirm, titleVisibility: .visible) {
+            Button("Report", role: .destructive) {
+                guard let uid = auth.currentUser?.id else { return }
+                Task { await feed.reportUser(userId, from: uid) }
+                withAnimation { reportedToast = true }
+                Task { try? await Task.sleep(for: .seconds(2)); withAnimation { reportedToast = false } }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Flag this account for review.")
         }
         .task { await load() }
         .sheet(item: $followList) { list in
@@ -269,6 +310,7 @@ struct DiscoverPeopleView: View {
             .task {
                 if let uid = auth.currentUser?.id {
                     await feed.loadFollowing(userId: uid)
+                    await feed.loadBlocked(userId: uid)
                     profiles = await feed.discoverProfiles(excluding: uid)
                 }
                 loaded = true

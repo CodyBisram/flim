@@ -272,11 +272,21 @@ struct DarkroomView: View {
             Text("Your darkroom's empty.")
                 .font(.system(size: 17, weight: .light))
                 .foregroundStyle(FlimTheme.textSecondary)
-            Text("Take a shot — it'll quietly develop, then show up here.")
+            Text("Head to the camera and take your first shot — sort it here, then keep it or share it.")
                 .font(.system(size: 13))
                 .foregroundStyle(FlimTheme.textTertiary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 40)
+            Button {
+                NotificationCenter.default.post(name: .openCamera, object: nil)
+            } label: {
+                Label("Take a shot", systemImage: "camera.aperture")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.black)
+                    .padding(.horizontal, 20).padding(.vertical, 11)
+                    .background(FlimTheme.accent, in: Capsule())
+            }
+            .padding(.top, 4)
         }
     }
 
