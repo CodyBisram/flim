@@ -19,6 +19,7 @@ struct RollDetailView: View {
     @State private var shareImages: [UIImage] = []
     @State private var showShareAll = false
     @State private var displayName = ""
+    @State private var showInviteShare = false
 
     private var isCreator: Bool { auth.currentUser?.id == roll.createdBy }
 
@@ -100,13 +101,13 @@ struct RollDetailView: View {
                 }
                 .accessibilityLabel("Members")
                 Button {
-                    UIPasteboard.general.string = roll.inviteCode
                     Haptics.tap()
+                    showInviteShare = true
                 } label: {
                     Image(systemName: "square.and.arrow.up")
                         .foregroundStyle(FlimTheme.accent)
                 }
-                .accessibilityLabel("Copy invite code")
+                .accessibilityLabel("Share invite")
 
                 Menu {
                     Button {
@@ -149,6 +150,9 @@ struct RollDetailView: View {
         }
         .sheet(isPresented: $showShareAll) {
             ActivityView(items: shareImages)
+        }
+        .sheet(isPresented: $showInviteShare) {
+            ActivityView(items: ["Join my roll “\(displayName.isEmpty ? roll.name : displayName)” on FLIM — use invite code \(roll.inviteCode)"])
         }
         .confirmationDialog("Delete this roll?", isPresented: $showDeleteRoll, titleVisibility: .visible) {
             Button("Delete Roll", role: .destructive) {

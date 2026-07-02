@@ -26,10 +26,16 @@ struct SortDeckView: View {
                 if cards.isEmpty && loaded {
                     Spacer(); doneState; Spacer()
                 } else {
-                    cardStack
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .padding(.horizontal, 18)
-                        .padding(.top, 6)
+                    GeometryReader { geo in
+                        ZStack {
+                            ForEach(Array(cards.prefix(3).enumerated()).reversed(), id: \.element.id) { index, photo in
+                                card(photo, index: index, area: geo.size)
+                            }
+                        }
+                        .frame(width: geo.size.width, height: geo.size.height)
+                    }
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 10)
                     controls
                 }
             }
@@ -55,17 +61,9 @@ struct SortDeckView: View {
         .padding(.horizontal, 20).padding(.top, 16).padding(.bottom, 8)
     }
 
-    // MARK: - Card stack
+    // MARK: - Card
 
-    private var cardStack: some View {
-        ZStack {
-            ForEach(Array(cards.prefix(3).enumerated()).reversed(), id: \.element.id) { index, photo in
-                card(photo, index: index)
-            }
-        }
-    }
-
-    private func card(_ photo: Photo, index: Int) -> some View {
+    private func card(_ photo: Photo, index: Int, area: CGSize) -> some View {
         let isTop = index == 0
         return RoundedRectangle(cornerRadius: 22)
             .fill(FlimTheme.bgElevated)
@@ -78,7 +76,7 @@ struct SortDeckView: View {
             .clipShape(RoundedRectangle(cornerRadius: 22))
             .overlay(RoundedRectangle(cornerRadius: 22).stroke(Color.white.opacity(0.08), lineWidth: 1))
             .shadow(color: .black.opacity(0.5), radius: 14, y: 8)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .frame(width: area.width, height: area.height)
             .scaleEffect(isTop ? 1 : 1 - CGFloat(index) * 0.04)
             .offset(y: isTop ? 0 : CGFloat(index) * 14)
             .offset(isTop ? drag : .zero)

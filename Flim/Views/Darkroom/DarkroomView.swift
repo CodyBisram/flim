@@ -8,7 +8,6 @@ struct DarkroomView: View {
     @State private var vm = DarkroomViewModel()
     @State private var selectedPhoto: Photo?
     @State private var selectedURL: URL?
-    @State private var showProfile = false
     @State private var isSelecting = false
     @State private var selectedIDs: Set<UUID> = []
     @State private var showDeleteConfirm = false
@@ -108,11 +107,6 @@ struct DarkroomView: View {
                         }
                         .accessibilityLabel("\(unsortedCount) to sort")
                     }
-                    Button { showProfile = true } label: {
-                        Image(systemName: "person.circle")
-                            .foregroundStyle(FlimTheme.accent)
-                    }
-                    .accessibilityLabel("Profile")
                 }
             }
         }
@@ -154,9 +148,6 @@ struct DarkroomView: View {
         }
         .fullScreenCover(isPresented: $showSortDeck, onDismiss: { Task { await reload() } }) {
             SortDeckView(onFinish: {})
-        }
-        .sheet(isPresented: $showProfile) {
-            ProfileView()
         }
     }
 

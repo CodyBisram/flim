@@ -13,6 +13,7 @@ struct UserPageView: View {
     @State private var following = 0
     @State private var loaded = false
     @State private var followList: FollowList?
+    @State private var showSettings = false
 
     private var isSelf: Bool { userId == auth.currentUser?.id }
     private var isFollowing: Bool { feed.isFollowing(userId) }
@@ -38,9 +39,22 @@ struct UserPageView: View {
         }
         .navigationBarTitleDisplayMode(.inline)
         .toolbarColorScheme(.dark, for: .navigationBar)
+        .toolbar {
+            if isSelf {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { showSettings = true } label: {
+                        Image(systemName: "gearshape").foregroundStyle(FlimTheme.accent)
+                    }
+                    .accessibilityLabel("Settings")
+                }
+            }
+        }
         .task { await load() }
         .sheet(item: $followList) { list in
             FollowListView(userId: userId, mode: list)
+        }
+        .sheet(isPresented: $showSettings) {
+            ProfileView()
         }
     }
 
