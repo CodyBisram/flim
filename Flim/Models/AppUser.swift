@@ -9,6 +9,7 @@ struct AppUser: Codable, Identifiable, Equatable {
     var bio: String?
     var avatarPath: String?
     var displayName: String?
+    var coverPath: String?
 
     /// Preferred name for greetings/display — the display name, else the username.
     var friendlyName: String { displayName?.isEmpty == false ? displayName! : (username ?? "there") }
@@ -22,5 +23,6 @@ struct AppUser: Codable, Identifiable, Equatable {
         case bio
         case avatarPath = "avatar_path"
         case displayName = "display_name"
+        case coverPath = "cover_path"
     }
 }

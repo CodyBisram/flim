@@ -103,7 +103,7 @@ struct FullScreenPhotoView: View {
                         Menu {
                             Button {
                                 Haptics.tap()
-                                Task { await auth.setAvatar(path: photo.storagePath) }
+                                Task { await auth.setAvatar(fromPhotoPath: photo.storagePath) }
                             } label: { Label("Set as profile photo", systemImage: "person.crop.circle") }
                             Button(role: .destructive) {
                                 showDeleteConfirm = true

@@ -264,6 +264,17 @@ final class PhotoService {
     }
     #endif
 
+    /// All of the user's Darkroom photos (sorted = kept), newest first — for the profile-photo
+    /// / cover picker. Returns without touching the shared `photos` feed.
+    func fetchDarkroom(userId: UUID) async -> [Photo] {
+        (try? await supabase
+            .from("photos").select()
+            .eq("user_id", value: userId.uuidString)
+            .eq("is_sorted", value: true)
+            .order("taken_at", ascending: false)
+            .execute().value) ?? []
+    }
+
     /// Personal instants that haven't been sorted yet (shown in the swipe deck), newest first.
     func fetchUnsorted(userId: UUID) async -> [Photo] {
         (try? await supabase

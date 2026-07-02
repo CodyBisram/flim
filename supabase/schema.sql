@@ -367,6 +367,8 @@ ALTER TABLE public.users ADD COLUMN IF NOT EXISTS bio TEXT;
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS avatar_path TEXT;
 -- Optional first/display name, used in greetings + shown on the profile (falls back to username).
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS display_name TEXT;
+-- Profile cover/header image (its own Storage copy, independent of any photo/post).
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS cover_path TEXT;
 
 -- Reactions to photos (mainly for shared rolls). One row per (photo, user, emoji).
 CREATE TABLE IF NOT EXISTS public.photo_reactions (
@@ -413,7 +415,7 @@ CREATE POLICY "reactions: remove own"
 -- New columns must be appended at the END for CREATE OR REPLACE VIEW (Postgres can't
 -- reorder/rename existing view columns) — decode is by name in the app, so order is irrelevant.
 CREATE OR REPLACE VIEW public.profiles AS
-    SELECT id, username, avatar_path, bio, created_at, display_name
+    SELECT id, username, avatar_path, bio, created_at, display_name, cover_path
     FROM public.users;
 
 GRANT SELECT ON public.profiles TO authenticated, anon;
@@ -488,6 +490,15 @@ CREATE POLICY "photos: readable when set as avatar"
     USING (
         bucket_id = 'photos'
         AND EXISTS (SELECT 1 FROM public.users u WHERE u.avatar_path = storage.objects.name)
+    );
+
+-- A profile cover image is readable by any signed-in user.
+DROP POLICY IF EXISTS "photos: readable when set as cover" ON storage.objects;
+CREATE POLICY "photos: readable when set as cover"
+    ON storage.objects FOR SELECT TO authenticated
+    USING (
+        bucket_id = 'photos'
+        AND EXISTS (SELECT 1 FROM public.users u WHERE u.cover_path = storage.objects.name)
     );
 
 -- POST REACTIONS ---------------------------------------------

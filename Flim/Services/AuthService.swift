@@ -165,20 +165,52 @@ final class AuthService {
             .value
     }
 
-    /// Sets the profile avatar to one of the user's own photos (its storage path).
-    func setAvatar(path: String) async {
-        guard let session = try? await supabase.auth.session else { return }
+    /// Sets the profile avatar from one of the user's photos. Copies the image into its own
+    /// Storage object so the avatar survives the source photo being deleted.
+    func setAvatar(fromPhotoPath sourcePath: String) async {
+        guard let session = try? await supabase.auth.session,
+              let dest = await copyToOwnedObject(from: sourcePath, prefix: "avatar", userId: session.user.id)
+        else { return }
+        let old = currentUser?.avatarPath
         struct Update: Encodable { let avatar_path: String }
         if let updated: AppUser = try? await supabase
-            .from("users")
-            .update(Update(avatar_path: path))
-            .eq("id", value: session.user.id.uuidString)
-            .select()
-            .single()
-            .execute()
-            .value {
+            .from("users").update(Update(avatar_path: dest))
+            .eq("id", value: session.user.id.uuidString).select().single().execute().value {
             currentUser = updated
+            cleanupOldCopy(old, keeping: dest, prefix: "avatar")
         }
+    }
+
+    /// Sets the profile cover/header from one of the user's photos (its own Storage copy).
+    func setCover(fromPhotoPath sourcePath: String) async {
+        guard let session = try? await supabase.auth.session,
+              let dest = await copyToOwnedObject(from: sourcePath, prefix: "cover", userId: session.user.id)
+        else { return }
+        let old = currentUser?.coverPath
+        struct Update: Encodable { let cover_path: String }
+        if let updated: AppUser = try? await supabase
+            .from("users").update(Update(cover_path: dest))
+            .eq("id", value: session.user.id.uuidString).select().single().execute().value {
+            currentUser = updated
+            cleanupOldCopy(old, keeping: dest, prefix: "cover")
+        }
+    }
+
+    /// Duplicates a photo into a fresh object in the user's own folder, returning its path.
+    private func copyToOwnedObject(from sourcePath: String, prefix: String, userId: UUID) async -> String? {
+        guard let data = try? await supabase.storage.from("photos").download(path: sourcePath) else { return nil }
+        let dest = "\(userId.uuidString.lowercased())/\(prefix)-\(UUID().uuidString.lowercased()).jpg"
+        do {
+            try await supabase.storage.from("photos")
+                .upload(dest, data: data, options: FileOptions(contentType: "image/jpeg"))
+            return dest
+        } catch { return nil }
+    }
+
+    /// Best-effort delete of a previous avatar/cover copy (only our own copies, never a real photo).
+    private func cleanupOldCopy(_ old: String?, keeping newPath: String, prefix: String) {
+        guard let old, old != newPath, old.contains("/\(prefix)-") else { return }
+        Task { _ = try? await supabase.storage.from("photos").remove(paths: [old]) }
     }
 
     func signOut() async throws {

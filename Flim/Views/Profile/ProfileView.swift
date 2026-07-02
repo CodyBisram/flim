@@ -10,6 +10,8 @@ struct ProfileView: View {
     @State private var avatarURL: URL?
     @State private var showEditBio = false
     @State private var showEditName = false
+    @State private var showAvatarPicker = false
+    @State private var showCoverPicker = false
     @State private var codeCopied = false
     @State private var showDeleteConfirm = false
     @State private var isDeleting = false
@@ -27,6 +29,7 @@ struct ProfileView: View {
                 VStack(spacing: 0) {
                     // Avatar + username + stats + bio
                     VStack(spacing: 12) {
+                        Button { showAvatarPicker = true } label: {
                         Circle()
                             .fill(FlimTheme.accent.opacity(0.18))
                             .frame(width: 84, height: 84)
@@ -45,6 +48,14 @@ struct ProfileView: View {
                             }
                             .clipShape(Circle())
                             .overlay(Circle().stroke(FlimTheme.accent.opacity(0.5), lineWidth: 1))
+                            .overlay(alignment: .bottomTrailing) {
+                                Image(systemName: "camera.fill")
+                                    .font(.system(size: 11)).foregroundStyle(.black)
+                                    .padding(6).background(FlimTheme.accent, in: Circle())
+                                    .overlay(Circle().stroke(FlimTheme.bg, lineWidth: 2))
+                            }
+                        }
+                        .accessibilityLabel("Change profile photo")
 
                         // Display name (tap to edit)
                         Button {
@@ -137,6 +148,19 @@ struct ProfileView: View {
                     .padding(.horizontal, 28)
                     .padding(.vertical, 14)
                     .background(FlimTheme.bgElevated)
+
+                    // Change cover photo
+                    Button {
+                        showCoverPicker = true
+                    } label: {
+                        HStack {
+                            Text("Change cover photo").font(.system(size: 15)).foregroundStyle(.white)
+                            Spacer()
+                            Image(systemName: "photo.on.rectangle").foregroundStyle(FlimTheme.textTertiary)
+                        }
+                        .padding(.horizontal, 28).padding(.vertical, 14)
+                        .background(FlimTheme.bgElevated)
+                    }
 
                     // Accent color
                     VStack(alignment: .leading, spacing: 12) {
@@ -232,6 +256,16 @@ struct ProfileView: View {
             }
             .sheet(isPresented: $showEditName) {
                 EditNameSheet(current: auth.currentUser?.displayName ?? "")
+            }
+            .sheet(isPresented: $showAvatarPicker) {
+                PhotoPickerSheet(title: "Profile Photo") { path in
+                    Task { await auth.setAvatar(fromPhotoPath: path) }
+                }
+            }
+            .sheet(isPresented: $showCoverPicker) {
+                PhotoPickerSheet(title: "Cover Photo") { path in
+                    Task { await auth.setCover(fromPhotoPath: path) }
+                }
             }
             .task {
                 if let uid = auth.currentUser?.id {

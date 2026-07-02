@@ -48,6 +48,7 @@
 		C8709C9620D5940B8626F149 /* FeedService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9817482FE2AB125EC4FC2FB /* FeedService.swift */; };
 		CBD8476D316567B4404ECBA9 /* Social.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0FA5444D3CDCB4379BF00F72 /* Social.swift */; };
 		D1044E118206CD6EDF9692B3 /* Roll.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A0B87FE1069C71306456DFF /* Roll.swift */; };
+		D86D45FEC7A4EA89A268B87B /* PhotoPickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC8AD03A8D1B86B86365239A /* PhotoPickerSheet.swift */; };
 		DF79D7CBD7A4684626EF2080 /* ActivityFeedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F4E26878DAFF415FB6B4644 /* ActivityFeedView.swift */; };
 		E01A141DA15C3B44C02C6CDA /* SortDeckView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F41D0B57C8881A275E755159 /* SortDeckView.swift */; };
 		E924D1944FA4475B4E383A61 /* PhotoReadinessTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BAF7FE72763EB709B93E5BA4 /* PhotoReadinessTests.swift */; };
@@ -117,6 +118,7 @@
 		D9927EBDE8E7056C4DA31EF2 /* AuthHelpersTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthHelpersTests.swift; sourceTree = "<group>"; };
 		DB2A4DF8A1879B929C3C4CB4 /* FilmStockTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilmStockTests.swift; sourceTree = "<group>"; };
 		DC34A455324DEE2A431A7720 /* ProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileView.swift; sourceTree = "<group>"; };
+		DC8AD03A8D1B86B86365239A /* PhotoPickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoPickerSheet.swift; sourceTree = "<group>"; };
 		EFC0C65109A81467AB59472B /* AuthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthService.swift; sourceTree = "<group>"; };
 		F1AA5EF66C46272F42891AF4 /* RollMembersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollMembersView.swift; sourceTree = "<group>"; };
 		F2CA2F6DA98A04777C3D3C23 /* OTPView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OTPView.swift; sourceTree = "<group>"; };
@@ -212,6 +214,7 @@
 		65E89728796BB8EE12A233ED /* Profile */ = {
 			isa = PBXGroup;
 			children = (
+				DC8AD03A8D1B86B86365239A /* PhotoPickerSheet.swift */,
 				DC34A455324DEE2A431A7720 /* ProfileView.swift */,
 			);
 			path = Profile;
@@ -454,6 +457,7 @@
 				3B9C5D883F61F8F4D2587186 /* PhoneAuthView.swift in Sources */,
 				501F195F7187429C965AE299 /* Photo.swift in Sources */,
 				AB3249CE1029C5382B7C55A6 /* PhotoGridCell.swift in Sources */,
+				D86D45FEC7A4EA89A268B87B /* PhotoPickerSheet.swift in Sources */,
 				C539D0CE6C29A43C779AA265 /* PhotoService.swift in Sources */,
 				A14025FE14C116AF28430EC0 /* PostDetailView.swift in Sources */,
 				A00F0B3005322C2FBEB54BB9 /* PrimaryButton.swift in Sources */,

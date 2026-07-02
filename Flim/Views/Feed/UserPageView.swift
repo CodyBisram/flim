@@ -18,6 +18,7 @@ struct UserPageView: View {
     @State private var showBlockConfirm = false
     @State private var showReportConfirm = false
     @State private var reportedToast = false
+    @State private var showAvatarViewer = false
     @Environment(\.dismiss) private var dismiss
 
     private var isSelf: Bool { userId == auth.currentUser?.id }
@@ -99,6 +100,9 @@ struct UserPageView: View {
         .sheet(isPresented: $showSettings) {
             ProfileView()
         }
+        .fullScreenCover(isPresented: $showAvatarViewer) {
+            ImageViewer(url: avatarURL)
+        }
     }
 
     private var pageHeader: some View {
@@ -116,7 +120,11 @@ struct UserPageView: View {
                     .overlay(LinearGradient(colors: [.black.opacity(0.45), .clear, FlimTheme.bg],
                                             startPoint: .top, endPoint: .bottom))
                     .clipped()
-                avatarCircle.offset(y: 44)
+                Button { if avatarURL != nil { showAvatarViewer = true } } label: {
+                    avatarCircle
+                }
+                .buttonStyle(.plain)
+                .offset(y: 44)
             }
             .padding(.bottom, 44)
 
@@ -236,8 +244,9 @@ struct UserPageView: View {
         following = await fg
         if feed.followingIds.isEmpty, let uid = auth.currentUser?.id { await feed.loadFollowing(userId: uid) }
         if let path = profile?.avatarPath { avatarURL = await feed.signedURL(for: path) }
-        // Cover = the newest shared shot, falling back to the avatar.
-        if let newest = posts.first?.storagePath { coverURL = await feed.signedURL(for: newest) }
+        // Cover = chosen cover, else the newest shared shot, else the avatar.
+        if let cover = profile?.coverPath { coverURL = await feed.signedURL(for: cover) }
+        else if let newest = posts.first?.storagePath { coverURL = await feed.signedURL(for: newest) }
         else { coverURL = avatarURL }
         loaded = true
     }

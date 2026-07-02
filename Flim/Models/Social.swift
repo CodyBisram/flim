@@ -7,6 +7,7 @@ struct UserProfile: Codable, Identifiable, Hashable {
     var avatarPath: String?
     var bio: String?
     var displayName: String?
+    var coverPath: String?
     let createdAt: Date
 
     var handle: String { "@\(username ?? "someone")" }
@@ -17,6 +18,7 @@ struct UserProfile: Codable, Identifiable, Hashable {
         case id, username, bio
         case avatarPath = "avatar_path"
         case displayName = "display_name"
+        case coverPath = "cover_path"
         case createdAt = "created_at"
     }
 }
