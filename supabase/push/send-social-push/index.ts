@@ -148,5 +148,57 @@ Deno.serve(async () => {
     await supabase.from("post_reactions").update({ push_sent: true }).in("id", g.ids);
   }
 
+  // ---- Roll photo comments: notify the OWNER + that photo's THREAD (people who already
+  //      commented on the same photo), never the whole roll. Skip anyone who muted the roll.
+  const { data: photoComments } = await supabase
+    .from("photo_comments")
+    .select("id, photo_id, user_id, body, photos(user_id, roll_id)")
+    .eq("push_sent", false);
+
+  const byPhoto = new Map<string, {
+    ownerId?: string; rollId?: string; items: { id: string; userId: string; body: string }[];
+  }>();
+  for (const pc of photoComments ?? []) {
+    const meta = (pc as { photos?: { user_id?: string; roll_id?: string } }).photos;
+    const g = byPhoto.get(pc.photo_id) ?? { ownerId: meta?.user_id, rollId: meta?.roll_id, items: [] };
+    g.items.push({ id: pc.id, userId: pc.user_id, body: pc.body });
+    byPhoto.set(pc.photo_id, g);
+  }
+
+  for (const [photoId, g] of byPhoto) {
+    // The thread = everyone who has ever commented on this photo, plus the owner.
+    const { data: allC } = await supabase.from("photo_comments").select("user_id").eq("photo_id", photoId);
+    const thread = new Set<string>((allC ?? []).map((c) => c.user_id));
+    if (g.ownerId) thread.add(g.ownerId);
+
+    // People who muted this roll get nothing.
+    let muted = new Set<string>();
+    if (g.rollId) {
+      const { data: m } = await supabase.from("roll_notification_mutes").select("user_id").eq("roll_id", g.rollId);
+      muted = new Set((m ?? []).map((x) => x.user_id));
+    }
+
+    for (const recipient of thread) {
+      if (muted.has(recipient)) continue;
+      const fromOthers = g.items.filter((it) => it.userId !== recipient);  // never notify about your own
+      if (fromOthers.length === 0) continue;
+
+      let title: string, body: string;
+      if (fromOthers.length === 1) {
+        title = `${await handle(fromOthers[0].userId)} commented`;
+        const b = fromOthers[0].body;
+        body = b.length > 90 ? b.slice(0, 87) + "…" : b;
+      } else {
+        title = `${fromOthers.length} new comments`;
+        body = "on a roll photo";
+      }
+      for (const token of await tokensFor(recipient)) {
+        if (await sendPush(token, title, body)) sent++;
+      }
+    }
+
+    await supabase.from("photo_comments").update({ push_sent: true }).in("id", g.items.map((it) => it.id));
+  }
+
   return new Response(`sent ${sent} social push(es)`);
 });

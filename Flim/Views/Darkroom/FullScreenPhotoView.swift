@@ -6,6 +6,8 @@ struct FullScreenPhotoView: View {
     let url: URL?
     /// Who took this shot (shown in shared rolls); nil in your personal Darkroom.
     var photographer: String? = nil
+    /// Roll member names for comment attribution (empty for personal photos).
+    var memberNames: [UUID: String] = [:]
     /// Called after the photo is deleted so the parent can refresh its grid.
     var onDelete: () -> Void = {}
     @Environment(PhotoService.self) private var photoService
@@ -27,9 +29,11 @@ struct FullScreenPhotoView: View {
     @State private var reactions: [PhotoReaction] = []
     @State private var showShareComposer = false
     @State private var shareCaptionDraft = ""
+    @State private var showComments = false
     @FocusState private var captionFocused: Bool
 
     private var isOwnPhoto: Bool { photo.userId == auth.currentUser?.id }
+    private var isRollPhoto: Bool { photo.rollId != nil }
 
     var body: some View {
         ZStack {
@@ -86,6 +90,17 @@ struct FullScreenPhotoView: View {
                     }
                     .accessibilityLabel("Close")
                     Spacer()
+                    // Comments (shared roll photos only).
+                    if isRollPhoto {
+                        Button { showComments = true } label: {
+                            Image(systemName: "bubble.right")
+                                .font(.system(size: 15, weight: .medium))
+                                .foregroundStyle(.white)
+                                .padding(12)
+                                .glassCapsule(interactive: true)
+                        }
+                        .accessibilityLabel("Comments")
+                    }
                     // Share / save to Camera Roll (the on-screen, screen-sized image).
                     Button {
                         if let resolvedURL,
@@ -159,6 +174,9 @@ struct FullScreenPhotoView: View {
         }
         .ignoresSafeArea()
         .statusBarHidden()
+        .sheet(isPresented: $showComments) {
+            PhotoCommentsSheet(photoId: photo.id, memberNames: memberNames)
+        }
         .overlay(alignment: .top) {
             if showSharedToast {
                 Label("Shared to your page", systemImage: "checkmark.circle.fill")

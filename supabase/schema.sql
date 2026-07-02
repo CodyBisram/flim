@@ -582,6 +582,47 @@ DROP POLICY IF EXISTS "comment_likes: remove own" ON public.comment_likes;
 CREATE POLICY "comment_likes: remove own"
     ON public.comment_likes FOR DELETE USING (auth.uid() = user_id);
 
+-- ROLL PHOTO COMMENTS -----------------------------------------
+-- Comments on a shared roll's photos. Visible to roll members; notifications go only to the
+-- photo's owner + people already in that photo's thread (see send-social-push), never the
+-- whole roll.
+CREATE TABLE IF NOT EXISTS public.photo_comments (
+    id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    photo_id   UUID NOT NULL REFERENCES public.photos(id) ON DELETE CASCADE,
+    user_id    UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+    body       TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+ALTER TABLE public.photo_comments ENABLE ROW LEVEL SECURITY;
+CREATE INDEX IF NOT EXISTS photo_comments_photo_idx ON public.photo_comments (photo_id);
+
+DROP POLICY IF EXISTS "photo_comments: readable by roll members" ON public.photo_comments;
+CREATE POLICY "photo_comments: readable by roll members"
+    ON public.photo_comments FOR SELECT TO authenticated
+    USING (EXISTS (SELECT 1 FROM public.photos p WHERE p.id = photo_id
+                   AND (p.user_id = auth.uid() OR public.is_roll_member(p.roll_id))));
+DROP POLICY IF EXISTS "photo_comments: insert as roll member" ON public.photo_comments;
+CREATE POLICY "photo_comments: insert as roll member"
+    ON public.photo_comments FOR INSERT TO authenticated
+    WITH CHECK (user_id = auth.uid()
+                AND EXISTS (SELECT 1 FROM public.photos p WHERE p.id = photo_id
+                            AND public.is_roll_member(p.roll_id)));
+DROP POLICY IF EXISTS "photo_comments: delete own" ON public.photo_comments;
+CREATE POLICY "photo_comments: delete own"
+    ON public.photo_comments FOR DELETE USING (user_id = auth.uid());
+
+-- Per-user, per-roll notification mute (so a busy roll can be silenced without leaving it).
+CREATE TABLE IF NOT EXISTS public.roll_notification_mutes (
+    roll_id UUID NOT NULL REFERENCES public.rolls(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+    PRIMARY KEY (roll_id, user_id)
+);
+ALTER TABLE public.roll_notification_mutes ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "roll_mutes: own" ON public.roll_notification_mutes;
+CREATE POLICY "roll_mutes: own"
+    ON public.roll_notification_mutes FOR ALL
+    USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
+
 -- BLOCKS + USER REPORTS (UGC safety) --------------------------
 CREATE TABLE IF NOT EXISTS public.blocks (
     blocker_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,

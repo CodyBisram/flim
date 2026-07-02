@@ -15,6 +15,7 @@ struct RollCarouselView: View {
     @State private var urls: [UUID: URL] = [:]
     @State private var reactions: [PhotoReaction] = []
     @State private var shareItem: ShareImage?
+    @State private var showComments = false
 
     private var current: Photo? { photos.indices.contains(selection) ? photos[selection] : nil }
 
@@ -56,6 +57,11 @@ struct RollCarouselView: View {
         }
         .statusBarHidden()
         .sheet(item: $shareItem) { ActivityView(items: [$0.image]) }
+        .sheet(isPresented: $showComments) {
+            if let photo = current {
+                PhotoCommentsSheet(photoId: photo.id, memberNames: memberNames)
+            }
+        }
         .onAppear { selection = min(max(startIndex, 0), max(0, photos.count - 1)) }
         .task(id: selection) { await loadAround(selection) }
     }
@@ -70,6 +76,11 @@ struct RollCarouselView: View {
             Text("\(selection + 1) / \(photos.count)")
                 .font(.system(size: 13, weight: .semibold)).foregroundStyle(.white)
             Spacer()
+            Button { showComments = true } label: {
+                Image(systemName: "bubble.right").font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(.white).padding(12).glassCapsule(interactive: true)
+            }
+            .accessibilityLabel("Comments")
             Button {
                 if let photo = current, let url = urls[photo.id],
                    let image = ImageCache.shared.object(forKey: "\(url.absoluteString)|1600" as NSString) {

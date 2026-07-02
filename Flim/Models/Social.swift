@@ -59,6 +59,22 @@ struct PostComment: Codable, Identifiable {
     }
 }
 
+/// A comment on a shared roll's photo (distinct from feed PostComment).
+struct PhotoComment: Codable, Identifiable {
+    let id: UUID
+    let photoId: UUID
+    let userId: UUID
+    let body: String
+    let createdAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case id, body
+        case photoId = "photo_id"
+        case userId = "user_id"
+        case createdAt = "created_at"
+    }
+}
+
 struct PostReaction: Codable, Identifiable {
     let id: UUID
     let postId: UUID

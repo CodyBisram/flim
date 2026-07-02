@@ -231,6 +231,46 @@ final class PhotoService {
             .execute()
     }
 
+    // MARK: - Roll photo comments
+
+    func fetchPhotoComments(photoId: UUID) async -> [PhotoComment] {
+        (try? await supabase.from("photo_comments").select()
+            .eq("photo_id", value: photoId.uuidString)
+            .order("created_at", ascending: true)
+            .execute().value) ?? []
+    }
+
+    @discardableResult
+    func addPhotoComment(photoId: UUID, body: String, userId: UUID) async -> PhotoComment? {
+        struct C: Encodable { let photo_id: UUID; let user_id: UUID; let body: String }
+        return try? await supabase.from("photo_comments")
+            .insert(C(photo_id: photoId, user_id: userId, body: body))
+            .select().single().execute().value
+    }
+
+    func deletePhotoComment(id: UUID) async {
+        _ = try? await supabase.from("photo_comments").delete().eq("id", value: id.uuidString).execute()
+    }
+
+    // MARK: - Per-roll notification mute
+
+    func fetchMutedRolls(userId: UUID) async -> Set<UUID> {
+        struct Row: Decodable { let roll_id: UUID }
+        let rows: [Row] = (try? await supabase.from("roll_notification_mutes").select("roll_id")
+            .eq("user_id", value: userId.uuidString).execute().value) ?? []
+        return Set(rows.map(\.roll_id))
+    }
+
+    func setRollMuted(_ muted: Bool, rollId: UUID, userId: UUID) async {
+        if muted {
+            struct M: Encodable { let roll_id: UUID; let user_id: UUID }
+            _ = try? await supabase.from("roll_notification_mutes").insert(M(roll_id: rollId, user_id: userId)).execute()
+        } else {
+            _ = try? await supabase.from("roll_notification_mutes").delete()
+                .eq("roll_id", value: rollId.uuidString).eq("user_id", value: userId.uuidString).execute()
+        }
+    }
+
     // MARK: - Fetch (paginated)
 
     private let pageSize = 30

@@ -29,6 +29,7 @@
 		56F026E4C4E1E30F19E98152 /* CameraViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2541CCDED4898D0604DB64EA /* CameraViewModel.swift */; };
 		58C00DA36934A8DF0C2C833B /* CameraPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1AF74B1882B2963B0A26004E /* CameraPreview.swift */; };
 		5AD497FC90DCDC3592EA12FE /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7148B48A915D24BFBDEB23E0 /* NotificationService.swift */; };
+		5BC43DD28869E8A440458914 /* PhotoCommentsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CECD20B5ABAAC6B609C6E31 /* PhotoCommentsSheet.swift */; };
 		5E2974194C8828B625B4F7F4 /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = DBEC3FD4AF48540B14AE6BD2 /* Supabase */; };
 		6013474B6F35E06F049139DD /* JoinRollView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35A42EF6E37ED2ED362069BA /* JoinRollView.swift */; };
 		6B14829E6DD63477E932FEDC /* FullScreenPhotoView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B7DE28ED82A77117E85EBE0 /* FullScreenPhotoView.swift */; };
@@ -105,6 +106,7 @@
 		8118D8FA0343F18F835415D3 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		870990313A19750FDF37E235 /* FilmStock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilmStock.swift; sourceTree = "<group>"; };
 		8BFE9FBCA04098DC6F972D9A /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		8CECD20B5ABAAC6B609C6E31 /* PhotoCommentsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoCommentsSheet.swift; sourceTree = "<group>"; };
 		9BE06A9CEC95AF492BDBD575 /* PrimaryButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrimaryButton.swift; sourceTree = "<group>"; };
 		9F609967CE45299259DA37AC /* PostDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PostDetailView.swift; sourceTree = "<group>"; };
 		A0EABF568B1F50179364FE91 /* SupabaseClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseClient.swift; sourceTree = "<group>"; };
@@ -322,6 +324,7 @@
 			children = (
 				BA95E5BB427471DF71E11E56 /* CreateRollView.swift */,
 				35A42EF6E37ED2ED362069BA /* JoinRollView.swift */,
+				8CECD20B5ABAAC6B609C6E31 /* PhotoCommentsSheet.swift */,
 				5CCFCD9A339AA06647B7A1E1 /* RollCarouselView.swift */,
 				54CD52378D31EEDB7D7BE6EF /* RollDetailView.swift */,
 				F1AA5EF66C46272F42891AF4 /* RollMembersView.swift */,
@@ -459,6 +462,7 @@
 				3329F6BEB76AA76B288DE250 /* OnboardingView.swift in Sources */,
 				3B9C5D883F61F8F4D2587186 /* PhoneAuthView.swift in Sources */,
 				501F195F7187429C965AE299 /* Photo.swift in Sources */,
+				5BC43DD28869E8A440458914 /* PhotoCommentsSheet.swift in Sources */,
 				AB3249CE1029C5382B7C55A6 /* PhotoGridCell.swift in Sources */,
 				D86D45FEC7A4EA89A268B87B /* PhotoPickerSheet.swift in Sources */,
 				C539D0CE6C29A43C779AA265 /* PhotoService.swift in Sources */,

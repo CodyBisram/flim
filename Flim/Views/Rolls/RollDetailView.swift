@@ -25,6 +25,7 @@ struct RollDetailView: View {
     @State private var coverToast = false
     @State private var showLeaveRoll = false
     @State private var showCarousel = false
+    @State private var isMuted = false
 
     private var isCreator: Bool { auth.currentUser?.id == roll.createdBy }
     /// Developed shots oldest → newest, for the flip-through carousel.
@@ -153,6 +154,16 @@ struct RollDetailView: View {
                     } label: { Label(savingAll ? "Saving…" : "Save all to Camera Roll", systemImage: "square.and.arrow.down.on.square") }
                         .disabled(savingAll || vm.developedPhotos.isEmpty)
 
+                    // Silence this roll's comment/reaction notifications without leaving it.
+                    Button {
+                        guard let uid = auth.currentUser?.id else { return }
+                        isMuted.toggle()
+                        Task { await photoService.setRollMuted(isMuted, rollId: roll.id, userId: uid) }
+                    } label: {
+                        Label(isMuted ? "Unmute notifications" : "Mute notifications",
+                              systemImage: isMuted ? "bell.slash" : "bell")
+                    }
+
                     if isCreator {
                         Button {
                             renameDraft = roll.name
@@ -193,10 +204,16 @@ struct RollDetailView: View {
                                              uniquingKeysWith: { first, _ in first })
                 }
             }
+            Task {
+                if let uid = auth.currentUser?.id {
+                    isMuted = await photoService.fetchMutedRolls(userId: uid).contains(roll.id)
+                }
+            }
         }
         .fullScreenCover(item: $selectedPhoto) { photo in
             FullScreenPhotoView(photo: photo, url: selectedURL,
                                 photographer: memberNames[photo.userId],
+                                memberNames: memberNames,
                                 onDelete: { Task { await vm.loadRoll(photoService: photoService, rollId: roll.id) } })
         }
         .fullScreenCover(isPresented: $showCarousel) {

@@ -36,3 +36,7 @@ ALTER TABLE public.post_comments  ADD COLUMN IF NOT EXISTS push_sent BOOLEAN NOT
 ALTER TABLE public.post_reactions ADD COLUMN IF NOT EXISTS push_sent BOOLEAN NOT NULL DEFAULT FALSE;
 CREATE INDEX IF NOT EXISTS post_comments_unpushed_idx  ON public.post_comments (push_sent) WHERE push_sent = FALSE;
 CREATE INDEX IF NOT EXISTS post_reactions_unpushed_idx ON public.post_reactions (push_sent) WHERE push_sent = FALSE;
+
+-- Roll photo comments: notify the photo owner + that photo's thread (see send-social-push).
+ALTER TABLE public.photo_comments ADD COLUMN IF NOT EXISTS push_sent BOOLEAN NOT NULL DEFAULT FALSE;
+CREATE INDEX IF NOT EXISTS photo_comments_unpushed_idx ON public.photo_comments (push_sent) WHERE push_sent = FALSE;
