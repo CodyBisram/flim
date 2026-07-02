@@ -73,22 +73,6 @@ struct CameraView: View {
                 // camera preview / flash bleed full-screen (they ignore safe area individually).
                 VStack(spacing: 0) {
                     topBar
-                    if unsortedCount > 0 {
-                        HStack {
-                            Spacer()
-                            Button { showSortDeck = true } label: {
-                                HStack(spacing: 5) {
-                                    Image(systemName: "square.stack.3d.up.fill").font(.system(size: 12))
-                                    Text("\(unsortedCount) to sort").font(.system(size: 13, weight: .semibold))
-                                }
-                                .foregroundStyle(.black)
-                                .padding(.horizontal, 12).padding(.vertical, 7)
-                                .background(FlimTheme.accent, in: Capsule())
-                            }
-                            .transition(.opacity)
-                        }
-                        .padding(.top, 10)
-                    }
                     Spacer()
                     VStack(spacing: 22) {
                         filmStrip
@@ -212,6 +196,19 @@ struct CameraView: View {
                         .padding(.vertical, 9)
                         .background(Color(red: 0.8, green: 0.2, blue: 0.2).opacity(0.85), in: Capsule())
                     }
+                } else if unsortedCount > 0 {
+                    // Shortcut into the sort deck — sits where the "Developing…" pill does.
+                    Button { showSortDeck = true } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: "square.stack.3d.up.fill").font(.system(size: 12))
+                            Text("\(unsortedCount) to sort").font(.system(size: 13, weight: .semibold))
+                        }
+                        .foregroundStyle(.black)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 9)
+                        .background(FlimTheme.accent, in: Capsule())
+                    }
+                    .accessibilityLabel("\(unsortedCount) to sort")
                 }
             }
         }
