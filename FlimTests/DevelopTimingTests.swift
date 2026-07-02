@@ -9,28 +9,28 @@ final class DevelopTimingTests: XCTestCase {
 
     func testPersonalDevelopsAfterPersonalDelay() {
         let date = PhotoService.developDate(
-            rollId: nil, existingRollReveal: nil, now: now,
+            rollId: nil, rollReveal: nil, now: now,
             personalDelay: personal, rollDelay: roll
         )
         XCTAssertEqual(date, now.addingTimeInterval(personal))
     }
 
-    func testFirstRollShotStartsTheRollClock() {
+    func testRollShotsUseTheRollsFixedReveal() {
+        // The reveal is set from the roll's creation, so every shot uses it exactly —
+        // independent of `now` — and the whole roll unlocks together.
+        let reveal = Date(timeIntervalSince1970: 2_000_000)
         let date = PhotoService.developDate(
-            rollId: UUID(), existingRollReveal: nil, now: now,
+            rollId: UUID(), rollReveal: reveal, now: now,
+            personalDelay: personal, rollDelay: roll
+        )
+        XCTAssertEqual(date, reveal)
+    }
+
+    func testRollFallsBackToNowPlusDelayWhenRevealUnknown() {
+        let date = PhotoService.developDate(
+            rollId: UUID(), rollReveal: nil, now: now,
             personalDelay: personal, rollDelay: roll
         )
         XCTAssertEqual(date, now.addingTimeInterval(roll))
-    }
-
-    func testLaterRollShotsInheritTheSharedReveal() {
-        // A roll that already has a reveal time set by its first shot: every later shot
-        // must reuse it exactly (ignoring `now`/`rollDelay`) so the roll unlocks together.
-        let sharedReveal = Date(timeIntervalSince1970: 2_000_000)
-        let date = PhotoService.developDate(
-            rollId: UUID(), existingRollReveal: sharedReveal, now: now,
-            personalDelay: personal, rollDelay: roll
-        )
-        XCTAssertEqual(date, sharedReveal)
     }
 }

@@ -238,7 +238,8 @@ CREATE POLICY "photos: roll members can see"
     ON public.photos FOR SELECT
     USING (roll_id IS NOT NULL AND public.is_roll_member(roll_id));
 
--- A roll is "developed" once its reveal time has passed (all its shots share one reveal).
+-- A roll is "developed" 12h after it was CREATED (the clock starts at creation, not the first
+-- shot), so the deadline is fixed up front and holds even for a roll with no photos.
 -- SECURITY DEFINER so the INSERT policy can check it without recursing on photos' RLS.
 CREATE OR REPLACE FUNCTION public.is_roll_developed(p_roll UUID)
 RETURNS boolean
@@ -246,7 +247,10 @@ LANGUAGE sql
 SECURITY DEFINER
 SET search_path = public
 AS $$
-    SELECT EXISTS (SELECT 1 FROM public.photos WHERE roll_id = p_roll AND develops_at <= now());
+    SELECT EXISTS (
+        SELECT 1 FROM public.rolls
+        WHERE id = p_roll AND created_at + interval '12 hours' <= now()
+    );
 $$;
 
 -- Once a roll has developed, NO ONE (member or creator) can add more shots to it.

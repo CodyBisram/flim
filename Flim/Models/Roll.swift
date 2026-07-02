@@ -19,6 +19,19 @@ struct Roll: Codable, Identifiable, Hashable {
         case createdAt = "created_at"
         case coverPath = "cover_path"
     }
+
+    // The reveal clock starts when the roll is CREATED (not at the first shot), so everyone
+    // knows the deadline up front. DEBUG shortens it so the loop is testable.
+    #if DEBUG
+    static let developDelay: TimeInterval = 2 * 60
+    #else
+    static let developDelay: TimeInterval = 12 * 3600
+    #endif
+
+    /// When this roll unlocks for everyone.
+    var revealAt: Date { createdAt.addingTimeInterval(Self.developDelay) }
+    /// True once the reveal has passed — the roll is closed to new shots.
+    var isDeveloped: Bool { revealAt <= .now }
 }
 
 struct RollMember: Codable {

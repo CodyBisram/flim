@@ -7,7 +7,8 @@ final class RollService {
     var rolls: [Roll] = []
     var memberCounts: [UUID: Int] = [:]
     var coverPaths: [UUID: String] = [:]   // roll id → latest developed photo's storage path
-    var closedRollIds: Set<UUID> = []      // rolls whose reveal has passed — no more shots
+    /// Rolls whose reveal (created_at + delay) has passed — closed to new shots.
+    var closedRollIds: Set<UUID> { Set(rolls.filter(\.isDeveloped).map(\.id)) }
     var isLoading = false
     var error: String?
 
@@ -116,8 +117,6 @@ final class RollService {
         for row in rows where covers[row.roll_id] == nil {
             covers[row.roll_id] = row.storage_path   // first per roll = latest (desc order)
         }
-        // Any roll with a developed photo has passed its reveal → it's closed to new shots.
-        closedRollIds = Set(rows.map(\.roll_id))
         // A creator-chosen cover overrides the latest-developed default.
         for roll in rolls where roll.coverPath != nil {
             covers[roll.id] = roll.coverPath

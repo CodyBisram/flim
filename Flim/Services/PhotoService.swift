@@ -106,43 +106,43 @@ final class PhotoService {
     // MARK: - Develop timing
 
     /// When a freshly captured shot should develop. Personal shots use the short "instant"
-    /// delay. Roll shots develop TOGETHER: they inherit the reveal time set by the roll's
-    /// first contribution, so everyone's photos unlock at the same moment (12h after the
-    /// roll's first shot). The first shot in a roll starts that clock.
+    /// delay. Roll shots develop TOGETHER at a time fixed when the ROLL WAS CREATED
+    /// (created_at + delay), so the deadline is the same for everyone from the very start —
+    /// it does not depend on when the first photo is taken.
     private func developDate(forRoll rollId: UUID?) async -> Date {
-        var existing: Date?
+        var reveal: Date?
         if let rollId {
-            existing = (try? await rollRevealDate(rollId: rollId)) ?? nil
+            reveal = (try? await rollRevealDate(rollId: rollId)) ?? nil
         }
         return Self.developDate(
-            rollId: rollId, existingRollReveal: existing, now: .now,
+            rollId: rollId, rollReveal: reveal, now: .now,
             personalDelay: personalDevelopDelay, rollDelay: rollDevelopDelay
         )
     }
 
     /// Pure develop-time policy (unit-tested): personal shots develop after `personalDelay`;
-    /// a roll's first shot starts a `rollDelay` clock, and every later shot inherits that
-    /// same reveal time so the whole roll unlocks together.
+    /// roll shots use the roll's fixed `rollReveal` (created_at + delay) so the whole roll
+    /// unlocks together. `rollReveal` is nil only if the roll can't be read — then we fall
+    /// back to now + delay.
     static func developDate(
-        rollId: UUID?, existingRollReveal: Date?, now: Date,
+        rollId: UUID?, rollReveal: Date?, now: Date,
         personalDelay: TimeInterval, rollDelay: TimeInterval
     ) -> Date {
         guard rollId != nil else { return now.addingTimeInterval(personalDelay) }
-        return existingRollReveal ?? now.addingTimeInterval(rollDelay)
+        return rollReveal ?? now.addingTimeInterval(rollDelay)
     }
 
-    /// The develop time already set for a roll (from its first photo), or nil if empty.
+    /// The roll's fixed reveal time: its `created_at` + the roll delay.
     private func rollRevealDate(rollId: UUID) async throws -> Date? {
-        struct Row: Decodable { let develops_at: Date }
+        struct Row: Decodable { let created_at: Date }
         let rows: [Row] = try await supabase
-            .from("photos")
-            .select("develops_at")
-            .eq("roll_id", value: rollId.uuidString)
-            .order("taken_at", ascending: true)
+            .from("rolls")
+            .select("created_at")
+            .eq("id", value: rollId.uuidString)
             .limit(1)
             .execute()
             .value
-        return rows.first?.develops_at
+        return rows.first.map { $0.created_at.addingTimeInterval(rollDevelopDelay) }
     }
 
     // MARK: - Delete

@@ -169,11 +169,32 @@ private struct RollRow: View {
                     .padding(.vertical, 4)
                     .background(FlimTheme.accentSoft, in: Capsule())
                 }
+
+                // Reveal status — the clock runs from when the roll was created.
+                if roll.isDeveloped {
+                    Label("Developed", systemImage: "checkmark.seal.fill")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(FlimTheme.textTertiary)
+                } else {
+                    TimelineView(.periodic(from: .now, by: 60)) { tl in
+                        let remaining = max(0, Int(roll.revealAt.timeIntervalSince(tl.date)))
+                        Label("Reveals in \(Self.short(remaining))", systemImage: "hourglass")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(FlimTheme.accent)
+                    }
+                }
             }
 
             Spacer()
         }
         .padding(.vertical, 8)
+    }
+
+    private static func short(_ seconds: Int) -> String {
+        let h = seconds / 3600, m = (seconds % 3600) / 60
+        if h > 0 { return "\(h)h \(m)m" }
+        if m > 0 { return "\(m)m" }
+        return "\(seconds)s"
     }
 }
 

@@ -32,7 +32,7 @@ struct RollDetailView: View {
         vm.developedPhotos.sorted { $0.takenAt < $1.takenAt }
     }
     private var isFullyDeveloped: Bool {
-        vm.developingPhotos.isEmpty && !vm.developedPhotos.isEmpty
+        roll.isDeveloped && !vm.developedPhotos.isEmpty
     }
 
     private let columns = [
@@ -58,9 +58,10 @@ struct RollDetailView: View {
                         .padding(.bottom, 8)
                 }
 
-                // Shared-reveal anticipation banner while shots are still developing.
-                if let revealAt = vm.developingPhotos.first?.developsAt {
-                    revealBanner(revealAt: revealAt,
+                // Countdown to the shared reveal — runs from the moment the roll was created,
+                // so it shows even before anyone has taken a shot.
+                if !roll.isDeveloped {
+                    revealBanner(revealAt: roll.revealAt,
                                  shots: vm.developingPhotos.count,
                                  people: Set(vm.developingPhotos.map(\.userId)).count)
                 }
@@ -176,12 +177,13 @@ struct RollDetailView: View {
             Task {
                 await vm.loadRoll(photoService: photoService, rollId: roll.id)
                 // Ensure EVERY member gets a develop reminder — even those who didn't shoot.
-                if notificationsEnabled, let reveal = vm.developingPhotos.first?.developsAt, reveal > .now {
+                // The reveal is fixed at the roll's creation, so this works with zero photos too.
+                if notificationsEnabled, !roll.isDeveloped {
                     let myCount = vm.photos.filter { $0.userId == auth.currentUser?.id }.count
                     await notifications.requestAuthorizationIfNeeded()
                     notifications.scheduleRollDevelopNotification(
                         rollId: roll.id, rollName: displayName.isEmpty ? roll.name : displayName,
-                        developsAt: reveal, photoCount: myCount
+                        developsAt: roll.revealAt, photoCount: myCount
                     )
                 }
             }
@@ -310,7 +312,9 @@ struct RollDetailView: View {
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(FlimTheme.accent)
             }
-            Text("\(shots) shot\(shots == 1 ? "" : "s") waiting" + (people > 1 ? " from \(people) people" : ""))
+            Text(shots == 0
+                 ? "No shots yet — be the first to add one"
+                 : "\(shots) shot\(shots == 1 ? "" : "s") waiting" + (people > 1 ? " from \(people) people" : ""))
                 .font(.system(size: 12))
                 .foregroundStyle(FlimTheme.textSecondary)
         }
