@@ -375,7 +375,9 @@ ALTER TABLE public.photos ADD COLUMN IF NOT EXISTS caption TEXT;
 -- swiped into the Darkroom (archive) or Feed (publish) via the sort deck. Roll shots skip
 -- the deck (inserted sorted). Existing photos are treated as already sorted.
 ALTER TABLE public.photos ADD COLUMN IF NOT EXISTS is_sorted BOOLEAN NOT NULL DEFAULT FALSE;
-UPDATE public.photos SET is_sorted = TRUE WHERE is_sorted = FALSE;
+-- One-time backfill (run once when the column was added; NOT here, so re-running schema.sql
+-- doesn't clear photos currently waiting in the sort deck):
+--   UPDATE public.photos SET is_sorted = TRUE WHERE is_sorted = FALSE;
 
 -- Profile bio + avatar (avatar_path points at one of the user's own photos in Storage).
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS bio TEXT;
