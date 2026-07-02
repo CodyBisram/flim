@@ -116,17 +116,19 @@ struct FeedView: View {
             #endif
             Button { showActivity = true } label: {
                 Image(systemName: "bell")
-                    .font(.system(size: 19, weight: .regular))
+                    .font(.system(size: 16, weight: .medium))
                     .foregroundStyle(FlimTheme.accent)
-                    .frame(width: 30, height: 34)
+                    .frame(width: 38, height: 38)
+                    .glassCapsule(interactive: true)
             }
             .accessibilityLabel("Activity")
 
             Button { showDiscover = true } label: {
                 Image(systemName: "person.badge.plus")
-                    .font(.system(size: 19, weight: .regular))
+                    .font(.system(size: 16, weight: .medium))
                     .foregroundStyle(FlimTheme.accent)
-                    .frame(width: 30, height: 34)
+                    .frame(width: 38, height: 38)
+                    .glassCapsule(interactive: true)
             }
             .accessibilityLabel("Find friends")
 

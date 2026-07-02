@@ -44,6 +44,7 @@ struct UserPageView: View {
         }
         .navigationBarTitleDisplayMode(.inline)
         .toolbarColorScheme(.dark, for: .navigationBar)
+        .toolbarBackground(.hidden, for: .navigationBar)   // let the cover show under the back/gear
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 if isSelf {
@@ -112,7 +113,7 @@ struct UserPageView: View {
                             CachedImage(url: coverURL, maxPixel: 1000) { $0.resizable().scaledToFill() } placeholder: { Color.clear }
                         }
                     }
-                    .overlay(LinearGradient(colors: [.black.opacity(0.1), .clear, FlimTheme.bg],
+                    .overlay(LinearGradient(colors: [.black.opacity(0.45), .clear, FlimTheme.bg],
                                             startPoint: .top, endPoint: .bottom))
                     .clipped()
                 avatarCircle.offset(y: 44)

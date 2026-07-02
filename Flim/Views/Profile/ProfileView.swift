@@ -9,8 +9,8 @@ struct ProfileView: View {
     @State private var photoCount = 0
     @State private var avatarURL: URL?
     @State private var showEditBio = false
+    @State private var showEditName = false
     @State private var codeCopied = false
-    @State private var showSignOutConfirm = false
     @State private var showDeleteConfirm = false
     @State private var isDeleting = false
     @State private var deleteError: String?
@@ -46,17 +46,27 @@ struct ProfileView: View {
                             .clipShape(Circle())
                             .overlay(Circle().stroke(FlimTheme.accent.opacity(0.5), lineWidth: 1))
 
+                        // Display name (tap to edit)
+                        Button {
+                            showEditName = true
+                        } label: {
+                            HStack(spacing: 6) {
+                                Text(auth.currentUser?.displayName?.isEmpty == false ? auth.currentUser!.displayName! : "Add your name")
+                                    .font(.system(size: 21, weight: .light))
+                                    .foregroundStyle(auth.currentUser?.displayName?.isEmpty == false ? .white : FlimTheme.textTertiary)
+                                Image(systemName: "pencil")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(FlimTheme.textTertiary)
+                            }
+                        }
+                        .accessibilityLabel("Edit name")
+
                         Button {
                             showEditUsername = true
                         } label: {
-                            HStack(spacing: 6) {
-                                Text("@\(auth.currentUser?.username ?? "")")
-                                    .font(.system(size: 20, weight: .thin))
-                                    .foregroundStyle(.white)
-                                Image(systemName: "pencil")
-                                    .font(.system(size: 12))
-                                    .foregroundStyle(FlimTheme.textTertiary)
-                            }
+                            Text("@\(auth.currentUser?.username ?? "")")
+                                .font(.system(size: 14))
+                                .foregroundStyle(FlimTheme.textTertiary)
                         }
                         .accessibilityLabel("Edit username")
 
@@ -169,9 +179,12 @@ struct ProfileView: View {
                     Spacer()
 
                     VStack(spacing: 12) {
-                        // Sign out
-                        Button(role: .destructive) {
-                            showSignOutConfirm = true
+                        // Sign out — immediate (non-destructive; you can sign right back in).
+                        Button {
+                            Task {
+                                try? await auth.signOut()
+                                dismiss()
+                            }
                         } label: {
                             Text("Sign Out")
                                 .font(.system(size: 15, weight: .medium))
@@ -217,6 +230,9 @@ struct ProfileView: View {
             .sheet(isPresented: $showEditBio) {
                 EditBioSheet(current: auth.currentUser?.bio ?? "")
             }
+            .sheet(isPresented: $showEditName) {
+                EditNameSheet(current: auth.currentUser?.displayName ?? "")
+            }
             .task {
                 if let uid = auth.currentUser?.id {
                     photoCount = await photos.photoCount(userId: uid)
@@ -225,15 +241,6 @@ struct ProfileView: View {
                 if let path = auth.currentUser?.avatarPath {
                     avatarURL = try? await photos.signedURL(for: path)
                 }
-            }
-            .confirmationDialog("Sign out?", isPresented: $showSignOutConfirm, titleVisibility: .visible) {
-                Button("Sign Out", role: .destructive) {
-                    Task {
-                        try? await auth.signOut()
-                        dismiss()
-                    }
-                }
-                Button("Cancel", role: .cancel) {}
             }
             .confirmationDialog("Delete your account?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
                 Button("Delete Everything", role: .destructive) {
@@ -325,6 +332,57 @@ private struct EditBioSheet: View {
                     Button("Save") {
                         isSaving = true
                         Task { try? await auth.setBio(String(bio.prefix(140))); dismiss() }
+                    }
+                    .foregroundStyle(FlimTheme.accent)
+                    .disabled(isSaving)
+                }
+            }
+        }
+        .presentationDetents([.medium])
+        .presentationBackground(FlimTheme.bg)
+    }
+}
+
+// MARK: - Edit name
+
+private struct EditNameSheet: View {
+    @Environment(AuthService.self) private var auth
+    @Environment(\.dismiss) private var dismiss
+    @State private var name: String
+    @State private var isSaving = false
+
+    init(current: String) { _name = State(initialValue: current) }
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                FlimTheme.bg.ignoresSafeArea()
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("What should we call you?")
+                        .font(.system(size: 13)).foregroundStyle(FlimTheme.textTertiary)
+                    TextField("First name", text: $name)
+                        .textContentType(.givenName)
+                        .autocorrectionDisabled()
+                        .font(.system(size: 17))
+                        .foregroundStyle(.white)
+                        .tint(.white)
+                        .padding(16)
+                        .background(Color(white: 0.1), in: RoundedRectangle(cornerRadius: 12))
+                    Spacer()
+                }
+                .padding(20)
+            }
+            .navigationBarTitleDisplayMode(.inline)
+            .flimInlineTitle("Name")
+            .toolbarColorScheme(.dark, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Cancel") { dismiss() }.foregroundStyle(.white)
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Save") {
+                        isSaving = true
+                        Task { try? await auth.setDisplayName(String(name.prefix(40))); dismiss() }
                     }
                     .foregroundStyle(FlimTheme.accent)
                     .disabled(isSaving)
