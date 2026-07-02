@@ -9,6 +9,7 @@ struct UserPageView: View {
     @State private var profile: UserProfile?
     @State private var posts: [Post] = []
     @State private var avatarURL: URL?
+    @State private var coverURL: URL?
     @State private var followers = 0
     @State private var following = 0
     @State private var loaded = false
@@ -101,22 +102,29 @@ struct UserPageView: View {
 
     private var pageHeader: some View {
         VStack(spacing: 12) {
-            Circle()
-                .fill(FlimTheme.accent.opacity(0.18))
-                .frame(width: 88, height: 88)
-                .overlay {
-                    if let avatarURL {
-                        CachedImage(url: avatarURL, maxPixel: 220) { $0.resizable().scaledToFill() } placeholder: { Color.clear }
-                    } else {
-                        Text(String((profile?.username ?? "?").prefix(1)).uppercased())
-                            .font(.system(size: 32, weight: .thin)).foregroundStyle(FlimTheme.accent)
+            // Cover banner (newest shot, or the avatar) with the avatar overlapping its base.
+            ZStack(alignment: .bottom) {
+                Rectangle()
+                    .fill(FlimTheme.bgElevated)
+                    .frame(height: 150)
+                    .overlay {
+                        if let coverURL {
+                            CachedImage(url: coverURL, maxPixel: 1000) { $0.resizable().scaledToFill() } placeholder: { Color.clear }
+                        }
                     }
-                }
-                .clipShape(Circle())
-                .overlay(Circle().stroke(FlimTheme.accent.opacity(0.5), lineWidth: 1))
+                    .overlay(LinearGradient(colors: [.black.opacity(0.1), .clear, FlimTheme.bg],
+                                            startPoint: .top, endPoint: .bottom))
+                    .clipped()
+                avatarCircle.offset(y: 44)
+            }
+            .padding(.bottom, 44)
 
-            Text(profile?.handle ?? "@…")
-                .font(.system(size: 22, weight: .thin)).foregroundStyle(.white)
+            VStack(spacing: 2) {
+                Text(profile?.name ?? "…")
+                    .font(.system(size: 22, weight: .light)).foregroundStyle(.white)
+                Text(profile?.handle ?? "@…")
+                    .font(.system(size: 13)).foregroundStyle(FlimTheme.textTertiary)
+            }
 
             if let bio = profile?.bio, !bio.isEmpty {
                 Text(bio)
@@ -144,7 +152,23 @@ struct UserPageView: View {
                 .padding(.top, 2)
             }
         }
-        .padding(.top, 12)
+    }
+
+    private var avatarCircle: some View {
+        Circle()
+            .fill(FlimTheme.accent.opacity(0.18))
+            .frame(width: 88, height: 88)
+            .overlay {
+                if let avatarURL {
+                    CachedImage(url: avatarURL, maxPixel: 220) { $0.resizable().scaledToFill() } placeholder: { Color.clear }
+                } else {
+                    Text(String((profile?.username ?? "?").prefix(1)).uppercased())
+                        .font(.system(size: 32, weight: .thin)).foregroundStyle(FlimTheme.accent)
+                }
+            }
+            .clipShape(Circle())
+            .overlay(Circle().stroke(FlimTheme.bg, lineWidth: 4))
+            .overlay(Circle().stroke(FlimTheme.accent.opacity(0.5), lineWidth: 1))
     }
 
     private func stat(_ value: String, _ label: String) -> some View {
@@ -211,6 +235,9 @@ struct UserPageView: View {
         following = await fg
         if feed.followingIds.isEmpty, let uid = auth.currentUser?.id { await feed.loadFollowing(userId: uid) }
         if let path = profile?.avatarPath { avatarURL = await feed.signedURL(for: path) }
+        // Cover = the newest shared shot, falling back to the avatar.
+        if let newest = posts.first?.storagePath { coverURL = await feed.signedURL(for: newest) }
+        else { coverURL = avatarURL }
         loaded = true
     }
 

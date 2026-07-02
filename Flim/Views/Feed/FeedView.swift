@@ -161,21 +161,29 @@ struct FeedView: View {
             Image(systemName: "sparkles")
                 .font(.system(size: 30, weight: .ultraLight))
                 .foregroundStyle(FlimTheme.accent)
-            Text("Your feed is quiet")
+            Text("It's quiet in here")
                 .font(.system(size: 19, weight: .thin))
                 .foregroundStyle(.white)
-            Text("Follow friends to see the moments they share to their page.")
+            Text("Follow friends to see what they share — or take the first shot yourself.")
                 .font(.system(size: 13))
                 .foregroundStyle(FlimTheme.textTertiary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 50)
-            Button { showDiscover = true } label: {
-                Text("Find people")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(.black)
-                    .padding(.horizontal, 22)
-                    .padding(.vertical, 11)
-                    .background(FlimTheme.accent, in: Capsule())
+            HStack(spacing: 10) {
+                Button { showDiscover = true } label: {
+                    Text("Find friends")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.black)
+                        .padding(.horizontal, 20).padding(.vertical, 11)
+                        .background(FlimTheme.accent, in: Capsule())
+                }
+                Button { NotificationCenter.default.post(name: .openCamera, object: nil) } label: {
+                    Text("Take a shot")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 20).padding(.vertical, 11)
+                        .background(Color.white.opacity(0.12), in: Capsule())
+                }
             }
             .padding(.top, 4)
             #if DEBUG
