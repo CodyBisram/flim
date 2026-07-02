@@ -71,26 +71,16 @@ struct RollDetailView: View {
                         }
                     } else {
                         ScrollView {
-                            LazyVGrid(columns: columns, spacing: 2) {
-                                ForEach(vm.photos) { photo in
-                                    PhotoGridCell(photo: photo, signedURL: vm.signedURLCache[photo.id])
-                                        .onTapGesture {
-                                            // Can't peek before it develops — only open ready shots.
-                                            guard photo.isReady else { return }
-                                            selectedURL = vm.signedURLCache[photo.id]
-                                            selectedPhoto = photo
-                                        }
-                                        .task {
-                                            if photo.isReady, vm.signedURLCache[photo.id] == nil {
-                                                _ = await vm.signedURL(for: photo, photoService: photoService)
-                                            }
-                                            if photo.id == vm.photos.last?.id {
-                                                await vm.loadMoreRoll(photoService: photoService, rollId: roll.id)
-                                            }
-                                        }
+                            VStack(alignment: .leading, spacing: 0) {
+                                if !vm.developingPhotos.isEmpty {
+                                    sectionHeader("\(vm.developingPhotos.count) DEVELOPING")
+                                    photoGrid(vm.developingPhotos, triggersLoadMore: false)
+                                }
+                                if !vm.developedPhotos.isEmpty {
+                                    sectionHeader("DEVELOPED")
+                                    photoGrid(vm.developedPhotos, triggersLoadMore: true)
                                 }
                             }
-                            .padding(.horizontal, 2)
                         }
                         .refreshable {
                             await vm.loadRoll(photoService: photoService, rollId: roll.id)
@@ -199,6 +189,39 @@ struct RollDetailView: View {
             savingAll = false
             if !images.isEmpty { showShareAll = true }
         }
+    }
+
+    private func sectionHeader(_ title: String) -> some View {
+        HStack {
+            Text(title)
+                .font(.system(size: 11, weight: .medium)).tracking(2)
+                .foregroundStyle(Color(white: 0.4))
+            Spacer()
+        }
+        .padding(.horizontal, 6).padding(.top, 18).padding(.bottom, 8)
+    }
+
+    private func photoGrid(_ list: [Photo], triggersLoadMore: Bool) -> some View {
+        LazyVGrid(columns: columns, spacing: 2) {
+            ForEach(list) { photo in
+                PhotoGridCell(photo: photo, signedURL: vm.signedURLCache[photo.id])
+                    .onTapGesture {
+                        // Can't peek before it develops — only open ready shots.
+                        guard photo.isReady else { return }
+                        selectedURL = vm.signedURLCache[photo.id]
+                        selectedPhoto = photo
+                    }
+                    .task {
+                        if photo.isReady, vm.signedURLCache[photo.id] == nil {
+                            _ = await vm.signedURL(for: photo, photoService: photoService)
+                        }
+                        if triggersLoadMore, photo.id == list.last?.id {
+                            await vm.loadMoreRoll(photoService: photoService, rollId: roll.id)
+                        }
+                    }
+            }
+        }
+        .padding(.horizontal, 2)
     }
 
     private func revealBanner(revealAt: Date, shots: Int, people: Int) -> some View {

@@ -14,4 +14,9 @@ enum Haptics {
     static func reveal() {
         UINotificationFeedbackGenerator().notificationOccurred(.success)
     }
+
+    /// A firmer bump for entering multi-select via long-press.
+    static func select() {
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+    }
 }

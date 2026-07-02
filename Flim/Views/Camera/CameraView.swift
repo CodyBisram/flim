@@ -73,6 +73,22 @@ struct CameraView: View {
                 // camera preview / flash bleed full-screen (they ignore safe area individually).
                 VStack(spacing: 0) {
                     topBar
+                    if unsortedCount > 0 {
+                        HStack {
+                            Spacer()
+                            Button { showSortDeck = true } label: {
+                                HStack(spacing: 5) {
+                                    Image(systemName: "square.stack.3d.up.fill").font(.system(size: 12))
+                                    Text("\(unsortedCount) to sort").font(.system(size: 13, weight: .semibold))
+                                }
+                                .foregroundStyle(.black)
+                                .padding(.horizontal, 12).padding(.vertical, 7)
+                                .background(FlimTheme.accent, in: Capsule())
+                            }
+                            .transition(.opacity)
+                        }
+                        .padding(.top, 10)
+                    }
                     Spacer()
                     VStack(spacing: 22) {
                         filmStrip
@@ -84,21 +100,6 @@ struct CameraView: View {
                 }
 
                 coachOverlay
-            }
-        }
-        .overlay(alignment: .top) {
-            if unsortedCount > 0 {
-                Button { showSortDeck = true } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: "square.stack.3d.up.fill").font(.system(size: 12))
-                        Text("\(unsortedCount) to sort").font(.system(size: 13, weight: .semibold))
-                    }
-                    .foregroundStyle(.black)
-                    .padding(.horizontal, 12).padding(.vertical, 7)
-                    .background(FlimTheme.accent, in: Capsule())
-                }
-                .padding(.top, 10)
-                .transition(.opacity)
             }
         }
         .fullScreenCover(isPresented: $showSortDeck, onDismiss: { Task { await refreshUnsorted() } }) {

@@ -14,10 +14,10 @@ struct OnboardingView: View {
     private let cards = [
         Card(icon: "camera.aperture",
              title: "Shoot now.",
-             body: "Snap like a disposable camera — no filters to fuss over. Just point and shoot."),
-        Card(icon: "hourglass",
-             title: "See it later.",
-             body: "Your shots develop over time. Personal instants take a minute; shared rolls reveal together at the 12-hour mark. The wait is the fun."),
+             body: "Pick a film look and capture the moment, disposable-camera style. Fast and in the moment — just tap the shutter."),
+        Card(icon: "square.stack.3d.up",
+             title: "Sort your shots.",
+             body: "Instants are ready right away — swipe to keep them in your Darkroom or publish to your feed. Shared rolls develop together at the 12-hour mark."),
         Card(icon: "sparkles",
              title: "Share the moment.",
              body: "Post your favorites to your page, follow friends, and react to theirs. FLIM is invite-only — it's just your people.")

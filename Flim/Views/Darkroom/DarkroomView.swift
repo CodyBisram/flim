@@ -225,7 +225,7 @@ struct DarkroomView: View {
     private func beginSelecting(_ id: UUID) {
         if !isSelecting { isSelecting = true }
         if !selectedIDs.contains(id) { selectedIDs.insert(id) }
-        Haptics.tap()
+        Haptics.select()
     }
 
     /// The name of the roll a photo belongs to (for labeling roll shots in the Darkroom).
