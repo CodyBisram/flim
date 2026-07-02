@@ -303,22 +303,12 @@ struct FeedPostCard: View {
                     .foregroundStyle(FlimTheme.textSecondary)
             }
 
-            // Emoji reactions (inline picker) + comment count
-            HStack(alignment: .top) {
-                ReactionBar(
-                    defaults: PostEmoji.all,
-                    counts: Dictionary(grouping: reactions, by: \.emoji).mapValues(\.count),
-                    mine: Set(reactions.filter { $0.userId == auth.currentUser?.id }.map(\.emoji))
-                ) { toggleReaction($0) }
-                Spacer()
-                Button { showDetail = true } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "bubble.right")
-                        if !comments.isEmpty { Text("\(comments.count)") }
-                    }
-                    .font(.system(size: 15, weight: .medium)).foregroundStyle(.white)
-                }
-            }
+            // Emoji reactions (inline picker). Comment access lives in the preview + composer below.
+            ReactionBar(
+                defaults: PostEmoji.all,
+                counts: Dictionary(grouping: reactions, by: \.emoji).mapValues(\.count),
+                mine: Set(reactions.filter { $0.userId == auth.currentUser?.id }.map(\.emoji))
+            ) { toggleReaction($0) }
 
             // Top comment preview → @handle taps to their page, the rest opens the photo.
             if let top = comments.first {
