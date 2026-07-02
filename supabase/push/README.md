@@ -5,9 +5,11 @@ The app already sends **local** "your photo developed" notifications with no bac
 when someone *else's* photo develops in a shared roll.
 
 ## What's here
-- `device_tokens.sql` — token table + RLS, and a `push_sent` flag on `photos`.
-- `send-develop-push/index.ts` — scheduled Edge Function that pushes to roll-mates
-  (excluding the photo owner) when a roll photo develops.
+- `device_tokens.sql` — token table + RLS, and the `push_sent` flags.
+- The Edge Functions live in **`supabase/functions/`** (the CLI's canonical location):
+  - `send-develop-push` — pushes to roll-mates when a roll photo develops.
+  - `send-social-push` — notifies a post owner on comments/reactions, and a roll
+    photo's owner + thread on roll-photo comments.
 
 ## One-time setup
 
