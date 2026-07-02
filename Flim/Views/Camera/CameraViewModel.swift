@@ -58,11 +58,22 @@ final class CameraViewModel: NSObject {
     }
 
     private func addVideoInput() {
-        if let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: cameraPosition),
-           let input = try? AVCaptureDeviceInput(device: device),
-           session.canAddInput(input) {
-            session.addInput(input)
+        guard let device = bestDevice(for: cameraPosition),
+              let input = try? AVCaptureDeviceInput(device: device),
+              session.canAddInput(input) else { return }
+        session.addInput(input)
+        configureZoomBaseline(for: device)
+    }
+
+    /// Prefer a multi-lens back camera so 0.5× (ultra-wide) is available; fall back to the plain
+    /// wide lens (and always wide for the selfie camera, which has no ultra-wide).
+    private func bestDevice(for position: AVCaptureDevice.Position) -> AVCaptureDevice? {
+        if position == .back {
+            for type in [AVCaptureDevice.DeviceType.builtInTripleCamera, .builtInDualWideCamera] {
+                if let device = AVCaptureDevice.default(type, for: .video, position: .back) { return device }
+            }
         }
+        return AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: position)
     }
 
     /// Switches between the back and front cameras.
@@ -70,9 +81,8 @@ final class CameraViewModel: NSObject {
         cameraPosition = isFront ? .back : .front
         session.beginConfiguration()
         session.inputs.forEach { session.removeInput($0) }
-        addVideoInput()
+        addVideoInput()   // re-reads the new lens layout + resets zoom to 1×
         session.commitConfiguration()
-        zoomFactor = 1   // the new device starts un-zoomed
     }
 
     // MARK: - Focus & zoom
@@ -84,11 +94,28 @@ final class CameraViewModel: NSObject {
     private var currentDevice: AVCaptureDevice? {
         session.inputs.compactMap { $0 as? AVCaptureDeviceInput }.first?.device
     }
-    /// Live zoom factor (drives the on-screen zoom pills; updated by pinch + preset taps).
+    /// Live DISPLAY zoom (what the pills show: 0.5×, 1×, 2×…). Updated by pinch + preset taps.
     var zoomFactor: CGFloat = 1
     var currentZoom: CGFloat { zoomFactor }
-    /// Max zoom we expose (device max, capped so digital zoom doesn't get mushy).
-    var maxZoom: CGFloat { min(currentDevice?.activeFormat.videoMaxZoomFactor ?? 1, 5) }
+    /// True when the active camera has an ultra-wide lens (so 0.5× is offered).
+    var supportsUltraWide = false
+    /// The raw `videoZoomFactor` that equals "1×" on this device. On a device with an ultra-wide
+    /// lens, factor 1.0 is the 0.5× lens and the main lens starts at the switch-over factor.
+    private var baseZoomFactor: CGFloat = 1
+    /// Lowest display zoom (0.5 when an ultra-wide is present, else 1).
+    var minDisplayZoom: CGFloat { 1 / baseZoomFactor }
+
+    /// Reads the active device's lens layout to map display zoom ↔ raw zoom, and opens at 1×.
+    private func configureZoomBaseline(for device: AVCaptureDevice) {
+        let switchOver = device.virtualDeviceSwitchOverVideoZoomFactors.first?.doubleValue ?? 1
+        baseZoomFactor = CGFloat(switchOver)
+        supportsUltraWide = baseZoomFactor > 1.001
+        if (try? device.lockForConfiguration()) != nil {
+            device.videoZoomFactor = baseZoomFactor   // open at the main lens (1×), not 0.5×
+            device.unlockForConfiguration()
+        }
+        zoomFactor = 1
+    }
 
     /// Tap-to-focus + set exposure at a device point (0–1), plus a reticle at the view point.
     func focus(atDevicePoint devicePoint: CGPoint, viewPoint: CGPoint) {
@@ -102,12 +129,14 @@ final class CameraViewModel: NSObject {
         Task { try? await Task.sleep(for: .seconds(1)); if focusReticle?.id == reticle.id { focusReticle = nil } }
     }
 
-    func zoom(to factor: CGFloat) {
+    /// `displayZoom` is what the user sees (0.5×, 1×, 2×…). Convert to the device's raw factor.
+    func zoom(to displayZoom: CGFloat) {
         guard let device = currentDevice, (try? device.lockForConfiguration()) != nil else { return }
-        let clamped = max(1, min(factor, min(device.activeFormat.videoMaxZoomFactor, 5)))
-        device.videoZoomFactor = clamped
+        let deviceMax = min(device.activeFormat.videoMaxZoomFactor, baseZoomFactor * 3)
+        let rawFactor = max(1, min(displayZoom * baseZoomFactor, deviceMax))
+        device.videoZoomFactor = rawFactor
         device.unlockForConfiguration()
-        zoomFactor = clamped
+        zoomFactor = rawFactor / baseZoomFactor
     }
 
     func startRunning() {

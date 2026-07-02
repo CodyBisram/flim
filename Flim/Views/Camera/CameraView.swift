@@ -79,11 +79,12 @@ struct CameraView: View {
                 VStack(spacing: 0) {
                     topBar
                     Spacer()
-                    VStack(spacing: 18) {
-                        zoomControl
+                    VStack(spacing: 16) {
                         filmStrip
                         bottomBar
                     }
+                    // Zoom floats just above the film strip so it doesn't eat a whole row.
+                    .overlay(alignment: .top) { zoomControl.offset(y: -36) }
                     // Lifts the shutter off the tab bar so it sits ~centered between the film
                     // pills and the bottom bar, rather than hugging the tabs.
                     .padding(.bottom, 34)
@@ -120,7 +121,9 @@ struct CameraView: View {
 
     // MARK: - Zoom control
 
-    private let zoomPresets: [CGFloat] = [1, 2]
+    private var zoomPresets: [CGFloat] {
+        camera.supportsUltraWide ? [0.5, 1, 2] : [1, 2]
+    }
     private var activeZoomPreset: CGFloat {
         zoomPresets.min(by: { abs($0 - camera.zoomFactor) < abs($1 - camera.zoomFactor) }) ?? 1
     }
@@ -135,18 +138,21 @@ struct CameraView: View {
                 Button {
                     withAnimation(.snappy(duration: 0.2)) { camera.zoom(to: level) }
                     Haptics.tap()
+                    wakeFilmStrip()
                 } label: {
-                    Text(active ? zoomLabel(camera.zoomFactor) : "\(Int(level))×")
+                    Text(active ? zoomLabel(camera.zoomFactor) : zoomLabel(level))
                         .font(.system(size: 13, weight: .semibold, design: .rounded))
                         .foregroundStyle(active ? .black : .white)
-                        .frame(minWidth: 36, minHeight: 32)
-                        .padding(.horizontal, active ? 6 : 0)
+                        .frame(minWidth: 34, minHeight: 30)
+                        .padding(.horizontal, active ? 5 : 0)
                         .background(active ? FlimTheme.accent : Color.black.opacity(0.35), in: Capsule())
                         .overlay(Capsule().stroke(Color.white.opacity(active ? 0 : 0.15), lineWidth: 1))
                 }
             }
         }
         .animation(.snappy(duration: 0.2), value: camera.zoomFactor)
+        .opacity(filmStripActive ? 1 : 0.55)
+        .animation(.easeInOut(duration: 0.35), value: filmStripActive)
     }
 
     private func refreshUnsorted() async {
@@ -161,7 +167,7 @@ struct CameraView: View {
         glassGroup {
             HStack {
                 // Roll target selector
-                Button { showRollPicker = true } label: {
+                Button { showRollPicker = true; wakeFilmStrip() } label: {
                     HStack(spacing: 6) {
                         Image(systemName: selectedRoll == nil ? "person.fill" : "film.stack")
                             .font(.system(size: 12))
@@ -256,6 +262,8 @@ struct CameraView: View {
         }
         .padding(.top, 12)
         .padding(.horizontal, 20)
+        .opacity(filmStripActive ? 1 : 0.55)
+        .animation(.easeInOut(duration: 0.35), value: filmStripActive)
     }
 
     // MARK: - Film picker
@@ -332,19 +340,7 @@ struct CameraView: View {
     // MARK: - Bottom bar (shutter)
 
     private var bottomBar: some View {
-        ZStack {
-            if #available(iOS 26, *) {
-                Capsule()
-                    .frame(width: 140, height: 96)
-                    .glassEffect()
-            } else {
-                Capsule()
-                    .fill(.ultraThinMaterial)
-                    .frame(width: 140, height: 96)
-            }
-
-            ShutterButton(isCapturing: camera.isCapturing) { shutter() }
-        }
+        ShutterButton(isCapturing: camera.isCapturing) { shutter() }
     }
 
     // MARK: - Glass grouping
