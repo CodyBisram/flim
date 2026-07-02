@@ -39,6 +39,16 @@ struct RollCarouselView: View {
             .ignoresSafeArea()
 
             VStack {
+                LinearGradient(colors: [.black.opacity(0.5), .clear], startPoint: .top, endPoint: .bottom)
+                    .frame(height: 150)
+                Spacer()
+                LinearGradient(colors: [.clear, .black.opacity(0.6)], startPoint: .top, endPoint: .bottom)
+                    .frame(height: 240)
+            }
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
+
+            VStack {
                 header
                 Spacer()
                 footer

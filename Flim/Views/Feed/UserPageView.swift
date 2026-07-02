@@ -27,20 +27,23 @@ struct UserPageView: View {
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 3), count: 3)
 
     var body: some View {
-        ZStack {
-            FlimTheme.bg.ignoresSafeArea()
-            ScrollView {
-                VStack(spacing: 18) {
-                    pageHeader
-                    if posts.isEmpty && loaded {
-                        emptyState
-                    } else {
-                        ForEach(monthlySections, id: \.key) { section in
-                            monthSection(label: section.key, posts: section.posts)
+        GeometryReader { geo in
+            ZStack {
+                FlimTheme.bg.ignoresSafeArea()
+                ScrollView {
+                    VStack(spacing: 18) {
+                        pageHeader(topInset: geo.safeAreaInsets.top)
+                        if posts.isEmpty && loaded {
+                            emptyState
+                        } else {
+                            ForEach(monthlySections, id: \.key) { section in
+                                monthSection(label: section.key, posts: section.posts)
+                            }
                         }
                     }
+                    .padding(.bottom, 30)
                 }
-                .padding(.bottom, 30)
+                .ignoresSafeArea(edges: .top)   // cover bleeds up under the back/gear buttons
             }
         }
         .navigationBarTitleDisplayMode(.inline)
@@ -97,7 +100,7 @@ struct UserPageView: View {
         .sheet(item: $followList) { list in
             FollowListView(userId: userId, mode: list)
         }
-        .sheet(isPresented: $showSettings) {
+        .sheet(isPresented: $showSettings, onDismiss: { Task { await load() } }) {
             ProfileView()
         }
         .fullScreenCover(isPresented: $showAvatarViewer) {
@@ -105,19 +108,20 @@ struct UserPageView: View {
         }
     }
 
-    private var pageHeader: some View {
+    private func pageHeader(topInset: CGFloat) -> some View {
         VStack(spacing: 12) {
-            // Cover banner (newest shot, or the avatar) with the avatar overlapping its base.
+            // Cover banner extends up behind the nav bar (topInset), so the back/gear overlap it.
             ZStack(alignment: .bottom) {
                 Rectangle()
                     .fill(FlimTheme.bgElevated)
-                    .frame(height: 150)
+                    .frame(height: 150 + topInset)
                     .overlay {
                         if let coverURL {
                             CachedImage(url: coverURL, maxPixel: 1000) { $0.resizable().scaledToFill() } placeholder: { Color.clear }
                         }
                     }
-                    .overlay(LinearGradient(colors: [.black.opacity(0.45), .clear, FlimTheme.bg],
+                    // Darken the top (under the buttons) + fade into the page at the bottom.
+                    .overlay(LinearGradient(colors: [.black.opacity(0.55), .clear, FlimTheme.bg],
                                             startPoint: .top, endPoint: .bottom))
                     .clipped()
                 Button { if avatarURL != nil { showAvatarViewer = true } } label: {

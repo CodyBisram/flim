@@ -272,10 +272,10 @@ struct ProfileView: View {
                     photoCount = await photos.photoCount(userId: uid)
                     try? await rolls.fetchRolls(for: uid)
                 }
-                if let path = auth.currentUser?.avatarPath {
-                    avatarURL = try? await photos.signedURL(for: path)
-                }
+                await refreshAvatar()
             }
+            // Reflect a newly-picked profile photo immediately (no need to leave + return).
+            .onChange(of: auth.currentUser?.avatarPath) { Task { await refreshAvatar() } }
             .confirmationDialog("Delete your account?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
                 Button("Delete Everything", role: .destructive) {
                     isDeleting = true
@@ -322,6 +322,14 @@ struct ProfileView: View {
             Text(label)
                 .font(.system(size: 11))
                 .foregroundStyle(FlimTheme.textTertiary)
+        }
+    }
+
+    private func refreshAvatar() async {
+        if let path = auth.currentUser?.avatarPath {
+            avatarURL = try? await photos.signedURL(for: path)
+        } else {
+            avatarURL = nil
         }
     }
 }

@@ -84,77 +84,84 @@ struct FeedView: View {
         }
     }
 
-    private var greeting: String {
+    private var timeGreeting: String {
         let hour = Calendar.current.component(.hour, from: Date())
-        let part = hour < 12 ? "Good morning" : (hour < 18 ? "Good afternoon" : "Good evening")
-        return "\(part), \(auth.currentUser?.friendlyName ?? "there")"
+        return hour < 12 ? "Good morning" : (hour < 18 ? "Good afternoon" : "Good evening")
     }
 
     private var header: some View {
-        HStack(spacing: 14) {
-            Text(greeting)
-                .font(.system(size: 26, weight: .light))
-                .tracking(0.5)
-                .foregroundStyle(FlimTheme.textPrimary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.leading, 20)
-                .padding(.top, 6)
-                .padding(.bottom, 10)
-            Spacer()
-            #if DEBUG
-            Button {
-                Task { if let uid = auth.currentUser?.id { await feed.seedFeedDemo(userId: uid, photoService: photos) } }
-            } label: {
-                Image(systemName: "ladybug")
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(FlimTheme.textTertiary)
-                    .padding(.trailing, 14)
-            }
-            .accessibilityLabel("Seed demo feed")
-            #endif
-            Button { showActivity = true } label: {
-                Image(systemName: "bell")
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(FlimTheme.accent)
-                    .frame(width: 38, height: 38)
-                    .glassCapsule(interactive: true)
-            }
-            .accessibilityLabel("Activity")
-
-            Button { showDiscover = true } label: {
-                Image(systemName: "person.badge.plus")
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(FlimTheme.accent)
-                    .frame(width: 38, height: 38)
-                    .glassCapsule(interactive: true)
-            }
-            .accessibilityLabel("Find friends")
-
-            // Your avatar → your own page.
-            if let uid = auth.currentUser?.id {
-                NavigationLink {
-                    UserPageView(userId: uid)
+        VStack(alignment: .leading, spacing: 12) {
+            // Action icons on their own top row (right-aligned).
+            HStack(spacing: 12) {
+                Spacer()
+                #if DEBUG
+                Button {
+                    Task { if let uid = auth.currentUser?.id { await feed.seedFeedDemo(userId: uid, photoService: photos) } }
                 } label: {
-                    Circle()
-                        .fill(FlimTheme.accent.opacity(0.18))
-                        .frame(width: 34, height: 34)
-                        .overlay {
-                            if let myAvatarURL {
-                                CachedImage(url: myAvatarURL, maxPixel: 100) { $0.resizable().scaledToFill() } placeholder: { Color.clear }
-                            } else {
-                                Text(String((auth.currentUser?.username ?? "?").prefix(1)).uppercased())
-                                    .font(.system(size: 14, weight: .thin)).foregroundStyle(FlimTheme.accent)
-                            }
-                        }
-                        .clipShape(Circle())
-                        .overlay(Circle().stroke(FlimTheme.accent.opacity(0.4), lineWidth: 1))
+                    Image(systemName: "ladybug")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundStyle(FlimTheme.textTertiary)
                 }
-                .accessibilityLabel("Your page")
+                .accessibilityLabel("Seed demo feed")
+                #endif
+                Button { showActivity = true } label: {
+                    Image(systemName: "bell")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundStyle(FlimTheme.accent)
+                        .frame(width: 38, height: 38)
+                        .glassCapsule(interactive: true)
+                }
+                .accessibilityLabel("Activity")
+
+                Button { showDiscover = true } label: {
+                    Image(systemName: "person.badge.plus")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundStyle(FlimTheme.accent)
+                        .frame(width: 38, height: 38)
+                        .glassCapsule(interactive: true)
+                }
+                .accessibilityLabel("Find friends")
+
+                // Your avatar → your own page.
+                if let uid = auth.currentUser?.id {
+                    NavigationLink {
+                        UserPageView(userId: uid)
+                    } label: {
+                        Circle()
+                            .fill(FlimTheme.accent.opacity(0.18))
+                            .frame(width: 34, height: 34)
+                            .overlay {
+                                if let myAvatarURL {
+                                    CachedImage(url: myAvatarURL, maxPixel: 100) { $0.resizable().scaledToFill() } placeholder: { Color.clear }
+                                } else {
+                                    Text(String((auth.currentUser?.username ?? "?").prefix(1)).uppercased())
+                                        .font(.system(size: 14, weight: .thin)).foregroundStyle(FlimTheme.accent)
+                                }
+                            }
+                            .clipShape(Circle())
+                            .overlay(Circle().stroke(FlimTheme.accent.opacity(0.4), lineWidth: 1))
+                    }
+                    .accessibilityLabel("Your page")
+                }
             }
+
+            // Greeting on its own line — the name gets full width and shrinks if it's long.
+            VStack(alignment: .leading, spacing: 1) {
+                Text("\(timeGreeting),")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(FlimTheme.textTertiary)
+                Text(auth.currentUser?.friendlyName ?? "there")
+                    .font(.system(size: 28, weight: .light))
+                    .tracking(0.5)
+                    .foregroundStyle(FlimTheme.textPrimary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(.trailing, 20)
+        .padding(.horizontal, 20)
+        .padding(.top, 6)
+        .padding(.bottom, 10)
     }
 
     private var emptyState: some View {

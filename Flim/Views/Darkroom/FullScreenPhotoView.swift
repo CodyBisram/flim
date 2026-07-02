@@ -60,6 +60,18 @@ struct FullScreenPhotoView: View {
                 }
             }
 
+            // Top + bottom scrims so the controls and @handle read cleanly over any photo
+            // (portrait shots otherwise fill the frame and the metadata would sit on the image).
+            VStack {
+                LinearGradient(colors: [.black.opacity(0.5), .clear], startPoint: .top, endPoint: .bottom)
+                    .frame(height: 150)
+                Spacer()
+                LinearGradient(colors: [.clear, .black.opacity(0.6)], startPoint: .top, endPoint: .bottom)
+                    .frame(height: 240)
+            }
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
+
             // Metadata bar
             VStack {
                 HStack(spacing: 12) {
