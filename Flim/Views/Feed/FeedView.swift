@@ -16,8 +16,18 @@ struct FeedView: View {
             VStack(spacing: 0) {
                 header
 
-                if feed.feed.isEmpty && !feed.isLoadingFeed {
-                    emptyState
+                if feed.feed.isEmpty {
+                    if feed.isLoadingFeed {
+                        ScrollView {
+                            VStack(spacing: 20) {
+                                ForEach(0..<3, id: \.self) { _ in FeedCardSkeleton() }
+                            }
+                            .padding(.horizontal, 16).padding(.vertical, 16)
+                        }
+                        .disabled(true)
+                    } else {
+                        emptyState
+                    }
                 } else {
                     ScrollView {
                         LazyVStack(spacing: 20) {
@@ -191,10 +201,10 @@ struct FeedPostCard: View {
                         CachedImage(url: url, maxPixel: 1200) { image in
                             image.resizable().scaledToFill()
                         } placeholder: {
-                            FlimTheme.bg
+                            ShimmerPlaceholder(cornerRadius: 12)
                         }
                     } else {
-                        FlimTheme.bg
+                        ShimmerPlaceholder(cornerRadius: 12)
                     }
                 }
                 .overlay { GrainOverlay().opacity(0.5) }
@@ -297,5 +307,29 @@ struct FeedPostCard: View {
             }
             reactions = await feed.fetchReactions(postId: post.id)
         }
+    }
+}
+
+// MARK: - Skeleton
+
+/// Placeholder card shown while the feed is loading for the first time.
+struct FeedCardSkeleton: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                Circle().fill(FlimTheme.bgElevated).frame(width: 34, height: 34).shimmering()
+                ShimmerPlaceholder(cornerRadius: 4).frame(width: 110, height: 12)
+                Spacer()
+            }
+            ShimmerPlaceholder(cornerRadius: 12).aspectRatio(1, contentMode: .fit)
+            ShimmerPlaceholder(cornerRadius: 4).frame(width: 180, height: 12)
+            HStack(spacing: 18) {
+                ShimmerPlaceholder(cornerRadius: 4).frame(width: 22, height: 14)
+                ShimmerPlaceholder(cornerRadius: 4).frame(width: 22, height: 14)
+                Spacer()
+            }
+        }
+        .padding(14)
+        .background(FlimTheme.bgElevated.opacity(0.5), in: RoundedRectangle(cornerRadius: 20))
     }
 }

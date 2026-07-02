@@ -71,7 +71,7 @@ struct SortDeckView: View {
             .fill(FlimTheme.bgElevated)
             .overlay {
                 CachedImage(url: urls[photo.id], maxPixel: 1400) { $0.resizable().scaledToFill() }
-                    placeholder: { FlimTheme.bgElevated }
+                    placeholder: { ShimmerPlaceholder(cornerRadius: 22) }
             }
             .overlay { GrainOverlay().opacity(0.4) }
             .overlay { if isTop { dragLabels } }

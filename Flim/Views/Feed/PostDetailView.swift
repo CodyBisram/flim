@@ -27,8 +27,8 @@ struct PostDetailView: View {
                         .aspectRatio(1, contentMode: .fit)
                         .overlay {
                             if let url {
-                                CachedImage(url: url, maxPixel: 1400) { $0.resizable().scaledToFill() } placeholder: { FlimTheme.bg }
-                            } else { FlimTheme.bg }
+                                CachedImage(url: url, maxPixel: 1400) { $0.resizable().scaledToFill() } placeholder: { ShimmerPlaceholder(cornerRadius: 14) }
+                            } else { ShimmerPlaceholder(cornerRadius: 14) }
                         }
                         .overlay { GrainOverlay().opacity(0.5) }
                         .clipShape(RoundedRectangle(cornerRadius: 14))

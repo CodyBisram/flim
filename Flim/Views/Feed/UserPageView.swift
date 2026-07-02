@@ -186,8 +186,8 @@ struct PostThumb: View {
             .aspectRatio(1, contentMode: .fit)
             .overlay {
                 if let url {
-                    CachedImage(url: url, maxPixel: 400) { $0.resizable().scaledToFill() } placeholder: { FlimTheme.bgElevated }
-                } else { FlimTheme.bgElevated }
+                    CachedImage(url: url, maxPixel: 400) { $0.resizable().scaledToFill() } placeholder: { ShimmerPlaceholder(cornerRadius: 3) }
+                } else { ShimmerPlaceholder(cornerRadius: 3) }
             }
             .clipShape(RoundedRectangle(cornerRadius: 3))
             .task { url = await feed.signedURL(for: path) }

@@ -19,7 +19,7 @@ struct PhotoGridCell: View {
                     CachedImage(url: url, maxPixel: 400) { image in
                         image.resizable().scaledToFill()
                     } placeholder: {
-                        Color(red: 0.08, green: 0.06, blue: 0.05)
+                        ShimmerPlaceholder(cornerRadius: 4)
                     }
                 } else {
                     developingPlaceholder
@@ -89,24 +89,16 @@ struct PhotoGridCell: View {
 /// A shimmering placeholder grid shown while the Darkroom loads — feels faster and more
 /// finished than a bare spinner.
 struct LoadingGrid: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var shimmer = false
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 2), count: 3)
 
     var body: some View {
         LazyVGrid(columns: columns, spacing: 2) {
             ForEach(0..<12, id: \.self) { _ in
-                RoundedRectangle(cornerRadius: 4)
-                    .fill(Color(white: 0.1))
-                    .aspectRatio(1, contentMode: .fill)
-                    .opacity(shimmer ? 0.45 : 1)
+                ShimmerPlaceholder(cornerRadius: 4)
+                    .aspectRatio(1, contentMode: .fit)
             }
         }
         .padding(.horizontal, 2)
-        .onAppear {
-            guard !reduceMotion else { return }
-            withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) { shimmer = true }
-        }
         .accessibilityHidden(true)
     }
 }

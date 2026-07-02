@@ -37,6 +37,7 @@
 		967633695FA8F00A8A3010DA /* DarkroomViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 060BA5995DD93E64A494A2E4 /* DarkroomViewModel.swift */; };
 		A00F0B3005322C2FBEB54BB9 /* PrimaryButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BE06A9CEC95AF492BDBD575 /* PrimaryButton.swift */; };
 		A14025FE14C116AF28430EC0 /* PostDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F609967CE45299259DA37AC /* PostDetailView.swift */; };
+		A1F62ACE36A2F7A63B9B78BE /* ShimmerPlaceholder.swift in Sources */ = {isa = PBXBuildFile; fileRef = C455E1683D6D539F208C704F /* ShimmerPlaceholder.swift */; };
 		AB3249CE1029C5382B7C55A6 /* PhotoGridCell.swift in Sources */ = {isa = PBXBuildFile; fileRef = A34B801CAAD6D2C6557DD581 /* PhotoGridCell.swift */; };
 		AD24F3CB906A687FED7FE687 /* DevelopTimingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F61787FFCEE49A74368FF8C /* DevelopTimingTests.swift */; };
 		B09880D2185738A73550E7C6 /* RollService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 633F60D6D348ADEA4D94D263 /* RollService.swift */; };
@@ -110,6 +111,7 @@
 		BAF7FE72763EB709B93E5BA4 /* PhotoReadinessTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoReadinessTests.swift; sourceTree = "<group>"; };
 		BF49F2D3C9EF346AAD3F41BF /* UsernameView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsernameView.swift; sourceTree = "<group>"; };
 		C14C96ED4A714B7DD3274C7E /* PhoneAuthView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhoneAuthView.swift; sourceTree = "<group>"; };
+		C455E1683D6D539F208C704F /* ShimmerPlaceholder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShimmerPlaceholder.swift; sourceTree = "<group>"; };
 		C9817482FE2AB125EC4FC2FB /* FeedService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedService.swift; sourceTree = "<group>"; };
 		CF062148240A383A260E8EE3 /* Photo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Photo.swift; sourceTree = "<group>"; };
 		D9927EBDE8E7056C4DA31EF2 /* AuthHelpersTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthHelpersTests.swift; sourceTree = "<group>"; };
@@ -171,6 +173,7 @@
 			children = (
 				9BE06A9CEC95AF492BDBD575 /* PrimaryButton.swift */,
 				235D6F50F5FDD8BE4BB9DE4E /* ReactionBar.swift */,
+				C455E1683D6D539F208C704F /* ShimmerPlaceholder.swift */,
 			);
 			path = Components;
 			sourceTree = "<group>";
@@ -462,6 +465,7 @@
 				EECAD4AB8FC87AFACD4A5A80 /* RollMembersView.swift in Sources */,
 				B09880D2185738A73550E7C6 /* RollService.swift in Sources */,
 				322A5492683DD8B6D58B77C6 /* RollsView.swift in Sources */,
+				A1F62ACE36A2F7A63B9B78BE /* ShimmerPlaceholder.swift in Sources */,
 				CBD8476D316567B4404ECBA9 /* Social.swift in Sources */,
 				E01A141DA15C3B44C02C6CDA /* SortDeckView.swift in Sources */,
 				0A8F3F3E94D6039F6537E14A /* SplashView.swift in Sources */,
