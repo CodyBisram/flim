@@ -410,8 +410,10 @@ CREATE POLICY "reactions: remove own"
 
 -- Public profile view — exposes only safe fields (NO email / invite code), readable
 -- by any signed-in user so you can browse pages, follow people, and see comment authors.
+-- New columns must be appended at the END for CREATE OR REPLACE VIEW (Postgres can't
+-- reorder/rename existing view columns) — decode is by name in the app, so order is irrelevant.
 CREATE OR REPLACE VIEW public.profiles AS
-    SELECT id, username, avatar_path, bio, display_name, created_at
+    SELECT id, username, avatar_path, bio, created_at, display_name
     FROM public.users;
 
 GRANT SELECT ON public.profiles TO authenticated, anon;
