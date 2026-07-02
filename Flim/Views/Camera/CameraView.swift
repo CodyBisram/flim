@@ -79,7 +79,8 @@ struct CameraView: View {
                 VStack(spacing: 0) {
                     topBar
                     Spacer()
-                    VStack(spacing: 22) {
+                    VStack(spacing: 18) {
+                        zoomControl
                         filmStrip
                         bottomBar
                     }
@@ -115,6 +116,37 @@ struct CameraView: View {
     private func shutter() {
         Haptics.shutter()
         camera.capturePhoto()
+    }
+
+    // MARK: - Zoom control
+
+    private let zoomPresets: [CGFloat] = [1, 2]
+    private var activeZoomPreset: CGFloat {
+        zoomPresets.min(by: { abs($0 - camera.zoomFactor) < abs($1 - camera.zoomFactor) }) ?? 1
+    }
+    private func zoomLabel(_ z: CGFloat) -> String {
+        z.truncatingRemainder(dividingBy: 1) == 0 ? "\(Int(z))×" : String(format: "%.1f×", z)
+    }
+
+    private var zoomControl: some View {
+        HStack(spacing: 8) {
+            ForEach(zoomPresets, id: \.self) { level in
+                let active = level == activeZoomPreset
+                Button {
+                    withAnimation(.snappy(duration: 0.2)) { camera.zoom(to: level) }
+                    Haptics.tap()
+                } label: {
+                    Text(active ? zoomLabel(camera.zoomFactor) : "\(Int(level))×")
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .foregroundStyle(active ? .black : .white)
+                        .frame(minWidth: 36, minHeight: 32)
+                        .padding(.horizontal, active ? 6 : 0)
+                        .background(active ? FlimTheme.accent : Color.black.opacity(0.35), in: Capsule())
+                        .overlay(Capsule().stroke(Color.white.opacity(active ? 0 : 0.15), lineWidth: 1))
+                }
+            }
+        }
+        .animation(.snappy(duration: 0.2), value: camera.zoomFactor)
     }
 
     private func refreshUnsorted() async {

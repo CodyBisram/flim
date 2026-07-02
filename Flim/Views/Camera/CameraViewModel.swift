@@ -72,6 +72,7 @@ final class CameraViewModel: NSObject {
         session.inputs.forEach { session.removeInput($0) }
         addVideoInput()
         session.commitConfiguration()
+        zoomFactor = 1   // the new device starts un-zoomed
     }
 
     // MARK: - Focus & zoom
@@ -83,7 +84,11 @@ final class CameraViewModel: NSObject {
     private var currentDevice: AVCaptureDevice? {
         session.inputs.compactMap { $0 as? AVCaptureDeviceInput }.first?.device
     }
-    var currentZoom: CGFloat { currentDevice?.videoZoomFactor ?? 1 }
+    /// Live zoom factor (drives the on-screen zoom pills; updated by pinch + preset taps).
+    var zoomFactor: CGFloat = 1
+    var currentZoom: CGFloat { zoomFactor }
+    /// Max zoom we expose (device max, capped so digital zoom doesn't get mushy).
+    var maxZoom: CGFloat { min(currentDevice?.activeFormat.videoMaxZoomFactor ?? 1, 5) }
 
     /// Tap-to-focus + set exposure at a device point (0–1), plus a reticle at the view point.
     func focus(atDevicePoint devicePoint: CGPoint, viewPoint: CGPoint) {
@@ -99,9 +104,10 @@ final class CameraViewModel: NSObject {
 
     func zoom(to factor: CGFloat) {
         guard let device = currentDevice, (try? device.lockForConfiguration()) != nil else { return }
-        let maxZoom = min(device.activeFormat.videoMaxZoomFactor, 5)
-        device.videoZoomFactor = max(1, min(factor, maxZoom))
+        let clamped = max(1, min(factor, min(device.activeFormat.videoMaxZoomFactor, 5)))
+        device.videoZoomFactor = clamped
         device.unlockForConfiguration()
+        zoomFactor = clamped
     }
 
     func startRunning() {
