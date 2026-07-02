@@ -10,6 +10,7 @@ struct FeedView: View {
     @State private var myAvatarURL: URL?
     @State private var pendingFeed: [FeedItem] = []
     @State private var hasNewPosts = false
+    @State private var didLoad = false
 
     var body: some View {
         ZStack {
@@ -19,7 +20,9 @@ struct FeedView: View {
                 header
 
                 if feed.feed.isEmpty {
-                    if feed.isLoadingFeed {
+                    if feed.isLoadingFeed || !didLoad {
+                        // Show skeletons until the first load actually completes — never flash
+                        // the "quiet" empty state before we know whether the feed is empty.
                         ScrollView {
                             VStack(spacing: 20) {
                                 ForEach(0..<3, id: \.self) { _ in FeedCardSkeleton() }
@@ -71,7 +74,7 @@ struct FeedView: View {
         .navigationBarHidden(true)
         .task {
             if let path = auth.currentUser?.avatarPath { myAvatarURL = await feed.signedURL(for: path) }
-            if feed.feed.isEmpty { await reload() } else { await checkNewPosts() }
+            if feed.feed.isEmpty { await reload() } else { didLoad = true; await checkNewPosts() }
         }
         .sheet(isPresented: $showDiscover) {
             DiscoverPeopleView()
@@ -177,8 +180,9 @@ struct FeedView: View {
     }
 
     private func reload() async {
-        guard let uid = auth.currentUser?.id else { return }
+        guard let uid = auth.currentUser?.id else { didLoad = true; return }
         await feed.loadFeed(currentUserId: uid)
+        didLoad = true
         hasNewPosts = false
         if let path = auth.currentUser?.avatarPath { myAvatarURL = await feed.signedURL(for: path) }
     }
