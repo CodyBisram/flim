@@ -189,6 +189,7 @@ struct DarkroomView: View {
                     PhotoGridCell(photo: photo, signedURL: nil, rollName: rollName(for: photo.rollId))
                         .overlay { if isSelecting { selectionMark(photo.id) } }
                         .onTapGesture { if isSelecting { toggleSelect(photo.id) } }
+                        .onLongPressGesture { beginSelecting(photo.id) }
                 }
             }
         }
@@ -213,13 +214,18 @@ struct DarkroomView: View {
     }
 
     private func deleteSelected() async {
-        let all = vm.developedPhotos + vm.developingPhotos
-        for photo in all where selectedIDs.contains(photo.id) {
-            await photoService.deletePhoto(photo)
-        }
+        let toDelete = (vm.developedPhotos + vm.developingPhotos).filter { selectedIDs.contains($0.id) }
+        await photoService.deletePhotos(toDelete)
         selectedIDs = []
         isSelecting = false
         await reload()
+    }
+
+    /// Long-press a photo to jump into selection mode with it selected.
+    private func beginSelecting(_ id: UUID) {
+        if !isSelecting { isSelecting = true }
+        if !selectedIDs.contains(id) { selectedIDs.insert(id) }
+        Haptics.tap()
     }
 
     /// The name of the roll a photo belongs to (for labeling roll shots in the Darkroom).
@@ -252,6 +258,7 @@ struct DarkroomView: View {
                                 selectedPhoto = photo
                             }
                         }
+                        .onLongPressGesture { beginSelecting(photo.id) }
                         .task {
                             if vm.signedURLCache[photo.id] == nil {
                                 _ = await vm.signedURL(for: photo, photoService: photoService)

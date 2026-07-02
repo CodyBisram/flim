@@ -226,8 +226,15 @@ final class FeedService {
 
     // MARK: - Storage
 
+    // Cache signed URLs per path for the session. Regenerating them (a new token each call)
+    // was defeating the image cache, so re-entering the feed re-downloaded every photo.
+    private var urlCache: [String: URL] = [:]
+
     func signedURL(for path: String) async -> URL? {
-        try? await supabase.storage.from("photos").createSignedURL(path: path, expiresIn: 3600)
+        if let cached = urlCache[path] { return cached }
+        let url = try? await supabase.storage.from("photos").createSignedURL(path: path, expiresIn: 3600)
+        if let url { urlCache[path] = url }
+        return url
     }
 
     // MARK: - Activity

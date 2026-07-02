@@ -33,21 +33,27 @@ struct RollsView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbarColorScheme(.dark, for: .navigationBar)
         .toolbar {
-            ToolbarItemGroup(placement: .topBarTrailing) {
-                Button {
-                    showJoin = true
-                } label: {
-                    Image(systemName: "person.badge.plus")
-                        .foregroundStyle(FlimTheme.accent)
+            ToolbarItem(placement: .topBarTrailing) {
+                HStack(spacing: 18) {
+                    Button {
+                        showJoin = true
+                    } label: {
+                        Image(systemName: "person.badge.plus")
+                            .font(.system(size: 16, weight: .regular))
+                            .foregroundStyle(FlimTheme.accent)
+                            .frame(width: 26, height: 24)
+                    }
+                    .accessibilityLabel("Join a roll")
+                    Button {
+                        showCreate = true
+                    } label: {
+                        Image(systemName: "plus")
+                            .font(.system(size: 18, weight: .medium))
+                            .foregroundStyle(FlimTheme.accent)
+                            .frame(width: 26, height: 24)
+                    }
+                    .accessibilityLabel("New roll")
                 }
-                .accessibilityLabel("Join a roll")
-                Button {
-                    showCreate = true
-                } label: {
-                    Image(systemName: "plus")
-                        .foregroundStyle(FlimTheme.accent)
-                }
-                .accessibilityLabel("New roll")
             }
         }
         .sheet(isPresented: $showCreate) {

@@ -23,14 +23,15 @@ struct SortDeckView: View {
             FlimTheme.bg.ignoresSafeArea()
             VStack(spacing: 0) {
                 header
-                Spacer(minLength: 0)
                 if cards.isEmpty && loaded {
-                    doneState
+                    Spacer(); doneState; Spacer()
                 } else {
                     cardStack
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .padding(.horizontal, 18)
+                        .padding(.top, 6)
+                    controls
                 }
-                Spacer(minLength: 0)
-                if !cards.isEmpty { controls }
             }
         }
         .task { await load() }
@@ -62,24 +63,24 @@ struct SortDeckView: View {
                 card(photo, index: index)
             }
         }
-        .padding(.horizontal, 28)
     }
 
     private func card(_ photo: Photo, index: Int) -> some View {
         let isTop = index == 0
-        return Color.clear
-            .aspectRatio(3.0 / 4.0, contentMode: .fit)
+        return RoundedRectangle(cornerRadius: 22)
+            .fill(FlimTheme.bgElevated)
             .overlay {
-                CachedImage(url: urls[photo.id], maxPixel: 1200) { $0.resizable().scaledToFill() }
+                CachedImage(url: urls[photo.id], maxPixel: 1400) { $0.resizable().scaledToFill() }
                     placeholder: { FlimTheme.bgElevated }
             }
-            .overlay { GrainOverlay().opacity(0.5) }
-            .clipShape(RoundedRectangle(cornerRadius: 18))
+            .overlay { GrainOverlay().opacity(0.4) }
             .overlay { if isTop { dragLabels } }
-            .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.white.opacity(0.08), lineWidth: 1))
-            .shadow(color: .black.opacity(0.5), radius: 12, y: 8)
-            .scaleEffect(isTop ? 1 : 1 - CGFloat(index) * 0.05)
-            .offset(y: isTop ? 0 : CGFloat(index) * 12)
+            .clipShape(RoundedRectangle(cornerRadius: 22))
+            .overlay(RoundedRectangle(cornerRadius: 22).stroke(Color.white.opacity(0.08), lineWidth: 1))
+            .shadow(color: .black.opacity(0.5), radius: 14, y: 8)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .scaleEffect(isTop ? 1 : 1 - CGFloat(index) * 0.04)
+            .offset(y: isTop ? 0 : CGFloat(index) * 14)
             .offset(isTop ? drag : .zero)
             .rotationEffect(.degrees(isTop ? Double(drag.width / 22) : 0))
             .gesture(isTop ? dragGesture : nil)

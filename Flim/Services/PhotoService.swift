@@ -164,6 +164,20 @@ final class PhotoService {
         }
     }
 
+    /// Deletes several photos in one round trip (one storage call + one DB call) — far faster
+    /// than looping `deletePhoto` for multi-select.
+    func deletePhotos(_ toDelete: [Photo]) async {
+        guard !toDelete.isEmpty else { return }
+        let ids = toDelete.map(\.id.uuidString)
+        _ = try? await supabase.storage.from("photos").remove(paths: toDelete.map(\.storagePath))
+        do {
+            try await supabase.from("photos").delete().in("id", values: ids).execute()
+            await MainActor.run { photos.removeAll { ids.contains($0.id.uuidString) } }
+        } catch {
+            await MainActor.run { uploadError = error.localizedDescription }
+        }
+    }
+
     /// Files a content report against a photo (UGC safety). Write-only from the client.
     func reportPhoto(_ photo: Photo, reason: String? = nil) async {
         guard let session = try? await supabase.auth.session else { return }

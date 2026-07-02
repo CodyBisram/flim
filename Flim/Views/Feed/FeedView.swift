@@ -46,7 +46,7 @@ struct FeedView: View {
     }
 
     private var header: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 14) {
             FlimNavTitle("Feed")
             Spacer()
             #if DEBUG
@@ -62,15 +62,17 @@ struct FeedView: View {
             #endif
             Button { showActivity = true } label: {
                 Image(systemName: "bell")
-                    .font(.system(size: 16, weight: .medium))
+                    .font(.system(size: 19, weight: .regular))
                     .foregroundStyle(FlimTheme.accent)
+                    .frame(width: 30, height: 34)
             }
             .accessibilityLabel("Activity")
 
             Button { showDiscover = true } label: {
                 Image(systemName: "person.badge.plus")
-                    .font(.system(size: 17, weight: .medium))
+                    .font(.system(size: 19, weight: .regular))
                     .foregroundStyle(FlimTheme.accent)
+                    .frame(width: 30, height: 34)
             }
             .accessibilityLabel("Find friends")
 
@@ -81,22 +83,22 @@ struct FeedView: View {
                 } label: {
                     Circle()
                         .fill(FlimTheme.accent.opacity(0.18))
-                        .frame(width: 30, height: 30)
+                        .frame(width: 34, height: 34)
                         .overlay {
                             if let myAvatarURL {
-                                CachedImage(url: myAvatarURL, maxPixel: 90) { $0.resizable().scaledToFill() } placeholder: { Color.clear }
+                                CachedImage(url: myAvatarURL, maxPixel: 100) { $0.resizable().scaledToFill() } placeholder: { Color.clear }
                             } else {
                                 Text(String((auth.currentUser?.username ?? "?").prefix(1)).uppercased())
-                                    .font(.system(size: 13, weight: .thin)).foregroundStyle(FlimTheme.accent)
+                                    .font(.system(size: 14, weight: .thin)).foregroundStyle(FlimTheme.accent)
                             }
                         }
                         .clipShape(Circle())
                         .overlay(Circle().stroke(FlimTheme.accent.opacity(0.4), lineWidth: 1))
                 }
                 .accessibilityLabel("Your page")
-                .padding(.trailing, 20)
             }
         }
+        .padding(.trailing, 20)
     }
 
     private var emptyState: some View {

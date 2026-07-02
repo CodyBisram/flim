@@ -29,7 +29,8 @@ struct CameraView: View {
     @AppStorage("flashModeRaw") private var flashModeRaw = 0
     // Whether to schedule a local "your photo developed" reminder (toggled in Profile).
     @AppStorage("developNotificationsEnabled") private var notificationsEnabled = true
-    @State private var showCapturedCue = false
+    @State private var unsortedCount = 0
+    @State private var showSortDeck = false
     private var flashMode: AVCaptureDevice.FlashMode { AVCaptureDevice.FlashMode(rawValue: flashModeRaw) ?? .off }
     private var flashIcon: String {
         switch flashMode {
@@ -86,21 +87,27 @@ struct CameraView: View {
             }
         }
         .overlay(alignment: .top) {
-            if showCapturedCue {
-                Label(selectedRoll == nil ? "Saved — sort it in your Darkroom" : "Added to the roll — reveals together",
-                      systemImage: selectedRoll == nil ? "square.stack.3d.up" : "hourglass")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
-                    .background(.ultraThinMaterial, in: Capsule())
-                    .padding(.top, 8)
-                    .transition(.move(edge: .top).combined(with: .opacity))
+            if unsortedCount > 0 {
+                Button { showSortDeck = true } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "square.stack.3d.up.fill").font(.system(size: 12))
+                        Text("\(unsortedCount) to sort").font(.system(size: 13, weight: .semibold))
+                    }
+                    .foregroundStyle(.black)
+                    .padding(.horizontal, 12).padding(.vertical, 7)
+                    .background(FlimTheme.accent, in: Capsule())
+                }
+                .padding(.top, 10)
+                .transition(.opacity)
             }
+        }
+        .fullScreenCover(isPresented: $showSortDeck, onDismiss: { Task { await refreshUnsorted() } }) {
+            SortDeckView()
         }
         .onAppear {
             camera.flashMode = flashMode
             bindCapture()
+            Task { await refreshUnsorted() }
             wakeFilmStrip()
             Task {
                 await camera.start()
@@ -115,12 +122,10 @@ struct CameraView: View {
         }
     }
 
-    private func flashCapturedCue() {
-        withAnimation { showCapturedCue = true }
-        Task {
-            try? await Task.sleep(for: .seconds(1.8))
-            withAnimation { showCapturedCue = false }
-        }
+    private func refreshUnsorted() async {
+        guard let uid = auth.currentUser?.id else { return }
+        let count = await photos.fetchUnsorted(userId: uid).count
+        await MainActor.run { withAnimation { unsortedCount = count } }
     }
 
     // MARK: - Top bar
@@ -301,7 +306,6 @@ struct CameraView: View {
             ShutterButton(isCapturing: camera.isCapturing) {
                 Haptics.shutter()
                 camera.capturePhoto()
-                flashCapturedCue()
             }
         }
     }
@@ -406,6 +410,7 @@ struct CameraView: View {
             // Serial pipeline: bakes the film look in + uploads one shot at a time, so a
             // rapid burst can't race and fail. Fires a local develop reminder on success.
             photos.enqueueCapture(rawData: data, stock: stock, userId: userId, rollId: rollId) { photo in
+                await refreshUnsorted()   // keep the "to sort" count live as shots come in
                 guard notificationsEnabled else { return }
                 await notifications.requestAuthorizationIfNeeded()
                 await notifications.scheduleDevelopNotification(

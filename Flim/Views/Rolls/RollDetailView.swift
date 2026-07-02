@@ -202,21 +202,21 @@ struct RollDetailView: View {
     }
 
     private func revealBanner(revealAt: Date, shots: Int, people: Int) -> some View {
-        VStack(spacing: 3) {
+        VStack(alignment: .leading, spacing: 3) {
             TimelineView(.periodic(from: .now, by: 1)) { timeline in
                 let remaining = max(0, Int(revealAt.timeIntervalSince(timeline.date)))
                 Label("Develops in \(Self.countdown(remaining))", systemImage: "hourglass")
-                    .font(.system(size: 15, weight: .medium))
+                    .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(FlimTheme.accent)
             }
             Text("\(shots) shot\(shots == 1 ? "" : "s") waiting" + (people > 1 ? " from \(people) people" : ""))
                 .font(.system(size: 12))
-                .foregroundStyle(FlimTheme.textTertiary)
+                .foregroundStyle(FlimTheme.textSecondary)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 12)
-        .background(FlimTheme.accentSoft)
-        .padding(.bottom, 4)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 16).padding(.vertical, 12)
+        .background(FlimTheme.accentSoft, in: RoundedRectangle(cornerRadius: 12))
+        .padding(.horizontal, 16).padding(.bottom, 4)
     }
 
     private static func countdown(_ seconds: Int) -> String {
