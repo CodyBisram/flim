@@ -4,6 +4,7 @@ struct MainTabView: View {
     @State private var selected = 0
     @AppStorage("hasOnboarded") private var hasOnboarded = false
     @AppStorage("accentColor") private var accentColor = "amber"   // re-tints on change
+    @Environment(NotificationService.self) private var notifications
     #if DEBUG
     @Environment(AuthService.self) private var auth
     @Environment(RollService.self) private var rolls
@@ -42,6 +43,9 @@ struct MainTabView: View {
             selected = 0
         }
         .onAppear {
+            // Ask once the app is up so every tester registers a push token (and re-registers
+            // on later launches, refreshing the token). No-ops if already decided.
+            Task { await notifications.requestAuthorizationIfNeeded() }
             #if DEBUG
             let args = ProcessInfo.processInfo.arguments
             // Deterministic Simulator verification (no camera in the sim):
