@@ -8,8 +8,7 @@ struct PostDetailView: View {
 
     @State private var url: URL?
     @State private var reactions: [PostReaction] = []
-    @State private var comments: [PostComment] = []
-    @State private var authors: [UUID: UserProfile] = [:]
+    @State private var comments: [CommentInfo] = []
     @State private var draft = ""
     @State private var sending = false
     @State private var showViewer = false
@@ -144,21 +143,32 @@ struct PostDetailView: View {
                 .font(.system(size: 11, weight: .medium)).tracking(1.5)
                 .foregroundStyle(FlimTheme.textTertiary)
 
-            ForEach(comments) { comment in
-                HStack(alignment: .top, spacing: 8) {
+            ForEach(comments) { info in
+                HStack(alignment: .top, spacing: 10) {
                     VStack(alignment: .leading, spacing: 2) {
                         HStack(spacing: 6) {
-                            Text(authors[comment.userId]?.handle ?? "@someone")
+                            Text(info.handle)
                                 .font(.system(size: 13, weight: .semibold)).foregroundStyle(.white)
-                            Text(comment.createdAt.formatted(.relative(presentation: .named)))
+                            Text(info.comment.createdAt.formatted(.relative(presentation: .named)))
                                 .font(.system(size: 10)).foregroundStyle(FlimTheme.textTertiary)
+                            if info.comment.userId == auth.currentUser?.id {
+                                Button { delete(info) } label: {
+                                    Image(systemName: "xmark").font(.system(size: 9)).foregroundStyle(FlimTheme.textTertiary)
+                                }
+                            }
                         }
-                        Text(comment.body).font(.system(size: 14)).foregroundStyle(FlimTheme.textSecondary)
+                        Text(info.comment.body).font(.system(size: 14)).foregroundStyle(FlimTheme.textSecondary)
                     }
                     Spacer()
-                    if comment.userId == auth.currentUser?.id {
-                        Button { delete(comment) } label: {
-                            Image(systemName: "xmark").font(.system(size: 10)).foregroundStyle(FlimTheme.textTertiary)
+                    // Heart the comment
+                    Button { toggleCommentLike(info) } label: {
+                        VStack(spacing: 2) {
+                            Image(systemName: info.likedByMe ? "heart.fill" : "heart")
+                                .font(.system(size: 13))
+                                .foregroundStyle(info.likedByMe ? FlimTheme.accent : FlimTheme.textTertiary)
+                            if info.likeCount > 0 {
+                                Text("\(info.likeCount)").font(.system(size: 10)).foregroundStyle(FlimTheme.textTertiary)
+                            }
                         }
                     }
                 }
@@ -196,9 +206,23 @@ struct PostDetailView: View {
     }
 
     private func reloadComments() async {
-        comments = await feed.fetchComments(postId: post.id)
-        let ids = Array(Set(comments.map(\.userId)))
-        authors = await feed.fetchProfiles(ids: ids)
+        guard let uid = auth.currentUser?.id else { return }
+        comments = await feed.fetchComments(postId: post.id, currentUserId: uid)
+    }
+
+    private func toggleCommentLike(_ info: CommentInfo) {
+        guard let uid = auth.currentUser?.id else { return }
+        Haptics.tap()
+        // Optimistic update.
+        if let i = comments.firstIndex(where: { $0.id == info.id }) {
+            comments[i].likedByMe.toggle()
+            comments[i].likeCount += comments[i].likedByMe ? 1 : -1
+        }
+        Task {
+            if info.likedByMe { await feed.unlikeComment(id: info.comment.id, userId: uid) }
+            else { await feed.likeComment(id: info.comment.id, userId: uid) }
+            await reloadComments()
+        }
     }
 
     private func toggle(_ emoji: String) {
@@ -230,9 +254,9 @@ struct PostDetailView: View {
         }
     }
 
-    private func delete(_ comment: PostComment) {
+    private func delete(_ info: CommentInfo) {
         Task {
-            await feed.deleteComment(id: comment.id)
+            await feed.deleteComment(id: info.comment.id)
             await reloadComments()
         }
     }

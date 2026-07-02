@@ -232,13 +232,16 @@ struct FeedPostCard: View {
     @State private var url: URL?
     @State private var avatarURL: URL?
     @State private var reactions: [PostReaction] = []
+    @State private var comments: [CommentInfo] = []
+    @State private var draft = ""
     @State private var showDetail = false
     @State private var showPage = false
     @State private var heartBurst = false
+    @FocusState private var commentFocused: Bool
 
     private var post: Post { item.post }
-    private var likeCount: Int { reactions.filter { $0.emoji == "❤️" }.count }
     private var iLiked: Bool { reactions.contains { $0.emoji == "❤️" && $0.userId == auth.currentUser?.id } }
+    private var canSend: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -293,26 +296,55 @@ struct FeedPostCard: View {
                     .foregroundStyle(FlimTheme.textSecondary)
             }
 
-            // Actions
-            HStack(spacing: 18) {
-                Button { toggleLike() } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: iLiked ? "heart.fill" : "heart")
-                            .foregroundStyle(iLiked ? FlimTheme.accent : .white)
-                        if likeCount > 0 { Text("\(likeCount)").foregroundStyle(.white) }
-                    }
-                    .font(.system(size: 15, weight: .medium))
-                }
-                Button { showDetail = true } label: {
-                    Image(systemName: "bubble.right")
-                        .font(.system(size: 15, weight: .medium))
-                        .foregroundStyle(.white)
-                }
+            // Emoji reactions (inline picker) + comment count
+            HStack(alignment: .top) {
+                ReactionBar(
+                    defaults: PostEmoji.all,
+                    counts: Dictionary(grouping: reactions, by: \.emoji).mapValues(\.count),
+                    mine: Set(reactions.filter { $0.userId == auth.currentUser?.id }.map(\.emoji))
+                ) { toggleReaction($0) }
                 Spacer()
-                Text(post.takenAt.formatted(date: .abbreviated, time: .omitted))
-                    .font(.system(size: 11))
-                    .foregroundStyle(FlimTheme.textTertiary)
+                Button { showDetail = true } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "bubble.right")
+                        if !comments.isEmpty { Text("\(comments.count)") }
+                    }
+                    .font(.system(size: 15, weight: .medium)).foregroundStyle(.white)
+                }
             }
+
+            // Top comment preview → tap into the photo for the rest.
+            if let top = comments.first {
+                Button { showDetail = true } label: {
+                    VStack(alignment: .leading, spacing: 3) {
+                        if comments.count > 1 {
+                            Text("View all \(comments.count) comments")
+                                .font(.system(size: 12)).foregroundStyle(FlimTheme.textTertiary)
+                        }
+                        (Text(top.handle + " ").font(.system(size: 14, weight: .semibold))
+                         + Text(top.comment.body).font(.system(size: 14)))
+                            .foregroundStyle(.white).lineLimit(2).multilineTextAlignment(.leading)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+
+            // Inline comment composer
+            HStack(spacing: 8) {
+                TextField("Add a comment…", text: $draft, axis: .vertical)
+                    .lineLimit(1...3)
+                    .focused($commentFocused)
+                    .font(.system(size: 14)).foregroundStyle(.white).tint(FlimTheme.accent)
+                    .padding(.horizontal, 12).padding(.vertical, 8)
+                    .background(Color.white.opacity(0.06), in: Capsule())
+                if canSend {
+                    Button { sendComment() } label: {
+                        Image(systemName: "arrow.up.circle.fill").font(.system(size: 26)).foregroundStyle(FlimTheme.accent)
+                    }
+                    .transition(.scale.combined(with: .opacity))
+                }
+            }
+            .animation(.snappy(duration: 0.2), value: canSend)
         }
         .padding(14)
         .background(FlimTheme.bgElevated, in: RoundedRectangle(cornerRadius: 20))
@@ -320,6 +352,7 @@ struct FeedPostCard: View {
             url = await feed.signedURL(for: post.storagePath)
             if let path = item.author.avatarPath { avatarURL = await feed.signedURL(for: path) }
             reactions = await feed.fetchReactions(postId: post.id)
+            await loadComments()
         }
         .navigationDestination(isPresented: $showDetail) {
             PostDetailView(item: item)
@@ -359,18 +392,35 @@ struct FeedPostCard: View {
         }
     }
 
-    private func toggleLike() {
+    private func toggleReaction(_ emoji: String) {
         guard let uid = auth.currentUser?.id else { return }
+        let mine = reactions.contains { $0.emoji == emoji && $0.userId == uid }
         Haptics.tap()
         Task {
-            if iLiked {
-                reactions.removeAll { $0.emoji == "❤️" && $0.userId == uid }
-                await feed.removeReaction(postId: post.id, emoji: "❤️", userId: uid)
+            if mine {
+                reactions.removeAll { $0.emoji == emoji && $0.userId == uid }
+                await feed.removeReaction(postId: post.id, emoji: emoji, userId: uid)
             } else {
-                reactions.append(PostReaction(id: UUID(), postId: post.id, userId: uid, emoji: "❤️"))
-                await feed.addReaction(postId: post.id, emoji: "❤️", userId: uid)
+                reactions.append(PostReaction(id: UUID(), postId: post.id, userId: uid, emoji: emoji))
+                await feed.addReaction(postId: post.id, emoji: emoji, userId: uid)
             }
             reactions = await feed.fetchReactions(postId: post.id)
+        }
+    }
+
+    private func loadComments() async {
+        guard let uid = auth.currentUser?.id else { return }
+        comments = await feed.fetchComments(postId: post.id, currentUserId: uid)
+    }
+
+    private func sendComment() {
+        guard let uid = auth.currentUser?.id, canSend else { return }
+        let body = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        draft = ""
+        commentFocused = false
+        Task {
+            _ = await feed.addComment(postId: post.id, body: body, userId: uid)
+            await loadComments()
         }
     }
 }

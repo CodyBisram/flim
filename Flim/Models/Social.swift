@@ -72,6 +72,16 @@ struct PostReaction: Codable, Identifiable {
     }
 }
 
+/// A comment with its author + like info, ranked for display.
+struct CommentInfo: Identifiable {
+    let comment: PostComment
+    var author: UserProfile?
+    var likeCount: Int
+    var likedByMe: Bool
+    var id: UUID { comment.id }
+    var handle: String { author?.handle ?? "@someone" }
+}
+
 /// A post joined with its author, for display in the feed / on a page.
 struct FeedItem: Identifiable {
     let post: Post

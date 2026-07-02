@@ -254,11 +254,32 @@ final class FeedService {
 
     // MARK: - Comments
 
-    func fetchComments(postId: UUID) async -> [PostComment] {
-        (try? await supabase.from("post_comments").select()
+    /// Comments for a post, each with author + like count + whether the current user liked it,
+    /// ranked most-liked first (the "most relevant" order used on the feed + in the detail).
+    func fetchComments(postId: UUID, currentUserId: UUID) async -> [CommentInfo] {
+        let comments: [PostComment] = (try? await supabase.from("post_comments").select()
             .eq("post_id", value: postId.uuidString)
             .order("created_at", ascending: true)
             .execute().value) ?? []
+        guard !comments.isEmpty else { return [] }
+
+        struct LikeRow: Decodable { let comment_id: UUID; let user_id: UUID }
+        let likes: [LikeRow] = (try? await supabase.from("comment_likes").select("comment_id,user_id")
+            .in("comment_id", values: comments.map(\.id.uuidString))
+            .execute().value) ?? []
+        let profiles = await fetchProfiles(ids: Array(Set(comments.map(\.userId))))
+
+        let items = comments.map { comment -> CommentInfo in
+            let commentLikes = likes.filter { $0.comment_id == comment.id }
+            return CommentInfo(comment: comment,
+                               author: profiles[comment.userId],
+                               likeCount: commentLikes.count,
+                               likedByMe: commentLikes.contains { $0.user_id == currentUserId })
+        }
+        return items.sorted {
+            $0.likeCount != $1.likeCount ? $0.likeCount > $1.likeCount
+                                         : $0.comment.createdAt < $1.comment.createdAt
+        }
     }
 
     func addComment(postId: UUID, body: String, userId: UUID) async -> PostComment? {
@@ -270,6 +291,16 @@ final class FeedService {
 
     func deleteComment(id: UUID) async {
         _ = try? await supabase.from("post_comments").delete().eq("id", value: id.uuidString).execute()
+    }
+
+    func likeComment(id: UUID, userId: UUID) async {
+        struct L: Encodable { let comment_id: UUID; let user_id: UUID }
+        _ = try? await supabase.from("comment_likes").insert(L(comment_id: id, user_id: userId)).execute()
+    }
+
+    func unlikeComment(id: UUID, userId: UUID) async {
+        _ = try? await supabase.from("comment_likes").delete()
+            .eq("comment_id", value: id.uuidString).eq("user_id", value: userId.uuidString).execute()
     }
 
     // MARK: - Storage

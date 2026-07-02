@@ -542,6 +542,25 @@ DROP POLICY IF EXISTS "post_comments: delete own" ON public.post_comments;
 CREATE POLICY "post_comments: delete own"
     ON public.post_comments FOR DELETE USING (auth.uid() = user_id);
 
+-- Likes on comments (so comments can be hearted + ranked "most relevant").
+CREATE TABLE IF NOT EXISTS public.comment_likes (
+    comment_id UUID NOT NULL REFERENCES public.post_comments(id) ON DELETE CASCADE,
+    user_id    UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    PRIMARY KEY (comment_id, user_id)
+);
+ALTER TABLE public.comment_likes ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "comment_likes: readable" ON public.comment_likes;
+CREATE POLICY "comment_likes: readable"
+    ON public.comment_likes FOR SELECT TO authenticated USING (true);
+DROP POLICY IF EXISTS "comment_likes: add own" ON public.comment_likes;
+CREATE POLICY "comment_likes: add own"
+    ON public.comment_likes FOR INSERT WITH CHECK (auth.uid() = user_id);
+DROP POLICY IF EXISTS "comment_likes: remove own" ON public.comment_likes;
+CREATE POLICY "comment_likes: remove own"
+    ON public.comment_likes FOR DELETE USING (auth.uid() = user_id);
+
 -- BLOCKS + USER REPORTS (UGC safety) --------------------------
 CREATE TABLE IF NOT EXISTS public.blocks (
     blocker_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
