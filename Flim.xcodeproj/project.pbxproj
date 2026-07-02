@@ -36,6 +36,7 @@
 		94D54440B811F938257FD796 /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC34A455324DEE2A431A7720 /* ProfileView.swift */; };
 		967633695FA8F00A8A3010DA /* DarkroomViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 060BA5995DD93E64A494A2E4 /* DarkroomViewModel.swift */; };
 		A00F0B3005322C2FBEB54BB9 /* PrimaryButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BE06A9CEC95AF492BDBD575 /* PrimaryButton.swift */; };
+		A09941FBF687F7F4F17CC981 /* RollCarouselView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CCFCD9A339AA06647B7A1E1 /* RollCarouselView.swift */; };
 		A14025FE14C116AF28430EC0 /* PostDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F609967CE45299259DA37AC /* PostDetailView.swift */; };
 		A1F62ACE36A2F7A63B9B78BE /* ShimmerPlaceholder.swift in Sources */ = {isa = PBXBuildFile; fileRef = C455E1683D6D539F208C704F /* ShimmerPlaceholder.swift */; };
 		AB3249CE1029C5382B7C55A6 /* PhotoGridCell.swift in Sources */ = {isa = PBXBuildFile; fileRef = A34B801CAAD6D2C6557DD581 /* PhotoGridCell.swift */; };
@@ -94,6 +95,7 @@
 		49A4B9AB5111472363BE0ECF /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
 		4B7DE28ED82A77117E85EBE0 /* FullScreenPhotoView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FullScreenPhotoView.swift; sourceTree = "<group>"; };
 		54CD52378D31EEDB7D7BE6EF /* RollDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollDetailView.swift; sourceTree = "<group>"; };
+		5CCFCD9A339AA06647B7A1E1 /* RollCarouselView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollCarouselView.swift; sourceTree = "<group>"; };
 		5FE59742B6CDB9699448F677 /* Flim.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Flim.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		633F60D6D348ADEA4D94D263 /* RollService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollService.swift; sourceTree = "<group>"; };
 		6D3CAAA6097E82270360343F /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -320,6 +322,7 @@
 			children = (
 				BA95E5BB427471DF71E11E56 /* CreateRollView.swift */,
 				35A42EF6E37ED2ED362069BA /* JoinRollView.swift */,
+				5CCFCD9A339AA06647B7A1E1 /* RollCarouselView.swift */,
 				54CD52378D31EEDB7D7BE6EF /* RollDetailView.swift */,
 				F1AA5EF66C46272F42891AF4 /* RollMembersView.swift */,
 				33D109A1C315CD466659A10F /* RollsView.swift */,
@@ -465,6 +468,7 @@
 				3F49B2B6996C065BA82A0395 /* ReactionBar.swift in Sources */,
 				BC9339EF423E0344336A96EF /* RemotePush.swift in Sources */,
 				D1044E118206CD6EDF9692B3 /* Roll.swift in Sources */,
+				A09941FBF687F7F4F17CC981 /* RollCarouselView.swift in Sources */,
 				05E99EC9B050D51173C5B157 /* RollDetailView.swift in Sources */,
 				EECAD4AB8FC87AFACD4A5A80 /* RollMembersView.swift in Sources */,
 				B09880D2185738A73550E7C6 /* RollService.swift in Sources */,

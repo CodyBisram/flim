@@ -109,7 +109,7 @@ struct CameraView: View {
         }
         .onDisappear { camera.stopRunning() }
         .sheet(isPresented: $showRollPicker) {
-            RollPickerSheet(rolls: rolls.rolls, selected: $selectedRoll)
+            RollPickerSheet(rolls: rolls.rolls, closed: rolls.closedRollIds, selected: $selectedRoll)
         }
     }
 
@@ -506,6 +506,7 @@ private struct ShutterButton: View {
 
 private struct RollPickerSheet: View {
     let rolls: [Roll]
+    var closed: Set<UUID> = []
     @Binding var selected: Roll?
     @Environment(\.dismiss) private var dismiss
 
@@ -532,13 +533,19 @@ private struct RollPickerSheet: View {
                     .listRowBackground(FlimTheme.bgElevated)
 
                     ForEach(rolls) { roll in
+                        let isClosed = closed.contains(roll.id)
                         Button {
                             selected = roll
                             dismiss()
                         } label: {
                             HStack {
                                 Label(roll.name, systemImage: "film.stack")
-                                    .foregroundStyle(.white)
+                                    .foregroundStyle(isClosed ? FlimTheme.textTertiary : .white)
+                                if isClosed {
+                                    Text("· developed")
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(FlimTheme.textTertiary)
+                                }
                                 Spacer()
                                 if selected?.id == roll.id {
                                     Image(systemName: "checkmark")
@@ -546,6 +553,7 @@ private struct RollPickerSheet: View {
                                 }
                             }
                         }
+                        .disabled(isClosed)
                         .listRowBackground(FlimTheme.bgElevated)
                     }
 

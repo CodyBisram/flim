@@ -6,7 +6,9 @@ struct RollDetailView: View {
     @Environment(PhotoService.self) private var photoService
     @Environment(RollService.self) private var rollService
     @Environment(AuthService.self) private var auth
+    @Environment(NotificationService.self) private var notifications
     @Environment(\.dismiss) private var dismiss
+    @AppStorage("developNotificationsEnabled") private var notificationsEnabled = true
     @State private var vm = DarkroomViewModel()
     @State private var showMembers = false
     @State private var selectedPhoto: Photo?
@@ -22,8 +24,16 @@ struct RollDetailView: View {
     @State private var showInviteShare = false
     @State private var coverToast = false
     @State private var showLeaveRoll = false
+    @State private var showCarousel = false
 
     private var isCreator: Bool { auth.currentUser?.id == roll.createdBy }
+    /// Developed shots oldest → newest, for the flip-through carousel.
+    private var chronologicalDeveloped: [Photo] {
+        vm.developedPhotos.sorted { $0.takenAt < $1.takenAt }
+    }
+    private var isFullyDeveloped: Bool {
+        vm.developingPhotos.isEmpty && !vm.developedPhotos.isEmpty
+    }
 
     private let columns = [
         GridItem(.flexible(), spacing: 2),
@@ -53,6 +63,21 @@ struct RollDetailView: View {
                     revealBanner(revealAt: revealAt,
                                  shots: vm.developingPhotos.count,
                                  people: Set(vm.developingPhotos.map(\.userId)).count)
+                }
+
+                // Flip through the whole developed roll, in order.
+                if isFullyDeveloped {
+                    Button {
+                        showCarousel = true
+                    } label: {
+                        Label("Play through the roll · \(vm.developedPhotos.count)", systemImage: "play.circle.fill")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(.black)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 13)
+                            .background(FlimTheme.accent, in: Capsule())
+                    }
+                    .padding(.horizontal, 16).padding(.bottom, 6)
                 }
 
                 Group {
@@ -148,7 +173,18 @@ struct RollDetailView: View {
             }
         }
         .onAppear {
-            Task { await vm.loadRoll(photoService: photoService, rollId: roll.id) }
+            Task {
+                await vm.loadRoll(photoService: photoService, rollId: roll.id)
+                // Ensure EVERY member gets a develop reminder — even those who didn't shoot.
+                if notificationsEnabled, let reveal = vm.developingPhotos.first?.developsAt, reveal > .now {
+                    let myCount = vm.photos.filter { $0.userId == auth.currentUser?.id }.count
+                    await notifications.requestAuthorizationIfNeeded()
+                    notifications.scheduleRollDevelopNotification(
+                        rollId: roll.id, rollName: displayName.isEmpty ? roll.name : displayName,
+                        developsAt: reveal, photoCount: myCount
+                    )
+                }
+            }
             Task {
                 if let members = try? await rollService.fetchMembers(for: roll.id) {
                     memberNames = Dictionary(members.map { ($0.id, $0.username ?? "unknown") },
@@ -160,6 +196,9 @@ struct RollDetailView: View {
             FullScreenPhotoView(photo: photo, url: selectedURL,
                                 photographer: memberNames[photo.userId],
                                 onDelete: { Task { await vm.loadRoll(photoService: photoService, rollId: roll.id) } })
+        }
+        .fullScreenCover(isPresented: $showCarousel) {
+            RollCarouselView(photos: chronologicalDeveloped, memberNames: memberNames)
         }
         .sheet(isPresented: $showMembers) {
             RollMembersView(roll: roll)

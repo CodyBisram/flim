@@ -238,10 +238,25 @@ CREATE POLICY "photos: roll members can see"
     ON public.photos FOR SELECT
     USING (roll_id IS NOT NULL AND public.is_roll_member(roll_id));
 
+-- A roll is "developed" once its reveal time has passed (all its shots share one reveal).
+-- SECURITY DEFINER so the INSERT policy can check it without recursing on photos' RLS.
+CREATE OR REPLACE FUNCTION public.is_roll_developed(p_roll UUID)
+RETURNS boolean
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+    SELECT EXISTS (SELECT 1 FROM public.photos WHERE roll_id = p_roll AND develops_at <= now());
+$$;
+
+-- Once a roll has developed, NO ONE (member or creator) can add more shots to it.
 DROP POLICY IF EXISTS "photos: can insert own" ON public.photos;
 CREATE POLICY "photos: can insert own"
     ON public.photos FOR INSERT
-    WITH CHECK (auth.uid() = user_id);
+    WITH CHECK (
+        auth.uid() = user_id
+        AND (roll_id IS NULL OR NOT public.is_roll_developed(roll_id))
+    );
 
 DROP POLICY IF EXISTS "photos: can update own" ON public.photos;
 CREATE POLICY "photos: can update own"
