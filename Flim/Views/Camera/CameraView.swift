@@ -449,12 +449,16 @@ struct CameraView: View {
             photos.enqueueCapture(rawData: data, stock: stock, userId: userId, rollId: rollId) { photo in
                 await refreshUnsorted()   // keep the "to sort" count live as shots come in
                 guard notificationsEnabled else { return }
-                await notifications.requestAuthorizationIfNeeded()
-                await notifications.scheduleDevelopNotification(
-                    photoID: photo.id,
-                    developsAt: photo.developsAt,
-                    rollName: rollName
-                )
+                // Personal instants are ready immediately (no reminder). Roll shots share a
+                // reveal — schedule ONE collapsed notification per roll, with your shot count.
+                if let rollId, let rollName {
+                    await notifications.requestAuthorizationIfNeeded()
+                    let count = photos.photos.filter { $0.rollId == rollId && $0.userId == userId }.count
+                    await notifications.scheduleRollDevelopNotification(
+                        rollId: rollId, rollName: rollName,
+                        developsAt: photo.developsAt, photoCount: count
+                    )
+                }
             }
         }
     }

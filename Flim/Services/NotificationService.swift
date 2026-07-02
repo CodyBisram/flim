@@ -32,20 +32,24 @@ final class NotificationService {
     }
 
     /// Schedules the develop reminder for a freshly captured photo.
-    func scheduleDevelopNotification(photoID: UUID, developsAt: Date, rollName: String?) {
+    /// Schedules ONE develop reminder per roll (personal instants are ready immediately, so
+    /// they don't need one). Reusing the roll's identifier means every shot you add just
+    /// updates the single pending notification instead of stacking dozens at the same reveal.
+    func scheduleRollDevelopNotification(rollId: UUID, rollName: String, developsAt: Date, photoCount: Int) {
         guard developsAt > .now else { return }
 
         let content = UNMutableNotificationContent()
-        content.title = "Your photo developed 📸"
-        content.body = rollName.map { "A new shot is ready in \"\($0)\"." }
-            ?? "Your latest shot is ready in the Darkroom."
+        content.title = "Your \(rollName) roll developed 🎞"
+        content.body = photoCount > 0
+            ? "Your \(photoCount) shot\(photoCount == 1 ? "" : "s") — and everyone else's — are ready."
+            : "Everyone's photos from the roll are ready to see."
         content.sound = .default
         content.interruptionLevel = .timeSensitive
 
         let interval = max(1, developsAt.timeIntervalSinceNow)
         let trigger = UNTimeIntervalNotificationTrigger(timeInterval: interval, repeats: false)
         let request = UNNotificationRequest(
-            identifier: "develop-\(photoID.uuidString)",
+            identifier: "develop-roll-\(rollId.uuidString)",   // same id → replaces, never stacks
             content: content,
             trigger: trigger
         )

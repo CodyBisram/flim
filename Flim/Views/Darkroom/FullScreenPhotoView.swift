@@ -74,16 +74,6 @@ struct FullScreenPhotoView: View {
                     }
                     .accessibilityLabel("Close")
                     Spacer()
-                    VStack(alignment: .trailing, spacing: 2) {
-                        if let photographer {
-                            Text("@\(photographer)")
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundStyle(.white)
-                        }
-                        Text(photo.takenAt.formatted(date: .abbreviated, time: .shortened))
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(Color(white: 0.7))
-                    }
                     // Share / save to Camera Roll (the on-screen, screen-sized image).
                     Button {
                         if let resolvedURL,
@@ -135,6 +125,20 @@ struct FullScreenPhotoView: View {
                 .padding(.top, 60)
 
                 Spacer()
+
+                // Photographer + date, centered under the photo (cleaner than the top bar).
+                VStack(spacing: 2) {
+                    if let photographer {
+                        Text("@\(photographer)")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(.white)
+                    }
+                    Text(photo.takenAt.formatted(date: .abbreviated, time: .shortened))
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Color(white: 0.68))
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.bottom, 14)
 
                 bottomBar
                     .padding(.horizontal, 20)
