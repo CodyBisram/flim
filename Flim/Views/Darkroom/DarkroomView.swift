@@ -83,6 +83,19 @@ struct DarkroomView: View {
             }
             ToolbarItem(placement: .topBarTrailing) {
                 HStack(spacing: 12) {
+                    #if DEBUG
+                    Button {
+                        Task {
+                            if let uid = auth.currentUser?.id {
+                                await photoService.seedUnsortedPhotos(userId: uid)
+                                await reload()
+                            }
+                        }
+                    } label: {
+                        Image(systemName: "ladybug").foregroundStyle(FlimTheme.textTertiary)
+                    }
+                    .accessibilityLabel("Seed unsorted (DEBUG)")
+                    #endif
                     if unsortedCount > 0 {
                         Button { showSortDeck = true } label: {
                             HStack(spacing: 4) {

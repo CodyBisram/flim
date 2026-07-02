@@ -231,6 +231,25 @@ final class PhotoService {
         }
     }
 
+    #if DEBUG
+    /// DEBUG: seed a few UNSORTED instants so the sort deck can be exercised in the simulator
+    /// (which has no camera to produce real captures).
+    func seedUnsortedPhotos(userId: UUID) async {
+        for i in 0..<5 {
+            guard let data = Self.makeDemoImage(seed: i) else { continue }
+            let photoId = UUID()
+            let path = "\(userId.uuidString.lowercased())/\(photoId.uuidString.lowercased()).jpg"
+            do {
+                try await supabase.storage.from("photos")
+                    .upload(path, data: data, options: FileOptions(contentType: "image/jpeg"))
+                let payload = InsertPhoto(id: photoId, userId: userId, rollId: nil,
+                                          storagePath: path, developsAt: .now, isSorted: false)
+                _ = try await supabase.from("photos").insert(payload).execute()
+            } catch { print("[seedUnsorted] failed \(i): \(error)") }
+        }
+    }
+    #endif
+
     /// Personal instants that haven't been sorted yet (shown in the swipe deck), newest first.
     func fetchUnsorted(userId: UUID) async -> [Photo] {
         (try? await supabase
