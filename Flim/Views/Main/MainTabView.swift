@@ -3,6 +3,7 @@ import SwiftUI
 struct MainTabView: View {
     @State private var selected = 0
     @AppStorage("hasOnboarded") private var hasOnboarded = false
+    @AppStorage("accentColor") private var accentColor = "amber"   // re-tints on change
     #if DEBUG
     @Environment(AuthService.self) private var auth
     @Environment(RollService.self) private var rolls

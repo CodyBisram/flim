@@ -365,6 +365,8 @@ UPDATE public.photos SET is_sorted = TRUE WHERE is_sorted = FALSE;
 -- Profile bio + avatar (avatar_path points at one of the user's own photos in Storage).
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS bio TEXT;
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS avatar_path TEXT;
+-- Optional first/display name, used in greetings + shown on the profile (falls back to username).
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS display_name TEXT;
 
 -- Reactions to photos (mainly for shared rolls). One row per (photo, user, emoji).
 CREATE TABLE IF NOT EXISTS public.photo_reactions (
@@ -409,7 +411,7 @@ CREATE POLICY "reactions: remove own"
 -- Public profile view — exposes only safe fields (NO email / invite code), readable
 -- by any signed-in user so you can browse pages, follow people, and see comment authors.
 CREATE OR REPLACE VIEW public.profiles AS
-    SELECT id, username, avatar_path, bio, created_at
+    SELECT id, username, avatar_path, bio, display_name, created_at
     FROM public.users;
 
 GRANT SELECT ON public.profiles TO authenticated, anon;

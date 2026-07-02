@@ -101,26 +101,31 @@ final class AuthService {
             && username.unicodeScalars.allSatisfy(chars.contains)
     }
 
-    func setUsername(_ username: String) async throws {
+    func setUsername(_ username: String, displayName: String? = nil) async throws {
         let session = try await supabase.auth.session
         let userId = session.user.id
         let email = session.user.email ?? ""
+        let name = displayName?.trimmingCharacters(in: .whitespacesAndNewlines)
 
         struct UpsertUser: Encodable {
             let id: UUID
             let email: String
             let username: String
             let inviteCode: String
+            let displayName: String?
             enum CodingKeys: String, CodingKey {
                 case id, email, username
                 case inviteCode = "invite_code"
+                case displayName = "display_name"
             }
         }
 
         do {
             currentUser = try await supabase
                 .from("users")
-                .upsert(UpsertUser(id: userId, email: email, username: username, inviteCode: Self.randomCode()))
+                .upsert(UpsertUser(id: userId, email: email, username: username,
+                                   inviteCode: Self.randomCode(),
+                                   displayName: (name?.isEmpty ?? true) ? nil : name))
                 .select()
                 .single()
                 .execute()
@@ -133,6 +138,17 @@ final class AuthService {
             }
             throw error
         }
+    }
+
+    /// Updates the optional display name and refreshes `currentUser`.
+    func setDisplayName(_ name: String) async throws {
+        let session = try await supabase.auth.session
+        struct Update: Encodable { let display_name: String }
+        currentUser = try await supabase
+            .from("users")
+            .update(Update(display_name: name.trimmingCharacters(in: .whitespacesAndNewlines)))
+            .eq("id", value: session.user.id.uuidString)
+            .select().single().execute().value
     }
 
     /// Updates the profile bio and refreshes `currentUser`.

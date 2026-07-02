@@ -7,14 +7,36 @@ enum FlimTheme {
     static let bgElevated = Color(white: 0.08)
     static let stroke = Color(white: 0.14)
 
-    /// Warm amber — the "film" accent.
-    static let accent = Color(red: 0.98, green: 0.74, blue: 0.36)
-    /// A soft amber wash for backgrounds/gradients that want warmth without shouting.
-    static let accentSoft = Color(red: 0.98, green: 0.74, blue: 0.36).opacity(0.16)
+    /// The user-chosen accent (defaults to warm amber). Read from UserDefaults so it applies
+    /// everywhere `FlimTheme.accent` is used; changing it recolors the app as views re-render.
+    static let accentKey = "accentColor"
+    static var accent: Color {
+        (FlimAccent(rawValue: UserDefaults.standard.string(forKey: accentKey) ?? "") ?? .amber).color
+    }
+    /// A soft accent wash for backgrounds/gradients that want warmth without shouting.
+    static var accentSoft: Color { accent.opacity(0.16) }
 
     static let textPrimary = Color.white
     static let textSecondary = Color(white: 0.62)   // nudged up for legibility
     static let textTertiary = Color(white: 0.44)    // faint, but now actually readable
+}
+
+/// The pickable accent colors (film-friendly palette).
+enum FlimAccent: String, CaseIterable, Identifiable {
+    case amber, rose, violet, teal, lime, sky
+    var id: String { rawValue }
+    var label: String { rawValue.capitalized }
+
+    var color: Color {
+        switch self {
+        case .amber:  return Color(red: 0.98, green: 0.74, blue: 0.36)
+        case .rose:   return Color(red: 0.96, green: 0.45, blue: 0.55)
+        case .violet: return Color(red: 0.66, green: 0.55, blue: 0.98)
+        case .teal:   return Color(red: 0.35, green: 0.82, blue: 0.75)
+        case .lime:   return Color(red: 0.70, green: 0.85, blue: 0.35)
+        case .sky:    return Color(red: 0.45, green: 0.72, blue: 0.98)
+        }
+    }
 }
 
 // MARK: - Page title

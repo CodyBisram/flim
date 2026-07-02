@@ -3,6 +3,7 @@ import SwiftUI
 struct UsernameView: View {
     @Environment(AuthService.self) private var auth
     @State private var username = ""
+    @State private var name = ""
     @State private var isSaving = false
     @State private var error: String?
 
@@ -50,6 +51,24 @@ struct UsernameView: View {
                     )
                 }
 
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("WHAT SHOULD WE CALL YOU? (OPTIONAL)")
+                        .font(.system(size: 11, weight: .medium))
+                        .tracking(2)
+                        .foregroundStyle(Color(white: 0.4))
+
+                    TextField("", text: $name, prompt: Text("First name").foregroundStyle(Color(white: 0.3)))
+                        .textContentType(.givenName)
+                        .autocorrectionDisabled()
+                        .font(.system(size: 17))
+                        .foregroundStyle(.white)
+                        .tint(.white)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 16)
+                        .background(Color(white: 0.1), in: RoundedRectangle(cornerRadius: 12))
+                }
+                .padding(.top, 18)
+
                 if let error {
                     Text(error)
                         .font(.system(size: 13))
@@ -73,7 +92,7 @@ struct UsernameView: View {
         isSaving = true
         error = nil
         do {
-            try await auth.setUsername(username.lowercased())
+            try await auth.setUsername(username.lowercased(), displayName: name)
         } catch {
             self.error = error.localizedDescription
         }

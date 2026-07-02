@@ -17,6 +17,7 @@ struct ProfileView: View {
     @State private var showEditUsername = false
     @AppStorage("developNotificationsEnabled") private var notificationsEnabled = true
     @AppStorage("hasOnboarded") private var hasOnboarded = false
+    @AppStorage("accentColor") private var accentColor = "amber"
 
     var body: some View {
         NavigationStack {
@@ -125,6 +126,30 @@ struct ProfileView: View {
                     .tint(FlimTheme.accent)
                     .padding(.horizontal, 28)
                     .padding(.vertical, 14)
+                    .background(FlimTheme.bgElevated)
+
+                    // Accent color
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("ACCENT")
+                            .font(.system(size: 11, weight: .medium)).tracking(2)
+                            .foregroundStyle(FlimTheme.textTertiary)
+                        HStack(spacing: 14) {
+                            ForEach(FlimAccent.allCases) { swatch in
+                                Button {
+                                    accentColor = swatch.rawValue
+                                    Haptics.tap()
+                                } label: {
+                                    Circle()
+                                        .fill(swatch.color)
+                                        .frame(width: 30, height: 30)
+                                        .overlay(Circle().strokeBorder(.white, lineWidth: accentColor == swatch.rawValue ? 2.5 : 0))
+                                }
+                                .accessibilityLabel(swatch.label)
+                            }
+                            Spacer()
+                        }
+                    }
+                    .padding(.horizontal, 28).padding(.vertical, 14)
                     .background(FlimTheme.bgElevated)
 
                     // Replay the intro

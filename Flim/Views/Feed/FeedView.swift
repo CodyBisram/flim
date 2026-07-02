@@ -84,9 +84,24 @@ struct FeedView: View {
         }
     }
 
+    private var greeting: String {
+        let hour = Calendar.current.component(.hour, from: Date())
+        let part = hour < 12 ? "Good morning" : (hour < 18 ? "Good afternoon" : "Good evening")
+        return "\(part), \(auth.currentUser?.friendlyName ?? "there")"
+    }
+
     private var header: some View {
         HStack(spacing: 14) {
-            FlimNavTitle("Feed")
+            Text(greeting)
+                .font(.system(size: 26, weight: .light))
+                .tracking(0.5)
+                .foregroundStyle(FlimTheme.textPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.leading, 20)
+                .padding(.top, 6)
+                .padding(.bottom, 10)
             Spacer()
             #if DEBUG
             Button {

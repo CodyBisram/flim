@@ -6,13 +6,17 @@ struct UserProfile: Codable, Identifiable, Hashable {
     var username: String?
     var avatarPath: String?
     var bio: String?
+    var displayName: String?
     let createdAt: Date
 
     var handle: String { "@\(username ?? "someone")" }
+    /// Display name if set, else the handle.
+    var name: String { displayName?.isEmpty == false ? displayName! : (username ?? "someone") }
 
     enum CodingKeys: String, CodingKey {
         case id, username, bio
         case avatarPath = "avatar_path"
+        case displayName = "display_name"
         case createdAt = "created_at"
     }
 }

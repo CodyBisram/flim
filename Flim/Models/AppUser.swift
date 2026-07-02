@@ -8,6 +8,10 @@ struct AppUser: Codable, Identifiable, Equatable {
     let createdAt: Date
     var bio: String?
     var avatarPath: String?
+    var displayName: String?
+
+    /// Preferred name for greetings/display — the display name, else the username.
+    var friendlyName: String { displayName?.isEmpty == false ? displayName! : (username ?? "there") }
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -17,5 +21,6 @@ struct AppUser: Codable, Identifiable, Equatable {
         case createdAt = "created_at"
         case bio
         case avatarPath = "avatar_path"
+        case displayName = "display_name"
     }
 }
