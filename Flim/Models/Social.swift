@@ -72,6 +72,9 @@ struct PostReaction: Codable, Identifiable {
     }
 }
 
+/// A navigation target for tapping a @username anywhere it appears.
+struct ProfileRoute: Identifiable, Hashable { let id: UUID }
+
 /// A comment with its author + like info, ranked for display.
 struct CommentInfo: Identifiable {
     let comment: PostComment

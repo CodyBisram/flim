@@ -16,6 +16,7 @@ struct PostDetailView: View {
     @State private var showReportConfirm = false
     @State private var showDeleteConfirm = false
     @State private var reportedToast = false
+    @State private var route: ProfileRoute?
     @Environment(\.dismiss) private var dismiss
     @FocusState private var commentFocused: Bool
 
@@ -57,6 +58,7 @@ struct PostDetailView: View {
         }
         .navigationBarTitleDisplayMode(.inline)
         .toolbarColorScheme(.dark, for: .navigationBar)
+        .navigationDestination(item: $route) { UserPageView(userId: $0.id) }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
@@ -117,12 +119,16 @@ struct PostDetailView: View {
 
     private var authorRow: some View {
         HStack(spacing: 10) {
-            Circle()
-                .fill(FlimTheme.accent.opacity(0.18))
-                .frame(width: 34, height: 34)
-                .overlay(Text(String(item.author.handle.dropFirst().prefix(1)).uppercased())
-                    .font(.system(size: 14, weight: .thin)).foregroundStyle(FlimTheme.accent))
-            Text(item.author.handle).font(.system(size: 15, weight: .semibold)).foregroundStyle(.white)
+            Button { route = ProfileRoute(id: post.userId) } label: {
+                HStack(spacing: 10) {
+                    Circle()
+                        .fill(FlimTheme.accent.opacity(0.18))
+                        .frame(width: 34, height: 34)
+                        .overlay(Text(String(item.author.handle.dropFirst().prefix(1)).uppercased())
+                            .font(.system(size: 14, weight: .thin)).foregroundStyle(FlimTheme.accent))
+                    Text(item.author.handle).font(.system(size: 15, weight: .semibold)).foregroundStyle(.white)
+                }
+            }
             Spacer()
             Text(post.takenAt.formatted(date: .abbreviated, time: .omitted))
                 .font(.system(size: 12)).foregroundStyle(FlimTheme.textTertiary)
@@ -147,8 +153,10 @@ struct PostDetailView: View {
                 HStack(alignment: .top, spacing: 10) {
                     VStack(alignment: .leading, spacing: 2) {
                         HStack(spacing: 6) {
-                            Text(info.handle)
-                                .font(.system(size: 13, weight: .semibold)).foregroundStyle(.white)
+                            Button { route = ProfileRoute(id: info.comment.userId) } label: {
+                                Text(info.handle)
+                                    .font(.system(size: 13, weight: .semibold)).foregroundStyle(.white)
+                            }
                             Text(info.comment.createdAt.formatted(.relative(presentation: .named)))
                                 .font(.system(size: 10)).foregroundStyle(FlimTheme.textTertiary)
                             if info.comment.userId == auth.currentUser?.id {

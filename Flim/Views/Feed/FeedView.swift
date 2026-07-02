@@ -235,7 +235,7 @@ struct FeedPostCard: View {
     @State private var comments: [CommentInfo] = []
     @State private var draft = ""
     @State private var showDetail = false
-    @State private var showPage = false
+    @State private var route: ProfileRoute?
     @State private var heartBurst = false
     @FocusState private var commentFocused: Bool
 
@@ -246,7 +246,7 @@ struct FeedPostCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             // Author row
-            Button { showPage = true } label: {
+            Button { route = ProfileRoute(id: item.author.id) } label: {
                 HStack(spacing: 10) {
                     avatar
                     VStack(alignment: .leading, spacing: 1) {
@@ -313,20 +313,26 @@ struct FeedPostCard: View {
                 }
             }
 
-            // Top comment preview → tap into the photo for the rest.
+            // Top comment preview → @handle taps to their page, the rest opens the photo.
             if let top = comments.first {
-                Button { showDetail = true } label: {
-                    VStack(alignment: .leading, spacing: 3) {
-                        if comments.count > 1 {
+                VStack(alignment: .leading, spacing: 3) {
+                    if comments.count > 1 {
+                        Button { showDetail = true } label: {
                             Text("View all \(comments.count) comments")
                                 .font(.system(size: 12)).foregroundStyle(FlimTheme.textTertiary)
                         }
-                        (Text(top.handle + " ").font(.system(size: 14, weight: .semibold))
-                         + Text(top.comment.body).font(.system(size: 14)))
-                            .foregroundStyle(.white).lineLimit(2).multilineTextAlignment(.leading)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    HStack(alignment: .top, spacing: 4) {
+                        Button { route = ProfileRoute(id: top.comment.userId) } label: {
+                            Text(top.handle).font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
+                        }
+                        Text(top.comment.body)
+                            .font(.system(size: 14)).foregroundStyle(.white)
+                            .lineLimit(2).multilineTextAlignment(.leading)
+                            .onTapGesture { showDetail = true }
+                    }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
 
             // Inline comment composer
@@ -357,9 +363,7 @@ struct FeedPostCard: View {
         .navigationDestination(isPresented: $showDetail) {
             PostDetailView(item: item)
         }
-        .navigationDestination(isPresented: $showPage) {
-            UserPageView(userId: item.author.id)
-        }
+        .navigationDestination(item: $route) { UserPageView(userId: $0.id) }
     }
 
     private var avatar: some View {
