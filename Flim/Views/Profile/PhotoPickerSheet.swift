@@ -70,16 +70,28 @@ struct PhotoPickerSheet: View {
     }
 }
 
-/// A tappable full-screen viewer for a single image (e.g. a profile photo).
+/// A full-screen image viewer with pinch + double-tap zoom and pan.
 struct ImageViewer: View {
     let url: URL?
     @Environment(\.dismiss) private var dismiss
+    @State private var scale: CGFloat = 1
+    @State private var offset: CGSize = .zero
+    @State private var lastOffset: CGSize = .zero
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
             if let url {
-                CachedImage(url: url, maxPixel: 1200) { $0.resizable().scaledToFit() } placeholder: { ProgressView().tint(.white) }
+                CachedImage(url: url, maxPixel: 1600) { image in
+                    image.resizable().scaledToFit()
+                        .scaleEffect(scale).offset(offset)
+                        .gesture(dragGesture).gesture(pinch)
+                        .onTapGesture(count: 2) {
+                            withAnimation(.spring(duration: 0.3)) {
+                                if scale > 1 { scale = 1; offset = .zero; lastOffset = .zero } else { scale = 2.5 }
+                            }
+                        }
+                } placeholder: { ProgressView().tint(.white) }
             }
             VStack {
                 HStack {
@@ -93,7 +105,27 @@ struct ImageViewer: View {
                 Spacer()
             }
         }
-        .onTapGesture { dismiss() }
         .statusBarHidden()
+    }
+
+    private var dragGesture: some Gesture {
+        DragGesture()
+            .onChanged { value in
+                if scale > 1 {
+                    offset = CGSize(width: lastOffset.width + value.translation.width,
+                                    height: lastOffset.height + value.translation.height)
+                } else { offset = value.translation }
+            }
+            .onEnded { value in
+                if scale > 1 { lastOffset = offset }
+                else if abs(value.translation.height) > 120 { dismiss() }
+                else { withAnimation(.spring(duration: 0.3)) { offset = .zero } }
+            }
+    }
+
+    private var pinch: some Gesture {
+        MagnificationGesture()
+            .onChanged { scale = max(1, $0) }
+            .onEnded { _ in withAnimation(.spring(duration: 0.3)) { if scale < 1.2 { scale = 1; offset = .zero; lastOffset = .zero } } }
     }
 }

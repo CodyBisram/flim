@@ -21,6 +21,7 @@ struct RollDetailView: View {
     @State private var displayName = ""
     @State private var showInviteShare = false
     @State private var coverToast = false
+    @State private var showLeaveRoll = false
 
     private var isCreator: Bool { auth.currentUser?.id == roll.createdBy }
 
@@ -134,6 +135,10 @@ struct RollDetailView: View {
                         Button(role: .destructive) {
                             showDeleteRoll = true
                         } label: { Label("Delete roll", systemImage: "trash") }
+                    } else {
+                        Button(role: .destructive) {
+                            showLeaveRoll = true
+                        } label: { Label("Leave roll", systemImage: "rectangle.portrait.and.arrow.right") }
                     }
                 } label: {
                     Image(systemName: "ellipsis")
@@ -175,6 +180,18 @@ struct RollDetailView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("The roll is removed for everyone. Each person keeps their own photos.")
+        }
+        .confirmationDialog("Leave this roll?", isPresented: $showLeaveRoll, titleVisibility: .visible) {
+            Button("Leave Roll", role: .destructive) {
+                guard let uid = auth.currentUser?.id else { return }
+                Task {
+                    try? await rollService.leaveRoll(rollId: roll.id, userId: uid)
+                    dismiss()
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("You'll stop seeing this roll. Your own photos stay in your Darkroom.")
         }
         .alert("Rename roll", isPresented: $showRename) {
             TextField("Roll name", text: $renameDraft)

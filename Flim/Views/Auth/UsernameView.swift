@@ -6,6 +6,7 @@ struct UsernameView: View {
     @State private var name = ""
     @State private var isSaving = false
     @State private var error: String?
+    @AppStorage("accentColor") private var accentColor = "amber"
 
     var isValid: Bool { AuthService.isValidUsername(username) }
 
@@ -66,6 +67,22 @@ struct UsernameView: View {
                         .padding(.horizontal, 16)
                         .padding(.vertical, 16)
                         .background(Color(white: 0.1), in: RoundedRectangle(cornerRadius: 12))
+                }
+                .padding(.top, 18)
+
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("PICK YOUR COLOR")
+                        .font(.system(size: 11, weight: .medium)).tracking(2)
+                        .foregroundStyle(Color(white: 0.4))
+                    HStack(spacing: 14) {
+                        ForEach(FlimAccent.allCases) { swatch in
+                            Button { accentColor = swatch.rawValue; Haptics.tap() } label: {
+                                Circle().fill(swatch.color).frame(width: 30, height: 30)
+                                    .overlay(Circle().strokeBorder(.white, lineWidth: accentColor == swatch.rawValue ? 2.5 : 0))
+                            }
+                        }
+                        Spacer()
+                    }
                 }
                 .padding(.top, 18)
 

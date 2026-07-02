@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct PostDetailView: View {
     let item: FeedItem
@@ -11,9 +12,16 @@ struct PostDetailView: View {
     @State private var authors: [UUID: UserProfile] = [:]
     @State private var draft = ""
     @State private var sending = false
+    @State private var showViewer = false
+    @State private var shareItem: ShareImage?
+    @State private var showReportConfirm = false
+    @State private var showDeleteConfirm = false
+    @State private var reportedToast = false
+    @Environment(\.dismiss) private var dismiss
     @FocusState private var commentFocused: Bool
 
     private var post: Post { item.post }
+    private var isOwn: Bool { post.userId == auth.currentUser?.id }
 
     var body: some View {
         ZStack {
@@ -32,6 +40,8 @@ struct PostDetailView: View {
                         }
                         .overlay { GrainOverlay().opacity(0.5) }
                         .clipShape(RoundedRectangle(cornerRadius: 14))
+                        .contentShape(Rectangle())
+                        .onTapGesture { if url != nil { showViewer = true } }
 
                     if let caption = post.caption, !caption.isEmpty {
                         Text(caption).font(.system(size: 15)).foregroundStyle(.white)
@@ -48,8 +58,62 @@ struct PostDetailView: View {
         }
         .navigationBarTitleDisplayMode(.inline)
         .toolbarColorScheme(.dark, for: .navigationBar)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    if isOwn {
+                        Button { saveToCameraRoll() } label: { Label("Save to Camera Roll", systemImage: "square.and.arrow.down") }
+                        Button(role: .destructive) { showDeleteConfirm = true } label: { Label("Delete post", systemImage: "trash") }
+                    } else {
+                        Button { showReportConfirm = true } label: { Label("Report", systemImage: "flag") }
+                    }
+                } label: {
+                    Image(systemName: "ellipsis").foregroundStyle(FlimTheme.accent)
+                }
+            }
+        }
         .safeAreaInset(edge: .bottom) { commentInput }
+        .overlay(alignment: .top) {
+            if reportedToast {
+                Label("Reported — thanks", systemImage: "checkmark.circle.fill")
+                    .font(.system(size: 13, weight: .medium)).foregroundStyle(.white)
+                    .padding(.horizontal, 16).padding(.vertical, 10)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+        .fullScreenCover(isPresented: $showViewer) { ImageViewer(url: url) }
+        .sheet(item: $shareItem) { ActivityView(items: [$0.image]) }
+        .confirmationDialog("Delete this post?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
+            Button("Delete", role: .destructive) {
+                Task { await feed.deletePost(id: post.id); dismiss() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("It's removed from your page and feed. The photo stays in your Darkroom.")
+        }
+        .confirmationDialog("Report this photo?", isPresented: $showReportConfirm, titleVisibility: .visible) {
+            Button("Report", role: .destructive) {
+                guard let uid = auth.currentUser?.id else { return }
+                Task { await feed.reportPost(post, from: uid) }
+                withAnimation { reportedToast = true }
+                Task { try? await Task.sleep(for: .seconds(2)); withAnimation { reportedToast = false } }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Flag this for review. Thanks for keeping FLIM safe.")
+        }
         .task { await load() }
+    }
+
+    private func saveToCameraRoll() {
+        guard let url else { return }
+        Task {
+            if let (data, _) = try? await URLSession.shared.data(from: url),
+               let image = UIImage(data: data) {
+                shareItem = ShareImage(image: image)
+            }
+        }
     }
 
     private var authorRow: some View {

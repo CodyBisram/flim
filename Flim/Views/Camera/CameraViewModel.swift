@@ -74,6 +74,36 @@ final class CameraViewModel: NSObject {
         session.commitConfiguration()
     }
 
+    // MARK: - Focus & zoom
+
+    /// The screen point of the last tap-to-focus, for a brief reticle. `nil` when hidden.
+    struct FocusReticle: Equatable { let id = UUID(); let point: CGPoint }
+    var focusReticle: FocusReticle?
+
+    private var currentDevice: AVCaptureDevice? {
+        session.inputs.compactMap { $0 as? AVCaptureDeviceInput }.first?.device
+    }
+    var currentZoom: CGFloat { currentDevice?.videoZoomFactor ?? 1 }
+
+    /// Tap-to-focus + set exposure at a device point (0–1), plus a reticle at the view point.
+    func focus(atDevicePoint devicePoint: CGPoint, viewPoint: CGPoint) {
+        if let device = currentDevice, (try? device.lockForConfiguration()) != nil {
+            if device.isFocusPointOfInterestSupported { device.focusPointOfInterest = devicePoint; device.focusMode = .autoFocus }
+            if device.isExposurePointOfInterestSupported { device.exposurePointOfInterest = devicePoint; device.exposureMode = .autoExpose }
+            device.unlockForConfiguration()
+        }
+        let reticle = FocusReticle(point: viewPoint)
+        focusReticle = reticle
+        Task { try? await Task.sleep(for: .seconds(1)); if focusReticle?.id == reticle.id { focusReticle = nil } }
+    }
+
+    func zoom(to factor: CGFloat) {
+        guard let device = currentDevice, (try? device.lockForConfiguration()) != nil else { return }
+        let maxZoom = min(device.activeFormat.videoMaxZoomFactor, 5)
+        device.videoZoomFactor = max(1, min(factor, maxZoom))
+        device.unlockForConfiguration()
+    }
+
     func startRunning() {
         guard !session.isRunning else { return }
         Task.detached(priority: .userInitiated) { [weak self] in

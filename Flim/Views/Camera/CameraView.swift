@@ -50,15 +50,20 @@ struct CameraView: View {
         ZStack {
             Color.black.ignoresSafeArea()
 
-            CameraPreview(session: camera.session)
+            CameraPreview(session: camera.session, camera: camera, onShutter: { shutter() })
                 .ignoresSafeArea()
-                // Double-tap anywhere on the preview to flip between front and back.
-                .onTapGesture(count: 2) {
-                    guard camera.permission == .authorized else { return }
-                    camera.flipCamera()
-                    Haptics.tap()
-                    wakeFilmStrip()
+                // Tap-to-focus reticle.
+                .overlay {
+                    if let reticle = camera.focusReticle {
+                        RoundedRectangle(cornerRadius: 4)
+                            .stroke(FlimTheme.accent, lineWidth: 1.5)
+                            .frame(width: 72, height: 72)
+                            .position(reticle.point)
+                            .transition(.opacity)
+                            .allowsHitTesting(false)
+                    }
                 }
+                .animation(.easeOut(duration: 0.2), value: camera.focusReticle)
 
             // Shutter flash overlay
             Color.white
@@ -105,6 +110,11 @@ struct CameraView: View {
         .sheet(isPresented: $showRollPicker) {
             RollPickerSheet(rolls: rolls.rolls, selected: $selectedRoll)
         }
+    }
+
+    private func shutter() {
+        Haptics.shutter()
+        camera.capturePhoto()
     }
 
     private func refreshUnsorted() async {
@@ -301,10 +311,7 @@ struct CameraView: View {
                     .frame(width: 140, height: 96)
             }
 
-            ShutterButton(isCapturing: camera.isCapturing) {
-                Haptics.shutter()
-                camera.capturePhoto()
-            }
+            ShutterButton(isCapturing: camera.isCapturing) { shutter() }
         }
     }
 

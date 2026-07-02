@@ -145,6 +145,13 @@ final class FeedService {
             .eq("blocked_id", value: targetId.uuidString).execute()
     }
 
+    /// Reports a post's photo for review (reuses the photo_reports table).
+    func reportPost(_ post: Post, from userId: UUID) async {
+        struct R: Encodable { let photo_id: UUID; let reporter_id: UUID; let reason: String? }
+        _ = try? await supabase.from("photo_reports")
+            .insert(R(photo_id: post.photoId, reporter_id: userId, reason: "feed post")).execute()
+    }
+
     func reportUser(_ targetId: UUID, from userId: UUID, reason: String? = nil) async {
         struct R: Encodable { let reporter_id: UUID; let reported_id: UUID; let reason: String? }
         _ = try? await supabase.from("user_reports")

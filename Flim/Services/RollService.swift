@@ -199,6 +199,14 @@ final class RollService {
         coverPaths[rollId] = nil
     }
 
+    /// The current user leaves a roll — drops their membership and removes it locally.
+    func leaveRoll(rollId: UUID, userId: UUID) async throws {
+        try await removeMember(rollId: rollId, userId: userId)
+        rolls.removeAll { $0.id == rollId }
+        memberCounts[rollId] = nil
+        coverPaths[rollId] = nil
+    }
+
     /// Removes a member from a roll. RLS allows this only for the member themselves
     /// (leaving) or the roll's creator (moderation).
     func removeMember(rollId: UUID, userId: UUID) async throws {
