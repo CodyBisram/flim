@@ -44,14 +44,20 @@ struct SortDeckView: View {
             }
         }
         .task { await load() }
-        .onDisappear { commitPending() }
+        .onDisappear {
+            // Safety net if dismissed some other way — commit any still-held action.
+            if let p = lastPhoto, let a = lastAction {
+                lastPhoto = nil; lastAction = nil
+                Task { await commit(p, a) }
+            }
+        }
     }
 
     // MARK: - Header
 
     private var header: some View {
         HStack {
-            Button { dismiss() } label: {
+            Button { closeDeck() } label: {
                 Image(systemName: "xmark").font(.system(size: 16, weight: .medium)).foregroundStyle(.white)
             }
             Spacer()
@@ -145,7 +151,7 @@ struct SortDeckView: View {
                 .font(.system(size: 44, weight: .ultraLight)).foregroundStyle(FlimTheme.accent)
             Text("All sorted")
                 .font(.system(size: 22, weight: .thin)).foregroundStyle(.white)
-            Button { dismiss() } label: {
+            Button { closeDeck() } label: {
                 Text("Done").font(.system(size: 15, weight: .semibold)).foregroundStyle(.black)
                     .padding(.horizontal, 30).padding(.vertical, 12)
                     .background(FlimTheme.accent, in: Capsule())
@@ -176,8 +182,11 @@ struct SortDeckView: View {
         case .trash:   withAnimation(.easeIn(duration: 0.25)) { drag = CGSize(width: 0, height: 900) }
         }
 
-        // Commit the previous action (it can no longer be undone) and hold this one.
-        commitPending()
+        // The previous swipe can no longer be undone — commit it now, and hold this one.
+        if let p = lastPhoto, let a = lastAction {
+            lastPhoto = nil; lastAction = nil
+            Task { await commit(p, a) }
+        }
         lastPhoto = photo
         lastAction = action
 
@@ -187,6 +196,17 @@ struct SortDeckView: View {
             if !cards.isEmpty { cards.removeFirst() }
             drag = .zero
             if cards.isEmpty { onFinish() }
+        }
+    }
+
+    /// Closes the deck, finishing any held action FIRST so the caller's refresh sees the
+    /// committed state (otherwise the "N to sort" count lingers).
+    private func closeDeck() {
+        let p = lastPhoto, a = lastAction
+        lastPhoto = nil; lastAction = nil
+        Task {
+            if let p, let a { await commit(p, a) }
+            dismiss()
         }
     }
 
@@ -201,21 +221,17 @@ struct SortDeckView: View {
         }
     }
 
-    /// Actually applies the held action to the backend.
-    private func commitPending() {
-        guard let photo = lastPhoto, let action = lastAction, let uid = auth.currentUser?.id else { return }
-        lastPhoto = nil
-        lastAction = nil
-        Task {
-            switch action {
-            case .archive:
-                await photoService.markSorted(photoId: photo.id)
-            case .publish:
-                await photoService.markSorted(photoId: photo.id)
-                try? await feed.createPost(photo: photo, caption: nil, userId: uid)
-            case .trash:
-                await photoService.deletePhoto(photo)
-            }
+    /// Applies a sort action to the backend.
+    private func commit(_ photo: Photo, _ action: SortAction) async {
+        guard let uid = auth.currentUser?.id else { return }
+        switch action {
+        case .archive:
+            await photoService.markSorted(photoId: photo.id)
+        case .publish:
+            await photoService.markSorted(photoId: photo.id)
+            try? await feed.createPost(photo: photo, caption: nil, userId: uid)
+        case .trash:
+            await photoService.deletePhoto(photo)
         }
     }
 
