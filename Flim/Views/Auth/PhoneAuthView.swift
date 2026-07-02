@@ -7,9 +7,8 @@ struct EmailAuthView: View {
     @State private var error: String?
     @State private var showOTP = false
     @ScaledMetric private var subtitleSize = 15
-    #if DEBUG
-    @State private var debugPassword = ""
-    #endif
+    @State private var password = ""
+    @State private var showPasswordEntry = false
 
     var body: some View {
         ZStack {
@@ -55,29 +54,42 @@ struct EmailAuthView: View {
                         .padding(.top, 8)
                 }
 
-                #if DEBUG
-                VStack(alignment: .leading, spacing: 6) {
-                    SecureField("", text: $debugPassword, prompt: Text("password (DEBUG sign-in)").foregroundStyle(Color(white: 0.3)))
-                        .textContentType(.password)
-                        .autocorrectionDisabled()
-                        .font(.system(size: 15))
-                        .foregroundStyle(.white)
-                        .tint(.white)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 12)
-                        .background(Color(white: 0.08), in: RoundedRectangle(cornerRadius: 12))
-                    Button("DEBUG sign in →") {
-                        Task {
-                            error = nil
-                            do { try await auth.debugSignIn(email: email, password: debugPassword) }
-                            catch { self.error = error.localizedDescription }
+                // Password sign-in for invited testers (while email OTP delivery is being set up).
+                if showPasswordEntry {
+                    VStack(alignment: .leading, spacing: 10) {
+                        SecureField("", text: $password, prompt: Text("Password").foregroundStyle(Color(white: 0.3)))
+                            .textContentType(.password)
+                            .autocorrectionDisabled()
+                            .font(.system(size: 16))
+                            .foregroundStyle(.white)
+                            .tint(.white)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 14)
+                            .background(Color(white: 0.1), in: RoundedRectangle(cornerRadius: 12))
+                        Button {
+                            Task {
+                                error = nil
+                                do { try await auth.signInWithPassword(email: email, password: password) }
+                                catch { self.error = error.localizedDescription }
+                            }
+                        } label: {
+                            Text("Sign in")
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundStyle(.black)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 14)
+                                .background(FlimTheme.accent, in: Capsule())
                         }
+                    }
+                    .padding(.top, 18)
+                } else {
+                    Button("Have a password? Sign in") {
+                        withAnimation { showPasswordEntry = true }
                     }
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(Color(white: 0.5))
+                    .padding(.top, 18)
                 }
-                .padding(.top, 20)
-                #endif
 
                 Spacer()
 
