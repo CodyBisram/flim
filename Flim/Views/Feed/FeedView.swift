@@ -11,6 +11,8 @@ struct FeedView: View {
     @State private var pendingFeed: [FeedItem] = []
     @State private var hasNewPosts = false
     @State private var didLoad = false
+    @State private var unreadActivity = 0
+    @AppStorage("lastActivitySeen") private var lastActivitySeen: Double = 0
 
     var body: some View {
         ZStack {
@@ -104,14 +106,28 @@ struct FeedView: View {
                 }
                 .accessibilityLabel("Seed demo feed")
                 #endif
-                Button { showActivity = true } label: {
+                Button {
+                    lastActivitySeen = Date().timeIntervalSince1970
+                    unreadActivity = 0
+                    showActivity = true
+                } label: {
                     Image(systemName: "bell")
                         .font(.system(size: 16, weight: .medium))
                         .foregroundStyle(FlimTheme.accent)
                         .frame(width: 38, height: 38)
                         .glassCapsule(interactive: true)
+                        .overlay(alignment: .topTrailing) {
+                            if unreadActivity > 0 {
+                                Text(unreadActivity > 9 ? "9+" : "\(unreadActivity)")
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 5).padding(.vertical, 1)
+                                    .background(Color.red, in: Capsule())
+                                    .offset(x: 4, y: -2)
+                            }
+                        }
                 }
-                .accessibilityLabel("Activity")
+                .accessibilityLabel(unreadActivity > 0 ? "Activity, \(unreadActivity) new" : "Activity")
 
                 Button { showDiscover = true } label: {
                     Image(systemName: "person.badge.plus")
@@ -217,6 +233,8 @@ struct FeedView: View {
         didLoad = true
         hasNewPosts = false
         if let path = auth.currentUser?.avatarPath { myAvatarURL = await feed.signedURL(for: path) }
+        let activity = await feed.fetchActivity(userId: uid)
+        unreadActivity = activity.filter { $0.date.timeIntervalSince1970 > lastActivitySeen }.count
     }
 
     private func checkNewPosts() async {
