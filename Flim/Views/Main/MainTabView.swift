@@ -4,6 +4,8 @@ struct MainTabView: View {
     @State private var selected = 0
     @AppStorage("hasOnboarded") private var hasOnboarded = false
     @AppStorage("accentColor") private var accentColor = "amber"   // re-tints on change
+    @AppStorage("didShowNotifPrimer") private var didShowNotifPrimer = false
+    @State private var showNotifPrimer = false
     @Environment(NotificationService.self) private var notifications
     #if DEBUG
     @Environment(AuthService.self) private var auth
@@ -36,16 +38,20 @@ struct MainTabView: View {
         .fullScreenCover(isPresented: Binding(get: { !hasOnboarded }, set: { _ in })) {
             OnboardingView()
         }
+        .sheet(isPresented: $showNotifPrimer, onDismiss: { didShowNotifPrimer = true }) {
+            NotificationPrimerSheet()
+        }
         .onReceive(NotificationCenter.default.publisher(for: .openDarkroom)) { _ in
             selected = 1
         }
         .onReceive(NotificationCenter.default.publisher(for: .openCamera)) { _ in
             selected = 0
         }
+        // Show the soft primer once — after onboarding, with context — instead of a cold
+        // system prompt on first launch (which gets denied far more often).
+        .onChange(of: hasOnboarded) { _, done in if done { maybeShowNotifPrimer() } }
         .onAppear {
-            // Ask once the app is up so every tester registers a push token (and re-registers
-            // on later launches, refreshing the token). No-ops if already decided.
-            Task { await notifications.requestAuthorizationIfNeeded() }
+            maybeShowNotifPrimer()
             #if DEBUG
             let args = ProcessInfo.processInfo.arguments
             // Deterministic Simulator verification (no camera in the sim):
@@ -64,6 +70,18 @@ struct MainTabView: View {
                 }
             }
             #endif
+        }
+    }
+
+    private func maybeShowNotifPrimer() {
+        guard hasOnboarded, !didShowNotifPrimer else { return }
+        Task {
+            if await notifications.isUndetermined() {
+                try? await Task.sleep(for: .seconds(1))   // let them land on the app first
+                showNotifPrimer = true
+            } else {
+                didShowNotifPrimer = true   // already decided elsewhere; don't ask again
+            }
         }
     }
 }

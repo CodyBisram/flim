@@ -117,7 +117,7 @@ struct RollsView: View {
             Text("Better with friends.")
                 .font(.system(size: 17, weight: .light))
                 .foregroundStyle(FlimTheme.textSecondary)
-            Text("Start a roll and share the code, or join one a friend sent you.")
+            Text("Start a roll and share the code, or join one with a friend's code.")
                 .font(.system(size: 13))
                 .foregroundStyle(FlimTheme.textTertiary)
                 .multilineTextAlignment(.center)
@@ -150,11 +150,7 @@ private struct RollRow: View {
 
                 HStack(spacing: 8) {
                     if let memberCount {
-                        HStack(spacing: 4) {
-                            Image(systemName: "person.2.fill").font(.system(size: 10))
-                            Text("\(memberCount)").font(.system(size: 12, weight: .medium))
-                        }
-                        .foregroundStyle(FlimTheme.textSecondary)
+                        MetaChip(icon: "person.2.fill", text: "\(memberCount)")
                     }
 
                     HStack(spacing: 5) {
@@ -172,19 +168,13 @@ private struct RollRow: View {
 
                 // Reveal status — the clock runs from when the roll was created.
                 if roll.isDeveloped {
-                    HStack(spacing: 4) {
-                        Image(systemName: "checkmark.seal.fill").font(.system(size: 10))
-                        Text("Developed").font(.system(size: 11, weight: .medium))
-                    }
-                    .foregroundStyle(FlimTheme.textTertiary)
+                    MetaChip(icon: "checkmark.seal.fill", text: "Developed",
+                             color: FlimTheme.textTertiary, textSize: 11)
                 } else {
                     TimelineView(.periodic(from: .now, by: 60)) { tl in
                         let remaining = max(0, Int(roll.revealAt.timeIntervalSince(tl.date)))
-                        HStack(spacing: 4) {
-                            Image(systemName: "hourglass").font(.system(size: 10))
-                            Text("Reveals in \(Self.short(remaining))").font(.system(size: 11, weight: .medium))
-                        }
-                        .foregroundStyle(FlimTheme.accent)
+                        MetaChip(icon: "hourglass", text: "Reveals in \(Self.short(remaining))",
+                                 color: FlimTheme.accent, textSize: 11)
                     }
                 }
             }

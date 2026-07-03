@@ -95,17 +95,19 @@ struct DarkroomView: View {
                     }
                     .accessibilityLabel("Seed unsorted (DEBUG)")
                     #endif
-                    Button { showSortDeck = true } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "square.stack.3d.up.fill").font(.system(size: 11))
-                            Text("\(unsortedCount)").font(.system(size: 13, weight: .semibold))
+                    // Only surface the "to sort" shortcut when there's actually something to sort.
+                    if unsortedCount > 0 {
+                        Button { showSortDeck = true } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "square.stack.3d.up.fill").font(.system(size: 11))
+                                Text("\(unsortedCount)").font(.system(size: 13, weight: .semibold))
+                            }
+                            .foregroundStyle(.black)
+                            .padding(.horizontal, 10).padding(.vertical, 5)
+                            .background(FlimTheme.accent, in: Capsule())
                         }
-                        .foregroundStyle(unsortedCount > 0 ? .black : FlimTheme.textTertiary)
-                        .padding(.horizontal, 10).padding(.vertical, 5)
-                        .background(unsortedCount > 0 ? FlimTheme.accent : Color.white.opacity(0.08), in: Capsule())
+                        .accessibilityLabel("\(unsortedCount) to sort")
                     }
-                    .disabled(unsortedCount == 0)
-                    .accessibilityLabel("\(unsortedCount) to sort")
                 }
             }
         }

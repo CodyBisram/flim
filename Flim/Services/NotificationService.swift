@@ -14,6 +14,12 @@ final class NotificationService {
     /// No-ops once the user has already decided. When permission is in hand we also
     /// register for remote (APNs) push so roll-mates' develop notifications can arrive
     /// via the Supabase Edge Function — see RemotePush + supabase/push/.
+    /// True when the OS hasn't been asked yet — used to decide whether to show the soft primer
+    /// (asking with context) before the one-shot system prompt.
+    func isUndetermined() async -> Bool {
+        await UNUserNotificationCenter.current().notificationSettings().authorizationStatus == .notDetermined
+    }
+
     func requestAuthorizationIfNeeded() async {
         let center = UNUserNotificationCenter.current()
         let settings = await center.notificationSettings()

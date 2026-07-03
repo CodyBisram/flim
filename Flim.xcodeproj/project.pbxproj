@@ -40,6 +40,7 @@
 		A09941FBF687F7F4F17CC981 /* RollCarouselView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CCFCD9A339AA06647B7A1E1 /* RollCarouselView.swift */; };
 		A14025FE14C116AF28430EC0 /* PostDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F609967CE45299259DA37AC /* PostDetailView.swift */; };
 		A1F62ACE36A2F7A63B9B78BE /* ShimmerPlaceholder.swift in Sources */ = {isa = PBXBuildFile; fileRef = C455E1683D6D539F208C704F /* ShimmerPlaceholder.swift */; };
+		A87C25A2CA30896A89F33F7B /* NotificationPrimerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40C6E2279C5B9F7F042A3349 /* NotificationPrimerSheet.swift */; };
 		AB3249CE1029C5382B7C55A6 /* PhotoGridCell.swift in Sources */ = {isa = PBXBuildFile; fileRef = A34B801CAAD6D2C6557DD581 /* PhotoGridCell.swift */; };
 		AD24F3CB906A687FED7FE687 /* DevelopTimingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F61787FFCEE49A74368FF8C /* DevelopTimingTests.swift */; };
 		B09880D2185738A73550E7C6 /* RollService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 633F60D6D348ADEA4D94D263 /* RollService.swift */; };
@@ -53,6 +54,7 @@
 		D86D45FEC7A4EA89A268B87B /* PhotoPickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC8AD03A8D1B86B86365239A /* PhotoPickerSheet.swift */; };
 		DF79D7CBD7A4684626EF2080 /* ActivityFeedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F4E26878DAFF415FB6B4644 /* ActivityFeedView.swift */; };
 		E01A141DA15C3B44C02C6CDA /* SortDeckView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F41D0B57C8881A275E755159 /* SortDeckView.swift */; };
+		E3917AFE742C6E4745A3292C /* MetaChip.swift in Sources */ = {isa = PBXBuildFile; fileRef = 373B00DF38CFC40848E59929 /* MetaChip.swift */; };
 		E924D1944FA4475B4E383A61 /* PhotoReadinessTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BAF7FE72763EB709B93E5BA4 /* PhotoReadinessTests.swift */; };
 		EECAD4AB8FC87AFACD4A5A80 /* RollMembersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1AA5EF66C46272F42891AF4 /* RollMembersView.swift */; };
 		F28BA958FD55FFA0EE8BDA41 /* FlimApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01F7C56CF5A21FB71964CFEB /* FlimApp.swift */; };
@@ -91,7 +93,9 @@
 		33D109A1C315CD466659A10F /* RollsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollsView.swift; sourceTree = "<group>"; };
 		34743DB97B9809C5C81D7E30 /* FlimTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = FlimTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		35A42EF6E37ED2ED362069BA /* JoinRollView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JoinRollView.swift; sourceTree = "<group>"; };
+		373B00DF38CFC40848E59929 /* MetaChip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetaChip.swift; sourceTree = "<group>"; };
 		4016CE892900287C20E82E97 /* FeedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedView.swift; sourceTree = "<group>"; };
+		40C6E2279C5B9F7F042A3349 /* NotificationPrimerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationPrimerSheet.swift; sourceTree = "<group>"; };
 		44986F8867E5B522EBEABEE8 /* AppUser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppUser.swift; sourceTree = "<group>"; };
 		49A4B9AB5111472363BE0ECF /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
 		4B7DE28ED82A77117E85EBE0 /* FullScreenPhotoView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FullScreenPhotoView.swift; sourceTree = "<group>"; };
@@ -170,6 +174,7 @@
 			isa = PBXGroup;
 			children = (
 				0A093E4509E9F7972F5B26E7 /* MainTabView.swift */,
+				40C6E2279C5B9F7F042A3349 /* NotificationPrimerSheet.swift */,
 			);
 			path = Main;
 			sourceTree = "<group>";
@@ -177,6 +182,7 @@
 		2BD73808C59340731B731131 /* Components */ = {
 			isa = PBXGroup;
 			children = (
+				373B00DF38CFC40848E59929 /* MetaChip.swift */,
 				9BE06A9CEC95AF492BDBD575 /* PrimaryButton.swift */,
 				235D6F50F5FDD8BE4BB9DE4E /* ReactionBar.swift */,
 				C455E1683D6D539F208C704F /* ShimmerPlaceholder.swift */,
@@ -457,6 +463,8 @@
 				F5701A740A6BFD822B551A03 /* InstantFilmProcessor.swift in Sources */,
 				6013474B6F35E06F049139DD /* JoinRollView.swift in Sources */,
 				C4599B50B1699E2971A353FF /* MainTabView.swift in Sources */,
+				E3917AFE742C6E4745A3292C /* MetaChip.swift in Sources */,
+				A87C25A2CA30896A89F33F7B /* NotificationPrimerSheet.swift in Sources */,
 				5AD497FC90DCDC3592EA12FE /* NotificationService.swift in Sources */,
 				46BB284536C9EFB9CB87A36C /* OTPView.swift in Sources */,
 				3329F6BEB76AA76B288DE250 /* OnboardingView.swift in Sources */,
