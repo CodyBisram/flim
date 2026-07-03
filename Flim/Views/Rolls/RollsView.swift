@@ -150,11 +150,11 @@ private struct RollRow: View {
 
                 HStack(spacing: 8) {
                     if let memberCount {
-                        Label("\(memberCount)", systemImage: "person.2.fill")
-                            .font(.system(size: 12, weight: .medium))
-                            .labelStyle(.titleAndIcon)
-                            .imageScale(.small)
-                            .foregroundStyle(FlimTheme.textSecondary)
+                        HStack(spacing: 4) {
+                            Image(systemName: "person.2.fill").font(.system(size: 10))
+                            Text("\(memberCount)").font(.system(size: 12, weight: .medium))
+                        }
+                        .foregroundStyle(FlimTheme.textSecondary)
                     }
 
                     HStack(spacing: 5) {
@@ -172,15 +172,19 @@ private struct RollRow: View {
 
                 // Reveal status — the clock runs from when the roll was created.
                 if roll.isDeveloped {
-                    Label("Developed", systemImage: "checkmark.seal.fill")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(FlimTheme.textTertiary)
+                    HStack(spacing: 4) {
+                        Image(systemName: "checkmark.seal.fill").font(.system(size: 10))
+                        Text("Developed").font(.system(size: 11, weight: .medium))
+                    }
+                    .foregroundStyle(FlimTheme.textTertiary)
                 } else {
                     TimelineView(.periodic(from: .now, by: 60)) { tl in
                         let remaining = max(0, Int(roll.revealAt.timeIntervalSince(tl.date)))
-                        Label("Reveals in \(Self.short(remaining))", systemImage: "hourglass")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(FlimTheme.accent)
+                        HStack(spacing: 4) {
+                            Image(systemName: "hourglass").font(.system(size: 10))
+                            Text("Reveals in \(Self.short(remaining))").font(.system(size: 11, weight: .medium))
+                        }
+                        .foregroundStyle(FlimTheme.accent)
                     }
                 }
             }
