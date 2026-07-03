@@ -29,7 +29,7 @@ struct LiveFilmPreview: UIViewRepresentable {
 
 final class FilmMetalView: MTKView, AVCaptureVideoDataOutputSampleBufferDelegate {
     var stock: FilmStock
-    var isFront: Bool { didSet { updateMirror() } }
+    var isFront: Bool
 
     private let captureSession: AVCaptureSession
     private let output = AVCaptureVideoDataOutput()
@@ -37,7 +37,6 @@ final class FilmMetalView: MTKView, AVCaptureVideoDataOutputSampleBufferDelegate
     private let ciContext: CIContext
     private let commandQueue: MTLCommandQueue?
     private var latest: CIImage?
-    private weak var videoConnection: AVCaptureConnection?
 
     init(session: AVCaptureSession, stock: FilmStock, isFront: Bool) {
         self.captureSession = session
@@ -70,18 +69,6 @@ final class FilmMetalView: MTKView, AVCaptureVideoDataOutputSampleBufferDelegate
         captureSession.beginConfiguration()
         if captureSession.canAddOutput(output) { captureSession.addOutput(output) }
         captureSession.commitConfiguration()
-
-        videoConnection = output.connection(with: .video)
-        if let c = videoConnection {
-            if c.isVideoRotationAngleSupported(90) { c.videoRotationAngle = 90 }   // portrait
-            c.automaticallyAdjustsVideoMirroring = false
-            updateMirror()
-        }
-    }
-
-    private func updateMirror() {
-        guard let c = videoConnection, c.isVideoMirroringSupported else { return }
-        c.isVideoMirrored = isFront
     }
 
     func tearDown() {
@@ -95,7 +82,10 @@ final class FilmMetalView: MTKView, AVCaptureVideoDataOutputSampleBufferDelegate
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer,
                        from connection: AVCaptureConnection) {
         guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
-        let source = CIImage(cvPixelBuffer: pixelBuffer)
+        // The camera delivers a landscape buffer; rotate it to portrait (and mirror the selfie
+        // camera so the preview reads like a mirror).
+        let orientation: CGImagePropertyOrientation = isFront ? .leftMirrored : .right
+        let source = CIImage(cvPixelBuffer: pixelBuffer).oriented(orientation)
         // Grain off for the live view (CIRandomGenerator per frame would shimmer + cost); the
         // captured photo still bakes grain in.
         latest = InstantFilmProcessor.filtered(source, params: stock.params, extent: source.extent, grain: false)
