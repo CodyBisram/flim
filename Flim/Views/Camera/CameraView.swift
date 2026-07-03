@@ -26,6 +26,9 @@ struct CameraView: View {
     @AppStorage("hasSeenCameraCoach") private var hasSeenCoach = false
     // Opt-in filtered viewfinder (Settings → Live film preview). Off by default.
     @AppStorage("liveFilmPreview") private var liveFilmPreview = false
+    // Self-timer: 0 (off), 3, or 10 seconds.
+    @AppStorage("selfTimerSeconds") private var selfTimerSeconds = 0
+    @State private var countdown: Int? = nil
 
     // Persisted hardware-flash mode (AVCaptureDevice.FlashMode rawValue: off=0, on=1, auto=2).
     @AppStorage("flashModeRaw") private var flashModeRaw = 0
@@ -102,6 +105,17 @@ struct CameraView: View {
                 }
 
                 coachOverlay
+
+                // Self-timer countdown.
+                if let countdown, countdown > 0 {
+                    Text("\(countdown)")
+                        .font(.system(size: 104, weight: .thin))
+                        .foregroundStyle(.white)
+                        .shadow(color: .black.opacity(0.4), radius: 12)
+                        .transition(.scale.combined(with: .opacity))
+                        .id(countdown)
+                        .allowsHitTesting(false)
+                }
             }
         }
         .fullScreenCover(isPresented: $showSortDeck, onDismiss: { Task { await refreshUnsorted() } }) {
@@ -126,8 +140,29 @@ struct CameraView: View {
     }
 
     private func shutter() {
+        if countdown != nil { countdown = nil; return }   // tapping again cancels the timer
+        if selfTimerSeconds > 0 { startCountdown() } else { capture() }
+    }
+
+    private func capture() {
         Haptics.shutter()
         camera.capturePhoto()
+    }
+
+    private func startCountdown() {
+        var remaining = selfTimerSeconds
+        withAnimation(.snappy) { countdown = remaining }
+        Task {
+            while remaining > 0 {
+                Haptics.tap()
+                try? await Task.sleep(for: .seconds(1))
+                guard countdown != nil else { return }   // cancelled
+                remaining -= 1
+                withAnimation(.snappy) { countdown = remaining }
+            }
+            countdown = nil
+            capture()
+        }
     }
 
     // MARK: - Zoom control
@@ -226,6 +261,27 @@ struct CameraView: View {
                 .glassCapsule(interactive: true)
                 .padding(.leading, 8)
                 .accessibilityLabel("Flip camera")
+
+                // Self-timer (Off → 3s → 10s). Minimal: dim when off, accent + value when set.
+                Button {
+                    selfTimerSeconds = selfTimerSeconds == 0 ? 3 : (selfTimerSeconds == 3 ? 10 : 0)
+                    Haptics.tap()
+                    wakeFilmStrip()
+                } label: {
+                    HStack(spacing: 3) {
+                        Image(systemName: "timer").font(.system(size: 14, weight: .semibold))
+                        if selfTimerSeconds > 0 {
+                            Text("\(selfTimerSeconds)").font(.system(size: 12, weight: .bold))
+                        }
+                    }
+                    .foregroundStyle(selfTimerSeconds == 0 ? .white : FlimTheme.accent)
+                    .frame(minWidth: 38, minHeight: 38)
+                    .padding(.horizontal, selfTimerSeconds > 0 ? 5 : 0)
+                }
+                .glassCapsule(interactive: true)
+                .padding(.leading, 8)
+                .accessibilityLabel("Self timer")
+                .accessibilityValue(selfTimerSeconds == 0 ? "Off" : "\(selfTimerSeconds) seconds")
 
                 Spacer()
 
