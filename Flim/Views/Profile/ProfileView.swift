@@ -18,6 +18,7 @@ struct ProfileView: View {
     @State private var deleteError: String?
     @State private var showEditUsername = false
     @AppStorage("developNotificationsEnabled") private var notificationsEnabled = true
+    @AppStorage("liveFilmPreview") private var liveFilmPreview = false
     @AppStorage("hasOnboarded") private var hasOnboarded = false
     @AppStorage("accentColor") private var accentColor = "amber"
 
@@ -143,6 +144,19 @@ struct ProfileView: View {
                         Text("Develop reminders")
                             .font(.system(size: 15))
                             .foregroundStyle(.white)
+                    }
+                    .tint(FlimTheme.accent)
+                    .padding(.horizontal, 28)
+                    .padding(.vertical, 14)
+                    .background(FlimTheme.bgElevated)
+
+                    // Live film preview (beta) — show the film look right in the viewfinder.
+                    Toggle(isOn: $liveFilmPreview) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Live film preview").font(.system(size: 15)).foregroundStyle(.white)
+                            Text("See the film look in the viewfinder (beta)")
+                                .font(.system(size: 12)).foregroundStyle(FlimTheme.textTertiary)
+                        }
                     }
                     .tint(FlimTheme.accent)
                     .padding(.horizontal, 28)

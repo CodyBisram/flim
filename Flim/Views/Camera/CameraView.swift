@@ -24,6 +24,8 @@ struct CameraView: View {
 
     // One-time intro that teaches the shoot → develop → darkroom loop.
     @AppStorage("hasSeenCameraCoach") private var hasSeenCoach = false
+    // Opt-in filtered viewfinder (Settings → Live film preview). Off by default.
+    @AppStorage("liveFilmPreview") private var liveFilmPreview = false
 
     // Persisted hardware-flash mode (AVCaptureDevice.FlashMode rawValue: off=0, on=1, auto=2).
     @AppStorage("flashModeRaw") private var flashModeRaw = 0
@@ -52,6 +54,15 @@ struct CameraView: View {
 
             CameraPreview(session: camera.session, camera: camera, onShutter: { shutter() })
                 .ignoresSafeArea()
+                // Optional filtered viewfinder — sits on top, touches pass through to the raw
+                // preview below (which is also the fallback if the Metal path can't run).
+                .overlay {
+                    if liveFilmPreview {
+                        LiveFilmPreview(session: camera.session, stock: selectedStock, isFront: camera.isFront)
+                            .ignoresSafeArea()
+                            .allowsHitTesting(false)
+                    }
+                }
                 // Tap-to-focus reticle.
                 .overlay {
                     if let reticle = camera.focusReticle {

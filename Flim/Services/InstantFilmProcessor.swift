@@ -18,15 +18,23 @@ enum InstantFilmProcessor {
 
     private static func processSync(_ data: Data, stock: FilmStock) -> Data? {
         // Apply embedded EXIF orientation so the output is upright.
-        guard var image = CIImage(data: data, options: [.applyOrientationProperty: true]) else {
+        guard let source = CIImage(data: data, options: [.applyOrientationProperty: true]) else {
             return nil
         }
-        let extent = image.extent
+        let extent = source.extent
         guard !extent.isEmpty else { return nil }
-        let p = stock.params
 
+        let image = filtered(source, params: stock.params, extent: extent, grain: true)
+        guard let cgImage = context.createCGImage(image, from: extent) else { return nil }
+        return UIImage(cgImage: cgImage).jpegData(compressionQuality: 0.85)
+    }
+
+    /// The film look as a pure CIImage → CIImage transform. Shared by capture (with grain) and
+    /// the live viewfinder preview (grain off, so it stays smooth at 30–60fps). This is the one
+    /// source of truth for the look, so the preview matches the developed shot.
+    static func filtered(_ input: CIImage, params p: FilmParams, extent: CGRect, grain: Bool) -> CIImage {
         // 1. Saturation + contrast.
-        image = image.applyingFilter("CIColorControls", parameters: [
+        var image = input.applyingFilter("CIColorControls", parameters: [
             kCIInputSaturationKey: p.monochrome ? 0 : p.saturation,
             kCIInputContrastKey: p.contrast,
             kCIInputBrightnessKey: 0
@@ -64,8 +72,8 @@ enum InstantFilmProcessor {
         ])
 
         // 6. Fine film grain — desaturated random noise composited at low opacity.
-        if p.grain > 0, let noise = CIFilter(name: "CIRandomGenerator")?.outputImage {
-            let grain = noise
+        if grain, p.grain > 0, let noise = CIFilter(name: "CIRandomGenerator")?.outputImage {
+            let grainLayer = noise
                 .cropped(to: extent)
                 .applyingFilter("CIColorControls", parameters: [
                     kCIInputSaturationKey: 0,
@@ -74,12 +82,11 @@ enum InstantFilmProcessor {
                 .applyingFilter("CIColorMatrix", parameters: [
                     "inputAVector": CIVector(x: 0, y: 0, z: 0, w: p.grain)
                 ])
-            image = grain.applyingFilter("CISourceOverCompositing", parameters: [
+            image = grainLayer.applyingFilter("CISourceOverCompositing", parameters: [
                 kCIInputBackgroundImageKey: image
             ])
         }
 
-        guard let cgImage = context.createCGImage(image, from: extent) else { return nil }
-        return UIImage(cgImage: cgImage).jpegData(compressionQuality: 0.85)
+        return image
     }
 }
