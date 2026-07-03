@@ -14,6 +14,7 @@ struct SortDeckView: View {
     @State private var urls: [UUID: URL] = [:]
     @State private var drag: CGSize = .zero
     @State private var loaded = false
+    @State private var closing = false
     // The last swipe, held un-committed so it can be undone (even a delete).
     @State private var lastPhoto: Photo?
     @State private var lastAction: SortAction?
@@ -27,7 +28,8 @@ struct SortDeckView: View {
             VStack(spacing: 0) {
                 header
                 if cards.isEmpty && loaded {
-                    Spacer(); doneState; Spacer()
+                    // Nothing left to sort — return to the previous screen (no "all sorted" wall).
+                    Color.clear.onAppear { closeDeck() }
                 } else {
                     GeometryReader { geo in
                         ZStack {
@@ -145,21 +147,6 @@ struct SortDeckView: View {
         }
     }
 
-    private var doneState: some View {
-        VStack(spacing: 14) {
-            Image(systemName: "checkmark.circle")
-                .font(.system(size: 44, weight: .ultraLight)).foregroundStyle(FlimTheme.accent)
-            Text("All sorted")
-                .font(.system(size: 22, weight: .thin)).foregroundStyle(.white)
-            Button { closeDeck() } label: {
-                Text("Done").font(.system(size: 15, weight: .semibold)).foregroundStyle(.black)
-                    .padding(.horizontal, 30).padding(.vertical, 12)
-                    .background(FlimTheme.accent, in: Capsule())
-            }
-            .padding(.top, 4)
-        }
-    }
-
     // MARK: - Gestures & actions
 
     private var dragGesture: some Gesture {
@@ -202,6 +189,8 @@ struct SortDeckView: View {
     /// Closes the deck, finishing any held action FIRST so the caller's refresh sees the
     /// committed state (otherwise the "N to sort" count lingers).
     private func closeDeck() {
+        guard !closing else { return }   // auto-dismiss + button could both fire
+        closing = true
         let p = lastPhoto, a = lastAction
         lastPhoto = nil; lastAction = nil
         Task {

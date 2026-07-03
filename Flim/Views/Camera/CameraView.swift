@@ -24,8 +24,8 @@ struct CameraView: View {
 
     // One-time intro that teaches the shoot → develop → darkroom loop.
     @AppStorage("hasSeenCameraCoach") private var hasSeenCoach = false
-    // Opt-in filtered viewfinder (Settings → Live film preview). Off by default.
-    @AppStorage("liveFilmPreview") private var liveFilmPreview = false
+    // Filtered viewfinder (Settings → Live film preview). On by default.
+    @AppStorage("liveFilmPreview") private var liveFilmPreview = true
     // Self-timer: 0 (off), 3, or 10 seconds.
     @AppStorage("selfTimerSeconds") private var selfTimerSeconds = 0
     @State private var countdown: Int? = nil
@@ -219,6 +219,9 @@ struct CameraView: View {
                             .font(.system(size: 12))
                         Text(selectedRoll?.name ?? "Personal")
                             .font(.system(size: 13, weight: .medium))
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                            .frame(maxWidth: 100, alignment: .leading)
                         Image(systemName: "chevron.down")
                             .font(.system(size: 10, weight: .semibold))
                     }
@@ -285,17 +288,12 @@ struct CameraView: View {
 
                 Spacer()
 
-                // Upload status
+                // Upload status — compact spinner only, so it can't crowd the top row.
                 if photos.isUploading {
-                    HStack(spacing: 6) {
-                        ProgressView().tint(.white).controlSize(.mini)
-                        Text("Developing…")
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundStyle(.white)
-                    }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 9)
-                    .glassCapsule()
+                    ProgressView().tint(.white).controlSize(.mini)
+                        .frame(width: 38, height: 38)
+                        .glassCapsule()
+                        .accessibilityLabel("Developing")
                 } else if photos.hasFailedUploads {
                     Button {
                         Task { await photos.retryFailedUploads() }
@@ -305,6 +303,7 @@ struct CameraView: View {
                                 .font(.system(size: 12))
                             Text("Retry \(photos.failedUploads.count)")
                                 .font(.system(size: 13, weight: .medium))
+                                .lineLimit(1).fixedSize()
                         }
                         .foregroundStyle(.white)
                         .padding(.horizontal, 14)
@@ -317,6 +316,7 @@ struct CameraView: View {
                         HStack(spacing: 5) {
                             Image(systemName: "square.stack.3d.up.fill").font(.system(size: 12))
                             Text("\(unsortedCount) to sort").font(.system(size: 13, weight: .semibold))
+                                .lineLimit(1).fixedSize()
                         }
                         .foregroundStyle(.black)
                         .padding(.horizontal, 14)

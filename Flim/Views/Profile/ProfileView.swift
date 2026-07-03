@@ -18,7 +18,7 @@ struct ProfileView: View {
     @State private var deleteError: String?
     @State private var showEditUsername = false
     @AppStorage("developNotificationsEnabled") private var notificationsEnabled = true
-    @AppStorage("liveFilmPreview") private var liveFilmPreview = false
+    @AppStorage("liveFilmPreview") private var liveFilmPreview = true
     @AppStorage("hasOnboarded") private var hasOnboarded = false
     @AppStorage("accentColor") private var accentColor = "amber"
 
@@ -27,6 +27,7 @@ struct ProfileView: View {
             ZStack {
                 FlimTheme.bg.ignoresSafeArea()
 
+                ScrollView(showsIndicators: false) {
                 VStack(spacing: 0) {
                     // Avatar + username + stats + bio
                     VStack(spacing: 12) {
@@ -214,8 +215,6 @@ struct ProfileView: View {
                         .background(FlimTheme.bgElevated)
                     }
 
-                    Spacer()
-
                     VStack(spacing: 12) {
                         // Sign out — immediate (non-destructive; you can sign right back in).
                         Button {
@@ -251,7 +250,9 @@ struct ProfileView: View {
                         .disabled(isDeleting)
                     }
                     .padding(.horizontal, 28)
+                    .padding(.top, 28)     // black space between Replay intro and Sign Out
                     .padding(.bottom, 36)
+                }
                 }
             }
             .navigationBarTitleDisplayMode(.inline)
