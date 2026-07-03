@@ -13,6 +13,7 @@ struct DarkroomView: View {
     @State private var showDeleteConfirm = false
     @AppStorage("lastRevealCheck") private var lastRevealCheck: Double = 0
     @State private var showReveal = false
+    @State private var revealAnim = false
     @State private var revealCount = 0
     @State private var unsortedCount = 0
     @State private var showSortDeck = false
@@ -318,31 +319,57 @@ struct DarkroomView: View {
 
     private var revealOverlay: some View {
         ZStack {
-            Color.black.opacity(0.92).ignoresSafeArea()
-            VStack(spacing: 16) {
-                Image(systemName: "sparkles")
-                    .font(.system(size: 56, weight: .ultraLight))
-                    .foregroundStyle(FlimTheme.accent)
-                    .symbolEffect(.pulse)
-                Text("Your photos are ready")
-                    .font(.system(size: 26, weight: .thin))
-                    .foregroundStyle(.white)
-                Text("\(revealCount) new \(revealCount == 1 ? "shot" : "shots") developed")
-                    .font(.system(size: 14))
-                    .foregroundStyle(FlimTheme.textSecondary)
-                Button {
-                    withAnimation { showReveal = false }
-                } label: {
-                    Text("Reveal")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(.black)
-                        .padding(.horizontal, 30).padding(.vertical, 13)
-                        .background(FlimTheme.accent, in: Capsule())
+            Color.black.opacity(0.94).ignoresSafeArea()
+            // A soft glow that blooms behind the icon as it lands.
+            RadialGradient(colors: [FlimTheme.accent.opacity(0.28), .clear],
+                           center: .center, startRadius: 2, endRadius: 280)
+                .ignoresSafeArea()
+                .scaleEffect(revealAnim ? 1 : 0.5)
+                .opacity(revealAnim ? 1 : 0)
+
+            VStack(spacing: 14) {
+                ZStack {
+                    Circle().fill(FlimTheme.accent.opacity(0.12)).frame(width: 112, height: 112)
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 48, weight: .ultraLight))
+                        .foregroundStyle(FlimTheme.accent)
+                        .symbolEffect(.pulse)
                 }
-                .padding(.top, 6)
+                .scaleEffect(revealAnim ? 1 : 0.4)
+
+                VStack(spacing: 6) {
+                    Text("Your photos are ready")
+                        .font(.system(size: 27, weight: .thin))
+                        .foregroundStyle(.white)
+                    Text("\(revealCount) new \(revealCount == 1 ? "shot" : "shots") developed")
+                        .font(.system(size: 14))
+                        .foregroundStyle(FlimTheme.textSecondary)
+                }
+                .opacity(revealAnim ? 1 : 0)
+                .offset(y: revealAnim ? 0 : 14)
+
+                Button { dismissReveal() } label: {
+                    Text("See them")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(.black)
+                        .padding(.horizontal, 34).padding(.vertical, 14)
+                        .background(FlimTheme.accent, in: Capsule())
+                        .shadow(color: FlimTheme.accent.opacity(0.5), radius: 12)
+                }
+                .opacity(revealAnim ? 1 : 0)
+                .padding(.top, 10)
             }
         }
         .transition(.opacity)
-        .onTapGesture { withAnimation { showReveal = false } }
+        .onAppear {
+            revealAnim = false
+            withAnimation(.spring(response: 0.55, dampingFraction: 0.68).delay(0.05)) { revealAnim = true }
+        }
+        .onTapGesture { dismissReveal() }
+    }
+
+    private func dismissReveal() {
+        withAnimation(.easeOut(duration: 0.25)) { revealAnim = false }
+        withAnimation(.easeInOut(duration: 0.3)) { showReveal = false }
     }
 }
