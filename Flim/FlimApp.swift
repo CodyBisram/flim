@@ -22,7 +22,15 @@ struct FlimApp: App {
                 .environment(feed)
                 .preferredColorScheme(.dark)
                 .onOpenURL { url in
-                    Task { await auth.handle(url: url) }
+                    // …//join/CODE opens the join flow; everything else is an auth callback.
+                    if url.host == "join" {
+                        let code = url.lastPathComponent
+                        if !code.isEmpty, code != "/" {
+                            NotificationCenter.default.post(name: .openRollInvite, object: code)
+                        }
+                    } else {
+                        Task { await auth.handle(url: url) }
+                    }
                 }
         }
     }

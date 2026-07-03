@@ -46,6 +46,8 @@ extension Notification.Name {
     static let openDarkroom = Notification.Name("openDarkroom")
     /// Posted to jump to the Camera tab (e.g. from the empty-Darkroom CTA).
     static let openCamera = Notification.Name("openCamera")
+    /// Posted with a roll invite code (String) when a `…//join/CODE` deep link is opened.
+    static let openRollInvite = Notification.Name("openRollInvite")
 }
 
 /// App delegate: forwards the APNs token to `RemotePush`, and handles notification

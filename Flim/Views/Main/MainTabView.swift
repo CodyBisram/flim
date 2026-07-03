@@ -6,6 +6,7 @@ struct MainTabView: View {
     @AppStorage("accentColor") private var accentColor = "amber"   // re-tints on change
     @AppStorage("didShowNotifPrimer") private var didShowNotifPrimer = false
     @State private var showNotifPrimer = false
+    @State private var inviteCode: String?
     @Environment(NotificationService.self) private var notifications
     #if DEBUG
     @Environment(AuthService.self) private var auth
@@ -40,6 +41,13 @@ struct MainTabView: View {
         }
         .sheet(isPresented: $showNotifPrimer, onDismiss: { didShowNotifPrimer = true }) {
             NotificationPrimerSheet()
+        }
+        .sheet(isPresented: Binding(get: { inviteCode != nil }, set: { if !$0 { inviteCode = nil } })) {
+            JoinRollView(initialCode: inviteCode ?? "")
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .openRollInvite)) { note in
+            selected = 2   // Rolls tab
+            inviteCode = note.object as? String
         }
         .onReceive(NotificationCenter.default.publisher(for: .openDarkroom)) { _ in
             selected = 1

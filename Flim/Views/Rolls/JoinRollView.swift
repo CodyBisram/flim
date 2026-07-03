@@ -1,6 +1,9 @@
 import SwiftUI
 
 struct JoinRollView: View {
+    /// Pre-filled from a `…//join/CODE` deep link; auto-joins when present.
+    var initialCode: String = ""
+
     @Environment(AuthService.self) private var auth
     @Environment(RollService.self) private var rolls
     @Environment(\.dismiss) private var dismiss
@@ -37,6 +40,13 @@ struct JoinRollView: View {
         }
         .presentationBackground(FlimTheme.bg)
         .presentationDetents([.medium])
+        .task {
+            // Deep-link arrival: fill the code and join automatically.
+            if !initialCode.isEmpty, code.isEmpty {
+                code = initialCode.uppercased()
+                await join()
+            }
+        }
     }
 
     private var formView: some View {
