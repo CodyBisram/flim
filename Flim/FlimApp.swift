@@ -11,6 +11,7 @@ struct FlimApp: App {
     @State private var rolls = RollService()
     @State private var notifications = NotificationService()
     @State private var feed = FeedService()
+    @State private var network = NetworkMonitor()
 
     var body: some Scene {
         WindowGroup {
@@ -20,6 +21,7 @@ struct FlimApp: App {
                 .environment(rolls)
                 .environment(notifications)
                 .environment(feed)
+                .environment(network)
                 .preferredColorScheme(.dark)
                 .onOpenURL { url in
                     // …//join/CODE opens the join flow; everything else is an auth callback.

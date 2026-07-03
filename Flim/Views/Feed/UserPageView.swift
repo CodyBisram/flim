@@ -44,6 +44,7 @@ struct UserPageView: View {
                     .padding(.bottom, 30)
                 }
                 .ignoresSafeArea(edges: .top)   // cover bleeds up under the back/gear buttons
+                .refreshable { await load() }
             }
         }
         .navigationBarTitleDisplayMode(.inline)

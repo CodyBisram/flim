@@ -8,6 +8,7 @@ struct MainTabView: View {
     @State private var showNotifPrimer = false
     @State private var inviteCode: String?
     @Environment(NotificationService.self) private var notifications
+    @Environment(NetworkMonitor.self) private var network
     #if DEBUG
     @Environment(AuthService.self) private var auth
     @Environment(RollService.self) private var rolls
@@ -36,6 +37,18 @@ struct MainTabView: View {
             }
         }
         .tint(FlimTheme.accent)
+        .overlay(alignment: .top) {
+            if !network.isConnected {
+                Label("No connection", systemImage: "wifi.slash")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 16).padding(.vertical, 9)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .padding(.top, 8)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+        .animation(.easeInOut(duration: 0.3), value: network.isConnected)
         .fullScreenCover(isPresented: Binding(get: { !hasOnboarded }, set: { _ in })) {
             OnboardingView()
         }

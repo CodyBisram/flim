@@ -10,7 +10,9 @@ struct DarkroomView: View {
     @State private var selectedURL: URL?
     @State private var isSelecting = false
     @State private var selectedIDs: Set<UUID> = []
-    @State private var showDeleteConfirm = false
+    @State private var pendingDelete: [Photo] = []
+    @State private var showUndoToast = false
+    @State private var undoTask: Task<Void, Never>?
     @AppStorage("lastRevealCheck") private var lastRevealCheck: Double = 0
     @State private var showReveal = false
     @State private var revealAnim = false
@@ -114,7 +116,7 @@ struct DarkroomView: View {
         }
         .safeAreaInset(edge: .bottom) {
             if isSelecting {
-                Button(role: .destructive) { showDeleteConfirm = true } label: {
+                Button(role: .destructive) { deleteSelected() } label: {
                     Text(selectedIDs.isEmpty ? "Select photos to delete" : "Delete \(selectedIDs.count)")
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(selectedIDs.isEmpty ? FlimTheme.textTertiary : .white)
@@ -128,11 +130,23 @@ struct DarkroomView: View {
                 .background(.ultraThinMaterial)
             }
         }
-        .confirmationDialog("Delete \(selectedIDs.count) photo\(selectedIDs.count == 1 ? "" : "s")?",
-                            isPresented: $showDeleteConfirm, titleVisibility: .visible) {
-            Button("Delete", role: .destructive) { Task { await deleteSelected() } }
-            Button("Cancel", role: .cancel) {}
+        // Undo toast — deletes are deferred a few seconds so an accidental tap is recoverable.
+        .overlay(alignment: .bottom) {
+            if showUndoToast {
+                HStack(spacing: 14) {
+                    Text("Deleted \(pendingDelete.count) photo\(pendingDelete.count == 1 ? "" : "s")")
+                        .font(.system(size: 14)).foregroundStyle(.white)
+                    Button("Undo") { undoDelete() }
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(FlimTheme.accent)
+                }
+                .padding(.horizontal, 18).padding(.vertical, 12)
+                .background(.ultraThinMaterial, in: Capsule())
+                .padding(.bottom, 90)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
         }
+        .animation(.snappy(duration: 0.25), value: showUndoToast)
         .onAppear {
             Task {
                 await reload()
@@ -206,12 +220,47 @@ struct DarkroomView: View {
         Haptics.tap()
     }
 
-    private func deleteSelected() async {
+    /// Optimistically hides the selected photos and shows an Undo toast; the real (irreversible)
+    /// server delete only commits after a few seconds if the user doesn't undo.
+    private func deleteSelected() {
         let toDelete = (vm.developedPhotos + vm.developingPhotos).filter { selectedIDs.contains($0.id) }
-        await photoService.deletePhotos(toDelete)
+        guard !toDelete.isEmpty else { return }
+
+        // If a previous pending delete is still waiting, commit it now before starting a new one.
+        commitPendingDelete()
+
+        let ids = Set(toDelete.map(\.id))
+        vm.photos.removeAll { ids.contains($0.id) }   // optimistic hide
+        pendingDelete = toDelete
         selectedIDs = []
         isSelecting = false
-        await reload()
+        showUndoToast = true
+
+        undoTask = Task {
+            try? await Task.sleep(for: .seconds(4))
+            guard !Task.isCancelled else { return }
+            let batch = pendingDelete
+            await photoService.deletePhotos(batch)
+            showUndoToast = false
+            pendingDelete = []
+        }
+    }
+
+    private func undoDelete() {
+        undoTask?.cancel()
+        showUndoToast = false
+        pendingDelete = []
+        Task { await reload() }   // restore from the server — nothing was actually deleted
+    }
+
+    /// Flush a still-pending delete immediately (e.g. leaving the view or starting a new delete).
+    private func commitPendingDelete() {
+        guard !pendingDelete.isEmpty else { return }
+        undoTask?.cancel()
+        let batch = pendingDelete
+        pendingDelete = []
+        showUndoToast = false
+        Task { await photoService.deletePhotos(batch) }
     }
 
     /// Long-press a photo to jump into selection mode with it selected.
