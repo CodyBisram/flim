@@ -375,6 +375,24 @@ final class PhotoService {
             .createSignedURL(path: path, expiresIn: 3600)
     }
 
+    /// Signs many paths in PARALLEL (all at once, vs one serial round-trip per photo as cells
+    /// scroll in), for grid prefetch.
+    func signedURLs(for paths: [String]) async -> [String: URL] {
+        guard !paths.isEmpty else { return [:] }
+        return await withTaskGroup(of: (String, URL?).self) { group in
+            for path in paths {
+                group.addTask {
+                    let url = try? await supabase.storage
+                        .from("photos").createSignedURL(path: path, expiresIn: 3600)
+                    return (path, url)
+                }
+            }
+            var map: [String: URL] = [:]
+            for await (path, url) in group where url != nil { map[path] = url }
+            return map
+        }
+    }
+
     // MARK: - Mark developed
 
     func markDevelopedIfReady() async {

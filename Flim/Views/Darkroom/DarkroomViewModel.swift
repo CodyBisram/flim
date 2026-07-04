@@ -26,6 +26,7 @@ final class DarkroomViewModel {
             try await photoService.fetchPersonalPhotos(userId: userId)
             photos = photoService.photos
             await markReadyPhotos(photoService: photoService)
+            await prefetchURLs(photoService: photoService)
         } catch {
             self.error = error.localizedDescription
         }
@@ -40,6 +41,7 @@ final class DarkroomViewModel {
             try await photoService.fetchRollPhotos(rollId: rollId)
             photos = photoService.photos
             await markReadyPhotos(photoService: photoService)
+            await prefetchURLs(photoService: photoService)
         } catch {
             self.error = error.localizedDescription
         }
@@ -63,6 +65,18 @@ final class DarkroomViewModel {
     }
 
     // MARK: - Signed URLs (with expiry tracking)
+
+    /// Prefetch signed URLs for all visible-ready photos in ONE batched request, so cells don't
+    /// each fire their own round-trip as they scroll in.
+    func prefetchURLs(photoService: PhotoService) async {
+        let ready = photos.filter { $0.isReady && signedURLCache[$0.id] == nil }
+        guard !ready.isEmpty else { return }
+        let map = await photoService.signedURLs(for: ready.map(\.storagePath))
+        for photo in ready where map[photo.storagePath] != nil {
+            signedURLCache[photo.id] = map[photo.storagePath]
+            urlExpiry[photo.id] = Date.now.addingTimeInterval(3600)
+        }
+    }
 
     func signedURL(for photo: Photo, photoService: PhotoService) async -> URL? {
         // Return cached URL if it won't expire in the next 5 minutes

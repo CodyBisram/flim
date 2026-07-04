@@ -117,6 +117,39 @@ enum ImageCache {
     }()
 }
 
+/// A persistent, on-disk cache of downsampled JPEGs. Keyed by the storage PATH (not the signed
+/// URL, whose token changes each session) + target size, so a photo you've already seen loads
+/// instantly on the next scroll-back or app launch instead of re-downloading.
+enum DiskImageCache {
+    private static let dir: URL = {
+        let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+        let d = base.appendingPathComponent("flim-images", isDirectory: true)
+        try? FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
+        return d
+    }()
+
+    /// A stable (across-launch) filename hash — String.hashValue is randomized per process.
+    private static func file(_ key: String) -> URL {
+        var h: UInt64 = 5381
+        for b in key.utf8 { h = (h &* 33) &+ UInt64(b) }
+        return dir.appendingPathComponent(String(h, radix: 16))
+    }
+
+    static func load(_ key: String) async -> UIImage? {
+        await Task.detached(priority: .userInitiated) {
+            guard let data = try? Data(contentsOf: file(key)) else { return nil }
+            return UIImage(data: data)
+        }.value
+    }
+
+    static func save(_ image: UIImage, key: String) {
+        Task.detached(priority: .background) {
+            guard let data = image.jpegData(compressionQuality: 0.9) else { return }
+            try? data.write(to: file(key), options: .atomic)
+        }
+    }
+}
+
 struct CachedImage<Content: View, Placeholder: View>: View {
     let url: URL?
     /// Longest-edge target in points; the image is downsampled to this (× screen scale).
@@ -142,11 +175,22 @@ struct CachedImage<Content: View, Placeholder: View>: View {
 
     private func load() async {
         guard let url else { uiImage = nil; return }
-        let key = "\(url.absoluteString)|\(Int(maxPixel))" as NSString
+        let sizeKey = Int(maxPixel)
+        let memKey = "\(url.absoluteString)|\(sizeKey)" as NSString
+        // Disk key ignores the URL's query token so it survives new signed URLs / app launches.
+        let diskKey = "\(url.path)|\(sizeKey)"
 
-        if let cached = ImageCache.shared.object(forKey: key) {
+        if let cached = ImageCache.shared.object(forKey: memKey) {
             uiImage = cached
-            shown = true                     // cache hit → instant
+            shown = true                     // memory hit → instant
+            return
+        }
+
+        // Persistent disk hit → near-instant, no network.
+        if let disk = await DiskImageCache.load(diskKey) {
+            ImageCache.shared.setObject(disk, forKey: memKey)
+            uiImage = disk
+            shown = true
             return
         }
 
@@ -155,7 +199,8 @@ struct CachedImage<Content: View, Placeholder: View>: View {
         guard let (data, _) = try? await URLSession.shared.data(from: url) else { return }
         // Downsample off the main actor; ImageIO decodes straight to the target size.
         guard let image = await Self.downsample(data: data, maxPixel: maxPixel, scale: displayScale) else { return }
-        ImageCache.shared.setObject(image, forKey: key)
+        ImageCache.shared.setObject(image, forKey: memKey)
+        DiskImageCache.save(image, key: diskKey)
         uiImage = image
         if reduceMotion {
             shown = true
