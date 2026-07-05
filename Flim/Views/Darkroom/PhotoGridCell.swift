@@ -307,6 +307,7 @@ struct GrainOverlay: View {
         Image(uiImage: Self.tile)
             .resizable(resizingMode: .tile)
             .allowsHitTesting(false)
+            .accessibilityHidden(true)   // decorative grain
             .blendMode(.screen)
     }
 

@@ -314,6 +314,7 @@ struct FullScreenPhotoView: View {
         captionFocused = false
         Task {
             try? await feed.createPost(photo: photo, caption: caption, userId: uid)
+            Haptics.reveal()   // success confirmation
             withAnimation { showSharedToast = true }
             try? await Task.sleep(for: .seconds(2))
             withAnimation { showSharedToast = false }

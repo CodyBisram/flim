@@ -339,6 +339,10 @@ struct FeedPostCard: View {
                 .contentShape(Rectangle())
                 .onTapGesture(count: 2) { doubleTapLike() }
                 .onTapGesture { showDetail = true }
+                .accessibilityElement()
+                .accessibilityLabel("Photo by \(item.author.handle)")
+                .accessibilityHint("Double-tap to open, or react below")
+                .accessibilityAddTraits(.isButton)
 
             if let caption = post.caption, !caption.isEmpty {
                 Text(caption)
@@ -442,6 +446,7 @@ struct FeedPostCard: View {
         let body = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         draft = ""
         commentFocused = false
+        Haptics.tap()
         Task { await feed.commentOnPost(post.id, body: body, userId: uid) }
     }
 }
