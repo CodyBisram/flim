@@ -303,20 +303,38 @@ struct FeedPostCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            // Author row
-            Button { route = ProfileRoute(id: item.author.id) } label: {
-                HStack(spacing: 10) {
-                    avatar
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(item.author.handle)
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(.white)
-                        Text(post.createdAt.formatted(.relative(presentation: .named)))
-                            .font(.system(size: 11))
-                            .foregroundStyle(FlimTheme.textTertiary)
+            // Author row — handle/time on the left, options ••• on the right.
+            HStack(spacing: 10) {
+                Button { route = ProfileRoute(id: item.author.id) } label: {
+                    HStack(spacing: 10) {
+                        avatar
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(item.author.handle)
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(.white)
+                            Text(post.createdAt.formatted(.relative(presentation: .named)))
+                                .font(.system(size: 11))
+                                .foregroundStyle(FlimTheme.textTertiary)
+                        }
                     }
-                    Spacer()
                 }
+                Spacer()
+                Menu {
+                    if isOwn {
+                        Button { saveToCameraRoll() } label: { Label("Save to Camera Roll", systemImage: "square.and.arrow.down") }
+                        Button(role: .destructive) { showDeleteConfirm = true } label: { Label("Delete post", systemImage: "trash") }
+                    } else {
+                        Button { showReportConfirm = true } label: { Label("Report", systemImage: "flag") }
+                        Button(role: .destructive) { showBlockConfirm = true } label: { Label("Block \(item.author.handle)", systemImage: "hand.raised") }
+                    }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(FlimTheme.textSecondary)
+                        .frame(width: 34, height: 34)
+                        .contentShape(Rectangle())
+                }
+                .accessibilityLabel("Post options")
             }
 
             // The print — single tap opens it, double tap likes it (with a heart burst).
@@ -342,25 +360,6 @@ struct FeedPostCard: View {
                         .scaleEffect(heartBurst ? 1 : 0.4)
                         .opacity(heartBurst ? 0.9 : 0)
                         .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.55), value: heartBurst)
-                }
-                .overlay(alignment: .topTrailing) {
-                    Menu {
-                        if isOwn {
-                            Button { saveToCameraRoll() } label: { Label("Save to Camera Roll", systemImage: "square.and.arrow.down") }
-                            Button(role: .destructive) { showDeleteConfirm = true } label: { Label("Delete post", systemImage: "trash") }
-                        } else {
-                            Button { showReportConfirm = true } label: { Label("Report", systemImage: "flag") }
-                            Button(role: .destructive) { showBlockConfirm = true } label: { Label("Block \(item.author.handle)", systemImage: "hand.raised") }
-                        }
-                    } label: {
-                        Image(systemName: "ellipsis")
-                            .font(.system(size: 15, weight: .bold))
-                            .foregroundStyle(.white)
-                            .frame(width: 30, height: 30)
-                            .background(.black.opacity(0.35), in: Circle())
-                            .padding(8)
-                    }
-                    .accessibilityLabel("Post options")
                 }
                 .clipShape(RoundedRectangle(cornerRadius: 12))
                 .contentShape(Rectangle())
