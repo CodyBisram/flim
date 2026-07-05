@@ -148,6 +148,27 @@ enum DiskImageCache {
             try? data.write(to: file(key), options: .atomic)
         }
     }
+
+    /// Keep the cache bounded — delete the oldest files if it exceeds `maxBytes`. Run at launch.
+    static func trim(maxBytes: Int = 200 * 1024 * 1024) {
+        Task.detached(priority: .background) {
+            let fm = FileManager.default
+            let keys: [URLResourceKey] = [.contentModificationDateKey, .fileSizeKey]
+            guard let files = try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: keys) else { return }
+            var infos: [(url: URL, date: Date, size: Int)] = files.compactMap {
+                guard let v = try? $0.resourceValues(forKeys: Set(keys)),
+                      let d = v.contentModificationDate, let s = v.fileSize else { return nil }
+                return ($0, d, s)
+            }
+            var total = infos.reduce(0) { $0 + $1.size }
+            guard total > maxBytes else { return }
+            infos.sort { $0.date < $1.date }   // oldest first
+            for info in infos where total > maxBytes {
+                try? fm.removeItem(at: info.url)
+                total -= info.size
+            }
+        }
+    }
 }
 
 struct CachedImage<Content: View, Placeholder: View>: View {

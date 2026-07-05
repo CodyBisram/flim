@@ -73,6 +73,8 @@ struct MainTabView: View {
         .onChange(of: hasOnboarded) { _, done in if done { maybeShowNotifPrimer() } }
         .onAppear {
             maybeShowNotifPrimer()
+            DiskImageCache.trim()   // keep the on-disk image cache bounded
+
             #if DEBUG
             let args = ProcessInfo.processInfo.arguments
             // Deterministic Simulator verification (no camera in the sim):

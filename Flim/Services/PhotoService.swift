@@ -382,27 +382,42 @@ final class PhotoService {
     // MARK: - Signed URLs
 
     func signedURL(for path: String) async throws -> URL {
-        try await supabase.storage
+        if let cached = await SignedURLStore.shared.cached(path) { return cached }
+        let url = try await supabase.storage
             .from("photos")
-            .createSignedURL(path: path, expiresIn: 3600)
+            .createSignedURL(path: path, expiresIn: Int(SignedURLStore.ttl))
+        await SignedURLStore.shared.store(url, for: path)
+        return url
     }
 
-    /// Signs many paths in PARALLEL (all at once, vs one serial round-trip per photo as cells
-    /// scroll in), for grid prefetch.
+    /// Signs many paths, reusing persisted URLs and minting only the misses in PARALLEL.
     func signedURLs(for paths: [String]) async -> [String: URL] {
         guard !paths.isEmpty else { return [:] }
-        return await withTaskGroup(of: (String, URL?).self) { group in
-            for path in paths {
+        var map: [String: URL] = [:]
+        var misses: [String] = []
+        for path in paths {
+            if let cached = await SignedURLStore.shared.cached(path) { map[path] = cached }
+            else { misses.append(path) }
+        }
+        guard !misses.isEmpty else { return map }
+
+        let minted = await withTaskGroup(of: (String, URL?).self) { group in
+            for path in misses {
                 group.addTask {
                     let url = try? await supabase.storage
-                        .from("photos").createSignedURL(path: path, expiresIn: 3600)
+                        .from("photos").createSignedURL(path: path, expiresIn: Int(SignedURLStore.ttl))
                     return (path, url)
                 }
             }
-            var map: [String: URL] = [:]
-            for await (path, url) in group where url != nil { map[path] = url }
-            return map
+            var result: [(String, URL)] = []
+            for await (path, url) in group { if let url { result.append((path, url)) } }
+            return result
         }
+        for (path, url) in minted {
+            await SignedURLStore.shared.store(url, for: path)
+            map[path] = url
+        }
+        return map
     }
 
     // MARK: - Mark developed
