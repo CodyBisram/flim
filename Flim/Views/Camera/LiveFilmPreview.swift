@@ -83,9 +83,11 @@ final class FilmMetalView: MTKView, AVCaptureVideoDataOutputSampleBufferDelegate
                        from connection: AVCaptureConnection) {
         guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
         // The camera delivers a landscape buffer; rotate it to portrait (and mirror the selfie
-        // camera so the preview reads like a mirror).
+        // camera so the preview reads like a mirror). Tag it sRGB so the film recipe operates in
+        // the SAME color space as the captured JPEG — otherwise the live look reads far too strong.
         let orientation: CGImagePropertyOrientation = isFront ? .leftMirrored : .right
-        let source = CIImage(cvPixelBuffer: pixelBuffer).oriented(orientation)
+        let options: [CIImageOption: Any] = (CGColorSpace(name: CGColorSpace.sRGB)).map { [.colorSpace: $0] } ?? [:]
+        let source = CIImage(cvPixelBuffer: pixelBuffer, options: options).oriented(orientation)
         // Grain off for the live view (CIRandomGenerator per frame would shimmer + cost); the
         // captured photo still bakes grain in.
         latest = InstantFilmProcessor.filtered(source, params: stock.params, extent: source.extent, grain: false)

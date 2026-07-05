@@ -195,20 +195,25 @@ final class FeedService {
         var authorIds = Array(followingIds)
         authorIds.append(currentUserId)
 
-        let posts: [Post] = (try? await supabase
-            .from("posts").select()
-            .in("user_id", values: authorIds.map(\.uuidString))
-            .order("created_at", ascending: false)
-            .range(from: feedOffset, to: feedOffset + feedPageSize - 1)
-            .execute().value) ?? []
+        // Keep pulling pages until we have visible items — so a page that's entirely blocked
+        // users doesn't leave nothing to trigger the next load (which would stall pagination).
+        var items: [FeedItem] = []
+        while hasMoreFeed, items.isEmpty {
+            let posts: [Post] = (try? await supabase
+                .from("posts").select()
+                .in("user_id", values: authorIds.map(\.uuidString))
+                .order("created_at", ascending: false)
+                .range(from: feedOffset, to: feedOffset + feedPageSize - 1)
+                .execute().value) ?? []
 
-        feedOffset += posts.count
-        if posts.count < feedPageSize { hasMoreFeed = false }
+            feedOffset += posts.count
+            if posts.count < feedPageSize { hasMoreFeed = false }
 
-        let visible = posts.filter { !blockedIds.contains($0.userId) }
-        let profiles = await fetchProfiles(ids: Array(Set(visible.map(\.userId))))
-        let items = visible.compactMap { post in
-            profiles[post.userId].map { FeedItem(post: post, author: $0) }
+            let visible = posts.filter { !blockedIds.contains($0.userId) }
+            let profiles = await fetchProfiles(ids: Array(Set(visible.map(\.userId))))
+            items = visible.compactMap { post in
+                profiles[post.userId].map { FeedItem(post: post, author: $0) }
+            }
         }
         guard !items.isEmpty else { return }
 
