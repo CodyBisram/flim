@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct FeedView: View {
     @Environment(AuthService.self) private var auth
@@ -284,9 +285,15 @@ struct FeedPostCard: View {
     @State private var showDetail = false
     @State private var route: ProfileRoute?
     @State private var heartBurst = false
+    @State private var showDeleteConfirm = false
+    @State private var showReportConfirm = false
+    @State private var showBlockConfirm = false
+    @State private var reportedToast = false
+    @State private var shareItem: ShareImage?
     @FocusState private var commentFocused: Bool
 
     private var post: Post { item.post }
+    private var isOwn: Bool { post.userId == auth.currentUser?.id }
     // Reactions + comments live in the batch-loaded FeedService cache (one fetch per page, not
     // per card). Reading them here keeps every card in sync as it recycles.
     private var reactions: [PostReaction] { feed.reactionsByPost[post.id] ?? [] }
@@ -335,6 +342,25 @@ struct FeedPostCard: View {
                         .scaleEffect(heartBurst ? 1 : 0.4)
                         .opacity(heartBurst ? 0.9 : 0)
                         .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.55), value: heartBurst)
+                }
+                .overlay(alignment: .topTrailing) {
+                    Menu {
+                        if isOwn {
+                            Button { saveToCameraRoll() } label: { Label("Save to Camera Roll", systemImage: "square.and.arrow.down") }
+                            Button(role: .destructive) { showDeleteConfirm = true } label: { Label("Delete post", systemImage: "trash") }
+                        } else {
+                            Button { showReportConfirm = true } label: { Label("Report", systemImage: "flag") }
+                            Button(role: .destructive) { showBlockConfirm = true } label: { Label("Block \(item.author.handle)", systemImage: "hand.raised") }
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis")
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundStyle(.white)
+                            .frame(width: 30, height: 30)
+                            .background(.black.opacity(0.35), in: Circle())
+                            .padding(8)
+                    }
+                    .accessibilityLabel("Post options")
                 }
                 .clipShape(RoundedRectangle(cornerRadius: 12))
                 .contentShape(Rectangle())
@@ -408,6 +434,52 @@ struct FeedPostCard: View {
             PostDetailView(item: item)
         }
         .navigationDestination(item: $route) { UserPageView(userId: $0.id) }
+        .sheet(item: $shareItem) { ActivityView(items: [$0.image]) }
+        .overlay(alignment: .top) {
+            if reportedToast {
+                Label("Reported — thanks", systemImage: "checkmark.circle.fill")
+                    .font(.system(size: 13, weight: .medium)).foregroundStyle(.white)
+                    .padding(.horizontal, 16).padding(.vertical, 10)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+        .confirmationDialog("Delete this post?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
+            Button("Delete", role: .destructive) { Task { await feed.deletePost(id: post.id) } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("It's removed from your page and feed. The photo stays in your Darkroom.")
+        }
+        .confirmationDialog("Report this photo?", isPresented: $showReportConfirm, titleVisibility: .visible) {
+            Button("Report", role: .destructive) {
+                guard let uid = auth.currentUser?.id else { return }
+                Task { await feed.reportPost(post, from: uid) }
+                withAnimation { reportedToast = true }
+                Task { try? await Task.sleep(for: .seconds(2)); withAnimation { reportedToast = false } }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Flag this for review. Thanks for keeping FLIM safe.")
+        }
+        .confirmationDialog("Block \(item.author.handle)?", isPresented: $showBlockConfirm, titleVisibility: .visible) {
+            Button("Block", role: .destructive) {
+                guard let uid = auth.currentUser?.id else { return }
+                Task { await feed.block(post.userId, from: uid) }
+                withAnimation { feed.feed.removeAll { $0.author.id == post.userId } }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("You won't see each other's posts, and they'll be unfollowed.")
+        }
+    }
+
+    private func saveToCameraRoll() {
+        Task {
+            guard let full = await feed.signedURL(for: post.storagePath),
+                  let (data, _) = try? await URLSession.shared.data(from: full),
+                  let image = UIImage(data: data) else { return }
+            shareItem = ShareImage(image: image)
+        }
     }
 
     private var avatar: some View {
