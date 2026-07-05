@@ -8,7 +8,6 @@ struct FeedView: View {
     @State private var showDiscover = false
     @State private var showActivity = false
     @State private var myAvatarURL: URL?
-    @State private var pendingFeed: [FeedItem] = []
     @State private var hasNewPosts = false
     @State private var didLoad = false
     @State private var unreadActivity = 0
@@ -42,6 +41,15 @@ struct FeedView: View {
                                 Color.clear.frame(height: 0).id("top")
                                 ForEach(feed.feed) { item in
                                     FeedPostCard(item: item)
+                                        .onAppear {
+                                            // Near the bottom → load the next page.
+                                            if item.id == feed.feed.last?.id, let uid = auth.currentUser?.id {
+                                                Task { await feed.loadMoreFeed(currentUserId: uid) }
+                                            }
+                                        }
+                                }
+                                if feed.isLoadingMoreFeed {
+                                    ProgressView().tint(FlimTheme.textTertiary).padding(.vertical, 8)
                                 }
                             }
                             .padding(.horizontal, 16)
@@ -51,12 +59,12 @@ struct FeedView: View {
                         .overlay(alignment: .top) {
                             if hasNewPosts {
                                 Button {
-                                    withAnimation {
-                                        feed.feed = pendingFeed
-                                        hasNewPosts = false
-                                        proxy.scrollTo("top", anchor: .top)
-                                    }
+                                    hasNewPosts = false
                                     Haptics.tap()
+                                    Task {
+                                        await reload()
+                                        withAnimation { proxy.scrollTo("top", anchor: .top) }
+                                    }
                                 } label: {
                                     Label("New posts", systemImage: "arrow.up")
                                         .font(.system(size: 13, weight: .semibold))
@@ -241,7 +249,6 @@ struct FeedView: View {
         guard let uid = auth.currentUser?.id else { return }
         let fresh = await feed.peekFeed(currentUserId: uid)
         if let newTop = fresh.first?.id, newTop != feed.feed.first?.id {
-            pendingFeed = fresh
             withAnimation { hasNewPosts = true }
         }
     }
@@ -256,8 +263,6 @@ struct FeedPostCard: View {
 
     @State private var url: URL?
     @State private var avatarURL: URL?
-    @State private var reactions: [PostReaction] = []
-    @State private var comments: [CommentInfo] = []
     @State private var draft = ""
     @State private var showDetail = false
     @State private var route: ProfileRoute?
@@ -265,6 +270,10 @@ struct FeedPostCard: View {
     @FocusState private var commentFocused: Bool
 
     private var post: Post { item.post }
+    // Reactions + comments live in the batch-loaded FeedService cache (one fetch per page, not
+    // per card). Reading them here keeps every card in sync as it recycles.
+    private var reactions: [PostReaction] { feed.reactionsByPost[post.id] ?? [] }
+    private var comments: [CommentInfo] { feed.commentsByPost[post.id] ?? [] }
     private var iLiked: Bool { reactions.contains { $0.emoji == "❤️" && $0.userId == auth.currentUser?.id } }
     private var canSend: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
@@ -372,8 +381,7 @@ struct FeedPostCard: View {
         .task {
             url = await feed.signedURL(for: post.displayPath)   // thumbnail — fast feed scroll
             if let path = item.author.avatarPath { avatarURL = await feed.signedURL(for: path) }
-            reactions = await feed.fetchReactions(postId: post.id)
-            await loadComments()
+            // reactions + comments already loaded in the feed batch — no per-card query.
         }
         .navigationDestination(isPresented: $showDetail) {
             PostDetailView(item: item)
@@ -403,33 +411,14 @@ struct FeedPostCard: View {
         heartBurst = true
         Task { try? await Task.sleep(for: .milliseconds(650)); heartBurst = false }
         if !iLiked {
-            reactions.append(PostReaction(id: UUID(), postId: post.id, userId: uid, emoji: "❤️"))
-            Task {
-                await feed.addReaction(postId: post.id, emoji: "❤️", userId: uid)
-                reactions = await feed.fetchReactions(postId: post.id)
-            }
+            Task { await feed.reactToPost(post.id, emoji: "❤️", userId: uid) }
         }
     }
 
     private func toggleReaction(_ emoji: String) {
         guard let uid = auth.currentUser?.id else { return }
-        let mine = reactions.contains { $0.emoji == emoji && $0.userId == uid }
         Haptics.tap()
-        Task {
-            if mine {
-                reactions.removeAll { $0.emoji == emoji && $0.userId == uid }
-                await feed.removeReaction(postId: post.id, emoji: emoji, userId: uid)
-            } else {
-                reactions.append(PostReaction(id: UUID(), postId: post.id, userId: uid, emoji: emoji))
-                await feed.addReaction(postId: post.id, emoji: emoji, userId: uid)
-            }
-            reactions = await feed.fetchReactions(postId: post.id)
-        }
-    }
-
-    private func loadComments() async {
-        guard let uid = auth.currentUser?.id else { return }
-        comments = await feed.fetchComments(postId: post.id, currentUserId: uid)
+        Task { await feed.reactToPost(post.id, emoji: emoji, userId: uid) }
     }
 
     private func sendComment() {
@@ -437,10 +426,7 @@ struct FeedPostCard: View {
         let body = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         draft = ""
         commentFocused = false
-        Task {
-            _ = await feed.addComment(postId: post.id, body: body, userId: uid)
-            await loadComments()
-        }
+        Task { await feed.commentOnPost(post.id, body: body, userId: uid) }
     }
 }
 

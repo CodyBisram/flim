@@ -10,6 +10,17 @@ final class FeedService {
     var followingIds: Set<UUID> = []
     var isLoadingFeed = false
 
+    // Reactions + comments for the loaded feed, batch-fetched once per page (vs a query per
+    // card). Feed cards read + mutate these, so they're the single source of truth.
+    var reactionsByPost: [UUID: [PostReaction]] = [:]
+    var commentsByPost: [UUID: [CommentInfo]] = [:]
+
+    // Infinite-scroll pagination.
+    private let feedPageSize = 15
+    private var feedOffset = 0
+    var hasMoreFeed = true
+    var isLoadingMoreFeed = false
+
     // MARK: - Follows
 
     func loadFollowing(userId: UUID) async {
@@ -163,7 +174,109 @@ final class FeedService {
     func loadFeed(currentUserId: UUID) async {
         isLoadingFeed = true
         defer { isLoadingFeed = false }
-        feed = await peekFeed(currentUserId: currentUserId)
+        followingIds = await fetchFollowingIds(userId: currentUserId)
+        await loadBlocked(userId: currentUserId)
+        // Reset for a fresh first page.
+        feed = []
+        reactionsByPost = [:]
+        commentsByPost = [:]
+        feedOffset = 0
+        hasMoreFeed = true
+        await loadMoreFeed(currentUserId: currentUserId)
+    }
+
+    /// Loads the next page and batch-fetches its reactions + comments (2–3 queries for the whole
+    /// page, instead of ~4 per card).
+    func loadMoreFeed(currentUserId: UUID) async {
+        guard hasMoreFeed, !isLoadingMoreFeed else { return }
+        isLoadingMoreFeed = true
+        defer { isLoadingMoreFeed = false }
+
+        var authorIds = Array(followingIds)
+        authorIds.append(currentUserId)
+
+        let posts: [Post] = (try? await supabase
+            .from("posts").select()
+            .in("user_id", values: authorIds.map(\.uuidString))
+            .order("created_at", ascending: false)
+            .range(from: feedOffset, to: feedOffset + feedPageSize - 1)
+            .execute().value) ?? []
+
+        feedOffset += posts.count
+        if posts.count < feedPageSize { hasMoreFeed = false }
+
+        let visible = posts.filter { !blockedIds.contains($0.userId) }
+        let profiles = await fetchProfiles(ids: Array(Set(visible.map(\.userId))))
+        let items = visible.compactMap { post in
+            profiles[post.userId].map { FeedItem(post: post, author: $0) }
+        }
+        guard !items.isEmpty else { return }
+
+        // Batch reactions + comments for this page's posts in one pass.
+        let postIds = items.map(\.post.id)
+        async let reactions = batchReactions(postIds: postIds)
+        async let comments = batchComments(postIds: postIds, currentUserId: currentUserId)
+        reactionsByPost.merge(await reactions) { _, new in new }
+        commentsByPost.merge(await comments) { _, new in new }
+
+        feed.append(contentsOf: items)
+    }
+
+    private func batchReactions(postIds: [UUID]) async -> [UUID: [PostReaction]] {
+        guard !postIds.isEmpty else { return [:] }
+        let rows: [PostReaction] = (try? await supabase.from("post_reactions").select()
+            .in("post_id", values: postIds.map(\.uuidString)).execute().value) ?? []
+        return Dictionary(grouping: rows, by: \.postId)
+    }
+
+    private func batchComments(postIds: [UUID], currentUserId: UUID) async -> [UUID: [CommentInfo]] {
+        guard !postIds.isEmpty else { return [:] }
+        let comments: [PostComment] = (try? await supabase.from("post_comments").select()
+            .in("post_id", values: postIds.map(\.uuidString))
+            .order("created_at", ascending: true).execute().value) ?? []
+        guard !comments.isEmpty else { return [:] }
+
+        struct LikeRow: Decodable { let comment_id: UUID; let user_id: UUID }
+        let likes: [LikeRow] = (try? await supabase.from("comment_likes").select("comment_id,user_id")
+            .in("comment_id", values: comments.map(\.id.uuidString)).execute().value) ?? []
+        let profiles = await fetchProfiles(ids: Array(Set(comments.map(\.userId))))
+
+        var byPost: [UUID: [CommentInfo]] = [:]
+        for comment in comments {
+            let commentLikes = likes.filter { $0.comment_id == comment.id }
+            let info = CommentInfo(comment: comment, author: profiles[comment.userId],
+                                   likeCount: commentLikes.count,
+                                   likedByMe: commentLikes.contains { $0.user_id == currentUserId })
+            byPost[comment.postId, default: []].append(info)
+        }
+        for (postId, list) in byPost {
+            byPost[postId] = list.sorted {
+                $0.likeCount != $1.likeCount ? $0.likeCount > $1.likeCount
+                                             : $0.comment.createdAt < $1.comment.createdAt
+            }
+        }
+        return byPost
+    }
+
+    /// Optimistic react/unreact that updates the shared cache (so cards stay in sync as they
+    /// recycle) + the server.
+    func reactToPost(_ postId: UUID, emoji: String, userId: UUID) async {
+        var current = reactionsByPost[postId] ?? []
+        if current.contains(where: { $0.emoji == emoji && $0.userId == userId }) {
+            current.removeAll { $0.emoji == emoji && $0.userId == userId }
+            reactionsByPost[postId] = current
+            await removeReaction(postId: postId, emoji: emoji, userId: userId)
+        } else {
+            current.append(PostReaction(id: UUID(), postId: postId, userId: userId, emoji: emoji))
+            reactionsByPost[postId] = current
+            await addReaction(postId: postId, emoji: emoji, userId: userId)
+        }
+    }
+
+    /// Posts a comment and refreshes just that post's cached comments.
+    func commentOnPost(_ postId: UUID, body: String, userId: UUID) async {
+        _ = await addComment(postId: postId, body: body, userId: userId)
+        commentsByPost[postId] = await fetchComments(postId: postId, currentUserId: userId)
     }
 
     /// Fetches the feed without assigning it — used to check for new posts without disturbing
@@ -174,11 +287,12 @@ final class FeedService {
         var authorIds = Array(followingIds)
         authorIds.append(currentUserId)   // your own posts show in your feed too
 
+        // Only the newest post's id is compared (for the "new posts" pill), so keep this light.
         let posts: [Post] = (try? await supabase
             .from("posts").select()
             .in("user_id", values: authorIds.map(\.uuidString))
             .order("created_at", ascending: false)
-            .limit(60)
+            .limit(5)
             .execute().value) ?? []
 
         let visible = posts.filter { !blockedIds.contains($0.userId) }
