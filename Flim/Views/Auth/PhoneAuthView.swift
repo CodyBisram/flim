@@ -55,6 +55,9 @@ struct EmailAuthView: View {
                 }
 
                 // Password sign-in for invited testers (while email OTP delivery is being set up).
+                // Hidden on public App Store builds — it bypasses the invite allowlist, so it must
+                // never ship to the public. DEBUG + TestFlight keep it (see AppInfo.isAppStore).
+                if !AppInfo.isAppStore {
                 if showPasswordEntry {
                     VStack(alignment: .leading, spacing: 10) {
                         SecureField("", text: $password, prompt: Text("Password").foregroundStyle(Color(white: 0.3)))
@@ -89,6 +92,7 @@ struct EmailAuthView: View {
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(Color(white: 0.5))
                     .padding(.top, 18)
+                }
                 }
 
                 Spacer()

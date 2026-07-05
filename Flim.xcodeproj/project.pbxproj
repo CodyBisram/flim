@@ -56,6 +56,7 @@
 		D86D45FEC7A4EA89A268B87B /* PhotoPickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC8AD03A8D1B86B86365239A /* PhotoPickerSheet.swift */; };
 		DF79D7CBD7A4684626EF2080 /* ActivityFeedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F4E26878DAFF415FB6B4644 /* ActivityFeedView.swift */; };
 		E01A141DA15C3B44C02C6CDA /* SortDeckView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F41D0B57C8881A275E755159 /* SortDeckView.swift */; };
+		E132A62DD98C56BC83EB715E /* AppInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A194AB5EE948FBA8903D086 /* AppInfo.swift */; };
 		E3917AFE742C6E4745A3292C /* MetaChip.swift in Sources */ = {isa = PBXBuildFile; fileRef = 373B00DF38CFC40848E59929 /* MetaChip.swift */; };
 		E924D1944FA4475B4E383A61 /* PhotoReadinessTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BAF7FE72763EB709B93E5BA4 /* PhotoReadinessTests.swift */; };
 		ECCE9AA4B362458687B4C9B1 /* SignedURLStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85C6F9C983DFB1E2ECF57092 /* SignedURLStore.swift */; };
@@ -105,6 +106,7 @@
 		49C42E0C072E983E45F3535C /* NetworkMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkMonitor.swift; sourceTree = "<group>"; };
 		4B7DE28ED82A77117E85EBE0 /* FullScreenPhotoView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FullScreenPhotoView.swift; sourceTree = "<group>"; };
 		54CD52378D31EEDB7D7BE6EF /* RollDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollDetailView.swift; sourceTree = "<group>"; };
+		5A194AB5EE948FBA8903D086 /* AppInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppInfo.swift; sourceTree = "<group>"; };
 		5CCFCD9A339AA06647B7A1E1 /* RollCarouselView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollCarouselView.swift; sourceTree = "<group>"; };
 		5FE59742B6CDB9699448F677 /* Flim.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Flim.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		633F60D6D348ADEA4D94D263 /* RollService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollService.swift; sourceTree = "<group>"; };
@@ -275,6 +277,7 @@
 		AC05434A8F7DF581D43AF6AD /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				5A194AB5EE948FBA8903D086 /* AppInfo.swift */,
 				EFC0C65109A81467AB59472B /* AuthService.swift */,
 				C9817482FE2AB125EC4FC2FB /* FeedService.swift */,
 				14C863F6302D9B2BFBA71B6C /* InstantFilmProcessor.swift */,
@@ -454,6 +457,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				DF79D7CBD7A4684626EF2080 /* ActivityFeedView.swift in Sources */,
+				E132A62DD98C56BC83EB715E /* AppInfo.swift in Sources */,
 				410927C61580C55C921D591F /* AppUser.swift in Sources */,
 				1986128F060D36EEB13FF786 /* AuthService.swift in Sources */,
 				58C00DA36934A8DF0C2C833B /* CameraPreview.swift in Sources */,

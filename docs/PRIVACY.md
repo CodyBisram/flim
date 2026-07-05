@@ -2,48 +2,57 @@
 
 _Last updated: July 2026_
 
-FLIM ("the app," "we," "us") is an invite-only camera app for sharing photos with friends.
-This policy explains what we collect, why, and the control you have. We keep it short because
-we collect very little.
+FLIM ("the app," "we," "us") is a disposable-camera app for sharing photos with friends — in
+private rolls and on a following-based feed. This policy explains what we collect, why, and the
+control you have. We keep it short because we collect very little.
 
 ## What we collect
 
-- **Email address** — used only to sign you in (a one-time code) and to gate invite-only access. We do not email you marketing.
-- **Username** — the display name you choose, shown to people in your shared rolls.
-- **Photos you take** — stored so they can develop and appear in your Darkroom and any rolls you share them to.
-- **Rolls & membership** — which rolls you create or join, so shared photos reach the right people.
-- **A device push token** *(only if you enable notifications)* — used to tell you when your photos develop.
+- **Email address** — used only to sign you in and gate invite access. We do not email you marketing.
+- **Profile** — the username, display name, bio, and profile/cover photos you choose. These are
+  shown to other users (e.g. on your page and in shared rolls).
+- **Photos you take** — stored so they can develop and appear in your Darkroom, in rolls you share
+  them to, and on your feed if you publish them.
+- **Social activity** — posts you publish, comments and emoji reactions you make, who you follow,
+  and the rolls you create or join, so content reaches the right people.
+- **Safety data** — users you block and any content or accounts you report, so we can review them.
+- **A device push token** *(only if you enable notifications)* — to tell you when your roll
+  develops and when friends react to or comment on your posts.
+- **Basic technical info** — app version and iOS version, included when you send feedback so we can
+  reproduce issues.
 
 We do **not** collect your contacts, location, or advertising identifiers, and we do **not** sell
 your data or use third-party ad tracking.
 
 ## Where your data lives
 
-Your account data and photos are stored on **Supabase** (our backend and storage provider) on
-your behalf. Photos are kept in a **private** storage bucket and are visible only to you and the
-members of rolls you share them to.
+Your account data and photos are stored on **Supabase** (our backend and storage provider) on your
+behalf. Photos are kept in a **private** storage bucket, access-controlled by row-level security,
+and served via time-limited signed links.
 
 ## How your data is used
 
-Only to run the app: authenticate you, develop and display your photos, and deliver photos to the
-rolls you choose. That's it.
+Only to run the app: authenticate you, develop and display your photos, deliver them to the rolls
+and followers you choose, power reactions/comments, send notifications you've enabled, and keep the
+community safe.
 
-## Sharing
+## Sharing / visibility
 
-Photos you add to a shared roll are visible to the members of that roll. Photos you keep personal
-are visible only to you. We don't share your data with anyone else except our infrastructure
-provider (Supabase) as needed to operate the app.
+- **Personal photos** in your Darkroom are visible only to you.
+- **Photos in a shared roll** are visible to that roll's members.
+- **Photos you publish to your feed** are visible to your followers.
 
-## Content reports
-
-If you report a photo, we store the report so we can review it and keep the community safe.
+We don't share your data with anyone else except our infrastructure providers — **Supabase**
+(backend/storage) and **Apple Push Notification service** (notifications, only if enabled) — as
+needed to operate the app.
 
 ## Your controls
 
-- **Delete a photo** at any time from the full-screen view.
-- **Leave a roll**, or (as a roll's creator) **remove a member**.
+- **Delete a photo** at any time from the full-screen view; **delete a post** to remove it from your feed.
+- **Block** or **report** a user or a photo; **leave a roll**, or (as its creator) remove a member.
+- **Turn notifications on/off** in Settings.
 - **Delete your account** from Profile → Delete Account. This permanently removes your account,
-  photos, rolls, and reports. This cannot be undone.
+  photos, posts, rolls, and reports, and cannot be undone.
 
 ## Children
 
@@ -55,4 +64,4 @@ We'll update this page if our practices change, and revise the date above.
 
 ## Contact
 
-Questions or requests: **support@flim.app** _(replace with your real support email before launch)_.
+Questions or requests: **[codyysb@gmail.com]** _(replace with your public support email before launch)_.

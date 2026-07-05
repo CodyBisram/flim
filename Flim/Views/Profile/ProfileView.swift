@@ -19,6 +19,7 @@ struct ProfileView: View {
     @State private var showEditUsername = false
     @AppStorage("developNotificationsEnabled") private var notificationsEnabled = true
     @AppStorage("liveFilmPreview") private var liveFilmPreview = true
+    @Environment(\.openURL) private var openURL
     @AppStorage("hasOnboarded") private var hasOnboarded = false
     @AppStorage("accentColor") private var accentColor = "amber"
 
@@ -206,13 +207,21 @@ struct ProfileView: View {
                         hasOnboarded = false
                         dismiss()
                     } label: {
-                        HStack {
-                            Text("Replay intro").font(.system(size: 15)).foregroundStyle(.white)
-                            Spacer()
-                            Image(systemName: "play.circle").foregroundStyle(FlimTheme.textTertiary)
-                        }
-                        .padding(.horizontal, 28).padding(.vertical, 14)
-                        .background(FlimTheme.bgElevated)
+                        settingsRow("Replay intro", icon: "play.circle")
+                    }
+
+                    // Send feedback (opens Mail, pre-filled with the build).
+                    Button {
+                        if let url = AppInfo.feedbackMailURL { openURL(url) }
+                    } label: {
+                        settingsRow("Send feedback", icon: "envelope")
+                    }
+
+                    // Privacy policy (required for the App Store).
+                    Button {
+                        openURL(AppInfo.privacyPolicyURL)
+                    } label: {
+                        settingsRow("Privacy Policy", icon: "hand.raised")
                     }
 
                     VStack(spacing: 12) {
@@ -248,6 +257,11 @@ struct ProfileView: View {
                             .padding(.vertical, 10)
                         }
                         .disabled(isDeleting)
+
+                        Text("FLIM \(AppInfo.versionString)")
+                            .font(.system(size: 11))
+                            .foregroundStyle(FlimTheme.textTertiary.opacity(0.7))
+                            .padding(.top, 4)
                     }
                     .padding(.horizontal, 28)
                     .padding(.top, 28)     // black space between Replay intro and Sign Out
@@ -338,6 +352,16 @@ struct ProfileView: View {
                 .font(.system(size: 11))
                 .foregroundStyle(FlimTheme.textTertiary)
         }
+    }
+
+    private func settingsRow(_ title: String, icon: String) -> some View {
+        HStack {
+            Text(title).font(.system(size: 15)).foregroundStyle(.white)
+            Spacer()
+            Image(systemName: icon).foregroundStyle(FlimTheme.textTertiary)
+        }
+        .padding(.horizontal, 28).padding(.vertical, 14)
+        .background(FlimTheme.bgElevated)
     }
 
     private func refreshAvatar() async {
