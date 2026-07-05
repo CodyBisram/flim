@@ -252,11 +252,13 @@ struct FeedView: View {
 
     /// Warm the image cache for the loaded posts so they appear instantly as you scroll.
     private func prefetchFeedImages() async {
-        var urls: [URL] = []
+        var items: [(url: URL, cacheKey: String?)] = []
         for item in feed.feed {
-            if let u = await feed.signedURL(for: item.post.displayPath) { urls.append(u) }
+            if let u = await feed.signedURL(for: item.post.displayPath) {
+                items.append((u, item.post.displayPath))
+            }
         }
-        ImageLoader.prefetch(urls, maxPixel: 1200, scale: displayScale)
+        ImageLoader.prefetch(items, maxPixel: 1200, scale: displayScale)
     }
 
     private func checkNewPosts() async {
@@ -314,7 +316,7 @@ struct FeedPostCard: View {
                 .aspectRatio(1, contentMode: .fit)
                 .overlay {
                     if let url {
-                        CachedImage(url: url, maxPixel: 1200) { image in
+                        CachedImage(url: url, maxPixel: 1200, cacheKey: post.displayPath) { image in
                             image.resizable().scaledToFill()
                         } placeholder: {
                             ShimmerPlaceholder(cornerRadius: 12)

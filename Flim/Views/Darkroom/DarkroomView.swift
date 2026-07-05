@@ -346,7 +346,10 @@ struct DarkroomView: View {
         guard let userId = auth.currentUser?.id else { return }
         await vm.load(photoService: photoService, userId: userId)
         // Warm the grid's thumbnails so cells appear instantly as you scroll.
-        ImageLoader.prefetch(Array(vm.signedURLCache.values), maxPixel: 400, scale: displayScale)
+        let prefetch = vm.photos.compactMap { photo -> (url: URL, cacheKey: String?)? in
+            vm.signedURLCache[photo.id].map { ($0, photo.displayPath) }
+        }
+        ImageLoader.prefetch(prefetch, maxPixel: 400, scale: displayScale)
         if rolls.rolls.isEmpty { try? await rolls.fetchRolls(for: userId) }   // for roll labels
         unsortedCount = await photoService.fetchUnsorted(userId: userId).count
         checkForReveal()

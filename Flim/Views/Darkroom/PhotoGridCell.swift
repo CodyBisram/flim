@@ -15,8 +15,8 @@ struct PhotoGridCell: View {
         Color.clear
             .aspectRatio(1, contentMode: .fit)
             .overlay {
-                if photo.isReady, let url = signedURL {
-                    CachedImage(url: url, maxPixel: 400) { image in
+                if photo.isReady {
+                    CachedImage(url: signedURL, maxPixel: 400, cacheKey: photo.displayPath) { image in
                         image.resizable().scaledToFill()
                     } placeholder: {
                         ShimmerPlaceholder(cornerRadius: 4)
@@ -154,6 +154,9 @@ struct CachedImage<Content: View, Placeholder: View>: View {
     let url: URL?
     /// Longest-edge target in points; the image is downsampled to this (× screen scale).
     var maxPixel: CGFloat = 1600
+    /// A stable storage path, if known — lets the image load from cache before a URL is resolved
+    /// (instant on cold launch) and survive new signed-URL tokens.
+    var cacheKey: String? = nil
     @ViewBuilder var content: (Image) -> Content
     @ViewBuilder var placeholder: () -> Placeholder
 
@@ -170,21 +173,28 @@ struct CachedImage<Content: View, Placeholder: View>: View {
                 placeholder()
             }
         }
-        .task(id: url) { await load() }
+        // Re-run when the URL resolves (nil → signed) too, not just when the stable key changes.
+        .task(id: "\(cacheKey ?? "")|\(url?.absoluteString ?? "")") { await load() }
     }
 
     private func load() async {
+        // Try the caches by stable key first — this can hit before any URL is resolved.
+        if let key = cacheKey {
+            let memKey = "\(key)|\(Int(maxPixel))" as NSString
+            if let cached = ImageCache.shared.object(forKey: memKey) { uiImage = cached; shown = true; return }
+            if let disk = await DiskImageCache.load("\(key)|\(Int(maxPixel))") {
+                ImageCache.shared.setObject(disk, forKey: memKey)
+                uiImage = disk; shown = true; return
+            }
+        }
         guard let url else { uiImage = nil; return }
-        // Synchronous memory hit → instant, no flash.
-        let memKey = "\(url.absoluteString)|\(Int(maxPixel))" as NSString
-        if let cached = ImageCache.shared.object(forKey: memKey) {
-            uiImage = cached
-            shown = true
-            return
+        if cacheKey == nil {
+            let memKey = "\(url.absoluteString)|\(Int(maxPixel))" as NSString
+            if let cached = ImageCache.shared.object(forKey: memKey) { uiImage = cached; shown = true; return }
         }
         uiImage = nil
         shown = false
-        guard let image = await ImageLoader.fetch(url: url, maxPixel: maxPixel, scale: displayScale) else { return }
+        guard let image = await ImageLoader.fetch(url: url, maxPixel: maxPixel, scale: displayScale, cacheKey: cacheKey) else { return }
         uiImage = image
         if reduceMotion {
             shown = true
@@ -199,11 +209,15 @@ struct CachedImage<Content: View, Placeholder: View>: View {
 /// Loads a downsampled image through memory → disk → network, caching in both. Shared so a
 /// prefetcher can warm the cache for cells that aren't visible yet.
 enum ImageLoader {
-    static func fetch(url: URL, maxPixel: CGFloat, scale: CGFloat) async -> UIImage? {
-        let memKey = "\(url.absoluteString)|\(Int(maxPixel))" as NSString
+    /// `cacheKey` (a stable storage path) keys both caches when provided, so a photo survives
+    /// new signed-URL tokens AND can be found before a URL is even resolved. Falls back to the
+    /// URL when nil.
+    static func fetch(url: URL, maxPixel: CGFloat, scale: CGFloat, cacheKey: String? = nil) async -> UIImage? {
+        let memKeyStr = cacheKey.map { "\($0)|\(Int(maxPixel))" } ?? "\(url.absoluteString)|\(Int(maxPixel))"
+        let memKey = memKeyStr as NSString
         if let cached = ImageCache.shared.object(forKey: memKey) { return cached }
 
-        let diskKey = "\(url.path)|\(Int(maxPixel))"   // ignores token → survives new URLs/launches
+        let diskKey = cacheKey.map { "\($0)|\(Int(maxPixel))" } ?? "\(url.path)|\(Int(maxPixel))"
         if let disk = await DiskImageCache.load(diskKey) {
             ImageCache.shared.setObject(disk, forKey: memKey)
             return disk
@@ -216,10 +230,13 @@ enum ImageLoader {
         return image
     }
 
-    /// Warm the cache for upcoming cells (fire-and-forget, low priority).
-    static func prefetch(_ urls: [URL], maxPixel: CGFloat, scale: CGFloat) {
-        for url in urls {
-            Task.detached(priority: .utility) { _ = await fetch(url: url, maxPixel: maxPixel, scale: scale) }
+    /// Warm the cache for upcoming cells (fire-and-forget, low priority). Pass the same cacheKey
+    /// the views use, or the prefetched image won't be found.
+    static func prefetch(_ items: [(url: URL, cacheKey: String?)], maxPixel: CGFloat, scale: CGFloat) {
+        for item in items {
+            Task.detached(priority: .utility) {
+                _ = await fetch(url: item.url, maxPixel: maxPixel, scale: scale, cacheKey: item.cacheKey)
+            }
         }
     }
 
