@@ -19,6 +19,7 @@ struct ProfileView: View {
     @State private var showEditUsername = false
     @AppStorage("developNotificationsEnabled") private var notificationsEnabled = true
     @AppStorage("liveFilmPreview") private var liveFilmPreview = true
+    @AppStorage("soundEffects") private var soundEffects = true
     @Environment(\.openURL) private var openURL
     @AppStorage("hasOnboarded") private var hasOnboarded = false
     @AppStorage("accentColor") private var accentColor = "amber"
@@ -159,6 +160,15 @@ struct ProfileView: View {
                             Text("See the film look in the viewfinder (beta)")
                                 .font(.system(size: 12)).foregroundStyle(FlimTheme.textTertiary)
                         }
+                    }
+                    .tint(FlimTheme.accent)
+                    .padding(.horizontal, 28)
+                    .padding(.vertical, 14)
+                    .background(FlimTheme.bgElevated)
+
+                    // Sound effects (shutter + reveal chime).
+                    Toggle(isOn: $soundEffects) {
+                        Text("Sound effects").font(.system(size: 15)).foregroundStyle(.white)
                     }
                     .tint(FlimTheme.accent)
                     .padding(.horizontal, 28)

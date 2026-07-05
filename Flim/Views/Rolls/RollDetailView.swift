@@ -11,6 +11,7 @@ struct RollDetailView: View {
     @AppStorage("developNotificationsEnabled") private var notificationsEnabled = true
     @State private var vm = DarkroomViewModel()
     @State private var showMembers = false
+    @Namespace private var photoNS
     @State private var selectedPhoto: Photo?
     @State private var selectedURL: URL?
     @State private var memberNames: [UUID: String] = [:]   // userId → username, for attribution
@@ -215,6 +216,7 @@ struct RollDetailView: View {
                                 photographer: memberNames[photo.userId],
                                 memberNames: memberNames,
                                 onDelete: { Task { await vm.loadRoll(photoService: photoService, rollId: roll.id) } })
+                .navigationTransition(.zoom(sourceID: photo.id, in: photoNS))
         }
         .fullScreenCover(isPresented: $showCarousel) {
             RollCarouselView(photos: chronologicalDeveloped, memberNames: memberNames)
@@ -295,6 +297,7 @@ struct RollDetailView: View {
         LazyVGrid(columns: columns, spacing: 2) {
             ForEach(list) { photo in
                 PhotoGridCell(photo: photo, signedURL: vm.signedURLCache[photo.id])
+                    .matchedTransitionSource(id: photo.id, in: photoNS)
                     .onTapGesture {
                         // Can't peek before it develops — only open ready shots.
                         guard photo.isReady else { return }

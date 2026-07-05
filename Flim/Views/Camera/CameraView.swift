@@ -146,6 +146,7 @@ struct CameraView: View {
 
     private func capture() {
         Haptics.shutter()
+        SoundFX.shutter()
         camera.capturePhoto()
     }
 

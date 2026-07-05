@@ -7,6 +7,7 @@ struct DarkroomView: View {
     @Environment(\.displayScale) private var displayScale
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    @Namespace private var photoNS
     @State private var vm = DarkroomViewModel()
     @State private var selectedPhoto: Photo?
     @State private var selectedURL: URL?
@@ -163,6 +164,7 @@ struct DarkroomView: View {
         }
         .fullScreenCover(item: $selectedPhoto) { photo in
             FullScreenPhotoView(photo: photo, url: selectedURL, onDelete: { Task { await reload() } })
+                .navigationTransition(.zoom(sourceID: photo.id, in: photoNS))
         }
         .fullScreenCover(isPresented: $showSortDeck, onDismiss: { Task { await reload() } }) {
             SortDeckView(onFinish: {})
@@ -293,6 +295,7 @@ struct DarkroomView: View {
             LazyVGrid(columns: columns, spacing: 2) {
                 ForEach(vm.developedPhotos) { photo in
                     PhotoGridCell(photo: photo, signedURL: vm.signedURLCache[photo.id], rollName: rollName(for: photo.rollId))
+                        .matchedTransitionSource(id: photo.id, in: photoNS)
                         .overlay { if isSelecting { selectionMark(photo.id) } }
                         .onTapGesture {
                             if isSelecting {
@@ -367,6 +370,7 @@ struct DarkroomView: View {
             if !newlyReady.isEmpty {
                 revealCount = newlyReady.count
                 Haptics.reveal()
+                SoundFX.reveal()
                 withAnimation(.spring(response: 0.5, dampingFraction: 0.7)) { showReveal = true }
             }
         }
