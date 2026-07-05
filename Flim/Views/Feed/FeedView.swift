@@ -273,6 +273,7 @@ struct FeedView: View {
 // MARK: - Post card
 
 struct FeedPostCard: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let item: FeedItem
     @Environment(AuthService.self) private var auth
     @Environment(FeedService.self) private var feed
@@ -333,7 +334,7 @@ struct FeedPostCard: View {
                         .shadow(radius: 8)
                         .scaleEffect(heartBurst ? 1 : 0.4)
                         .opacity(heartBurst ? 0.9 : 0)
-                        .animation(.spring(response: 0.3, dampingFraction: 0.55), value: heartBurst)
+                        .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.55), value: heartBurst)
                 }
                 .clipShape(RoundedRectangle(cornerRadius: 12))
                 .contentShape(Rectangle())
@@ -428,8 +429,10 @@ struct FeedPostCard: View {
     private func doubleTapLike() {
         guard let uid = auth.currentUser?.id else { return }
         Haptics.tap()
-        heartBurst = true
-        Task { try? await Task.sleep(for: .milliseconds(650)); heartBurst = false }
+        if !reduceMotion {
+            heartBurst = true
+            Task { try? await Task.sleep(for: .milliseconds(650)); heartBurst = false }
+        }
         if !iLiked {
             Task { await feed.reactToPost(post.id, emoji: "❤️", userId: uid) }
         }

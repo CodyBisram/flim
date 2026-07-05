@@ -194,6 +194,8 @@ struct CameraView: View {
                         .background(active ? FlimTheme.accent : Color.black.opacity(0.35), in: Capsule())
                         .overlay(Capsule().stroke(Color.white.opacity(active ? 0 : 0.15), lineWidth: 1))
                 }
+                .accessibilityLabel("\(zoomLabel(level)) zoom")
+                .accessibilityAddTraits(active ? [.isSelected] : [])
             }
         }
         .animation(.snappy(duration: 0.2), value: camera.zoomFactor)
@@ -389,6 +391,8 @@ struct CameraView: View {
             }
         }
         .buttonStyle(.plain)
+        .accessibilityLabel("\(stock.name) film")
+        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
         .scaleEffect(isSelected ? 1.06 : 0.94)
         .animation(.snappy(duration: 0.25), value: isSelected)
     }

@@ -5,6 +5,7 @@ struct DarkroomView: View {
     @Environment(PhotoService.self) private var photoService
     @Environment(RollService.self) private var rolls
     @Environment(\.displayScale) private var displayScale
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var vm = DarkroomViewModel()
     @State private var selectedPhoto: Photo?
@@ -417,8 +418,12 @@ struct DarkroomView: View {
         }
         .transition(.opacity)
         .onAppear {
-            revealAnim = false
-            withAnimation(.spring(response: 0.55, dampingFraction: 0.68).delay(0.05)) { revealAnim = true }
+            if reduceMotion {
+                revealAnim = true   // no spring/scale — appear settled
+            } else {
+                revealAnim = false
+                withAnimation(.spring(response: 0.55, dampingFraction: 0.68).delay(0.05)) { revealAnim = true }
+            }
         }
         .onTapGesture { dismissReveal() }
     }

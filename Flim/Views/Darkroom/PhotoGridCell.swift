@@ -40,6 +40,11 @@ struct PhotoGridCell: View {
                 }
             }
             .contentShape(Rectangle())
+            .accessibilityElement()
+            .accessibilityLabel(photo.isReady
+                ? "Photo\(rollName.map { " from \($0)" } ?? ""), \(photo.takenAt.formatted(date: .abbreviated, time: .omitted))"
+                : "Developing photo")
+            .accessibilityAddTraits(photo.isReady ? .isButton : [])
     }
 
     private var developingPlaceholder: some View {
