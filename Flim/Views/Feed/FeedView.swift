@@ -370,7 +370,7 @@ struct FeedPostCard: View {
         .padding(14)
         .background(FlimTheme.bgElevated, in: RoundedRectangle(cornerRadius: 20))
         .task {
-            url = await feed.signedURL(for: post.storagePath)
+            url = await feed.signedURL(for: post.displayPath)   // thumbnail — fast feed scroll
             if let path = item.author.avatarPath { avatarURL = await feed.signedURL(for: path) }
             reactions = await feed.fetchReactions(postId: post.id)
             await loadComments()

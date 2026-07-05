@@ -71,9 +71,10 @@ final class DarkroomViewModel {
     func prefetchURLs(photoService: PhotoService) async {
         let ready = photos.filter { $0.isReady && signedURLCache[$0.id] == nil }
         guard !ready.isEmpty else { return }
-        let map = await photoService.signedURLs(for: ready.map(\.storagePath))
-        for photo in ready where map[photo.storagePath] != nil {
-            signedURLCache[photo.id] = map[photo.storagePath]
+        // Grid shows the thumbnail (displayPath) — tiny download vs the full image.
+        let map = await photoService.signedURLs(for: ready.map(\.displayPath))
+        for photo in ready where map[photo.displayPath] != nil {
+            signedURLCache[photo.id] = map[photo.displayPath]
             urlExpiry[photo.id] = Date.now.addingTimeInterval(3600)
         }
     }
@@ -86,7 +87,7 @@ final class DarkroomViewModel {
             return url
         }
 
-        guard let url = try? await photoService.signedURL(for: photo.storagePath) else { return nil }
+        guard let url = try? await photoService.signedURL(for: photo.displayPath) else { return nil }
         signedURLCache[photo.id] = url
         urlExpiry[photo.id] = Date.now.addingTimeInterval(3600)
         return url

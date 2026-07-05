@@ -323,7 +323,7 @@ CREATE POLICY "photos: roll members can read shared"
         bucket_id = 'photos'
         AND EXISTS (
             SELECT 1 FROM public.photos p
-            WHERE p.storage_path = storage.objects.name
+            WHERE storage.objects.name IN (p.storage_path, p.thumb_path)
               AND p.roll_id IS NOT NULL
               AND public.is_roll_member(p.roll_id)
         )
@@ -374,6 +374,10 @@ CREATE POLICY "photo_reports: can file own"
 
 -- A caption on your own photo (owner-editable via the existing "photos: can update own").
 ALTER TABLE public.photos ADD COLUMN IF NOT EXISTS caption TEXT;
+
+-- Small thumbnail uploaded alongside the full image, so grids/feeds download ~30KB not MBs.
+-- Nil for photos taken before thumbnails existed (client falls back to the full image).
+ALTER TABLE public.photos ADD COLUMN IF NOT EXISTS thumb_path TEXT;
 
 -- Sort/triage state: new personal "instants" land unsorted (is_sorted = false) and are
 -- swiped into the Darkroom (archive) or Feed (publish) via the sort deck. Roll shots skip
@@ -477,6 +481,8 @@ CREATE TABLE IF NOT EXISTS public.posts (
     UNIQUE (user_id, photo_id)
 );
 ALTER TABLE public.posts ENABLE ROW LEVEL SECURITY;
+-- Thumbnail denormalized from the photo (see photos.thumb_path), so the feed loads small.
+ALTER TABLE public.posts ADD COLUMN IF NOT EXISTS thumb_path TEXT;
 
 DROP POLICY IF EXISTS "posts: readable by authenticated" ON public.posts;
 CREATE POLICY "posts: readable by authenticated"
@@ -500,7 +506,8 @@ CREATE POLICY "photos: readable when shared to a post"
     ON storage.objects FOR SELECT TO authenticated
     USING (
         bucket_id = 'photos'
-        AND EXISTS (SELECT 1 FROM public.posts po WHERE po.storage_path = storage.objects.name)
+        AND EXISTS (SELECT 1 FROM public.posts po
+                    WHERE storage.objects.name IN (po.storage_path, po.thumb_path))
     );
 
 -- A photo used as someone's avatar is readable by any signed-in user (so avatars load

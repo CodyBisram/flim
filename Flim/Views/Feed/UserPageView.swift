@@ -206,7 +206,7 @@ struct UserPageView: View {
                 ForEach(posts) { post in
                     if let author = profile {
                         NavigationLink { PostDetailView(item: FeedItem(post: post, author: author)) } label: {
-                            PostThumb(path: post.storagePath)
+                            PostThumb(path: post.displayPath)
                         }
                         .buttonStyle(.plain)
                     }

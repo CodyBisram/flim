@@ -5,6 +5,8 @@ struct Photo: Codable, Identifiable {
     let userId: UUID
     let rollId: UUID?
     let storagePath: String
+    /// Small thumbnail for grids/feeds; nil for photos taken before thumbnails existed.
+    var thumbPath: String?
     let takenAt: Date
     let developsAt: Date
     var isDeveloped: Bool
@@ -12,6 +14,8 @@ struct Photo: Codable, Identifiable {
     var isSorted: Bool = true
 
     var isReady: Bool { Date.now >= developsAt }
+    /// Path to use in grids/feeds — the thumbnail if present, else the full image.
+    var displayPath: String { thumbPath ?? storagePath }
 
     var timeUntilDeveloped: TimeInterval { developsAt.timeIntervalSinceNow }
 
@@ -20,6 +24,7 @@ struct Photo: Codable, Identifiable {
         case userId = "user_id"
         case rollId = "roll_id"
         case storagePath = "storage_path"
+        case thumbPath = "thumb_path"
         case takenAt = "taken_at"
         case developsAt = "develops_at"
         case isDeveloped = "is_developed"
@@ -48,6 +53,7 @@ struct InsertPhoto: Encodable {
     let userId: UUID
     let rollId: UUID?
     let storagePath: String
+    var thumbPath: String?
     let developsAt: Date
     var isSorted: Bool = true
 
@@ -56,6 +62,7 @@ struct InsertPhoto: Encodable {
         case userId = "user_id"
         case rollId = "roll_id"
         case storagePath = "storage_path"
+        case thumbPath = "thumb_path"
         case developsAt = "develops_at"
         case isSorted = "is_sorted"
     }

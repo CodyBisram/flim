@@ -195,6 +195,7 @@ final class FeedService {
             let user_id: UUID
             let photo_id: UUID
             let storage_path: String
+            let thumb_path: String?
             let taken_at: Date
             let caption: String?
         }
@@ -203,6 +204,7 @@ final class FeedService {
             user_id: userId,
             photo_id: photo.id,
             storage_path: photo.storagePath,
+            thumb_path: photo.thumbPath,
             taken_at: photo.takenAt,
             caption: (trimmed?.isEmpty ?? true) ? nil : trimmed
         )).execute()

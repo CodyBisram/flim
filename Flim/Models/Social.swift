@@ -30,15 +30,20 @@ struct Post: Codable, Identifiable {
     let userId: UUID
     let photoId: UUID
     let storagePath: String
+    var thumbPath: String?
     let takenAt: Date
     var caption: String?
     let createdAt: Date
+
+    /// Path for the feed card — the thumbnail if present, else the full image.
+    var displayPath: String { thumbPath ?? storagePath }
 
     enum CodingKeys: String, CodingKey {
         case id, caption
         case userId = "user_id"
         case photoId = "photo_id"
         case storagePath = "storage_path"
+        case thumbPath = "thumb_path"
         case takenAt = "taken_at"
         case createdAt = "created_at"
     }

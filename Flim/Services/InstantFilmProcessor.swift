@@ -1,5 +1,6 @@
 import CoreImage
 import UIKit
+import ImageIO
 
 /// Bakes an instant-camera film look into a captured photo at capture time, so the
 /// developed reveal already carries the aesthetic with no view-time processing.
@@ -14,6 +15,20 @@ enum InstantFilmProcessor {
         await Task.detached(priority: .userInitiated) {
             processSync(data, stock: stock)
         }.value
+    }
+
+    /// A small JPEG thumbnail (longest edge ~`maxPixel` × 2, for retina grids) of an already
+    /// processed photo — uploaded alongside the full image so grids/feeds download ~30KB, not MBs.
+    static func thumbnail(from data: Data, maxPixel: CGFloat = 400) -> Data? {
+        let srcOptions = [kCGImageSourceShouldCache: false] as CFDictionary
+        guard let source = CGImageSourceCreateWithData(data as CFData, srcOptions) else { return nil }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixel * 2
+        ]
+        guard let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
+        return UIImage(cgImage: cg).jpegData(compressionQuality: 0.8)
     }
 
     private static func processSync(_ data: Data, stock: FilmStock) -> Data? {

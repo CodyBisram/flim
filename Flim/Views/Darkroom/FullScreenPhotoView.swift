@@ -194,12 +194,11 @@ struct FullScreenPhotoView: View {
             if isOwnPhoto, let uid = auth.currentUser?.id {
                 shared = await feed.hasPosted(photoId: photo.id, userId: uid)
             }
-            // Use the URL the grid already resolved; otherwise mint one so the photo always
-            // loads (the grid resolves URLs lazily now, so the tapped one may not be ready).
-            if let url {
-                resolvedURL = url
-            } else {
-                resolvedURL = try? await photoService.signedURL(for: photo.storagePath)
+            // Show the grid's (cached, instant) thumbnail first, then upgrade to the full-res
+            // image so full-screen is never a downscaled thumb.
+            if let url { resolvedURL = url }
+            if let full = try? await photoService.signedURL(for: photo.storagePath) {
+                resolvedURL = full
             }
         }
         .confirmationDialog("Delete this photo?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {

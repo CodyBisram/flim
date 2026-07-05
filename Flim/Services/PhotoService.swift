@@ -59,11 +59,23 @@ final class PhotoService {
                 .from("photos")
                 .upload(path, data: imageData, options: FileOptions(contentType: "image/jpeg"))
 
+            // Upload a small thumbnail alongside it (best-effort — grids/feeds load this instead
+            // of the multi-MB original). Same folder, so the owner's read policy already covers it.
+            var thumbPath: String? = nil
+            if let thumbData = InstantFilmProcessor.thumbnail(from: imageData) {
+                let tPath = "\(userId.uuidString.lowercased())/\(photoId.uuidString.lowercased())_thumb.jpg"
+                if (try? await supabase.storage.from("photos")
+                    .upload(tPath, data: thumbData, options: FileOptions(contentType: "image/jpeg"))) != nil {
+                    thumbPath = tPath
+                }
+            }
+
             let payload = InsertPhoto(
                 id: photoId,
                 userId: userId,
                 rollId: rollId,
                 storagePath: path,
+                thumbPath: thumbPath,
                 developsAt: developsAt,
                 // Roll shots skip the deck; personal instants start unsorted for triage.
                 isSorted: rollId != nil
@@ -151,7 +163,7 @@ final class PhotoService {
     /// then drops it from the in-memory list. Best-effort on storage (the row is the
     /// source of truth the grid reads from).
     func deletePhoto(_ photo: Photo) async {
-        _ = try? await supabase.storage.from("photos").remove(paths: [photo.storagePath])
+        _ = try? await supabase.storage.from("photos").remove(paths: [photo.storagePath, photo.thumbPath].compactMap { $0 })
         do {
             try await supabase
                 .from("photos")
@@ -169,7 +181,7 @@ final class PhotoService {
     func deletePhotos(_ toDelete: [Photo]) async {
         guard !toDelete.isEmpty else { return }
         let ids = toDelete.map(\.id.uuidString)
-        _ = try? await supabase.storage.from("photos").remove(paths: toDelete.map(\.storagePath))
+        _ = try? await supabase.storage.from("photos").remove(paths: toDelete.flatMap { [$0.storagePath, $0.thumbPath].compactMap { $0 } })
         do {
             try await supabase.from("photos").delete().in("id", values: ids).execute()
             await MainActor.run { photos.removeAll { ids.contains($0.id.uuidString) } }
