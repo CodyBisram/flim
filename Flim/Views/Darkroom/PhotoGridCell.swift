@@ -183,6 +183,7 @@ struct CachedImage<Content: View, Placeholder: View>: View {
 
     @State private var uiImage: UIImage?
     @State private var shown = false
+    @State private var failed = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.displayScale) private var displayScale
 
@@ -190,6 +191,16 @@ struct CachedImage<Content: View, Placeholder: View>: View {
         ZStack {
             if let uiImage {
                 content(Image(uiImage: uiImage)).opacity(shown ? 1 : 0)
+            } else if failed {
+                // Graceful failure instead of shimmering forever — tap to retry.
+                Rectangle().fill(Color.white.opacity(0.04))
+                    .overlay {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.5))
+                    }
+                    .contentShape(Rectangle())
+                    .onTapGesture { Task { await load() } }
             } else {
                 placeholder()
             }
@@ -199,6 +210,7 @@ struct CachedImage<Content: View, Placeholder: View>: View {
     }
 
     private func load() async {
+        failed = false
         // Try the caches by stable key first — this can hit before any URL is resolved.
         if let key = cacheKey {
             let memKey = "\(key)|\(Int(maxPixel))" as NSString
@@ -215,7 +227,10 @@ struct CachedImage<Content: View, Placeholder: View>: View {
         }
         uiImage = nil
         shown = false
-        guard let image = await ImageLoader.fetch(url: url, maxPixel: maxPixel, scale: displayScale, cacheKey: cacheKey) else { return }
+        guard let image = await ImageLoader.fetch(url: url, maxPixel: maxPixel, scale: displayScale, cacheKey: cacheKey) else {
+            failed = true   // network/decode failed → show retry, not endless shimmer
+            return
+        }
         uiImage = image
         if reduceMotion {
             shown = true
