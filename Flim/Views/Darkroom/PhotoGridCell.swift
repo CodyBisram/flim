@@ -175,32 +175,16 @@ struct CachedImage<Content: View, Placeholder: View>: View {
 
     private func load() async {
         guard let url else { uiImage = nil; return }
-        let sizeKey = Int(maxPixel)
-        let memKey = "\(url.absoluteString)|\(sizeKey)" as NSString
-        // Disk key ignores the URL's query token so it survives new signed URLs / app launches.
-        let diskKey = "\(url.path)|\(sizeKey)"
-
+        // Synchronous memory hit → instant, no flash.
+        let memKey = "\(url.absoluteString)|\(Int(maxPixel))" as NSString
         if let cached = ImageCache.shared.object(forKey: memKey) {
             uiImage = cached
-            shown = true                     // memory hit → instant
-            return
-        }
-
-        // Persistent disk hit → near-instant, no network.
-        if let disk = await DiskImageCache.load(diskKey) {
-            ImageCache.shared.setObject(disk, forKey: memKey)
-            uiImage = disk
             shown = true
             return
         }
-
         uiImage = nil
         shown = false
-        guard let (data, _) = try? await URLSession.shared.data(from: url) else { return }
-        // Downsample off the main actor; ImageIO decodes straight to the target size.
-        guard let image = await Self.downsample(data: data, maxPixel: maxPixel, scale: displayScale) else { return }
-        ImageCache.shared.setObject(image, forKey: memKey)
-        DiskImageCache.save(image, key: diskKey)
+        guard let image = await ImageLoader.fetch(url: url, maxPixel: maxPixel, scale: displayScale) else { return }
         uiImage = image
         if reduceMotion {
             shown = true
@@ -208,9 +192,39 @@ struct CachedImage<Content: View, Placeholder: View>: View {
             withAnimation(.easeIn(duration: 0.3)) { shown = true }   // first load → gentle fade
         }
     }
+}
 
-    /// Decodes `data` directly to a thumbnail no larger than `maxPixel` (× scale) on its
-    /// longest edge — fast and low-memory, without ever fully decoding the original.
+// MARK: - Image loading (shared by CachedImage + prefetch)
+
+/// Loads a downsampled image through memory → disk → network, caching in both. Shared so a
+/// prefetcher can warm the cache for cells that aren't visible yet.
+enum ImageLoader {
+    static func fetch(url: URL, maxPixel: CGFloat, scale: CGFloat) async -> UIImage? {
+        let memKey = "\(url.absoluteString)|\(Int(maxPixel))" as NSString
+        if let cached = ImageCache.shared.object(forKey: memKey) { return cached }
+
+        let diskKey = "\(url.path)|\(Int(maxPixel))"   // ignores token → survives new URLs/launches
+        if let disk = await DiskImageCache.load(diskKey) {
+            ImageCache.shared.setObject(disk, forKey: memKey)
+            return disk
+        }
+
+        guard let (data, _) = try? await URLSession.shared.data(from: url) else { return nil }
+        guard let image = await downsample(data: data, maxPixel: maxPixel, scale: scale) else { return nil }
+        ImageCache.shared.setObject(image, forKey: memKey)
+        DiskImageCache.save(image, key: diskKey)
+        return image
+    }
+
+    /// Warm the cache for upcoming cells (fire-and-forget, low priority).
+    static func prefetch(_ urls: [URL], maxPixel: CGFloat, scale: CGFloat) {
+        for url in urls {
+            Task.detached(priority: .utility) { _ = await fetch(url: url, maxPixel: maxPixel, scale: scale) }
+        }
+    }
+
+    /// Decodes `data` directly to a thumbnail no larger than `maxPixel` (× scale) on its longest
+    /// edge — fast and low-memory, without ever fully decoding the original.
     private static func downsample(data: Data, maxPixel: CGFloat, scale: CGFloat) async -> UIImage? {
         await Task.detached(priority: .userInitiated) {
             let srcOptions = [kCGImageSourceShouldCache: false] as CFDictionary
@@ -235,17 +249,27 @@ struct CachedImage<Content: View, Placeholder: View>: View {
 
 struct GrainOverlay: View {
     var body: some View {
-        Canvas { context, size in
-            let count = Int(size.width * size.height / 80)
+        // A single pre-rendered noise tile, reused everywhere — vs a Canvas that re-drew
+        // hundreds of random dots on every render (costly while scrolling a grid).
+        Image(uiImage: Self.tile)
+            .resizable(resizingMode: .tile)
+            .allowsHitTesting(false)
+            .blendMode(.screen)
+    }
+
+    private static let tile: UIImage = {
+        let side: CGFloat = 160
+        let format = UIGraphicsImageRendererFormat()
+        format.opaque = false
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: side, height: side), format: format)
+        return renderer.image { ctx in
+            let count = Int(side * side / 80)
             for _ in 0..<count {
-                let x = CGFloat.random(in: 0...size.width)
-                let y = CGFloat.random(in: 0...size.height)
-                let dot = CGRect(x: x, y: y, width: 1.2, height: 1.2)
-                let alpha = Double.random(in: 0.03...0.12)
-                context.fill(Path(dot), with: .color(.white.opacity(alpha)))
+                let x = CGFloat.random(in: 0...side)
+                let y = CGFloat.random(in: 0...side)
+                ctx.cgContext.setFillColor(UIColor.white.withAlphaComponent(CGFloat.random(in: 0.03...0.12)).cgColor)
+                ctx.cgContext.fill(CGRect(x: x, y: y, width: 1.2, height: 1.2))
             }
         }
-        .allowsHitTesting(false)
-        .blendMode(.screen)
-    }
+    }()
 }

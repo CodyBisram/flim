@@ -4,6 +4,7 @@ struct FeedView: View {
     @Environment(AuthService.self) private var auth
     @Environment(FeedService.self) private var feed
     @Environment(PhotoService.self) private var photos
+    @Environment(\.displayScale) private var displayScale
 
     @State private var showDiscover = false
     @State private var showActivity = false
@@ -42,9 +43,12 @@ struct FeedView: View {
                                 ForEach(feed.feed) { item in
                                     FeedPostCard(item: item)
                                         .onAppear {
-                                            // Near the bottom → load the next page.
+                                            // Near the bottom → load the next page + warm its images.
                                             if item.id == feed.feed.last?.id, let uid = auth.currentUser?.id {
-                                                Task { await feed.loadMoreFeed(currentUserId: uid) }
+                                                Task {
+                                                    await feed.loadMoreFeed(currentUserId: uid)
+                                                    await prefetchFeedImages()
+                                                }
                                             }
                                         }
                                 }
@@ -241,8 +245,18 @@ struct FeedView: View {
         didLoad = true
         hasNewPosts = false
         if let path = auth.currentUser?.avatarPath { myAvatarURL = await feed.signedURL(for: path) }
-        let activity = await feed.fetchActivity(userId: uid)
-        unreadActivity = activity.filter { $0.date.timeIntervalSince1970 > lastActivitySeen }.count
+        unreadActivity = await feed.unreadActivityCount(
+            userId: uid, since: Date(timeIntervalSince1970: lastActivitySeen))
+        await prefetchFeedImages()
+    }
+
+    /// Warm the image cache for the loaded posts so they appear instantly as you scroll.
+    private func prefetchFeedImages() async {
+        var urls: [URL] = []
+        for item in feed.feed {
+            if let u = await feed.signedURL(for: item.post.displayPath) { urls.append(u) }
+        }
+        ImageLoader.prefetch(urls, maxPixel: 1200, scale: displayScale)
     }
 
     private func checkNewPosts() async {

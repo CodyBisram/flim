@@ -436,6 +436,30 @@ final class FeedService {
 
     /// Recent things others did involving you: reactions + comments on your posts, and new
     /// followers. Merged and sorted newest-first.
+    /// A lightweight unread count for the Activity bell — fetches only `created_at` of activity
+    /// since `since` (no bodies, no profile lookups), unlike the full `fetchActivity`.
+    func unreadActivityCount(userId: UUID, since: Date) async -> Int {
+        struct Row: Decodable { let created_at: Date }
+        let sinceStr = since.ISO8601Format()
+        var total = 0
+
+        let postIds = await fetchUserPosts(userId: userId).map(\.id.uuidString)
+        if !postIds.isEmpty {
+            let reactions: [Row] = (try? await supabase.from("post_reactions").select("created_at")
+                .in("post_id", values: postIds).neq("user_id", value: userId.uuidString)
+                .gt("created_at", value: sinceStr).execute().value) ?? []
+            let comments: [Row] = (try? await supabase.from("post_comments").select("created_at")
+                .in("post_id", values: postIds).neq("user_id", value: userId.uuidString)
+                .gt("created_at", value: sinceStr).execute().value) ?? []
+            total += reactions.count + comments.count
+        }
+        let follows: [Row] = (try? await supabase.from("follows").select("created_at")
+            .eq("following_id", value: userId.uuidString)
+            .gt("created_at", value: sinceStr).execute().value) ?? []
+        total += follows.count
+        return total
+    }
+
     func fetchActivity(userId: UUID) async -> [ActivityItem] {
         struct Raw { let kind: ActivityItem.Kind; let actorId: UUID; let date: Date; let postId: UUID? }
         var raws: [Raw] = []
