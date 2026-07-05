@@ -50,6 +50,9 @@ CREATE TABLE IF NOT EXISTS public.photos (
     develops_at  TIMESTAMPTZ NOT NULL,
     is_developed BOOLEAN DEFAULT FALSE
 );
+-- Small thumbnail uploaded alongside the full image (grids/feeds load ~30KB not MBs). Added
+-- here — before the storage policies that reference it — so a fresh run has the column ready.
+ALTER TABLE public.photos ADD COLUMN IF NOT EXISTS thumb_path TEXT;
 
 -- ============================================================
 -- Invite gate: is this email allowed to sign in?
@@ -375,9 +378,7 @@ CREATE POLICY "photo_reports: can file own"
 -- A caption on your own photo (owner-editable via the existing "photos: can update own").
 ALTER TABLE public.photos ADD COLUMN IF NOT EXISTS caption TEXT;
 
--- Small thumbnail uploaded alongside the full image, so grids/feeds download ~30KB not MBs.
--- Nil for photos taken before thumbnails existed (client falls back to the full image).
-ALTER TABLE public.photos ADD COLUMN IF NOT EXISTS thumb_path TEXT;
+-- (photos.thumb_path is added right under the photos table, above the storage policies.)
 
 -- Sort/triage state: new personal "instants" land unsorted (is_sorted = false) and are
 -- swiped into the Darkroom (archive) or Feed (publish) via the sort deck. Roll shots skip
