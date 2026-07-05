@@ -4,6 +4,7 @@ struct DarkroomView: View {
     @Environment(AuthService.self) private var auth
     @Environment(PhotoService.self) private var photoService
     @Environment(RollService.self) private var rolls
+    @Environment(\.displayScale) private var displayScale
 
     @State private var vm = DarkroomViewModel()
     @State private var selectedPhoto: Photo?
@@ -344,6 +345,8 @@ struct DarkroomView: View {
     private func reload() async {
         guard let userId = auth.currentUser?.id else { return }
         await vm.load(photoService: photoService, userId: userId)
+        // Warm the grid's thumbnails so cells appear instantly as you scroll.
+        ImageLoader.prefetch(Array(vm.signedURLCache.values), maxPixel: 400, scale: displayScale)
         if rolls.rolls.isEmpty { try? await rolls.fetchRolls(for: userId) }   // for roll labels
         unsortedCount = await photoService.fetchUnsorted(userId: userId).count
         checkForReveal()
