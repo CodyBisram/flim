@@ -19,13 +19,14 @@ struct ReactionBar: View {
         recentsRaw.split(separator: ",").map(String.init)
     }
 
-    /// Reacted emojis first (most-used → least), then any not-yet-used defaults.
+    /// A STABLE order: the default set always in the same positions, then any other emoji people
+    /// used, appended in a deterministic order. Tapping toggles a chip in place — it never jumps
+    /// to the front, which was disorienting.
     private var chipEmojis: [String] {
-        let reacted = counts.filter { $0.value > 0 }
-            .sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }
-            .map(\.key)
-        let extraDefaults = defaults.filter { (counts[$0] ?? 0) == 0 }
-        return reacted + extraDefaults
+        let extra = counts.keys
+            .filter { !defaults.contains($0) && (counts[$0] ?? 0) > 0 }
+            .sorted()
+        return defaults + extra
     }
 
     var body: some View {

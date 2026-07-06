@@ -86,34 +86,40 @@ struct DarkroomView: View {
                     .foregroundStyle(.white)
                 }
             }
+            #if DEBUG
             ToolbarItem(placement: .topBarTrailing) {
-                HStack(spacing: 12) {
-                    #if DEBUG
-                    Button {
-                        Task {
-                            if let uid = auth.currentUser?.id {
-                                await photoService.seedUnsortedPhotos(userId: uid)
-                                await reload()
-                            }
+                Button {
+                    Task {
+                        if let uid = auth.currentUser?.id {
+                            await photoService.seedUnsortedPhotos(userId: uid)
+                            await reload()
                         }
-                    } label: {
-                        Image(systemName: "ladybug").foregroundStyle(FlimTheme.textTertiary)
                     }
-                    .accessibilityLabel("Seed unsorted (DEBUG)")
-                    #endif
-                    // Only surface the "to sort" shortcut when there's actually something to sort.
-                    if unsortedCount > 0 {
-                        Button { showSortDeck = true } label: {
-                            HStack(spacing: 4) {
-                                Image(systemName: "square.stack.3d.up.fill").font(.system(size: 11))
-                                Text("\(unsortedCount)").font(.system(size: 13, weight: .semibold))
-                            }
-                            .foregroundStyle(.black)
-                            .padding(.horizontal, 10).padding(.vertical, 5)
-                            .background(FlimTheme.accent, in: Capsule())
+                } label: {
+                    Image(systemName: "ladybug").foregroundStyle(FlimTheme.textTertiary)
+                }
+                .accessibilityLabel("Seed unsorted (DEBUG)")
+            }
+            #endif
+            // Something to sort → the shortcut pill; otherwise a glanceable count (no empty button).
+            if unsortedCount > 0 {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { showSortDeck = true } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "square.stack.3d.up.fill").font(.system(size: 11))
+                            Text("\(unsortedCount)").font(.system(size: 13, weight: .semibold))
                         }
-                        .accessibilityLabel("\(unsortedCount) to sort")
+                        .foregroundStyle(.black)
+                        .padding(.horizontal, 10).padding(.vertical, 5)
+                        .background(FlimTheme.accent, in: Capsule())
                     }
+                    .accessibilityLabel("\(unsortedCount) to sort")
+                }
+            } else if !vm.developedPhotos.isEmpty {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Text("\(vm.developedPhotos.count) shot\(vm.developedPhotos.count == 1 ? "" : "s")")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(FlimTheme.textTertiary)
                 }
             }
         }
