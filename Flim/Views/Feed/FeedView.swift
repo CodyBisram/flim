@@ -288,6 +288,8 @@ struct FeedPostCard: View {
     @State private var showDeleteConfirm = false
     @State private var showReportConfirm = false
     @State private var showBlockConfirm = false
+    @State private var showEditCaption = false
+    @State private var captionDraft = ""
     @State private var reportedToast = false
     @State private var shareItem: ShareImage?
     @FocusState private var commentFocused: Bool
@@ -321,6 +323,7 @@ struct FeedPostCard: View {
                 Spacer()
                 Menu {
                     if isOwn {
+                        Button { captionDraft = post.caption ?? ""; showEditCaption = true } label: { Label("Edit caption", systemImage: "pencil") }
                         Button { saveToCameraRoll() } label: { Label("Save to Camera Roll", systemImage: "square.and.arrow.down") }
                         Button(role: .destructive) { showDeleteConfirm = true } label: { Label("Delete post", systemImage: "trash") }
                     } else {
@@ -434,6 +437,13 @@ struct FeedPostCard: View {
         }
         .navigationDestination(item: $route) { UserPageView(userId: $0.id) }
         .sheet(item: $shareItem) { ActivityView(items: [$0.image]) }
+        .sheet(isPresented: $showEditCaption) {
+            EditCaptionSheet(caption: $captionDraft) {
+                guard let uid = auth.currentUser?.id else { return }
+                let trimmed = captionDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+                Task { await feed.updatePostCaption(postId: post.id, caption: trimmed.isEmpty ? nil : trimmed, userId: uid) }
+            }
+        }
         .overlay(alignment: .top) {
             if reportedToast {
                 Label("Reported — thanks", systemImage: "checkmark.circle.fill")
@@ -522,6 +532,48 @@ struct FeedPostCard: View {
         commentFocused = false
         Haptics.tap()
         Task { await feed.commentOnPost(post.id, body: body, userId: uid) }
+    }
+}
+
+// MARK: - Edit caption
+
+private struct EditCaptionSheet: View {
+    @Binding var caption: String
+    let onSave: () -> Void
+    @Environment(\.dismiss) private var dismiss
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                FlimTheme.bg.ignoresSafeArea()
+                VStack {
+                    TextField("Add a caption…", text: $caption, axis: .vertical)
+                        .lineLimit(1...5)
+                        .font(.system(size: 16)).foregroundStyle(.white).tint(FlimTheme.accent)
+                        .focused($focused)
+                        .padding(14)
+                        .background(FlimTheme.bgElevated, in: RoundedRectangle(cornerRadius: 12))
+                        .padding(20)
+                    Spacer()
+                }
+            }
+            .navigationBarTitleDisplayMode(.inline)
+            .flimInlineTitle("Edit Caption")
+            .toolbarColorScheme(.dark, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Cancel") { dismiss() }.foregroundStyle(.white)
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Save") { onSave(); dismiss() }
+                        .foregroundStyle(FlimTheme.accent).fontWeight(.semibold)
+                }
+            }
+            .onAppear { focused = true }
+        }
+        .presentationDetents([.height(220)])
+        .presentationBackground(FlimTheme.bg)
     }
 }
 

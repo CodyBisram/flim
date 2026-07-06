@@ -334,6 +334,19 @@ final class FeedService {
         feed.removeAll { $0.post.id == id }
     }
 
+    /// Edit a post's caption (owner only, enforced by the "posts: update own" policy). Updates the
+    /// local feed so the card reflects it immediately.
+    func updatePostCaption(postId: UUID, caption: String?, userId: UUID) async {
+        struct U: Encodable { let caption: String? }
+        _ = try? await supabase.from("posts").update(U(caption: caption))
+            .eq("id", value: postId.uuidString).eq("user_id", value: userId.uuidString).execute()
+        if let i = feed.firstIndex(where: { $0.post.id == postId }) {
+            var p = feed[i].post
+            p.caption = caption
+            feed[i] = FeedItem(post: p, author: feed[i].author)
+        }
+    }
+
     /// Whether the user has already shared this photo (to toggle the share affordance).
     func hasPosted(photoId: UUID, userId: UUID) async -> Bool {
         struct Row: Decodable { let id: UUID }
