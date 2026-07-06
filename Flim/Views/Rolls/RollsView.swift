@@ -10,6 +10,7 @@ struct RollsView: View {
     @State private var coverURLs: [UUID: URL] = [:]
     @State private var loadError: String?
     @State private var rollToLeave: Roll?
+    @State private var mutedRolls: Set<UUID> = []
 
     private func isCreator(_ roll: Roll) -> Bool { auth.currentUser?.id == roll.createdBy }
 
@@ -82,6 +83,7 @@ struct RollsView: View {
             try await rolls.fetchRolls(for: userId)
             loadError = nil
             await resolveCovers()
+            mutedRolls = await photos.fetchMutedRolls(userId: userId)
         } catch {
             loadError = error.localizedDescription
         }
@@ -103,7 +105,8 @@ struct RollsView: View {
                     NavigationLink(value: roll) {
                         RollRow(roll: roll,
                                 memberCount: rolls.memberCounts[roll.id],
-                                coverURL: coverURLs[roll.id])
+                                coverURL: coverURLs[roll.id],
+                                isMuted: mutedRolls.contains(roll.id))
                     }
                     .listRowBackground(Color(white: 0.08))
                     .listRowSeparatorTint(Color(white: 0.15))
@@ -165,15 +168,24 @@ private struct RollRow: View {
     let roll: Roll
     var memberCount: Int?
     var coverURL: URL?
+    var isMuted: Bool = false
 
     var body: some View {
         HStack(spacing: 14) {
             RollCover(roll: roll, coverURL: coverURL)
 
             VStack(alignment: .leading, spacing: 6) {
-                Text(roll.name)
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(.white)
+                HStack(spacing: 6) {
+                    Text(roll.name)
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(.white)
+                    if isMuted {
+                        Image(systemName: "bell.slash.fill")
+                            .font(.system(size: 11))
+                            .foregroundStyle(FlimTheme.textTertiary)
+                            .accessibilityLabel("Muted")
+                    }
+                }
 
                 HStack(spacing: 8) {
                     if let memberCount {

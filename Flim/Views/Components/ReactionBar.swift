@@ -12,6 +12,9 @@ struct ReactionBar: View {
     /// Emojis the current user reacted with (highlighted).
     let mine: Set<String>
     let onReact: (String) -> Void
+    /// Show the one-time "react with anything" tip on the + button. Enabled on a single stable
+    /// instance only (the first feed card) so TipKit doesn't fight across every scrolling card.
+    var showTip: Bool = false
 
     @State private var expanded = false
     @State private var displayOrder: [String] = []
@@ -90,9 +93,18 @@ struct ReactionBar: View {
         return (recents + PostEmoji.palette).filter { seen.insert($0).inserted }
     }
 
-    private var plusButton: some View {
+    @ViewBuilder private var plusButton: some View {
+        if showTip {
+            plusButtonBody.popoverTip(ReactTip())
+        } else {
+            plusButtonBody
+        }
+    }
+
+    private var plusButtonBody: some View {
         Button {
             withAnimation(.snappy(duration: 0.25)) { expanded.toggle() }
+            if expanded { ReactTip().invalidate(reason: .actionPerformed) }   // opened it → dismiss the tip
         } label: {
             Image(systemName: expanded ? "xmark" : "plus")
                 .font(.system(size: 13, weight: .semibold))
@@ -101,7 +113,6 @@ struct ReactionBar: View {
                 .background(Color.white.opacity(0.12), in: Capsule())
         }
         .accessibilityLabel(expanded ? "Close emoji picker" : "More emoji")
-        .popoverTip(ReactTip())
     }
 
     private func chip(_ emoji: String) -> some View {

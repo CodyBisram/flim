@@ -43,7 +43,7 @@ struct FeedView: View {
                             LazyVStack(spacing: 20) {
                                 Color.clear.frame(height: 0).id("top")
                                 ForEach(feed.feed) { item in
-                                    FeedPostCard(item: item)
+                                    FeedPostCard(item: item, showReactTip: item.id == feed.feed.first?.id)
                                         .scrollTransition { content, phase in
                                             content
                                                 .opacity(phase.isIdentity ? 1 : 0.55)
@@ -286,6 +286,7 @@ struct FeedView: View {
 struct FeedPostCard: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let item: FeedItem
+    var showReactTip: Bool = false
     @Environment(AuthService.self) private var auth
     @Environment(FeedService.self) private var feed
 
@@ -394,7 +395,8 @@ struct FeedPostCard: View {
             ReactionBar(
                 defaults: PostEmoji.all,
                 counts: Dictionary(grouping: reactions, by: \.emoji).mapValues(\.count),
-                mine: Set(reactions.filter { $0.userId == auth.currentUser?.id }.map(\.emoji))
+                mine: Set(reactions.filter { $0.userId == auth.currentUser?.id }.map(\.emoji)),
+                showTip: showReactTip
             ) { toggleReaction($0) }
 
             // Top comment preview → @handle taps to their page, the rest opens the photo.

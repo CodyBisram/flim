@@ -31,13 +31,12 @@ struct PostDetailView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     authorRow
 
-                    Color.clear
-                        .aspectRatio(1, contentMode: .fit)
-                        .overlay {
-                            if let url {
-                                CachedImage(url: url, maxPixel: 1400) { $0.resizable().scaledToFill() } placeholder: { ShimmerPlaceholder(cornerRadius: 14) }
-                            } else { ShimmerPlaceholder(cornerRadius: 14) }
-                        }
+                    Group {
+                        if let url {
+                            CachedImage(url: url, maxPixel: 1400) { $0.resizable().scaledToFit() } placeholder: { ShimmerPlaceholder(cornerRadius: 14).aspectRatio(3.0 / 4.0, contentMode: .fit) }
+                        } else { ShimmerPlaceholder(cornerRadius: 14).aspectRatio(3.0 / 4.0, contentMode: .fit) }
+                    }
+                        .frame(maxWidth: .infinity)
                         .overlay { GrainOverlay().opacity(0.5) }
                         .clipShape(RoundedRectangle(cornerRadius: 14))
                         .contentShape(Rectangle())

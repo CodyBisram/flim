@@ -90,6 +90,7 @@ struct DarkroomView: View {
                     Button(isSelecting ? "Cancel" : "Select") {
                         isSelecting.toggle()
                         selectedIDs = []
+                        SelectTip().invalidate(reason: .actionPerformed)   // used it → dismiss the tip
                     }
                     .foregroundStyle(.white)
                     .popoverTip(SelectTip())
