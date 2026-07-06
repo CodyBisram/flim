@@ -120,6 +120,8 @@ struct DarkroomView: View {
                     Text("\(vm.developedPhotos.count) shot\(vm.developedPhotos.count == 1 ? "" : "s")")
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(FlimTheme.textTertiary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
                 }
             }
         }
