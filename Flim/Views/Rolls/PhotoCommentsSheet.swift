@@ -8,6 +8,7 @@ struct PhotoCommentsSheet: View {
 
     @Environment(AuthService.self) private var auth
     @Environment(PhotoService.self) private var photoService
+    @Environment(FeedService.self) private var feed
     @Environment(\.dismiss) private var dismiss
 
     @State private var comments: [PhotoComment] = []
@@ -74,26 +75,35 @@ struct PhotoCommentsSheet: View {
                         }
                     }
                 }
-                Text(comment.body).font(.system(size: 14)).foregroundStyle(FlimTheme.textSecondary)
+                MentionText(text: comment.body, font: .system(size: 14), color: FlimTheme.textSecondary) { openMention($0) }
             }
             Spacer()
         }
     }
 
+    private func openMention(_ username: String) {
+        Task { if let p = await feed.fetchProfile(username: username) { route = ProfileRoute(id: p.id) } }
+    }
+
     private var composer: some View {
-        HStack(spacing: 10) {
-            TextField("Add a comment…", text: $draft, axis: .vertical)
-                .lineLimit(1...4)
-                .font(.system(size: 15)).foregroundStyle(.white).tint(FlimTheme.accent)
-                .focused($focused)
-                .padding(.horizontal, 14).padding(.vertical, 10)
-                .background(FlimTheme.bgElevated, in: Capsule())
-            Button { send() } label: {
-                Image(systemName: "arrow.up.circle.fill")
-                    .font(.system(size: 30))
-                    .foregroundStyle(canSend ? FlimTheme.accent : FlimTheme.textTertiary)
+        VStack(spacing: 8) {
+            if focused {
+                MentionSuggestionBar(text: $draft).clipShape(RoundedRectangle(cornerRadius: 12))
             }
-            .disabled(!canSend)
+            HStack(spacing: 10) {
+                TextField("Add a comment…", text: $draft, axis: .vertical)
+                    .lineLimit(1...4)
+                    .font(.system(size: 15)).foregroundStyle(.white).tint(FlimTheme.accent)
+                    .focused($focused)
+                    .padding(.horizontal, 14).padding(.vertical, 10)
+                    .background(FlimTheme.bgElevated, in: Capsule())
+                Button { send() } label: {
+                    Image(systemName: "arrow.up.circle.fill")
+                        .font(.system(size: 30))
+                        .foregroundStyle(canSend ? FlimTheme.accent : FlimTheme.textTertiary)
+                }
+                .disabled(!canSend)
+            }
         }
         .padding(.horizontal, 16).padding(.vertical, 10)
         .background(FlimTheme.bg)

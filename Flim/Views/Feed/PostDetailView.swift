@@ -46,7 +46,7 @@ struct PostDetailView: View {
                         .onTapGesture { if url != nil { showViewer = true } }
 
                     if let caption = post.caption, !caption.isEmpty {
-                        Text(caption).font(.system(size: 15)).foregroundStyle(.white)
+                        MentionText(text: caption, font: .system(size: 15), color: .white) { openMention($0) }
                     }
 
                     reactionBar
@@ -167,7 +167,7 @@ struct PostDetailView: View {
                                 }
                             }
                         }
-                        Text(info.comment.body).font(.system(size: 14)).foregroundStyle(FlimTheme.textSecondary)
+                        MentionText(text: info.comment.body, font: .system(size: 14), color: FlimTheme.textSecondary) { openMention($0) }
                     }
                     Spacer()
                     // Heart the comment
@@ -188,27 +188,36 @@ struct PostDetailView: View {
     }
 
     private var commentInput: some View {
-        HStack(spacing: 10) {
-            TextField("Add a comment…", text: $draft, axis: .vertical)
-                .lineLimit(1...3)
-                .font(.system(size: 15))
-                .foregroundStyle(.white)
-                .tint(FlimTheme.accent)
-                .focused($commentFocused)
-                .padding(.horizontal, 14).padding(.vertical, 10)
-                .background(FlimTheme.bgElevated, in: Capsule())
-            Button { send() } label: {
-                Image(systemName: "arrow.up.circle.fill")
-                    .font(.system(size: 30))
-                    .foregroundStyle(canSend ? FlimTheme.accent : FlimTheme.textTertiary)
+        VStack(spacing: 8) {
+            if commentFocused {
+                MentionSuggestionBar(text: $draft).clipShape(RoundedRectangle(cornerRadius: 12))
             }
-            .disabled(!canSend || sending)
+            HStack(spacing: 10) {
+                TextField("Add a comment…", text: $draft, axis: .vertical)
+                    .lineLimit(1...3)
+                    .font(.system(size: 15))
+                    .foregroundStyle(.white)
+                    .tint(FlimTheme.accent)
+                    .focused($commentFocused)
+                    .padding(.horizontal, 14).padding(.vertical, 10)
+                    .background(FlimTheme.bgElevated, in: Capsule())
+                Button { send() } label: {
+                    Image(systemName: "arrow.up.circle.fill")
+                        .font(.system(size: 30))
+                        .foregroundStyle(canSend ? FlimTheme.accent : FlimTheme.textTertiary)
+                }
+                .disabled(!canSend || sending)
+            }
         }
         .padding(.horizontal, 16).padding(.vertical, 10)
         .background(.ultraThinMaterial)
     }
 
     private var canSend: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+
+    private func openMention(_ username: String) {
+        Task { if let p = await feed.fetchProfile(username: username) { route = ProfileRoute(id: p.id) } }
+    }
 
     private func load() async {
         url = await feed.signedURL(for: post.storagePath)

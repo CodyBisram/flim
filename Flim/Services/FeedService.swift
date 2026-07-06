@@ -98,6 +98,14 @@ final class FeedService {
         return list.first
     }
 
+    /// Look up a profile by username (case-insensitive) — used to resolve a tapped @mention.
+    func fetchProfile(username: String) async -> UserProfile? {
+        let list: [UserProfile] = (try? await supabase
+            .from("profiles").select().ilike("username", value: username).limit(1)
+            .execute().value) ?? []
+        return list.first
+    }
+
     func fetchProfiles(ids: [UUID]) async -> [UUID: UserProfile] {
         guard !ids.isEmpty else { return [:] }
         let list: [UserProfile] = (try? await supabase

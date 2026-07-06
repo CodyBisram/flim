@@ -484,6 +484,8 @@ CREATE TABLE IF NOT EXISTS public.posts (
 ALTER TABLE public.posts ENABLE ROW LEVEL SECURITY;
 -- Thumbnail denormalized from the photo (see photos.thumb_path), so the feed loads small.
 ALTER TABLE public.posts ADD COLUMN IF NOT EXISTS thumb_path TEXT;
+-- Marked once the push scanner has processed this post (tag + caption-mention notifications).
+ALTER TABLE public.posts ADD COLUMN IF NOT EXISTS push_sent BOOLEAN DEFAULT FALSE;
 
 DROP POLICY IF EXISTS "posts: readable by authenticated" ON public.posts;
 CREATE POLICY "posts: readable by authenticated"

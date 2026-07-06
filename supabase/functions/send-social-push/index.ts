@@ -100,6 +100,18 @@ async function tokensFor(userId: string): Promise<string[]> {
   return (data ?? []).map((t) => t.token);
 }
 
+// Distinct @usernames (lowercased) referenced in text.
+function mentionUsernames(text: string): string[] {
+  const matches = text.match(/@([A-Za-z0-9_.]+)/g) ?? [];
+  return [...new Set(matches.map((m) => m.slice(1).toLowerCase()))];
+}
+
+// Resolve a username to a user id (case-insensitive).
+async function idForUsername(username: string): Promise<string | null> {
+  const { data } = await supabase.from("profiles").select("id").ilike("username", username).limit(1).maybeSingle();
+  return data?.id ?? null;
+}
+
 Deno.serve(async () => {
   let sent = 0;
 
@@ -111,14 +123,62 @@ Deno.serve(async () => {
 
   for (const c of comments ?? []) {
     const ownerId = (c as { posts?: { user_id?: string } }).posts?.user_id;
-    if (ownerId && ownerId !== c.user_id) {
-      const name = await handle(c.user_id);
-      const preview = c.body.length > 90 ? c.body.slice(0, 87) + "…" : c.body;
+    const name = await handle(c.user_id);
+    const preview = c.body.length > 90 ? c.body.slice(0, 87) + "…" : c.body;
+    const notified = new Set<string>([c.user_id]);   // never notify yourself
+    if (ownerId && !notified.has(ownerId)) {
+      notified.add(ownerId);
       for (const token of await tokensFor(ownerId)) {
         if (await sendPush(token, `${name} commented`, preview)) sent++;
       }
     }
+    // @mentions in the comment → notify each mentioned person once.
+    for (const username of mentionUsernames(c.body)) {
+      const uid = await idForUsername(username);
+      if (uid && !notified.has(uid)) {
+        notified.add(uid);
+        for (const token of await tokensFor(uid)) {
+          if (await sendPush(token, `${name} mentioned you`, preview)) sent++;
+        }
+      }
+    }
     await supabase.from("post_comments").update({ push_sent: true }).eq("id", c.id);
+  }
+
+  // ---- New posts: notify people tagged in the photo + @mentioned in the caption ----
+  const { data: newPosts } = await supabase
+    .from("posts")
+    .select("id, user_id, caption")
+    .eq("push_sent", false);
+
+  for (const p of newPosts ?? []) {
+    const name = await handle(p.user_id);
+    const notified = new Set<string>([p.user_id]);
+    // Photo tags.
+    const { data: tagRows } = await supabase.from("post_tags").select("tagged_user_id").eq("post_id", p.id);
+    for (const t of tagRows ?? []) {
+      const uid = t.tagged_user_id as string;
+      if (!notified.has(uid)) {
+        notified.add(uid);
+        for (const token of await tokensFor(uid)) {
+          if (await sendPush(token, `${name} tagged you`, "in a photo")) sent++;
+        }
+      }
+    }
+    // Caption @mentions.
+    if (p.caption) {
+      const preview = p.caption.length > 90 ? p.caption.slice(0, 87) + "…" : p.caption;
+      for (const username of mentionUsernames(p.caption)) {
+        const uid = await idForUsername(username);
+        if (uid && !notified.has(uid)) {
+          notified.add(uid);
+          for (const token of await tokensFor(uid)) {
+            if (await sendPush(token, `${name} mentioned you`, preview)) sent++;
+          }
+        }
+      }
+    }
+    await supabase.from("posts").update({ push_sent: true }).eq("id", p.id);
   }
 
   // ---- Reactions: batch per (post, reactor) → one push listing their emoji ----
