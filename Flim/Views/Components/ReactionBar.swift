@@ -1,8 +1,8 @@
 import SwiftUI
 
-/// A reaction row, Lapse-style: the emojis people actually used float left (with counts) in a
-/// horizontal scroll that never clips, and a "+" opens a picker led by your recently-used
-/// emojis. Used on posts, roll photos, and the carousel.
+/// A reaction row: chips (with counts) in a horizontal scroll that never clips, and a "+" opens a
+/// picker of recents + a big palette + an "any emoji" keyboard entry. The order stays stable while
+/// you're looking (tapping never reshuffles it) and re-sorts reacted-to-front on the next appear.
 struct ReactionBar: View {
     /// A few default emojis offered up front when a photo has no reactions yet.
     var defaults: [String] = PostEmoji.all
@@ -13,50 +13,73 @@ struct ReactionBar: View {
     let onReact: (String) -> Void
 
     @State private var expanded = false
+    @State private var displayOrder: [String] = []
+    @State private var typed = ""
+    @FocusState private var keyboardFocused: Bool
     @AppStorage("recentEmojis") private var recentsRaw = ""
 
-    private var recents: [String] {
-        recentsRaw.split(separator: ",").map(String.init)
-    }
-
-    /// A STABLE order: the default set always in the same positions, then any other emoji people
-    /// used, appended in a deterministic order. Tapping toggles a chip in place — it never jumps
-    /// to the front, which was disorienting.
-    private var chipEmojis: [String] {
-        let extra = counts.keys
-            .filter { !defaults.contains($0) && (counts[$0] ?? 0) > 0 }
-            .sorted()
-        return defaults + extra
-    }
+    private var recents: [String] { recentsRaw.split(separator: ",").map(String.init) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
-                    ForEach(chipEmojis, id: \.self) { chip($0) }
+                    ForEach(displayOrder, id: \.self) { chip($0) }
                     plusButton
                 }
                 .padding(.trailing, 4)
             }
-
-            if expanded {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 4) {
-                        ForEach(pickerEmojis, id: \.self) { emoji in
-                            Button { pick(emoji) } label: {
-                                Text(emoji)
-                                    .font(.system(size: 26))
-                                    .padding(6)
-                                    .background(mine.contains(emoji) ? FlimTheme.accent.opacity(0.28) : .clear, in: Circle())
-                            }
-                        }
-                    }
-                    .padding(.horizontal, 4).padding(.vertical, 6)
-                }
-                .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 14))
-                .transition(.opacity.combined(with: .move(edge: .top)))
-            }
+            if expanded { picker }
         }
+        // Hidden field the system keyboard feeds — tap 🌐 to switch to emoji and pick ANYTHING.
+        .background(
+            TextField("", text: $typed)
+                .focused($keyboardFocused)
+                .frame(width: 1, height: 1)
+                .opacity(0.01)
+                .allowsHitTesting(false)
+        )
+        .onAppear { rebuildOrder() }
+        .onChange(of: typed) { _, new in
+            guard !new.isEmpty else { return }
+            if let emoji = new.first(where: Self.isEmoji) { react(String(emoji), fromPicker: true) }
+            typed = ""
+            keyboardFocused = false
+        }
+    }
+
+    /// Reacted emojis first (by count), then the remaining defaults. Recomputed on each appear — so
+    /// re-entering promotes what people reacted with, but it holds still while you're looking.
+    private func rebuildOrder() {
+        let reacted = counts.filter { $0.value > 0 }
+            .sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }
+            .map(\.key)
+        displayOrder = reacted + defaults.filter { !reacted.contains($0) }
+    }
+
+    private var picker: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 4) {
+                // Any emoji — opens the keyboard so you can pick literally anything.
+                Button { keyboardFocused = true } label: {
+                    Image(systemName: "keyboard")
+                        .font(.system(size: 18)).foregroundStyle(.white)
+                        .frame(width: 38, height: 38)
+                        .background(Color.white.opacity(0.14), in: Circle())
+                }
+                .accessibilityLabel("Pick any emoji")
+
+                ForEach(pickerEmojis, id: \.self) { emoji in
+                    Button { pick(emoji) } label: {
+                        Text(emoji).font(.system(size: 26)).padding(6)
+                            .background(mine.contains(emoji) ? FlimTheme.accent.opacity(0.28) : .clear, in: Circle())
+                    }
+                }
+            }
+            .padding(.horizontal, 4).padding(.vertical, 6)
+        }
+        .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 14))
+        .transition(.opacity.combined(with: .move(edge: .top)))
     }
 
     /// Recently-used first, then the rest of the palette (deduped).
@@ -81,7 +104,7 @@ struct ReactionBar: View {
     private func chip(_ emoji: String) -> some View {
         let count = counts[emoji] ?? 0
         let isMine = mine.contains(emoji)
-        return Button { onReact(emoji) } label: {
+        return Button { react(emoji) } label: {
             HStack(spacing: 4) {
                 Text(emoji).font(.system(size: 16))
                 if count > 0 {
@@ -99,14 +122,31 @@ struct ReactionBar: View {
     }
 
     private func pick(_ emoji: String) {
-        recordRecent(emoji)
+        react(emoji, fromPicker: true)
+    }
+
+    /// React, and make sure the emoji is visible in the row (appended if new) WITHOUT reshuffling
+    /// existing chips — the reacted-to-front re-sort only happens on the next appear.
+    private func react(_ emoji: String, fromPicker: Bool = false) {
+        if !displayOrder.contains(emoji) { displayOrder.append(emoji) }
+        if fromPicker {
+            recordRecent(emoji)
+            withAnimation(.snappy(duration: 0.25)) { expanded = false }
+        }
         onReact(emoji)
-        withAnimation(.snappy(duration: 0.25)) { expanded = false }
     }
 
     private func recordRecent(_ emoji: String) {
         var list = recents.filter { $0 != emoji }
         list.insert(emoji, at: 0)
-        recentsRaw = list.prefix(16).joined(separator: ",")
+        recentsRaw = list.prefix(24).joined(separator: ",")
+    }
+
+    /// True for real emoji graphemes (not typed letters/digits).
+    private static func isEmoji(_ char: Character) -> Bool {
+        if char.unicodeScalars.count > 1 {
+            return char.unicodeScalars.contains { $0.properties.isEmoji }
+        }
+        return char.unicodeScalars.first?.properties.isEmojiPresentation ?? false
     }
 }

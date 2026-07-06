@@ -110,6 +110,7 @@ struct RollCarouselView: View {
                     counts: Dictionary(grouping: reactions, by: \.emoji).mapValues(\.count),
                     mine: Set(reactions.filter { $0.userId == auth.currentUser?.id }.map(\.emoji))
                 ) { toggleReaction($0, on: photo) }
+                .id(photo.id)   // fresh reaction bar per photo as you swipe
                 .frame(maxWidth: .infinity)
             }
             .padding(.horizontal, 20).padding(.bottom, 40)
