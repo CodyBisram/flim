@@ -56,7 +56,7 @@ enum InstantFilmProcessor {
 
         let image = filtered(source, params: stock.params, extent: extent, grain: true)
         guard let cgImage = context.createCGImage(image, from: extent) else { return nil }
-        return UIImage(cgImage: cgImage).jpegData(compressionQuality: 0.80)
+        return UIImage(cgImage: cgImage).jpegData(compressionQuality: 0.85)
     }
 
     /// The film look as a pure CIImage → CIImage transform. Shared by capture (with grain) and
