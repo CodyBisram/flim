@@ -551,6 +551,33 @@ DROP POLICY IF EXISTS "post_reactions: remove own" ON public.post_reactions;
 CREATE POLICY "post_reactions: remove own"
     ON public.post_reactions FOR DELETE USING (auth.uid() = user_id);
 
+-- POST TAGS (people tagged on the photo, Instagram-style) -----
+CREATE TABLE IF NOT EXISTS public.post_tags (
+    id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    post_id        UUID NOT NULL REFERENCES public.posts(id) ON DELETE CASCADE,
+    tagged_user_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+    x              DOUBLE PRECISION NOT NULL,   -- 0..1 normalized position on the photo
+    y              DOUBLE PRECISION NOT NULL,
+    created_at     TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE (post_id, tagged_user_id)
+);
+ALTER TABLE public.post_tags ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "post_tags: readable" ON public.post_tags;
+CREATE POLICY "post_tags: readable"
+    ON public.post_tags FOR SELECT TO authenticated USING (true);
+-- Only the post's owner can add/remove tags on it.
+DROP POLICY IF EXISTS "post_tags: owner adds" ON public.post_tags;
+CREATE POLICY "post_tags: owner adds"
+    ON public.post_tags FOR INSERT WITH CHECK (
+        EXISTS (SELECT 1 FROM public.posts p WHERE p.id = post_id AND p.user_id = auth.uid())
+    );
+DROP POLICY IF EXISTS "post_tags: owner removes" ON public.post_tags;
+CREATE POLICY "post_tags: owner removes"
+    ON public.post_tags FOR DELETE USING (
+        EXISTS (SELECT 1 FROM public.posts p WHERE p.id = post_id AND p.user_id = auth.uid())
+    );
+
 -- POST COMMENTS ----------------------------------------------
 CREATE TABLE IF NOT EXISTS public.post_comments (
     id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),

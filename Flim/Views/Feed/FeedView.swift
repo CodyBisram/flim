@@ -376,6 +376,9 @@ struct FeedPostCard: View {
                         .opacity(heartBurst ? 0.9 : 0)
                         .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.55), value: heartBurst)
                 }
+                .overlay {
+                    PhotoTags(tags: feed.tagsByPost[post.id] ?? [], profiles: feed.tagProfiles) { route = ProfileRoute(id: $0) }
+                }
                 .clipShape(RoundedRectangle(cornerRadius: 12))
                 .contentShape(Rectangle())
                 .onTapGesture(count: 2) { doubleTapLike() }

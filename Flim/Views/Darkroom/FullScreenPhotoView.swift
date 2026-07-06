@@ -29,6 +29,8 @@ struct FullScreenPhotoView: View {
     @State private var reactions: [PhotoReaction] = []
     @State private var showShareComposer = false
     @State private var shareCaptionDraft = ""
+    @State private var pendingTags: [PendingTag] = []
+    @State private var showTagSheet = false
     @State private var showComments = false
     @FocusState private var captionFocused: Bool
 
@@ -177,6 +179,9 @@ struct FullScreenPhotoView: View {
         .sheet(isPresented: $showComments) {
             PhotoCommentsSheet(photoId: photo.id, memberNames: memberNames)
         }
+        .sheet(isPresented: $showTagSheet) {
+            TagPhotoSheet(url: resolvedURL, tags: $pendingTags)
+        }
         .overlay(alignment: .top) {
             if showSharedToast {
                 Label("Shared to your page", systemImage: "checkmark.circle.fill")
@@ -269,29 +274,45 @@ struct FullScreenPhotoView: View {
 
     /// Inline caption composer, shown at the bottom when publishing a photo to your page.
     private var shareComposer: some View {
-        HStack(spacing: 10) {
-            TextField("Add a caption…", text: $shareCaptionDraft, axis: .vertical)
-                .lineLimit(1...3)
-                .focused($captionFocused)
-                .font(.system(size: 15))
+        VStack(spacing: 10) {
+            // Tag people — opens the Instagram-style tagging sheet.
+            Button { showTagSheet = true } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "person.crop.circle.badge.plus").font(.system(size: 14))
+                    Text(pendingTags.isEmpty ? "Tag people" : "\(pendingTags.count) tagged")
+                        .font(.system(size: 14))
+                    Spacer()
+                    Image(systemName: "chevron.right").font(.system(size: 11)).foregroundStyle(.white.opacity(0.4))
+                }
                 .foregroundStyle(.white)
-                .tint(FlimTheme.accent)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .background(Color.white.opacity(0.14), in: Capsule())
-            Button {
-                showShareComposer = false
-                captionFocused = false
-            } label: {
-                Text("Cancel").font(.system(size: 13)).foregroundStyle(.white.opacity(0.6))
+                .padding(.horizontal, 14).padding(.vertical, 10)
+                .background(Color.white.opacity(0.1), in: Capsule())
             }
-            Button { confirmShare() } label: {
-                Text("Share")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(.black)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 9)
-                    .background(FlimTheme.accent, in: Capsule())
+
+            HStack(spacing: 10) {
+                TextField("Add a caption…", text: $shareCaptionDraft, axis: .vertical)
+                    .lineLimit(1...3)
+                    .focused($captionFocused)
+                    .font(.system(size: 15))
+                    .foregroundStyle(.white)
+                    .tint(FlimTheme.accent)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(Color.white.opacity(0.14), in: Capsule())
+                Button {
+                    showShareComposer = false
+                    captionFocused = false
+                } label: {
+                    Text("Cancel").font(.system(size: 13)).foregroundStyle(.white.opacity(0.6))
+                }
+                Button { confirmShare() } label: {
+                    Text("Share")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.black)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 9)
+                        .background(FlimTheme.accent, in: Capsule())
+                }
             }
         }
         .padding(.horizontal, 16)
@@ -301,6 +322,7 @@ struct FullScreenPhotoView: View {
 
     private func shareToPage() {
         shareCaptionDraft = ""
+        pendingTags = []
         showShareComposer = true
         captionFocused = true
     }
@@ -308,12 +330,13 @@ struct FullScreenPhotoView: View {
     private func confirmShare() {
         guard let uid = auth.currentUser?.id else { return }
         let caption = shareCaptionDraft
+        let tags = pendingTags
         Haptics.tap()
         shared = true
         showShareComposer = false
         captionFocused = false
         Task {
-            try? await feed.createPost(photo: photo, caption: caption, userId: uid)
+            try? await feed.createPost(photo: photo, caption: caption, userId: uid, tags: tags)
             Haptics.reveal()   // success confirmation
             withAnimation { showSharedToast = true }
             try? await Task.sleep(for: .seconds(2))

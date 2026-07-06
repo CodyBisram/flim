@@ -80,6 +80,29 @@ struct PhotoComment: Codable, Identifiable {
     }
 }
 
+/// A person tagged on a post's photo, pinned at a normalized (x, y) position (0…1).
+struct PostTag: Codable, Identifiable {
+    let id: UUID
+    let postId: UUID
+    let taggedUserId: UUID
+    let x: Double
+    let y: Double
+
+    enum CodingKeys: String, CodingKey {
+        case id, x, y
+        case postId = "post_id"
+        case taggedUserId = "tagged_user_id"
+    }
+}
+
+/// A tag being placed in the composer, before the post exists. Holds the profile for display.
+struct PendingTag: Identifiable {
+    let id = UUID()
+    let user: UserProfile
+    var x: Double
+    var y: Double
+}
+
 struct PostReaction: Codable, Identifiable {
     let id: UUID
     let postId: UUID

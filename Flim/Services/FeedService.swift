@@ -14,6 +14,9 @@ final class FeedService {
     // card). Feed cards read + mutate these, so they're the single source of truth.
     var reactionsByPost: [UUID: [PostReaction]] = [:]
     var commentsByPost: [UUID: [CommentInfo]] = [:]
+    /// Photo tags per post, and the profiles of tagged users (for their labels).
+    var tagsByPost: [UUID: [PostTag]] = [:]
+    var tagProfiles: [UUID: UserProfile] = [:]
 
     // Infinite-scroll pagination.
     private let feedPageSize = 15
@@ -180,6 +183,8 @@ final class FeedService {
         feed = []
         reactionsByPost = [:]
         commentsByPost = [:]
+        tagsByPost = [:]
+        tagProfiles = [:]
         feedOffset = 0
         hasMoreFeed = true
         await loadMoreFeed(currentUserId: currentUserId)
@@ -217,14 +222,35 @@ final class FeedService {
         }
         guard !items.isEmpty else { return }
 
-        // Batch reactions + comments for this page's posts in one pass.
+        // Batch reactions + comments + tags for this page's posts in one pass.
         let postIds = items.map(\.post.id)
         async let reactions = batchReactions(postIds: postIds)
         async let comments = batchComments(postIds: postIds, currentUserId: currentUserId)
+        async let tags = batchTags(postIds: postIds)
         reactionsByPost.merge(await reactions) { _, new in new }
         commentsByPost.merge(await comments) { _, new in new }
+        let (tagMap, tagProf) = await tags
+        tagsByPost.merge(tagMap) { _, new in new }
+        tagProfiles.merge(tagProf) { _, new in new }
 
         feed.append(contentsOf: items)
+    }
+
+    /// Loads tags for a single post (e.g. a detail view opened outside the feed) into the caches.
+    func loadTags(for postId: UUID) async {
+        let (map, profs) = await batchTags(postIds: [postId])
+        tagsByPost.merge(map) { _, new in new }
+        tagProfiles.merge(profs) { _, new in new }
+    }
+
+    /// Batch-loads photo tags + the tagged users' profiles for a page of posts.
+    private func batchTags(postIds: [UUID]) async -> ([UUID: [PostTag]], [UUID: UserProfile]) {
+        guard !postIds.isEmpty else { return ([:], [:]) }
+        let rows: [PostTag] = (try? await supabase.from("post_tags").select()
+            .in("post_id", values: postIds.map(\.uuidString)).execute().value) ?? []
+        guard !rows.isEmpty else { return ([:], [:]) }
+        let profiles = await fetchProfiles(ids: Array(Set(rows.map(\.taggedUserId))))
+        return (Dictionary(grouping: rows, by: \.postId), profiles)
     }
 
     private func batchReactions(postIds: [UUID]) async -> [UUID: [PostReaction]] {
@@ -309,7 +335,7 @@ final class FeedService {
 
     // MARK: - Posts
 
-    func createPost(photo: Photo, caption: String?, userId: UUID) async throws {
+    func createPost(photo: Photo, caption: String?, userId: UUID, tags: [PendingTag] = []) async throws {
         struct Insert: Encodable {
             let user_id: UUID
             let photo_id: UUID
@@ -318,15 +344,21 @@ final class FeedService {
             let taken_at: Date
             let caption: String?
         }
+        struct Created: Decodable { let id: UUID }
         let trimmed = caption?.trimmingCharacters(in: .whitespacesAndNewlines)
-        try await supabase.from("posts").insert(Insert(
+        let created: Created = try await supabase.from("posts").insert(Insert(
             user_id: userId,
             photo_id: photo.id,
             storage_path: photo.storagePath,
             thumb_path: photo.thumbPath,
             taken_at: photo.takenAt,
             caption: (trimmed?.isEmpty ?? true) ? nil : trimmed
-        )).execute()
+        )).select("id").single().execute().value
+
+        guard !tags.isEmpty else { return }
+        struct TagInsert: Encodable { let post_id: UUID; let tagged_user_id: UUID; let x: Double; let y: Double }
+        let rows = tags.map { TagInsert(post_id: created.id, tagged_user_id: $0.user.id, x: $0.x, y: $0.y) }
+        _ = try? await supabase.from("post_tags").insert(rows).execute()
     }
 
     func deletePost(id: UUID) async {

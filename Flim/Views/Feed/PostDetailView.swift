@@ -38,6 +38,9 @@ struct PostDetailView: View {
                     }
                         .frame(maxWidth: .infinity)
                         .overlay { GrainOverlay().opacity(0.5) }
+                        .overlay {
+                            PhotoTags(tags: feed.tagsByPost[post.id] ?? [], profiles: feed.tagProfiles) { route = ProfileRoute(id: $0) }
+                        }
                         .clipShape(RoundedRectangle(cornerRadius: 14))
                         .contentShape(Rectangle())
                         .onTapGesture { if url != nil { showViewer = true } }
@@ -210,6 +213,7 @@ struct PostDetailView: View {
     private func load() async {
         url = await feed.signedURL(for: post.storagePath)
         reactions = await feed.fetchReactions(postId: post.id)
+        await feed.loadTags(for: post.id)
         await reloadComments()
     }
 
