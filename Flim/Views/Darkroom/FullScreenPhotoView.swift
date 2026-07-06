@@ -364,7 +364,9 @@ struct FullScreenPhotoView: View {
     private var pinchToZoom: some Gesture {
         MagnificationGesture()
             .onChanged { value in
-                scale = max(1, value)
+                // Cap at 3× — enough to inspect detail, and keeps the image from turning to mush
+                // (uncapped zoom looks bad at any resolution).
+                scale = min(3, max(1, value))
             }
             .onEnded { _ in
                 withAnimation(.spring(duration: 0.3)) {

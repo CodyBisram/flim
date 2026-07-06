@@ -31,9 +31,10 @@ enum InstantFilmProcessor {
         return UIImage(cgImage: cg).jpegData(compressionQuality: 0.8)
     }
 
-    /// Longest edge we store the full image at. Full sensor res (~4000px, multi-MB) is wasteful to
-    /// store and serve — 2048 is indistinguishable on a phone and ~6× smaller (cuts egress a lot).
-    private static let maxStoredEdge: CGFloat = 2048
+    /// Longest edge we store the full image at. The widest iPhone is ~1320px, so 1600 already
+    /// exceeds what any screen shows at full-frame — indistinguishable on-screen, but ~35% smaller
+    /// than 2048 (real egress savings). Full sensor res would be multi-MB and pure waste.
+    private static let maxStoredEdge: CGFloat = 1600
 
     private static func processSync(_ data: Data, stock: FilmStock) -> Data? {
         // Apply embedded EXIF orientation so the output is upright.
@@ -55,7 +56,7 @@ enum InstantFilmProcessor {
 
         let image = filtered(source, params: stock.params, extent: extent, grain: true)
         guard let cgImage = context.createCGImage(image, from: extent) else { return nil }
-        return UIImage(cgImage: cgImage).jpegData(compressionQuality: 0.82)
+        return UIImage(cgImage: cgImage).jpegData(compressionQuality: 0.80)
     }
 
     /// The film look as a pure CIImage → CIImage transform. Shared by capture (with grain) and
