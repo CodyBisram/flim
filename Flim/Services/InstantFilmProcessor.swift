@@ -31,10 +31,10 @@ enum InstantFilmProcessor {
         return UIImage(cgImage: cg).jpegData(compressionQuality: 0.8)
     }
 
-    /// Longest edge we store the full image at. The widest iPhone is ~1320px, so 1600 already
-    /// exceeds what any screen shows at full-frame — indistinguishable on-screen, but ~35% smaller
-    /// than 2048 (real egress savings). Full sensor res would be multi-MB and pure waste.
-    private static let maxStoredEdge: CGFloat = 1600
+    /// Longest edge we store the full image at. 2048 keeps shots crisp at full-screen *and* under
+    /// zoom / when saved out (a big jump from 1600), while still being ~3× smaller than raw 12MP
+    /// sensor output so egress stays sane. Bump higher (2560+) if you want near-original quality.
+    private static let maxStoredEdge: CGFloat = 2048
 
     private static func processSync(_ data: Data, stock: FilmStock) -> Data? {
         // Apply embedded EXIF orientation so the output is upright.
