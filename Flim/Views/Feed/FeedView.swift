@@ -350,20 +350,21 @@ struct FeedPostCard: View {
                 .accessibilityLabel("Post options")
             }
 
-            // The print — single tap opens it, double tap likes it (with a heart burst).
-            Color.clear
-                .aspectRatio(1, contentMode: .fit)
-                .overlay {
-                    if let url {
-                        CachedImage(url: url, maxPixel: 1200, cacheKey: post.displayPath) { image in
-                            image.resizable().scaledToFill()
-                        } placeholder: {
-                            ShimmerPlaceholder(cornerRadius: 12)
-                        }
-                    } else {
-                        ShimmerPlaceholder(cornerRadius: 12)
+            // The print — shown at its native aspect (no square crop). Single tap opens it,
+            // double tap likes it (with a heart burst). A 3:4 default sizes the placeholder so
+            // there's no layout jump before the image resolves.
+            Group {
+                if let url {
+                    CachedImage(url: url, maxPixel: 1200, cacheKey: post.displayPath) { image in
+                        image.resizable().scaledToFit()
+                    } placeholder: {
+                        ShimmerPlaceholder(cornerRadius: 12).aspectRatio(3.0 / 4.0, contentMode: .fit)
                     }
+                } else {
+                    ShimmerPlaceholder(cornerRadius: 12).aspectRatio(3.0 / 4.0, contentMode: .fit)
                 }
+            }
+                .frame(maxWidth: .infinity)
                 .overlay { GrainOverlay().opacity(0.5) }
                 .overlay {
                     Image(systemName: "heart.fill")
