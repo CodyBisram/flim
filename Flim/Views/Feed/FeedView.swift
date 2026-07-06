@@ -429,6 +429,19 @@ struct FeedPostCard: View {
                             MentionText(text: info.comment.body, font: .system(size: 14), color: .white) { openMention($0) }
                                 .lineLimit(2).multilineTextAlignment(.leading)
                                 .onTapGesture { showDetail = true }
+                            Spacer(minLength: 6)
+                            Button { likeComment(info) } label: {
+                                VStack(spacing: 1) {
+                                    Image(systemName: info.likedByMe ? "heart.fill" : "heart")
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(info.likedByMe ? FlimTheme.accent : FlimTheme.textTertiary)
+                                        .symbolEffect(.bounce, value: info.likedByMe)
+                                    if info.likeCount > 0 {
+                                        Text("\(info.likeCount)").font(.system(size: 10)).foregroundStyle(FlimTheme.textTertiary)
+                                            .contentTransition(.numericText())
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -558,6 +571,12 @@ struct FeedPostCard: View {
 
     private func openMention(_ username: String) {
         Task { if let p = await feed.fetchProfile(username: username) { route = ProfileRoute(id: p.id) } }
+    }
+
+    private func likeComment(_ info: CommentInfo) {
+        guard let uid = auth.currentUser?.id else { return }
+        Haptics.tap()
+        Task { await feed.toggleCommentLike(info, postId: post.id, userId: uid) }
     }
 
     private func sendComment() {

@@ -14,6 +14,7 @@ struct PostDetailView: View {
     @State private var showViewer = false
     @State private var shareItem: ShareImage?
     @State private var showReportConfirm = false
+    @State private var showBlockConfirm = false
     @State private var showDeleteConfirm = false
     @State private var reportedToast = false
     @State private var route: ProfileRoute?
@@ -69,6 +70,7 @@ struct PostDetailView: View {
                         Button(role: .destructive) { showDeleteConfirm = true } label: { Label("Delete post", systemImage: "trash") }
                     } else {
                         Button { showReportConfirm = true } label: { Label("Report", systemImage: "flag") }
+                        Button(role: .destructive) { showBlockConfirm = true } label: { Label("Block \(item.author.handle)", systemImage: "hand.raised") }
                     }
                 } label: {
                     Image(systemName: "ellipsis").foregroundStyle(FlimTheme.accent)
@@ -105,6 +107,19 @@ struct PostDetailView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Flag this for review. Thanks for keeping FLIM safe.")
+        }
+        .confirmationDialog("Block \(item.author.handle)?", isPresented: $showBlockConfirm, titleVisibility: .visible) {
+            Button("Block", role: .destructive) {
+                guard let uid = auth.currentUser?.id else { return }
+                Task {
+                    await feed.block(post.userId, from: uid)
+                    feed.feed.removeAll { $0.author.id == post.userId }
+                    dismiss()
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("You won't see each other's posts, and they'll be unfollowed.")
         }
         .task { await load() }
     }

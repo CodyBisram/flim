@@ -477,6 +477,17 @@ final class FeedService {
             .eq("comment_id", value: id.uuidString).eq("user_id", value: userId.uuidString).execute()
     }
 
+    /// Toggle a comment's like from the feed, updating the shared cache so every card stays in sync.
+    func toggleCommentLike(_ info: CommentInfo, postId: UUID, userId: UUID) async {
+        if var list = commentsByPost[postId], let i = list.firstIndex(where: { $0.id == info.id }) {
+            list[i].likedByMe.toggle()
+            list[i].likeCount += list[i].likedByMe ? 1 : -1
+            commentsByPost[postId] = list
+        }
+        if info.likedByMe { await unlikeComment(id: info.comment.id, userId: userId) }
+        else { await likeComment(id: info.comment.id, userId: userId) }
+    }
+
     // MARK: - Storage
 
     /// Long-lived signed URLs, persisted + reused across launches (see SignedURLStore) so the CDN
