@@ -190,6 +190,24 @@ final class PhotoService {
         }
     }
 
+    /// One-time test reset: removes EVERY Storage object in your folder (photos, thumbs, avatar,
+    /// cover) and all your photo rows (cascades to your posts/reactions/comments). Frees storage +
+    /// resets your egress baseline. Only reachable from a gated Settings button (not public).
+    func deleteAllMyData(userId: UUID) async {
+        let uid = userId.uuidString.lowercased()
+        // Remove all objects in the user's folder (may be paginated — loop until empty).
+        while true {
+            guard let objects = try? await supabase.storage.from("photos")
+                .list(path: uid, options: SearchOptions(limit: 1000)), !objects.isEmpty else { break }
+            let paths = objects.map { "\(uid)/\($0.name)" }
+            _ = try? await supabase.storage.from("photos").remove(paths: paths)
+            if objects.count < 1000 { break }
+        }
+        // Delete photo rows (cascades to posts, reactions, comments).
+        _ = try? await supabase.from("photos").delete().eq("user_id", value: userId.uuidString).execute()
+        await MainActor.run { photos = []; failedUploads = [] }
+    }
+
     /// Files a content report against a photo (UGC safety). Write-only from the client.
     func reportPhoto(_ photo: Photo, reason: String? = nil) async {
         guard let session = try? await supabase.auth.session else { return }

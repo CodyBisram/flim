@@ -17,6 +17,7 @@ struct ProfileView: View {
     @State private var isDeleting = false
     @State private var deleteError: String?
     @State private var showEditUsername = false
+    @State private var showWipeConfirm = false
     @AppStorage("developNotificationsEnabled") private var notificationsEnabled = true
     @AppStorage("liveFilmPreview") private var liveFilmPreview = true
     @AppStorage("soundEffects") private var soundEffects = true
@@ -234,6 +235,19 @@ struct ProfileView: View {
                         settingsRow("Privacy Policy", icon: "hand.raised")
                     }
 
+                    // Test-only data reset (TestFlight/dev; hidden on the public App Store).
+                    if !AppInfo.isAppStore {
+                        Button(role: .destructive) { showWipeConfirm = true } label: {
+                            HStack {
+                                Text("Wipe my test data").font(.system(size: 15)).foregroundStyle(Color(red: 1, green: 0.4, blue: 0.4))
+                                Spacer()
+                                Image(systemName: "trash").foregroundStyle(FlimTheme.textTertiary)
+                            }
+                            .padding(.horizontal, 28).padding(.vertical, 14)
+                            .background(FlimTheme.bgElevated)
+                        }
+                    }
+
                     VStack(spacing: 12) {
                         // Sign out — immediate (non-destructive; you can sign right back in).
                         Button {
@@ -336,6 +350,15 @@ struct ProfileView: View {
                 Button("OK") { deleteError = nil }
             } message: {
                 Text(deleteError ?? "")
+            }
+            .confirmationDialog("Wipe all your test data?", isPresented: $showWipeConfirm, titleVisibility: .visible) {
+                Button("Wipe Everything", role: .destructive) {
+                    guard let uid = auth.currentUser?.id else { return }
+                    Task { await photos.deleteAllMyData(userId: uid); photoCount = await photos.photoCount(userId: uid) }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Deletes all your photos, thumbnails, avatar/cover, and posts from storage. Resets your egress baseline. Your account stays.")
             }
         }
         .presentationBackground(FlimTheme.bg)
