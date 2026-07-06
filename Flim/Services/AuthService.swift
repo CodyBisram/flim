@@ -169,7 +169,7 @@ final class AuthService {
     /// Storage object so the avatar survives the source photo being deleted.
     func setAvatar(fromPhotoPath sourcePath: String) async {
         guard let session = try? await supabase.auth.session,
-              let dest = await copyToOwnedObject(from: sourcePath, prefix: "avatar", userId: session.user.id)
+              let dest = await copyToOwnedObject(from: sourcePath, prefix: "avatar", userId: session.user.id, maxPixel: 256)
         else { return }
         let old = currentUser?.avatarPath
         struct Update: Encodable { let avatar_path: String }
@@ -184,7 +184,7 @@ final class AuthService {
     /// Sets the profile cover/header from one of the user's photos (its own Storage copy).
     func setCover(fromPhotoPath sourcePath: String) async {
         guard let session = try? await supabase.auth.session,
-              let dest = await copyToOwnedObject(from: sourcePath, prefix: "cover", userId: session.user.id)
+              let dest = await copyToOwnedObject(from: sourcePath, prefix: "cover", userId: session.user.id, maxPixel: 640)
         else { return }
         let old = currentUser?.coverPath
         struct Update: Encodable { let cover_path: String }
@@ -197,8 +197,10 @@ final class AuthService {
     }
 
     /// Duplicates a photo into a fresh object in the user's own folder, returning its path.
-    private func copyToOwnedObject(from sourcePath: String, prefix: String, userId: UUID) async -> String? {
-        guard let data = try? await supabase.storage.from("photos").download(path: sourcePath) else { return nil }
+    private func copyToOwnedObject(from sourcePath: String, prefix: String, userId: UUID, maxPixel: CGFloat) async -> String? {
+        guard let raw = try? await supabase.storage.from("photos").download(path: sourcePath) else { return nil }
+        // Downscale the copy — an avatar/cover never needs the full image (saves storage + egress).
+        let data = InstantFilmProcessor.thumbnail(from: raw, maxPixel: maxPixel) ?? raw
         let dest = "\(userId.uuidString.lowercased())/\(prefix)-\(UUID().uuidString.lowercased()).jpg"
         do {
             try await supabase.storage.from("photos")

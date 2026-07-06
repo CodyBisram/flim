@@ -31,17 +31,31 @@ enum InstantFilmProcessor {
         return UIImage(cgImage: cg).jpegData(compressionQuality: 0.8)
     }
 
+    /// Longest edge we store the full image at. Full sensor res (~4000px, multi-MB) is wasteful to
+    /// store and serve — 2048 is indistinguishable on a phone and ~6× smaller (cuts egress a lot).
+    private static let maxStoredEdge: CGFloat = 2048
+
     private static func processSync(_ data: Data, stock: FilmStock) -> Data? {
         // Apply embedded EXIF orientation so the output is upright.
-        guard let source = CIImage(data: data, options: [.applyOrientationProperty: true]) else {
+        guard var source = CIImage(data: data, options: [.applyOrientationProperty: true]) else {
             return nil
+        }
+        // Downscale before filtering — smaller file to store/serve, and faster to process.
+        let raw = source.extent
+        guard !raw.isEmpty else { return nil }
+        let longEdge = max(raw.width, raw.height)
+        if longEdge > maxStoredEdge {
+            source = source.applyingFilter("CILanczosScaleTransform", parameters: [
+                kCIInputScaleKey: maxStoredEdge / longEdge,
+                kCIInputAspectRatioKey: 1.0
+            ])
         }
         let extent = source.extent
         guard !extent.isEmpty else { return nil }
 
         let image = filtered(source, params: stock.params, extent: extent, grain: true)
         guard let cgImage = context.createCGImage(image, from: extent) else { return nil }
-        return UIImage(cgImage: cgImage).jpegData(compressionQuality: 0.85)
+        return UIImage(cgImage: cgImage).jpegData(compressionQuality: 0.82)
     }
 
     /// The film look as a pure CIImage → CIImage transform. Shared by capture (with grain) and
