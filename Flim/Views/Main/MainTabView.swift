@@ -2,6 +2,8 @@ import SwiftUI
 
 struct MainTabView: View {
     @State private var selected = 0
+    /// Per-tab counter — bumped when you re-tap the tab you're already on, so that tab scrolls to top.
+    @State private var scrollSignal: [Int: Int] = [:]
     @AppStorage("hasOnboarded") private var hasOnboarded = false
     @AppStorage("accentColor") private var accentColor = "amber"   // re-tints on change
     @AppStorage("didShowNotifPrimer") private var didShowNotifPrimer = false
@@ -15,24 +17,39 @@ struct MainTabView: View {
     @Environment(PhotoService.self) private var photos
     #endif
 
+    /// Selection binding that adds a haptic on tab change and a scroll-to-top on re-tap.
+    private var selection: Binding<Int> {
+        Binding(
+            get: { selected },
+            set: { newValue in
+                if newValue == selected {
+                    scrollSignal[newValue, default: 0] += 1
+                } else {
+                    Haptics.tap()
+                }
+                selected = newValue
+            }
+        )
+    }
+
     var body: some View {
-        TabView(selection: $selected) {
+        TabView(selection: selection) {
             Tab("Camera", systemImage: "camera.aperture", value: 0) {
                 CameraView()
             }
             Tab("Darkroom", systemImage: "photo.stack", value: 1) {
                 NavigationStack {
-                    DarkroomView()
+                    DarkroomView(scrollToTop: scrollSignal[1, default: 0])
                 }
             }
             Tab("Rolls", systemImage: "film.stack", value: 2) {
                 NavigationStack {
-                    RollsView()
+                    RollsView(scrollToTop: scrollSignal[2, default: 0])
                 }
             }
             Tab("Feed", systemImage: "house", value: 3) {
                 NavigationStack {
-                    FeedView()
+                    FeedView(scrollToTop: scrollSignal[3, default: 0])
                 }
             }
         }

@@ -14,6 +14,7 @@ struct ReactionBar: View {
 
     @State private var expanded = false
     @State private var displayOrder: [String] = []
+    @State private var pressed: String?
     @State private var typed = ""
     @FocusState private var keyboardFocused: Bool
     @AppStorage("recentEmojis") private var recentsRaw = ""
@@ -111,13 +112,18 @@ struct ReactionBar: View {
                     Text("\(count)")
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(.white)
+                        .contentTransition(.numericText())          // digits roll when the count changes
                 }
             }
             .padding(.horizontal, 11)
             .padding(.vertical, 7)
             .background(isMine ? FlimTheme.accent.opacity(0.28) : Color.white.opacity(0.12), in: Capsule())
             .overlay(Capsule().strokeBorder(isMine ? FlimTheme.accent : .clear, lineWidth: 1))
+            .scaleEffect(pressed == emoji ? 1.18 : 1)               // little bounce on tap
         }
+        .buttonStyle(.plain)
+        .animation(.snappy(duration: 0.28), value: count)
+        .animation(.spring(response: 0.28, dampingFraction: 0.5), value: pressed)
         .accessibilityLabel("React \(emoji)")
     }
 
@@ -129,6 +135,10 @@ struct ReactionBar: View {
     /// existing chips — the reacted-to-front re-sort only happens on the next appear.
     private func react(_ emoji: String, fromPicker: Bool = false) {
         if !displayOrder.contains(emoji) { displayOrder.append(emoji) }
+        // Bounce feedback — pop the chip, then settle.
+        pressed = emoji
+        Haptics.tap()
+        Task { try? await Task.sleep(for: .milliseconds(140)); pressed = nil }
         if fromPicker {
             recordRecent(emoji)
             withAnimation(.snappy(duration: 0.25)) { expanded = false }

@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct DarkroomView: View {
+    var scrollToTop: Int = 0
     @Environment(AuthService.self) private var auth
     @Environment(PhotoService.self) private var photoService
     @Environment(RollService.self) private var rolls
@@ -61,11 +62,17 @@ struct DarkroomView: View {
                     } else if vm.photos.isEmpty {
                         emptyState
                     } else {
-                        ScrollView {
-                            photoGrid
-                                .padding(.horizontal, 2)
+                        ScrollViewReader { proxy in
+                            ScrollView {
+                                Color.clear.frame(height: 0).id("top")
+                                photoGrid
+                                    .padding(.horizontal, 2)
+                            }
+                            .refreshable { await reload() }
+                            .onChange(of: scrollToTop) {
+                                withAnimation(.snappy) { proxy.scrollTo("top", anchor: .top) }
+                            }
                         }
-                        .refreshable { await reload() }
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)

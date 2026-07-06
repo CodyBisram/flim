@@ -188,6 +188,8 @@ struct UserPageView: View {
     private func stat(_ value: String, _ label: String) -> some View {
         VStack(spacing: 2) {
             Text(value).font(.system(size: 16, weight: .medium)).foregroundStyle(.white)
+                .contentTransition(.numericText())
+                .animation(.snappy(duration: 0.28), value: value)
             Text(label).font(.system(size: 11)).foregroundStyle(FlimTheme.textTertiary)
         }
     }

@@ -2,6 +2,7 @@ import SwiftUI
 import UIKit
 
 struct FeedView: View {
+    var scrollToTop: Int = 0
     @Environment(AuthService.self) private var auth
     @Environment(FeedService.self) private var feed
     @Environment(PhotoService.self) private var photos
@@ -61,6 +62,9 @@ struct FeedView: View {
                             .padding(.vertical, 16)
                         }
                         .refreshable { await reload() }
+                        .onChange(of: scrollToTop) {
+                            withAnimation(.snappy) { proxy.scrollTo("top", anchor: .top) }
+                        }
                         .overlay(alignment: .top) {
                             if hasNewPosts {
                                 Button {
@@ -393,6 +397,8 @@ struct FeedPostCard: View {
                         Button { showDetail = true } label: {
                             Text("View all \(comments.count) comments")
                                 .font(.system(size: 12)).foregroundStyle(FlimTheme.textTertiary)
+                                .contentTransition(.numericText())
+                                .animation(.snappy(duration: 0.28), value: comments.count)
                         }
                     }
                     HStack(alignment: .top, spacing: 4) {

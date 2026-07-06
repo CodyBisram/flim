@@ -381,6 +381,8 @@ struct ProfileView: View {
             Text(value)
                 .font(.system(size: 15, weight: .medium))
                 .foregroundStyle(.white)
+                .contentTransition(.numericText())
+                .animation(.snappy(duration: 0.28), value: value)
             Text(label)
                 .font(.system(size: 11))
                 .foregroundStyle(FlimTheme.textTertiary)

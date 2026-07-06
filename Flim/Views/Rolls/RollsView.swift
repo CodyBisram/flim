@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct RollsView: View {
+    var scrollToTop: Int = 0
     @Environment(AuthService.self) private var auth
     @Environment(RollService.self) private var rolls
     @Environment(PhotoService.self) private var photos
@@ -8,6 +9,9 @@ struct RollsView: View {
     @State private var showJoin = false
     @State private var coverURLs: [UUID: URL] = [:]
     @State private var loadError: String?
+    @State private var rollToLeave: Roll?
+
+    private func isCreator(_ roll: Roll) -> Bool { auth.currentUser?.id == roll.createdBy }
 
     var body: some View {
         ZStack {
@@ -93,20 +97,43 @@ struct RollsView: View {
     }
 
     private var rollList: some View {
-        List {
-            ForEach(rolls.rolls) { roll in
-                NavigationLink(value: roll) {
-                    RollRow(roll: roll,
-                            memberCount: rolls.memberCounts[roll.id],
-                            coverURL: coverURLs[roll.id])
+        ScrollViewReader { proxy in
+            List {
+                ForEach(rolls.rolls) { roll in
+                    NavigationLink(value: roll) {
+                        RollRow(roll: roll,
+                                memberCount: rolls.memberCounts[roll.id],
+                                coverURL: coverURLs[roll.id])
+                    }
+                    .listRowBackground(Color(white: 0.08))
+                    .listRowSeparatorTint(Color(white: 0.15))
+                    .swipeActions(edge: .trailing) {
+                        // Members leave via swipe; creators delete from inside the roll (too
+                        // destructive for a swipe — it removes the roll for everyone).
+                        if !isCreator(roll) {
+                            Button(role: .destructive) { rollToLeave = roll } label: {
+                                Label("Leave", systemImage: "rectangle.portrait.and.arrow.right")
+                            }
+                        }
+                    }
                 }
-                .listRowBackground(Color(white: 0.08))
-                .listRowSeparatorTint(Color(white: 0.15))
+            }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .refreshable { await load() }
+            .onChange(of: scrollToTop) {
+                withAnimation(.snappy) { proxy.scrollTo(rolls.rolls.first?.id, anchor: .top) }
             }
         }
-        .listStyle(.plain)
-        .scrollContentBackground(.hidden)
-        .refreshable { await load() }
+        .confirmationDialog("Leave this roll?", isPresented: Binding(get: { rollToLeave != nil }, set: { if !$0 { rollToLeave = nil } }), presenting: rollToLeave) { roll in
+            Button("Leave Roll", role: .destructive) {
+                guard let uid = auth.currentUser?.id else { return }
+                Task { try? await rolls.leaveRoll(rollId: roll.id, userId: uid); await load() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { roll in
+            Text("You'll leave “\(roll.name)” and need the code to rejoin.")
+        }
     }
 
     private var emptyState: some View {
