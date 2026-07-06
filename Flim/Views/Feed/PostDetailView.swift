@@ -174,6 +174,7 @@ struct PostDetailView: View {
                             Image(systemName: info.likedByMe ? "heart.fill" : "heart")
                                 .font(.system(size: 13))
                                 .foregroundStyle(info.likedByMe ? FlimTheme.accent : FlimTheme.textTertiary)
+                                .symbolEffect(.bounce, value: info.likedByMe)
                             if info.likeCount > 0 {
                                 Text("\(info.likeCount)").font(.system(size: 10)).foregroundStyle(FlimTheme.textTertiary)
                             }

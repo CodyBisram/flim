@@ -1,4 +1,5 @@
 import SwiftUI
+import TipKit
 
 /// A reaction row: chips (with counts) in a horizontal scroll that never clips, and a "+" opens a
 /// picker of recents + a big palette + an "any emoji" keyboard entry. The order stays stable while
@@ -100,6 +101,7 @@ struct ReactionBar: View {
                 .background(Color.white.opacity(0.12), in: Capsule())
         }
         .accessibilityLabel(expanded ? "Close emoji picker" : "More emoji")
+        .popoverTip(ReactTip())
     }
 
     private func chip(_ emoji: String) -> some View {

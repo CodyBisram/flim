@@ -16,6 +16,7 @@
 		203A74E3F739D03F1FCD6248 /* DarkroomView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AACFEBE63C392489A62B63C /* DarkroomView.swift */; };
 		24C89EABBAFF98261AEB3ABB /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 6D3CAAA6097E82270360343F /* Assets.xcassets */; };
 		287023347895E167ECC91920 /* Haptics.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA04DBB3261C344B5DD64806 /* Haptics.swift */; };
+		2D79A1965A02C47AB1AADE6D /* Tips.swift in Sources */ = {isa = PBXBuildFile; fileRef = 105ECDBD3955C30D1FDE432D /* Tips.swift */; };
 		2EDCE64ACD1C1B9060F4B36B /* UserPageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 799578BF49AD244204751AC0 /* UserPageView.swift */; };
 		322A5492683DD8B6D58B77C6 /* RollsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33D109A1C315CD466659A10F /* RollsView.swift */; };
 		3329F6BEB76AA76B288DE250 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49A4B9AB5111472363BE0ECF /* OnboardingView.swift */; };
@@ -35,6 +36,7 @@
 		6013474B6F35E06F049139DD /* JoinRollView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35A42EF6E37ED2ED362069BA /* JoinRollView.swift */; };
 		6B14829E6DD63477E932FEDC /* FullScreenPhotoView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B7DE28ED82A77117E85EBE0 /* FullScreenPhotoView.swift */; };
 		6FDE9DF7E6D1E48B36B0FFCC /* UsernameView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF49F2D3C9EF346AAD3F41BF /* UsernameView.swift */; };
+		793DFF7AB411740E0874DD22 /* QuickCaptureIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5F4E6A1053D1FADA991924E /* QuickCaptureIntent.swift */; };
 		94D54440B811F938257FD796 /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC34A455324DEE2A431A7720 /* ProfileView.swift */; };
 		967633695FA8F00A8A3010DA /* DarkroomViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 060BA5995DD93E64A494A2E4 /* DarkroomViewModel.swift */; };
 		A00F0B3005322C2FBEB54BB9 /* PrimaryButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BE06A9CEC95AF492BDBD575 /* PrimaryButton.swift */; };
@@ -87,6 +89,7 @@
 		0F4E26878DAFF415FB6B4644 /* ActivityFeedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityFeedView.swift; sourceTree = "<group>"; };
 		0F61787FFCEE49A74368FF8C /* DevelopTimingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevelopTimingTests.swift; sourceTree = "<group>"; };
 		0FA5444D3CDCB4379BF00F72 /* Social.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Social.swift; sourceTree = "<group>"; };
+		105ECDBD3955C30D1FDE432D /* Tips.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tips.swift; sourceTree = "<group>"; };
 		121F65D393ABD1CC13DA0186 /* SplashView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplashView.swift; sourceTree = "<group>"; };
 		14C863F6302D9B2BFBA71B6C /* InstantFilmProcessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InstantFilmProcessor.swift; sourceTree = "<group>"; };
 		1AF74B1882B2963B0A26004E /* CameraPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPreview.swift; sourceTree = "<group>"; };
@@ -141,6 +144,7 @@
 		F1AA5EF66C46272F42891AF4 /* RollMembersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollMembersView.swift; sourceTree = "<group>"; };
 		F2CA2F6DA98A04777C3D3C23 /* OTPView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OTPView.swift; sourceTree = "<group>"; };
 		F41D0B57C8881A275E755159 /* SortDeckView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SortDeckView.swift; sourceTree = "<group>"; };
+		F5F4E6A1053D1FADA991924E /* QuickCaptureIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickCaptureIntent.swift; sourceTree = "<group>"; };
 		FA04DBB3261C344B5DD64806 /* Haptics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Haptics.swift; sourceTree = "<group>"; };
 		FE6E3DB97398A385FA3C9489 /* RemotePush.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemotePush.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -264,6 +268,7 @@
 				FA04DBB3261C344B5DD64806 /* Haptics.swift */,
 				57C3947082A0D5033379C318 /* SoundFX.swift */,
 				8118D8FA0343F18F835415D3 /* Theme.swift */,
+				105ECDBD3955C30D1FDE432D /* Tips.swift */,
 				59442940A66724C5875B4D6C /* Auth */,
 				C01D7301DE4DAAF31EF5976E /* Camera */,
 				2BD73808C59340731B731131 /* Components */,
@@ -287,6 +292,7 @@
 				49C42E0C072E983E45F3535C /* NetworkMonitor.swift */,
 				7148B48A915D24BFBDEB23E0 /* NotificationService.swift */,
 				01ECCD46517220EBFD0EC621 /* PhotoService.swift */,
+				F5F4E6A1053D1FADA991924E /* QuickCaptureIntent.swift */,
 				FE6E3DB97398A385FA3C9489 /* RemotePush.swift */,
 				633F60D6D348ADEA4D94D263 /* RollService.swift */,
 				85C6F9C983DFB1E2ECF57092 /* SignedURLStore.swift */,
@@ -495,6 +501,7 @@
 				A14025FE14C116AF28430EC0 /* PostDetailView.swift in Sources */,
 				A00F0B3005322C2FBEB54BB9 /* PrimaryButton.swift in Sources */,
 				94D54440B811F938257FD796 /* ProfileView.swift in Sources */,
+				793DFF7AB411740E0874DD22 /* QuickCaptureIntent.swift in Sources */,
 				3F49B2B6996C065BA82A0395 /* ReactionBar.swift in Sources */,
 				BC9339EF423E0344336A96EF /* RemotePush.swift in Sources */,
 				D1044E118206CD6EDF9692B3 /* Roll.swift in Sources */,
@@ -511,6 +518,7 @@
 				0A8F3F3E94D6039F6537E14A /* SplashView.swift in Sources */,
 				1A636EF87FB2E349B9F555DC /* SupabaseClient.swift in Sources */,
 				F8B7B0BD9EA2812E69282C03 /* Theme.swift in Sources */,
+				2D79A1965A02C47AB1AADE6D /* Tips.swift in Sources */,
 				2EDCE64ACD1C1B9060F4B36B /* UserPageView.swift in Sources */,
 				6FDE9DF7E6D1E48B36B0FFCC /* UsernameView.swift in Sources */,
 			);

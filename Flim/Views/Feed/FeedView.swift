@@ -44,6 +44,11 @@ struct FeedView: View {
                                 Color.clear.frame(height: 0).id("top")
                                 ForEach(feed.feed) { item in
                                     FeedPostCard(item: item)
+                                        .scrollTransition { content, phase in
+                                            content
+                                                .opacity(phase.isIdentity ? 1 : 0.55)
+                                                .scaleEffect(phase.isIdentity ? 1 : 0.96)
+                                        }
                                         .onAppear {
                                             // Near the bottom → load the next page + warm its images.
                                             if item.id == feed.feed.last?.id, let uid = auth.currentUser?.id {
@@ -128,9 +133,10 @@ struct FeedView: View {
                     unreadActivity = 0
                     showActivity = true
                 } label: {
-                    Image(systemName: "bell")
+                    Image(systemName: unreadActivity > 0 ? "bell.badge" : "bell")
                         .font(.system(size: 16, weight: .medium))
                         .foregroundStyle(FlimTheme.accent)
+                        .symbolEffect(.bounce, value: unreadActivity)   // bounces when new activity lands
                         .frame(width: 38, height: 38)
                         .glassCapsule(interactive: true)
                         .overlay(alignment: .topTrailing) {

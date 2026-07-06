@@ -1,10 +1,16 @@
 import SwiftUI
+import TipKit
 
 @main
 struct FlimApp: App {
     // Registered so APNs token callbacks are handled once Push Notifications is enabled.
     // Inert until RemotePush.register() is called — see RemotePush.swift.
     @UIApplicationDelegateAdaptor(FlimAppDelegate.self) private var appDelegate
+
+    init() {
+        // In-app tips — shown once, contextually, then remembered as seen.
+        try? Tips.configure([.displayFrequency(.immediate), .datastoreLocation(.applicationDefault)])
+    }
 
     @State private var auth = AuthService()
     @State private var photos = PhotoService()

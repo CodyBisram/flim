@@ -1,4 +1,5 @@
 import SwiftUI
+import TipKit
 
 struct DarkroomView: View {
     var scrollToTop: Int = 0
@@ -91,6 +92,7 @@ struct DarkroomView: View {
                         selectedIDs = []
                     }
                     .foregroundStyle(.white)
+                    .popoverTip(SelectTip())
                 }
             }
             #if DEBUG
