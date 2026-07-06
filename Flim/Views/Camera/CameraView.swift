@@ -224,7 +224,7 @@ struct CameraView: View {
                             .font(.system(size: 13, weight: .medium))
                             .lineLimit(1)
                             .truncationMode(.tail)
-                            .frame(maxWidth: 100, alignment: .leading)
+                            .fixedSize(horizontal: true, vertical: false)
                         Image(systemName: "chevron.down")
                             .font(.system(size: 10, weight: .semibold))
                     }

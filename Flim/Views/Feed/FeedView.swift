@@ -311,6 +311,16 @@ struct FeedPostCard: View {
     // per card). Reading them here keeps every card in sync as it recycles.
     private var reactions: [PostReaction] { feed.reactionsByPost[post.id] ?? [] }
     private var comments: [CommentInfo] { feed.commentsByPost[post.id] ?? [] }
+    /// The top-ranked couple of comments, plus your own latest so it always shows after you post.
+    private var commentPreview: [CommentInfo] {
+        var shown = Array(comments.prefix(2))
+        if let uid = auth.currentUser?.id,
+           let mine = comments.last(where: { $0.comment.userId == uid }),
+           !shown.contains(where: { $0.id == mine.id }) {
+            shown.append(mine)
+        }
+        return shown
+    }
     private var iLiked: Bool { reactions.contains { $0.emoji == "❤️" && $0.userId == auth.currentUser?.id } }
     private var canSend: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
@@ -400,10 +410,10 @@ struct FeedPostCard: View {
                 showTip: showReactTip
             ) { toggleReaction($0) }
 
-            // Top comment preview → @handle taps to their page, the rest opens the photo.
-            if let top = comments.first {
-                VStack(alignment: .leading, spacing: 3) {
-                    if comments.count > 1 {
+            // Comment preview → @handle taps to their page, the rest opens the photo.
+            if !commentPreview.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    if comments.count > commentPreview.count {
                         Button { showDetail = true } label: {
                             Text("View all \(comments.count) comments")
                                 .font(.system(size: 12)).foregroundStyle(FlimTheme.textTertiary)
@@ -411,13 +421,15 @@ struct FeedPostCard: View {
                                 .animation(.snappy(duration: 0.28), value: comments.count)
                         }
                     }
-                    HStack(alignment: .top, spacing: 4) {
-                        Button { route = ProfileRoute(id: top.comment.userId) } label: {
-                            Text(top.handle).font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
+                    ForEach(commentPreview) { info in
+                        HStack(alignment: .top, spacing: 4) {
+                            Button { route = ProfileRoute(id: info.comment.userId) } label: {
+                                Text(info.handle).font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
+                            }
+                            MentionText(text: info.comment.body, font: .system(size: 14), color: .white) { openMention($0) }
+                                .lineLimit(2).multilineTextAlignment(.leading)
+                                .onTapGesture { showDetail = true }
                         }
-                        MentionText(text: top.comment.body, font: .system(size: 14), color: .white) { openMention($0) }
-                            .lineLimit(2).multilineTextAlignment(.leading)
-                            .onTapGesture { showDetail = true }
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
