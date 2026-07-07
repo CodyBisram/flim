@@ -19,6 +19,7 @@ enum AuthError: LocalizedError {
     }
 }
 
+@MainActor
 @Observable
 final class AuthService {
     var currentUser: AppUser?

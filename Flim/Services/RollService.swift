@@ -2,6 +2,7 @@ import Foundation
 import Observation
 import Supabase
 
+@MainActor
 @Observable
 final class RollService {
     var rolls: [Roll] = []

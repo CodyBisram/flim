@@ -4,6 +4,7 @@ import Supabase
 
 /// Backs the social layer: the follow graph, shared posts, the home feed, and
 /// reactions + comments on posts.
+@MainActor
 @Observable
 final class FeedService {
     var feed: [FeedItem] = []
@@ -560,6 +561,20 @@ final class FeedService {
             .eq("following_id", value: userId.uuidString)
             .order("created_at", ascending: false).limit(40).execute().value) ?? []
         raws += fs.map { Raw(kind: .follow, actorId: $0.follower_id, date: $0.created_at, postId: nil) }
+
+        // Photos you were tagged in — the actor is the post's author.
+        struct T: Decodable {
+            let post_id: UUID; let created_at: Date; let posts: P?
+            struct P: Decodable { let user_id: UUID }
+        }
+        let ts: [T] = (try? await supabase.from("post_tags")
+            .select("post_id,created_at,posts(user_id)")
+            .eq("tagged_user_id", value: userId.uuidString)
+            .order("created_at", ascending: false).limit(40).execute().value) ?? []
+        raws += ts.compactMap { t in
+            guard let author = t.posts?.user_id, author != userId else { return nil }
+            return Raw(kind: .tagged, actorId: author, date: t.created_at, postId: t.post_id)
+        }
 
         let profiles = await fetchProfiles(ids: Array(Set(raws.map(\.actorId))))
         return raws
