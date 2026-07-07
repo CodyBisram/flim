@@ -71,6 +71,7 @@
 		F5701A740A6BFD822B551A03 /* InstantFilmProcessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14C863F6302D9B2BFBA71B6C /* InstantFilmProcessor.swift */; };
 		F7DB8CBEBE8B5B6A7FA4EEA9 /* CubeLUT.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EF884AA4C8711AA4738DA8C /* CubeLUT.swift */; };
 		F8B7B0BD9EA2812E69282C03 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8118D8FA0343F18F835415D3 /* Theme.swift */; };
+		FD353271770C9545F7CD5972 /* CommentsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4B503FFA5A021E632A20DB4 /* CommentsSheet.swift */; };
 		FD944ED3A07EC2925623D43B /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BFE9FBCA04098DC6F972D9A /* ContentView.swift */; };
 /* End PBXBuildFile section */
 
@@ -139,6 +140,7 @@
 		BF49F2D3C9EF346AAD3F41BF /* UsernameView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsernameView.swift; sourceTree = "<group>"; };
 		C14C96ED4A714B7DD3274C7E /* PhoneAuthView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhoneAuthView.swift; sourceTree = "<group>"; };
 		C455E1683D6D539F208C704F /* ShimmerPlaceholder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShimmerPlaceholder.swift; sourceTree = "<group>"; };
+		C4B503FFA5A021E632A20DB4 /* CommentsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommentsSheet.swift; sourceTree = "<group>"; };
 		C9817482FE2AB125EC4FC2FB /* FeedService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedService.swift; sourceTree = "<group>"; };
 		CF062148240A383A260E8EE3 /* Photo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Photo.swift; sourceTree = "<group>"; };
 		D9927EBDE8E7056C4DA31EF2 /* AuthHelpersTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthHelpersTests.swift; sourceTree = "<group>"; };
@@ -183,6 +185,7 @@
 			isa = PBXGroup;
 			children = (
 				0F4E26878DAFF415FB6B4644 /* ActivityFeedView.swift */,
+				C4B503FFA5A021E632A20DB4 /* CommentsSheet.swift */,
 				4016CE892900287C20E82E97 /* FeedView.swift */,
 				9F609967CE45299259DA37AC /* PostDetailView.swift */,
 				799578BF49AD244204751AC0 /* UserPageView.swift */,
@@ -481,6 +484,7 @@
 				58C00DA36934A8DF0C2C833B /* CameraPreview.swift in Sources */,
 				B5E40248AEAEF1C69C495751 /* CameraView.swift in Sources */,
 				56F026E4C4E1E30F19E98152 /* CameraViewModel.swift in Sources */,
+				FD353271770C9545F7CD5972 /* CommentsSheet.swift in Sources */,
 				FD944ED3A07EC2925623D43B /* ContentView.swift in Sources */,
 				F3492DCB0D6D8A98FBE699B2 /* CreateRollView.swift in Sources */,
 				F7DB8CBEBE8B5B6A7FA4EEA9 /* CubeLUT.swift in Sources */,

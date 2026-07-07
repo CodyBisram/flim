@@ -293,7 +293,7 @@ struct FeedPostCard: View {
     @State private var url: URL?
     @State private var avatarURL: URL?
     @State private var draft = ""
-    @State private var showDetail = false
+    @State private var showComments = false
     @State private var route: ProfileRoute?
     @State private var heartBurst = false
     @State private var showDeleteConfirm = false
@@ -392,7 +392,7 @@ struct FeedPostCard: View {
                 .clipShape(RoundedRectangle(cornerRadius: 12))
                 .contentShape(Rectangle())
                 .onTapGesture(count: 2) { doubleTapLike() }
-                .onTapGesture { showDetail = true }
+                .onTapGesture { showComments = true }
                 .accessibilityElement()
                 .accessibilityLabel("Photo by \(item.author.handle)")
                 .accessibilityHint("Double-tap to open, or react below")
@@ -414,7 +414,7 @@ struct FeedPostCard: View {
             if !commentPreview.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
                     if comments.count > commentPreview.count {
-                        Button { showDetail = true } label: {
+                        Button { showComments = true } label: {
                             Text("View all \(comments.count) comments")
                                 .font(.system(size: 12)).foregroundStyle(FlimTheme.textTertiary)
                                 .contentTransition(.numericText())
@@ -429,7 +429,7 @@ struct FeedPostCard: View {
                                 }
                                 Text(info.comment.body).font(.system(size: 14)).foregroundStyle(.white)
                                     .lineLimit(2).multilineTextAlignment(.leading)
-                                    .onTapGesture { showDetail = true }
+                                    .onTapGesture { showComments = true }
                             }
                             Spacer(minLength: 8)
                             Button { likeComment(info) } label: {
@@ -475,8 +475,8 @@ struct FeedPostCard: View {
             if let path = item.author.avatarPath { avatarURL = await feed.signedURL(for: path) }
             // reactions + comments already loaded in the feed batch — no per-card query.
         }
-        .navigationDestination(isPresented: $showDetail) {
-            PostDetailView(item: item)
+        .sheet(isPresented: $showComments) {
+            CommentsSheet(post: post)
         }
         .navigationDestination(item: $route) { UserPageView(userId: $0.id) }
         .sheet(item: $shareItem) { ActivityView(items: [$0.image]) }
