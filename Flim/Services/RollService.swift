@@ -108,6 +108,7 @@ final class RollService {
             .from("photos")
             .select("roll_id,storage_path")
             .in("roll_id", values: rollIds)
+            .eq("hidden", value: false)
             .lte("develops_at", value: nowISO)
             .order("taken_at", ascending: false)
             .execute()

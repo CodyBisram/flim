@@ -215,6 +215,7 @@ final class FeedService {
             let posts: [Post] = (try? await supabase
                 .from("posts").select()
                 .in("user_id", values: authorIds.map(\.uuidString))
+                .eq("hidden", value: false)
                 .order("created_at", ascending: false)
                 .range(from: feedOffset, to: feedOffset + feedPageSize - 1)
                 .execute().value) ?? []
@@ -330,6 +331,7 @@ final class FeedService {
         let posts: [Post] = (try? await supabase
             .from("posts").select()
             .in("user_id", values: authorIds.map(\.uuidString))
+            .eq("hidden", value: false)
             .order("created_at", ascending: false)
             .limit(5)
             .execute().value) ?? []
@@ -402,6 +404,7 @@ final class FeedService {
         (try? await supabase
             .from("posts").select()
             .eq("user_id", value: userId.uuidString)
+            .eq("hidden", value: false)
             .order("taken_at", ascending: false)
             .execute().value) ?? []
     }

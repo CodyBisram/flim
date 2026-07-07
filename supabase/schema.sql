@@ -716,3 +716,32 @@ $$;
 INSERT INTO public.allowed_emails (email, note)
 VALUES ('codyysb@gmail.com', 'owner')
 ON CONFLICT (email) DO NOTHING;
+
+-- ============================================================
+-- Auto-moderation (Guideline 1.2)
+-- Once a photo is reported by >= 2 DISTINCT users, hide it (and any feed posts of it) pending
+-- review. The client filters hidden content out of feeds + shared rolls. Review/restore from the
+-- dashboard: SELECT * FROM photos WHERE hidden;  then UPDATE ... SET hidden = FALSE (or delete).
+-- ============================================================
+ALTER TABLE public.photos ADD COLUMN IF NOT EXISTS hidden BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE public.posts  ADD COLUMN IF NOT EXISTS hidden BOOLEAN NOT NULL DEFAULT FALSE;
+
+CREATE OR REPLACE FUNCTION public.auto_hide_reported()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    IF (SELECT COUNT(DISTINCT reporter_id) FROM public.photo_reports WHERE photo_id = NEW.photo_id) >= 2 THEN
+        UPDATE public.photos SET hidden = TRUE WHERE id = NEW.photo_id;
+        UPDATE public.posts  SET hidden = TRUE WHERE photo_id = NEW.photo_id;
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS auto_hide_reported_trigger ON public.photo_reports;
+CREATE TRIGGER auto_hide_reported_trigger
+    AFTER INSERT ON public.photo_reports
+    FOR EACH ROW EXECUTE FUNCTION public.auto_hide_reported();

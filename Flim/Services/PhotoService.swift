@@ -364,7 +364,7 @@ final class PhotoService {
 
     func fetchRollPhotos(rollId: UUID, reset: Bool = true) async throws {
         try await fetchPage(reset: reset) {
-            $0.eq("roll_id", value: rollId.uuidString)
+            $0.eq("roll_id", value: rollId.uuidString).eq("hidden", value: false)
         }
     }
 
