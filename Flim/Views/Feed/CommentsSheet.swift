@@ -45,13 +45,14 @@ struct CommentsSheet: View {
             .toolbarColorScheme(.dark, for: .navigationBar)
             .navigationDestination(item: $route) { UserPageView(userId: $0.id) }
         }
-        .presentationDetents([.large])
+        // Not full-screen — opens tall (like IG) with the feed peeking above; draggable to full.
+        .presentationDetents([.fraction(0.9), .large])
         .presentationDragIndicator(.visible)
         .task { await reload() }
     }
 
     private func commentRow(_ info: CommentInfo) -> some View {
-        HStack(alignment: .top, spacing: 12) {
+        HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
                     Button { route = ProfileRoute(id: info.comment.userId) } label: {
