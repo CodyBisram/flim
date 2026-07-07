@@ -56,48 +56,8 @@ struct FilmStock: Identifiable, Hashable {
         )
     )
 
-    static let noir = FilmStock(
-        id: "noir",
-        name: "Noir",
-        tagline: "High-contrast black & white",
-        params: FilmParams(
-            temperature: 6500, tint: 0,
-            saturation: 0, contrast: 1.18,
-            blackLift: 0.03, highlightRolloff: 0.98,
-            vignetteIntensity: 1.3, vignetteRadius: 1.6,
-            grain: 0.09, bloom: 0.2, monochrome: true
-        )
-    )
+    /// FLIM ships a single, signature look.
+    static let catalog: [FilmStock] = [original]
 
-    static let sunwash = FilmStock(
-        id: "sunwash",
-        name: "Sunwash",
-        tagline: "Golden-hour glow",
-        params: FilmParams(
-            temperature: 4700, tint: 10,
-            saturation: 1.2, contrast: 1.0,
-            blackLift: 0.09, highlightRolloff: 0.9,
-            vignetteIntensity: 0.8, vignetteRadius: 1.9,
-            grain: 0.05, bloom: 0.6, monochrome: false
-        )
-    )
-
-    static let faded88 = FilmStock(
-        id: "faded88",
-        name: "'88 Faded",
-        tagline: "Muted retro, cyan shadows",
-        params: FilmParams(
-            temperature: 6900, tint: -8,
-            saturation: 0.85, contrast: 0.94,
-            blackLift: 0.12, highlightRolloff: 0.92,
-            vignetteIntensity: 1.1, vignetteRadius: 1.8,
-            grain: 0.07, bloom: 0.3, monochrome: false
-        )
-    )
-
-    static let catalog: [FilmStock] = [original, noir, sunwash, faded88]
-
-    static func stock(id: String) -> FilmStock {
-        catalog.first { $0.id == id } ?? original
-    }
+    static func stock(id: String) -> FilmStock { original }
 }

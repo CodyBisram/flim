@@ -12,7 +12,6 @@
 		0A8F3F3E94D6039F6537E14A /* SplashView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 121F65D393ABD1CC13DA0186 /* SplashView.swift */; };
 		1986128F060D36EEB13FF786 /* AuthService.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFC0C65109A81467AB59472B /* AuthService.swift */; };
 		1A636EF87FB2E349B9F555DC /* SupabaseClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0EABF568B1F50179364FE91 /* SupabaseClient.swift */; };
-		1C12B4AFB0B1B8F0E43E1B01 /* LiveFilmPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F20C61C8CF2B72631C7FEB2 /* LiveFilmPreview.swift */; };
 		203A74E3F739D03F1FCD6248 /* DarkroomView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AACFEBE63C392489A62B63C /* DarkroomView.swift */; };
 		24C89EABBAFF98261AEB3ABB /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 6D3CAAA6097E82270360343F /* Assets.xcassets */; };
 		287023347895E167ECC91920 /* Haptics.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA04DBB3261C344B5DD64806 /* Haptics.swift */; };
@@ -104,7 +103,6 @@
 		2AACFEBE63C392489A62B63C /* DarkroomView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DarkroomView.swift; sourceTree = "<group>"; };
 		2BF0928EB05A780C49AC79C8 /* CameraView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraView.swift; sourceTree = "<group>"; };
 		2CDE42DC73343A3669F6A4A9 /* TagPhotoSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TagPhotoSheet.swift; sourceTree = "<group>"; };
-		2F20C61C8CF2B72631C7FEB2 /* LiveFilmPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveFilmPreview.swift; sourceTree = "<group>"; };
 		30C50D36C86F6B2F96A50C5D /* Mentions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Mentions.swift; sourceTree = "<group>"; };
 		33D109A1C315CD466659A10F /* RollsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollsView.swift; sourceTree = "<group>"; };
 		34743DB97B9809C5C81D7E30 /* FlimTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = FlimTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -334,7 +332,6 @@
 				1AF74B1882B2963B0A26004E /* CameraPreview.swift */,
 				2BF0928EB05A780C49AC79C8 /* CameraView.swift */,
 				2541CCDED4898D0604DB64EA /* CameraViewModel.swift */,
-				2F20C61C8CF2B72631C7FEB2 /* LiveFilmPreview.swift */,
 			);
 			path = Camera;
 			sourceTree = "<group>";
@@ -496,7 +493,6 @@
 				287023347895E167ECC91920 /* Haptics.swift in Sources */,
 				F5701A740A6BFD822B551A03 /* InstantFilmProcessor.swift in Sources */,
 				6013474B6F35E06F049139DD /* JoinRollView.swift in Sources */,
-				1C12B4AFB0B1B8F0E43E1B01 /* LiveFilmPreview.swift in Sources */,
 				C4599B50B1699E2971A353FF /* MainTabView.swift in Sources */,
 				92CBBD8D7C5022CDB49A6B81 /* Mentions.swift in Sources */,
 				E3917AFE742C6E4745A3292C /* MetaChip.swift in Sources */,

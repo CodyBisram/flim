@@ -13,19 +13,16 @@ struct CameraView: View {
     @State private var selectedRoll: Roll? = nil
     @State private var showRollPicker = false
 
-    // Film strip fades out when idle so the shutter stays the focal point; any
-    // interaction wakes it back up.
+    // Controls fade out when idle so the shutter stays the focal point; any
+    // interaction wakes them back up.
     @State private var filmStripActive = false
     @State private var dimTask: Task<Void, Never>?
 
-    // Persisted across launches so your last film pick sticks.
-    @AppStorage("selectedFilmID") private var selectedFilmID: String = FilmStock.original.id
-    private var selectedStock: FilmStock { FilmStock.stock(id: selectedFilmID) }
+    // FLIM ships a single signature look.
+    private var selectedStock: FilmStock { .original }
 
     // One-time intro that teaches the shoot → develop → darkroom loop.
     @AppStorage("hasSeenCameraCoach") private var hasSeenCoach = false
-    // Filtered viewfinder (Settings → Live film preview). On by default.
-    @AppStorage("liveFilmPreview") private var liveFilmPreview = true
     // Self-timer: 0 (off), 3, or 10 seconds.
     @AppStorage("selfTimerSeconds") private var selfTimerSeconds = 0
     @State private var countdown: Int? = nil
@@ -57,15 +54,6 @@ struct CameraView: View {
 
             CameraPreview(session: camera.session, camera: camera, onShutter: { shutter() })
                 .ignoresSafeArea()
-                // Optional filtered viewfinder — sits on top, touches pass through to the raw
-                // preview below (which is also the fallback if the Metal path can't run).
-                .overlay {
-                    if liveFilmPreview {
-                        LiveFilmPreview(session: camera.session, stock: selectedStock, isFront: camera.isFront)
-                            .ignoresSafeArea()
-                            .allowsHitTesting(false)
-                    }
-                }
                 // Tap-to-focus reticle.
                 .overlay {
                     if let reticle = camera.focusReticle {
@@ -94,10 +82,9 @@ struct CameraView: View {
                     topBar
                     Spacer()
                     VStack(spacing: 16) {
-                        filmStrip
                         bottomBar
                     }
-                    // Zoom floats just above the film strip so it doesn't eat a whole row.
+                    // Zoom floats just above the shutter row.
                     .overlay(alignment: .top) { zoomControl.offset(y: -36) }
                     // Lifts the shutter off the tab bar so it sits ~centered between the film
                     // pills and the bottom bar, rather than hugging the tabs.
@@ -336,69 +323,7 @@ struct CameraView: View {
         .animation(.easeInOut(duration: 0.35), value: filmStripActive)
     }
 
-    // MARK: - Film picker
-
-    private var filmStrip: some View {
-        VStack(spacing: 8) {
-            Text("FILM")
-                .font(.system(size: 10, weight: .semibold))
-                .tracking(3)
-                .foregroundStyle(FlimTheme.textTertiary)
-
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 10) {
-                    ForEach(FilmStock.catalog) { stock in
-                        filmChip(stock)
-                    }
-                }
-                .padding(.horizontal, 24)
-                .padding(.vertical, 6)   // room for the selected chip's scale + glow
-            }
-            .scrollClipDisabled()
-        }
-        .opacity(filmStripActive ? 1 : 0.55)
-        .animation(.easeInOut(duration: 0.35), value: filmStripActive)
-    }
-
-    @ViewBuilder
-    private func filmChip(_ stock: FilmStock) -> some View {
-        let isSelected = stock.id == selectedFilmID
-        let label = HStack(spacing: 7) {
-            // A tiny preview of the film's look, so the pick is visual not just a name.
-            Circle()
-                .fill(LinearGradient(colors: stock.swatch, startPoint: .topLeading, endPoint: .bottomTrailing))
-                .frame(width: 14, height: 14)
-                .overlay(Circle().strokeBorder(.white.opacity(0.3), lineWidth: 0.5))
-            Text(stock.name)
-                .font(.system(size: 13, weight: isSelected ? .semibold : .medium))
-        }
-        .foregroundStyle(isSelected ? .black : .white)
-        .padding(.horizontal, 13)
-        .padding(.vertical, 9)
-
-        Button {
-            Haptics.tap()
-            wakeFilmStrip()
-            if stock.id != selectedFilmID {
-                withAnimation(.snappy(duration: 0.25)) { selectedFilmID = stock.id }
-            }
-        } label: {
-            if isSelected {
-                label
-                    .background(FlimTheme.accent, in: Capsule())
-                    .shadow(color: FlimTheme.accent.opacity(0.55), radius: 8)
-            } else {
-                label.glassCapsule(interactive: true)
-            }
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("\(stock.name) film")
-        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
-        .scaleEffect(isSelected ? 1.06 : 0.94)
-        .animation(.snappy(duration: 0.25), value: isSelected)
-    }
-
-    /// Brings the film strip to full opacity, then fades it back out after a few idle seconds.
+    /// Brings the controls to full opacity, then fades them back out after a few idle seconds.
     private func wakeFilmStrip() {
         filmStripActive = true
         dimTask?.cancel()
