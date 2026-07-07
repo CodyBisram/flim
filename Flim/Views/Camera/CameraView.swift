@@ -86,9 +86,8 @@ struct CameraView: View {
                     }
                     // Zoom floats just above the shutter row.
                     .overlay(alignment: .top) { zoomControl.offset(y: -36) }
-                    // Lifts the shutter off the tab bar so it sits ~centered between the film
-                    // pills and the bottom bar, rather than hugging the tabs.
-                    .padding(.bottom, 34)
+                    // Small lift off the tab bar so the shutter sits low + centered.
+                    .padding(.bottom, 14)
                 }
 
                 coachOverlay
@@ -133,7 +132,9 @@ struct CameraView: View {
 
     private func capture() {
         Haptics.shutter()
-        SoundFX.shutter()
+        // No app shutter sound — AVCapturePhotoOutput plays the system camera-shutter sound itself
+        // at the actual capture (correctly timed, and after the flash fires). Playing our own too
+        // caused a double shutter noise with flash on.
         camera.capturePhoto()
     }
 
