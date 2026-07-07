@@ -46,13 +46,15 @@ struct FilmStock: Identifiable, Hashable {
     static let original = FilmStock(
         id: "flim_original",
         name: "FLIM Original",
-        tagline: "Warm, timeless, a little grainy",
+        tagline: "Warm, faded, disposable-camera glow",
+        // Tuned toward the Lapse look: warm golden cast, lifted/matte blacks (the faded-film
+        // signature), soft low contrast, glowing flash highlights, and fine grain.
         params: FilmParams(
-            temperature: 5300, tint: 6,
-            saturation: 1.12, contrast: 1.06,
-            blackLift: 0.05, highlightRolloff: 0.96,
-            vignetteIntensity: 1.0, vignetteRadius: 1.7,
-            grain: 0.06, bloom: 0.35, monochrome: false
+            temperature: 5150, tint: 7,
+            saturation: 1.06, contrast: 1.0,
+            blackLift: 0.12, highlightRolloff: 0.94,
+            vignetteIntensity: 0.85, vignetteRadius: 1.85,
+            grain: 0.085, bloom: 0.48, monochrome: false
         )
     )
 
