@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Privacy Policy — FLIM</title>
+  <meta name="description" content="FLIM's privacy policy: what we collect, why, and the control you have." />
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <header>
+    <div class="wrap">
+      <a class="logo" href="/">FL<span>I</span>M</a>
+      <nav>
+        <a href="/privacy">Privacy</a>
+        <a href="/terms">Terms</a>
+        <a href="/support">Support</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="wrap doc">
+    <h1>Privacy Policy</h1>
+    <p class="updated">Last updated: July 2026</p>
+
+    <p class="lead">FLIM is a disposable-camera app for sharing photos with friends — in private rolls and on a following-based feed. This policy explains what we collect, why, and the control you have. We keep it short because we collect very little.</p>
+
+    <h2>What we collect</h2>
+    <ul>
+      <li><strong>Email address</strong> — used only to sign you in and gate invite access. We do not email you marketing.</li>
+      <li><strong>Profile</strong> — the username, display name, bio, and profile/cover photos you choose. These are shown to other users.</li>
+      <li><strong>Photos you take</strong> — stored so they can develop and appear in your Darkroom, in rolls you share them to, and on your feed if you publish them.</li>
+      <li><strong>Social activity</strong> — posts you publish, comments and emoji reactions you make, who you follow, and the rolls you create or join.</li>
+      <li><strong>Safety data</strong> — users you block and any content or accounts you report, so we can review them.</li>
+      <li><strong>A device push token</strong> <em>(only if you enable notifications)</em> — to tell you when your roll develops and when friends react to or comment on your posts.</li>
+      <li><strong>Basic technical info</strong> — app version and iOS version, included when you send feedback so we can reproduce issues.</li>
+    </ul>
+    <p>We do <strong>not</strong> collect your contacts, location, or advertising identifiers, and we do <strong>not</strong> sell your data or use third-party ad tracking.</p>
+
+    <h2>Where your data lives</h2>
+    <p>Your account data and photos are stored on <strong>Supabase</strong> (our backend and storage provider) on your behalf. Photos are kept in a private storage bucket, access-controlled by row-level security, and served via time-limited signed links.</p>
+
+    <h2>How your data is used</h2>
+    <p>Only to run the app: authenticate you, develop and display your photos, deliver them to the rolls and followers you choose, power reactions and comments, send notifications you've enabled, and keep the community safe.</p>
+
+    <h2>Sharing and visibility</h2>
+    <ul>
+      <li><strong>Personal photos</strong> in your Darkroom are visible only to you.</li>
+      <li><strong>Photos in a shared roll</strong> are visible to that roll's members.</li>
+      <li><strong>Photos you publish to your feed</strong> are visible to your followers.</li>
+    </ul>
+    <p>We don't share your data with anyone else except our infrastructure providers — <strong>Supabase</strong> (backend and storage) and <strong>Apple Push Notification service</strong> (notifications, only if enabled) — as needed to operate the app.</p>
+
+    <h2>Your controls</h2>
+    <ul>
+      <li><strong>Delete a photo</strong> at any time from the full-screen view; <strong>delete a post</strong> to remove it from your feed.</li>
+      <li><strong>Block</strong> or <strong>report</strong> a user or a photo; <strong>leave a roll</strong>, or (as its creator) remove a member.</li>
+      <li><strong>Turn notifications on or off</strong> in Settings.</li>
+      <li><strong>Delete your account</strong> from Profile → Delete Account. This permanently removes your account, photos, posts, rolls, and reports, and cannot be undone.</li>
+    </ul>
+
+    <h2>Children</h2>
+    <p>FLIM is not directed to children under 13, and we don't knowingly collect their data.</p>
+
+    <h2>Changes</h2>
+    <p>We'll update this page if our practices change, and revise the date above.</p>
+
+    <h2>Contact</h2>
+    <p>Questions or requests: <a href="mailto:codyysb@gmail.com">codyysb@gmail.com</a>.</p>
+  </main>
+
+  <footer>
+    <div class="wrap">
+      <div>© <span id="year"></span> FLIM</div>
+      <div class="links">
+        <a href="/privacy">Privacy</a>
+        <a href="/terms">Terms</a>
+        <a href="/support">Support</a>
+        <a href="mailto:codyysb@gmail.com">Contact</a>
+      </div>
+    </div>
+  </footer>
+  <script>document.getElementById("year").textContent = new Date().getFullYear();</script>
+</body>
+</html>

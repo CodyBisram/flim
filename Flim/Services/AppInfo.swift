@@ -7,8 +7,9 @@ enum AppInfo {
     /// Where in-app feedback is emailed. Change to your address.
     static let feedbackEmail = "codyysb@gmail.com"
 
-    /// Hosted privacy policy (required for the App Store). Replace with your real URL once hosted.
-    static let privacyPolicyURL = URL(string: "https://flim.app/privacy")!
+    /// Hosted legal pages (required for the App Store).
+    static let privacyPolicyURL = URL(string: "https://flim-app.com/privacy")!
+    static let termsURL = URL(string: "https://flim-app.com/terms")!
 
     /// e.g. "1.0 (42)"
     static var versionString: String {

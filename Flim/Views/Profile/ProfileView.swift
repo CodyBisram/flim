@@ -235,6 +235,13 @@ struct ProfileView: View {
                         settingsRow("Privacy Policy", icon: "hand.raised")
                     }
 
+                    // Terms of Service.
+                    Button {
+                        openURL(AppInfo.termsURL)
+                    } label: {
+                        settingsRow("Terms of Service", icon: "doc.text")
+                    }
+
                     // Test-only data reset (TestFlight/dev; hidden on the public App Store).
                     if !AppInfo.isAppStore {
                         Button(role: .destructive) { showWipeConfirm = true } label: {
