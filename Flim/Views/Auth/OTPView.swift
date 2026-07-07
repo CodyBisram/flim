@@ -87,23 +87,27 @@ private struct OTPField: View {
 
     var body: some View {
         ZStack {
-            TextField("", text: $code)
-                .keyboardType(.numberPad)
-                .textContentType(.oneTimeCode)
-                .focused($isFocused)
-                .frame(width: 1, height: 1)
-                .opacity(0.001)
-                .onChange(of: code) { _, new in
-                    code = String(new.filter(\.isNumber).prefix(length))
-                }
-
+            // The visible digit boxes.
             HStack(spacing: 6) {
                 ForEach(0..<length, id: \.self) { index in
                     digitBox(at: index)
                 }
             }
-            .contentShape(Rectangle())
-            .onTapGesture { isFocused = true }
+
+            // A real, full-size text field laid over the boxes — its text and cursor are invisible,
+            // so the boxes show the code, but because it's a proper full-size field, one-time-code
+            // autofill (tap the keyboard suggestion) and paste land reliably.
+            TextField("", text: $code)
+                .keyboardType(.numberPad)
+                .textContentType(.oneTimeCode)
+                .focused($isFocused)
+                .foregroundStyle(.clear)
+                .tint(.clear)
+                .frame(height: 52)
+                .contentShape(Rectangle())
+                .onChange(of: code) { _, new in
+                    code = String(new.filter(\.isNumber).prefix(length))
+                }
         }
         .onAppear { isFocused = true }
     }
