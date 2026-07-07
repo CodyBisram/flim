@@ -434,14 +434,15 @@ struct FeedPostCard: View {
                             Spacer(minLength: 8)
                             Button { likeComment(info) } label: {
                                 HStack(spacing: 3) {
-                                    Image(systemName: info.likedByMe ? "heart.fill" : "heart")
-                                        .font(.system(size: 12))
-                                        .foregroundStyle(info.likedByMe ? FlimTheme.accent : FlimTheme.textTertiary)
-                                        .symbolEffect(.bounce, value: info.likedByMe)
                                     if info.likeCount > 0 {
                                         Text("\(info.likeCount)").font(.system(size: 11)).foregroundStyle(FlimTheme.textTertiary)
                                             .contentTransition(.numericText())
                                     }
+                                    Image(systemName: info.likedByMe ? "heart.fill" : "heart")
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(info.likedByMe ? FlimTheme.accent : FlimTheme.textTertiary)
+                                        .symbolEffect(.bounce, value: info.likedByMe)
+                                        .frame(width: 16, alignment: .trailing)
                                 }
                             }
                         }

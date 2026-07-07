@@ -79,6 +79,8 @@ struct MentionSuggestionBar: View {
     @Environment(FeedService.self) private var feed
     @State private var following: [UserProfile] = []
     @State private var mutualIds: Set<UUID> = []
+    @State private var searched: [UserProfile] = []   // all-users fallback for the current query
+    @State private var searchTask: Task<Void, Never>?
 
     private var matches: [UserProfile] {
         guard let q = Mentions.activeToken(in: text) else { return [] }
@@ -91,7 +93,9 @@ struct MentionSuggestionBar: View {
             if am != bm { return am }
             return (a.username ?? "") < (b.username ?? "")
         }
-        return Array(ranked.prefix(10))
+        // Then anyone else who matched the search but isn't someone you follow.
+        let extra = searched.filter { s in !ranked.contains { $0.id == s.id } }
+        return Array((ranked + extra).prefix(10))
     }
 
     var body: some View {
@@ -117,14 +121,32 @@ struct MentionSuggestionBar: View {
                                 .padding(.horizontal, 8).padding(.vertical, 6)
                                 .background(Color.white.opacity(0.1), in: Capsule())
                             }
+                            .buttonStyle(.plain)   // don't let the tap steal first-responder from the field
                         }
                     }
                     .padding(.horizontal, 12).padding(.vertical, 6)
                 }
+                .scrollDismissesKeyboard(.never)   // scrolling/tapping the strip keeps the keyboard up
                 .background(.ultraThinMaterial)
+                .transition(.opacity)
             }
         }
+        .animation(.easeInOut(duration: 0.18), value: matches.isEmpty)   // smooth the height change
         .task { await load() }
+        .onChange(of: text) { _, _ in scheduleSearch() }
+    }
+
+    /// Debounced search of all users for the current @token, so people you don't follow (e.g. the
+    /// person whose photo you're commenting on) can still be mentioned.
+    private func scheduleSearch() {
+        searchTask?.cancel()
+        guard let q = Mentions.activeToken(in: text), q.count >= 2 else { searched = []; return }
+        searchTask = Task {
+            try? await Task.sleep(for: .milliseconds(250))
+            guard !Task.isCancelled, let uid = auth.currentUser?.id else { return }
+            let results = await feed.searchProfiles(query: q, excluding: uid)
+            if !Task.isCancelled { searched = results }
+        }
     }
 
     private func load() async {
