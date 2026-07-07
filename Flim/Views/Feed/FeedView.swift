@@ -392,11 +392,9 @@ struct FeedPostCard: View {
                 .clipShape(RoundedRectangle(cornerRadius: 12))
                 .contentShape(Rectangle())
                 .onTapGesture(count: 2) { doubleTapLike() }
-                .onTapGesture { showComments = true }
                 .accessibilityElement()
                 .accessibilityLabel("Photo by \(item.author.handle)")
-                .accessibilityHint("Double-tap to open, or react below")
-                .accessibilityAddTraits(.isButton)
+                .accessibilityHint("Double-tap to like, or react below")
 
             if let caption = post.caption, !caption.isEmpty {
                 Text(caption).font(.system(size: 14)).foregroundStyle(FlimTheme.textSecondary)
@@ -410,16 +408,15 @@ struct FeedPostCard: View {
                 showTip: showReactTip
             ) { toggleReaction($0) }
 
-            // Comment preview → @handle taps to their page, the rest opens the photo.
+            // Comment preview → @handle taps to their page; "View all" is the ONLY way
+            // into the comments sheet (the photo tile itself no longer opens it).
             if !commentPreview.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
-                    if comments.count > commentPreview.count {
-                        Button { showComments = true } label: {
-                            Text("View all \(comments.count) comments")
-                                .font(.system(size: 12)).foregroundStyle(FlimTheme.textTertiary)
-                                .contentTransition(.numericText())
-                                .animation(.snappy(duration: 0.28), value: comments.count)
-                        }
+                    Button { showComments = true } label: {
+                        Text("View all \(comments.count) comments")
+                            .font(.system(size: 12)).foregroundStyle(FlimTheme.textTertiary)
+                            .contentTransition(.numericText())
+                            .animation(.snappy(duration: 0.28), value: comments.count)
                     }
                     ForEach(commentPreview) { info in
                         HStack(alignment: .top, spacing: 8) {
@@ -429,7 +426,6 @@ struct FeedPostCard: View {
                                 }
                                 Text(info.comment.body).font(.system(size: 14)).foregroundStyle(.white)
                                     .lineLimit(2).multilineTextAlignment(.leading)
-                                    .onTapGesture { showComments = true }
                             }
                             Spacer(minLength: 8)
                             Button { likeComment(info) } label: {
