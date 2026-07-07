@@ -5,8 +5,8 @@ import Foundation
 /// Spotlight, and the Shortcuts app. (Camera is the default tab, so even a cold launch lands right;
 /// a warm launch gets nudged over by the notification.)
 struct OpenCameraIntent: AppIntent {
-    static var title: LocalizedStringResource = "Take a FLIM Photo"
-    static var description = IntentDescription("Opens FLIM ready to shoot.")
+    static var title: LocalizedStringResource = "Take a Photo"
+    static var description = IntentDescription("Opens the camera, ready to shoot.")
     static var openAppWhenRun = true
 
     @MainActor

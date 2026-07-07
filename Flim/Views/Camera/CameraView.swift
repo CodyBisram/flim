@@ -363,7 +363,7 @@ struct CameraView: View {
             Text("Camera access needed")
                 .font(.system(size: 20, weight: .light))
                 .foregroundStyle(.white)
-            Text("FLIM needs your camera to take photos. Turn it on in Settings.")
+            Text("\(AppInfo.appName) needs your camera to take photos. Turn it on in Settings.")
                 .font(.system(size: 14))
                 .foregroundStyle(FlimTheme.textSecondary)
                 .multilineTextAlignment(.center)

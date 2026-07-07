@@ -106,7 +106,7 @@ struct PostDetailView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Flag this for review. Thanks for keeping FLIM safe.")
+            Text("Flag this for review. Thanks for keeping \(AppInfo.appName) safe.")
         }
         .confirmationDialog("Block \(item.author.handle)?", isPresented: $showBlockConfirm, titleVisibility: .visible) {
             Button("Block", role: .destructive) {

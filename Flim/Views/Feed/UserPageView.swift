@@ -70,7 +70,7 @@ struct UserPageView: View {
         }
         .overlay(alignment: .top) {
             if reportedToast {
-                Label("Reported — thanks for keeping FLIM safe", systemImage: "checkmark.circle.fill")
+                Label("Reported — thanks for keeping \(AppInfo.appName) safe", systemImage: "checkmark.circle.fill")
                     .font(.system(size: 13, weight: .medium)).foregroundStyle(.white)
                     .padding(.horizontal, 16).padding(.vertical, 10)
                     .background(.ultraThinMaterial, in: Capsule())

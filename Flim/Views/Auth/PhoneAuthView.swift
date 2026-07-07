@@ -18,7 +18,7 @@ struct EmailAuthView: View {
                 Spacer()
 
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("FLIM")
+                    Text(AppInfo.appName)
                         .font(.system(size: 34, weight: .thin))
                         .tracking(12)
                         .foregroundStyle(.white)

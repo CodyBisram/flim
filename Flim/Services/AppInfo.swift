@@ -4,6 +4,10 @@ import UIKit
 /// App metadata + distribution channel — used for the Settings footer, feedback email, and to
 /// gate the temporary password sign-in so it can't ship to the public App Store.
 enum AppInfo {
+    /// The app's display name, used in all user-facing copy. To rename the app, change this here
+    /// (covers the whole UI) plus CFBundleDisplayName in project.yml (the home-screen name).
+    static let appName = "FLIM"
+
     /// Where in-app feedback is emailed. Change to your address.
     static let feedbackEmail = "codyysb@gmail.com"
 
@@ -31,12 +35,12 @@ enum AppInfo {
 
     /// A pre-filled feedback email (Mail app), stamped with the build so bug reports self-identify.
     static var feedbackMailURL: URL? {
-        let body = "\n\n——\nApp: FLIM \(versionString)\niOS: \(UIDevice.current.systemVersion)"
+        let body = "\n\n——\nApp: \(appName) \(versionString)\niOS: \(UIDevice.current.systemVersion)"
         var comps = URLComponents()
         comps.scheme = "mailto"
         comps.path = feedbackEmail
         comps.queryItems = [
-            URLQueryItem(name: "subject", value: "FLIM feedback"),
+            URLQueryItem(name: "subject", value: "\(appName) feedback"),
             URLQueryItem(name: "body", value: body)
         ]
         return comps.url

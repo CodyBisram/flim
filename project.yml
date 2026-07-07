@@ -28,6 +28,7 @@ targets:
     info:
       path: Flim/Info.plist
       properties:
+        # Home-screen app name. To rename the app: change this + AppInfo.appName (covers the UI).
         CFBundleDisplayName: FLIM
         # App uses only standard HTTPS (exempt encryption) — declaring this skips
         # the per-build export-compliance prompt so builds reach testers automatically.
@@ -38,7 +39,7 @@ targets:
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
-        NSCameraUsageDescription: "FLIM uses your camera to take disposable photos that develop over time."
+        NSCameraUsageDescription: "Used to take disposable photos that develop over time."
         NSPhotoLibraryAddUsageDescription: "Save your developed photos to your camera roll."
         UIUserInterfaceStyle: Dark
         CFBundleURLTypes:

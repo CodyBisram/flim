@@ -10,7 +10,7 @@ struct SplashView: View {
                 Image(systemName: "camera.aperture")
                     .font(.system(size: 48, weight: .ultraLight))
                     .foregroundStyle(FlimTheme.accent)
-                Text("FLIM")
+                Text(AppInfo.appName)
                     .font(.system(size: 30, weight: .thin, design: .default))
                     .tracking(12)
                     .foregroundStyle(.white)

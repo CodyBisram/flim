@@ -20,7 +20,7 @@ struct OnboardingView: View {
              body: "Instants are ready right away — swipe to keep them in your Darkroom or publish to your feed. Shared rolls develop together at the 12-hour mark."),
         Card(icon: "sparkles",
              title: "Share the moment.",
-             body: "Post your favorites to your page, follow friends, and react to theirs. FLIM is invite-only — it's just your people.")
+             body: "Post your favorites to your page, follow friends, and react to theirs. \(AppInfo.appName) is invite-only — it's just your people.")
     ]
 
     var body: some View {

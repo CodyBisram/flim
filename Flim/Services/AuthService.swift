@@ -12,7 +12,7 @@ enum AuthError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .notInvited:
-            return "This email isn’t on the invite list yet. FLIM is invite-only — ask whoever invited you to add you."
+            return "This email isn’t on the invite list yet. \(AppInfo.appName) is invite-only — ask whoever invited you to add you."
         case .usernameTaken:
             return "That username’s taken — try another."
         }

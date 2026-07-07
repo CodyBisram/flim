@@ -134,7 +134,7 @@ struct ProfileView: View {
                             .glassCard(cornerRadius: 14, interactive: true)
                         }
 
-                        Text("Share this code so friends can add you on FLIM.")
+                        Text("Share this code so friends can add you on \(AppInfo.appName).")
                             .font(.system(size: 12))
                             .foregroundStyle(FlimTheme.textTertiary)
                             .multilineTextAlignment(.center)
@@ -275,7 +275,7 @@ struct ProfileView: View {
                         }
                         .disabled(isDeleting)
 
-                        Text("FLIM \(AppInfo.versionString)")
+                        Text("\(AppInfo.appName) \(AppInfo.versionString)")
                             .font(.system(size: 11))
                             .foregroundStyle(FlimTheme.textTertiary.opacity(0.7))
                             .padding(.top, 4)

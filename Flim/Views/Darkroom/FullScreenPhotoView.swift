@@ -229,7 +229,7 @@ struct FullScreenPhotoView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Flag this for review. Thanks for keeping FLIM safe.")
+            Text("Flag this for review. Thanks for keeping \(AppInfo.appName) safe.")
         }
         .sheet(item: $shareItem) { item in
             ActivityView(items: [item.image])
