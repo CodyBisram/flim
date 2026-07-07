@@ -399,10 +399,12 @@ struct FullScreenPhotoView: View {
     }
 }
 
-/// Identifiable wrapper so a shared image can drive `.sheet(item:)`.
+/// Identifiable wrapper so a shared image can drive `.sheet(item:)`. Wraps the photo in the FLIM
+/// print frame on the way out, so anything saved/shared quietly carries the brand.
 struct ShareImage: Identifiable {
     let id = UUID()
     let image: UIImage
+    init(image: UIImage) { self.image = BrandedExport.framed(image) }
 }
 
 /// Bridges UIKit's share sheet (Save to Photos, AirDrop, Messages, …) into SwiftUI.
