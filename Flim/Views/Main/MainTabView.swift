@@ -98,6 +98,7 @@ struct MainTabView: View {
             //   -seedDemo : jump to the Darkroom, which auto-seeds personal photos.
             //   -seedRoll : jump to Rolls and seed the first roll (for cover thumbnails).
             if args.contains("-seedDemo") { selected = 1 }
+            if args.contains("-tabFeed") { selected = 3 }   // jump to Feed for screenshots
             if args.contains("-seedRoll") {
                 selected = 2
                 Task {

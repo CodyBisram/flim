@@ -228,18 +228,18 @@ struct ProfileView: View {
                         settingsRow("Terms of Service", icon: "doc.text")
                     }
 
-                    // Test-only data reset (TestFlight/dev; hidden on the public App Store).
-                    if !AppInfo.isAppStore {
-                        Button(role: .destructive) { showWipeConfirm = true } label: {
-                            HStack {
-                                Text("Wipe my test data").font(.system(size: 15)).foregroundStyle(Color(red: 1, green: 0.4, blue: 0.4))
-                                Spacer()
-                                Image(systemName: "trash").foregroundStyle(FlimTheme.textTertiary)
-                            }
-                            .padding(.horizontal, 28).padding(.vertical, 14)
-                            .background(FlimTheme.bgElevated)
+                    // Test-only data reset. DEBUG builds only, so App Review never sees it.
+                    #if DEBUG
+                    Button(role: .destructive) { showWipeConfirm = true } label: {
+                        HStack {
+                            Text("Wipe my test data").font(.system(size: 15)).foregroundStyle(Color(red: 1, green: 0.4, blue: 0.4))
+                            Spacer()
+                            Image(systemName: "trash").foregroundStyle(FlimTheme.textTertiary)
                         }
+                        .padding(.horizontal, 28).padding(.vertical, 14)
+                        .background(FlimTheme.bgElevated)
                     }
+                    #endif
 
                     VStack(spacing: 12) {
                         // Sign out — immediate (non-destructive; you can sign right back in).
