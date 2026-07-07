@@ -63,27 +63,34 @@ enum InstantFilmProcessor {
     /// the live viewfinder preview (grain off, so it stays smooth at 30–60fps). This is the one
     /// source of truth for the look, so the preview matches the developed shot.
     static func filtered(_ input: CIImage, params p: FilmParams, extent: CGRect, grain: Bool) -> CIImage {
-        // 1. Saturation + contrast.
-        var image = input.applyingFilter("CIColorControls", parameters: [
-            kCIInputSaturationKey: p.monochrome ? 0 : p.saturation,
-            kCIInputContrastKey: p.contrast,
-            kCIInputBrightnessKey: 0
-        ])
+        var image: CIImage
 
-        // 2. Warmth / white-balance shift.
-        image = image.applyingFilter("CITemperatureAndTint", parameters: [
-            "inputNeutral": CIVector(x: 6500, y: 0),
-            "inputTargetNeutral": CIVector(x: p.temperature, y: p.tint)
-        ])
+        // Color grade: a .cube LUT if one is set and loads, otherwise the parametric chain.
+        if let lut = p.lut, CubeLUT.load(lut) != nil {
+            image = CubeLUT.apply(lut, to: input)
+        } else {
+            // 1. Saturation + contrast.
+            image = input.applyingFilter("CIColorControls", parameters: [
+                kCIInputSaturationKey: p.monochrome ? 0 : p.saturation,
+                kCIInputContrastKey: p.contrast,
+                kCIInputBrightnessKey: 0
+            ])
 
-        // 3. Tone curve — lift the blacks and roll off the highlights for that faded film feel.
-        image = image.applyingFilter("CIToneCurve", parameters: [
-            "inputPoint0": CIVector(x: 0.0, y: p.blackLift),
-            "inputPoint1": CIVector(x: 0.25, y: 0.25 + p.blackLift * 0.4),
-            "inputPoint2": CIVector(x: 0.5, y: 0.5 + p.blackLift * 0.1),
-            "inputPoint3": CIVector(x: 0.75, y: min(0.85, p.highlightRolloff)),
-            "inputPoint4": CIVector(x: 1.0, y: p.highlightRolloff)
-        ])
+            // 2. Warmth / white-balance shift.
+            image = image.applyingFilter("CITemperatureAndTint", parameters: [
+                "inputNeutral": CIVector(x: 6500, y: 0),
+                "inputTargetNeutral": CIVector(x: p.temperature, y: p.tint)
+            ])
+
+            // 3. Tone curve — lift the blacks and roll off the highlights for that faded film feel.
+            image = image.applyingFilter("CIToneCurve", parameters: [
+                "inputPoint0": CIVector(x: 0.0, y: p.blackLift),
+                "inputPoint1": CIVector(x: 0.25, y: 0.25 + p.blackLift * 0.4),
+                "inputPoint2": CIVector(x: 0.5, y: 0.5 + p.blackLift * 0.1),
+                "inputPoint3": CIVector(x: 0.75, y: min(0.85, p.highlightRolloff)),
+                "inputPoint4": CIVector(x: 1.0, y: p.highlightRolloff)
+            ])
+        }
 
         // 4. Halation / bloom glow on the highlights. Bloom grows the extent, so crop back.
         if p.bloom > 0 {

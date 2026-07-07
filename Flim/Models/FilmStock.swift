@@ -13,6 +13,10 @@ struct FilmParams: Hashable {
     var grain: CGFloat              // 0...~0.12 — opacity of the baked grain layer
     var bloom: CGFloat              // halation / glow on highlights
     var monochrome: Bool
+    /// Optional `.cube` 3D LUT (bundle resource name, no extension). When set and the file loads,
+    /// it replaces the parametric color grade (saturation/contrast/temperature/tone-curve) — grain,
+    /// bloom, and vignette still apply on top. Drop a `.cube` file into the app and set this to use it.
+    var lut: String? = nil
 }
 
 /// A selectable film look. While FLIM is invite-only, every pack ships free — there is
