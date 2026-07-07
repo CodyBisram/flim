@@ -45,22 +45,41 @@ struct FullScreenPhotoView: View {
                 // CachedImage serves a screen-sized, already-decoded image from memory, so
                 // opening a photo you can see in the grid is instant.
                 CachedImage(url: resolvedURL, maxPixel: 1600) { image in
-                    image
-                        .resizable()
-                        .scaledToFit()
-                        .scaleEffect(scale)
-                        .offset(offset)
-                        .gesture(dragToDismiss)
-                        .gesture(pinchToZoom)
-                        .onTapGesture(count: 2) {
-                            withAnimation(.spring(duration: 0.3)) {
-                                if scale > 1 {
-                                    scale = 1; offset = .zero; lastOffset = .zero
-                                } else {
-                                    scale = 2.5
+                    // Photographer + date live UNDER the photo's actual bottom edge (part of
+                    // its layout), so they never overlap the image — on any aspect ratio.
+                    VStack(spacing: 10) {
+                        image
+                            .resizable()
+                            .scaledToFit()
+                            .scaleEffect(scale)
+                            .offset(offset)
+                            .gesture(dragToDismiss)
+                            .gesture(pinchToZoom)
+                            .onTapGesture(count: 2) {
+                                withAnimation(.spring(duration: 0.3)) {
+                                    if scale > 1 {
+                                        scale = 1; offset = .zero; lastOffset = .zero
+                                    } else {
+                                        scale = 2.5
+                                    }
                                 }
                             }
+                        VStack(spacing: 2) {
+                            if let photographer {
+                                Text("@\(photographer)")
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundStyle(.white)
+                            }
+                            Text(photo.takenAt.formatted(date: .abbreviated, time: .shortened))
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(Color(white: 0.68))
                         }
+                        .opacity(scale > 1 ? 0 : 1)   // tuck away while zoomed in
+                        .animation(.easeOut(duration: 0.2), value: scale > 1)
+                    }
+                    // Keep the photo + label clear of the top controls and bottom bar.
+                    .padding(.top, 108)
+                    .padding(.bottom, 168)
                 } placeholder: {
                     ProgressView().tint(.white)
                 }
@@ -154,20 +173,6 @@ struct FullScreenPhotoView: View {
                 .padding(.top, 60)
 
                 Spacer()
-
-                // Photographer + date, centered under the photo (cleaner than the top bar).
-                VStack(spacing: 2) {
-                    if let photographer {
-                        Text("@\(photographer)")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(.white)
-                    }
-                    Text(photo.takenAt.formatted(date: .abbreviated, time: .shortened))
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(Color(white: 0.68))
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.bottom, 14)
 
                 bottomBar
                     .padding(.horizontal, 20)
