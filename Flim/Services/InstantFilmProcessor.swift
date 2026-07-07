@@ -44,21 +44,10 @@ enum InstantFilmProcessor {
         let extent = source.extent
         guard !extent.isEmpty else { return nil }
 
-        // Dark-scene tuning: grain and lifted blacks are most visible (and least flattering) in a
-        // dim room, where the whole frame is shadow. Ease both off as the scene gets darker so it
-        // reads clean-dark instead of hazy/grainy. Bright scenes (brightness ≥ 0.35) are untouched.
-        var params = stock.params
-        let brightness = averageLuminance(of: source, extent: extent)
-        if brightness < 0.35 {
-            let darkness = min(1, (0.35 - brightness) / 0.35)   // 0 at 0.35 → 1 at pure black
-            params.grain *= (1 - 0.65 * darkness)               // up to 65% less grain
-            params.blackLift *= (1 - 0.80 * darkness)           // up to 80% deeper blacks
-        }
-
         // Filter at FULL resolution — this matches the original look. Grain and bloom render
         // relative to the native pixel size; downscaling *before* filtering (a past egress tweak)
         // made the grain coarse and the bloom too strong. So bake the look first…
-        var image = filtered(source, params: params, extent: extent, grain: true)
+        var image = filtered(source, params: stock.params, extent: extent, grain: true)
 
         // …then downscale the finished image to the storage cap (keeps egress sane, look intact).
         let longEdge = max(extent.width, extent.height)
@@ -70,20 +59,6 @@ enum InstantFilmProcessor {
         }
         guard let cgImage = context.createCGImage(image, from: image.extent) else { return nil }
         return UIImage(cgImage: cgImage).jpegData(compressionQuality: 0.85)
-    }
-
-    /// Average perceived brightness of an image, 0 (black) … 1 (white). Uses CIAreaAverage → 1px.
-    private static func averageLuminance(of image: CIImage, extent: CGRect) -> CGFloat {
-        guard let avg = CIFilter(name: "CIAreaAverage", parameters: [
-            kCIInputImageKey: image,
-            kCIInputExtentKey: CIVector(cgRect: extent)
-        ])?.outputImage else { return 0.5 }
-        var px: [UInt8] = [0, 0, 0, 0]
-        context.render(avg, toBitmap: &px, rowBytes: 4,
-                       bounds: CGRect(x: 0, y: 0, width: 1, height: 1),
-                       format: .RGBA8, colorSpace: CGColorSpaceCreateDeviceRGB())
-        let r = CGFloat(px[0]) / 255, g = CGFloat(px[1]) / 255, b = CGFloat(px[2]) / 255
-        return 0.299 * r + 0.587 * g + 0.114 * b
     }
 
     /// The film look as a pure CIImage → CIImage transform. Shared by capture (with grain) and
