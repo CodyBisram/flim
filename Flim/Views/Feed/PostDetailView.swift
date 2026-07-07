@@ -88,7 +88,7 @@ struct PostDetailView: View {
             }
         }
         .fullScreenCover(isPresented: $showViewer) { ImageViewer(url: url) }
-        .sheet(item: $shareItem) { ActivityView(items: [$0.image]) }
+        .sheet(item: $shareItem) { SharePreviewSheet(photo: $0.image) }
         .confirmationDialog("Delete this post?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
             Button("Delete", role: .destructive) {
                 Task { await feed.deletePost(id: post.id); dismiss() }

@@ -56,7 +56,7 @@ struct RollCarouselView: View {
             }
         }
         .statusBarHidden()
-        .sheet(item: $shareItem) { ActivityView(items: [$0.image]) }
+        .sheet(item: $shareItem) { SharePreviewSheet(photo: $0.image) }
         .sheet(isPresented: $showComments) {
             if let photo = current {
                 PhotoCommentsSheet(photoId: photo.id, memberNames: memberNames)

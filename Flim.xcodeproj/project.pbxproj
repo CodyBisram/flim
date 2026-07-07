@@ -27,6 +27,7 @@
 		40156F83DC4D83217CB2DED5 /* AuthHelpersTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9927EBDE8E7056C4DA31EF2 /* AuthHelpersTests.swift */; };
 		410927C61580C55C921D591F /* AppUser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44986F8867E5B522EBEABEE8 /* AppUser.swift */; };
 		46BB284536C9EFB9CB87A36C /* OTPView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2CA2F6DA98A04777C3D3C23 /* OTPView.swift */; };
+		4D1C56A98C6D0528C19AF61D /* SharePreviewSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76A0A3EA09696EA2921DCA7C /* SharePreviewSheet.swift */; };
 		501F195F7187429C965AE299 /* Photo.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF062148240A383A260E8EE3 /* Photo.swift */; };
 		56F026E4C4E1E30F19E98152 /* CameraViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2541CCDED4898D0604DB64EA /* CameraViewModel.swift */; };
 		58ACCFC04DEF968BFD005E0A /* TagPhotoSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CDE42DC73343A3669F6A4A9 /* TagPhotoSheet.swift */; };
@@ -127,6 +128,7 @@
 		633F60D6D348ADEA4D94D263 /* RollService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollService.swift; sourceTree = "<group>"; };
 		6D3CAAA6097E82270360343F /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		7148B48A915D24BFBDEB23E0 /* NotificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationService.swift; sourceTree = "<group>"; };
+		76A0A3EA09696EA2921DCA7C /* SharePreviewSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharePreviewSheet.swift; sourceTree = "<group>"; };
 		799578BF49AD244204751AC0 /* UserPageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserPageView.swift; sourceTree = "<group>"; };
 		7A0B87FE1069C71306456DFF /* Roll.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Roll.swift; sourceTree = "<group>"; };
 		8118D8FA0343F18F835415D3 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
@@ -214,6 +216,7 @@
 				24DE0B6E57BFD6B0DE4804A0 /* PhotoTags.swift */,
 				9BE06A9CEC95AF492BDBD575 /* PrimaryButton.swift */,
 				235D6F50F5FDD8BE4BB9DE4E /* ReactionBar.swift */,
+				76A0A3EA09696EA2921DCA7C /* SharePreviewSheet.swift */,
 				C455E1683D6D539F208C704F /* ShimmerPlaceholder.swift */,
 				2CDE42DC73343A3669F6A4A9 /* TagPhotoSheet.swift */,
 			);
@@ -533,6 +536,7 @@
 				EECAD4AB8FC87AFACD4A5A80 /* RollMembersView.swift in Sources */,
 				B09880D2185738A73550E7C6 /* RollService.swift in Sources */,
 				322A5492683DD8B6D58B77C6 /* RollsView.swift in Sources */,
+				4D1C56A98C6D0528C19AF61D /* SharePreviewSheet.swift in Sources */,
 				A1F62ACE36A2F7A63B9B78BE /* ShimmerPlaceholder.swift in Sources */,
 				ECCE9AA4B362458687B4C9B1 /* SignedURLStore.swift in Sources */,
 				CBD8476D316567B4404ECBA9 /* Social.swift in Sources */,

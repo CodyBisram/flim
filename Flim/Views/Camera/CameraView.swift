@@ -26,9 +26,6 @@ struct CameraView: View {
     // Self-timer: 0 (off), 3, or 10 seconds.
     @AppStorage("selfTimerSeconds") private var selfTimerSeconds = 0
     @State private var countdown: Int? = nil
-    // Transient "→ Darkroom" cue after each shot; the dismiss task cancels on re-shoot.
-    @State private var showDarkroomCue = false
-    @State private var cueTask: Task<Void, Never>?
 
     // Persisted hardware-flash mode (AVCaptureDevice.FlashMode rawValue: off=0, on=1, auto=2).
     @AppStorage("flashModeRaw") private var flashModeRaw = 0
@@ -94,22 +91,6 @@ struct CameraView: View {
                 }
 
                 coachOverlay
-
-                // Post-capture cue: tells first-time users WHERE the shot went (it develops
-                // in the Darkroom — there's no instant review, by design).
-                if showDarkroomCue {
-                    VStack {
-                        Spacer()
-                        Label("Developing in your Darkroom", systemImage: "photo.stack")
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 16).padding(.vertical, 10)
-                            .background(.ultraThinMaterial, in: Capsule())
-                            .padding(.bottom, 132)   // clears the shutter cluster
-                    }
-                    .allowsHitTesting(false)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-                }
 
                 // Self-timer countdown.
                 if let countdown, countdown > 0 {
@@ -453,16 +434,6 @@ struct CameraView: View {
     private func bindCapture() {
         camera.onPhotoCapture = { data in
             guard let userId = auth.currentUser?.id else { return }
-            // Brief cue so a first shot doesn't feel like it vanished (delegate thread → main).
-            Task { @MainActor in
-                cueTask?.cancel()
-                withAnimation(.snappy(duration: 0.25)) { showDarkroomCue = true }
-                cueTask = Task {
-                    try? await Task.sleep(for: .seconds(1.8))
-                    guard !Task.isCancelled else { return }
-                    withAnimation(.easeOut(duration: 0.3)) { showDarkroomCue = false }
-                }
-            }
             // Read the current roll + film selection at capture time.
             let rollId = selectedRoll?.id
             let rollName = selectedRoll?.name

@@ -475,7 +475,7 @@ struct FeedPostCard: View {
             CommentsSheet(post: post)
         }
         .navigationDestination(item: $route) { UserPageView(userId: $0.id) }
-        .sheet(item: $shareItem) { ActivityView(items: [$0.image]) }
+        .sheet(item: $shareItem) { SharePreviewSheet(photo: $0.image) }
         .sheet(isPresented: $showEditCaption) {
             EditCaptionSheet(caption: $captionDraft) {
                 guard let uid = auth.currentUser?.id else { return }

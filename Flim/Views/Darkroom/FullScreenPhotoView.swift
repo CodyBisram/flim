@@ -232,7 +232,7 @@ struct FullScreenPhotoView: View {
             Text("Flag this for review. Thanks for keeping \(AppInfo.appName) safe.")
         }
         .sheet(item: $shareItem) { item in
-            ActivityView(items: [item.image])
+            SharePreviewSheet(photo: item.image)
         }
         .safeAreaInset(edge: .bottom) {
             if showShareComposer { shareComposer }
@@ -399,12 +399,11 @@ struct FullScreenPhotoView: View {
     }
 }
 
-/// Identifiable wrapper so a shared image can drive `.sheet(item:)`. Wraps the photo in the FLIM
-/// print frame on the way out, so anything saved/shared quietly carries the brand.
+/// Identifiable wrapper so a shared image can drive `.sheet(item:)`. Framing (the FLIM print
+/// border) is the user's choice, made live in SharePreviewSheet — this holds the untouched photo.
 struct ShareImage: Identifiable {
     let id = UUID()
     let image: UIImage
-    init(image: UIImage) { self.image = BrandedExport.framed(image) }
 }
 
 /// Bridges UIKit's share sheet (Save to Photos, AirDrop, Messages, …) into SwiftUI.

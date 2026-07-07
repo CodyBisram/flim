@@ -53,7 +53,10 @@ struct MainTabView: View {
                 }
             }
         }
-        .tint(FlimTheme.accent)
+        // Tint via the OBSERVED accentColor (not the static FlimTheme.accent) so the tab bar
+        // re-tints the moment the user picks a new accent — the static read never invalidates
+        // this view, which left the old color until a relaunch.
+        .tint((FlimAccent(rawValue: accentColor) ?? .amber).color)
         .overlay(alignment: .top) {
             if !network.isConnected {
                 Label("No connection", systemImage: "wifi.slash")
