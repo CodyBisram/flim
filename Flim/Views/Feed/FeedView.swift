@@ -399,7 +399,7 @@ struct FeedPostCard: View {
                 .accessibilityAddTraits(.isButton)
 
             if let caption = post.caption, !caption.isEmpty {
-                MentionText(text: caption, font: .system(size: 14), color: FlimTheme.textSecondary) { openMention($0) }
+                Text(caption).font(.system(size: 14)).foregroundStyle(FlimTheme.textSecondary)
             }
 
             // Emoji reactions (inline picker). Comment access lives in the preview + composer below.
@@ -427,7 +427,7 @@ struct FeedPostCard: View {
                                 Button { route = ProfileRoute(id: info.comment.userId) } label: {
                                     Text(info.handle).font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
                                 }
-                                MentionText(text: info.comment.body, font: .system(size: 14), color: .white) { openMention($0) }
+                                Text(info.comment.body).font(.system(size: 14)).foregroundStyle(.white)
                                     .lineLimit(2).multilineTextAlignment(.leading)
                                     .onTapGesture { showDetail = true }
                             }
@@ -452,10 +452,6 @@ struct FeedPostCard: View {
             }
 
             // Inline comment composer
-            if commentFocused {
-                MentionSuggestionBar(text: $draft)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-            }
             HStack(spacing: 8) {
                 TextField("Add a comment…", text: $draft, axis: .vertical)
                     .lineLimit(1...3)
@@ -572,9 +568,6 @@ struct FeedPostCard: View {
         Task { await feed.reactToPost(post.id, emoji: emoji, userId: uid) }
     }
 
-    private func openMention(_ username: String) {
-        Task { if let p = await feed.fetchProfile(username: username) { route = ProfileRoute(id: p.id) } }
-    }
 
     private func likeComment(_ info: CommentInfo) {
         guard let uid = auth.currentUser?.id else { return }
@@ -612,9 +605,6 @@ private struct EditCaptionSheet: View {
                         .padding(14)
                         .background(FlimTheme.bgElevated, in: RoundedRectangle(cornerRadius: 12))
                         .padding(.horizontal, 20).padding(.top, 20)
-                    MentionSuggestionBar(text: $caption)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                        .padding(.horizontal, 20)
                     Spacer()
                 }
             }

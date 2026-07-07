@@ -8,7 +8,6 @@ struct PhotoCommentsSheet: View {
 
     @Environment(AuthService.self) private var auth
     @Environment(PhotoService.self) private var photoService
-    @Environment(FeedService.self) private var feed
     @Environment(\.dismiss) private var dismiss
 
     @State private var comments: [PhotoComment] = []
@@ -75,21 +74,14 @@ struct PhotoCommentsSheet: View {
                         }
                     }
                 }
-                MentionText(text: comment.body, font: .system(size: 14), color: FlimTheme.textSecondary) { openMention($0) }
+                Text(comment.body).font(.system(size: 14)).foregroundStyle(FlimTheme.textSecondary)
             }
             Spacer()
         }
     }
 
-    private func openMention(_ username: String) {
-        Task { if let p = await feed.fetchProfile(username: username) { route = ProfileRoute(id: p.id) } }
-    }
-
     private var composer: some View {
         VStack(spacing: 8) {
-            if focused {
-                MentionSuggestionBar(text: $draft).clipShape(RoundedRectangle(cornerRadius: 12))
-            }
             HStack(spacing: 10) {
                 TextField("Add a comment…", text: $draft, axis: .vertical)
                     .lineLimit(1...4)

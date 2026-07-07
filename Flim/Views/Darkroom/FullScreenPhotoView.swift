@@ -289,9 +289,6 @@ struct FullScreenPhotoView: View {
                 .background(Color.white.opacity(0.1), in: Capsule())
             }
 
-            if captionFocused {
-                MentionSuggestionBar(text: $shareCaptionDraft).clipShape(RoundedRectangle(cornerRadius: 12))
-            }
             HStack(spacing: 10) {
                 TextField("Add a caption…", text: $shareCaptionDraft, axis: .vertical)
                     .lineLimit(1...3)
