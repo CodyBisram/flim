@@ -27,6 +27,9 @@ struct RollDetailView: View {
     @State private var showLeaveRoll = false
     @State private var showCarousel = false
     @State private var isMuted = false
+    @State private var showReveal = false
+
+    private var revealSeenKey: String { "rollRevealSeen.\(roll.id.uuidString)" }
 
     private var isCreator: Bool { auth.currentUser?.id == roll.createdBy }
     /// Developed shots oldest → newest, for the flip-through carousel.
@@ -188,6 +191,13 @@ struct RollDetailView: View {
         .onAppear {
             Task {
                 await vm.loadRoll(photoService: photoService, rollId: roll.id)
+                // The reveal, as an event: play everyone's shots once, the first time the
+                // roll is opened after it has developed.
+                if roll.isDeveloped, !vm.developedPhotos.isEmpty,
+                   !UserDefaults.standard.bool(forKey: revealSeenKey) {
+                    UserDefaults.standard.set(true, forKey: revealSeenKey)
+                    showReveal = true
+                }
                 // Ensure EVERY member gets a develop reminder — even those who didn't shoot.
                 // The reveal is fixed at the roll's creation, so this works with zero photos too.
                 if notificationsEnabled, !roll.isDeveloped {
@@ -220,6 +230,10 @@ struct RollDetailView: View {
         }
         .fullScreenCover(isPresented: $showCarousel) {
             RollCarouselView(photos: chronologicalDeveloped, memberNames: memberNames)
+        }
+        .fullScreenCover(isPresented: $showReveal) {
+            RollRevealView(rollName: displayName.isEmpty ? roll.name : displayName,
+                           photos: chronologicalDeveloped, memberNames: memberNames)
         }
         .sheet(isPresented: $showMembers) {
             RollMembersView(roll: roll)

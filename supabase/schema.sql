@@ -745,3 +745,20 @@ DROP TRIGGER IF EXISTS auto_hide_reported_trigger ON public.photo_reports;
 CREATE TRIGGER auto_hide_reported_trigger
     AFTER INSERT ON public.photo_reports
     FOR EACH ROW EXECUTE FUNCTION public.auto_hide_reported();
+
+-- ============================================================
+-- Indexes on hot query paths (Postgres does NOT auto-index foreign keys).
+-- Cheap now, and they keep the feed / rolls / activity queries index-backed as data grows.
+-- ============================================================
+CREATE INDEX IF NOT EXISTS posts_user_created_idx      ON public.posts (user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS posts_photo_idx             ON public.posts (photo_id);
+CREATE INDEX IF NOT EXISTS photos_user_idx             ON public.photos (user_id, taken_at DESC);
+CREATE INDEX IF NOT EXISTS photos_roll_idx             ON public.photos (roll_id, develops_at DESC);
+CREATE INDEX IF NOT EXISTS post_comments_post_idx      ON public.post_comments (post_id);
+CREATE INDEX IF NOT EXISTS post_reactions_post_idx     ON public.post_reactions (post_id);
+CREATE INDEX IF NOT EXISTS follows_follower_idx        ON public.follows (follower_id);
+CREATE INDEX IF NOT EXISTS follows_following_idx       ON public.follows (following_id);
+CREATE INDEX IF NOT EXISTS post_tags_tagged_idx        ON public.post_tags (tagged_user_id);
+CREATE INDEX IF NOT EXISTS roll_members_user_idx       ON public.roll_members (user_id);
+CREATE INDEX IF NOT EXISTS photo_reports_photo_idx     ON public.photo_reports (photo_id);
+CREATE INDEX IF NOT EXISTS blocks_blocker_idx          ON public.blocks (blocker_id);
