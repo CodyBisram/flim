@@ -38,24 +38,26 @@ enum InstantFilmProcessor {
 
     private static func processSync(_ data: Data, stock: FilmStock) -> Data? {
         // Apply embedded EXIF orientation so the output is upright.
-        guard var source = CIImage(data: data, options: [.applyOrientationProperty: true]) else {
+        guard let source = CIImage(data: data, options: [.applyOrientationProperty: true]) else {
             return nil
-        }
-        // Downscale before filtering — smaller file to store/serve, and faster to process.
-        let raw = source.extent
-        guard !raw.isEmpty else { return nil }
-        let longEdge = max(raw.width, raw.height)
-        if longEdge > maxStoredEdge {
-            source = source.applyingFilter("CILanczosScaleTransform", parameters: [
-                kCIInputScaleKey: maxStoredEdge / longEdge,
-                kCIInputAspectRatioKey: 1.0
-            ])
         }
         let extent = source.extent
         guard !extent.isEmpty else { return nil }
 
-        let image = filtered(source, params: stock.params, extent: extent, grain: true)
-        guard let cgImage = context.createCGImage(image, from: extent) else { return nil }
+        // Filter at FULL resolution — this matches the original look. Grain and bloom render
+        // relative to the native pixel size; downscaling *before* filtering (a past egress tweak)
+        // made the grain coarse and the bloom too strong. So bake the look first…
+        var image = filtered(source, params: stock.params, extent: extent, grain: true)
+
+        // …then downscale the finished image to the storage cap (keeps egress sane, look intact).
+        let longEdge = max(extent.width, extent.height)
+        if longEdge > maxStoredEdge {
+            image = image.applyingFilter("CILanczosScaleTransform", parameters: [
+                kCIInputScaleKey: maxStoredEdge / longEdge,
+                kCIInputAspectRatioKey: 1.0
+            ])
+        }
+        guard let cgImage = context.createCGImage(image, from: image.extent) else { return nil }
         return UIImage(cgImage: cgImage).jpegData(compressionQuality: 0.85)
     }
 
