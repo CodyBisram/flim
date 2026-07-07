@@ -60,7 +60,14 @@ struct UserPageView: View {
                 } else {
                     Menu {
                         Button { showReportConfirm = true } label: { Label("Report", systemImage: "flag") }
-                        Button(role: .destructive) { showBlockConfirm = true } label: { Label("Block", systemImage: "hand.raised") }
+                        if feed.isBlocked(userId) {
+                            Button {
+                                guard let uid = auth.currentUser?.id else { return }
+                                Task { await feed.unblock(userId, from: uid) }
+                            } label: { Label("Unblock", systemImage: "hand.raised.slash") }
+                        } else {
+                            Button(role: .destructive) { showBlockConfirm = true } label: { Label("Block", systemImage: "hand.raised") }
+                        }
                     } label: {
                         Image(systemName: "ellipsis").foregroundStyle(FlimTheme.accent)
                     }

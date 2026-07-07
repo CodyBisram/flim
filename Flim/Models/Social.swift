@@ -142,6 +142,7 @@ struct ActivityItem: Identifiable {
         case like(String)      // emoji
         case comment(String)   // body
         case follow
+        case tagged            // tagged you in a photo
     }
     let id = UUID()
     let kind: Kind

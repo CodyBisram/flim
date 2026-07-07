@@ -228,7 +228,9 @@ struct RollDetailView: View {
             ActivityView(items: shareImages)
         }
         .sheet(isPresented: $showInviteShare) {
-            ActivityView(items: ["Join my roll “\(displayName.isEmpty ? roll.name : displayName)” on \(AppInfo.appName) 🎞\nTap to join: com.lapse.app://join/\(roll.inviteCode)\n(or enter code \(roll.inviteCode) in the app)"])
+            // Lead with the code — custom URL schemes aren't tappable links in iMessage,
+            // so the code is the reliable path. (Universal links are a post-launch upgrade.)
+            ActivityView(items: ["Join my roll “\(displayName.isEmpty ? roll.name : displayName)” on \(AppInfo.appName) 🎞\nOpen \(AppInfo.appName) → Rolls → Join, and enter code: \(roll.inviteCode)"])
         }
         .confirmationDialog("Delete this roll?", isPresented: $showDeleteRoll, titleVisibility: .visible) {
             Button("Delete Roll", role: .destructive) {

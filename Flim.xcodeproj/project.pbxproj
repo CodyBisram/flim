@@ -12,6 +12,7 @@
 		0A8F3F3E94D6039F6537E14A /* SplashView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 121F65D393ABD1CC13DA0186 /* SplashView.swift */; };
 		1986128F060D36EEB13FF786 /* AuthService.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFC0C65109A81467AB59472B /* AuthService.swift */; };
 		1A636EF87FB2E349B9F555DC /* SupabaseClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0EABF568B1F50179364FE91 /* SupabaseClient.swift */; };
+		1E37F6744B21D26B8E8DDFAB /* BlockedUsersSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DBDD795E7211D298DCFEB50 /* BlockedUsersSheet.swift */; };
 		203A74E3F739D03F1FCD6248 /* DarkroomView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AACFEBE63C392489A62B63C /* DarkroomView.swift */; };
 		24C89EABBAFF98261AEB3ABB /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 6D3CAAA6097E82270360343F /* Assets.xcassets */; };
 		287023347895E167ECC91920 /* Haptics.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA04DBB3261C344B5DD64806 /* Haptics.swift */; };
@@ -105,6 +106,7 @@
 		2AACFEBE63C392489A62B63C /* DarkroomView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DarkroomView.swift; sourceTree = "<group>"; };
 		2BF0928EB05A780C49AC79C8 /* CameraView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraView.swift; sourceTree = "<group>"; };
 		2CDE42DC73343A3669F6A4A9 /* TagPhotoSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TagPhotoSheet.swift; sourceTree = "<group>"; };
+		2DBDD795E7211D298DCFEB50 /* BlockedUsersSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlockedUsersSheet.swift; sourceTree = "<group>"; };
 		33D109A1C315CD466659A10F /* RollsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollsView.swift; sourceTree = "<group>"; };
 		34743DB97B9809C5C81D7E30 /* FlimTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = FlimTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		35A42EF6E37ED2ED362069BA /* JoinRollView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JoinRollView.swift; sourceTree = "<group>"; };
@@ -252,6 +254,7 @@
 		65E89728796BB8EE12A233ED /* Profile */ = {
 			isa = PBXGroup;
 			children = (
+				2DBDD795E7211D298DCFEB50 /* BlockedUsersSheet.swift */,
 				DC8AD03A8D1B86B86365239A /* PhotoPickerSheet.swift */,
 				DC34A455324DEE2A431A7720 /* ProfileView.swift */,
 			);
@@ -484,6 +487,7 @@
 				E132A62DD98C56BC83EB715E /* AppInfo.swift in Sources */,
 				410927C61580C55C921D591F /* AppUser.swift in Sources */,
 				1986128F060D36EEB13FF786 /* AuthService.swift in Sources */,
+				1E37F6744B21D26B8E8DDFAB /* BlockedUsersSheet.swift in Sources */,
 				A738DE58BF36527DC94CBF12 /* BrandedExport.swift in Sources */,
 				58C00DA36934A8DF0C2C833B /* CameraPreview.swift in Sources */,
 				B5E40248AEAEF1C69C495751 /* CameraView.swift in Sources */,

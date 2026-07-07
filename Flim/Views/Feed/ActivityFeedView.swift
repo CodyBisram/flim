@@ -20,7 +20,7 @@ struct ActivityFeedView: View {
                             .foregroundStyle(FlimTheme.textTertiary)
                         Text("No activity yet")
                             .font(.system(size: 14)).foregroundStyle(FlimTheme.textTertiary)
-                        Text("Likes, comments, and new followers will show up here.")
+                        Text("Reactions, comments, tags, and new followers will show up here.")
                             .font(.system(size: 12)).foregroundStyle(FlimTheme.textTertiary)
                             .multilineTextAlignment(.center).padding(.horizontal, 50)
                     }
@@ -85,6 +85,7 @@ struct ActivityFeedView: View {
         case .like(let emoji): return "reacted \(emoji) to your photo"
         case .comment(let body): return "commented: “\(body)”"
         case .follow: return "started following you"
+        case .tagged: return "tagged you in a photo"
         }
     }
 
@@ -93,6 +94,7 @@ struct ActivityFeedView: View {
         case .like: return "heart.fill"
         case .comment: return "bubble.right.fill"
         case .follow: return "person.fill.badge.plus"
+        case .tagged: return "tag.fill"
         }
     }
 }

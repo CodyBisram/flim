@@ -14,7 +14,7 @@ struct OnboardingView: View {
     private let cards = [
         Card(icon: "camera.aperture",
              title: "Shoot now.",
-             body: "Pick a film look and capture the moment, disposable-camera style. Fast and in the moment — just tap the shutter."),
+             body: "Capture the moment, disposable-camera style — every shot gets \(AppInfo.appName)'s film look baked in. No filters to pick. Just tap the shutter."),
         Card(icon: "square.stack.3d.up",
              title: "Sort your shots.",
              body: "Instants are ready right away — swipe to keep them in your Darkroom or publish to your feed. Shared rolls develop together at the 12-hour mark."),
@@ -61,7 +61,7 @@ struct OnboardingView: View {
                         hasOnboarded = true
                     }
                 } label: {
-                    Text(page < cards.count - 1 ? "Next" : "Get started")
+                    Text(page < cards.count - 1 ? "Next" : "Take your first shot")
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(.black)
                         .frame(maxWidth: .infinity)

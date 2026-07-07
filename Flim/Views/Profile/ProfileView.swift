@@ -18,6 +18,7 @@ struct ProfileView: View {
     @State private var deleteError: String?
     @State private var showEditUsername = false
     @State private var showWipeConfirm = false
+    @State private var showBlockedUsers = false
     @AppStorage("developNotificationsEnabled") private var notificationsEnabled = true
     @AppStorage("soundEffects") private var soundEffects = true
     @Environment(\.openURL) private var openURL
@@ -228,6 +229,13 @@ struct ProfileView: View {
                         settingsRow("Terms of Service", icon: "doc.text")
                     }
 
+                    // Blocked users — review + undo blocks.
+                    Button {
+                        showBlockedUsers = true
+                    } label: {
+                        settingsRow("Blocked users", icon: "hand.raised.slash")
+                    }
+
                     // Test-only data reset. DEBUG builds only, so App Review never sees it.
                     #if DEBUG
                     Button(role: .destructive) { showWipeConfirm = true } label: {
@@ -296,6 +304,9 @@ struct ProfileView: View {
             }
             .sheet(isPresented: $showEditUsername) {
                 EditUsernameSheet(current: auth.currentUser?.username ?? "")
+            }
+            .sheet(isPresented: $showBlockedUsers) {
+                BlockedUsersSheet()
             }
             .sheet(isPresented: $showEditBio) {
                 EditBioSheet(current: auth.currentUser?.bio ?? "")
