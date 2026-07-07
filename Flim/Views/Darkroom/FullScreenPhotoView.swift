@@ -41,63 +41,9 @@ struct FullScreenPhotoView: View {
         ZStack {
             Color.black.ignoresSafeArea()
 
-            if let resolvedURL {
-                // CachedImage serves a screen-sized, already-decoded image from memory, so
-                // opening a photo you can see in the grid is instant.
-                CachedImage(url: resolvedURL, maxPixel: 1600) { image in
-                    // Photographer + date live UNDER the photo's actual bottom edge (part of
-                    // its layout), so they never overlap the image — on any aspect ratio.
-                    VStack(spacing: 10) {
-                        image
-                            .resizable()
-                            .scaledToFit()
-                            .scaleEffect(scale)
-                            .offset(offset)
-                            .gesture(dragToDismiss)
-                            .gesture(pinchToZoom)
-                            .onTapGesture(count: 2) {
-                                withAnimation(.spring(duration: 0.3)) {
-                                    if scale > 1 {
-                                        scale = 1; offset = .zero; lastOffset = .zero
-                                    } else {
-                                        scale = 2.5
-                                    }
-                                }
-                            }
-                        VStack(spacing: 2) {
-                            if let photographer {
-                                Text("@\(photographer)")
-                                    .font(.system(size: 14, weight: .semibold))
-                                    .foregroundStyle(.white)
-                            }
-                            Text(photo.takenAt.formatted(date: .abbreviated, time: .shortened))
-                                .font(.system(size: 12, weight: .medium))
-                                .foregroundStyle(Color(white: 0.68))
-                        }
-                        .opacity(scale > 1 ? 0 : 1)   // tuck away while zoomed in
-                        .animation(.easeOut(duration: 0.2), value: scale > 1)
-                    }
-                    // Keep the photo + label clear of the top controls and bottom bar.
-                    .padding(.top, 108)
-                    .padding(.bottom, 168)
-                } placeholder: {
-                    ProgressView().tint(.white)
-                }
-            }
-
-            // Top + bottom scrims so the controls and @handle read cleanly over any photo
-            // (portrait shots otherwise fill the frame and the metadata would sit on the image).
-            VStack {
-                LinearGradient(colors: [.black.opacity(0.5), .clear], startPoint: .top, endPoint: .bottom)
-                    .frame(height: 150)
-                Spacer()
-                LinearGradient(colors: [.clear, .black.opacity(0.6)], startPoint: .top, endPoint: .bottom)
-                    .frame(height: 240)
-            }
-            .ignoresSafeArea()
-            .allowsHitTesting(false)
-
-            // Metadata bar
+            // ONE vertical layout — top controls / flexible photo / bottom bar — so when the
+            // reaction bar expands (or the keyboard rises), the photo SHRINKS instead of
+            // anything overlapping the metadata or the image.
             VStack {
                 HStack(spacing: 12) {
                     Button {
@@ -172,14 +118,62 @@ struct FullScreenPhotoView: View {
                 .padding(.horizontal, 20)
                 .padding(.top, 60)
 
-                Spacer()
+                // Flexible middle: the photo scales to whatever room the bars leave.
+                Group {
+                    if let resolvedURL {
+                        // CachedImage serves a screen-sized, already-decoded image from memory,
+                        // so opening a photo you can see in the grid is instant.
+                        CachedImage(url: resolvedURL, maxPixel: 1600) { image in
+                            // Photographer + date live UNDER the photo's bottom edge, inside
+                            // its layout — never on the image, on any aspect ratio.
+                            VStack(spacing: 10) {
+                                image
+                                    .resizable()
+                                    .scaledToFit()
+                                    .scaleEffect(scale)
+                                    .offset(offset)
+                                    .gesture(dragToDismiss)
+                                    .gesture(pinchToZoom)
+                                    .onTapGesture(count: 2) {
+                                        withAnimation(.spring(duration: 0.3)) {
+                                            if scale > 1 {
+                                                scale = 1; offset = .zero; lastOffset = .zero
+                                            } else {
+                                                scale = 2.5
+                                            }
+                                        }
+                                    }
+                                VStack(spacing: 2) {
+                                    if let photographer {
+                                        Text("@\(photographer)")
+                                            .font(.system(size: 14, weight: .semibold))
+                                            .foregroundStyle(.white)
+                                    }
+                                    Text(photo.takenAt.formatted(date: .abbreviated, time: .shortened))
+                                        .font(.system(size: 12, weight: .medium))
+                                        .foregroundStyle(Color(white: 0.68))
+                                }
+                                .opacity(scale > 1 ? 0 : 1)   // tuck away while zoomed in
+                                .animation(.easeOut(duration: 0.2), value: scale > 1)
+                            }
+                        } placeholder: {
+                            ProgressView().tint(.white)
+                        }
+                    } else {
+                        ProgressView().tint(.white)
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(.vertical, 12)
 
                 bottomBar
                     .padding(.horizontal, 20)
                     .padding(.bottom, 44)
             }
         }
-        .ignoresSafeArea()
+        // Container edges only — keep KEYBOARD avoidance, so the bottom bar (and the shrinking
+        // photo) ride above the emoji-search keyboard instead of being covered by it.
+        .ignoresSafeArea(.container)
         .statusBarHidden()
         .sheet(isPresented: $showComments) {
             PhotoCommentsSheet(photoId: photo.id, memberNames: memberNames)

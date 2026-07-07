@@ -23,35 +23,29 @@ struct RollCarouselView: View {
         ZStack {
             Color.black.ignoresSafeArea()
 
-            TabView(selection: $selection) {
-                ForEach(Array(photos.enumerated()), id: \.element.id) { index, photo in
-                    Group {
-                        if let url = urls[photo.id] {
-                            CachedImage(url: url, maxPixel: 1600) { $0.resizable().scaledToFit() }
-                                placeholder: { ProgressView().tint(.white) }
-                        } else {
-                            ProgressView().tint(.white)
-                        }
-                    }
-                    .tag(index)
-                }
-            }
-            .tabViewStyle(.page(indexDisplayMode: .never))
-            .ignoresSafeArea()
-
-            VStack {
-                LinearGradient(colors: [.black.opacity(0.5), .clear], startPoint: .top, endPoint: .bottom)
-                    .frame(height: 150)
-                Spacer()
-                LinearGradient(colors: [.clear, .black.opacity(0.6)], startPoint: .top, endPoint: .bottom)
-                    .frame(height: 240)
-            }
-            .ignoresSafeArea()
-            .allowsHitTesting(false)
-
+            // One vertical layout — header / flexible photo pager / footer — so the photo
+            // SHRINKS when the reaction bar expands (or the emoji keyboard rises) instead of
+            // the bar overlapping the metadata or the image.
             VStack {
                 header
-                Spacer()
+
+                TabView(selection: $selection) {
+                    ForEach(Array(photos.enumerated()), id: \.element.id) { index, photo in
+                        Group {
+                            if let url = urls[photo.id] {
+                                CachedImage(url: url, maxPixel: 1600) { $0.resizable().scaledToFit() }
+                                    placeholder: { ProgressView().tint(.white) }
+                            } else {
+                                ProgressView().tint(.white)
+                            }
+                        }
+                        .padding(.vertical, 8)
+                        .tag(index)
+                    }
+                }
+                .tabViewStyle(.page(indexDisplayMode: .never))
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
                 footer
             }
         }
