@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct CreateRollView: View {
     @Environment(AuthService.self) private var auth
@@ -9,6 +10,7 @@ struct CreateRollView: View {
     @State private var isCreating = false
     @State private var createdRoll: Roll?
     @State private var error: String?
+    @State private var copied = false
 
     var body: some View {
         NavigationStack {
@@ -96,6 +98,35 @@ struct CreateRollView: View {
                 .padding(.vertical, 20)
                 .padding(.horizontal, 28)
                 .glassCard(cornerRadius: 16)
+
+            // Copy the code, or share the invite (a tappable https link) straight to friends.
+            HStack(spacing: 12) {
+                Button {
+                    UIPasteboard.general.string = roll.inviteCode
+                    Haptics.tap()
+                    withAnimation(.snappy(duration: 0.2)) { copied = true }
+                } label: {
+                    Label(copied ? "Copied" : "Copy code",
+                          systemImage: copied ? "checkmark" : "doc.on.doc")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(copied ? FlimTheme.accent : .white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 13)
+                        .glassCapsule(interactive: true)
+                        .contentTransition(.symbolEffect(.replace))
+                }
+
+                ShareLink(item: AppInfo.rollInviteMessage(rollName: roll.name, code: roll.inviteCode)) {
+                    Label("Share", systemImage: "square.and.arrow.up")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.black)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 13)
+                        .background(FlimTheme.accent, in: Capsule())
+                }
+                .simultaneousGesture(TapGesture().onEnded { Haptics.tap() })
+            }
+            .padding(.horizontal, 4)
 
             Spacer()
 

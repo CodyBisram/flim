@@ -34,10 +34,12 @@ struct FlimApp: App {
                 .environment(network)
                 .preferredColorScheme(.dark)
                 .onOpenURL { url in
-                    // …//join/CODE opens the join flow; everything else is an auth callback.
-                    if url.host == "join" {
+                    // Two invite shapes: the custom scheme (…//join/CODE) and the universal
+                    // link (https://flim-app.com/join/CODE). Everything else is an auth callback.
+                    let isUniversalJoin = url.host == "flim-app.com" && url.pathComponents.dropFirst().first == "join"
+                    if url.host == "join" || isUniversalJoin {
                         let code = url.lastPathComponent
-                        if !code.isEmpty, code != "/" {
+                        if !code.isEmpty, code != "/", code != "join" {
                             NotificationCenter.default.post(name: .openRollInvite, object: code)
                         }
                     } else {

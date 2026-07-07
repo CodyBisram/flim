@@ -1,0 +1,11 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "DCU7GHRVUQ.com.flim.app",
+        "paths": ["/join/*"]
+      }
+    ]
+  }
+}

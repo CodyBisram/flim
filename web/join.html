@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Join a roll — FLIM</title>
+  <link rel="stylesheet" href="/style.css">
+  <style>
+    .join-card { text-align: center; padding: 48px 24px; }
+    .join-code {
+      display: inline-block; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 40px; font-weight: 300; letter-spacing: 10px; color: #fff;
+      background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 16px; padding: 18px 22px 18px 32px; margin: 22px 0;
+    }
+    .join-open {
+      display: inline-block; background: var(--accent, #e8a33d); color: #111;
+      font-weight: 600; border-radius: 999px; padding: 14px 36px; text-decoration: none;
+      margin-top: 8px;
+    }
+    .join-hint { color: rgba(255,255,255,0.45); font-size: 14px; margin-top: 20px; line-height: 1.6; }
+  </style>
+</head>
+<body>
+  <main class="wrap join-card">
+    <h1>You’re invited to a roll 🎞</h1>
+    <p>Join the roll on FLIM with this code:</p>
+    <div class="join-code" id="code">·····</div>
+    <br>
+    <a class="join-open" id="open" href="#">Open FLIM</a>
+    <p class="join-hint">
+      Don’t have FLIM yet? It’s invite-only — ask the friend who sent you this for an invite.<br>
+      In the app: <strong>Rolls → Join</strong>, then enter the code.
+    </p>
+  </main>
+  <script>
+    // /join/CODE → show the code and deep-link the Open button into the app.
+    const code = decodeURIComponent(location.pathname.split("/").filter(Boolean).pop() || "");
+    const valid = /^[A-Z0-9]{4,10}$/i.test(code) && code.toLowerCase() !== "join";
+    if (valid) {
+      document.getElementById("code").textContent = code.toUpperCase();
+      document.getElementById("open").href = "com.lapse.app://join/" + code.toUpperCase();
+    } else {
+      document.getElementById("code").textContent = "——";
+      document.getElementById("open").style.display = "none";
+    }
+  </script>
+</body>
+</html>

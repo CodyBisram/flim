@@ -15,6 +15,18 @@ enum AppInfo {
     static let privacyPolicyURL = URL(string: "https://flim-app.com/privacy")!
     static let termsURL = URL(string: "https://flim-app.com/terms")!
 
+    /// A roll invite as a real https link — tappable in Messages. It lands on flim-app.com/join
+    /// (which shows the code + an "Open" button), and opens the app directly once the
+    /// Associated Domains entitlement is live (universal links).
+    static func rollInviteLink(code: String) -> URL {
+        URL(string: "https://flim-app.com/join/\(code)")!
+    }
+
+    /// The share-sheet message for inviting someone to a roll.
+    static func rollInviteMessage(rollName: String, code: String) -> String {
+        "Join my roll “\(rollName)” on \(appName) 🎞\n\(rollInviteLink(code: code).absoluteString)\n(code: \(code))"
+    }
+
     /// e.g. "1.0 (42)"
     static var versionString: String {
         let v = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
