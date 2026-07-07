@@ -26,6 +26,7 @@
 		3F49B2B6996C065BA82A0395 /* ReactionBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 235D6F50F5FDD8BE4BB9DE4E /* ReactionBar.swift */; };
 		40156F83DC4D83217CB2DED5 /* AuthHelpersTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9927EBDE8E7056C4DA31EF2 /* AuthHelpersTests.swift */; };
 		410927C61580C55C921D591F /* AppUser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44986F8867E5B522EBEABEE8 /* AppUser.swift */; };
+		4480B3972FE7723102195B87 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = FD8B0DEC0C9EF1C45B057D1F /* PrivacyInfo.xcprivacy */; };
 		46BB284536C9EFB9CB87A36C /* OTPView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2CA2F6DA98A04777C3D3C23 /* OTPView.swift */; };
 		4D1C56A98C6D0528C19AF61D /* SharePreviewSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76A0A3EA09696EA2921DCA7C /* SharePreviewSheet.swift */; };
 		501F195F7187429C965AE299 /* Photo.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF062148240A383A260E8EE3 /* Photo.swift */; };
@@ -160,6 +161,7 @@
 		F41D0B57C8881A275E755159 /* SortDeckView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SortDeckView.swift; sourceTree = "<group>"; };
 		F5F4E6A1053D1FADA991924E /* QuickCaptureIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickCaptureIntent.swift; sourceTree = "<group>"; };
 		FA04DBB3261C344B5DD64806 /* Haptics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Haptics.swift; sourceTree = "<group>"; };
+		FD8B0DEC0C9EF1C45B057D1F /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		FE6E3DB97398A385FA3C9489 /* RemotePush.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemotePush.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -330,6 +332,7 @@
 				AAB338D99E6E3C7278DE9CFA /* Flim.entitlements */,
 				01F7C56CF5A21FB71964CFEB /* FlimApp.swift */,
 				2841F63BB7020F90D16433C0 /* Info.plist */,
+				FD8B0DEC0C9EF1C45B057D1F /* PrivacyInfo.xcprivacy */,
 				55F410877B333B2DFC41DA1E /* Config */,
 				38520D38033334240FFE644F /* Models */,
 				AC05434A8F7DF581D43AF6AD /* Services */,
@@ -465,6 +468,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				24C89EABBAFF98261AEB3ABB /* Assets.xcassets in Resources */,
+				4480B3972FE7723102195B87 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
