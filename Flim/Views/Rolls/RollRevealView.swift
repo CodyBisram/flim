@@ -67,7 +67,6 @@ struct RollRevealView: View {
                         .onTapGesture { step(-1) }
                     Color.clear.contentShape(Rectangle())
                         .frame(maxWidth: .infinity)
-                        .frame(maxWidth: .infinity)
                         .onTapGesture { step(1) }
                 }
 

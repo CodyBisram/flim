@@ -19,4 +19,9 @@ enum Haptics {
     static func select() {
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
     }
+
+    /// Something went wrong (a send failed, an action didn't stick).
+    static func error() {
+        UINotificationFeedbackGenerator().notificationOccurred(.error)
+    }
 }

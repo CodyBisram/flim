@@ -128,8 +128,12 @@ struct CommentsSheet: View {
         Haptics.tap()
         Task {
             sending = true
-            await feed.commentOnPost(post.id, body: body, userId: uid)   // updates the shared cache
+            let ok = await feed.commentOnPost(post.id, body: body, userId: uid)   // updates the shared cache
             sending = false
+            if !ok {
+                draft = body   // don't lose what they typed — restore and let them retry
+                Haptics.error()
+            }
         }
     }
 

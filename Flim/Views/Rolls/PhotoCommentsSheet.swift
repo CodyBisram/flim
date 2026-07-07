@@ -12,6 +12,7 @@ struct PhotoCommentsSheet: View {
 
     @State private var comments: [PhotoComment] = []
     @State private var draft = ""
+    @State private var sending = false
     @State private var loaded = false
     @State private var route: ProfileRoute?
     @FocusState private var focused: Bool
@@ -94,7 +95,7 @@ struct PhotoCommentsSheet: View {
                         .font(.system(size: 30))
                         .foregroundStyle(canSend ? FlimTheme.accent : FlimTheme.textTertiary)
                 }
-                .disabled(!canSend)
+                .disabled(!canSend || sending)
             }
         }
         .padding(.horizontal, 16).padding(.vertical, 10)
@@ -111,13 +112,19 @@ struct PhotoCommentsSheet: View {
     }
 
     private func send() {
-        guard let uid = auth.currentUser?.id, canSend else { return }
+        guard let uid = auth.currentUser?.id, canSend, !sending else { return }
         let body = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         draft = ""
         focused = false
         Task {
-            _ = await photoService.addPhotoComment(photoId: photoId, body: body, userId: uid)
+            sending = true
+            let created = await photoService.addPhotoComment(photoId: photoId, body: body, userId: uid)
             await load()
+            sending = false
+            if created == nil {
+                draft = body   // restore instead of silently losing the comment
+                Haptics.error()
+            }
         }
     }
 

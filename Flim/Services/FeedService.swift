@@ -315,9 +315,13 @@ final class FeedService {
     }
 
     /// Posts a comment and refreshes just that post's cached comments.
-    func commentOnPost(_ postId: UUID, body: String, userId: UUID) async {
-        _ = await addComment(postId: postId, body: body, userId: userId)
+    /// Returns false if the comment didn't reach the server (offline, RLS, …) so the
+    /// composer can restore the draft instead of silently losing what was typed.
+    @discardableResult
+    func commentOnPost(_ postId: UUID, body: String, userId: UUID) async -> Bool {
+        let created = await addComment(postId: postId, body: body, userId: userId)
         commentsByPost[postId] = await fetchComments(postId: postId, currentUserId: userId)
+        return created != nil
     }
 
     /// Fetches the feed without assigning it — used to check for new posts without disturbing

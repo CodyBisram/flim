@@ -577,7 +577,13 @@ struct FeedPostCard: View {
         draft = ""
         commentFocused = false
         Haptics.tap()
-        Task { await feed.commentOnPost(post.id, body: body, userId: uid) }
+        Task {
+            let ok = await feed.commentOnPost(post.id, body: body, userId: uid)
+            if !ok {
+                draft = body   // restore instead of silently losing the comment
+                Haptics.error()
+            }
+        }
     }
 }
 

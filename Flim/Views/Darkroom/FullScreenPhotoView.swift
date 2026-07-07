@@ -335,11 +335,17 @@ struct FullScreenPhotoView: View {
         showShareComposer = false
         captionFocused = false
         Task {
-            try? await feed.createPost(photo: photo, caption: caption, userId: uid, tags: tags)
-            Haptics.reveal()   // success confirmation
-            withAnimation { showSharedToast = true }
-            try? await Task.sleep(for: .seconds(2))
-            withAnimation { showSharedToast = false }
+            do {
+                try await feed.createPost(photo: photo, caption: caption, userId: uid, tags: tags)
+                Haptics.reveal()   // success confirmation
+                withAnimation { showSharedToast = true }
+                try? await Task.sleep(for: .seconds(2))
+                withAnimation { showSharedToast = false }
+            } catch {
+                // Didn't reach the server — un-mark so the Share button comes back for a retry.
+                shared = false
+                Haptics.error()
+            }
         }
     }
 

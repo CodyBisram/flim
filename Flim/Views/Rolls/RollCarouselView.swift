@@ -116,7 +116,12 @@ struct RollCarouselView: View {
             let photo = photos[i]
             if urls[photo.id] == nil { urls[photo.id] = try? await photoService.signedURL(for: photo.storagePath) }
         }
-        if let photo = current { reactions = await photoService.fetchReactions(photoId: photo.id) }
+        if let photo = current {
+            // Guard against fast swipes: only apply the fetch if this is still the visible photo.
+            let id = photo.id
+            let fetched = await photoService.fetchReactions(photoId: id)
+            if current?.id == id { reactions = fetched }
+        }
     }
 
     private func toggleReaction(_ emoji: String, on photo: Photo) {
