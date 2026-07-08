@@ -3,7 +3,7 @@
   "cleanUrls": true,
   "trailingSlash": false,
   "rewrites": [
-    { "source": "/join/:code", "destination": "/join.html" }
+    { "source": "/join/:code", "destination": "/join" }
   ],
   "headers": [
     {
