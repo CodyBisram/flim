@@ -771,3 +771,47 @@ CREATE INDEX IF NOT EXISTS blocks_blocker_idx          ON public.blocks (blocker
 -- ============================================================
 ALTER TABLE public.photos ADD COLUMN IF NOT EXISTS feed_path TEXT;
 ALTER TABLE public.posts  ADD COLUMN IF NOT EXISTS feed_path TEXT;
+
+-- ============================================================
+-- Security-advisor hardening (2026-07). All applied live; kept here as source of truth.
+-- ============================================================
+-- profiles enforces the QUERYING user's rights (safe columns come from users column grants).
+ALTER VIEW public.profiles SET (security_invoker = on);
+
+-- users: any signed-in user may read rows, but ONLY the safe profile columns.
+-- email + invite_code are excluded from the grant → unreadable via the API for OTHER users
+-- (this also closed a leak where roll co-members could select each other's email).
+DROP POLICY IF EXISTS "users: visible to co-members" ON public.users;
+DROP POLICY IF EXISTS "users: profiles readable" ON public.users;
+CREATE POLICY "users: profiles readable" ON public.users FOR SELECT TO authenticated USING (true);
+REVOKE SELECT ON public.users FROM anon, authenticated;
+GRANT SELECT (id, username, avatar_path, bio, created_at, display_name, cover_path) ON public.users TO authenticated;
+
+-- Your OWN full row (incl. email + invite_code) via a locked-down RPC.
+CREATE OR REPLACE FUNCTION public.get_own_profile()
+RETURNS public.users
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+AS $$ SELECT * FROM public.users WHERE id = auth.uid() $$;
+REVOKE ALL ON FUNCTION public.get_own_profile() FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.get_own_profile() TO authenticated;
+
+-- Function hygiene: pin the one mutable search_path; internal functions unreachable via RPC;
+-- signed-in-only actions closed to anon. is_email_allowed stays anon-callable BY DESIGN
+-- (the invite gate runs before sign-in; it returns only a boolean).
+ALTER FUNCTION public.mark_developed_photos() SET search_path = public;
+REVOKE EXECUTE ON FUNCTION public.auto_hide_reported() FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.rls_auto_enable() FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.mark_developed_photos() FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.delete_account() FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION public.join_roll(text) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION public.is_roll_member(uuid) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION public.is_roll_developed(uuid) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION public.is_email_allowed(text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.is_email_allowed(text) TO anon, authenticated;
+
+-- Accepted advisor remainders (intentional):
+--  * allowed_emails: RLS on, no policies = deny-all to clients (read via is_email_allowed only).
+--  * pg_net in public: the extension does not support SET SCHEMA; its callable API lives in `net`.
+--  * leaked-password protection (HIBP): Pro-plan feature — enable in dashboard after upgrading.

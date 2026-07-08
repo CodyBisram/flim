@@ -2,9 +2,12 @@ import Foundation
 
 struct AppUser: Codable, Identifiable, Equatable {
     let id: UUID
-    let email: String
+    /// Readable on your OWN row only (via the get_own_profile RPC) — the users table's
+    /// column-level grants hide it from everyone else, so it decodes nil elsewhere.
+    var email: String?
     var username: String?
-    let inviteCode: String
+    /// Own row only, like `email`.
+    var inviteCode: String?
     let createdAt: Date
     var bio: String?
     var avatarPath: String?

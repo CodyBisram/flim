@@ -122,15 +122,14 @@ final class AuthService {
         }
 
         do {
-            currentUser = try await supabase
+            _ = try await supabase
                 .from("users")
                 .upsert(UpsertUser(id: userId, email: email, username: username,
                                    inviteCode: Self.randomCode(),
                                    displayName: (name?.isEmpty ?? true) ? nil : name))
-                .select()
-                .single()
                 .execute()
-                .value
+            // Refetch via the RPC — plain selects can't read email/invite_code (column grants).
+            currentUser = try await fetchUserProfile(id: userId)
         } catch {
             // Postgres unique_violation (23505) → the username is taken by someone else.
             let desc = "\(error)".lowercased()
@@ -141,22 +140,32 @@ final class AuthService {
         }
     }
 
+    /// Re-attaches the own-row-only fields (hidden from table selects by column grants) after
+    /// an update's returned row replaced `currentUser`.
+    private func merged(_ updated: AppUser) -> AppUser {
+        var u = updated
+        u.email = u.email ?? currentUser?.email
+        u.inviteCode = u.inviteCode ?? currentUser?.inviteCode
+        return u
+    }
+
     /// Updates the optional display name and refreshes `currentUser`.
     func setDisplayName(_ name: String) async throws {
         let session = try await supabase.auth.session
         struct Update: Encodable { let display_name: String }
-        currentUser = try await supabase
+        let updated: AppUser = try await supabase
             .from("users")
             .update(Update(display_name: name.trimmingCharacters(in: .whitespacesAndNewlines)))
             .eq("id", value: session.user.id.uuidString)
             .select().single().execute().value
+        currentUser = merged(updated)
     }
 
     /// Updates the profile bio and refreshes `currentUser`.
     func setBio(_ bio: String) async throws {
         let session = try await supabase.auth.session
         struct Update: Encodable { let bio: String }
-        currentUser = try await supabase
+        let updated: AppUser = try await supabase
             .from("users")
             .update(Update(bio: bio.trimmingCharacters(in: .whitespacesAndNewlines)))
             .eq("id", value: session.user.id.uuidString)
@@ -164,6 +173,7 @@ final class AuthService {
             .single()
             .execute()
             .value
+        currentUser = merged(updated)
     }
 
     /// Sets the profile avatar from one of the user's photos. Copies the image into its own
@@ -177,7 +187,7 @@ final class AuthService {
         if let updated: AppUser = try? await supabase
             .from("users").update(Update(avatar_path: dest))
             .eq("id", value: session.user.id.uuidString).select().single().execute().value {
-            currentUser = updated
+            currentUser = merged(updated)
             cleanupOldCopy(old, keeping: dest, prefix: "avatar")
         }
     }
@@ -192,7 +202,7 @@ final class AuthService {
         if let updated: AppUser = try? await supabase
             .from("users").update(Update(cover_path: dest))
             .eq("id", value: session.user.id.uuidString).select().single().execute().value {
-            currentUser = updated
+            currentUser = merged(updated)
             cleanupOldCopy(old, keeping: dest, prefix: "cover")
         }
     }
@@ -265,15 +275,10 @@ final class AuthService {
 
     // MARK: - Helpers
 
+    /// The signed-in user's FULL row — email + invite_code are hidden from plain table selects
+    /// by column-level grants, so the own row comes through the locked-down get_own_profile RPC.
     private func fetchUserProfile(id: UUID) async throws -> AppUser? {
-        let rows: [AppUser] = try await supabase
-            .from("users")
-            .select()
-            .eq("id", value: id.uuidString)
-            .limit(1)
-            .execute()
-            .value
-        return rows.first
+        try? await supabase.rpc("get_own_profile").single().execute().value
     }
 
     private func listenForAuthChanges() async {
