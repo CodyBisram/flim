@@ -1,4 +1,16 @@
 import SwiftUI
+import UniformTypeIdentifiers
+
+/// Wraps the outgoing photo so ShareLink exports JPEG. (Sharing a SwiftUI `Image` directly
+/// exports PNG — ~10× the bytes for a photo, which makes Messages/AirDrop shares slow.)
+struct SharedPhoto: Transferable {
+    let image: UIImage
+    static var transferRepresentation: some TransferRepresentation {
+        DataRepresentation(exportedContentType: .jpeg) { photo in
+            photo.image.jpegData(compressionQuality: 0.9) ?? Data()
+        }
+    }
+}
 
 /// Pre-share sheet: a live preview of the photo with a toggle for the FLIM print frame
 /// (warm border + wordmark). The choice is remembered for next time. Sharing hands the
@@ -57,7 +69,7 @@ struct SharePreviewSheet: View {
 
                     // Hand the previewed image to the system share sheet.
                     ShareLink(
-                        item: Image(uiImage: outgoing),
+                        item: SharedPhoto(image: outgoing),
                         preview: SharePreview("Photo", image: Image(uiImage: outgoing))
                     ) {
                         Label("Share", systemImage: "square.and.arrow.up")
