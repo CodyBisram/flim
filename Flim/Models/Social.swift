@@ -31,12 +31,16 @@ struct Post: Codable, Identifiable {
     let photoId: UUID
     let storagePath: String
     var thumbPath: String?
+    /// Mid-size (~1400px) rendition — what feed cards download; nil on older posts.
+    var feedPath: String?
     let takenAt: Date
     var caption: String?
     let createdAt: Date
 
-    /// Path for the feed card — the thumbnail if present, else the full image.
+    /// Path for grid thumbnails — the thumbnail if present, else the full image.
     var displayPath: String { thumbPath ?? storagePath }
+    /// Path for the feed card — mid-size rendition if present, else the full image.
+    var cardPath: String { feedPath ?? storagePath }
 
     enum CodingKeys: String, CodingKey {
         case id, caption
@@ -44,6 +48,7 @@ struct Post: Codable, Identifiable {
         case photoId = "photo_id"
         case storagePath = "storage_path"
         case thumbPath = "thumb_path"
+        case feedPath = "feed_path"
         case takenAt = "taken_at"
         case createdAt = "created_at"
     }

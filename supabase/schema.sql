@@ -762,3 +762,12 @@ CREATE INDEX IF NOT EXISTS post_tags_tagged_idx        ON public.post_tags (tagg
 CREATE INDEX IF NOT EXISTS roll_members_user_idx       ON public.roll_members (user_id);
 CREATE INDEX IF NOT EXISTS photo_reports_photo_idx     ON public.photo_reports (photo_id);
 CREATE INDEX IF NOT EXISTS blocks_blocker_idx          ON public.blocks (blocker_id);
+
+-- ============================================================
+-- Feed-size rendition (egress): a ~1400px mid-size JPEG uploaded alongside the full image.
+-- The feed downloads this (~250KB) instead of the full 2048px file (~700KB) — pixel-identical
+-- at feed-card width. Full image still used for full-screen / zoom / save. Older photos have
+-- NULL and fall back to storage_path.
+-- ============================================================
+ALTER TABLE public.photos ADD COLUMN IF NOT EXISTS feed_path TEXT;
+ALTER TABLE public.posts  ADD COLUMN IF NOT EXISTS feed_path TEXT;

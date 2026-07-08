@@ -7,6 +7,8 @@ struct Photo: Codable, Identifiable {
     let storagePath: String
     /// Small thumbnail for grids/feeds; nil for photos taken before thumbnails existed.
     var thumbPath: String?
+    /// Mid-size (~1400px) rendition for feed cards; nil for photos taken before it existed.
+    var feedPath: String?
     let takenAt: Date
     let developsAt: Date
     var isDeveloped: Bool
@@ -25,6 +27,7 @@ struct Photo: Codable, Identifiable {
         case rollId = "roll_id"
         case storagePath = "storage_path"
         case thumbPath = "thumb_path"
+        case feedPath = "feed_path"
         case takenAt = "taken_at"
         case developsAt = "develops_at"
         case isDeveloped = "is_developed"
@@ -54,6 +57,7 @@ struct InsertPhoto: Encodable {
     let rollId: UUID?
     let storagePath: String
     var thumbPath: String?
+    var feedPath: String?
     let developsAt: Date
     var isSorted: Bool = true
 
@@ -63,6 +67,7 @@ struct InsertPhoto: Encodable {
         case rollId = "roll_id"
         case storagePath = "storage_path"
         case thumbPath = "thumb_path"
+        case feedPath = "feed_path"
         case developsAt = "develops_at"
         case isSorted = "is_sorted"
     }

@@ -20,21 +20,36 @@ enum InstantFilmProcessor {
     /// A small JPEG thumbnail (longest edge ~`maxPixel` × 2, for retina grids) of an already
     /// processed photo — uploaded alongside the full image so grids/feeds download ~30KB, not MBs.
     static func thumbnail(from data: Data, maxPixel: CGFloat = 400) -> Data? {
+        rendition(from: data, longEdge: maxPixel * 2, quality: 0.8)
+    }
+
+    /// The feed-card rendition: ~1400px long edge — pixel-identical at feed width on a 3x screen,
+    /// but ~1/3 the bytes of the stored full image. Cuts the feed's first-view egress ~65%.
+    static func feedRendition(from data: Data) -> Data? {
+        rendition(from: data, longEdge: 1400, quality: 0.82)
+    }
+
+    /// Downsampled JPEG at an exact long edge, via ImageIO (no full decode of the source).
+    static func rendition(from data: Data, longEdge: CGFloat, quality: CGFloat) -> Data? {
         let srcOptions = [kCGImageSourceShouldCache: false] as CFDictionary
         guard let source = CGImageSourceCreateWithData(data as CFData, srcOptions) else { return nil }
         let options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceCreateThumbnailWithTransform: true,
-            kCGImageSourceThumbnailMaxPixelSize: maxPixel * 2
+            kCGImageSourceThumbnailMaxPixelSize: longEdge
         ]
         guard let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
-        return UIImage(cgImage: cg).jpegData(compressionQuality: 0.8)
+        return UIImage(cgImage: cg).jpegData(compressionQuality: quality)
     }
 
     /// Longest edge we store the full image at. 2048 keeps shots crisp at full-screen *and* under
     /// zoom / when saved out (a big jump from 1600), while still being ~3× smaller than raw 12MP
     /// sensor output so egress stays sane. Bump higher (2560+) if you want near-original quality.
     private static let maxStoredEdge: CGFloat = 2048
+
+    /// TestFlight-only calibration mode (Settings → Film Lab): stores the capture with NO grade,
+    /// grain, vignette, or bloom — the neutral half of a (neutral, Lapse) pair for LUT fitting.
+    static let neutralCaptureKey = "neutralCapture"
 
     private static func processSync(_ data: Data, stock: FilmStock) -> Data? {
         // Apply embedded EXIF orientation so the output is upright.
@@ -43,6 +58,19 @@ enum InstantFilmProcessor {
         }
         let extent = source.extent
         guard !extent.isEmpty else { return nil }
+
+        // Calibration path: neutral, higher-quality JPEG (no look at all).
+        if UserDefaults.standard.bool(forKey: neutralCaptureKey), !AppInfo.isAppStore {
+            var neutral = source
+            let edge = max(extent.width, extent.height)
+            if edge > maxStoredEdge {
+                neutral = neutral.applyingFilter("CILanczosScaleTransform", parameters: [
+                    kCIInputScaleKey: maxStoredEdge / edge, kCIInputAspectRatioKey: 1.0
+                ])
+            }
+            guard let cg = context.createCGImage(neutral, from: neutral.extent) else { return nil }
+            return UIImage(cgImage: cg).jpegData(compressionQuality: 0.92)
+        }
 
         // Filter at FULL resolution — this matches the original look. Grain and bloom render
         // relative to the native pixel size; downscaling *before* filtering (a past egress tweak)

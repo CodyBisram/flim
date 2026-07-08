@@ -19,6 +19,7 @@ struct ProfileView: View {
     @State private var showEditUsername = false
     @State private var showWipeConfirm = false
     @State private var showBlockedUsers = false
+    @AppStorage(InstantFilmProcessor.neutralCaptureKey) private var neutralCapture = false
     @AppStorage("developNotificationsEnabled") private var notificationsEnabled = true
     @AppStorage("soundEffects") private var soundEffects = true
     @Environment(\.openURL) private var openURL
@@ -234,6 +235,23 @@ struct ProfileView: View {
                         showBlockedUsers = true
                     } label: {
                         settingsRow("Blocked users", icon: "hand.raised.slash")
+                    }
+
+                    // Film Lab — TestFlight-only (hidden on the public App Store, like password
+                    // sign-in). Neutral capture stores shots UNGRADED for LUT calibration pairs.
+                    if !AppInfo.isAppStore {
+                        HStack {
+                            Image(systemName: "testtube.2").foregroundStyle(FlimTheme.accent)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Neutral capture").font(.system(size: 15)).foregroundStyle(.white)
+                                Text("Film Lab: shots skip the FLIM look (LUT calibration)")
+                                    .font(.system(size: 11)).foregroundStyle(FlimTheme.textTertiary)
+                            }
+                            Spacer()
+                            Toggle("", isOn: $neutralCapture).labelsHidden().tint(FlimTheme.accent)
+                        }
+                        .padding(.horizontal, 28).padding(.vertical, 14)
+                        .background(FlimTheme.bgElevated)
                     }
 
                     // Test-only data reset. DEBUG builds only, so App Review never sees it.

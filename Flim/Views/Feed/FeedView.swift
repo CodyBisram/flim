@@ -265,8 +265,8 @@ struct FeedView: View {
     private func prefetchFeedImages() async {
         var items: [(url: URL, cacheKey: String?)] = []
         for item in feed.feed {
-            if let u = await feed.signedURL(for: item.post.storagePath) {
-                items.append((u, item.post.storagePath))
+            if let u = await feed.signedURL(for: item.post.cardPath) {
+                items.append((u, item.post.cardPath))
             }
         }
         ImageLoader.prefetch(items, maxPixel: 1400, scale: displayScale)
@@ -366,7 +366,7 @@ struct FeedPostCard: View {
             // there's no layout jump before the image resolves.
             Group {
                 if let url {
-                    CachedImage(url: url, maxPixel: 1400, cacheKey: post.storagePath) { image in
+                    CachedImage(url: url, maxPixel: 1400, cacheKey: post.cardPath) { image in
                         image.resizable().scaledToFit()
                     } placeholder: {
                         ShimmerPlaceholder(cornerRadius: 12).aspectRatio(3.0 / 4.0, contentMode: .fit)
@@ -467,7 +467,7 @@ struct FeedPostCard: View {
         .padding(14)
         .background(FlimTheme.bgElevated, in: RoundedRectangle(cornerRadius: 20))
         .task {
-            url = await feed.signedURL(for: post.storagePath)   // full image — crisp at full width
+            url = await feed.signedURL(for: post.cardPath)   // 1400px rendition (falls back to full)
             if let path = item.author.avatarPath { avatarURL = await feed.signedURL(for: path) }
             // reactions + comments already loaded in the feed batch — no per-card query.
         }

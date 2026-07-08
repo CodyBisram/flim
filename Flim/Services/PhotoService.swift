@@ -59,7 +59,7 @@ final class PhotoService {
                 .from("photos")
                 .upload(path, data: imageData, options: FileOptions(contentType: "image/jpeg"))
 
-            // Upload a small thumbnail alongside it (best-effort — grids/feeds load this instead
+            // Upload a small thumbnail alongside it (best-effort — grids load this instead
             // of the multi-MB original). Same folder, so the owner's read policy already covers it.
             var thumbPath: String? = nil
             if let thumbData = InstantFilmProcessor.thumbnail(from: imageData) {
@@ -70,12 +70,24 @@ final class PhotoService {
                 }
             }
 
+            // And a ~1400px feed rendition (best-effort) — what feed cards download instead of
+            // the full image: pixel-identical at card width, ~1/3 the egress.
+            var feedPath: String? = nil
+            if let feedData = InstantFilmProcessor.feedRendition(from: imageData) {
+                let fPath = "\(userId.uuidString.lowercased())/\(photoId.uuidString.lowercased())_feed.jpg"
+                if (try? await supabase.storage.from("photos")
+                    .upload(fPath, data: feedData, options: FileOptions(contentType: "image/jpeg"))) != nil {
+                    feedPath = fPath
+                }
+            }
+
             let payload = InsertPhoto(
                 id: photoId,
                 userId: userId,
                 rollId: rollId,
                 storagePath: path,
                 thumbPath: thumbPath,
+                feedPath: feedPath,
                 developsAt: developsAt,
                 // Roll shots skip the deck; personal instants start unsorted for triage.
                 isSorted: rollId != nil
