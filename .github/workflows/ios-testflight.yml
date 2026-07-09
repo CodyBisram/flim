@@ -6,6 +6,15 @@ name: iOS · TestFlight
 on:
   push:
     branches: [main]
+    # Skip TestFlight builds for changes that can't affect the app binary —
+    # docs, agent config, the Vercel site (deployed separately), and LUT tooling
+    # (only the bundled .cube in Flim/Resources affects the app).
+    paths-ignore:
+      - ".claude/**"
+      - "docs/**"
+      - "web/**"
+      - "scripts/**"
+      - "*.md"
   pull_request:
   workflow_dispatch:
 
