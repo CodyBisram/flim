@@ -38,11 +38,13 @@ def load_pixels(path: Path) -> np.ndarray:
 
 def normalize_exposure(px: np.ndarray) -> np.ndarray:
     """Scene-adaptive exposure lift for dark scenes — MUST mirror the app
-    (InstantFilmProcessor): EV = clamp(0.9 * log2(0.26 / meanLum), 0, 1.3),
-    applied as a linear-space gain. Bright scenes pass through untouched."""
+    (InstantFilmProcessor): EV = clamp(0.6 * log2(0.18 / meanLum), 0, 0.5),
+    applied as a linear-space gain. Deliberately GENTLE: night scenes stay night
+    (a city skyline must not get daylighted); only truly underexposed scenes get
+    a nudge. Bright scenes pass through untouched."""
     lum = 0.299 * px[:, 0] + 0.587 * px[:, 1] + 0.114 * px[:, 2]
     mean = max(lum.mean(), 1e-4)
-    ev = float(np.clip(0.9 * np.log2(0.26 / mean), 0, 1.3))
+    ev = float(np.clip(0.6 * np.log2(0.18 / mean), 0, 0.5))
     if ev < 0.01:
         return px
     lin = np.power(px, 2.2) * (2 ** ev)

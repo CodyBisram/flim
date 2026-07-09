@@ -72,21 +72,28 @@ enum InstantFilmProcessor {
             return UIImage(cgImage: cg).jpegData(compressionQuality: 0.92)
         }
 
-        // Scene-adaptive exposure — the data-fitted half of the dark-photo fix. Lapse lifts
-        // genuinely dark scenes before its grade; the LUT was fitted against inputs normalized
-        // with THIS exact formula (scripts/fit_lut.py normalize_exposure — keep them in sync).
-        // Bright scenes (mean luminance ≥ 0.26) pass through untouched.
+        // Scene-adaptive exposure, deliberately GENTLE — night must stay night (a city
+        // skyline can't get daylighted), so only truly underexposed scenes get a nudge.
+        // Mirrors scripts/fit_lut.py normalize_exposure exactly (the LUT was fitted against
+        // inputs normalized with this formula — keep them in sync).
         var graded = source
         let meanLum = averageLuminance(of: source, extent: extent)
-        let ev = min(1.3, max(0, 0.9 * log2(0.26 / max(meanLum, 0.0001))))
+        let ev = min(0.5, max(0, 0.6 * log2(0.18 / max(meanLum, 0.0001))))
         if ev > 0.01 {
             graded = graded.applyingFilter("CIExposureAdjust", parameters: ["inputEV": ev])
+        }
+
+        // Dark scenes also get bloom scaled way down — halation over a night scene spreads
+        // every point light into milky haze and lifts the blacks (the washed-skyline bug).
+        var params = stock.params
+        if meanLum < 0.22 {
+            params.bloom *= max(0.35, meanLum / 0.22)
         }
 
         // Filter at FULL resolution — this matches the original look. Grain and bloom render
         // relative to the native pixel size; downscaling *before* filtering (a past egress tweak)
         // made the grain coarse and the bloom too strong. So bake the look first…
-        var image = filtered(graded, params: stock.params, extent: extent, grain: true)
+        var image = filtered(graded, params: params, extent: extent, grain: true)
 
         // …then downscale the finished image to the storage cap (keeps egress sane, look intact).
         let longEdge = max(extent.width, extent.height)
