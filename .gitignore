@@ -22,7 +22,7 @@ Pods/
 Carthage/Build/
 
 # Editor / tooling
-.claude/
+.claude/*
 *.swp
 *~
 
@@ -38,3 +38,6 @@ fastlane/*.log
 *.mobileprovision
 *.env
 .env*
+
+# project agents ship with the repo; local settings stay local
+!.claude/agents/
