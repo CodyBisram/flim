@@ -72,10 +72,21 @@ enum InstantFilmProcessor {
             return UIImage(cgImage: cg).jpegData(compressionQuality: 0.92)
         }
 
+        // Scene-adaptive exposure — the data-fitted half of the dark-photo fix. Lapse lifts
+        // genuinely dark scenes before its grade; the LUT was fitted against inputs normalized
+        // with THIS exact formula (scripts/fit_lut.py normalize_exposure — keep them in sync).
+        // Bright scenes (mean luminance ≥ 0.26) pass through untouched.
+        var graded = source
+        let meanLum = averageLuminance(of: source, extent: extent)
+        let ev = min(1.3, max(0, 0.9 * log2(0.26 / max(meanLum, 0.0001))))
+        if ev > 0.01 {
+            graded = graded.applyingFilter("CIExposureAdjust", parameters: ["inputEV": ev])
+        }
+
         // Filter at FULL resolution — this matches the original look. Grain and bloom render
         // relative to the native pixel size; downscaling *before* filtering (a past egress tweak)
         // made the grain coarse and the bloom too strong. So bake the look first…
-        var image = filtered(source, params: stock.params, extent: extent, grain: true)
+        var image = filtered(graded, params: stock.params, extent: extent, grain: true)
 
         // …then downscale the finished image to the storage cap (keeps egress sane, look intact).
         let longEdge = max(extent.width, extent.height)
@@ -87,6 +98,17 @@ enum InstantFilmProcessor {
         }
         guard let cgImage = context.createCGImage(image, from: image.extent) else { return nil }
         return UIImage(cgImage: cgImage).jpegData(compressionQuality: 0.85)
+    }
+
+    /// Mean scene luminance (0–1) via CIAreaAverage — drives the adaptive dark-scene exposure.
+    private static func averageLuminance(of image: CIImage, extent: CGRect) -> CGFloat {
+        guard let avg = CIFilter(name: "CIAreaAverage", parameters: [
+            kCIInputImageKey: image, kCIInputExtentKey: CIVector(cgRect: extent)])?.outputImage else { return 0.5 }
+        var px: [UInt8] = [0, 0, 0, 0]
+        context.render(avg, toBitmap: &px, rowBytes: 4, bounds: CGRect(x: 0, y: 0, width: 1, height: 1),
+                       format: .RGBA8, colorSpace: CGColorSpaceCreateDeviceRGB())
+        let r = CGFloat(px[0]) / 255, g = CGFloat(px[1]) / 255, b = CGFloat(px[2]) / 255
+        return 0.299 * r + 0.587 * g + 0.114 * b
     }
 
     /// The film look as a pure CIImage → CIImage transform. Shared by capture (with grain) and

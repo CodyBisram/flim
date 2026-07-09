@@ -36,6 +36,19 @@ def load_pixels(path: Path) -> np.ndarray:
     return np.asarray(img, dtype=np.float64).reshape(-1, 3) / 255.0
 
 
+def normalize_exposure(px: np.ndarray) -> np.ndarray:
+    """Scene-adaptive exposure lift for dark scenes — MUST mirror the app
+    (InstantFilmProcessor): EV = clamp(0.9 * log2(0.26 / meanLum), 0, 1.3),
+    applied as a linear-space gain. Bright scenes pass through untouched."""
+    lum = 0.299 * px[:, 0] + 0.587 * px[:, 1] + 0.114 * px[:, 2]
+    mean = max(lum.mean(), 1e-4)
+    ev = float(np.clip(0.9 * np.log2(0.26 / mean), 0, 1.3))
+    if ev < 0.01:
+        return px
+    lin = np.power(px, 2.2) * (2 ** ev)
+    return np.clip(np.power(np.clip(lin, 0, 1), 1 / 2.2), 0, 1)
+
+
 def gather(pairs_dir: Path):
     neutrals, graded = [], []
     for n in sorted(pairs_dir.glob("*_neutral.*")):
@@ -44,7 +57,7 @@ def gather(pairs_dir: Path):
         if g is None:
             print(f"!! no lapse partner for {n.name}, skipping", file=sys.stderr)
             continue
-        neutrals.append(load_pixels(n))
+        neutrals.append(normalize_exposure(load_pixels(n)))
         graded.append(load_pixels(g))
         print(f"   pair: {n.name} <-> {g.name}")
     if not neutrals:

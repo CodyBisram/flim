@@ -52,11 +52,18 @@ struct FilmStock: Identifiable, Hashable {
         name: "FLIM Original",
         tagline: "Warm, timeless, a little grainy",
         params: FilmParams(
+            // The parametric values remain as the FALLBACK if the LUT ever fails to load.
             temperature: 5300, tint: 6,
             saturation: 1.12, contrast: 1.06,
             blackLift: 0.05, highlightRolloff: 0.96,
-            vignetteIntensity: 1.0, vignetteRadius: 1.7,
-            grain: 0.06, bloom: 0.35, monochrome: false
+            // Softer physical effects with the LUT: the fitted grade already carries the
+            // Lapse-matched tone, so heavy bloom/vignette would re-haze what the data fixed.
+            vignetteIntensity: 0.75, vignetteRadius: 1.7,
+            grain: 0.06, bloom: 0.18, monochrome: false,
+            // Color grade fitted from real (FLIM-neutral, Lapse) same-scene pairs — see
+            // docs/LUTS.md + scripts/fit_lut.py. Pairs with scene-adaptive exposure in
+            // InstantFilmProcessor (dark scenes get lifted BEFORE this LUT, like Lapse does).
+            lut: "flim"
         )
     )
 
