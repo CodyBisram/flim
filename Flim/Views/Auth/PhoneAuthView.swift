@@ -7,8 +7,6 @@ struct EmailAuthView: View {
     @State private var error: String?
     @State private var showOTP = false
     @ScaledMetric private var subtitleSize = 15
-    @State private var password = ""
-    @State private var showPasswordEntry = false
 
     var body: some View {
         ZStack {
@@ -52,47 +50,6 @@ struct EmailAuthView: View {
                         .font(.system(size: 13))
                         .foregroundStyle(Color(red: 1, green: 0.4, blue: 0.4))
                         .padding(.top, 8)
-                }
-
-                // Password sign-in for invited testers (while email OTP delivery is being set up).
-                // Hidden on public App Store builds — it bypasses the invite allowlist, so it must
-                // never ship to the public. DEBUG + TestFlight keep it (see AppInfo.isAppStore).
-                if !AppInfo.isAppStore {
-                if showPasswordEntry {
-                    VStack(alignment: .leading, spacing: 10) {
-                        SecureField("", text: $password, prompt: Text("Password").foregroundStyle(Color(white: 0.3)))
-                            .textContentType(.password)
-                            .autocorrectionDisabled()
-                            .font(.system(size: 16))
-                            .foregroundStyle(.white)
-                            .tint(.white)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 14)
-                            .background(Color(white: 0.1), in: RoundedRectangle(cornerRadius: 12))
-                        Button {
-                            Task {
-                                error = nil
-                                do { try await auth.signInWithPassword(email: email, password: password) }
-                                catch { self.error = error.localizedDescription }
-                            }
-                        } label: {
-                            Text("Sign in")
-                                .font(.system(size: 15, weight: .semibold))
-                                .foregroundStyle(.black)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 14)
-                                .background(FlimTheme.accent, in: Capsule())
-                        }
-                    }
-                    .padding(.top, 18)
-                } else {
-                    Button("Have a password? Sign in") {
-                        withAnimation { showPasswordEntry = true }
-                    }
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(Color(white: 0.5))
-                    .padding(.top, 18)
-                }
                 }
 
                 Spacer()

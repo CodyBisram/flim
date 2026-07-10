@@ -232,21 +232,6 @@ final class AuthService {
         isAuthenticated = false
     }
 
-    /// Password sign-in for invited testers, so they can get in while email OTP delivery isn't
-    /// set up yet. Accounts are created in the Supabase dashboard (email + password, auto-
-    /// confirmed). TEMPORARY — remove/re-gate before public launch once SMTP is live.
-    func signInWithPassword(email: String, password: String) async throws {
-        try await supabase.auth.signIn(
-            email: email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
-            password: password
-        )
-        let session = try await supabase.auth.session
-        isResolvingProfile = true
-        isAuthenticated = true
-        currentUser = try? await fetchUserProfile(id: session.user.id)
-        isResolvingProfile = false
-    }
-
     /// Permanently deletes the account + all associated data (App Store Guideline 5.1.1(v)).
     /// The `delete_account` RPC removes the auth user, which cascades to the profile, rolls,
     /// memberships, photos, and reports. Then we clear the local session.

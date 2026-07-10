@@ -237,8 +237,8 @@ struct ProfileView: View {
                         settingsRow("Blocked users", icon: "hand.raised.slash")
                     }
 
-                    // Film Lab — TestFlight-only (hidden on the public App Store, like password
-                    // sign-in). Neutral capture stores shots UNGRADED for LUT calibration pairs.
+                    // Film Lab — TestFlight-only (hidden on the public App Store).
+                    // Neutral capture stores shots UNGRADED for LUT calibration pairs.
                     if !AppInfo.isAppStore {
                         HStack {
                             Image(systemName: "testtube.2").foregroundStyle(FlimTheme.accent)

@@ -2,7 +2,8 @@ import Foundation
 import UIKit
 
 /// App metadata + distribution channel — used for the Settings footer, feedback email, and to
-/// gate the temporary password sign-in so it can't ship to the public App Store.
+/// gate TestFlight-only surfaces (like Film Lab's neutral capture) so they can't ship to the
+/// public App Store.
 enum AppInfo {
     /// The app's display name, used in all user-facing copy. To rename the app, change this here
     /// (covers the whole UI) plus CFBundleDisplayName in project.yml (the home-screen name).
@@ -35,7 +36,7 @@ enum AppInfo {
     }
 
     /// True ONLY for a public App Store build (production receipt). DEBUG and TestFlight are false —
-    /// so the password sign-in stays available while testing but auto-disappears on public release.
+    /// so TestFlight-only surfaces stay available while testing but auto-disappear on public release.
     static var isAppStore: Bool {
         #if DEBUG
         return false
