@@ -834,9 +834,16 @@ GRANT EXECUTE ON FUNCTION public.is_email_allowed(text) TO anon, authenticated;
 -- `blocks` has an owner-only SELECT policy, so a policy on some OTHER table
 -- (posts, comments, …) can't read it directly. This SECURITY DEFINER helper
 -- runs with owner rights (bypassing blocks' RLS internally) and returns only a
--- boolean — the same pattern as is_roll_member. STABLE + pinned search_path,
--- and EXECUTE is revoked from client roles (policies call it as the definer, so
--- clients never need direct RPC access to it).
+-- boolean — the same pattern as is_roll_member. STABLE + pinned search_path.
+--
+-- ⚠️ Grants: `authenticated` MUST keep EXECUTE. SECURITY DEFINER only controls
+-- whose privileges the function BODY runs with — the querying role still needs
+-- EXECUTE to call it, and RLS policies evaluate as the querying role. Revoking
+-- authenticated here took production down ("permission denied for function
+-- is_blocked_either_way" on every read/write). Same grant shape as
+-- is_roll_member: revoke PUBLIC + anon only. Accepted remainder: a signed-in
+-- user can probe block relationships between two arbitrary user ids via RPC
+-- (same exposure class as probing roll membership via is_roll_member).
 -- ============================================================
 CREATE OR REPLACE FUNCTION public.is_blocked_either_way(a UUID, b UUID)
 RETURNS BOOLEAN
@@ -851,7 +858,8 @@ AS $$
            OR (blocker_id = b AND blocked_id = a)
     );
 $$;
-REVOKE EXECUTE ON FUNCTION public.is_blocked_either_way(uuid, uuid) FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.is_blocked_either_way(uuid, uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.is_blocked_either_way(uuid, uuid) TO authenticated;
 
 -- Reverse-direction index so the OR-branch (blocker=b AND blocked=a) is index-backed.
 -- The blocks PK (blocker_id, blocked_id) already covers the forward lookup.

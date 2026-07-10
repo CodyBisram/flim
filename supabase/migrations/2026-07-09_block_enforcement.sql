@@ -7,7 +7,10 @@
 -- ============================================================
 
 -- 1. Helper: bidirectional block check (SECURITY DEFINER so policies on other
---    tables can read the owner-only `blocks` table). Revoked from client roles.
+--    tables can read the owner-only `blocks` table). Revoked from PUBLIC/anon
+--    only — `authenticated` MUST keep EXECUTE: RLS policies evaluate as the
+--    querying role, which needs EXECUTE to call the function (SECURITY DEFINER
+--    only affects the body's privileges). Revoking authenticated = full outage.
 CREATE OR REPLACE FUNCTION public.is_blocked_either_way(a UUID, b UUID)
 RETURNS BOOLEAN
 LANGUAGE sql
@@ -21,7 +24,8 @@ AS $$
            OR (blocker_id = b AND blocked_id = a)
     );
 $$;
-REVOKE EXECUTE ON FUNCTION public.is_blocked_either_way(uuid, uuid) FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.is_blocked_either_way(uuid, uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.is_blocked_either_way(uuid, uuid) TO authenticated;
 
 -- 2. Reverse-direction index (the PK covers the forward lookup).
 CREATE INDEX IF NOT EXISTS blocks_blocked_idx ON public.blocks (blocked_id, blocker_id);
