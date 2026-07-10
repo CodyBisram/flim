@@ -6,6 +6,11 @@
 // person (one push listing that person's emoji), so a burst of reactions from
 // one friend is a single notification — the way Lapse did it, not one-per-emoji.
 //
+// Also notifies the APP OWNER whenever a content report lands (photo_reports /
+// user_reports) so UGC can be actioned within 24h (App Store Guideline 1.2).
+// Same poll + push_sent-flag pattern as everything else here; auto-hide at >=2
+// distinct reporters is a separate DB trigger (auto_hide_reported in schema.sql).
+//
 // Deploy:
 //   supabase functions deploy send-social-push --no-verify-jwt
 // Schedule (Dashboard → Edge Functions → Schedules, or pg_cron): every 1 minute
@@ -98,6 +103,20 @@ async function handle(userId: string): Promise<string> {
 async function tokensFor(userId: string): Promise<string[]> {
   const { data } = await supabase.from("device_tokens").select("token").eq("user_id", userId);
   return (data ?? []).map((t) => t.token);
+}
+
+// --- App owner: the single place the owner is named. Matches the `note = 'owner'`
+//     seed in allowed_emails (schema.sql). Report notifications go to whichever
+//     account(s) sign in with this email; resolved by email (case-insensitive) so
+//     no raw user UUID is hardcoded. If the owner has no registered device, the
+//     report still sits in the table for the daily-check query in the migration.
+const OWNER_EMAIL = "codyysb@gmail.com";
+
+async function ownerTokens(): Promise<string[]> {
+  const { data: owners } = await supabase.from("users").select("id").ilike("email", OWNER_EMAIL);
+  const tokens: string[] = [];
+  for (const o of owners ?? []) tokens.push(...(await tokensFor(o.id)));
+  return [...new Set(tokens)];
 }
 
 Deno.serve(async () => {
@@ -221,6 +240,40 @@ Deno.serve(async () => {
     }
 
     await supabase.from("photo_comments").update({ push_sent: true }).in("id", g.items.map((it) => it.id));
+  }
+
+  // ---- Content reports → notify the app OWNER (Guideline 1.2, act within 24h).
+  //      Every report pushes (not just the >=2-reporter auto-hide threshold), so a
+  //      first report is seen immediately. push_sent is flipped regardless of
+  //      whether the owner has a device registered (same as the blocks above);
+  //      the migration's daily-check query is the backstop for the no-device case.
+  const ownerPushTokens = await ownerTokens();
+
+  const { data: photoReports } = await supabase
+    .from("photo_reports")
+    .select("id, photo_id, reason")
+    .eq("push_sent", false);
+
+  for (const r of photoReports ?? []) {
+    const body = r.reason ? `Reason: ${r.reason}` : "A photo was reported — review in the dashboard";
+    for (const token of ownerPushTokens) {
+      if (await sendPush(token, "Photo reported", body)) sent++;
+    }
+    await supabase.from("photo_reports").update({ push_sent: true }).eq("id", r.id);
+  }
+
+  const { data: userReports } = await supabase
+    .from("user_reports")
+    .select("id, reported_id, reason")
+    .eq("push_sent", false);
+
+  for (const r of userReports ?? []) {
+    const who = await handle(r.reported_id);
+    const body = r.reason ? `${who} — ${r.reason}` : `${who} was reported — review in the dashboard`;
+    for (const token of ownerPushTokens) {
+      if (await sendPush(token, "User reported", body)) sent++;
+    }
+    await supabase.from("user_reports").update({ push_sent: true }).eq("id", r.id);
   }
 
   return new Response(`sent ${sent} social push(es)`);

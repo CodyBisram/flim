@@ -56,3 +56,17 @@ Setup (in addition to the develop-push steps above — same APNs secrets):
 1. Run the updated `device_tokens.sql` (adds `push_sent` to `post_comments` / `post_reactions`).
 2. `supabase functions deploy send-social-push --no-verify-jwt`
 3. Schedule it every 1 minute (Dashboard → Edge Functions → Schedules, or pg_cron).
+
+## Report notifications (App Store Guideline 1.2)
+
+`send-social-push` also notifies the **app owner** whenever a content report lands
+(`photo_reports` / `user_reports`) so UGC can be actioned within 24h. Same poll +
+`push_sent` flag pattern; the owner is named once via the `OWNER_EMAIL` constant in
+the function (matches the `note = 'owner'` seed in `allowed_emails`).
+
+Setup:
+1. Run `../migrations/2026-07-10_report_notifications.sql` (adds `push_sent` to the
+   two report tables). Its header carries a daily-check SQL backstop for when the
+   owner has no registered device.
+2. Redeploy: `supabase functions deploy send-social-push --no-verify-jwt`
+   (already scheduled every 1 minute — no new schedule needed).

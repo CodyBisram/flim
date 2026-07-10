@@ -1056,3 +1056,21 @@ DROP TRIGGER IF EXISTS block_severs_follows_trigger ON public.blocks;
 CREATE TRIGGER block_severs_follows_trigger
     AFTER INSERT ON public.blocks
     FOR EACH ROW EXECUTE FUNCTION public.block_severs_follows();
+
+-- ============================================================
+-- Report notifications (App Store Guideline 1.2 — act on UGC reports within 24h).
+-- The auto_hide_reported trigger above hides content at >= 2 distinct reporters,
+-- but nothing told the owner a report happened. Rather than add a pg_net trigger
+-- (which would need the service key + function URL in the DB — deliberately not
+-- how push works here), we reuse the existing scheduled poll + push_sent pattern:
+-- the every-1-minute send-social-push Edge Function scans photo_reports and
+-- user_reports for push_sent = FALSE and pushes to the OWNER's device_tokens
+-- (owner resolved by the note='owner' allowed_emails / OWNER_EMAIL constant in
+-- that function), then flips the flag. Every report notifies, not just the
+-- auto-hide threshold. Daily-check backstop (for when the owner has no device on
+-- file) lives in the 2026-07-10_report_notifications.sql migration header.
+-- ============================================================
+ALTER TABLE public.photo_reports ADD COLUMN IF NOT EXISTS push_sent BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE public.user_reports  ADD COLUMN IF NOT EXISTS push_sent BOOLEAN NOT NULL DEFAULT FALSE;
+CREATE INDEX IF NOT EXISTS photo_reports_unpushed_idx ON public.photo_reports (push_sent) WHERE push_sent = FALSE;
+CREATE INDEX IF NOT EXISTS user_reports_unpushed_idx  ON public.user_reports  (push_sent) WHERE push_sent = FALSE;
