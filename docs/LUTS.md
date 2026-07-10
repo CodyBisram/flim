@@ -11,7 +11,14 @@ as the **color grade**, then still layers on **grain, bloom, and vignette** (str
 effects the LUT usually doesn't include). If `lut` is `nil` or the file fails to load, it falls
 back to the parametric chain — so this is always safe.
 
-Order: `LUT (color) → bloom → vignette → grain`.
+Order: `scene-adaptive exposure → LUT (color) → bloom → vignette → grain`.
+
+The exposure step runs **before** the LUT because the LUT was fitted on
+exposure-normalized inputs: `EV = clamp(0.6 * log2(0.18 / meanLum), 0, 0.5)` from
+CIAreaAverage mean luminance. This formula must stay identical to
+`normalize_exposure` in `scripts/fit_lut.py` — change one, change both, refit.
+Dark scenes (`meanLum < 0.22`) also scale bloom down (floor 35%) so halation
+doesn't milk night shots.
 
 ## Adding a LUT (3 steps)
 
@@ -54,7 +61,13 @@ taste on top of it.
 
 ## Fitting the FLIM look from Lapse (the calibration shoot)
 
-**Goal:** photograph the same scenes in Lapse and in FLIM (neutral mode), then fit a
+**Status: SHIPPED.** The fitted look is live — `Flim/Resources/flim.cube` (33³) was fitted
+from 6 real same-scene (FLIM-neutral, Lapse) pairs (4 coherent pairs used; 2 moody-crush
+scenes excluded as Lapse outliers) and is enabled on FLIM Original, with the parametric
+grade as fallback. Scene-adaptive exposure ships alongside it (see pipeline order above).
+Keep the steps below for **refits** when new calibration pairs come in.
+
+**How it works:** photograph the same scenes in Lapse and in FLIM (neutral mode), then fit a
 `.cube` that maps neutral → Lapse's grade. Fixes the dark-photo problem with data
 instead of guesswork.
 

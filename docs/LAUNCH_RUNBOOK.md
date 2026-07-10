@@ -81,7 +81,7 @@ On the latest TestFlight build, with a FRESH account:
 
 ## Parked (post-launch backlog)
 - Widget + Live Activity (develop countdown)
-- LUT color grade (fit from Lapse reference pairs — `LUTS.md`)
+- LUT refits from new calibration pairs (`LUTS.md`) — the v1 fitted look (flim.cube + adaptive exposure) shipped
 - Universal links entitlement (needs match profile regen)
 - Personal-photo develop reveal (reuse RollRevealView effect)
 - Rename decision window: first couple of months
