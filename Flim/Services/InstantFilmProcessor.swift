@@ -8,6 +8,56 @@ enum InstantFilmProcessor {
     // CIContext is expensive to build — create once and reuse for every capture.
     private static let context = CIContext()
 
+    /// The one declared color space for the whole exported chain. sRGB is the safe universal
+    /// choice — it's what shared-photo consumers (Messages/web/Android) assume for untagged
+    /// JPEGs, and it's the space the LUT was fitted in. Every JPEG we write is rendered into
+    /// this space AND tagged with its ICC profile so it reads identically outside the app.
+    private static let outputColorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
+
+    /// Renders a finished CIImage to sRGB JPEG bytes with the sRGB ICC profile embedded.
+    /// `createCGImage(colorSpace:)` pins the output to sRGB (previously it inherited the
+    /// context default, and `UIImage.jpegData` then wrote an UNTAGGED JPEG). We encode via
+    /// CGImageDestination with the color space set explicitly so the ICC tag is guaranteed —
+    /// UIImage.jpegData does not reliably embed a profile from a bare CGImage.
+    private static func srgbJPEG(_ image: CIImage, quality: CGFloat) -> Data? {
+        guard let cg = context.createCGImage(
+            image, from: image.extent, format: .RGBA8, colorSpace: outputColorSpace
+        ) else { return nil }
+        return encodeJPEG(cg, quality: quality)
+    }
+
+    /// Encodes a CGImage as JPEG with its ICC profile embedded, so downstream viewers don't
+    /// guess the color space. CGImageDestination writes the ICC bytes of the CGImage's OWN
+    /// color space; callers pass an sRGB-tagged CGImage (from `createCGImage(colorSpace:)` or
+    /// a thumbnail of our own sRGB output), so the file carries the sRGB profile. Falls back to
+    /// `UIImage.jpegData` only if the destination can't be built — a photo must not be lost.
+    private static func encodeJPEG(_ cg: CGImage, quality: CGFloat) -> Data? {
+        // Guarantee the CGImage is sRGB before encoding; if it somehow isn't (e.g. a thumbnail
+        // of an untagged fallback original), redraw it into sRGB so the embedded ICC is honest.
+        let srgb = cg.colorSpace?.name == outputColorSpace.name ? cg : redrawSRGB(cg) ?? cg
+        let out = NSMutableData()
+        guard let dest = CGImageDestinationCreateWithData(
+            out, "public.jpeg" as CFString, 1, nil
+        ) else { return UIImage(cgImage: srgb).jpegData(compressionQuality: quality) }
+        let props: [CFString: Any] = [kCGImageDestinationLossyCompressionQuality: quality]
+        CGImageDestinationAddImage(dest, srgb, props as CFDictionary)
+        guard CGImageDestinationFinalize(dest) else {
+            return UIImage(cgImage: srgb).jpegData(compressionQuality: quality)
+        }
+        return out as Data
+    }
+
+    /// Redraws a CGImage into the sRGB space (used only when an input isn't already sRGB).
+    private static func redrawSRGB(_ cg: CGImage) -> CGImage? {
+        guard let ctx = CGContext(
+            data: nil, width: cg.width, height: cg.height, bitsPerComponent: 8,
+            bytesPerRow: 0, space: outputColorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+        ctx.draw(cg, in: CGRect(x: 0, y: 0, width: cg.width, height: cg.height))
+        return ctx.makeImage()
+    }
+
     /// Processes raw JPEG/HEIC data through the given film stock and returns JPEG bytes.
     /// Runs off the main actor. Returns `nil` on failure so the caller can fall back to
     /// the original bytes (a photo should never be lost to a filter error).
@@ -39,7 +89,10 @@ enum InstantFilmProcessor {
             kCGImageSourceThumbnailMaxPixelSize: longEdge
         ]
         guard let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
-        return UIImage(cgImage: cg).jpegData(compressionQuality: quality)
+        // Re-encode through CGImageDestination so the downscaled rendition keeps an ICC tag.
+        // The source here is our own sRGB-tagged full JPEG, so the thumbnail CGImage is already
+        // sRGB; encodeJPEG embeds the profile (UIImage.jpegData would drop it — the export bug).
+        return encodeJPEG(cg, quality: quality)
     }
 
     /// Longest edge we store the full image at. 2048 keeps shots crisp at full-screen *and* under
@@ -68,8 +121,11 @@ enum InstantFilmProcessor {
                     kCIInputScaleKey: maxStoredEdge / edge, kCIInputAspectRatioKey: 1.0
                 ])
             }
-            guard let cg = context.createCGImage(neutral, from: neutral.extent) else { return nil }
-            return UIImage(cgImage: cg).jpegData(compressionQuality: 0.92)
+            // Render + tag sRGB like every other export. Pixel values are unchanged from the
+            // old untagged path (the context already resolved to sRGB); fit_lut.py reads these
+            // via PIL, which assumes sRGB for untagged input — so the fit sees the same numbers,
+            // now correctly tagged.
+            return srgbJPEG(neutral, quality: 0.92)
         }
 
         // Scene-adaptive exposure, deliberately GENTLE — night must stay night (a city
@@ -103,8 +159,12 @@ enum InstantFilmProcessor {
                 kCIInputAspectRatioKey: 1.0
             ])
         }
-        guard let cgImage = context.createCGImage(image, from: image.extent) else { return nil }
-        return UIImage(cgImage: cgImage).jpegData(compressionQuality: 0.85)
+        // LUT input space: we deliberately do NOT insert a P3→sRGB conversion before the grade.
+        // The look was signed off with the source flowing into the CI graph exactly as it does
+        // here, and CubeLUT.apply already declares the cube's own working space (sRGB) to
+        // CIColorCubeWithColorSpace. Converting the source first would shift the on-screen result;
+        // the goal here is correct EXPORT tagging, not a regrade. We only pin the OUTPUT to sRGB.
+        return srgbJPEG(image, quality: 0.85)
     }
 
     /// Mean scene luminance (0–1) via CIAreaAverage — drives the adaptive dark-scene exposure.
@@ -118,9 +178,10 @@ enum InstantFilmProcessor {
         return 0.299 * r + 0.587 * g + 0.114 * b
     }
 
-    /// The film look as a pure CIImage → CIImage transform. Shared by capture (with grain) and
-    /// the live viewfinder preview (grain off, so it stays smooth at 30–60fps). This is the one
-    /// source of truth for the look, so the preview matches the developed shot.
+    /// The film look as a pure CIImage → CIImage transform, applied at CAPTURE time only.
+    /// The live viewfinder deliberately shows the RAW, ungraded preview — this is a
+    /// disposable/instant-camera app: you don't see the developed result until it develops.
+    /// So this is the source of truth for the baked look, not for what the viewfinder shows.
     static func filtered(_ input: CIImage, params p: FilmParams, extent: CGRect, grain: Bool) -> CIImage {
         var image: CIImage
 
