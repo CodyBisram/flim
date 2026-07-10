@@ -23,6 +23,7 @@ struct UserPageView: View {
 
     private var isSelf: Bool { userId == auth.currentUser?.id }
     private var isFollowing: Bool { feed.isFollowing(userId) }
+    private var isBlocked: Bool { feed.isBlocked(userId) }
 
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 3), count: 3)
 
@@ -33,7 +34,9 @@ struct UserPageView: View {
                 ScrollView {
                     VStack(spacing: 18) {
                         pageHeader(topInset: geo.safeAreaInsets.top)
-                        if posts.isEmpty && loaded {
+                        if isBlocked {
+                            blockedState
+                        } else if posts.isEmpty && loaded {
                             emptyState
                         } else {
                             ForEach(monthlySections, id: \.key) { section in
@@ -159,7 +162,9 @@ struct UserPageView: View {
                 Button { followList = .following } label: { stat("\(following)", "following") }
             }
 
-            if !isSelf {
+            // No follow affordance on a blocked account — the dedicated blocked-state panel
+            // below (with its own Unblock) replaces it.
+            if !isSelf && !isBlocked {
                 Button { toggleFollow() } label: {
                     Text(isFollowing ? "Following" : "Follow")
                         .font(.system(size: 14, weight: .semibold))
@@ -235,6 +240,32 @@ struct UserPageView: View {
         .padding(.top, 40)
     }
 
+    /// Replaces the post grid + follow affordance for a blocked account — mirrors
+    /// BlockedUsersSheet's language and Unblock pill so the undo path stays consistent.
+    private var blockedState: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "hand.raised.slash")
+                .font(.system(size: 26, weight: .ultraLight)).foregroundStyle(FlimTheme.textTertiary)
+            Text("You blocked \(profile?.handle ?? "this account")")
+                .font(.system(size: 15, weight: .medium)).foregroundStyle(.white)
+            Text("You won't see their posts, and they won't see yours.")
+                .font(.system(size: 13)).foregroundStyle(FlimTheme.textTertiary)
+                .multilineTextAlignment(.center).padding(.horizontal, 40)
+            Button {
+                guard let uid = auth.currentUser?.id else { return }
+                Haptics.tap()
+                Task { await feed.unblock(userId, from: uid) }
+            } label: {
+                Text("Unblock")
+                    .font(.system(size: 13, weight: .semibold)).foregroundStyle(.black)
+                    .padding(.horizontal, 18).padding(.vertical, 9)
+                    .background(FlimTheme.accent, in: Capsule())
+            }
+            .padding(.top, 6)
+        }
+        .padding(.top, 40)
+    }
+
     private var monthlySections: [(key: String, posts: [Post])] {
         let cal = Calendar.current
         let groups = Dictionary(grouping: posts) { cal.dateComponents([.year, .month], from: $0.takenAt) }
@@ -257,6 +288,7 @@ struct UserPageView: View {
         followers = await fr
         following = await fg
         if feed.followingIds.isEmpty, let uid = auth.currentUser?.id { await feed.loadFollowing(userId: uid) }
+        if let uid = auth.currentUser?.id { await feed.loadBlocked(userId: uid) }
         if let path = profile?.avatarPath { avatarURL = await feed.signedURL(for: path) }
         // Cover = chosen cover, else the newest shared shot, else the avatar.
         if let cover = profile?.coverPath { coverURL = await feed.signedURL(for: cover) }
@@ -469,7 +501,10 @@ struct FollowListView: View {
                 }
             }
             .task {
-                if let uid = auth.currentUser?.id { await feed.loadFollowing(userId: uid) }
+                if let uid = auth.currentUser?.id {
+                    await feed.loadFollowing(userId: uid)
+                    await feed.loadBlocked(userId: uid)   // so the list below filters blocked users
+                }
                 profiles = mode == .followers
                     ? await feed.fetchFollowers(of: userId)
                     : await feed.fetchFollowingProfiles(of: userId)

@@ -309,8 +309,14 @@ struct FeedPostCard: View {
     private var isOwn: Bool { post.userId == auth.currentUser?.id }
     // Reactions + comments live in the batch-loaded FeedService cache (one fetch per page, not
     // per card). Reading them here keeps every card in sync as it recycles.
-    private var reactions: [PostReaction] { feed.reactionsByPost[post.id] ?? [] }
-    private var comments: [CommentInfo] { feed.commentsByPost[post.id] ?? [] }
+    // Filtered again here (on top of FeedService's own filtering) as defense-in-depth: cards can
+    // recycle against a cache that predates a block landing.
+    private var reactions: [PostReaction] {
+        (feed.reactionsByPost[post.id] ?? []).filter { !feed.blockedIds.contains($0.userId) }
+    }
+    private var comments: [CommentInfo] {
+        (feed.commentsByPost[post.id] ?? []).filter { !feed.blockedIds.contains($0.comment.userId) }
+    }
     /// The top-ranked couple of comments, plus your own latest so it always shows after you post.
     private var commentPreview: [CommentInfo] {
         var shown = Array(comments.prefix(2))

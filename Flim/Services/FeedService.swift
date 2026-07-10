@@ -57,18 +57,20 @@ final class FeedService {
             .execute()
     }
 
+    /// Follows tables stay fully readable server-side (so counts aren't affected by blocks), but
+    /// the *rendered lists* filter blocked users out client-side — defense-in-depth over RLS.
     func fetchFollowers(of userId: UUID) async -> [UserProfile] {
         struct Row: Decodable { let follower_id: UUID }
         let rows: [Row] = (try? await supabase.from("follows").select("follower_id")
             .eq("following_id", value: userId.uuidString).execute().value) ?? []
-        return await orderedProfiles(rows.map(\.follower_id))
+        return await orderedProfiles(rows.map(\.follower_id).filter { !blockedIds.contains($0) })
     }
 
     func fetchFollowingProfiles(of userId: UUID) async -> [UserProfile] {
         struct Row: Decodable { let following_id: UUID }
         let rows: [Row] = (try? await supabase.from("follows").select("following_id")
             .eq("follower_id", value: userId.uuidString).execute().value) ?? []
-        return await orderedProfiles(rows.map(\.following_id))
+        return await orderedProfiles(rows.map(\.following_id).filter { !blockedIds.contains($0) })
     }
 
     private func orderedProfiles(_ ids: [UUID]) async -> [UserProfile] {
@@ -159,6 +161,7 @@ final class FeedService {
         _ = try? await supabase.from("blocks").insert(B(blocker_id: userId, blocked_id: targetId)).execute()
         await unfollow(targetId, from: userId)          // blocking implies unfollow
         feed.removeAll { $0.author.id == targetId }      // drop their posts from the current feed
+        purgeCachedContent(from: targetId)               // and their reactions/comments/tags on everyone else's
     }
 
     func unblock(_ targetId: UUID, from userId: UUID) async {
@@ -166,6 +169,21 @@ final class FeedService {
         _ = try? await supabase.from("blocks").delete()
             .eq("blocker_id", value: userId.uuidString)
             .eq("blocked_id", value: targetId.uuidString).execute()
+    }
+
+    /// Strips a just-blocked user's reactions/comments/tags out of the already-loaded feed cache,
+    /// so their content vanishes from cards immediately instead of surviving until the next reload.
+    private func purgeCachedContent(from targetId: UUID) {
+        for (postId, list) in reactionsByPost {
+            reactionsByPost[postId] = list.filter { $0.userId != targetId }
+        }
+        for (postId, list) in commentsByPost {
+            commentsByPost[postId] = list.filter { $0.comment.userId != targetId }
+        }
+        for (postId, list) in tagsByPost {
+            tagsByPost[postId] = list.filter { $0.taggedUserId != targetId }
+        }
+        tagProfiles.removeValue(forKey: targetId)
     }
 
     /// Reports a post's photo for review (reuses the photo_reports table).
@@ -267,14 +285,17 @@ final class FeedService {
         guard !postIds.isEmpty else { return [:] }
         let rows: [PostReaction] = (try? await supabase.from("post_reactions").select()
             .in("post_id", values: postIds.map(\.uuidString)).execute().value) ?? []
-        return Dictionary(grouping: rows, by: \.postId)
+        // Defense-in-depth over RLS: filters stale/offline-cached rows from blocked users too.
+        return Dictionary(grouping: rows.filter { !blockedIds.contains($0.userId) }, by: \.postId)
     }
 
     private func batchComments(postIds: [UUID], currentUserId: UUID) async -> [UUID: [CommentInfo]] {
         guard !postIds.isEmpty else { return [:] }
-        let comments: [PostComment] = (try? await supabase.from("post_comments").select()
+        let allComments: [PostComment] = (try? await supabase.from("post_comments").select()
             .in("post_id", values: postIds.map(\.uuidString))
             .order("created_at", ascending: true).execute().value) ?? []
+        // Defense-in-depth over RLS: filters stale/offline-cached rows from blocked users too.
+        let comments = allComments.filter { !blockedIds.contains($0.userId) }
         guard !comments.isEmpty else { return [:] }
 
         struct LikeRow: Decodable { let comment_id: UUID; let user_id: UUID }
@@ -419,8 +440,10 @@ final class FeedService {
     // MARK: - Reactions
 
     func fetchReactions(postId: UUID) async -> [PostReaction] {
-        (try? await supabase.from("post_reactions").select()
+        let rows: [PostReaction] = (try? await supabase.from("post_reactions").select()
             .eq("post_id", value: postId.uuidString).execute().value) ?? []
+        // Defense-in-depth over RLS: filters stale/offline-cached rows from blocked users too.
+        return rows.filter { !blockedIds.contains($0.userId) }
     }
 
     func addReaction(postId: UUID, emoji: String, userId: UUID) async {
@@ -441,10 +464,12 @@ final class FeedService {
     /// Comments for a post, each with author + like count + whether the current user liked it,
     /// ranked most-liked first (the "most relevant" order used on the feed + in the detail).
     func fetchComments(postId: UUID, currentUserId: UUID) async -> [CommentInfo] {
-        let comments: [PostComment] = (try? await supabase.from("post_comments").select()
+        let allComments: [PostComment] = (try? await supabase.from("post_comments").select()
             .eq("post_id", value: postId.uuidString)
             .order("created_at", ascending: true)
             .execute().value) ?? []
+        // Defense-in-depth over RLS: filters stale/offline-cached rows from blocked users too.
+        let comments = allComments.filter { !blockedIds.contains($0.userId) }
         guard !comments.isEmpty else { return [] }
 
         struct LikeRow: Decodable { let comment_id: UUID; let user_id: UUID }
@@ -542,6 +567,11 @@ final class FeedService {
         struct Raw { let kind: ActivityItem.Kind; let actorId: UUID; let date: Date; let postId: UUID? }
         var raws: [Raw] = []
 
+        // The rows themselves are already clean (RLS hides blocked-either-way activity), but
+        // refresh + re-check blockedIds anyway — this view can be reached without the Feed tab
+        // ever loading first, and it protects against anything cached before a block landed.
+        await loadBlocked(userId: userId)
+
         let postIds = await fetchUserPosts(userId: userId).map(\.id.uuidString)
         if !postIds.isEmpty {
             struct R: Decodable { let user_id: UUID; let emoji: String; let created_at: Date; let post_id: UUID }
@@ -582,6 +612,7 @@ final class FeedService {
             return Raw(kind: .tagged, actorId: author, date: t.created_at, postId: t.post_id)
         }
 
+        raws.removeAll { blockedIds.contains($0.actorId) }
         let profiles = await fetchProfiles(ids: Array(Set(raws.map(\.actorId))))
         return raws
             .compactMap { raw -> ActivityItem? in

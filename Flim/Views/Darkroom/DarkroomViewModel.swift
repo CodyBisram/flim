@@ -34,11 +34,11 @@ final class DarkroomViewModel {
         startRefreshLoop(photoService: photoService)
     }
 
-    func loadRoll(photoService: PhotoService, rollId: UUID) async {
+    func loadRoll(photoService: PhotoService, rollId: UUID, blockedIds: Set<UUID> = []) async {
         isLoading = true
         error = nil
         do {
-            try await photoService.fetchRollPhotos(rollId: rollId)
+            try await photoService.fetchRollPhotos(rollId: rollId, blockedIds: blockedIds)
             photos = photoService.photos
             await markReadyPhotos(photoService: photoService)
             await prefetchURLs(photoService: photoService)
@@ -57,9 +57,9 @@ final class DarkroomViewModel {
         await markReadyPhotos(photoService: photoService)
     }
 
-    func loadMoreRoll(photoService: PhotoService, rollId: UUID) async {
+    func loadMoreRoll(photoService: PhotoService, rollId: UUID, blockedIds: Set<UUID> = []) async {
         guard photoService.hasMore, !photoService.isLoading else { return }
-        try? await photoService.fetchRollPhotos(rollId: rollId, reset: false)
+        try? await photoService.fetchRollPhotos(rollId: rollId, reset: false, blockedIds: blockedIds)
         photos = photoService.photos
         await markReadyPhotos(photoService: photoService)
     }

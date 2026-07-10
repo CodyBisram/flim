@@ -802,7 +802,14 @@ GRANT EXECUTE ON FUNCTION public.get_own_profile() TO authenticated;
 -- (the invite gate runs before sign-in; it returns only a boolean).
 ALTER FUNCTION public.mark_developed_photos() SET search_path = public;
 REVOKE EXECUTE ON FUNCTION public.auto_hide_reported() FROM PUBLIC, anon, authenticated;
-REVOKE EXECUTE ON FUNCTION public.rls_auto_enable() FROM PUBLIC, anon, authenticated;
+-- rls_auto_enable() exists only in the live DB (event-trigger helper, never mirrored here);
+-- guard the REVOKE so a fresh run of this file doesn't abort on the missing function.
+DO $$
+BEGIN
+  IF to_regprocedure('public.rls_auto_enable()') IS NOT NULL THEN
+    REVOKE EXECUTE ON FUNCTION public.rls_auto_enable() FROM PUBLIC, anon, authenticated;
+  END IF;
+END $$;
 REVOKE EXECUTE ON FUNCTION public.mark_developed_photos() FROM PUBLIC, anon, authenticated;
 REVOKE EXECUTE ON FUNCTION public.delete_account() FROM PUBLIC, anon;
 REVOKE EXECUTE ON FUNCTION public.join_roll(text) FROM PUBLIC, anon;
@@ -815,3 +822,178 @@ GRANT EXECUTE ON FUNCTION public.is_email_allowed(text) TO anon, authenticated;
 --  * allowed_emails: RLS on, no policies = deny-all to clients (read via is_email_allowed only).
 --  * pg_net in public: the extension does not support SET SCHEMA; its callable API lives in `net`.
 --  * leaked-password protection (HIBP): Pro-plan feature — enable in dashboard after upgrading.
+
+-- ============================================================
+-- Block enforcement at the RLS level (App Store Guideline 1.2).
+-- Blocking used to be a client-only filter, so a blocked user's comments,
+-- reactions, tags, and roll photos still surfaced (and the block was one-way).
+-- We now push blocking into the read/write policies so it is bidirectional and
+-- holds regardless of client: if A blocked B (or B blocked A) neither sees the
+-- other's UGC, and neither can act on the other's content going forward.
+--
+-- `blocks` has an owner-only SELECT policy, so a policy on some OTHER table
+-- (posts, comments, …) can't read it directly. This SECURITY DEFINER helper
+-- runs with owner rights (bypassing blocks' RLS internally) and returns only a
+-- boolean — the same pattern as is_roll_member. STABLE + pinned search_path,
+-- and EXECUTE is revoked from client roles (policies call it as the definer, so
+-- clients never need direct RPC access to it).
+-- ============================================================
+CREATE OR REPLACE FUNCTION public.is_blocked_either_way(a UUID, b UUID)
+RETURNS BOOLEAN
+LANGUAGE sql
+SECURITY DEFINER
+STABLE
+SET search_path = public
+AS $$
+    SELECT EXISTS (
+        SELECT 1 FROM public.blocks
+        WHERE (blocker_id = a AND blocked_id = b)
+           OR (blocker_id = b AND blocked_id = a)
+    );
+$$;
+REVOKE EXECUTE ON FUNCTION public.is_blocked_either_way(uuid, uuid) FROM PUBLIC, anon, authenticated;
+
+-- Reverse-direction index so the OR-branch (blocker=b AND blocked=a) is index-backed.
+-- The blocks PK (blocker_id, blocked_id) already covers the forward lookup.
+CREATE INDEX IF NOT EXISTS blocks_blocked_idx ON public.blocks (blocked_id, blocker_id);
+
+-- --- READ policies: drop the blocked party's content from every shared surface ---
+
+-- Feed posts: hide posts authored by anyone in a block relationship with the viewer.
+DROP POLICY IF EXISTS "posts: readable by authenticated" ON public.posts;
+CREATE POLICY "posts: readable by authenticated"
+    ON public.posts FOR SELECT TO authenticated
+    USING (NOT public.is_blocked_either_way(auth.uid(), user_id));
+
+-- Post comments: hide comments authored by a blocked party (even on posts you can see).
+DROP POLICY IF EXISTS "post_comments: readable" ON public.post_comments;
+CREATE POLICY "post_comments: readable"
+    ON public.post_comments FOR SELECT TO authenticated
+    USING (NOT public.is_blocked_either_way(auth.uid(), user_id));
+
+-- Post reactions: hide reactions from a blocked party (feed cards + Activity).
+DROP POLICY IF EXISTS "post_reactions: readable" ON public.post_reactions;
+CREATE POLICY "post_reactions: readable"
+    ON public.post_reactions FOR SELECT TO authenticated
+    USING (NOT public.is_blocked_either_way(auth.uid(), user_id));
+
+-- Post tags: hide tags that point at a blocked party.
+DROP POLICY IF EXISTS "post_tags: readable" ON public.post_tags;
+CREATE POLICY "post_tags: readable"
+    ON public.post_tags FOR SELECT TO authenticated
+    USING (NOT public.is_blocked_either_way(auth.uid(), tagged_user_id));
+
+-- Comment likes: hide likes from a blocked party (comment ranking + counts).
+DROP POLICY IF EXISTS "comment_likes: readable" ON public.comment_likes;
+CREATE POLICY "comment_likes: readable"
+    ON public.comment_likes FOR SELECT TO authenticated
+    USING (NOT public.is_blocked_either_way(auth.uid(), user_id));
+
+-- Shared-roll photos: hide a blocked party's photos from the roll surface. Preserves
+-- the existing membership check; adds the block predicate. (Own photos policy is
+-- unchanged — you can never block yourself, CHECK (blocker_id <> blocked_id).)
+DROP POLICY IF EXISTS "photos: roll members can see" ON public.photos;
+CREATE POLICY "photos: roll members can see"
+    ON public.photos FOR SELECT
+    USING (
+        roll_id IS NOT NULL
+        AND public.is_roll_member(roll_id)
+        AND NOT public.is_blocked_either_way(auth.uid(), user_id)
+    );
+
+-- Roll photo comments: keep the membership/ownership check, drop the blocked author's.
+DROP POLICY IF EXISTS "photo_comments: readable by roll members" ON public.photo_comments;
+CREATE POLICY "photo_comments: readable by roll members"
+    ON public.photo_comments FOR SELECT TO authenticated
+    USING (
+        NOT public.is_blocked_either_way(auth.uid(), user_id)
+        AND EXISTS (SELECT 1 FROM public.photos p WHERE p.id = photo_id
+                    AND (p.user_id = auth.uid() OR public.is_roll_member(p.roll_id)))
+    );
+
+-- Roll photo reactions: keep the visible-photo check, drop the blocked reactor's.
+DROP POLICY IF EXISTS "reactions: visible on visible photos" ON public.photo_reactions;
+CREATE POLICY "reactions: visible on visible photos"
+    ON public.photo_reactions FOR SELECT
+    USING (
+        NOT public.is_blocked_either_way(auth.uid(), user_id)
+        AND EXISTS (
+            SELECT 1 FROM public.photos p
+            WHERE p.id = photo_reactions.photo_id
+              AND (p.user_id = auth.uid()
+                   OR (p.roll_id IS NOT NULL AND public.is_roll_member(p.roll_id)))
+        )
+    );
+
+-- --- WRITE policies: a blocked party can't act on the blocker's content going forward ---
+-- (Closes the one-directional gap: previously the blocked user could still comment/
+-- react on the blocker. Reads are already hidden above; these stop new interactions.)
+
+-- Can't comment on a post whose author is in a block relationship with you.
+DROP POLICY IF EXISTS "post_comments: add own" ON public.post_comments;
+CREATE POLICY "post_comments: add own"
+    ON public.post_comments FOR INSERT WITH CHECK (
+        auth.uid() = user_id
+        AND EXISTS (SELECT 1 FROM public.posts p WHERE p.id = post_id
+                    AND NOT public.is_blocked_either_way(auth.uid(), p.user_id))
+    );
+
+-- Can't react on a post whose author is in a block relationship with you.
+DROP POLICY IF EXISTS "post_reactions: add own" ON public.post_reactions;
+CREATE POLICY "post_reactions: add own"
+    ON public.post_reactions FOR INSERT WITH CHECK (
+        auth.uid() = user_id
+        AND EXISTS (SELECT 1 FROM public.posts p WHERE p.id = post_id
+                    AND NOT public.is_blocked_either_way(auth.uid(), p.user_id))
+    );
+
+-- Can't like a comment authored by a block-related party.
+DROP POLICY IF EXISTS "comment_likes: add own" ON public.comment_likes;
+CREATE POLICY "comment_likes: add own"
+    ON public.comment_likes FOR INSERT WITH CHECK (
+        auth.uid() = user_id
+        AND EXISTS (SELECT 1 FROM public.post_comments c WHERE c.id = comment_id
+                    AND NOT public.is_blocked_either_way(auth.uid(), c.user_id))
+    );
+
+-- Can't comment on a roll photo whose owner is a block-related party (keeps membership check).
+DROP POLICY IF EXISTS "photo_comments: insert as roll member" ON public.photo_comments;
+CREATE POLICY "photo_comments: insert as roll member"
+    ON public.photo_comments FOR INSERT TO authenticated
+    WITH CHECK (user_id = auth.uid()
+                AND EXISTS (SELECT 1 FROM public.photos p WHERE p.id = photo_id
+                            AND public.is_roll_member(p.roll_id)
+                            AND NOT public.is_blocked_either_way(auth.uid(), p.user_id)));
+
+-- Can't react on a roll photo whose owner is a block-related party. (photo_reactions'
+-- INSERT was CHECK (auth.uid() = user_id) only; we now also verify the photo owner.)
+DROP POLICY IF EXISTS "reactions: add own" ON public.photo_reactions;
+CREATE POLICY "reactions: add own"
+    ON public.photo_reactions FOR INSERT WITH CHECK (
+        auth.uid() = user_id
+        AND EXISTS (SELECT 1 FROM public.photos p WHERE p.id = photo_id
+                    AND NOT public.is_blocked_either_way(auth.uid(), p.user_id))
+    );
+
+-- Can't follow a block-related party.
+DROP POLICY IF EXISTS "follows: create own" ON public.follows;
+CREATE POLICY "follows: create own"
+    ON public.follows FOR INSERT WITH CHECK (
+        auth.uid() = follower_id
+        AND NOT public.is_blocked_either_way(auth.uid(), following_id)
+    );
+
+-- What RLS deliberately does NOT cover (must stay a client-side filter) — see the
+-- report handed to the Swift agent:
+--  * public.profiles / public.users rows: readable by every signed-in user by design
+--    (comment authors, page browsing). Hiding a blocked user's whole profile row would
+--    break unrelated joins; the client hides the profile surface instead.
+--  * roll member lists (roll_members): membership stays visible so counts/avatars render;
+--    the client greys/omits a blocked co-member in the roster.
+--  * follows READ: the graph stays readable (follower/following counts); the client
+--    filters blocked users out of follower/following LISTS.
+--  * Activity aggregation: assembled client-side from now-block-filtered reaction/comment/
+--    tag rows, but any purely client-derived activity items must also be filtered there.
+--  * Storage objects: signed URLs are minted per-path; a stale URL already handed out
+--    isn't revoked by a later block. New reads are gated because the photos/posts rows
+--    that authorize them are now block-filtered.

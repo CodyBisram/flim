@@ -17,8 +17,11 @@ struct CommentsSheet: View {
     @FocusState private var focused: Bool
 
     // Chronological (oldest first) so new comments land at the bottom, right above the composer.
+    // Filtered again here (on top of FeedService's own filtering) as defense-in-depth.
     private var comments: [CommentInfo] {
-        (feed.commentsByPost[post.id] ?? []).sorted { $0.comment.createdAt < $1.comment.createdAt }
+        (feed.commentsByPost[post.id] ?? [])
+            .filter { !feed.blockedIds.contains($0.comment.userId) }
+            .sorted { $0.comment.createdAt < $1.comment.createdAt }
     }
     private var canSend: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 

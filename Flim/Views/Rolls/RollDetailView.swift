@@ -7,6 +7,7 @@ struct RollDetailView: View {
     @Environment(RollService.self) private var rollService
     @Environment(AuthService.self) private var auth
     @Environment(NotificationService.self) private var notifications
+    @Environment(FeedService.self) private var feed
     @Environment(\.dismiss) private var dismiss
     @AppStorage("developNotificationsEnabled") private var notificationsEnabled = true
     @State private var vm = DarkroomViewModel()
@@ -117,7 +118,7 @@ struct RollDetailView: View {
                             }
                         }
                         .refreshable {
-                            await vm.loadRoll(photoService: photoService, rollId: roll.id)
+                            await vm.loadRoll(photoService: photoService, rollId: roll.id, blockedIds: feed.blockedIds)
                         }
                     }
                 }
@@ -190,7 +191,8 @@ struct RollDetailView: View {
         }
         .onAppear {
             Task {
-                await vm.loadRoll(photoService: photoService, rollId: roll.id)
+                if let uid = auth.currentUser?.id { await feed.loadBlocked(userId: uid) }
+                await vm.loadRoll(photoService: photoService, rollId: roll.id, blockedIds: feed.blockedIds)
                 // The reveal, as an event: play everyone's shots once, the first time the
                 // roll is opened after it has developed.
                 if roll.isDeveloped, !vm.developedPhotos.isEmpty,
@@ -225,7 +227,7 @@ struct RollDetailView: View {
             FullScreenPhotoView(photo: photo, url: selectedURL,
                                 photographer: memberNames[photo.userId],
                                 memberNames: memberNames,
-                                onDelete: { Task { await vm.loadRoll(photoService: photoService, rollId: roll.id) } })
+                                onDelete: { Task { await vm.loadRoll(photoService: photoService, rollId: roll.id, blockedIds: feed.blockedIds) } })
                 .navigationTransition(.zoom(sourceID: photo.id, in: photoNS))
         }
         .fullScreenCover(isPresented: $showCarousel) {
@@ -331,7 +333,7 @@ struct RollDetailView: View {
                             _ = await vm.signedURL(for: photo, photoService: photoService)
                         }
                         if triggersLoadMore, photo.id == list.last?.id {
-                            await vm.loadMoreRoll(photoService: photoService, rollId: roll.id)
+                            await vm.loadMoreRoll(photoService: photoService, rollId: roll.id, blockedIds: feed.blockedIds)
                         }
                     }
             }

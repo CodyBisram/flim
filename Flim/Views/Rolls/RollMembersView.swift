@@ -4,6 +4,7 @@ struct RollMembersView: View {
     let roll: Roll
     @Environment(RollService.self) private var rollService
     @Environment(AuthService.self) private var auth
+    @Environment(FeedService.self) private var feed
     @Environment(\.dismiss) private var dismiss
 
     @State private var members: [AppUser] = []
@@ -65,20 +66,30 @@ struct RollMembersView: View {
                     } else {
                         List {
                             ForEach(members) { member in
+                                // roll_members stays fully readable server-side (so the "x/cap"
+                                // count is accurate), but a blocked co-member's identity is
+                                // omitted from the roster — no name, no avatar initial.
+                                let isBlocked = feed.isBlocked(member.id)
                                 HStack(spacing: 12) {
                                     Circle()
                                         .fill(Color(white: 0.15))
                                         .frame(width: 36, height: 36)
-                                        .overlay(
-                                            Text(String((member.username ?? "?").prefix(1)).uppercased())
-                                                .font(.system(size: 14, weight: .medium))
-                                                .foregroundStyle(Color(white: 0.7))
-                                        )
+                                        .overlay {
+                                            if isBlocked {
+                                                Image(systemName: "hand.raised.slash")
+                                                    .font(.system(size: 13))
+                                                    .foregroundStyle(Color(white: 0.4))
+                                            } else {
+                                                Text(String((member.username ?? "?").prefix(1)).uppercased())
+                                                    .font(.system(size: 14, weight: .medium))
+                                                    .foregroundStyle(Color(white: 0.7))
+                                            }
+                                        }
 
                                     VStack(alignment: .leading, spacing: 2) {
-                                        Text("@\(member.username ?? "unknown")")
+                                        Text(isBlocked ? "Blocked user" : "@\(member.username ?? "unknown")")
                                             .font(.system(size: 15, weight: .medium))
-                                            .foregroundStyle(.white)
+                                            .foregroundStyle(isBlocked ? Color(white: 0.45) : .white)
                                         if member.id == roll.createdBy {
                                             Text("Creator")
                                                 .font(.system(size: 11))
@@ -129,6 +140,7 @@ struct RollMembersView: View {
         .presentationBackground(FlimTheme.bg)
         .task {
             isLoading = true
+            if let uid = auth.currentUser?.id { await feed.loadBlocked(userId: uid) }
             members = (try? await rollService.fetchMembers(for: roll.id)) ?? []
             isLoading = false
         }

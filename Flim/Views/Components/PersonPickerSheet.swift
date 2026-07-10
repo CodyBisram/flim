@@ -113,6 +113,7 @@ struct PersonPickerSheet: View {
 
     private func load() async {
         guard let uid = auth.currentUser?.id else { return }
+        await feed.loadBlocked(userId: uid)   // so the people below filter out blocked users
         async let followingList = feed.fetchFollowingProfiles(of: uid)
         async let followerList = feed.fetchFollowers(of: uid)
         following = await followingList

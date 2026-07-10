@@ -8,6 +8,7 @@ struct PhotoCommentsSheet: View {
 
     @Environment(AuthService.self) private var auth
     @Environment(PhotoService.self) private var photoService
+    @Environment(FeedService.self) private var feed
     @Environment(\.dismiss) private var dismiss
 
     @State private var comments: [PhotoComment] = []
@@ -107,7 +108,8 @@ struct PhotoCommentsSheet: View {
     }
 
     private func load() async {
-        comments = await photoService.fetchPhotoComments(photoId: photoId)
+        if let uid = auth.currentUser?.id { await feed.loadBlocked(userId: uid) }
+        comments = await photoService.fetchPhotoComments(photoId: photoId, blockedIds: feed.blockedIds)
         loaded = true
     }
 

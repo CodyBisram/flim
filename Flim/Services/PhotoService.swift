@@ -275,11 +275,15 @@ final class PhotoService {
 
     // MARK: - Roll photo comments
 
-    func fetchPhotoComments(photoId: UUID) async -> [PhotoComment] {
-        (try? await supabase.from("photo_comments").select()
+    /// `blockedIds` is the signed-in user's own block list (owned by FeedService — passed in by the
+    /// caller rather than fetched here). RLS already hides these bidirectionally; this is
+    /// defense-in-depth for stale/offline caches.
+    func fetchPhotoComments(photoId: UUID, blockedIds: Set<UUID> = []) async -> [PhotoComment] {
+        let rows: [PhotoComment] = (try? await supabase.from("photo_comments").select()
             .eq("photo_id", value: photoId.uuidString)
             .order("created_at", ascending: true)
             .execute().value) ?? []
+        return blockedIds.isEmpty ? rows : rows.filter { !blockedIds.contains($0.userId) }
     }
 
     @discardableResult
@@ -374,8 +378,11 @@ final class PhotoService {
             .eq("id", value: photoId.uuidString).execute()
     }
 
-    func fetchRollPhotos(rollId: UUID, reset: Bool = true) async throws {
-        try await fetchPage(reset: reset) {
+    /// `blockedIds` is the signed-in user's own block list (owned by FeedService — passed in by
+    /// the caller). RLS already hides co-members' photos bidirectionally once blocked; this is
+    /// defense-in-depth for stale/offline caches.
+    func fetchRollPhotos(rollId: UUID, reset: Bool = true, blockedIds: Set<UUID> = []) async throws {
+        try await fetchPage(reset: reset, blockedIds: blockedIds) {
             $0.eq("roll_id", value: rollId.uuidString).eq("hidden", value: false)
         }
     }
@@ -385,6 +392,7 @@ final class PhotoService {
     /// the visible pages are ever fetched, and signed URLs are resolved lazily per cell.
     private func fetchPage(
         reset: Bool,
+        blockedIds: Set<UUID> = [],
         filter: (PostgrestFilterBuilder) -> PostgrestFilterBuilder
     ) async throws {
         if reset {
@@ -404,7 +412,10 @@ final class PhotoService {
             .execute()
             .value
 
-        photos.append(contentsOf: page)
+        let visible = blockedIds.isEmpty ? page : page.filter { !blockedIds.contains($0.userId) }
+        photos.append(contentsOf: visible)
+        // Advance pagination by the raw page size (not the filtered count) so a blocked-heavy
+        // page doesn't get re-requested — the offset tracks server rows, not rendered ones.
         loadedCount += page.count
         if page.count < pageSize { hasMore = false }
     }
