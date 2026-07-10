@@ -16,8 +16,7 @@ Steps, in order (10 min, needs whoever runs match):
 1. **Developer portal** → Identifiers → `com.flim.app` → enable **Associated Domains** → Save.
 2. **Regenerate the match profiles** so they pick up the capability:
    `bundle exec fastlane match appstore --force` (and `development --force` if used locally).
-3. **Tell Claude "flip the associated-domains entitlement"** — a 3-line change to
-   `Flim/Flim.entitlements` (+ project.yml property):
+3. **Flip the associated-domains entitlement** in `Flim/Flim.entitlements` (+ project.yml):
    ```xml
    <key>com.apple.developer.associated-domains</key>
    <array><string>applinks:flim-app.com</string></array>

@@ -86,7 +86,7 @@ instead of guesswork.
    AirDrop everything to the Mac.
 5. Turn **Neutral capture OFF** when done.
 
-### On the Mac (Claude runs this)
+### On the Mac
 ```
 pairs/               # name pairs with matching stems
   dark_neutral.jpg     dark_lapse.jpg
