@@ -1,8 +1,8 @@
 import SwiftUI
 import UIKit
 
-// Supabase generates 8-digit email OTP codes by default
-private let otpLength = 8
+// Supabase mailer OTP length (server-configured, currently 6 digits)
+private let otpLength = 6
 
 struct OTPView: View {
     @Environment(AuthService.self) private var auth
@@ -85,6 +85,18 @@ private struct OTPField: View {
     let length: Int
     @FocusState private var isFocused: Bool
 
+    // Sanitizes on the same write that delivers autofill/paste/typed input, rather than
+    // correcting after the fact in a separate onChange — a follow-up onChange that rewrites
+    // the bound value can race with the system's one-time-code autofill transaction and drop
+    // the insertion. Strips non-digits (autofill sometimes appends a trailing space) and clamps
+    // to `length` instead of rejecting the whole string.
+    private var sanitizedCode: Binding<String> {
+        Binding(
+            get: { code },
+            set: { code = String($0.filter(\.isNumber).prefix(length)) }
+        )
+    }
+
     var body: some View {
         ZStack {
             // The visible digit boxes.
@@ -96,18 +108,17 @@ private struct OTPField: View {
 
             // A real, full-size text field laid over the boxes — its text and cursor are invisible,
             // so the boxes show the code, but because it's a proper full-size field, one-time-code
-            // autofill (tap the keyboard suggestion) and paste land reliably.
-            TextField("", text: $code)
+            // autofill (tap the keyboard suggestion) and paste land reliably. It must actually span
+            // the full width (not just its own intrinsic, near-zero width for an empty string) —
+            // a narrow/undersized field is unreliable as an autofill insertion target.
+            TextField("", text: sanitizedCode)
                 .keyboardType(.numberPad)
                 .textContentType(.oneTimeCode)
                 .focused($isFocused)
                 .foregroundStyle(.clear)
                 .tint(.clear)
-                .frame(height: 52)
+                .frame(maxWidth: .infinity, minHeight: 52)
                 .contentShape(Rectangle())
-                .onChange(of: code) { _, new in
-                    code = String(new.filter(\.isNumber).prefix(length))
-                }
         }
         .onAppear { isFocused = true }
     }
