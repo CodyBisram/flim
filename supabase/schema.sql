@@ -1010,3 +1010,49 @@ CREATE POLICY "follows: create own"
 --  * Storage objects: signed URLs are minted per-path; a stale URL already handed out
 --    isn't revoked by a later block. New reads are gated because the photos/posts rows
 --    that authorize them are now block-filtered.
+
+-- ============================================================
+-- Block severs the follow graph (fixes a follower-count asymmetry).
+--
+-- When A blocks B, the client optimistically deletes A→B (unfollow). But the
+-- follows DELETE policy is `follower_id = auth.uid()` — A can delete only its
+-- OWN follower_id row, never B's B→A row. So B→A survived every block:
+--   - the blocker vanished from the blocked user's follower LIST (the client
+--     filters blockedIds out of the list), but
+--   - the follower COUNT stayed unchanged (count queries count raw rows), while
+--     the following count dropped correctly.
+-- Observed live after Sabirah blocked Cody: confusing, looked broken.
+--
+-- Fix it server-side and BIDIRECTIONALLY: an AFTER INSERT trigger on blocks
+-- deletes BOTH follow edges between the pair (follower/following either way).
+-- SECURITY DEFINER so it runs with owner rights and bypasses the follows DELETE
+-- policy — the client role could never delete the counterparty's row. Pinned
+-- search_path = public, same as the other definer/trigger functions.
+--
+-- Grants: a trigger function is invoked by the trigger mechanism, NOT called by
+-- a client role via RPC, so no role needs EXECUTE on it. We still revoke from
+-- PUBLIC/anon/authenticated to match the auto_hide_reported convention above —
+-- nothing can call it directly. The blocks INSERT policy (blocker_id =
+-- auth.uid()) is unchanged; the trigger just fires after a legit block lands.
+-- All blocks come from the client table INSERT (FeedService.block); there is no
+-- block-creating RPC or edge function, so this trigger covers every path.
+-- ============================================================
+CREATE OR REPLACE FUNCTION public.block_severs_follows()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    DELETE FROM public.follows
+    WHERE (follower_id = NEW.blocker_id AND following_id = NEW.blocked_id)
+       OR (follower_id = NEW.blocked_id AND following_id = NEW.blocker_id);
+    RETURN NEW;
+END;
+$$;
+REVOKE EXECUTE ON FUNCTION public.block_severs_follows() FROM PUBLIC, anon, authenticated;
+
+DROP TRIGGER IF EXISTS block_severs_follows_trigger ON public.blocks;
+CREATE TRIGGER block_severs_follows_trigger
+    AFTER INSERT ON public.blocks
+    FOR EACH ROW EXECUTE FUNCTION public.block_severs_follows();
