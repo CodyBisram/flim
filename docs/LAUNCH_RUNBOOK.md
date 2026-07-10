@@ -79,6 +79,14 @@ On the latest TestFlight build, with a FRESH account:
 - Egress: Supabase dashboard → usage (Pro gives headroom)
 - When ready for tappable-into-app invite links: `UNIVERSAL_LINKS.md`
 
+### Lessons from production
+- **SECURITY DEFINER functions in RLS:** if a policy calls a SECURITY DEFINER function, that
+  function still needs EXECUTE granted to the role invoking it (e.g., `authenticated`).
+  Revoking the grant will silently fail RLS checks and take features down.
+- **Storage read policies + new rendition paths:** when a new storage column is added
+  (e.g., `feed_path`), ensure all read policies' `IN (path1, path2, ...)` lists include it.
+  Missing it leaves the new path unloadable for other users.
+
 ## Parked (post-launch backlog)
 - Widget + Live Activity (develop countdown)
 - LUT refits from new calibration pairs (`LUTS.md`) — the v1 fitted look (flim.cube + adaptive exposure) shipped

@@ -57,8 +57,12 @@ Then open `Flim.xcodeproj` in Xcode and run on an iOS 26 simulator or device.
 
 ### Supabase setup
 
-1. Run `supabase/schema.sql` in the Supabase SQL editor (idempotent — safe to re-run).
-   It creates the tables, RLS policies, and RPCs.
+1. **Paste migrations**, then run `supabase/schema.sql` in the SQL editor:
+   - `supabase/migrations/` holds paste-ready, idempotent migrations (already applied to
+     production). Paste each into the editor and run once; they are then mirrored in
+     `schema.sql` for historical reference. (New migrations get their own dated file.)
+   - `schema.sql` is the source of truth for the full schema state (idempotent — safe to
+     re-run). It creates the tables, RLS policies, and RPCs.
 2. Create a **private** Storage bucket named `photos` and add the per-user policies
    documented in `schema.sql`.
 3. Add the project URL and publishable key to `Flim/Config/SupabaseClient.swift`.
