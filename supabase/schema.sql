@@ -326,7 +326,7 @@ CREATE POLICY "photos: roll members can read shared"
         bucket_id = 'photos'
         AND EXISTS (
             SELECT 1 FROM public.photos p
-            WHERE storage.objects.name IN (p.storage_path, p.thumb_path)
+            WHERE storage.objects.name IN (p.storage_path, p.thumb_path, p.feed_path)
               AND p.roll_id IS NOT NULL
               AND public.is_roll_member(p.roll_id)
         )
@@ -504,13 +504,18 @@ CREATE POLICY "posts: delete own"
     ON public.posts FOR DELETE USING (auth.uid() = user_id);
 
 -- A photo shared to a post is readable in Storage by any signed-in user.
+-- ⚠️ Every rendition column must be listed here. When a new rendition path is
+-- added to posts (thumb_path, feed_path, …), it MUST be added to this IN list —
+-- feed_path was missed for 2 days and no one could load anyone else's feed
+-- images (sign → 400; authors unaffected via the own-folder policy, so it
+-- only surfaces cross-account).
 DROP POLICY IF EXISTS "photos: readable when shared to a post" ON storage.objects;
 CREATE POLICY "photos: readable when shared to a post"
     ON storage.objects FOR SELECT TO authenticated
     USING (
         bucket_id = 'photos'
         AND EXISTS (SELECT 1 FROM public.posts po
-                    WHERE storage.objects.name IN (po.storage_path, po.thumb_path))
+                    WHERE storage.objects.name IN (po.storage_path, po.thumb_path, po.feed_path))
     );
 
 -- A photo used as someone's avatar is readable by any signed-in user (so avatars load
