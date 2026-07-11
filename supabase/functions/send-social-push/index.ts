@@ -89,9 +89,20 @@ async function sendPush(deviceToken: string, title: string, body: string): Promi
     },
     body: JSON.stringify({ aps: { alert: { title, body }, sound: "default" } }),
   });
-  if (!res.ok) {
-    console.error("APNs error", res.status, await res.text(), "token", deviceToken.slice(0, 8));
-  }
+  // Structured per-send record: `host` shows which APNs environment we hit, so a
+  // sandbox/production mismatch (production TestFlight token rejected by sandbox
+  // with 400 BadDeviceToken) is visible in the logs without guesswork. `reason`
+  // is only read on failure (Apple returns JSON like {"reason":"BadDeviceToken"}).
+  const reason = res.ok ? undefined : await res.text();
+  console.log(JSON.stringify({
+    at: "apns_send",
+    ok: res.ok,
+    status: res.status,
+    host: APNS_HOST,
+    apnsId: res.headers.get("apns-id"),
+    token8: deviceToken.slice(0, 8),
+    reason,
+  }));
   return res.ok;
 }
 

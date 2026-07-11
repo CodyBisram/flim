@@ -2,16 +2,18 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#0a0908">
   <title>Join a roll — FLIM</title>
   <link rel="stylesheet" href="/style.css">
   <style>
-    .join-card { text-align: center; padding: 48px 24px; }
+    .join-card { text-align: center; padding-top: clamp(48px, 14vw, 96px); padding-bottom: 48px; }
     .join-code {
-      display: inline-block; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-      font-size: 40px; font-weight: 300; letter-spacing: 10px; color: #fff;
+      display: inline-block; max-width: 100%; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: clamp(26px, 8vw, 40px); font-weight: 300; letter-spacing: 0.25em; color: #fff;
       background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1);
-      border-radius: 16px; padding: 18px 22px 18px 32px; margin: 22px 0;
+      border-radius: 16px; padding: 18px 16px 18px 26px; margin: 22px 0;
+      overflow-wrap: anywhere;
     }
     .join-open {
       display: inline-block; background: var(--accent, #e8a33d); color: #111;
