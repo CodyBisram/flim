@@ -50,10 +50,28 @@ final class AuthService {
         await listenForAuthChanges()
     }
 
+    // MARK: - App Review demo account
+    //
+    // Apple's reviewer can't receive our OTP emails, so this one exact address gets a
+    // self-serve fixed-code path instead. It bypasses the invite allowlist and the OTP
+    // send below, and signs in with a password (see `verifyOTP`) rather than a real
+    // one-time code. This account holds zero privileged data, exists only so App Review
+    // can sign in, and should be deleted from Supabase Auth once the app is approved.
+    // Not a general bypass — unreachable by any other email string.
+    private static let reviewEmail = "review@flim-app.com"
+    private static let reviewCode = "482915"
+    private static let reviewPassword = reviewCode + "-flim-app-review-only"
+
     // MARK: - Email OTP
 
     func sendOTP(email: String) async throws {
         let normalized = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if normalized == Self.reviewEmail {
+            // No inbox to send to, and the review account isn't on the invite allowlist —
+            // skip straight to the code screen.
+            pendingEmail = normalized
+            return
+        }
         // Invite gate: only allow-listed emails may request a code. Checked server-side
         // via the `is_email_allowed` RPC (reachable by the anon role before sign-in).
         guard try await isEmailAllowed(normalized) else {
@@ -73,7 +91,14 @@ final class AuthService {
 
     func verifyOTP(token: String) async throws {
         guard let email = pendingEmail else { return }
-        try await supabase.auth.verifyOTP(email: email, token: token, type: .email)
+        if email == Self.reviewEmail, token == Self.reviewCode {
+            try await supabase.auth.signIn(email: email, password: Self.reviewPassword)
+        } else {
+            // Any other code against the review email (including on that exact address)
+            // falls through to real OTP verification, which fails normally since no
+            // code was ever sent for it.
+            try await supabase.auth.verifyOTP(email: email, token: token, type: .email)
+        }
         let session = try await supabase.auth.session
         isResolvingProfile = true
         isAuthenticated = true

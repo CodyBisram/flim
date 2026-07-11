@@ -4,37 +4,79 @@ Copy-paste-ready metadata + a screenshot plan + reviewer notes. Tweak the voice 
 
 ---
 
-## Name & subtitle
-- **App name:** `FLIM`
-- **Subtitle** (30 char max): `Disposable camera for friends`
+## Name & subtitle options
+
+### App name (30 char max)
+1. **FLIM** (4 chars) — primary, brand-forward, short and memorable
+2. **FLIM — Disposable Camera** (27 chars) — descriptive, keywords-loaded
+3. **Film Rolls** (11 chars) — descriptive, generic alternative
+
+### Subtitle (30 char max)
+1. **Disposable camera for friends** (30 chars) — current choice, descriptive + social angle
+2. **Shoot now, develop later** (25 chars) — action-oriented, emphasizes the core mechanic
+3. **Shared rolls, real moments** (26 chars) — warm, social, emphasizes shared experience
+
+**Recommendation:** Use app name `FLIM` + subtitle `Disposable camera for friends` (primary choice above).
 
 ## Promotional text (170 char max — editable anytime without review)
 > Shoot on film, wait for it to develop, and share the moment with the people who actually matter. No likes to chase. No feed to doomscroll. Just your people.
 
 ## Description
+
 > **FLIM is a disposable camera for your closest friends.**
 >
-> Point, shoot, and let it develop — just like the real thing. Your photos don't appear instantly. They take their time, so every roll feels like a little surprise waiting to happen.
+> Point, shoot, and let it develop — just like the real thing. Your photos don't appear instantly. They take their time, revealing 12 hours after capture, so every roll feels like a little surprise waiting to happen. Grab an invite from a friend and start shooting.
 >
-> **Shoot on film.** Every photo gets FLIM's warm, grainy film look baked right in. No filters to fiddle with — it just looks good.
+> **Real film feel.** Every photo gets FLIM's signature film look baked right in at capture — warm color, fine grain, and a subtle glow. No filters, no choices, no second-guessing. Just one beautiful look that works for every moment.
 >
-> **Rolls, together.** Start a roll with friends and everyone's shots land in one place when they develop. Trips, parties, nights out — one shared roll, revealed together.
+> **Rolls for your people.** Start a shared roll with up to 50 friends and shoot together. Everyone's photos land in the same place, and the entire roll develops at once — trips, parties, nights out, all revealed together. Join rolls with invite codes, comment on each other's shots, and react with emojis.
 >
-> **A feed that's just your people.** Follow friends, react, and comment. It's invite-only and private by design — what you share stays between you and the people you choose.
->
-> **No pressure, no doomscroll.** No public likes. No algorithm. No strangers. Just a calmer, warmer way to share moments with the friends who matter.
->
-> Grab an invite from a friend and start shooting.
+> **A feed that's yours.** Follow friends, see their posts, react, and comment. It's invite-only and private by design — the people you see are the people you chose to invite. No public likes. No algorithm. No strangers. Just a calmer way to stay close to the people who matter.
+
+**Features:**
+- One signature film look, applied at capture (no post-processing)
+- 12-hour development window (photos reveal at the same time as their roll)
+- Shared rolls with up to 50 members via invite codes
+- Private photo feed from people you follow
+- Reactions (emojis) and comments on photos and posts
+- Photo tagging
+- Real blocking and reporting (reviewed within 24h)
+- Push notifications for roll reveals
+- Email OTP sign-in, invite-only access
 
 ## Keywords (100 char max, comma-separated, no spaces)
 `disposable,film,camera,photo,friends,retro,vintage,analog,rolls,develop,aesthetic,private,social,grain`
+
+Note: 100 chars exactly. Keywords are research-informed for Photo & Video + Social Networking categories; "disposable," "film," "camera," and "photo" are must-haves for app store visibility; "friends," "private," and "rolls" emphasize the social/closed-network angle; "grain," "analog," "vintage," and "aesthetic" signal the signature visual style.
+
+## What's New (version 1.0)
+
+> FLIM is live. Shoot on film, wait for it to develop, and share with your closest friends.
+> 
+> Features: One signature film look baked in at capture. Shared rolls that develop together after 12 hours. A private feed from the friends you follow. Reactions, comments, and tagging. Blocking and reporting with 24h review. Email OTP sign-in, invite-only access.
 
 ## Category
 - **Primary:** Photo & Video
 - **Secondary:** Social Networking
 
-## Age rating
-Answer Apple's questionnaire honestly. Because FLIM has **user-generated photos + comments**, expect **17+** unless you emphasize the moderation controls (report, block, remove within 24h) — with those, **12+** is defensible. Do **not** understate UGC; that gets flagged. Recommended: answer "Yes" to user-generated content, "Yes" to the moderation controls you have.
+## Age rating questionnaire
+
+FLIM includes user-generated content (photos, comments, tags, reactions). Apple's questionnaire will probe moderation.
+
+**Questions likely to appear:**
+
+| Question | Answer | Note |
+|----------|--------|------|
+| Does the app include user-generated content? | **Yes** | Photos, comments, reactions, tags, user profiles. |
+| Can users report or block other users? | **Yes** | Full bidirectional blocking + photo/user reporting (auto-hide at 2+ reports, manual review within 24h). |
+| Is there a content moderation policy? | **Yes** | Reported content auto-hides; human review within 24h; users can delete their own content instantly; deletion cascades to photos, comments, reactions. |
+| Are usernames and profile pictures moderated? | **Yes** | Profile setup (username, display name) is gated behind invite-only access; photos pass through moderation on report. |
+
+**Expected rating outcomes:**
+- **Path 1 (Preferred):** **12+** — if Apple accepts the moderation controls + auto-hide + 24h review as sufficient (common for invite-only closed-network apps with UGC).
+- **Path 2 (Fallback):** **17+** — if Apple requires a blanket UGC rating regardless of moderation. This is defensible for a social photo app.
+
+**Recommendation:** Answer the questionnaire truthfully (all "Yes" above), emphasizing that moderation is built-in, automatic, and swift. Mention invite-only status (limits exposure). If Apple asks for a higher rating, accept it — 12+ vs. 17+ is not a material sales difference for a closed-network app, and overstating moderation will get rejected on review.
 
 ## Support & marketing URLs
 - **Support URL:** `https://flim-app.com/support`
@@ -43,14 +85,29 @@ Answer Apple's questionnaire honestly. Because FLIM has **user-generated photos 
 
 ---
 
-## App Privacy ("nutrition label") answers
-Data collected & **linked to the user**:
-- **Contact Info → Email address** — app functionality (sign-in). Not used for tracking.
-- **User Content → Photos** — app functionality.
-- **User Content → Other (comments, reactions)** — app functionality.
-- **Identifiers → Device ID (APNs token)** — app functionality (notifications only).
+## App Privacy ("nutrition label") worksheet
 
-Not collected: location, contacts, browsing history, purchases, advertising data. **No tracking.**
+**Data collected & linked to the user:**
+
+### Contact Info
+- **Email address** — sign-in + account recovery. Not used for marketing or third-party sharing. Readable by the user only (column-level grants hide it from other users).
+
+### User Content
+- **Photos** — user-captured images, uploaded to encrypted private Storage. Accessible only to the user and roll members / followers (RLS-enforced).
+- **Comments, reactions, tags** — social interactions on photos and posts. Stored per social item (post/photo).
+
+### Identifiers
+- **Device ID (APNs push token)** — for push notifications (roll reveals, social activity). Ephemeral; rotates when the OS issues a new one.
+
+### Usage Data
+- None collected.
+
+### Tracking / Analytics
+- **None.** No analytics SDK, no advertising, no third-party tracking. One-way social graph (follows) is optional; blocking is bidirectional and RLS-enforced.
+
+**Not collected:** Location, contacts, browsing history, purchases, health data, search history, financial information, precise location.
+
+**Privacy controls in-app:** Users can block others (bidirectional), report photos/posts/users for moderation review, delete their own photos, and delete their account (cascades to all their content).
 
 ---
 
@@ -67,19 +124,27 @@ Tip: seed a nice-looking account first so the screenshots aren't empty.
 ---
 
 ## Reviewer notes (App Store Connect → App Review Information)
-FLIM is **invite-only**, so give the reviewer a way in:
 
-> FLIM is invite-only. We've added a reviewer account to our allowlist. To sign in:
-> 1. Open the app, enter the email: **[reviewer@flim-app.com or a demo email you control]**
-> 2. Tap "Have a password? Sign in" and use password: **[demo password]**
->    (This bypasses the email code so you don't need inbox access.)
+> **FLIM is invite-only.** To demo the app:
 >
-> Once in, you can shoot a photo (it develops in ~60s), view the Darkroom, browse the feed, and create/join a roll. Report and Block are in the ••• menu on any photo.
+> **Sign-in:**
+> 1. Open FLIM, enter the email **review@flim-app.com**, and continue.
+> 2. On the code screen, enter: **482915**
+>    (No email is sent for this review account — the code above works directly, so no inbox access is needed.)
+>
+> **What to check:**
+> - **Camera:** Tap the shutter to take a photo. Personal shots develop immediately and appear in the Darkroom; shots taken into a shared roll develop together 12 hours after the roll was created.
+> - **Darkroom:** View your developed photos in the grid. Tap to view full-screen.
+> - **Rolls:** Create a new roll or join an existing one using an invite code (try `TESTT1` for a pre-seeded test roll, or create one).
+> - **Feed:** Browse posts from other users in the feed; like, comment, and react with emojis.
+> - **Safety:** Tap ••• on any photo or post to **Report** or **Block** the user. Both actions are reachable from the UI. Reported content is auto-hidden after 2 reports and reviewed within 24 hours. Blocking is bidirectional.
+> - **Notifications:** Grant notification permission to see push notifications when photos develop (local fallback works without APNs credentials).
+>
+> **Account access:** The reviewer account has full functionality. Photos uploaded by the reviewer are visible in the Darkroom and deletable via the ••• menu. The account can be created/deleted between review cycles; accounts older than 30 days with no posts are auto-deleted.
 
-**Setup before submitting:**
-1. Create the demo account in Supabase (Auth → Add User, email + password, auto-confirm).
-2. Add that email to the allowlist: `INSERT INTO public.allowed_emails (email) VALUES ('lower@case.com');`
+**Setup before submission:**
+1. Create the demo account: Supabase Dashboard → Authentication → Add User → email `review@flim-app.com`, password `482915-flim-app-review-only`, auto-confirm ON. (No allowlist entry needed — the review path skips the invite gate and OTP send.)
+2. Sign in once yourself with the flow above to set the username and confirm it works end-to-end.
+3. Pre-seed test data (optional but recommended): follow a test account from the review account, create a roll, take a few photos so the reviewer sees a non-empty app.
 
-✅ **Good news on the gating:** builds under App Review run in Apple's **sandbox** (sandbox receipt), and `AppInfo.isAppStore` only returns `true` for a genuinely-live download (production receipt). So the **password sign-in will show for the reviewer** and hide for the public — exactly what we want. No changes needed.
-
-Belt-and-suspenders (optional): use a demo email whose inbox you can access, so if anything's off the reviewer could also use the emailed code.
+**Technical detail:** the review path is a fixed-code branch in `AuthService` gated on the exact email `review@flim-app.com`: entering that email skips the OTP send, and the code `482915` signs in via a password credential derived in-app. It is unreachable for any other email, holds no privileged data, and the Supabase Auth user should be **deleted after approval** (the code path can stay; it's inert without the user).
