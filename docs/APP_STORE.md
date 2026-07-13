@@ -8,7 +8,7 @@ Copy-paste-ready metadata + a screenshot plan + reviewer notes. Tweak the voice 
 
 ### App name (30 char max)
 1. **FLIM** (4 chars) — primary, brand-forward, short and memorable
-2. **FLIM — Disposable Camera** (27 chars) — descriptive, keywords-loaded
+2. **FLIM: Disposable Camera** (23 chars) — descriptive, keywords-loaded
 3. **Film Rolls** (11 chars) — descriptive, generic alternative
 
 ### Subtitle (30 char max)
@@ -25,13 +25,13 @@ Copy-paste-ready metadata + a screenshot plan + reviewer notes. Tweak the voice 
 
 > **FLIM is a disposable camera for your closest friends.**
 >
-> Point, shoot, and let it develop — just like the real thing. Your photos don't appear instantly. They take their time, revealing 12 hours after capture, so every roll feels like a little surprise waiting to happen. Grab an invite from a friend and start shooting.
+> Point, shoot, and let it develop, just like the real thing. Your photos don't appear instantly. They take their time, revealing 12 hours after capture, so every roll feels like a little surprise waiting to happen. Grab an invite from a friend and start shooting.
 >
-> **Real film feel.** Every photo gets FLIM's signature film look baked right in at capture — warm color, fine grain, and a subtle glow. No filters, no choices, no second-guessing. Just one beautiful look that works for every moment.
+> **Real film feel.** Every photo gets FLIM's signature film look baked right in at capture: warm color, fine grain, and a subtle glow. No filters, no choices, no second-guessing. Just one beautiful look that works for every moment.
 >
-> **Rolls for your people.** Start a shared roll with up to 50 friends and shoot together. Everyone's photos land in the same place, and the entire roll develops at once — trips, parties, nights out, all revealed together. Join rolls with invite codes, comment on each other's shots, and react with emojis.
+> **Rolls for your people.** Start a shared roll with up to 50 friends and shoot together. Everyone's photos land in the same place, and the entire roll develops at once. Trips, parties, nights out, all revealed together. Join rolls with invite codes, comment on each other's shots, and react with emojis.
 >
-> **A feed that's yours.** Follow friends, see their posts, react, and comment. It's invite-only and private by design — the people you see are the people you chose to invite. No public likes. No algorithm. No strangers. Just a calmer way to stay close to the people who matter.
+> **A feed that's yours.** Follow friends, see their posts, react, and comment. It's invite-only and private by design. The people you see are the people you chose to invite. No public likes. No algorithm. No strangers. Just a calmer way to stay close to the people who matter.
 
 **Features:**
 - One signature film look, applied at capture (no post-processing)
@@ -130,7 +130,7 @@ Tip: seed a nice-looking account first so the screenshots aren't empty.
 > **Sign-in:**
 > 1. Open FLIM, enter the email **review@flim-app.com**, and continue.
 > 2. On the code screen, enter: **482915**
->    (No email is sent for this review account — the code above works directly, so no inbox access is needed.)
+>    (No email is sent for this review account. The code above works directly, so no inbox access is needed.)
 >
 > **What to check:**
 > - **Camera:** Tap the shutter to take a photo. Personal shots develop immediately and appear in the Darkroom; shots taken into a shared roll develop together 12 hours after the roll was created.

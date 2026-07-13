@@ -55,3 +55,6 @@ xcodebuild -project Flim.xcodeproj -scheme Flim \
   -derivedDataPath .build/dd build     # (or `test` to run FlimTests)
 ```
 SourceKit/editor diagnostics are noise here — only xcodebuild's verdict counts.
+
+## Copy rule: no em dashes
+Never use em dashes (—) in any user-facing copy: UI strings, notification titles/bodies, emails, App Store metadata, release notes, or the flim-app.com site. Rephrase with periods, commas, or a break into two sentences. This is the owner's standing vernacular rule (2026-07-12). Source-code comments and internal docs are exempt.

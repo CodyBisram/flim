@@ -54,3 +54,6 @@ never break that gate.
 Never print secrets (ASC keys, match password, tokens live only in GH Actions secrets).
 Supabase free tier pauses after ~1 week idle and caps egress at 5GB — recommend the
 Pro flip at submission time.
+
+## Copy rule: no em dashes
+Never use em dashes (—) in any user-facing copy: UI strings, notification titles/bodies, emails, App Store metadata, release notes, or the flim-app.com site. Rephrase with periods, commas, or a break into two sentences. This is the owner's standing vernacular rule (2026-07-12). Source-code comments and internal docs are exempt.

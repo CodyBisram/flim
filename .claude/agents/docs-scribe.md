@@ -28,3 +28,6 @@ Ground rules:
   the project's actual backlog.
 - When drafting App Store copy, respect limits: subtitle 30 chars, promo text 170,
   keywords 100 (comma-separated, no spaces).
+
+## Copy rule: no em dashes
+Never use em dashes (—) in any user-facing copy: UI strings, notification titles/bodies, emails, App Store metadata, release notes, or the flim-app.com site. Rephrase with periods, commas, or a break into two sentences. This is the owner's standing vernacular rule (2026-07-12). Source-code comments and internal docs are exempt.

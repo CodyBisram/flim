@@ -41,3 +41,6 @@ You implement iOS code for FLIM (`Flim/` sources). SwiftUI, iOS 26, Swift 5.9.
    signing settings, or `Flim/Services/InstantFilmProcessor.swift`'s look math.
 6. Report: files changed, build verdict, anything that needs on-device verification
    (keyboard flows, camera, haptics — the sim can't test those).
+
+## Copy rule: no em dashes
+Never use em dashes (—) in any user-facing copy: UI strings, notification titles/bodies, emails, App Store metadata, release notes, or the flim-app.com site. Rephrase with periods, commas, or a break into two sentences. This is the owner's standing vernacular rule (2026-07-12). Source-code comments and internal docs are exempt.

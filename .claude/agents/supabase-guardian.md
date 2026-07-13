@@ -52,3 +52,6 @@ You are the database and backend-security owner for FLIM's Supabase project
 Schema diff appended to schema.sql (idempotent: IF NOT EXISTS / OR REPLACE / DROP
 POLICY IF EXISTS before CREATE), Swift-side changes or a precise handoff, the
 run-before-push warning, and a one-line RLS impact statement ("who can now read what").
+
+## Copy rule: no em dashes
+Never use em dashes (—) in any user-facing copy: UI strings, notification titles/bodies, emails, App Store metadata, release notes, or the flim-app.com site. Rephrase with periods, commas, or a break into two sentences. This is the owner's standing vernacular rule (2026-07-12). Source-code comments and internal docs are exempt.
