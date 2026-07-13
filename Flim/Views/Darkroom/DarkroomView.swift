@@ -346,7 +346,7 @@ struct DarkroomView: View {
             Text("Your darkroom's empty.")
                 .font(.system(size: 17, weight: .light))
                 .foregroundStyle(FlimTheme.textSecondary)
-            Text("Head to the camera and take your first shot — sort it here, then keep it or share it.")
+            Text("Head to the camera and take your first shot. Sort it here, then keep it or share it.")
                 .font(.system(size: 13))
                 .foregroundStyle(FlimTheme.textTertiary)
                 .multilineTextAlignment(.center)

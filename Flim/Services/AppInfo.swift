@@ -48,7 +48,7 @@ enum AppInfo {
 
     /// A pre-filled feedback email (Mail app), stamped with the build so bug reports self-identify.
     static var feedbackMailURL: URL? {
-        let body = "\n\n——\nApp: \(appName) \(versionString)\niOS: \(UIDevice.current.systemVersion)"
+        let body = "\n\n--\nApp: \(appName) \(versionString)\niOS: \(UIDevice.current.systemVersion)"
         var comps = URLComponents()
         comps.scheme = "mailto"
         comps.path = feedbackEmail

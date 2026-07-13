@@ -14,13 +14,13 @@ struct OnboardingView: View {
     private let cards = [
         Card(icon: "camera.aperture",
              title: "Shoot now.",
-             body: "Capture the moment, disposable-camera style — every shot gets \(AppInfo.appName)'s film look baked in. No filters to pick. Just tap the shutter."),
+             body: "Capture the moment, disposable-camera style. Every shot gets \(AppInfo.appName)'s film look baked in. No filters to pick. Just tap the shutter."),
         Card(icon: "square.stack.3d.up",
              title: "Sort your shots.",
-             body: "Instants are ready right away — swipe to keep them in your Darkroom or publish to your feed. Shared rolls develop together at the 12-hour mark."),
+             body: "Instants are ready right away. Swipe to keep them in your Darkroom or publish to your feed. Shared rolls develop together at the 12-hour mark."),
         Card(icon: "sparkles",
              title: "Share the moment.",
-             body: "Post your favorites to your page, follow friends, and react to theirs. \(AppInfo.appName) is invite-only — it's just your people.")
+             body: "Post your favorites to your page, follow friends, and react to theirs. \(AppInfo.appName) is invite-only. It's just your people.")
     ]
 
     var body: some View {

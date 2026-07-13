@@ -47,7 +47,7 @@ final class NotificationService {
         let content = UNMutableNotificationContent()
         content.title = "Your \(rollName) roll developed 🎞"
         content.body = photoCount > 0
-            ? "Your \(photoCount) shot\(photoCount == 1 ? "" : "s") — and everyone else's — are ready."
+            ? "Your \(photoCount) shot\(photoCount == 1 ? "" : "s"), and everyone else's, are ready."
             : "Everyone's photos from the roll are ready to see."
         content.sound = .default
         content.interruptionLevel = .timeSensitive

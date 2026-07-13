@@ -16,7 +16,7 @@ struct NotificationPrimerSheet: View {
             Text("Don't miss the reveal")
                 .font(.system(size: 24, weight: .light))
                 .foregroundStyle(.white)
-            Text("We'll ping you the moment your roll develops — and when friends react or comment on your shots.")
+            Text("We'll ping you the moment your roll develops, and when friends react or comment on your shots.")
                 .font(.system(size: 15))
                 .foregroundStyle(FlimTheme.textSecondary)
                 .multilineTextAlignment(.center)

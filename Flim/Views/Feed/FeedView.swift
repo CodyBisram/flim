@@ -212,7 +212,7 @@ struct FeedView: View {
             Text("It's quiet in here")
                 .font(.system(size: 19, weight: .thin))
                 .foregroundStyle(.white)
-            Text("Follow friends to see what they share — or take the first shot yourself.")
+            Text("Follow friends to see what they share, or take the first shot yourself.")
                 .font(.system(size: 13))
                 .foregroundStyle(FlimTheme.textTertiary)
                 .multilineTextAlignment(.center)
@@ -491,7 +491,7 @@ struct FeedPostCard: View {
         }
         .overlay(alignment: .top) {
             if reportedToast {
-                Label("Reported — thanks", systemImage: "checkmark.circle.fill")
+                Label("Reported, thanks", systemImage: "checkmark.circle.fill")
                     .font(.system(size: 13, weight: .medium)).foregroundStyle(.white)
                     .padding(.horizontal, 16).padding(.vertical, 10)
                     .background(.ultraThinMaterial, in: Capsule())

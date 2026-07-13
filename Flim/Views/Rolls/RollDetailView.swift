@@ -352,7 +352,7 @@ struct RollDetailView: View {
                     .foregroundStyle(FlimTheme.accent)
             }
             Text(shots == 0
-                 ? "No shots yet — be the first to add one"
+                 ? "No shots yet. Be the first to add one"
                  : "\(shots) shot\(shots == 1 ? "" : "s") waiting" + (people > 1 ? " from \(people) people" : ""))
                 .font(.system(size: 12))
                 .foregroundStyle(FlimTheme.textSecondary)

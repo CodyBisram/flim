@@ -451,7 +451,7 @@ struct CameraView: View {
                         .multilineTextAlignment(.center)
                         .foregroundStyle(.white)
 
-                    Text("Tap the shutter to take a photo. It stays hidden while it develops — about a minute — then appears in your Darkroom.")
+                    Text("Tap the shutter to take a photo. It stays hidden while it develops, about a minute, then appears in your Darkroom.")
                         .font(.system(size: 15))
                         .foregroundStyle(FlimTheme.textSecondary)
                         .multilineTextAlignment(.center)
@@ -599,7 +599,7 @@ private struct RollPickerSheet: View {
                     }
 
                     if rolls.isEmpty {
-                        Text("Start a roll in the Rolls tab to share photos with friends — they'll all develop together.")
+                        Text("Start a roll in the Rolls tab to share photos with friends. They'll all develop together.")
                             .font(.system(size: 13))
                             .foregroundStyle(FlimTheme.textTertiary)
                             .padding(.vertical, 8)

@@ -80,7 +80,7 @@ struct UserPageView: View {
         }
         .overlay(alignment: .top) {
             if reportedToast {
-                Label("Reported — thanks for keeping \(AppInfo.appName) safe", systemImage: "checkmark.circle.fill")
+                Label("Reported, thanks for keeping \(AppInfo.appName) safe", systemImage: "checkmark.circle.fill")
                     .font(.system(size: 13, weight: .medium)).foregroundStyle(.white)
                     .padding(.horizontal, 16).padding(.vertical, 10)
                     .background(.ultraThinMaterial, in: Capsule())
@@ -356,7 +356,7 @@ struct DiscoverPeopleView: View {
                     if shown.isEmpty && loaded {
                         Spacer()
                         Text(searchText.isEmpty
-                             ? "No one else here yet — invite some friends!"
+                             ? "No one else here yet. Invite some friends!"
                              : "No one matches “\(searchText)”")
                             .font(.system(size: 14)).foregroundStyle(FlimTheme.textTertiary)
                             .multilineTextAlignment(.center).padding(40)
