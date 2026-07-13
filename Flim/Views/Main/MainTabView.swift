@@ -15,6 +15,12 @@ struct MainTabView: View {
     @Environment(AuthService.self) private var auth
     @Environment(RollService.self) private var rolls
     @Environment(PhotoService.self) private var photos
+    /// Owned here (not in RollsView) so `-openRollId` can push straight into a roll's detail
+    /// at launch, for App Store screenshots the sim can't reach by tapping.
+    @State private var rollsPath = NavigationPath()
+    /// Drives `-openPhotoFullscreen`: presents the same full-screen viewer used from the
+    /// darkroom/roll grids, without needing a tap to get there.
+    @State private var debugFullscreenPhoto: Photo?
     #endif
 
     /// Selection binding that adds a haptic on tab change and a scroll-to-top on re-tap.
@@ -43,9 +49,16 @@ struct MainTabView: View {
                 }
             }
             Tab("Rolls", systemImage: "film.stack", value: 2) {
+                #if DEBUG
+                // `-openRollId` needs a path it can push onto; Release keeps the plain stack.
+                NavigationStack(path: $rollsPath) {
+                    RollsView(scrollToTop: scrollSignal[2, default: 0])
+                }
+                #else
                 NavigationStack {
                     RollsView(scrollToTop: scrollSignal[2, default: 0])
                 }
+                #endif
             }
             Tab("Feed", systemImage: "house", value: 3) {
                 NavigationStack {
@@ -72,6 +85,12 @@ struct MainTabView: View {
         .fullScreenCover(isPresented: Binding(get: { !hasOnboarded }, set: { _ in })) {
             OnboardingView()
         }
+        #if DEBUG
+        // `-openPhotoFullscreen` — same viewer the darkroom/roll grids use.
+        .fullScreenCover(item: $debugFullscreenPhoto) { photo in
+            FullScreenPhotoView(photo: photo, url: nil)
+        }
+        #endif
         .sheet(isPresented: $showNotifPrimer, onDismiss: { didShowNotifPrimer = true }) {
             NotificationPrimerSheet()
         }
@@ -113,9 +132,39 @@ struct MainTabView: View {
                     }
                 }
             }
+            //   -openRollId <uuid>          : push straight into that roll's detail.
+            //   -openPhotoFullscreen <uuid> : present the full-screen viewer for that photo.
+            // Both are for screenshotting screens the sim can't tap into; a roll/photo the
+            // account can't see is a graceful no-op, not a crash.
+            if let rollIdArg = Self.launchArgValue("-openRollId", in: args),
+               let rollId = UUID(uuidString: rollIdArg) {
+                selected = 2
+                Task {
+                    guard let uid = auth.currentUser?.id else { return }
+                    try? await rolls.fetchRolls(for: uid)
+                    if let roll = rolls.rolls.first(where: { $0.id == rollId }) {
+                        rollsPath.append(roll)
+                    }
+                }
+            }
+            if let photoIdArg = Self.launchArgValue("-openPhotoFullscreen", in: args),
+               let photoId = UUID(uuidString: photoIdArg) {
+                Task {
+                    debugFullscreenPhoto = await photos.fetchPhoto(id: photoId)
+                }
+            }
             #endif
         }
     }
+
+    #if DEBUG
+    /// Reads the value following a `-flag value` launch argument pair (Xcode scheme launch
+    /// arguments come through as separate elements of `ProcessInfo.arguments`).
+    private static func launchArgValue(_ flag: String, in args: [String]) -> String? {
+        guard let i = args.firstIndex(of: flag), args.indices.contains(i + 1) else { return nil }
+        return args[i + 1]
+    }
+    #endif
 
     private func maybeShowNotifPrimer() {
         guard hasOnboarded, !didShowNotifPrimer else { return }

@@ -544,6 +544,20 @@ extension PhotoService {
         print("[seed] done — userId=\(userId)")
     }
 
+    /// DEBUG-only: fetches a single photo by id for the `-openPhotoFullscreen` launch-arg
+    /// screenshot flow. RLS on `photos` already gates this to owner/roll-member/shared-to-feed —
+    /// returns nil (graceful no-op) if the photo doesn't exist or isn't visible to this account.
+    func fetchPhoto(id: UUID) async -> Photo? {
+        let rows: [Photo] = (try? await supabase
+            .from("photos")
+            .select()
+            .eq("id", value: id.uuidString)
+            .limit(1)
+            .execute()
+            .value) ?? []
+        return rows.first
+    }
+
     private static func makeDemoImage(seed: Int) -> Data? {
         let size = CGSize(width: 900, height: 1200)
         let hues: [CGFloat] = [0.06, 0.55, 0.85, 0.33, 0.0, 0.70]
