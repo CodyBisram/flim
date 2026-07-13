@@ -2,6 +2,33 @@ import SwiftUI
 import AVFoundation
 import UIKit
 
+// MARK: - Control hit-region reporting
+//
+// The camera preview covers the full screen and owns a UIKit tap gesture for tap-to-focus.
+// Buttons floating on top of it (roll pill, flash, flip, timer, zoom pills, shutter) must
+// always win a tap over that background gesture. Each control reports its on-screen frame
+// here; `CameraView` collects them and hands the list to `CameraPreview`, which refuses to
+// recognize a focus/flip/pinch touch that starts inside any of them.
+
+private struct ControlRegionPreferenceKey: PreferenceKey {
+    static var defaultValue: [CGRect] = []
+    static func reduce(value: inout [CGRect], nextValue: () -> [CGRect]) {
+        value.append(contentsOf: nextValue())
+    }
+}
+
+private extension View {
+    /// Marks this view's on-screen frame as a control region the background tap-to-focus
+    /// gesture must never intercept.
+    func reportsControlRegion() -> some View {
+        background {
+            GeometryReader { proxy in
+                Color.clear.preference(key: ControlRegionPreferenceKey.self, value: [proxy.frame(in: .global)])
+            }
+        }
+    }
+}
+
 struct CameraView: View {
     @Environment(AuthService.self) private var auth
     @Environment(PhotoService.self) private var photos
@@ -20,6 +47,11 @@ struct CameraView: View {
     // interaction wakes them back up.
     @State private var filmStripActive = false
     @State private var dimTask: Task<Void, Never>?
+
+    // Screen-space rects the top bar, zoom pills, and shutter/bottom pill occupy, reported
+    // via `.reportsControlRegion()` below. Handed to `CameraPreview` so its tap-to-focus
+    // gesture can never claim a touch that starts on a real control.
+    @State private var controlRegions: [CGRect] = []
 
     // FLIM ships a single signature look.
     private var selectedStock: FilmStock { .original }
@@ -55,7 +87,7 @@ struct CameraView: View {
         ZStack {
             Color.black.ignoresSafeArea()
 
-            CameraPreview(session: camera.session, camera: camera, onShutter: { shutter() })
+            CameraPreview(session: camera.session, camera: camera, onShutter: { shutter() }, excludedRegions: controlRegions)
                 .ignoresSafeArea()
                 // Tap-to-focus reticle.
                 .overlay {
@@ -83,15 +115,18 @@ struct CameraView: View {
                 // camera preview / flash bleed full-screen (they ignore safe area individually).
                 VStack(spacing: 0) {
                     topBar
+                        .reportsControlRegion()
                     Spacer()
                     VStack(spacing: 16) {
                         bottomBar
+                            .reportsControlRegion()
                     }
                     // Zoom floats just above the shutter row.
-                    .overlay(alignment: .top) { zoomControl.offset(y: -36) }
+                    .overlay(alignment: .top) { zoomControl.reportsControlRegion().offset(y: -36) }
                     // Small lift off the tab bar so the shutter sits low + centered.
                     .padding(.bottom, 14)
                 }
+                .onPreferenceChange(ControlRegionPreferenceKey.self) { controlRegions = $0 }
 
                 coachOverlay
 
@@ -222,6 +257,7 @@ struct CameraView: View {
                         .background(active ? FlimTheme.accent : Color.black.opacity(0.35), in: Capsule())
                         .overlay(Capsule().stroke(Color.white.opacity(active ? 0 : 0.15), lineWidth: 1))
                 }
+                .contentShape(Capsule())
                 .accessibilityLabel("\(zoomLabel(level)) zoom")
                 .accessibilityAddTraits(active ? [.isSelected] : [])
             }
@@ -235,15 +271,6 @@ struct CameraView: View {
         guard let uid = auth.currentUser?.id else { return }
         let count = await photos.fetchUnsorted(userId: uid).count
         await MainActor.run { withAnimation { unsortedCount = count } }
-    }
-
-    /// Own shot count for a roll, from the already-loaded `photos.photos` model — the same
-    /// count `bindCapture()` already computes below for the roll-develop notification. Not a
-    /// strict "this session" counter (it also reflects any roll photos fetched elsewhere, e.g.
-    /// a prior visit to Roll detail), but it's what the existing code already tracks for free.
-    private func ownRollShotCount(in roll: Roll) -> Int {
-        guard let userId = auth.currentUser?.id else { return 0 }
-        return photos.photos.filter { $0.rollId == roll.id && $0.userId == userId }.count
     }
 
     // MARK: - Top bar
@@ -272,6 +299,7 @@ struct CameraView: View {
                     .padding(.horizontal, 14)
                     .padding(.vertical, 9)
                 }
+                .contentShape(Capsule())
                 .glassCapsule(interactive: true)
                 .overlay(
                     Capsule().stroke(FlimTheme.accent.opacity(selectedRoll == nil ? 0 : 0.55), lineWidth: 1)
@@ -291,6 +319,7 @@ struct CameraView: View {
                             .foregroundStyle(flashMode == .off ? .white : FlimTheme.accent)
                             .frame(width: 38, height: 38)
                     }
+                    .contentShape(Capsule())
                     .glassCapsule(interactive: true)
                     .padding(.leading, 8)
                     .accessibilityLabel("Flash")
@@ -308,6 +337,7 @@ struct CameraView: View {
                         .foregroundStyle(.white)
                         .frame(width: 38, height: 38)
                 }
+                .contentShape(Capsule())
                 .glassCapsule(interactive: true)
                 .padding(.leading, 8)
                 .accessibilityLabel("Flip camera")
@@ -328,6 +358,7 @@ struct CameraView: View {
                     .frame(minWidth: 38, minHeight: 38)
                     .padding(.horizontal, selfTimerSeconds > 0 ? 5 : 0)
                 }
+                .contentShape(Capsule())
                 .glassCapsule(interactive: true)
                 .padding(.leading, 8)
                 .accessibilityLabel("Self timer")
@@ -357,29 +388,6 @@ struct CameraView: View {
                         .padding(.vertical, 9)
                         .background(Color(red: 0.8, green: 0.2, blue: 0.2).opacity(0.85), in: Capsule())
                     }
-                } else if let selectedRoll, ownRollShotCount(in: selectedRoll) > 0 {
-                    // Shooting into a roll: confirm the shot landed there instead of the
-                    // Personal "to sort" pill, which never applies to roll shots (they skip the
-                    // sort deck entirely — see `isSorted: rollId != nil` in PhotoService). Tinted
-                    // to rhyme with the accent-tinted roll selector pill above it.
-                    Button {
-                        NotificationCenter.default.post(name: .openRollDetail, object: selectedRoll)
-                    } label: {
-                        HStack(spacing: 5) {
-                            Image(systemName: "film.stack").font(.system(size: 12))
-                            Text("\(ownRollShotCount(in: selectedRoll)) in \(selectedRoll.name)")
-                                .font(.system(size: 13, weight: .semibold))
-                                .lineLimit(1)
-                                .truncationMode(.tail)
-                        }
-                        .foregroundStyle(FlimTheme.accent)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 9)
-                    }
-                    .glassCapsule(interactive: true)
-                    .overlay(Capsule().stroke(FlimTheme.accent.opacity(0.55), lineWidth: 1))
-                    .accessibilityLabel("\(ownRollShotCount(in: selectedRoll)) photos in \(selectedRoll.name)")
-                    .accessibilityHint("Opens the roll")
                 } else if unsortedCount > 0 {
                     // Shortcut into the sort deck — sits where the "Developing…" pill does.
                     Button { showSortDeck = true } label: {
@@ -562,6 +570,10 @@ private struct ShutterButton: View {
                     .frame(width: 60, height: 60)
                     .scaleEffect(isCapturing ? 0.85 : 1)
             }
+            // Comfortable thumb target that matches the full breathing halo, not just the
+            // solid 60pt disc.
+            .frame(width: 84, height: 84)
+            .contentShape(Circle())
         }
         .animation(.spring(duration: 0.2, bounce: 0.4), value: isCapturing)
         .disabled(isCapturing)

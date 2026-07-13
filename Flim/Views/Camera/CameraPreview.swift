@@ -8,6 +8,11 @@ struct CameraPreview: UIViewRepresentable {
     let camera: CameraViewModel
     /// Called by a hardware volume-button press (iOS 17.2+).
     var onShutter: () -> Void = {}
+    /// Screen-space (window/global coordinate) rects the top bar, zoom pills, shutter, etc.
+    /// occupy. The preview's own tap/double-tap/pinch recognizers never claim a touch that
+    /// starts inside one of these, so a control's own action always wins over tap-to-focus,
+    /// no matter how SwiftUI and this UIKit view's hit-testing happen to interleave.
+    var excludedRegions: [CGRect] = []
 
     func makeCoordinator() -> Coordinator { Coordinator(camera: camera, onShutter: onShutter) }
 
@@ -22,10 +27,13 @@ struct CameraPreview: UIViewRepresentable {
         let double = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.doubleTap(_:)))
         double.numberOfTapsRequired = 2
         single.require(toFail: double)
+        single.delegate = context.coordinator
+        double.delegate = context.coordinator
         view.addGestureRecognizer(single)
         view.addGestureRecognizer(double)
 
         let pinch = UIPinchGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.pinch(_:)))
+        pinch.delegate = context.coordinator
         view.addGestureRecognizer(pinch)
 
         // Hardware volume button as a shutter (the sanctioned API).
@@ -40,6 +48,7 @@ struct CameraPreview: UIViewRepresentable {
 
     func updateUIView(_ uiView: PreviewView, context: Context) {
         context.coordinator.onShutter = onShutter
+        context.coordinator.excludedRegions = excludedRegions
     }
 
     final class PreviewView: UIView {
@@ -47,15 +56,25 @@ struct CameraPreview: UIViewRepresentable {
         var previewLayer: AVCaptureVideoPreviewLayer { layer as! AVCaptureVideoPreviewLayer }
     }
 
-    final class Coordinator: NSObject {
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
         let camera: CameraViewModel
         var onShutter: () -> Void
         weak var view: PreviewView?
+        var excludedRegions: [CGRect] = []
         private var zoomBase: CGFloat = 1
 
         init(camera: CameraViewModel, onShutter: @escaping () -> Void) {
             self.camera = camera
             self.onShutter = onShutter
+        }
+
+        /// Buttons always win: a touch that begins inside a known control rect (top bar,
+        /// zoom pills, shutter, bottom pill) is never handed to the preview's own
+        /// focus/flip/pinch recognizers, regardless of how the touch would otherwise hit-test.
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+            guard !excludedRegions.isEmpty else { return true }
+            let point = touch.location(in: nil)   // window coordinates, matching SwiftUI's `.global` space
+            return !excludedRegions.contains { $0.contains(point) }
         }
 
         @objc func tap(_ gesture: UITapGestureRecognizer) {
