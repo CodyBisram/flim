@@ -237,6 +237,15 @@ struct CameraView: View {
         await MainActor.run { withAnimation { unsortedCount = count } }
     }
 
+    /// Own shot count for a roll, from the already-loaded `photos.photos` model — the same
+    /// count `bindCapture()` already computes below for the roll-develop notification. Not a
+    /// strict "this session" counter (it also reflects any roll photos fetched elsewhere, e.g.
+    /// a prior visit to Roll detail), but it's what the existing code already tracks for free.
+    private func ownRollShotCount(in roll: Roll) -> Int {
+        guard let userId = auth.currentUser?.id else { return 0 }
+        return photos.photos.filter { $0.rollId == roll.id && $0.userId == userId }.count
+    }
+
     // MARK: - Top bar
 
     private var topBar: some View {
@@ -348,6 +357,29 @@ struct CameraView: View {
                         .padding(.vertical, 9)
                         .background(Color(red: 0.8, green: 0.2, blue: 0.2).opacity(0.85), in: Capsule())
                     }
+                } else if let selectedRoll, ownRollShotCount(in: selectedRoll) > 0 {
+                    // Shooting into a roll: confirm the shot landed there instead of the
+                    // Personal "to sort" pill, which never applies to roll shots (they skip the
+                    // sort deck entirely — see `isSorted: rollId != nil` in PhotoService). Tinted
+                    // to rhyme with the accent-tinted roll selector pill above it.
+                    Button {
+                        NotificationCenter.default.post(name: .openRollDetail, object: selectedRoll)
+                    } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: "film.stack").font(.system(size: 12))
+                            Text("\(ownRollShotCount(in: selectedRoll)) in \(selectedRoll.name)")
+                                .font(.system(size: 13, weight: .semibold))
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                        }
+                        .foregroundStyle(FlimTheme.accent)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 9)
+                    }
+                    .glassCapsule(interactive: true)
+                    .overlay(Capsule().stroke(FlimTheme.accent.opacity(0.55), lineWidth: 1))
+                    .accessibilityLabel("\(ownRollShotCount(in: selectedRoll)) photos in \(selectedRoll.name)")
+                    .accessibilityHint("Opens the roll")
                 } else if unsortedCount > 0 {
                     // Shortcut into the sort deck — sits where the "Developing…" pill does.
                     Button { showSortDeck = true } label: {

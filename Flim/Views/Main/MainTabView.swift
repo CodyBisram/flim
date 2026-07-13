@@ -4,6 +4,9 @@ struct MainTabView: View {
     @State private var selected = 0
     /// Per-tab counter — bumped when you re-tap the tab you're already on, so that tab scrolls to top.
     @State private var scrollSignal: [Int: Int] = [:]
+    /// Owned here (not in RollsView) so a cross-tab deep link (see `.openRollDetail` below) can
+    /// push into a specific roll's detail programmatically.
+    @State private var rollsPath = NavigationPath()
     @AppStorage("hasOnboarded") private var hasOnboarded = false
     @AppStorage("accentColor") private var accentColor = "amber"   // re-tints on change
     @AppStorage("didShowNotifPrimer") private var didShowNotifPrimer = false
@@ -43,7 +46,7 @@ struct MainTabView: View {
                 }
             }
             Tab("Rolls", systemImage: "film.stack", value: 2) {
-                NavigationStack {
+                NavigationStack(path: $rollsPath) {
                     RollsView(scrollToTop: scrollSignal[2, default: 0])
                 }
             }
@@ -87,6 +90,12 @@ struct MainTabView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .openCamera)) { _ in
             selected = 0
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .openRollDetail)) { note in
+            selected = 2   // Rolls tab
+            if let roll = note.object as? Roll {
+                rollsPath.append(roll)
+            }
         }
         // Show the soft primer once — after onboarding, with context — instead of a cold
         // system prompt on first launch (which gets denied far more often).

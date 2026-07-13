@@ -160,11 +160,12 @@ final class CameraViewModel: NSObject {
         guard !isCapturing else { return }
         isCapturing = true
 
-        // Shutter flash
-        flashOpacity = 1
-        withAnimation(.easeOut(duration: 0.4)) {
-            flashOpacity = 0
-        }
+        // The on-screen flash overlay is NOT triggered here anymore. A real LED flash needs a
+        // beat for AE/AF + preflash metering before it actually fires, so lighting up the screen
+        // at tap time made the white flash arrive a full 1-2s before the real flash — reading as
+        // a glitch on-device. The overlay is now driven by the capture delegate's
+        // willCapturePhotoFor/didCapturePhotoFor callbacks below, which fire right as the real
+        // exposure happens.
 
         let settings = AVCapturePhotoSettings()
         if output.supportedFlashModes.contains(flashMode) {
@@ -182,14 +183,49 @@ final class CameraViewModel: NSObject {
 // MARK: - AVCapturePhotoCaptureDelegate
 
 extension CameraViewModel: AVCapturePhotoCaptureDelegate {
+    /// Fires right as the real exposure begins (after AE/AF + any preflash metering) — this is
+    /// the correct moment for a flash-adjacent overlay, not the shutter tap.
+    func photoOutput(
+        _ output: AVCapturePhotoOutput,
+        willCapturePhotoFor resolvedSettings: AVCaptureResolvedPhotoSettings
+    ) {
+        if resolvedSettings.isFlashEnabled {
+            // The rear LED is about to fire — it IS the flash. A white screen overlay on top of
+            // it reads as a glitch, so the rear+flash case shows no overlay at all.
+            return
+        }
+        // Front camera has no LED, so an explicit "flash on" there means screen-as-flash: brighten
+        // the display itself in place of hardware flash, timed to the real exposure. Every other
+        // no-flash shot (front or rear) keeps a subtle blink so the shutter still feels responsive.
+        // Delegate callbacks arrive on AVFoundation's queue, not main — hop before touching UI state.
+        let opacity: Double = (isFront && flashMode == .on) ? 1 : 0.35
+        Task { @MainActor in self.flashOpacity = opacity }
+    }
+
+    /// Fires once the exposure itself is finished — fade the overlay out here so its length always
+    /// tracks the real capture instead of a timer guessed at tap time.
+    func photoOutput(
+        _ output: AVCapturePhotoOutput,
+        didCapturePhotoFor resolvedSettings: AVCaptureResolvedPhotoSettings
+    ) {
+        let fade = resolvedSettings.isFlashEnabled ? 0.15 : 0.3
+        Task { @MainActor in
+            withAnimation(.easeOut(duration: fade)) { self.flashOpacity = 0 }
+        }
+    }
+
     func photoOutput(
         _ output: AVCapturePhotoOutput,
         didFinishProcessingPhoto photo: AVCapturePhoto,
         error: Error?
     ) {
-        isCapturing = false
-        guard let data = photo.fileDataRepresentation() else { return }
-        capturedData = data
-        onPhotoCapture?(data)
+        let data = photo.fileDataRepresentation()
+        Task { @MainActor in
+            self.isCapturing = false
+            self.flashOpacity = 0   // safety net in case the capture errored before the callbacks above fired
+            guard let data else { return }
+            self.capturedData = data
+            self.onPhotoCapture?(data)
+        }
     }
 }

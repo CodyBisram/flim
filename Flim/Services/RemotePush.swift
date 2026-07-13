@@ -48,6 +48,9 @@ extension Notification.Name {
     static let openCamera = Notification.Name("openCamera")
     /// Posted with a roll invite code (String) when a `…//join/CODE` deep link is opened.
     static let openRollInvite = Notification.Name("openRollInvite")
+    /// Posted with a `Roll` payload to jump to the Rolls tab and push straight into that
+    /// roll's detail view (e.g. tapping the "N in «rollname»" pill on the Camera tab).
+    static let openRollDetail = Notification.Name("openRollDetail")
 }
 
 /// App delegate: forwards the APNs token to `RemotePush`, and handles notification
