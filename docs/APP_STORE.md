@@ -25,7 +25,7 @@ Copy-paste-ready metadata + a screenshot plan + reviewer notes. Tweak the voice 
 
 > **FLIM is a disposable camera for your closest friends.**
 >
-> Point, shoot, and let it develop, just like the real thing. Your photos don't appear instantly. They take their time, revealing 12 hours after capture, so every roll feels like a little surprise waiting to happen. Grab an invite from a friend and start shooting.
+> Point, shoot, and let it develop, just like the real thing. Personal shots appear in your Darkroom right away. Shots into a shared roll stay private until the whole roll reveals together at a fixed time: 12 hours after the roll was created. Every reveal feels like a little surprise waiting to happen. Grab an invite from a friend and start shooting.
 >
 > **Real film feel.** Every photo gets FLIM's signature film look baked right in at capture: warm color, fine grain, and a subtle glow. No filters, no choices, no second-guessing. Just one beautiful look that works for every moment.
 >
@@ -41,7 +41,7 @@ Copy-paste-ready metadata + a screenshot plan + reviewer notes. Tweak the voice 
 - Reactions (emojis) and comments on photos and posts
 - Photo tagging
 - Real blocking and reporting (reviewed within 24h)
-- Push notifications for roll reveals
+- Push notifications for roll reveals and social activity (comments, reactions)
 - Email OTP sign-in, invite-only access
 
 ## Keywords (100 char max, comma-separated, no spaces)
@@ -135,7 +135,7 @@ Tip: seed a nice-looking account first so the screenshots aren't empty.
 > **What to check:**
 > - **Camera:** Tap the shutter to take a photo. Personal shots develop immediately and appear in the Darkroom; shots taken into a shared roll develop together 12 hours after the roll was created.
 > - **Darkroom:** View your developed photos in the grid. Tap to view full-screen.
-> - **Rolls:** Create a new roll or join an existing one using an invite code (try `TESTT1` for a pre-seeded test roll, or create one).
+> - **Rolls:** Create a new roll or join an existing one using an invite code.
 > - **Feed:** Browse posts from other users in the feed; like, comment, and react with emojis.
 > - **Safety:** Tap ••• on any photo or post to **Report** or **Block** the user. Both actions are reachable from the UI. Reported content is auto-hidden after 2 reports and reviewed within 24 hours. Blocking is bidirectional.
 > - **Notifications:** Grant notification permission to see push notifications when photos develop (local fallback works without APNs credentials).
