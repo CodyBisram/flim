@@ -266,7 +266,7 @@ Deno.serve(async () => {
     .eq("push_sent", false);
 
   for (const r of photoReports ?? []) {
-    const body = r.reason ? `Reason: ${r.reason}` : "A photo was reported — review in the dashboard";
+    const body = r.reason ? `Reason: ${r.reason}` : "A photo was reported. Review in the dashboard.";
     for (const token of ownerPushTokens) {
       if (await sendPush(token, "Photo reported", body)) sent++;
     }
@@ -280,7 +280,7 @@ Deno.serve(async () => {
 
   for (const r of userReports ?? []) {
     const who = await handle(r.reported_id);
-    const body = r.reason ? `${who} — ${r.reason}` : `${who} was reported — review in the dashboard`;
+    const body = r.reason ? `${who}: ${r.reason}` : `${who} was reported. Review in the dashboard.`;
     for (const token of ownerPushTokens) {
       if (await sendPush(token, "User reported", body)) sent++;
     }

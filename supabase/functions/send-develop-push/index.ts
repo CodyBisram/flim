@@ -2,8 +2,18 @@
 // FLIM — send-develop-push  (Supabase Edge Function, Deno)
 //
 // Scheduled (e.g. every minute) function that finds photos which have just
-// developed in a shared roll and sends an APNs push to every roll-mate EXCEPT
-// the photo's owner (the owner already gets a local notification on-device).
+// developed in a shared roll and sends ONE APNs push per (roll, recipient) —
+// regardless of how many shots the roll holds.
+//
+// Recipient rule: only roll-mates who took ZERO shots in the developed batch.
+// Anyone who shot into the roll already got a LOCAL "your roll developed"
+// notification on their own device at capture time (NotificationService
+// .scheduleRollDevelopNotification — one per roll), so pushing them again would
+// double-notify the same event. The remote push exists for the OTHER members,
+// who took no shots and would otherwise never learn the roll is ready.
+//
+// Personal instants (roll_id NULL) develop immediately and never push — the
+// `roll_id is not null` filter below excludes them.
 //
 // Deploy:
 //   supabase functions deploy send-develop-push --no-verify-jwt
@@ -77,7 +87,7 @@ async function importPrivateKey(pem: string): Promise<CryptoKey> {
   );
 }
 
-async function sendPush(deviceToken: string, title: string, body: string) {
+async function sendPush(deviceToken: string, title: string, body: string): Promise<boolean> {
   const jwt = await apnsAuthToken();
   const res = await fetch(`${APNS_HOST}/3/device/${deviceToken}`, {
     method: "POST",
@@ -87,18 +97,29 @@ async function sendPush(deviceToken: string, title: string, body: string) {
       "apns-push-type": "alert",
       "apns-priority": "10",
     },
-    body: JSON.stringify({
-      aps: { alert: { title, body }, sound: "default" },
-    }),
+    body: JSON.stringify({ aps: { alert: { title, body }, sound: "default" } }),
   });
-  if (!res.ok) {
-    console.error("APNs error", res.status, await res.text(), "token", deviceToken.slice(0, 8));
-  }
+  // Structured per-send record: `host` shows which APNs environment we hit, so a
+  // sandbox/production mismatch (production TestFlight token rejected by sandbox
+  // with 400 BadDeviceToken) is visible in the logs without guesswork. `reason`
+  // is only read on failure (Apple returns JSON like {"reason":"BadDeviceToken"}).
+  const reason = res.ok ? undefined : await res.text();
+  console.log(JSON.stringify({
+    at: "apns_send",
+    ok: res.ok,
+    status: res.status,
+    host: APNS_HOST,
+    apnsId: res.headers.get("apns-id"),
+    token8: deviceToken.slice(0, 8),
+    reason,
+  }));
   return res.ok;
 }
 
 Deno.serve(async () => {
   // 1. Photos that have developed, belong to a roll, and haven't pushed yet.
+  //    Personal instants (roll_id NULL) are excluded — they develop immediately
+  //    and never generate a remote push.
   const { data: photos, error } = await supabase
     .from("photos")
     .select("id, user_id, roll_id, rolls(name)")
@@ -109,33 +130,55 @@ Deno.serve(async () => {
   if (error) return new Response(`query failed: ${error.message}`, { status: 500 });
   if (!photos?.length) return new Response("nothing to send");
 
+  // 2. Collapse the batch into one entry per roll. `shooters` = everyone who took
+  //    a shot in this developed batch (they already got a local notification);
+  //    `photoIds` = every photo of the roll to flip push_sent on once we're done.
+  type Row = { id: string; user_id: string; roll_id: string; rolls?: { name?: string } };
+  const rolls = new Map<string, { name: string; shooters: Set<string>; photoIds: string[] }>();
+  for (const p of photos as Row[]) {
+    const g = rolls.get(p.roll_id) ?? {
+      name: p.rolls?.name ?? "your roll",
+      shooters: new Set<string>(),
+      photoIds: [],
+    };
+    g.shooters.add(p.user_id);
+    g.photoIds.push(p.id);
+    rolls.set(p.roll_id, g);
+  }
+
   let sent = 0;
-  for (const photo of photos) {
-    // 2. Roll members minus the photo owner.
+  for (const [rollId, g] of rolls) {
+    // 3. Recipients = roll members who took NO shots in this batch. Shooters are
+    //    skipped because they already have the on-device local notification.
     const { data: members } = await supabase
       .from("roll_members")
       .select("user_id")
-      .eq("roll_id", photo.roll_id)
-      .neq("user_id", photo.user_id);
+      .eq("roll_id", rollId);
 
-    const userIds = (members ?? []).map((m) => m.user_id);
-    if (userIds.length) {
+    const recipientIds = (members ?? [])
+      .map((m) => m.user_id as string)
+      .filter((uid) => !g.shooters.has(uid));
+
+    if (recipientIds.length) {
       const { data: tokens } = await supabase
         .from("device_tokens")
         .select("token")
-        .in("user_id", userIds);
+        .in("user_id", recipientIds);
 
-      const rollName = (photo as { rolls?: { name?: string } }).rolls?.name ?? "your roll";
-      for (const t of tokens ?? []) {
-        if (await sendPush(t.token, "A photo developed 📸", `A new shot is ready in "${rollName}".`)) {
-          sent++;
-        }
+      // One push per (roll, recipient device), naming the roll + total shot count.
+      const count = g.photoIds.length;
+      const title = `"${g.name}" developed 🎞`;
+      const body = `${count} shot${count === 1 ? "" : "s"} ${count === 1 ? "is" : "are"} ready.`;
+      const uniqueTokens = [...new Set((tokens ?? []).map((t) => t.token as string))];
+      for (const token of uniqueTokens) {
+        if (await sendPush(token, title, body)) sent++;
       }
     }
 
-    // 3. Mark as pushed regardless so we don't retry forever.
-    await supabase.from("photos").update({ push_sent: true }).eq("id", photo.id);
+    // 4. Mark every photo of the batch as pushed regardless of send outcome, so a
+    //    dead token or a member with no device can't make us retry this roll forever.
+    await supabase.from("photos").update({ push_sent: true }).in("id", g.photoIds);
   }
 
-  return new Response(`sent ${sent} push(es) for ${photos.length} photo(s)`);
+  return new Response(`sent ${sent} push(es) for ${rolls.size} roll(s)`);
 });
