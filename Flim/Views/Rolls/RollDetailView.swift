@@ -313,7 +313,9 @@ struct RollDetailView: View {
     private func photoGrid(_ list: [Photo], triggersLoadMore: Bool) -> some View {
         LazyVGrid(columns: columns, spacing: 2) {
             ForEach(list) { photo in
-                PhotoGridCell(photo: photo, signedURL: vm.signedURLCache[photo.id])
+                // The reveal banner above already shows "Develops in Xh Xm" for the whole roll
+                // (every shot in it develops together), so developing tiles here don't repeat it.
+                PhotoGridCell(photo: photo, signedURL: vm.signedURLCache[photo.id], showsCountdown: false)
                     .matchedTransitionSource(id: photo.id, in: photoNS)
                     .onTapGesture {
                         // Can't peek before it develops — only open ready shots.

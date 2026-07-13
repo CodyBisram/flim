@@ -74,6 +74,7 @@
 		EECAD4AB8FC87AFACD4A5A80 /* RollMembersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1AA5EF66C46272F42891AF4 /* RollMembersView.swift */; };
 		F28BA958FD55FFA0EE8BDA41 /* FlimApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01F7C56CF5A21FB71964CFEB /* FlimApp.swift */; };
 		F3492DCB0D6D8A98FBE699B2 /* CreateRollView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA95E5BB427471DF71E11E56 /* CreateRollView.swift */; };
+		F3A160AE08996C251746F069 /* AnimatedHourglass.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8BD88710129E95E109D5086 /* AnimatedHourglass.swift */; };
 		F5701A740A6BFD822B551A03 /* InstantFilmProcessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14C863F6302D9B2BFBA71B6C /* InstantFilmProcessor.swift */; };
 		F63EEF7D9CF0A8333B587BE8 /* ColorProfileTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1BCF6EBC279A8B682333548 /* ColorProfileTests.swift */; };
 		F7DB8CBEBE8B5B6A7FA4EEA9 /* CubeLUT.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EF884AA4C8711AA4738DA8C /* CubeLUT.swift */; };
@@ -166,6 +167,7 @@
 		F2CA2F6DA98A04777C3D3C23 /* OTPView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OTPView.swift; sourceTree = "<group>"; };
 		F41D0B57C8881A275E755159 /* SortDeckView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SortDeckView.swift; sourceTree = "<group>"; };
 		F5F4E6A1053D1FADA991924E /* QuickCaptureIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickCaptureIntent.swift; sourceTree = "<group>"; };
+		F8BD88710129E95E109D5086 /* AnimatedHourglass.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnimatedHourglass.swift; sourceTree = "<group>"; };
 		FA04DBB3261C344B5DD64806 /* Haptics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Haptics.swift; sourceTree = "<group>"; };
 		FD8B0DEC0C9EF1C45B057D1F /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		FE6E3DB97398A385FA3C9489 /* RemotePush.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemotePush.swift; sourceTree = "<group>"; };
@@ -227,6 +229,7 @@
 		2BD73808C59340731B731131 /* Components */ = {
 			isa = PBXGroup;
 			children = (
+				F8BD88710129E95E109D5086 /* AnimatedHourglass.swift */,
 				373B00DF38CFC40848E59929 /* MetaChip.swift */,
 				DFAC10EA5BF9B35854D17FFF /* PersonPickerSheet.swift */,
 				24DE0B6E57BFD6B0DE4804A0 /* PhotoTags.swift */,
@@ -510,6 +513,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				DF79D7CBD7A4684626EF2080 /* ActivityFeedView.swift in Sources */,
+				F3A160AE08996C251746F069 /* AnimatedHourglass.swift in Sources */,
 				E132A62DD98C56BC83EB715E /* AppInfo.swift in Sources */,
 				410927C61580C55C921D591F /* AppUser.swift in Sources */,
 				1986128F060D36EEB13FF786 /* AuthService.swift in Sources */,

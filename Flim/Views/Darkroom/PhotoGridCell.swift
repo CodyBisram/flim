@@ -7,6 +7,12 @@ struct PhotoGridCell: View {
     let signedURL: URL?
     /// The roll this shot belongs to (shown so roll photos are distinguishable in the Darkroom).
     var rollName: String? = nil
+    /// Whether this tile should show its own "develops in HH:MM:SS" countdown. The personal
+    /// Darkroom grid has no other time display, so its tiles keep the real countdown; roll
+    /// detail screens already show "Develops in Xh Xm" for the whole roll in a header (every
+    /// shot in a roll develops together), so their tiles pass `false` and get a quiet animated
+    /// hourglass instead of repeating the same number on every tile.
+    var showsCountdown: Bool = true
 
     var body: some View {
         // A clear square anchor sizes each cell to exactly 1/3 of the grid width; the image
@@ -52,15 +58,19 @@ struct PhotoGridCell: View {
             Color(red: 0.08, green: 0.06, blue: 0.05)
             GrainOverlay()
             VStack(spacing: 6) {
-                Image(systemName: "hourglass")
-                    .font(.system(size: 14, weight: .ultraLight))
-                    .foregroundStyle(FlimTheme.accent.opacity(0.8))
+                if showsCountdown {
+                    Image(systemName: "hourglass")
+                        .font(.system(size: 14, weight: .ultraLight))
+                        .foregroundStyle(FlimTheme.accent.opacity(0.8))
 
-                // TimelineView fires once per second — no external timer needed
-                TimelineView(.periodic(from: .now, by: 1)) { timeline in
-                    Text(countdown(at: timeline.date))
-                        .font(.system(size: 11, weight: .medium, design: .monospaced))
-                        .foregroundStyle(Color(white: 0.35))
+                    // TimelineView fires once per second — no external timer needed
+                    TimelineView(.periodic(from: .now, by: 1)) { timeline in
+                        Text(countdown(at: timeline.date))
+                            .font(.system(size: 11, weight: .medium, design: .monospaced))
+                            .foregroundStyle(Color(white: 0.35))
+                    }
+                } else {
+                    AnimatedHourglass(size: 16, color: FlimTheme.textTertiary)
                 }
 
                 // Tell the user which roll this shot is developing for (or just "DEVELOPING").
