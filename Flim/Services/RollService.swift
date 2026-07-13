@@ -155,8 +155,11 @@ final class RollService {
         let userIds = memberRows.map(\.userId.uuidString)
         guard !userIds.isEmpty else { return [] }
 
+        // `profiles` (not `users`) — the safe-columns view every other cross-user read in this
+        // app uses post column-grant hardening (see FeedService). Roll rosters only need
+        // username/avatar/etc, never email/invite_code.
         return try await supabase
-            .from("users")
+            .from("profiles")
             .select()
             .in("id", values: userIds)
             .execute()

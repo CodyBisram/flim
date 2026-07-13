@@ -10,6 +10,7 @@ struct RollMembersView: View {
     @State private var members: [AppUser] = []
     @State private var isLoading = false
     @State private var codeCopied = false
+    @State private var loadError: String?
 
     private var isCreator: Bool { auth.currentUser?.id == roll.createdBy }
 
@@ -62,6 +63,10 @@ struct RollMembersView: View {
                     if isLoading {
                         Spacer()
                         ProgressView().tint(.white)
+                        Spacer()
+                    } else if let error = loadError {
+                        Spacer()
+                        ErrorState(message: error) { await load() }
                         Spacer()
                     } else {
                         List {
@@ -138,11 +143,20 @@ struct RollMembersView: View {
             }
         }
         .presentationBackground(FlimTheme.bg)
-        .task {
-            isLoading = true
-            if let uid = auth.currentUser?.id { await feed.loadBlocked(userId: uid) }
-            members = (try? await rollService.fetchMembers(for: roll.id)) ?? []
-            isLoading = false
+        .task { await load() }
+    }
+
+    /// Fetches the roster, surfacing a real error + retry instead of a silently-empty list
+    /// when the fetch fails (network, RLS, etc.) — matches RollsView's load pattern.
+    private func load() async {
+        isLoading = true
+        loadError = nil
+        if let uid = auth.currentUser?.id { await feed.loadBlocked(userId: uid) }
+        do {
+            members = try await rollService.fetchMembers(for: roll.id)
+        } catch {
+            loadError = error.localizedDescription
         }
+        isLoading = false
     }
 }

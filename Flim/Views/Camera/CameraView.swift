@@ -12,6 +12,9 @@ struct CameraView: View {
     @State private var camera = CameraViewModel()
     @State private var selectedRoll: Roll? = nil
     @State private var showRollPicker = false
+    // Restore the persisted roll selection once per launch — the tab re-fires onAppear every
+    // time you switch back to Camera, and we don't want that to clobber a live in-session pick.
+    @State private var didRestoreSelectedRoll = false
 
     // Controls fade out when idle so the shutter stays the focal point; any
     // interaction wakes them back up.
@@ -116,12 +119,48 @@ struct CameraView: View {
                 await camera.start()
                 if let userId = auth.currentUser?.id {
                     try? await rolls.fetchRolls(for: userId)
+                    if !didRestoreSelectedRoll {
+                        didRestoreSelectedRoll = true
+                        restoreSelectedRoll(userId: userId)
+                    }
                 }
             }
         }
         .onDisappear { camera.stopRunning() }
+        .onChange(of: selectedRoll) { persistSelectedRoll() }
         .sheet(isPresented: $showRollPicker) {
             RollPickerSheet(rolls: rolls.rolls, closed: rolls.closedRollIds, selected: $selectedRoll)
+        }
+    }
+
+    // MARK: - Selected roll persistence
+    //
+    // Camera defaults back to Personal on every relaunch otherwise, which is easy to shoot
+    // into by mistake right after opening a roll. Keyed per user id (UserDefaults, matching
+    // RollDetailView's per-roll key pattern) so switching accounts on one device can't leak
+    // one user's roll pick into another's camera.
+
+    private func selectedRollKey(for userId: UUID) -> String { "selectedRollId.\(userId.uuidString)" }
+
+    /// Restores the last-picked roll ONLY if it still exists and hasn't developed yet — a
+    /// developed roll can't take new shots, so we fall back to Personal in that case.
+    private func restoreSelectedRoll(userId: UUID) {
+        guard let raw = UserDefaults.standard.string(forKey: selectedRollKey(for: userId)),
+              let savedId = UUID(uuidString: raw) else { return }
+        if let roll = rolls.rolls.first(where: { $0.id == savedId }), !roll.isDeveloped {
+            selectedRoll = roll
+        } else {
+            UserDefaults.standard.removeObject(forKey: selectedRollKey(for: userId))
+        }
+    }
+
+    private func persistSelectedRoll() {
+        guard let userId = auth.currentUser?.id else { return }
+        let key = selectedRollKey(for: userId)
+        if let roll = selectedRoll {
+            UserDefaults.standard.set(roll.id.uuidString, forKey: key)
+        } else {
+            UserDefaults.standard.removeObject(forKey: key)
         }
     }
 
@@ -203,7 +242,10 @@ struct CameraView: View {
     private var topBar: some View {
         glassGroup {
             HStack {
-                // Roll target selector
+                // Roll target selector — this pill is the ONLY compressible element in the row
+                // (icons below are fixed 38x38). No .fixedSize here: that would defeat
+                // lineLimit/truncation and let a long roll name push the whole row off-screen
+                // (regressed with a long-named roll on both a 13 and a 17 Pro Max).
                 Button { showRollPicker = true; wakeFilmStrip() } label: {
                     HStack(spacing: 6) {
                         Image(systemName: selectedRoll == nil ? "person.fill" : "film.stack")
@@ -212,15 +254,20 @@ struct CameraView: View {
                             .font(.system(size: 13, weight: .medium))
                             .lineLimit(1)
                             .truncationMode(.tail)
-                            .fixedSize(horizontal: true, vertical: false)
                         Image(systemName: "chevron.down")
                             .font(.system(size: 10, weight: .semibold))
                     }
-                    .foregroundStyle(.white)
+                    // A roll target should be unmistakable at a glance — accent-tinted with a
+                    // matching ring when a roll is selected; neutral white for Personal.
+                    .foregroundStyle(selectedRoll == nil ? .white : FlimTheme.accent)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 9)
                 }
                 .glassCapsule(interactive: true)
+                .overlay(
+                    Capsule().stroke(FlimTheme.accent.opacity(selectedRoll == nil ? 0 : 0.55), lineWidth: 1)
+                )
+                .layoutPriority(-1)
                 .accessibilityLabel("Send photos to")
                 .accessibilityValue(selectedRoll?.name ?? "Personal")
 
