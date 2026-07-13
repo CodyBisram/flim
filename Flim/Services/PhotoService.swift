@@ -387,6 +387,20 @@ final class PhotoService {
         }
     }
 
+    /// A standalone snapshot of a roll's CURRENT photo rows — same filter as `fetchRollPhotos`,
+    /// but doesn't touch the shared `photos` list or its pagination state. Used to refresh the
+    /// reveal slideshow's deck right before it plays, so a shot deleted after the roll developed
+    /// (but before this member watched) is dropped instead of showing as a dead frame.
+    func fetchRollPhotosSnapshot(rollId: UUID) async throws -> [Photo] {
+        try await supabase
+            .from("photos")
+            .select()
+            .eq("roll_id", value: rollId.uuidString)
+            .eq("hidden", value: false)
+            .execute()
+            .value
+    }
+
     /// Loads one page of photos (newest develop-time first), appending to `photos`. `reset`
     /// starts a fresh feed; otherwise it continues from where the last page left off. Only
     /// the visible pages are ever fetched, and signed URLs are resolved lazily per cell.

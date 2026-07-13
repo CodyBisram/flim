@@ -227,6 +227,7 @@ struct RollDetailView: View {
             FullScreenPhotoView(photo: photo, url: selectedURL,
                                 photographer: memberNames[photo.userId],
                                 memberNames: memberNames,
+                                rollName: displayName.isEmpty ? roll.name : displayName,
                                 onDelete: { Task { await vm.loadRoll(photoService: photoService, rollId: roll.id, blockedIds: feed.blockedIds) } })
                 .navigationTransition(.zoom(sourceID: photo.id, in: photoNS))
         }
@@ -234,7 +235,7 @@ struct RollDetailView: View {
             RollCarouselView(photos: chronologicalDeveloped, memberNames: memberNames)
         }
         .fullScreenCover(isPresented: $showReveal) {
-            RollRevealView(rollName: displayName.isEmpty ? roll.name : displayName,
+            RollRevealView(rollId: roll.id, rollName: displayName.isEmpty ? roll.name : displayName,
                            photos: chronologicalDeveloped, memberNames: memberNames)
         }
         .sheet(isPresented: $showMembers) {

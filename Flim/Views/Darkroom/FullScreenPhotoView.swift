@@ -8,6 +8,10 @@ struct FullScreenPhotoView: View {
     var photographer: String? = nil
     /// Roll member names for comment attribution (empty for personal photos).
     var memberNames: [UUID: String] = [:]
+    /// The name of the roll this shot belongs to, if any — used to name the roll in the delete
+    /// confirmation. Passed in by the caller (cheaper than a lookup here); falls back to generic
+    /// wording if it isn't available.
+    var rollName: String? = nil
     /// Called after the photo is deleted so the parent can refresh its grid.
     var onDelete: () -> Void = {}
     @Environment(PhotoService.self) private var photoService
@@ -36,6 +40,14 @@ struct FullScreenPhotoView: View {
 
     private var isOwnPhoto: Bool { photo.userId == auth.currentUser?.id }
     private var isRollPhoto: Bool { photo.rollId != nil }
+    /// Roll shots are shared — deleting removes them for every member, so the confirmation
+    /// names the roll (falling back to generic wording if the name wasn't passed in).
+    private var rollDeleteMessage: String {
+        if let rollName {
+            return "This shot is in the roll \"\(rollName)\". Deleting removes it for everyone."
+        }
+        return "This shot is in a shared roll. Deleting removes it for everyone."
+    }
 
     var body: some View {
         ZStack {
@@ -216,7 +228,7 @@ struct FullScreenPhotoView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This can't be undone.")
+            Text(isRollPhoto ? rollDeleteMessage : "This can't be undone.")
         }
         .confirmationDialog("Report this photo?", isPresented: $showReportConfirm, titleVisibility: .visible) {
             Button("Report", role: .destructive) {

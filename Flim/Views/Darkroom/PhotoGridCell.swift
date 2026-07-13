@@ -193,6 +193,10 @@ struct CachedImage<Content: View, Placeholder: View>: View {
     /// A stable storage path, if known — lets the image load from cache before a URL is resolved
     /// (instant on cold launch) and survive new signed-URL tokens.
     var cacheKey: String? = nil
+    /// Called once when the load fails (network error, or the object no longer exists — e.g. it
+    /// was deleted after a caller resolved its signed URL). Most call sites just show the built-in
+    /// retry tile; a slideshow can use this to skip the frame instead.
+    var onFailure: (() -> Void)? = nil
     @ViewBuilder var content: (Image) -> Content
     @ViewBuilder var placeholder: () -> Placeholder
 
@@ -244,6 +248,7 @@ struct CachedImage<Content: View, Placeholder: View>: View {
         shown = false
         guard let image = await ImageLoader.fetch(url: url, maxPixel: maxPixel, scale: displayScale, cacheKey: cacheKey) else {
             failed = true   // network/decode failed → show retry, not endless shimmer
+            onFailure?()
             return
         }
         uiImage = image

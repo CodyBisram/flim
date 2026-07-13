@@ -24,6 +24,8 @@ struct DarkroomView: View {
     @State private var revealCount = 0
     @State private var unsortedCount = 0
     @State private var showSortDeck = false
+    @State private var showRollDeleteConfirm = false
+    @State private var pendingRollDeleteBatch: [Photo] = []
 
     private let columns = [
         GridItem(.flexible(), spacing: 2),
@@ -181,11 +183,22 @@ struct DarkroomView: View {
             }
         }
         .fullScreenCover(item: $selectedPhoto) { photo in
-            FullScreenPhotoView(photo: photo, url: selectedURL, onDelete: { Task { await reload() } })
+            FullScreenPhotoView(photo: photo, url: selectedURL, rollName: rollName(for: photo.rollId),
+                               onDelete: { Task { await reload() } })
                 .navigationTransition(.zoom(sourceID: photo.id, in: photoNS))
         }
         .fullScreenCover(isPresented: $showSortDeck, onDismiss: { Task { await reload() } }) {
             SortDeckView(onFinish: {})
+        }
+        .confirmationDialog("Delete this photo?", isPresented: $showRollDeleteConfirm, titleVisibility: .visible) {
+            Button("Delete", role: .destructive) {
+                let batch = pendingRollDeleteBatch
+                pendingRollDeleteBatch = []
+                commitDeleteBatch(batch)
+            }
+            Button("Cancel", role: .cancel) { pendingRollDeleteBatch = [] }
+        } message: {
+            Text(rollDeleteMessage(for: pendingRollDeleteBatch))
         }
     }
 
@@ -243,11 +256,32 @@ struct DarkroomView: View {
     }
 
     /// Optimistically hides the selected photos and shows an Undo toast; the real (irreversible)
-    /// server delete only commits after a few seconds if the user doesn't undo.
+    /// server delete only commits after a few seconds if the user doesn't undo. Roll shots are
+    /// shared, so if the selection includes any, confirm first (naming the roll) — personal
+    /// photos keep the existing instant-hide-then-undo behavior.
     private func deleteSelected() {
         let toDelete = (vm.developedPhotos + vm.developingPhotos).filter { selectedIDs.contains($0.id) }
         guard !toDelete.isEmpty else { return }
 
+        if toDelete.contains(where: { $0.rollId != nil }) {
+            pendingRollDeleteBatch = toDelete
+            showRollDeleteConfirm = true
+        } else {
+            commitDeleteBatch(toDelete)
+        }
+    }
+
+    /// The roll-name message for a batch that includes shared shots — names the roll if every
+    /// roll shot in the batch belongs to the same one, else falls back to generic wording.
+    private func rollDeleteMessage(for batch: [Photo]) -> String {
+        let names = Set(batch.compactMap { rollName(for: $0.rollId) })
+        if names.count == 1, let name = names.first {
+            return "This shot is in the roll \"\(name)\". Deleting removes it for everyone."
+        }
+        return "This shot is in a shared roll. Deleting removes it for everyone."
+    }
+
+    private func commitDeleteBatch(_ toDelete: [Photo]) {
         // If a previous pending delete is still waiting, commit it now before starting a new one.
         commitPendingDelete()
 
