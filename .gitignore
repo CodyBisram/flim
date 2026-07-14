@@ -39,5 +39,6 @@ fastlane/*.log
 *.env
 .env*
 
-# project agents ship with the repo; local settings stay local
+# project agents + shared rules ship with the repo; local settings stay local
 !.claude/agents/
+!.claude/rules/
