@@ -64,4 +64,4 @@ We'll update this page if our practices change, and revise the date above.
 
 ## Contact
 
-Questions or requests: **[codyysb@gmail.com]** _(replace with your public support email before launch)_.
+Questions or requests: **[support@flim-app.com]**.

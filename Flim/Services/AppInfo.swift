@@ -10,7 +10,7 @@ enum AppInfo {
     static let appName = "FLIM"
 
     /// Where in-app feedback is emailed. Change to your address.
-    static let feedbackEmail = "codyysb@gmail.com"
+    static let feedbackEmail = "support@flim-app.com"
 
     /// Hosted legal pages (required for the App Store).
     static let privacyPolicyURL = URL(string: "https://flim-app.com/privacy")!
