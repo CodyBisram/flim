@@ -111,15 +111,27 @@ FLIM includes user-generated content (photos, comments, tags, reactions). Apple'
 
 ---
 
-## Screenshots (shot-list)
-6.9" (iPhone 16 Pro Max) + 6.5" required. Shoot these on-device (clean status bar via `xcrun simctl status_bar` or a real device):
-1. **The camera** — clean viewfinder + shutter. Caption: *"Shoot like a disposable."*
-2. **The Darkroom grid** — a few developed shots. Caption: *"Watch them develop."*
-3. **A feed post** — photo + reactions + a comment. Caption: *"A feed that's just your friends."*
-4. **A shared roll** — roll cover + members. Caption: *"Start a roll together."*
-5. **The reveal / a great developed photo full-screen.** Caption: *"Every moment, on film."*
+## Screenshots
 
-Tip: seed a nice-looking account first so the screenshots aren't empty.
+Five primary screenshots, in recommended App Store upload order (the first 2-3 appear prominently in search):
+
+1. **02-feed-post.png** — The Feed showing a @cody post of a sunlit hydrangea garden with the film look, emoji reaction bar (heart, fire, laugh, wow, raised hands), and comment field. Caption: *"A feed that's just your friends."*
+
+2. **01-camera-viewfinder.png** — The live Camera tab viewfinder framing a vibrant garden of purple flowers and greenery, with Personal mode pill top-left, zoom pills, and shutter button visible. Shows the film look applied to the live viewfinder. Caption: *"Shoot like a disposable."*
+
+3. **05-roll-invite-code.png** — The New Roll share sheet overlay on the Rolls list, displaying a 6-character invite code (World Cup '26 / ZPE7EF) with Copy code and Share buttons. Shows the invite mechanic. Caption: *"Invite them with a code."*
+
+4. **03-darkroom-developing.png** — The Darkroom showing "28 shots", a "2 DEVELOPING" row (hourglass tiles, one tagged World Cup '26) above a DEVELOPED grid of film-look photos. Shows the development mechanic. Caption: *"Watch them develop."*
+
+5. **04-rolls-list.png** — The Rolls tab list showing World Cup '26 (developing, reveals in 11h 59m), Summer '26, Graduation Party, Road Trip, each with member count and invite code. Shows shared rolls. Caption: *"Rolls for your people."*
+
+**Spare:** 06-rolls-list-alt.png (near-duplicate of 04, hold for future alternates).
+
+### Before uploading
+
+These are 6.9" device captures (1320x2868 pixels) ready for App Store Connect.
+
+**Important:** Screenshots 03 and 04 contain recognizable faces of real people. Confirm you have consent to publish them, or swap them for faceless alternatives before uploading.
 
 ---
 
