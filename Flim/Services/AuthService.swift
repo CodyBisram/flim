@@ -132,8 +132,9 @@ final class AuthService {
         let userId = session.user.id
         let email = session.user.email ?? ""
         let name = displayName?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedName = (name?.isEmpty ?? true) ? nil : name
 
-        struct UpsertUser: Encodable {
+        struct InsertUser: Encodable {
             let id: UUID
             let email: String
             let username: String
@@ -145,60 +146,81 @@ final class AuthService {
                 case displayName = "display_name"
             }
         }
+        struct UpdateUsername: Encodable {
+            let username: String
+            let displayName: String?
+            enum CodingKeys: String, CodingKey {
+                case username
+                case displayName = "display_name"
+            }
+        }
 
+        // Table-level SELECT on `users` is revoked (column-scoped grants only), which the
+        // ON CONFLICT machinery behind `.upsert()` needs even with `return=minimal` — it 403s.
+        // So: insert first (this is the first-ever write for a new account). If the row
+        // already exists (id PK conflict, e.g. re-running onboarding), fall back to a plain
+        // update. Both use `return=minimal` and never chain `.select()` — that too needs
+        // table-level SELECT and 403s.
         do {
             _ = try await supabase
                 .from("users")
-                .upsert(UpsertUser(id: userId, email: email, username: username,
-                                   inviteCode: Self.randomCode(),
-                                   displayName: (name?.isEmpty ?? true) ? nil : name))
+                .insert(InsertUser(id: userId, email: email, username: username,
+                                   inviteCode: Self.randomCode(), displayName: trimmedName),
+                        returning: .minimal)
                 .execute()
-            // Refetch via the RPC — plain selects can't read email/invite_code (column grants).
-            currentUser = try await fetchUserProfile(id: userId)
-        } catch {
-            // Postgres unique_violation (23505) → the username is taken by someone else.
-            let desc = "\(error)".lowercased()
-            if desc.contains("23505") || desc.contains("duplicate") {
+        } catch let error as PostgrestError where error.code == "23505" {
+            if Self.isPrimaryKeyConflict(error) {
+                do {
+                    _ = try await supabase
+                        .from("users")
+                        .update(UpdateUsername(username: username, displayName: trimmedName),
+                                returning: .minimal)
+                        .eq("id", value: userId.uuidString)
+                        .execute()
+                } catch let updateError as PostgrestError where updateError.code == "23505" {
+                    // The username unique constraint, this time on the update path.
+                    throw AuthError.usernameTaken
+                }
+            } else {
+                // Postgres unique_violation on the username unique constraint.
                 throw AuthError.usernameTaken
             }
-            throw error
         }
+        // Refetch via the RPC — plain selects can't read email/invite_code (column grants).
+        currentUser = try await fetchUserProfile(id: userId)
     }
 
-    /// Re-attaches the own-row-only fields (hidden from table selects by column grants) after
-    /// an update's returned row replaced `currentUser`.
-    private func merged(_ updated: AppUser) -> AppUser {
-        var u = updated
-        u.email = u.email ?? currentUser?.email
-        u.inviteCode = u.inviteCode ?? currentUser?.inviteCode
-        return u
+    /// Distinguishes a 23505 on the `users` PK (`id`, meaning the row already exists) from one
+    /// on the `username` unique constraint, using the constraint name Postgres reports.
+    private static func isPrimaryKeyConflict(_ error: PostgrestError) -> Bool {
+        let text = "\(error.detail ?? "") \(error.message)".lowercased()
+        return text.contains("users_pkey") || text.contains("(id)")
     }
 
     /// Updates the optional display name and refreshes `currentUser`.
     func setDisplayName(_ name: String) async throws {
         let session = try await supabase.auth.session
         struct Update: Encodable { let display_name: String }
-        let updated: AppUser = try await supabase
+        _ = try await supabase
             .from("users")
-            .update(Update(display_name: name.trimmingCharacters(in: .whitespacesAndNewlines)))
+            .update(Update(display_name: name.trimmingCharacters(in: .whitespacesAndNewlines)),
+                    returning: .minimal)
             .eq("id", value: session.user.id.uuidString)
-            .select().single().execute().value
-        currentUser = merged(updated)
+            .execute()
+        currentUser = try await fetchUserProfile(id: session.user.id)
     }
 
     /// Updates the profile bio and refreshes `currentUser`.
     func setBio(_ bio: String) async throws {
         let session = try await supabase.auth.session
         struct Update: Encodable { let bio: String }
-        let updated: AppUser = try await supabase
+        _ = try await supabase
             .from("users")
-            .update(Update(bio: bio.trimmingCharacters(in: .whitespacesAndNewlines)))
+            .update(Update(bio: bio.trimmingCharacters(in: .whitespacesAndNewlines)),
+                    returning: .minimal)
             .eq("id", value: session.user.id.uuidString)
-            .select()
-            .single()
             .execute()
-            .value
-        currentUser = merged(updated)
+        currentUser = try await fetchUserProfile(id: session.user.id)
     }
 
     /// Sets the profile avatar from one of the user's photos. Copies the image into its own
@@ -209,12 +231,12 @@ final class AuthService {
         else { return }
         let old = currentUser?.avatarPath
         struct Update: Encodable { let avatar_path: String }
-        if let updated: AppUser = try? await supabase
-            .from("users").update(Update(avatar_path: dest))
-            .eq("id", value: session.user.id.uuidString).select().single().execute().value {
-            currentUser = merged(updated)
-            cleanupOldCopy(old, keeping: dest, prefix: "avatar")
-        }
+        guard (try? await supabase
+            .from("users").update(Update(avatar_path: dest), returning: .minimal)
+            .eq("id", value: session.user.id.uuidString).execute()) != nil
+        else { return }
+        currentUser = try? await fetchUserProfile(id: session.user.id)
+        cleanupOldCopy(old, keeping: dest, prefix: "avatar")
     }
 
     /// Sets the profile cover/header from one of the user's photos (its own Storage copy).
@@ -224,12 +246,12 @@ final class AuthService {
         else { return }
         let old = currentUser?.coverPath
         struct Update: Encodable { let cover_path: String }
-        if let updated: AppUser = try? await supabase
-            .from("users").update(Update(cover_path: dest))
-            .eq("id", value: session.user.id.uuidString).select().single().execute().value {
-            currentUser = merged(updated)
-            cleanupOldCopy(old, keeping: dest, prefix: "cover")
-        }
+        guard (try? await supabase
+            .from("users").update(Update(cover_path: dest), returning: .minimal)
+            .eq("id", value: session.user.id.uuidString).execute()) != nil
+        else { return }
+        currentUser = try? await fetchUserProfile(id: session.user.id)
+        cleanupOldCopy(old, keeping: dest, prefix: "cover")
     }
 
     /// Duplicates a photo into a fresh object in the user's own folder, returning its path.
