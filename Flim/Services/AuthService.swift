@@ -8,6 +8,7 @@ private let redirectURL = URL(string: "com.lapse.app://login-callback")!
 enum AuthError: LocalizedError {
     case notInvited
     case usernameTaken
+    case rateLimited
 
     var errorDescription: String? {
         switch self {
@@ -15,6 +16,8 @@ enum AuthError: LocalizedError {
             return "This email isn’t on the invite list yet. \(AppInfo.appName) is invite-only, so ask whoever invited you to add you."
         case .usernameTaken:
             return "That username’s taken. Try another."
+        case .rateLimited:
+            return "Too many attempts right now. Try again in a bit."
         }
     }
 }
@@ -87,6 +90,23 @@ final class AuthService {
             .rpc("is_email_allowed", params: ["p_email": email])
             .execute()
             .value
+    }
+
+    /// Redeems an invite code for `email`, allowlisting it server-side. Returns `true` if the
+    /// code was valid (also `true`, idempotently, if the email was already allowlisted).
+    /// `false` means the code doesn't exist. The caller is responsible for proceeding via
+    /// `sendOTP(email:)` on success — `is_email_allowed` stays the single source of truth there.
+    func redeemInvite(code: String, email: String) async throws -> Bool {
+        let normalizedCode = Self.normalizeInviteCode(code)
+        let normalizedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        do {
+            return try await supabase
+                .rpc("redeem_invite", params: ["p_code": normalizedCode, "p_email": normalizedEmail])
+                .execute()
+                .value
+        } catch let error as PostgrestError where error.code == "P0003" || error.message == "rate_limited" {
+            throw AuthError.rateLimited
+        }
     }
 
     func verifyOTP(token: String) async throws {
@@ -335,5 +355,12 @@ final class AuthService {
     static func randomCode(length: Int = 6) -> String {
         let chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
         return String((0..<length).map { _ in chars.randomElement()! })
+    }
+
+    /// Trims and uppercases an invite code before sending it to `redeem_invite`. The server
+    /// normalizes too — this is purely for consistent client-side UX (e.g. matching what the
+    /// user sees echoed back on a failure).
+    static func normalizeInviteCode(_ code: String) -> String {
+        code.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
     }
 }

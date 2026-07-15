@@ -20,4 +20,10 @@ final class AuthHelpersTests: XCTestCase {
         let codes = Set((0..<5).map { _ in AuthService.randomCode() })
         XCTAssertGreaterThan(codes.count, 1)
     }
+
+    func testNormalizeInviteCodeTrimsAndUppercases() async {
+        XCTAssertEqual(AuthService.normalizeInviteCode("  abc123 "), "ABC123")
+        XCTAssertEqual(AuthService.normalizeInviteCode("AbC123"), "ABC123")
+        XCTAssertEqual(AuthService.normalizeInviteCode(""), "")
+    }
 }

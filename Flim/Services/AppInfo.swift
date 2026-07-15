@@ -28,6 +28,12 @@ enum AppInfo {
         "Join my roll “\(rollName)” on \(appName) 🎞\n\(rollInviteLink(code: code).absoluteString)\n(code: \(code))"
     }
 
+    /// The share-sheet message for inviting someone to join the app itself with a personal
+    /// invite code.
+    static func personalInviteMessage(code: String) -> String {
+        "Join me on \(appName)! Use invite code \(code) when you sign up: https://flim-app.com"
+    }
+
     /// e.g. "1.0 (42)"
     static var versionString: String {
         let v = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"

@@ -77,6 +77,106 @@ $$;
 GRANT EXECUTE ON FUNCTION public.is_email_allowed(TEXT) TO anon, authenticated;
 
 -- ============================================================
+-- Invite-code redemption: turns a friend's invite_code + your email into an
+-- allowed_emails row so is_email_allowed() (above) then lets you request an
+-- OTP. Called pre-sign-in, same class as is_email_allowed, so it must also be
+-- reachable by `anon`.
+--
+-- Singleton rate-gate table backing a GLOBAL (not per-actor) limit: 30
+-- attempts per rolling hour, period, no matter who or how many IPs/emails are
+-- behind them. Per-IP or per-email keying would defeat nothing here, since an
+-- attacker guessing codes rotates both trivially, and it would add a table
+-- that DOES need per-key indexing/cleanup for no real benefit. A flat global
+-- gate is simpler, cannot be bypassed by rotating identity, and 30/hour is
+-- far above any real invite flow while still crushing the 36^6 code
+-- keyspace's brute-force math. `id BOOLEAN PK CHECK (id)` is a standard
+-- singleton-row trick: id can only ever be TRUE, and TRUE is already the
+-- primary key, so a second row is structurally impossible.
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.redeem_invite_rate (
+    id           BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (id),
+    window_start TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    attempts     INT NOT NULL DEFAULT 0
+);
+INSERT INTO public.redeem_invite_rate (id) VALUES (TRUE) ON CONFLICT DO NOTHING;
+ALTER TABLE public.redeem_invite_rate ENABLE ROW LEVEL SECURITY;
+-- No policies, and every role's implicit table privileges are stripped below —
+-- this row is readable/writable only from inside redeem_invite()'s definer body.
+REVOKE ALL ON public.redeem_invite_rate FROM PUBLIC, anon, authenticated;
+
+-- Forward-compat hook for scarce invites (e.g. "this code works N times").
+-- NULL = unlimited, which is what every existing row gets and what v1 enforces
+-- for everyone — redeem_invite() does not read or decrement this column yet.
+-- Wiring it in later is additive: no shape change needed when that ships.
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS invite_uses_remaining INT;
+
+CREATE OR REPLACE FUNCTION public.redeem_invite(p_code TEXT, p_email TEXT)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+VOLATILE
+AS $$
+DECLARE
+    v_email    TEXT := LOWER(TRIM(p_email));
+    v_code     TEXT := UPPER(TRIM(p_code));
+    v_inviter  UUID;
+    v_window   TIMESTAMPTZ;
+    v_attempts INT;
+BEGIN
+    -- Global rate gate. FOR UPDATE serializes concurrent callers on the single
+    -- row so two requests can't both read attempts=29 and both slip through.
+    SELECT window_start, attempts INTO v_window, v_attempts
+    FROM public.redeem_invite_rate
+    WHERE id = TRUE
+    FOR UPDATE;
+
+    IF v_window < NOW() - INTERVAL '1 hour' THEN
+        UPDATE public.redeem_invite_rate SET window_start = NOW(), attempts = 1 WHERE id = TRUE;
+    ELSIF v_attempts >= 30 THEN
+        RAISE EXCEPTION 'rate_limited' USING ERRCODE = 'P0003';
+    ELSE
+        UPDATE public.redeem_invite_rate SET attempts = attempts + 1 WHERE id = TRUE;
+    END IF;
+
+    -- Case/whitespace-insensitive match against the inviting user's own code.
+    SELECT id INTO v_inviter FROM public.users WHERE invite_code = v_code LIMIT 1;
+
+    IF v_inviter IS NULL THEN
+        RETURN FALSE;
+    END IF;
+
+    -- note stores the inviter's UUID, not their username: usernames are
+    -- nullable and can change later, so a username snapshot would go stale or
+    -- be missing entirely. The UUID is a stable, permanent audit trail back to
+    -- `users.id` no matter what the inviter later renames themselves to.
+    --
+    -- ON CONFLICT DO NOTHING + unconditional RETURN TRUE: whether v_email was
+    -- already on the allowlist or was just added is indistinguishable to the
+    -- caller, by design. This is what makes the RPC idempotent — redeeming the
+    -- same valid code for the same email twice (double-tap, client retry) is
+    -- always safe, never errors, and never writes a second row — and it also
+    -- closes an email-enumeration side channel: a caller can't use the return
+    -- value to learn whether an email was allowed before they submitted it.
+    INSERT INTO public.allowed_emails (email, note)
+    VALUES (v_email, 'invited_by:' || v_inviter::text)
+    ON CONFLICT (email) DO NOTHING;
+
+    RETURN TRUE;
+END;
+$$;
+
+-- Explicit REVOKE-then-GRANT-to-both, not just one role: the outage lesson
+-- documented at is_blocked_either_way below is that a client-callable
+-- function's EXECUTE grants must be spelled out for every role that calls it,
+-- because SECURITY DEFINER only changes whose privileges the BODY runs with —
+-- it does not substitute for the caller needing EXECUTE. redeem_invite is
+-- called pre-sign-in (anon) and is harmless to also allow post-sign-in
+-- (authenticated), same shape as is_email_allowed.
+REVOKE ALL ON FUNCTION public.redeem_invite(TEXT, TEXT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.redeem_invite(TEXT, TEXT) TO anon, authenticated;
+
+-- ============================================================
 -- Helper: membership check as SECURITY DEFINER.
 -- This is the key to avoiding "infinite recursion detected in policy"
 -- (42P17): policies on roll_members must NOT sub-select roll_members

@@ -113,27 +113,40 @@ struct ProfileView: View {
                             .tracking(2)
                             .foregroundStyle(FlimTheme.textTertiary)
 
-                        Button {
-                            UIPasteboard.general.string = auth.currentUser?.inviteCode
-                            withAnimation { codeCopied = true }
-                            Task {
-                                try? await Task.sleep(for: .seconds(2))
-                                withAnimation { codeCopied = false }
-                            }
-                        } label: {
-                            HStack(spacing: 12) {
-                                Text(auth.currentUser?.inviteCode ?? "------")
-                                    .font(.system(size: 32, weight: .thin, design: .monospaced))
-                                    .tracking(8)
-                                    .foregroundStyle(.white)
+                        HStack(spacing: 12) {
+                            Button {
+                                UIPasteboard.general.string = auth.currentUser?.inviteCode
+                                withAnimation { codeCopied = true }
+                                Task {
+                                    try? await Task.sleep(for: .seconds(2))
+                                    withAnimation { codeCopied = false }
+                                }
+                            } label: {
+                                HStack(spacing: 12) {
+                                    Text(auth.currentUser?.inviteCode ?? "------")
+                                        .font(.system(size: 32, weight: .thin, design: .monospaced))
+                                        .tracking(8)
+                                        .foregroundStyle(.white)
 
-                                Image(systemName: codeCopied ? "checkmark.circle.fill" : "doc.on.doc")
-                                    .font(.system(size: 18))
-                                    .foregroundStyle(codeCopied ? FlimTheme.accent : FlimTheme.textSecondary)
+                                    Image(systemName: codeCopied ? "checkmark.circle.fill" : "doc.on.doc")
+                                        .font(.system(size: 18))
+                                        .foregroundStyle(codeCopied ? FlimTheme.accent : FlimTheme.textSecondary)
+                                }
+                                .padding(.vertical, 20)
+                                .padding(.horizontal, 24)
+                                .glassCard(cornerRadius: 14, interactive: true)
                             }
-                            .padding(.vertical, 20)
-                            .padding(.horizontal, 24)
-                            .glassCard(cornerRadius: 14, interactive: true)
+
+                            if let code = auth.currentUser?.inviteCode {
+                                ShareLink(item: AppInfo.personalInviteMessage(code: code)) {
+                                    Image(systemName: "square.and.arrow.up")
+                                        .font(.system(size: 18, weight: .medium))
+                                        .foregroundStyle(FlimTheme.textSecondary)
+                                        .frame(width: 56, height: 56)
+                                        .glassCard(cornerRadius: 14, interactive: true)
+                                }
+                                .simultaneousGesture(TapGesture().onEnded { Haptics.tap() })
+                            }
                         }
 
                         Text("Share this code so friends can add you on \(AppInfo.appName).")
