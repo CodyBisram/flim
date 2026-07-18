@@ -13,7 +13,7 @@ A native iOS instant/disposable-camera app. Shoot now, see it later — photos h
 
 ## Features
 
-- Email OTP sign-in, gated by an invite allowlist
+- Email OTP sign-in, gated by an invite allowlist; users can self-invite with a friend's code
 - Full-screen camera with a film-strip picker and instant-film look baked in at capture
 - **Darkroom** — developing placeholders, countdown, and reveal moment
 - **Rolls** — shared friend groups via 6-char invite codes (max 50 members)

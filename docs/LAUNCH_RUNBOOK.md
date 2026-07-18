@@ -7,13 +7,13 @@ Do these in order. Copy for the listing itself lives in `APP_STORE.md`; this is 
 ## 1. Reviewer demo account (~10 min)
 
 1. Supabase Dashboard → Authentication → Users → **Add user**
-   - Email: `reviewer@flim-app.com` (or any inbox you control)
+   - Email: `review@flim-app.com` (or any inbox you control)
    - Password: something strong you'll paste into Review Notes
    - ✅ Auto-confirm
 2. SQL editor:
    ```sql
    INSERT INTO public.allowed_emails (email, note)
-   VALUES ('reviewer@flim-app.com', 'App Review demo')
+   VALUES ('review@flim-app.com', 'App Review demo')
    ON CONFLICT (email) DO NOTHING;
    ```
 3. Sign into the app as the reviewer once: pick a username, shoot 1–2 photos,
@@ -45,7 +45,7 @@ user-generated content = YES; moderation in place = YES (report, block,
 auto-removal). Everything else (violence, gambling, etc.) = NO. Expect 12+/17+.
 
 **App Review Information:**
-- Sign-in required: YES → email: `reviewer@flim-app.com`, password: `<the one you set>`
+- Sign-in required: YES → email: `review@flim-app.com`, password: `<the one you set>`
 - Notes: paste the reviewer blurb from `APP_STORE.md` (mentions the
   "Have a password? Sign in" path and that photos develop in ~60s).
 - Contact: your name + phone + email.
@@ -86,6 +86,11 @@ On the latest TestFlight build, with a FRESH account:
 - **Storage read policies + new rendition paths:** when a new storage column is added
   (e.g., `feed_path`), ensure all read policies' `IN (path1, path2, ...)` lists include it.
   Missing it leaves the new path unloadable for other users.
+- **Column-scoped grants break upserts:** when SELECT is revoked at the table level but
+  granted on specific columns only (e.g., on `users` to hide email + invite_code from
+  other users), `.upsert()` will 403 because the CONFLICT machinery requires table-level
+  SELECT. Workaround: use insert-then-catch-and-update, both with `return=minimal` and no
+  `.select()` chain.
 
 ## Parked (post-launch backlog)
 - Widget + Live Activity (develop countdown)

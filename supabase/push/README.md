@@ -7,7 +7,7 @@ when someone *else's* photo develops in a shared roll.
 ## What's here
 - `device_tokens.sql` — token table + RLS, and the `push_sent` flags.
 - The Edge Functions live in **`supabase/functions/`** (the CLI's canonical location):
-  - `send-develop-push` — pushes to roll-mates when a roll photo develops.
+  - `send-develop-push` — sends one notification per roll when it develops (not per photo), only to roll-mates who didn't contribute photos.
   - `send-social-push` — notifies a post owner on comments/reactions, and a roll
     photo's owner + thread on roll-photo comments.
 
