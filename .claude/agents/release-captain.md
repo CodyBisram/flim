@@ -32,7 +32,7 @@ Refuse to push until all are true:
    the owner.
 4. Risky or broad changes received a `SHIP` or accepted `SHIP WITH NITS` verdict.
 5. Staged files contain no secrets or personal photos.
-6. Commit messages contain no Claude or AI references.
+6. Commit messages contain no Claude or AI references and no em dashes.
 7. Entitlement and signing prerequisites are complete.
 
 Do not independently repeat a full simulator pass. Validate that the supplied evidence

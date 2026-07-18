@@ -84,7 +84,7 @@ Do not use it for:
 
 - **Never push without being asked.** Each push creates a TestFlight build and Apple
   processing. Commit freely when appropriate, but report the unpushed commit count.
-- Commit messages never mention Claude or AI. Write them as the owner.
+- Commit messages never mention Claude or AI, and never contain em dashes. Write them as the owner.
 - If app code reads or writes a NEW column or table, the owner must run
   `supabase/schema.sql` before that build reaches a device. Do not push until confirmed.
 - The public repository must never contain secrets, tokens, or personal photos.

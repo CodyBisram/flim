@@ -76,7 +76,7 @@ refactors do not need this agent.
 - User-facing copy uses `AppInfo.appName`.
 - `!AppInfo.isAppStore` and `#if DEBUG` are used for their correct environments.
 - RLS, grants, and definer functions are unchanged unless `supabase-guardian` owned them.
-- No secrets, tokens, personal photos, or Claude/AI references in commit messages.
+- No secrets, tokens, personal photos, Claude/AI references, or em dashes in commit messages.
 - EV formula parity remains intact between `InstantFilmProcessor` and `scripts/fit_lut.py`.
 - Any new entitlement or capability is blocked until portal setup and match regeneration.
 
