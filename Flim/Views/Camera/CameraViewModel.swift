@@ -50,10 +50,12 @@ final class CameraViewModel: NSObject {
 
         session.beginConfiguration()
         session.sessionPreset = .photo
-        addVideoInput()
+        // Output added before the input so `configurePreviewFormat(for:)` below can set
+        // `output.maxPhotoDimensions` against an output that's already attached.
         if session.canAddOutput(output) {
             session.addOutput(output)
         }
+        addVideoInput()
         session.commitConfiguration()
     }
 
@@ -62,7 +64,53 @@ final class CameraViewModel: NSObject {
               let input = try? AVCaptureDeviceInput(device: device),
               session.canAddInput(input) else { return }
         session.addInput(input)
+        // Format first, zoom baseline second: reassigning `activeFormat` inside
+        // `configurePreviewFormat` can reset the device's raw `videoZoomFactor`, so setting
+        // the "open on the main lens" zoom before that would get silently clobbered back to
+        // the ultra-wide's 1.0 raw factor on devices where the format swap actually happens.
+        configurePreviewFormat(for: device)
         configureZoomBaseline(for: device)
+    }
+
+    /// The `.photo` preset's default format pick optimizes for full-resolution stills, not
+    /// a smooth preview — on most devices that pick tops out at 24-30fps, which read as
+    /// visibly choppier panning next to Lapse's 60fps viewfinder. This swaps in the
+    /// highest-resolution format that ALSO supports a frame rate above 30fps (capped at
+    /// 60), so the live preview runs smoother while `AVCapturePhotoOutput` keeps capturing
+    /// stills at the same full sensor resolution — decoupled from the preview format via
+    /// `maxPhotoDimensions`, available since iOS 16. If no format on this lens beats the
+    /// `.photo` preset's own 30fps pick at full resolution, this leaves that pick alone:
+    /// preview smoothness is never traded for photo quality.
+    private func configurePreviewFormat(for device: AVCaptureDevice) {
+        guard let bestPhotoArea = device.formats
+            .compactMap({ $0.supportedMaxPhotoDimensions.map { Int($0.width) * Int($0.height) }.max() })
+            .max() else { return }
+
+        // Candidates that keep the lens's full photo resolution available.
+        let fullResFormats = device.formats.filter {
+            ($0.supportedMaxPhotoDimensions.map { Int($0.width) * Int($0.height) }.max() ?? 0) >= bestPhotoArea
+        }
+        guard let target = fullResFormats.max(by: {
+            ($0.videoSupportedFrameRateRanges.map(\.maxFrameRate).max() ?? 0) <
+            ($1.videoSupportedFrameRateRanges.map(\.maxFrameRate).max() ?? 0)
+        }) else { return }
+
+        let ceiling = target.videoSupportedFrameRateRanges.map(\.maxFrameRate).max() ?? 30
+        guard ceiling > 30.5, (try? device.lockForConfiguration()) != nil else { return }
+
+        // Manual format selection needs input-priority — `.photo` would otherwise snap the
+        // format back to its own pick the moment configuration commits.
+        session.sessionPreset = .inputPriority
+        device.activeFormat = target
+        // Only cap the ceiling at 60fps; leave the floor at the format's own default so
+        // auto exposure can still legitimately drop the frame rate in low light (expected
+        // behavior — not fought here).
+        device.activeVideoMinFrameDuration = CMTime(value: 1, timescale: Int32(min(ceiling, 60)))
+        device.unlockForConfiguration()
+
+        if let maxDims = target.supportedMaxPhotoDimensions.max(by: { $0.width * $0.height < $1.width * $1.height }) {
+            output.maxPhotoDimensions = maxDims
+        }
     }
 
     /// Prefer a multi-lens back camera so 0.5× (ultra-wide) is available; fall back to the plain
@@ -80,6 +128,12 @@ final class CameraViewModel: NSObject {
     func flipCamera() {
         cameraPosition = isFront ? .back : .front
         session.beginConfiguration()
+        // Reset to the known-good baseline before re-deriving it for the new lens —
+        // `configurePreviewFormat(for:)` (called from `addVideoInput`) only upgrades to
+        // `.inputPriority` when it finds a format that beats this, so a lens without a
+        // faster-than-30fps full-res option deterministically lands back on `.photo`
+        // rather than inheriting `.inputPriority` left over from the other camera.
+        session.sessionPreset = .photo
         session.inputs.forEach { session.removeInput($0) }
         addVideoInput()   // re-reads the new lens layout + resets zoom to 1×
         session.commitConfiguration()
