@@ -74,38 +74,67 @@ final class CameraViewModel: NSObject {
 
     /// The `.photo` preset's default format pick optimizes for full-resolution stills, not
     /// a smooth preview — on most devices that pick tops out at 24-30fps, which read as
-    /// visibly choppier panning next to Lapse's 60fps viewfinder. This swaps in the
-    /// highest-resolution format that ALSO supports a frame rate above 30fps (capped at
-    /// 60), so the live preview runs smoother while `AVCapturePhotoOutput` keeps capturing
-    /// stills at the same full sensor resolution — decoupled from the preview format via
-    /// `maxPhotoDimensions`, available since iOS 16. If no format on this lens beats the
-    /// `.photo` preset's own 30fps pick at full resolution, this leaves that pick alone:
-    /// preview smoothness is never traded for photo quality.
+    /// visibly choppier panning next to Lapse's 60fps viewfinder. This looks for a format
+    /// that is a PARITY match for that `.photo` baseline (same or better photo resolution,
+    /// same field of view, same pixel format, and — for virtual multi-lens devices — the
+    /// same constituent-lens zoom breakpoints) and only differs in frame rate. That keeps
+    /// the fast path structurally identical to the default pick, just faster: it can never
+    /// silently drop a lens (0.5× pill disappearing), narrow the field of view, change the
+    /// pixel format (e.g. HDR x420 vs 420f), or win a tie by undocumented array order,
+    /// because a non-matching format is never a candidate in the first place. If nothing
+    /// beats the baseline's frame rate under those constraints, this leaves `.photo`'s own
+    /// pick alone — preview smoothness is never traded for photo quality or zoom behavior.
     private func configurePreviewFormat(for device: AVCaptureDevice) {
-        guard let bestPhotoArea = device.formats
-            .compactMap({ $0.supportedMaxPhotoDimensions.map { Int($0.width) * Int($0.height) }.max() })
-            .max() else { return }
+        // The `.photo` preset's own pick, captured before anything is touched — every
+        // candidate below is compared against THIS, not the global best across formats.
+        let baseline = device.activeFormat
+        let baselineSwitchOverFactors = device.virtualDeviceSwitchOverVideoZoomFactors
+        guard let baselinePhotoArea = baseline.supportedMaxPhotoDimensions
+            .map({ Int($0.width) * Int($0.height) }).max() else { return }
+        let baselineFOV = baseline.videoFieldOfView
+        let baselineSubType = baseline.formatDescription.mediaSubType
 
-        // Candidates that keep the lens's full photo resolution available.
-        let fullResFormats = device.formats.filter {
-            ($0.supportedMaxPhotoDimensions.map { Int($0.width) * Int($0.height) }.max() ?? 0) >= bestPhotoArea
+        let candidates = device.formats.filter { format in
+            let photoArea = format.supportedMaxPhotoDimensions
+                .map { Int($0.width) * Int($0.height) }.max() ?? 0
+            guard photoArea >= baselinePhotoArea else { return false }
+            guard abs(format.videoFieldOfView - baselineFOV) < 0.1 else { return false }
+            guard format.formatDescription.mediaSubType == baselineSubType else { return false }
+            return true
         }
-        guard let target = fullResFormats.max(by: {
+        guard let target = candidates.max(by: {
             ($0.videoSupportedFrameRateRanges.map(\.maxFrameRate).max() ?? 0) <
             ($1.videoSupportedFrameRateRanges.map(\.maxFrameRate).max() ?? 0)
         }) else { return }
 
         let ceiling = target.videoSupportedFrameRateRanges.map(\.maxFrameRate).max() ?? 30
-        guard ceiling > 30.5, (try? device.lockForConfiguration()) != nil else { return }
+        guard ceiling > 30.5 else { return }
+        let targetFPS = min(ceiling, 60)
+        // The candidate must actually declare support for the fps we're about to request —
+        // `maxFrameRate` alone doesn't guarantee every rate up to it is achievable.
+        guard target.videoSupportedFrameRateRanges.contains(where: {
+            $0.minFrameRate <= targetFPS && targetFPS <= $0.maxFrameRate
+        }) else { return }
 
+        guard (try? device.lockForConfiguration()) != nil else { return }
         // Manual format selection needs input-priority — `.photo` would otherwise snap the
         // format back to its own pick the moment configuration commits.
         session.sessionPreset = .inputPriority
         device.activeFormat = target
+        // The constituent-lens switch-over breakpoints can only be verified once the format
+        // is actually active — this is a no-op equality check on non-virtual devices (both
+        // arrays are empty). If activating the format changed them, the 0.5×/1×/2× pill
+        // mapping would silently break, so revert to the untouched baseline instead.
+        guard device.virtualDeviceSwitchOverVideoZoomFactors == baselineSwitchOverFactors else {
+            device.activeFormat = baseline
+            device.unlockForConfiguration()
+            session.sessionPreset = .photo
+            return
+        }
         // Only cap the ceiling at 60fps; leave the floor at the format's own default so
         // auto exposure can still legitimately drop the frame rate in low light (expected
         // behavior — not fought here).
-        device.activeVideoMinFrameDuration = CMTime(value: 1, timescale: Int32(min(ceiling, 60)))
+        device.activeVideoMinFrameDuration = CMTime(value: 1, timescale: Int32(targetFPS))
         device.unlockForConfiguration()
 
         if let maxDims = target.supportedMaxPhotoDimensions.max(by: { $0.width * $0.height < $1.width * $1.height }) {
