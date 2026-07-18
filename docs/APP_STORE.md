@@ -1,4 +1,4 @@
-# FLIM — App Store Connect listing
+# FLIM: App Store Connect listing
 
 Copy-paste-ready metadata + a screenshot plan + reviewer notes. Tweak the voice to taste.
 
@@ -7,18 +7,18 @@ Copy-paste-ready metadata + a screenshot plan + reviewer notes. Tweak the voice 
 ## Name & subtitle options
 
 ### App name (30 char max)
-1. **FLIM** (4 chars) — primary, brand-forward, short and memorable
-2. **FLIM: Disposable Camera** (23 chars) — descriptive, keywords-loaded
-3. **Film Rolls** (11 chars) — descriptive, generic alternative
+1. **FLIM** (4 chars): primary, brand-forward, short and memorable
+2. **FLIM: Disposable Camera** (23 chars): descriptive, keywords-loaded
+3. **Film Rolls** (11 chars): descriptive, generic alternative
 
 ### Subtitle (30 char max)
-1. **Disposable camera for friends** (30 chars) — current choice, descriptive + social angle
-2. **Shoot now, develop later** (25 chars) — action-oriented, emphasizes the core mechanic
-3. **Shared rolls, real moments** (26 chars) — warm, social, emphasizes shared experience
+1. **Disposable camera for friends** (30 chars): current choice, descriptive + social angle
+2. **Shoot now, develop later** (25 chars): action-oriented, emphasizes the core mechanic
+3. **Shared rolls, real moments** (26 chars): warm, social, emphasizes shared experience
 
 **Recommendation:** Use app name `FLIM` + subtitle `Disposable camera for friends` (primary choice above).
 
-## Promotional text (170 char max — editable anytime without review)
+## Promotional text (170 char max, editable anytime without review)
 > Shoot on film, wait for it to develop, and share the moment with the people who actually matter. No likes to chase. No feed to doomscroll. Just your people.
 
 ## Description
@@ -73,10 +73,10 @@ FLIM includes user-generated content (photos, comments, tags, reactions). Apple'
 | Are usernames and profile pictures moderated? | **Yes** | Profile setup (username, display name) is gated behind invite-only access; photos pass through moderation on report. |
 
 **Expected rating outcomes:**
-- **Path 1 (Preferred):** **12+** — if Apple accepts the moderation controls + auto-hide + 24h review as sufficient (common for invite-only closed-network apps with UGC).
-- **Path 2 (Fallback):** **17+** — if Apple requires a blanket UGC rating regardless of moderation. This is defensible for a social photo app.
+- **Path 1 (Preferred):** **12+** if Apple accepts the moderation controls + auto-hide + 24h review as sufficient (common for invite-only closed-network apps with UGC).
+- **Path 2 (Fallback):** **17+** if Apple requires a blanket UGC rating regardless of moderation. This is defensible for a social photo app.
 
-**Recommendation:** Answer the questionnaire truthfully (all "Yes" above), emphasizing that moderation is built-in, automatic, and swift. Mention invite-only status (limits exposure). If Apple asks for a higher rating, accept it — 12+ vs. 17+ is not a material sales difference for a closed-network app, and overstating moderation will get rejected on review.
+**Recommendation:** Answer the questionnaire truthfully (all "Yes" above), emphasizing that moderation is built-in, automatic, and swift. Mention invite-only status (limits exposure). If Apple asks for a higher rating, accept it. 12+ vs. 17+ is not a material sales difference for a closed-network app, and overstating moderation will get rejected on review.
 
 ## Support & marketing URLs
 - **Support URL:** `https://flim-app.com/support`
@@ -90,14 +90,14 @@ FLIM includes user-generated content (photos, comments, tags, reactions). Apple'
 **Data collected & linked to the user:**
 
 ### Contact Info
-- **Email address** — sign-in + account recovery. Not used for marketing or third-party sharing. Readable by the user only (column-level grants hide it from other users).
+- **Email address**: sign-in + account recovery. Not used for marketing or third-party sharing. Readable by the user only (column-level grants hide it from other users).
 
 ### User Content
-- **Photos** — user-captured images, uploaded to encrypted private Storage. Accessible only to the user and roll members / followers (RLS-enforced).
-- **Comments, reactions, tags** — social interactions on photos and posts. Stored per social item (post/photo).
+- **Photos**: user-captured images, uploaded to encrypted private Storage. Accessible only to the user and roll members / followers (RLS-enforced).
+- **Comments, reactions, tags**: social interactions on photos and posts. Stored per social item (post/photo).
 
 ### Identifiers
-- **Device ID (APNs push token)** — for push notifications (roll reveals, social activity). Ephemeral; rotates when the OS issues a new one.
+- **Device ID (APNs push token)**: for push notifications (roll reveals, social activity). Ephemeral; rotates when the OS issues a new one.
 
 ### Usage Data
 - None collected.
@@ -115,15 +115,15 @@ FLIM includes user-generated content (photos, comments, tags, reactions). Apple'
 
 Five primary screenshots, in recommended App Store upload order (the first 2-3 appear prominently in search):
 
-1. **02-feed-post.png** — The Feed showing a @cody post of a sunlit hydrangea garden with the film look, emoji reaction bar (heart, fire, laugh, wow, raised hands), and comment field. Caption: *"A feed that's just your friends."*
+1. **02-feed-post.png**: The Feed showing a @cody post of a sunlit hydrangea garden with the film look, emoji reaction bar (heart, fire, laugh, wow, raised hands), and comment field. Caption: *"A feed that's just your friends."*
 
-2. **01-camera-viewfinder.png** — The live Camera tab viewfinder framing a vibrant garden of purple flowers and greenery, with Personal mode pill top-left, zoom pills, and shutter button visible. Shows the film look applied to the live viewfinder. Caption: *"Shoot like a disposable."*
+2. **01-camera-viewfinder.png**: The live Camera tab viewfinder framing a vibrant garden of purple flowers and greenery, with Personal mode pill top-left, zoom pills, and shutter button visible. Shows the film look applied to the live viewfinder. Caption: *"Shoot like a disposable."*
 
-3. **05-roll-invite-code.png** — The New Roll share sheet overlay on the Rolls list, displaying a 6-character invite code (World Cup '26 / ZPE7EF) with Copy code and Share buttons. Shows the invite mechanic. Caption: *"Invite them with a code."*
+3. **05-roll-invite-code.png**: The New Roll share sheet overlay on the Rolls list, displaying a 6-character invite code (World Cup '26 / ZPE7EF) with Copy code and Share buttons. Shows the invite mechanic. Caption: *"Invite them with a code."*
 
-4. **03-darkroom-developing.png** — The Darkroom showing "28 shots", a "2 DEVELOPING" row (hourglass tiles, one tagged World Cup '26) above a DEVELOPED grid of film-look photos. Shows the development mechanic. Caption: *"Watch them develop."*
+4. **03-darkroom-developing.png**: The Darkroom showing "28 shots", a "2 DEVELOPING" row (hourglass tiles, one tagged World Cup '26) above a DEVELOPED grid of film-look photos. Shows the development mechanic. Caption: *"Watch them develop."*
 
-5. **04-rolls-list.png** — The Rolls tab list showing World Cup '26 (developing, reveals in 11h 59m), Summer '26, Graduation Party, Road Trip, each with member count and invite code. Shows shared rolls. Caption: *"Rolls for your people."*
+5. **04-rolls-list.png**: The Rolls tab list showing World Cup '26 (developing, reveals in 11h 59m), Summer '26, Graduation Party, Road Trip, each with member count and invite code. Shows shared rolls. Caption: *"Rolls for your people."*
 
 **Spare:** 06-rolls-list-alt.png (near-duplicate of 04, hold for future alternates).
 
@@ -155,7 +155,7 @@ These are 6.9" device captures (1320x2868 pixels) ready for App Store Connect.
 > **Account access:** The reviewer account has full functionality. Photos uploaded by the reviewer are visible in the Darkroom and deletable via the ••• menu. The account can be created/deleted between review cycles; accounts older than 30 days with no posts are auto-deleted.
 
 **Setup before submission:**
-1. Create the demo account: Supabase Dashboard → Authentication → Add User → email `review@flim-app.com`, password `482915-flim-app-review-only`, auto-confirm ON. (No allowlist entry needed — the review path skips the invite gate and OTP send.)
+1. Create the demo account: Supabase Dashboard → Authentication → Add User → email `review@flim-app.com`, password `482915-flim-app-review-only`, auto-confirm ON. (No allowlist entry needed; the review path skips the invite gate and OTP send.)
 2. Sign in once yourself with the flow above to set the username and confirm it works end-to-end.
 3. Pre-seed test data (optional but recommended): follow a test account from the review account, create a roll, take a few photos so the reviewer sees a non-empty app.
 

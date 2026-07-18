@@ -81,7 +81,7 @@ weaken that gate.
 Never print secrets. Supabase may pause or hit free-tier egress limits, so surface the
 production-tier decision at submission time without changing billing.
 
-Never use em dashes in user-facing release copy.
+Never use em dashes in user-facing release copy or any repository documentation (owner rule, extended 2026-07-18).
 
 ## Completion
 

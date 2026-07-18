@@ -1,10 +1,10 @@
-# FLIM — TestFlight CI/CD setup
+# FLIM: TestFlight CI/CD setup
 
 Every push to `main` builds a signed Release archive and uploads it to TestFlight,
 with no manual Xcode steps. Pull requests get a fast simulator build as a sanity check.
 
 This file is the one-time setup. Budget ~15–20 minutes. The steps marked **(Apple)**
-can only be done by the Apple Developer account holder — they need your Apple ID and
+can only be done by the Apple Developer account holder; they need your Apple ID and
 2FA, so nobody (and no script) can do them for you.
 
 ```
@@ -22,7 +22,7 @@ main ──▶ fastlane: match signing ▶ archive ▶ upload to TestFlight
 
 ---
 
-## Step 1 — Register the App ID **(Apple)**
+## Step 1: Register the App ID **(Apple)**
 
 1. Go to <https://developer.apple.com/account/resources/identifiers/list>.
 2. **+** → **App IDs** → **App**. Description: `FLIM`. Bundle ID: **Explicit** → `com.flim.app`.
@@ -31,30 +31,30 @@ main ──▶ fastlane: match signing ▶ archive ▶ upload to TestFlight
    build will fail. If you ever strip push from the app, you can skip this.)*
 4. **Continue → Register.**
 
-## Step 2 — Create the app record in App Store Connect **(Apple)**
+## Step 2: Create the app record in App Store Connect **(Apple)**
 
 1. Go to <https://appstoreconnect.apple.com/apps> → **+** → **New App**.
 2. Platform **iOS**, Name **FLIM**, Primary language, Bundle ID **com.flim.app**,
    SKU `flim` (any unique string). Create.
    *(You don't need to fill in screenshots/metadata to use TestFlight.)*
 
-## Step 3 — Create an App Store Connect API key **(Apple)**
+## Step 3: Create an App Store Connect API key **(Apple)**
 
-This is how CI authenticates — no passwords, no 2FA prompts.
+This is how CI authenticates: no passwords, no 2FA prompts.
 
 1. <https://appstoreconnect.apple.com/access/integrations/api> → **Team Keys** tab.
 2. **Generate API Key**. Name `FLIM CI`, Access **App Manager**. Generate.
-3. **Download** the `AuthKey_XXXXXX.p8` — you only get one chance. Keep it safe.
+3. **Download** the `AuthKey_XXXXXX.p8`: you only get one chance. Keep it safe.
 4. Note the **Key ID** (next to the key) and the **Issuer ID** (top of the page).
 
-## Step 4 — Find your Team ID **(Apple)**
+## Step 4: Find your Team ID **(Apple)**
 
 <https://developer.apple.com/account> → **Membership details** → copy the 10-character
 **Team ID** (looks like `A1B2C3D4E5`).
 
 ---
 
-## Step 5 — Create the signing (match) repo
+## Step 5: Create the signing (match) repo
 
 `fastlane match` keeps the distribution certificate + provisioning profile encrypted
 in a **separate private git repo**, so you, your cousin, and CI all share one signing
@@ -62,10 +62,10 @@ identity (no "works on my machine" cert chaos).
 
 ✅ Already created for you: **<https://github.com/wiggapony0925/flim-certificates>** (private).
 
-Pick a strong passphrase and remember it — it encrypts the certs. This becomes
+Pick a strong passphrase and remember it; it encrypts the certs. This becomes
 `MATCH_PASSWORD`.
 
-## Step 6 — Seed the signing assets (run once, locally)
+## Step 6: Seed the signing assets (run once, locally)
 
 From the repo root, with the `.p8` you downloaded in Step 3:
 
@@ -86,12 +86,12 @@ This creates an Apple Distribution certificate + an App Store provisioning profi
 `com.flim.app` and pushes them (encrypted) to `flim-certificates`. You only ever rerun
 this if the cert expires or you add a device/capability.
 
-## Step 7 — Make a token so CI can read the match repo
+## Step 7: Make a token so CI can read the match repo
 
 CI needs read access to the private `flim-certificates` repo.
 
 1. Create a fine-grained PAT: <https://github.com/settings/personal-access-tokens/new>
-   — Resource owner **wiggapony0925**; Repository access: **only** `flim-certificates`;
+   Resource owner: **wiggapony0925**; Repository access: **only** `flim-certificates`;
    Permission: **Contents → Read-only**.
 2. Build the basic-auth value:
 
@@ -102,7 +102,7 @@ printf '<gh-username>:<token>' | base64
 
 That base64 string is `MATCH_GIT_BASIC_AUTHORIZATION`.
 
-## Step 8 — Add the secrets to the `flim` repo
+## Step 8: Add the secrets to the `flim` repo
 
 These power the `deploy` job. You need **admin** on `CodyBisram/flim` to set secrets.
 Run from the repo root (each reads the value you already exported in Step 6, except the
@@ -128,7 +128,7 @@ You should see all 7.
 
 ---
 
-## Step 9 — Go live
+## Step 9: Go live
 
 Merge this branch's PR into `main`. The push triggers the `deploy` job, which builds,
 signs, and uploads. In ~10–20 min the build shows up under your app in
@@ -146,7 +146,7 @@ paying for his own membership, invite him to **your** team:
 - **App Store Connect** → <https://appstoreconnect.apple.com/access/users> → **+** →
   his email → role **App Manager** (can manage TestFlight, builds, testers) or **Admin**
   (everything except legal/banking). He accepts the email invite and signs in with his
-  own Apple ID — no second $99 fee.
+  own Apple ID; no second $99 fee.
 - The **Account Holder** role can't be shared; that stays you (the membership owner).
 
 He'll also want to be a tester: add him under **TestFlight → Internal Testing** (internal
@@ -162,7 +162,7 @@ testers must be in Users and Access; up to 100, builds available immediately, no
 | Merge to `main` | Sign + upload a new TestFlight build, auto-incrementing the build number |
 | Bump the app version | Edit `MARKETING_VERSION` in `project.yml` (e.g. `1.1`) |
 
-Build numbers are set automatically to *(highest build on TestFlight) + 1* — you never
+Build numbers are set automatically to *(highest build on TestFlight) + 1*: you never
 touch them. The marketing version (`1.0`, `1.1`, …) lives in `project.yml`.
 
 ---
@@ -177,16 +177,16 @@ If you outgrow it: deploy only on version tags, or move to Xcode Cloud (25 free 
 
 ## Troubleshooting
 
-- **`No profiles for 'com.flim.app' were found` / cert errors in CI** — the match repo
+- **`No profiles for 'com.flim.app' were found` / cert errors in CI**: the match repo
   wasn't seeded (Step 6) or `MATCH_GIT_BASIC_AUTHORIZATION` is wrong. Re-run Step 6
   locally, recheck Step 7.
-- **`Provisioning profile doesn't include the aps-environment entitlement`** — Push
+- **`Provisioning profile doesn't include the aps-environment entitlement`**: Push
   isn't enabled on the App ID (Step 1.3). Enable it, then re-run Step 6 so match
   regenerates the profile.
-- **`There is no app with bundle identifier com.flim.app`** — the App Store Connect app
+- **`There is no app with bundle identifier com.flim.app`**: the App Store Connect app
   record (Step 2) doesn't exist yet, or the API key lacks access.
-- **`bundle exec fastlane` can't find Ruby/bundler locally** — install a modern Ruby
+- **`bundle exec fastlane` can't find Ruby/bundler locally**: install a modern Ruby
   (`brew install ruby` or use rbenv); the system Ruby 2.6 is too old for some gems.
-- **Xcode version mismatch on the runner** — if `latest-stable` isn't Xcode 26.x yet,
+- **Xcode version mismatch on the runner**: if `latest-stable` isn't Xcode 26.x yet,
   pin `xcode-version:` in `.github/workflows/ios-testflight.yml` to the exact version.
 </content>

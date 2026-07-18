@@ -1,24 +1,24 @@
-# FLIM — Privacy Policy
+# FLIM: Privacy Policy
 
 _Last updated: July 2026_
 
-FLIM ("the app," "we," "us") is a disposable-camera app for sharing photos with friends — in
+FLIM ("the app," "we," "us") is a disposable-camera app for sharing photos with friends in
 private rolls and on a following-based feed. This policy explains what we collect, why, and the
 control you have. We keep it short because we collect very little.
 
 ## What we collect
 
-- **Email address** — used only to sign you in and gate invite access. We do not email you marketing.
-- **Profile** — the username, display name, bio, and profile/cover photos you choose. These are
+- **Email address**: used only to sign you in and gate invite access. We do not email you marketing.
+- **Profile**: the username, display name, bio, and profile/cover photos you choose. These are
   shown to other users (e.g. on your page and in shared rolls).
-- **Photos you take** — stored so they can develop and appear in your Darkroom, in rolls you share
+- **Photos you take**: stored so they can develop and appear in your Darkroom, in rolls you share
   them to, and on your feed if you publish them.
-- **Social activity** — posts you publish, comments and emoji reactions you make, who you follow,
+- **Social activity**: posts you publish, comments and emoji reactions you make, who you follow,
   and the rolls you create or join, so content reaches the right people.
-- **Safety data** — users you block and any content or accounts you report, so we can review them.
-- **A device push token** *(only if you enable notifications)* — to tell you when your roll
+- **Safety data**: users you block and any content or accounts you report, so we can review them.
+- **A device push token** *(only if you enable notifications)*: to tell you when your roll
   develops and when friends react to or comment on your posts.
-- **Basic technical info** — app version and iOS version, included when you send feedback so we can
+- **Basic technical info**: app version and iOS version, included when you send feedback so we can
   reproduce issues.
 
 We do **not** collect your contacts, location, or advertising identifiers, and we do **not** sell
@@ -42,8 +42,8 @@ community safe.
 - **Photos in a shared roll** are visible to that roll's members.
 - **Photos you publish to your feed** are visible to your followers.
 
-We don't share your data with anyone else except our infrastructure providers — **Supabase**
-(backend/storage) and **Apple Push Notification service** (notifications, only if enabled) — as
+We don't share your data with anyone else except our infrastructure providers: **Supabase**
+(backend/storage) and **Apple Push Notification service** (notifications, only if enabled), as
 needed to operate the app.
 
 ## Your controls

@@ -1,14 +1,14 @@
-# FLIM — Remote Push (APNs) setup
+# FLIM: Remote Push (APNs) setup
 
 The app already sends **local** "your photo developed" notifications with no backend
-(`NotificationService`). You only need this for **remote** push — notifying a roll-mate
+(`NotificationService`). You only need this for **remote** push: notifying a roll-mate
 when someone *else's* photo develops in a shared roll.
 
 ## What's here
-- `device_tokens.sql` — token table + RLS, and the `push_sent` flags.
+- `device_tokens.sql`: token table + RLS, and the `push_sent` flags.
 - The Edge Functions live in **`supabase/functions/`** (the CLI's canonical location):
-  - `send-develop-push` — sends one notification per roll when it develops (not per photo), only to roll-mates who didn't contribute photos.
-  - `send-social-push` — notifies a post owner on comments/reactions, and a roll
+  - `send-develop-push`: sends one notification per roll when it develops (not per photo), only to roll-mates who didn't contribute photos.
+  - `send-social-push`: notifies a post owner on comments/reactions, and a roll
     photo's owner + thread on roll-photo comments.
 
 ## One-time setup
@@ -43,16 +43,16 @@ when someone *else's* photo develops in a shared roll.
    `NotificationService.requestAuthorizationIfNeeded` once `isAuthorized` is true).
    The `FlimAppDelegate` then uploads the APNs token to `device_tokens`.
 
-That's it — local notifications keep working regardless; remote push lights up once the
+That's it: local notifications keep working regardless; remote push lights up once the
 above is in place.
 
 ## Social push (comments + reactions)
 
 `send-social-push/index.ts` notifies a post's **owner** when someone else comments or
 reacts. Reactions are **batched per person** (one push listing that friend's emoji), the
-Lapse way — not one notification per emoji.
+Lapse way, not one notification per emoji.
 
-Setup (in addition to the develop-push steps above — same APNs secrets):
+Setup (in addition to the develop-push steps above, same APNs secrets):
 1. Run the updated `device_tokens.sql` (adds `push_sent` to `post_comments` / `post_reactions`).
 2. `supabase functions deploy send-social-push --no-verify-jwt`
 3. Schedule it every 1 minute (Dashboard → Edge Functions → Schedules, or pg_cron).
@@ -69,4 +69,4 @@ Setup:
    two report tables). Its header carries a daily-check SQL backstop for when the
    owner has no registered device.
 2. Redeploy: `supabase functions deploy send-social-push --no-verify-jwt`
-   (already scheduled every 1 minute — no new schedule needed).
+   (already scheduled every 1 minute; no new schedule needed).

@@ -1,4 +1,4 @@
-# FLIM 1.0 — App Store launch runbook
+# FLIM 1.0: App Store launch runbook
 
 Do these in order. Copy for the listing itself lives in `APP_STORE.md`; this is the click-by-click.
 
@@ -17,12 +17,12 @@ Do these in order. Copy for the listing itself lives in `APP_STORE.md`; this is 
    ON CONFLICT (email) DO NOTHING;
    ```
 3. Sign into the app as the reviewer once: pick a username, shoot 1–2 photos,
-   follow your main account — so the reviewer lands in a live-feeling app.
+   follow your main account so the reviewer lands in a live-feeling app.
 
 ## 2. Supabase production settings (~5 min)
 - Auth → Rate Limits: confirm email/OTP limits are on (defaults are fine).
 - Edge Functions → `send-social-push` → confirm **Verify JWT** is enabled.
-- (At submission) **Upgrade to Pro ($25/mo)** — kills the 5GB egress wall and
+- (At submission) **Upgrade to Pro ($25/mo)**: this kills the 5GB egress wall and
   free-tier project pausing, which could otherwise bite during review.
 
 ## 3. Screenshots (~20 min, real device)
@@ -51,7 +51,7 @@ auto-removal). Everything else (violence, gambling, etc.) = NO. Expect 12+/17+.
 - Contact: your name + phone + email.
 
 **Version info:** What's New for 1.0:
-> Welcome to FLIM — a disposable camera for your closest friends.
+> Welcome to FLIM, a disposable camera for your closest friends.
 > Shoot, let it develop, and share the moment.
 
 ## 5. Final smoke test (~30 min, the one that matters)
@@ -71,7 +71,7 @@ On the latest TestFlight build, with a FRESH account:
 - ASC → your version → Build → select the latest TestFlight build
 - Submit for Review (typical first review: 1–3 days)
 - If rejected: read the reason calmly, it's almost always metadata or reviewer
-  access — fixable within a day.
+  access; fixable within a day.
 
 ## Day-1 post-launch
 - Watch ASC crash reports + Supabase logs
@@ -94,7 +94,7 @@ On the latest TestFlight build, with a FRESH account:
 
 ## Parked (post-launch backlog)
 - Widget + Live Activity (develop countdown)
-- LUT refits from new calibration pairs (`LUTS.md`) — the v1 fitted look (flim.cube + adaptive exposure) shipped
+- LUT refits from new calibration pairs (`LUTS.md`): the v1 fitted look (flim.cube + adaptive exposure) shipped
 - Universal links entitlement (needs match profile regen)
 - Personal-photo develop reveal (reuse RollRevealView effect)
 - Rename decision window: first couple of months

@@ -40,9 +40,11 @@ Do not perform a repository-wide documentation audit unless explicitly asked.
 
 ## Copy rule
 
-Never use em dashes in user-facing copy, including UI strings, notifications, email,
-App Store metadata, release notes, or flim-app.com. Internal documentation and comments
-may contain them, but prefer simpler punctuation when editing nearby text.
+Never use em dashes anywhere: user-facing copy (UI strings, notifications, email,
+App Store metadata, release notes, flim-app.com) AND all repository documentation
+(README, docs/, supabase READMEs). The owner extended the rule to documentation on
+2026-07-18. Rephrase with commas, periods, colons, or parentheses. Only source-code
+comments inside code files remain exempt.
 
 ## Completion
 
