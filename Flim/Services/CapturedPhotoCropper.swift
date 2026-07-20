@@ -92,6 +92,17 @@ enum CapturedPhotoCropper {
             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
         ) else { return nil }
 
+        // A raw CGContext built via this initializer uses Core Graphics' native bottom-left,
+        // Y-up coordinate space. `UIGraphicsPushContext` only marks this context as "current"
+        // for UIKit drawing — it does NOT reconcile the coordinate space the way
+        // `UIGraphicsImageRenderer`/`UIGraphicsBeginImageContext` do internally. Without this
+        // flip, `image.draw(in:)` below draws correctly-oriented pixels into a buffer whose
+        // Y-axis is inverted relative to what UIKit assumes, so the image comes out upside
+        // down. This flips the context to the top-left, Y-down convention `image.draw(in:)`
+        // expects, BEFORE any drawing happens.
+        ctx.translateBy(x: 0, y: CGFloat(height))
+        ctx.scaleBy(x: 1, y: -1)
+
         // Draw through UIKit's own `image.draw`, which honors `imageOrientation` and bakes in
         // any rotation, by pushing OUR color-space-preserving context as the current graphics
         // context — this is what lets us keep both the orientation normalization AND the

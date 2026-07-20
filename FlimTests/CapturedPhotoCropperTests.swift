@@ -112,6 +112,79 @@ final class CapturedPhotoCropperTests: XCTestCase {
         XCTAssertNil(cropped, "no crop needed should skip re-encoding and signal the caller to keep the original")
     }
 
+    // MARK: - Orientation (the upside-down regression this fix guards against)
+
+    /// Builds a synthetic JPEG with an ASYMMETRIC top/bottom split (top half white, bottom
+    /// half black) so a vertical flip is unambiguously detectable — unlike a size-only check,
+    /// which a vertically-flipped image would still pass.
+    private func topBottomSplitJPEG(size: CGSize) -> Data {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let renderer = UIGraphicsImageRenderer(size: size, format: format)
+        let image = renderer.image { ctx in
+            UIColor.white.setFill()
+            ctx.fill(CGRect(x: 0, y: 0, width: size.width, height: size.height / 2))
+            UIColor.black.setFill()
+            ctx.fill(CGRect(x: 0, y: size.height / 2, width: size.width, height: size.height / 2))
+        }
+        return image.jpegData(compressionQuality: 0.95)!
+    }
+
+    /// Reads the raw RGBA bytes of a `UIImage` by drawing it into a known, plain top-left,
+    /// Y-down sRGB buffer — independent of `CapturedPhotoCropper`'s own drawing path, so this
+    /// sampling itself can't hide the same bug it's meant to catch.
+    private func pixel(_ image: UIImage, x: Int, y: Int) -> (r: UInt8, g: UInt8, b: UInt8) {
+        let width = Int(image.size.width)
+        let height = Int(image.size.height)
+        var buffer = [UInt8](repeating: 0, count: width * height * 4)
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        guard let ctx = CGContext(
+            data: &buffer, width: width, height: height, bitsPerComponent: 8,
+            bytesPerRow: width * 4, space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else {
+            XCTFail("failed to build sampling context")
+            return (0, 0, 0)
+        }
+        // Plain top-left/Y-down flip, matching UIKit's own convention, so this helper's
+        // output reflects the image's VISUAL orientation, not Quartz's native one.
+        ctx.translateBy(x: 0, y: CGFloat(height))
+        ctx.scaleBy(x: 1, y: -1)
+        UIGraphicsPushContext(ctx)
+        image.draw(in: CGRect(x: 0, y: 0, width: width, height: height))
+        UIGraphicsPopContext()
+
+        let offset = (y * width + x) * 4
+        return (buffer[offset], buffer[offset + 1], buffer[offset + 2])
+    }
+
+    /// Proves the fix: an asymmetric top(white)/bottom(black) source, run through a WIDTH
+    /// crop (the real-world shape of the bug — see `testRealWorldPortraitCaptureCropsWidthMeaningfully`),
+    /// must still have white on top and black on bottom in the output. Before the Y-flip fix,
+    /// this would fail (output flipped: black on top, white on bottom), while the existing
+    /// `testCroppedJPEGDataProducesExpectedPixelWidth` test — which only checks size and
+    /// orientation tag, never pixel content — would still have passed, so it never caught this
+    /// regression.
+    func testCroppedJPEGDataPreservesVerticalOrientation() throws {
+        let capturedSize = CGSize(width: 400, height: 300)   // forces a width-only crop
+        let data = topBottomSplitJPEG(size: capturedSize)
+        let cropped = try XCTUnwrap(
+            CapturedPhotoCropper.croppedJPEGData(from: data, targetAspectRatio: 1.0),
+            "expected a cropped image when aspect ratios differ"
+        )
+        let image = try XCTUnwrap(UIImage(data: cropped))
+        let width = Int(image.size.width)
+        let height = Int(image.size.height)
+        XCTAssertEqual(width, 300, accuracy: 1)
+        XCTAssertEqual(height, 300, accuracy: 1)
+
+        let topSample = pixel(image, x: width / 2, y: 5)
+        let bottomSample = pixel(image, x: width / 2, y: height - 5)
+
+        XCTAssertGreaterThan(topSample.r, 200, "top of output must still be the WHITE half, not flipped")
+        XCTAssertLessThan(bottomSample.r, 55, "bottom of output must still be the BLACK half, not flipped")
+    }
+
     // MARK: - Color profile preservation (the P0 regression this fix guards against)
 
     /// True iff the JPEG data carries an ICC/color profile marker readable by ImageIO, and
