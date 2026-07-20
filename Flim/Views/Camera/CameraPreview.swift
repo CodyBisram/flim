@@ -22,6 +22,18 @@ struct CameraPreview: UIViewRepresentable {
         view.previewLayer.videoGravity = .resizeAspectFill
         context.coordinator.view = view
 
+        // Push the preview's REAL on-screen bounds up to the view model every layout pass,
+        // so a captured photo can later be cropped to match what this full-bleed,
+        // `.resizeAspectFill` preview actually showed (see `CameraViewModel.previewAspectRatio`).
+        // A live view's bounds are more robust than a `UIScreen` constant here, since
+        // `TARGETED_DEVICE_FAMILY` and safe-area/layout specifics can vary across build
+        // configs and devices.
+        weak var coordinator = context.coordinator
+        view.onLayout = { size in
+            guard size.width > 0, size.height > 0 else { return }
+            coordinator?.camera.previewAspectRatio = size.width / size.height
+        }
+
         // Single tap = focus/exposure; double tap = flip; they can't both fire.
         let single = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.tap(_:)))
         let double = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.doubleTap(_:)))
@@ -54,6 +66,15 @@ struct CameraPreview: UIViewRepresentable {
     final class PreviewView: UIView {
         override class var layerClass: AnyClass { AVCaptureVideoPreviewLayer.self }
         var previewLayer: AVCaptureVideoPreviewLayer { layer as! AVCaptureVideoPreviewLayer }
+
+        /// Fires with this view's real bounds every layout pass — the mechanism for pushing
+        /// the live preview's aspect ratio up to `CameraViewModel` (see `makeUIView` above).
+        var onLayout: ((CGSize) -> Void)?
+
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            onLayout?(bounds.size)
+        }
     }
 
     final class Coordinator: NSObject, UIGestureRecognizerDelegate {

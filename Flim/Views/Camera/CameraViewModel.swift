@@ -2,6 +2,7 @@ import AVFoundation
 import CoreMedia
 import Observation
 import SwiftUI
+import os
 
 @Observable
 final class CameraViewModel: NSObject {
@@ -26,6 +27,26 @@ final class CameraViewModel: NSObject {
     /// Which camera is active. Front has no hardware flash, so the UI hides the flash toggle.
     var cameraPosition: AVCaptureDevice.Position = .back
     var isFront: Bool { cameraPosition == .front }
+
+    /// Backing storage for `previewAspectRatio`, guarded by a lock: written from the main
+    /// thread (`CameraPreview.PreviewView.layoutSubviews`) and read from
+    /// `AVCapturePhotoOutput`'s delegate queue in `photoOutput(_:didFinishProcessingPhoto:error:)`
+    /// — this file already documents elsewhere that delegate callbacks arrive off-main (see
+    /// the flash-overlay handling above), so this cross-thread value needs the same kind of
+    /// synchronization, unlike the plain properties above that are only ever mutated from
+    /// inside a `Task { @MainActor in ... }` hop.
+    private let previewAspectRatioLock = OSAllocatedUnfairLock<CGFloat?>(initialState: nil)
+
+    /// Live aspect ratio (width / height) the full-bleed `.resizeAspectFill` viewfinder is
+    /// actually showing on screen right now, pushed up from `CameraPreview`'s real view
+    /// bounds every layout pass (mirrors how `excludedRegions` is threaded from the view
+    /// layer, rather than sourced from a `UIScreen` constant). `nil` until the preview has
+    /// laid out at least once. Used to crop the captured photo down to what was framed —
+    /// see `photoOutput(_:didFinishProcessingPhoto:error:)`.
+    var previewAspectRatio: CGFloat? {
+        get { previewAspectRatioLock.withLock { $0 } }
+        set { previewAspectRatioLock.withLock { $0 = newValue } }
+    }
 
     // MARK: - Setup
 
@@ -327,7 +348,21 @@ extension CameraViewModel: AVCapturePhotoCaptureDelegate {
         didFinishProcessingPhoto photo: AVCapturePhoto,
         error: Error?
     ) {
-        let data = photo.fileDataRepresentation()
+        let rawData = photo.fileDataRepresentation()
+        // Crop to match what the full-bleed viewfinder actually framed: `.resizeAspectFill`
+        // center-crops the LIVE PREVIEW to fill the screen, but AVCapturePhotoOutput always
+        // delivers the full, uncropped sensor frame, so the saved photo otherwise shows more
+        // scene at the left/right edges than what was on screen at capture time. Done here,
+        // synchronously, on this delegate's own background queue (like `fileDataRepresentation()`
+        // just above) since decode/redraw/re-encode is real CPU work that shouldn't run after
+        // the `@MainActor` hop below. Falls back to the untouched bytes if the aspect ratio
+        // isn't known yet or the crop fails — a photo must never be lost to this.
+        let data = rawData.flatMap { raw -> Data in
+            guard let targetAspectRatio = previewAspectRatio,
+                  let cropped = CapturedPhotoCropper.croppedJPEGData(from: raw, targetAspectRatio: targetAspectRatio)
+            else { return raw }
+            return cropped
+        }
         Task { @MainActor in
             self.isCapturing = false
             self.flashOpacity = 0   // safety net in case the capture errored before the callbacks above fired
