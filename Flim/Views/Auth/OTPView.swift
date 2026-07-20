@@ -10,6 +10,16 @@ struct OTPView: View {
     @State private var isVerifying = false
     @State private var error: String?
 
+    // Sanitizes on the same write that delivers autofill/paste/typed input, rather than
+    // correcting after the fact in a separate onChange — a follow-up onChange that rewrites
+    // the bound value can race with the system's one-time-code autofill transaction and drop
+    // the insertion. Strips non-digits (autofill sometimes appends a trailing space) and clamps
+    // to `length` instead of rejecting the whole string. Shared by the digit field's binding and
+    // the paste button so both behave identically.
+    static func sanitizeOTPInput(_ raw: String, length: Int) -> String {
+        String(raw.filter(\.isNumber).prefix(length))
+    }
+
     var body: some View {
         ZStack {
             Color(red: 0.04, green: 0.04, blue: 0.04).ignoresSafeArea()
@@ -35,7 +45,7 @@ struct OTPView: View {
                 // The hidden field can't surface the system paste menu, so offer paste directly.
                 // Always shown (clipboard state isn't re-checked on appear/return-to-app).
                 Button {
-                    let digits = String((UIPasteboard.general.string ?? "").filter(\.isNumber).prefix(otpLength))
+                    let digits = OTPView.sanitizeOTPInput(UIPasteboard.general.string ?? "", length: otpLength)
                     if !digits.isEmpty { code = digits }
                 } label: {
                     Label("Paste code", systemImage: "doc.on.clipboard")
@@ -85,15 +95,10 @@ private struct OTPField: View {
     let length: Int
     @FocusState private var isFocused: Bool
 
-    // Sanitizes on the same write that delivers autofill/paste/typed input, rather than
-    // correcting after the fact in a separate onChange — a follow-up onChange that rewrites
-    // the bound value can race with the system's one-time-code autofill transaction and drop
-    // the insertion. Strips non-digits (autofill sometimes appends a trailing space) and clamps
-    // to `length` instead of rejecting the whole string.
     private var sanitizedCode: Binding<String> {
         Binding(
             get: { code },
-            set: { code = String($0.filter(\.isNumber).prefix(length)) }
+            set: { code = OTPView.sanitizeOTPInput($0, length: length) }
         )
     }
 

@@ -34,18 +34,23 @@ struct FlimApp: App {
                 .environment(network)
                 .preferredColorScheme(.dark)
                 .onOpenURL { url in
-                    // Two invite shapes: the custom scheme (…//join/CODE) and the universal
-                    // link (https://flim-app.com/join/CODE). Everything else is an auth callback.
-                    let isUniversalJoin = url.host == "flim-app.com" && url.pathComponents.dropFirst().first == "join"
-                    if url.host == "join" || isUniversalJoin {
-                        let code = url.lastPathComponent
-                        if !code.isEmpty, code != "/", code != "join" {
-                            NotificationCenter.default.post(name: .openRollInvite, object: code)
-                        }
+                    if let code = FlimApp.routeInviteCode(from: url) {
+                        NotificationCenter.default.post(name: .openRollInvite, object: code)
                     } else {
                         Task { await auth.handle(url: url) }
                     }
                 }
         }
+    }
+
+    /// Two invite URL shapes: the custom scheme (…//join/CODE) and the universal link
+    /// (https://flim-app.com/join/CODE). Returns the invite code, or `nil` if `url` isn't a
+    /// recognized invite link (e.g. an auth callback) or the invite link carries no real code.
+    static func routeInviteCode(from url: URL) -> String? {
+        let isUniversalJoin = url.host == "flim-app.com" && url.pathComponents.dropFirst().first == "join"
+        guard url.host == "join" || isUniversalJoin else { return nil }
+        let code = url.lastPathComponent
+        guard !code.isEmpty, code != "/", code != "join" else { return nil }
+        return code
     }
 }

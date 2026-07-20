@@ -39,7 +39,13 @@ enum CubeLUT {
     private static func parse(_ name: String) -> Loaded? {
         guard let url = Bundle.main.url(forResource: name, withExtension: "cube"),
               let text = try? String(contentsOf: url, encoding: .utf8) else { return nil }
+        return parse(contents: text)
+    }
 
+    /// The core `.cube` text parser, separate from bundle-file loading so it's directly
+    /// testable against in-memory fixtures. Case-insensitive on `LUT_3D_SIZE`; returns `nil`
+    /// if the size line is missing or the value count doesn't match `dimension³ × 3`.
+    static func parse(contents text: String) -> Loaded? {
         var dimension = 0
         var values: [Float] = []
         for raw in text.split(whereSeparator: \.isNewline) {

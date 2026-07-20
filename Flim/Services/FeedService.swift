@@ -173,7 +173,7 @@ final class FeedService {
 
     /// Strips a just-blocked user's reactions/comments/tags out of the already-loaded feed cache,
     /// so their content vanishes from cards immediately instead of surviving until the next reload.
-    private func purgeCachedContent(from targetId: UUID) {
+    func purgeCachedContent(from targetId: UUID) {
         for (postId, list) in reactionsByPost {
             reactionsByPost[postId] = list.filter { $0.userId != targetId }
         }
@@ -312,12 +312,18 @@ final class FeedService {
             byPost[comment.postId, default: []].append(info)
         }
         for (postId, list) in byPost {
-            byPost[postId] = list.sorted {
-                $0.likeCount != $1.likeCount ? $0.likeCount > $1.likeCount
-                                             : $0.comment.createdAt < $1.comment.createdAt
-            }
+            byPost[postId] = Self.rank(list)
         }
         return byPost
+    }
+
+    /// The "most relevant" comment order used on both the feed and the detail view: most-liked
+    /// first, ties broken oldest-created-first.
+    static func rank(_ comments: [CommentInfo]) -> [CommentInfo] {
+        comments.sorted {
+            $0.likeCount != $1.likeCount ? $0.likeCount > $1.likeCount
+                                         : $0.comment.createdAt < $1.comment.createdAt
+        }
     }
 
     /// Optimistic react/unreact that updates the shared cache (so cards stay in sync as they
@@ -485,10 +491,7 @@ final class FeedService {
                                likeCount: commentLikes.count,
                                likedByMe: commentLikes.contains { $0.user_id == currentUserId })
         }
-        return items.sorted {
-            $0.likeCount != $1.likeCount ? $0.likeCount > $1.likeCount
-                                         : $0.comment.createdAt < $1.comment.createdAt
-        }
+        return Self.rank(items)
     }
 
     func addComment(postId: UUID, body: String, userId: UUID) async -> PostComment? {

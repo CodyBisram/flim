@@ -1,6 +1,18 @@
 import SwiftUI
 import TipKit
 
+/// Builds the roll-delete confirmation message from each photo's already-resolved roll name
+/// (`nil` for a personal, non-roll photo). A batch that resolves to exactly one shared roll
+/// names it; anything else (multiple rolls, a roll mixed with personal shots, or no rolls at
+/// all) falls back to generic wording.
+func rollDeleteConfirmationMessage(forRollNames names: [String?]) -> String {
+    let uniqueNames = Set(names.compactMap { $0 })
+    if uniqueNames.count == 1, let name = uniqueNames.first {
+        return "This shot is in the roll \"\(name)\". Deleting removes it for everyone."
+    }
+    return "This shot is in a shared roll. Deleting removes it for everyone."
+}
+
 struct DarkroomView: View {
     var scrollToTop: Int = 0
     @Environment(AuthService.self) private var auth
@@ -274,11 +286,7 @@ struct DarkroomView: View {
     /// The roll-name message for a batch that includes shared shots — names the roll if every
     /// roll shot in the batch belongs to the same one, else falls back to generic wording.
     private func rollDeleteMessage(for batch: [Photo]) -> String {
-        let names = Set(batch.compactMap { rollName(for: $0.rollId) })
-        if names.count == 1, let name = names.first {
-            return "This shot is in the roll \"\(name)\". Deleting removes it for everyone."
-        }
-        return "This shot is in a shared roll. Deleting removes it for everyone."
+        rollDeleteConfirmationMessage(forRollNames: batch.map { rollName(for: $0.rollId) })
     }
 
     private func commitDeleteBatch(_ toDelete: [Photo]) {

@@ -65,11 +65,19 @@ final class RollService {
             return roll
         } catch {
             // Map the function's RAISE EXCEPTION messages to friendly errors.
-            let desc = "\(error)".lowercased()
-            if desc.contains("roll_full") { throw RollError.full }
-            if desc.contains("roll_not_found") { throw RollError.notFound }
+            if let mapped = Self.mapJoinRollError("\(error)") { throw mapped }
             throw error
         }
+    }
+
+    /// Maps the `join_roll` RPC's `RAISE EXCEPTION` message text to a friendly `RollError`,
+    /// or `nil` if `description` doesn't match a recognized failure (the caller then rethrows
+    /// the original error as-is).
+    static func mapJoinRollError(_ description: String) -> RollError? {
+        let desc = description.lowercased()
+        if desc.contains("roll_full") { return .full }
+        if desc.contains("roll_not_found") { return .notFound }
+        return nil
     }
 
     // MARK: - Fetch user rolls

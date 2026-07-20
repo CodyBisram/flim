@@ -65,11 +65,23 @@ final class AuthService {
     private static let reviewCode = "482915"
     private static let reviewPassword = reviewCode + "-flim-app-review-only"
 
+    /// Whether `email` (after the same trim + lowercase normalization used everywhere else in
+    /// this file) is the fixed App Review demo account. Pure predicate, kept separate from the
+    /// network calls in `sendOTP`/`verifyOTP` so it's directly testable.
+    static func isReviewEmail(_ email: String) -> Bool {
+        email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == reviewEmail
+    }
+
+    /// Whether `code` is the App Review demo account's fixed one-time code.
+    static func isReviewCode(_ code: String) -> Bool {
+        code == reviewCode
+    }
+
     // MARK: - Email OTP
 
     func sendOTP(email: String) async throws {
         let normalized = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if normalized == Self.reviewEmail {
+        if Self.isReviewEmail(normalized) {
             // No inbox to send to, and the review account isn't on the invite allowlist —
             // skip straight to the code screen.
             pendingEmail = normalized
@@ -111,7 +123,7 @@ final class AuthService {
 
     func verifyOTP(token: String) async throws {
         guard let email = pendingEmail else { return }
-        if email == Self.reviewEmail, token == Self.reviewCode {
+        if Self.isReviewEmail(email), Self.isReviewCode(token) {
             try await supabase.auth.signIn(email: email, password: Self.reviewPassword)
         } else {
             // Any other code against the review email (including on that exact address)
@@ -212,7 +224,7 @@ final class AuthService {
 
     /// Distinguishes a 23505 on the `users` PK (`id`, meaning the row already exists) from one
     /// on the `username` unique constraint, using the constraint name Postgres reports.
-    private static func isPrimaryKeyConflict(_ error: PostgrestError) -> Bool {
+    static func isPrimaryKeyConflict(_ error: PostgrestError) -> Bool {
         let text = "\(error.detail ?? "") \(error.message)".lowercased()
         return text.contains("users_pkey") || text.contains("(id)")
     }
