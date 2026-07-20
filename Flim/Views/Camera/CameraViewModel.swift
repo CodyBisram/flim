@@ -1,4 +1,5 @@
 import AVFoundation
+import CoreMedia
 import Observation
 import SwiftUI
 
@@ -80,10 +81,14 @@ final class CameraViewModel: NSObject {
     /// same constituent-lens zoom breakpoints) and only differs in frame rate. That keeps
     /// the fast path structurally identical to the default pick, just faster: it can never
     /// silently drop a lens (0.5× pill disappearing), narrow the field of view, change the
-    /// pixel format (e.g. HDR x420 vs 420f), or win a tie by undocumented array order,
-    /// because a non-matching format is never a candidate in the first place. If nothing
-    /// beats the baseline's frame rate under those constraints, this leaves `.photo`'s own
-    /// pick alone — preview smoothness is never traded for photo quality or zoom behavior.
+    /// pixel format (e.g. HDR x420 vs 420f), pick a format whose live video stream is a
+    /// pathologically small fraction of what it advertises for stills (a format can claim a
+    /// full-res `supportedMaxPhotoDimensions` while actually streaming a tiny binned/upscaled
+    /// preview — the still photo looks fine but the live feed reads as pixelated), or win a
+    /// tie by undocumented array order, because a non-matching format is never a candidate in
+    /// the first place. If nothing beats the baseline's frame rate under those constraints,
+    /// this leaves `.photo`'s own pick alone — preview smoothness is never traded for photo
+    /// quality, zoom behavior, or live resolution.
     private func configurePreviewFormat(for device: AVCaptureDevice) {
         // The `.photo` preset's own pick, captured before anything is touched — every
         // candidate below is compared against THIS, not the global best across formats.
@@ -100,6 +105,26 @@ final class CameraViewModel: NSObject {
             guard photoArea >= baselinePhotoArea else { return false }
             guard abs(format.videoFieldOfView - baselineFOV) < 0.1 else { return false }
             guard format.formatDescription.mediaSubType == baselineSubType else { return false }
+            // Self-referential check, not a cross-format one: a format is only suspect when
+            // ITS OWN live video stream is a pathologically small fraction of ITS OWN
+            // advertised photo size — the literal signature of "advertises big stills,
+            // streams a tiny binned/upscaled preview." Comparing against some OTHER format's
+            // (e.g. the baseline's) video area would wrongly punish legitimate high-frame-rate
+            // formats that bin their video proportionally to go faster, which is normal and
+            // healthy on modern sensors, not a bug.
+            // Floor set below (not at) the most common legitimate binning ratio: standard 2x2
+            // sensor binning is an exact 4x area reduction (ratio 0.25), so a hard 0.25 cutoff
+            // would sit exactly on that boundary with no room for aspect-crop/stabilization
+            // rounding to knock a healthy format fractionally under it. 0.15 clears the reported
+            // pathological case by a wide margin (~480p video against ~12MP+ photo is ~0.028,
+            // roughly 5x below this floor) while giving 2x2-binned formats (~0.25) real headroom.
+            // A 3x3-binned format (~0.111) still fails this floor and falls back to a slower
+            // candidate or .photo; that is an acceptable tradeoff, since this check exists to
+            // guarantee "never pixelated" over "always the fastest possible format on every
+            // sensor," and the fallback path is always the safe, previously-shipped behavior.
+            let videoDimensions = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
+            let videoArea = Int(videoDimensions.width) * Int(videoDimensions.height)
+            guard Double(videoArea) >= Double(photoArea) * 0.15 else { return false }
             return true
         }
         guard let target = candidates.max(by: {
