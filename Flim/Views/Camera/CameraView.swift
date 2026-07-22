@@ -103,14 +103,13 @@ struct CameraView: View {
             // so the screen feels alive edge-to-edge while the crisp box stays the one honest
             // "this is your photo" frame. Decorative only — non-interactive (taps outside the
             // box must keep doing nothing), heavily blurred so it can't be mistaken for real
-            // out-of-frame scene, and dimmed enough that the floating controls stay legible
-            // over a bright feed. `opaque: true` keeps the blur from feathering to transparent
-            // at the screen edges.
+            // out-of-frame scene (the blur itself lives inside the view — see BackdropView for
+            // why SwiftUI's `.blur` can't do it), and dimmed enough on top of the blur's own
+            // dark tint that the floating controls stay legible over a bright feed.
             CameraBackdropPreview(session: camera.session)
                 .ignoresSafeArea()
-                .blur(radius: 24, opaque: true)
                 .allowsHitTesting(false)
-            Color.black.opacity(0.45)
+            Color.black.opacity(0.35)
                 .ignoresSafeArea()
                 .allowsHitTesting(false)
 

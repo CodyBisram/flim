@@ -25,6 +25,22 @@ struct CameraBackdropPreview: UIViewRepresentable {
     final class BackdropView: UIView {
         override class var layerClass: AnyClass { AVCaptureVideoPreviewLayer.self }
         var previewLayer: AVCaptureVideoPreviewLayer { layer as! AVCaptureVideoPreviewLayer }
+
+        // The blur must be a UIVisualEffectView INSIDE this view, not SwiftUI's `.blur`:
+        // SwiftUI blurs by sampling the view's contents into a texture, and a video preview
+        // layer's frames aren't sampleable that way — the result was a solid black backdrop
+        // on device. An effect view instead blurs whatever the render server composites
+        // beneath it, live video included.
+        private let blurView = UIVisualEffectView(effect: UIBlurEffect(style: .dark))
+
+        override init(frame: CGRect) {
+            super.init(frame: frame)
+            blurView.frame = bounds
+            blurView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            addSubview(blurView)
+        }
+
+        required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
     }
 }
 
