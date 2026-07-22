@@ -151,8 +151,11 @@ struct CameraView: View {
                     Spacer()
                     bottomBar
                         .reportsControlRegion()
-                        // Small lift off the tab bar so the shutter sits low + centered.
-                        .padding(.bottom, 14)
+                        // Roughly centers the 84pt shutter in the black strip between the
+                        // viewfinder's rounded bottom and the tab bar (the strip is ~241pt on
+                        // a 16e up to ~286pt on a Pro Max). Bottom-anchoring it left the
+                        // shutter floating alone at the foot of a large black void.
+                        .padding(.bottom, 86)
                 }
 
                 coachOverlay
@@ -354,25 +357,7 @@ struct CameraView: View {
                 .accessibilityLabel("Send photos to")
                 .accessibilityValue(selectedRoll?.name ?? "Personal")
 
-                // Flash toggle (Off → Auto → On) — hidden on the front camera (no flash).
-                if camera.isFlashSupported {
-                    Button {
-                        cycleFlash()
-                        wakeFilmStrip()
-                    } label: {
-                        Image(systemName: flashIcon)
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(flashMode == .off ? .white : FlimTheme.accent)
-                            .frame(width: 38, height: 38)
-                    }
-                    .contentShape(Capsule())
-                    .glassCapsule(interactive: true)
-                    .padding(.leading, 8)
-                    .accessibilityLabel("Flash")
-                    .accessibilityValue(flashMode == .off ? "Off" : (flashMode == .auto ? "Auto" : "On"))
-                }
-
-                // Flip between back and front cameras.
+                // Flip between back and front cameras. (Flash moved down beside the shutter.)
                 Button {
                     camera.flipCamera()
                     Haptics.tap()
@@ -471,7 +456,32 @@ struct CameraView: View {
     // MARK: - Bottom bar (shutter)
 
     private var bottomBar: some View {
-        ShutterButton(isCapturing: camera.isCapturing) { shutter() }
+        ZStack {
+            ShutterButton(isCapturing: camera.isCapturing) { shutter() }
+            // Flash sits beside the shutter, Lapse-style: it fills the control strip so the
+            // shutter isn't alone in the black band, and it thins out the floating top bar,
+            // which stacked five pills over the feed. Hidden on the front camera (no flash),
+            // exactly as it was in the top bar.
+            if camera.isFlashSupported {
+                HStack {
+                    Spacer()
+                    Button {
+                        cycleFlash()
+                        wakeFilmStrip()
+                    } label: {
+                        Image(systemName: flashIcon)
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(flashMode == .off ? .white : FlimTheme.accent)
+                            .frame(width: 52, height: 52)
+                    }
+                    .contentShape(Capsule())
+                    .glassCapsule(interactive: true)
+                    .padding(.trailing, 44)
+                    .accessibilityLabel("Flash")
+                    .accessibilityValue(flashMode == .off ? "Off" : (flashMode == .auto ? "Auto" : "On"))
+                }
+            }
+        }
     }
 
     // MARK: - Glass grouping
