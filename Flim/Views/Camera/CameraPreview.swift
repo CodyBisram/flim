@@ -3,47 +3,6 @@ import UIKit
 import AVFoundation
 import AVKit
 
-/// Full-screen echo of the same capture session, used purely as the blurred/dimmed backdrop
-/// behind the boxed 3:4 viewfinder (see `CameraView`). A session happily drives multiple
-/// preview layers, so this costs no extra capture work. Deliberately NOT `CameraPreview`:
-/// this view must carry no gestures (taps outside the box should do nothing) and must never
-/// push its bounds into `CameraViewModel.previewAspectRatio` — only the real viewfinder's
-/// bounds may feed the capture-crop math, and a full-screen echo reporting its own aspect
-/// ratio would silently re-crop every photo back to the screen's shape.
-struct CameraBackdropPreview: UIViewRepresentable {
-    let session: AVCaptureSession
-
-    func makeUIView(context: Context) -> BackdropView {
-        let view = BackdropView()
-        view.previewLayer.session = session
-        view.previewLayer.videoGravity = .resizeAspectFill
-        return view
-    }
-
-    func updateUIView(_ uiView: BackdropView, context: Context) {}
-
-    final class BackdropView: UIView {
-        override class var layerClass: AnyClass { AVCaptureVideoPreviewLayer.self }
-        var previewLayer: AVCaptureVideoPreviewLayer { layer as! AVCaptureVideoPreviewLayer }
-
-        // The blur must be a UIVisualEffectView INSIDE this view, not SwiftUI's `.blur`:
-        // SwiftUI blurs by sampling the view's contents into a texture, and a video preview
-        // layer's frames aren't sampleable that way — the result was a solid black backdrop
-        // on device. An effect view instead blurs whatever the render server composites
-        // beneath it, live video included.
-        private let blurView = UIVisualEffectView(effect: UIBlurEffect(style: .dark))
-
-        override init(frame: CGRect) {
-            super.init(frame: frame)
-            blurView.frame = bounds
-            blurView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-            addSubview(blurView)
-        }
-
-        required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
-    }
-}
-
 struct CameraPreview: UIViewRepresentable {
     let session: AVCaptureSession
     let camera: CameraViewModel

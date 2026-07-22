@@ -99,38 +99,21 @@ struct CameraView: View {
         ZStack {
             Color.black.ignoresSafeArea()
 
-            // Blurred bleed: a full-screen echo of the live feed behind the boxed viewfinder,
-            // so the screen feels alive edge-to-edge while the crisp box stays the one honest
-            // "this is your photo" frame. Decorative only — non-interactive (taps outside the
-            // box must keep doing nothing), heavily blurred so it can't be mistaken for real
-            // out-of-frame scene (the blur itself lives inside the view — see BackdropView for
-            // why SwiftUI's `.blur` can't do it), and dimmed enough on top of the blur's own
-            // dark tint that the floating controls stay legible over a bright feed.
-            CameraBackdropPreview(session: camera.session)
-                .ignoresSafeArea()
-                .allowsHitTesting(false)
-            Color.black.opacity(0.35)
-                .ignoresSafeArea()
-                .allowsHitTesting(false)
-
             CameraPreview(session: camera.session, camera: camera, onShutter: { shutter() }, excludedRegions: controlRegions)
-                // Boxed to a 3:4 viewfinder instead of the full screen — see CameraPreview.swift
-                // for why. The box must live in the band between the top bar and the zoom/shutter
-                // stack: naive centering ran it under the shutter controls, and top-anchoring ran
-                // it under the top bar. The paddings clear those two rows AND split the band's
-                // leftover slack evenly — measured on an iPhone 17 Pro the box gets ~32pt of air
-                // above (to the top bar) and below (to the zoom pills), instead of hugging one
-                // row; `.fit` keeps the box exactly 3:4 within whatever band remains, shrinking
-                // it slightly on shorter devices instead of overlapping the controls. The
-                // horizontal padding matches the top bar's 20pt insets so the box's side margins
-                // never fall under that (Pro Max otherwise landed at 8pt slivers); on smaller
-                // devices the height-limited fit yields naturally wider margins. Capture cropping
-                // is unaffected by the box's final size — it reads the preview's actual on-screen
-                // aspect ratio (see CameraViewModel.previewAspectRatio), not a screen constant.
+                // A 3:4 viewfinder at full screen width, anchored to the physical top of the
+                // screen (Lapse-style): the feed runs behind the status bar and the floating
+                // top-bar pills instead of being squeezed into a band between reserved control
+                // rows, which is what makes the box this large while staying exactly 3:4 —
+                // what the box shows is still exactly the saved photo (see CameraPreview.swift
+                // and CameraViewModel.previewAspectRatio; the crop math reads this view's real
+                // on-screen bounds, so the box's size never affects capture). The zoom pills
+                // float over the feed's bottom edge; only the shutter strip below the box and
+                // the tab bar keep reserved space.
                 .aspectRatio(3.0 / 4.0, contentMode: .fit)
-                // Tap-to-focus reticle. Attached to the box itself (before the frame/paddings)
-                // because `reticle.point` is in the preview view's own coordinate space — on the
-                // padded full-screen frame the reticle drew ~56pt above where you tapped.
+                // Rounded only at the bottom: the top corners meet the physical screen edge.
+                .clipShape(UnevenRoundedRectangle(bottomLeadingRadius: 36, bottomTrailingRadius: 36))
+                // Tap-to-focus reticle. Attached to the box itself (before the outer frame)
+                // because `reticle.point` is in the preview view's own coordinate space.
                 .overlay {
                     if let reticle = camera.focusReticle {
                         RoundedRectangle(cornerRadius: 4)
@@ -142,10 +125,14 @@ struct CameraView: View {
                     }
                 }
                 .animation(.easeOut(duration: 0.2), value: camera.focusReticle)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .padding(.top, 82)
-                .padding(.bottom, 164)
-                .padding(.horizontal, 20)
+                // Zoom floats on the feed like Lapse, just above the box's rounded bottom edge.
+                .overlay(alignment: .bottom) {
+                    zoomControl
+                        .reportsControlRegion()
+                        .padding(.bottom, 14)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .ignoresSafeArea(edges: .top)
 
             // Shutter flash overlay
             Color.white
@@ -162,16 +149,11 @@ struct CameraView: View {
                     topBar
                         .reportsControlRegion()
                     Spacer()
-                    VStack(spacing: 16) {
-                        bottomBar
-                            .reportsControlRegion()
-                    }
-                    // Zoom floats just above the shutter row.
-                    .overlay(alignment: .top) { zoomControl.reportsControlRegion().offset(y: -36) }
-                    // Small lift off the tab bar so the shutter sits low + centered.
-                    .padding(.bottom, 14)
+                    bottomBar
+                        .reportsControlRegion()
+                        // Small lift off the tab bar so the shutter sits low + centered.
+                        .padding(.bottom, 14)
                 }
-                .onPreferenceChange(ControlRegionPreferenceKey.self) { controlRegions = $0 }
 
                 coachOverlay
 
@@ -187,6 +169,9 @@ struct CameraView: View {
                 }
             }
         }
+        // Collected at the ZStack so it hears every branch: the zoom pills now live in an
+        // overlay on the viewfinder box, not in the control VStack with the top bar/shutter.
+        .onPreferenceChange(ControlRegionPreferenceKey.self) { controlRegions = $0 }
         .fullScreenCover(isPresented: $showSortDeck, onDismiss: { Task { await refreshUnsorted() } }) {
             SortDeckView()
         }
