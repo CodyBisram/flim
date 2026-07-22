@@ -1,18 +1,19 @@
 import UIKit
 import ImageIO
 
-/// Crops a captured photo to match what the full-bleed, edge-to-edge viewfinder actually
-/// showed. `CameraPreview` fills the tall portrait screen with `.resizeAspectFill`, which
-/// scales the sensor's feed to cover the screen and center-crops the overflow — but
-/// `AVCapturePhotoOutput` always delivers the FULL, uncropped sensor frame. Left as-is, the
-/// saved photo shows meaningfully more scene at the left/right edges than what was framed
-/// on screen (confirmed repro: a laptop barely in frame in the viewfinder appeared fully in
-/// the saved photo).
+/// Crops a captured photo to match what the viewfinder actually showed. `CameraPreview` fills
+/// its box (3:4, see `CameraView.swift`) with `.resizeAspectFill`, which scales the sensor's
+/// feed to cover that box and center-crops the overflow — but `AVCapturePhotoOutput` always
+/// delivers the FULL, uncropped sensor frame. Left as-is, the saved photo shows meaningfully
+/// more scene at the edges than what was framed on screen (confirmed repro: a laptop barely in
+/// frame in the viewfinder appeared fully in the saved photo).
 ///
-/// Sensor capture in portrait is roughly 4:3 (width/height ~0.75); a typical phone screen is
-/// much narrower/taller (~0.46). Because the captured frame is always proportionally WIDER
-/// than the screen in a portrait-only app, `.resizeAspectFill` can only ever have cropped
-/// WIDTH off the preview (never height) — so this is always a width crop in practice.
+/// Sensor capture in portrait is roughly 4:3 (width/height ~0.75), i.e. already close to the
+/// viewfinder's 3:4 box — so in practice this crop now trims little to nothing (the epsilon
+/// guard below often finds the two aspect ratios already match) instead of the large width
+/// crop it made when the viewfinder was full-screen. Because the captured frame is never
+/// proportionally NARROWER than the box in a portrait-only app, any crop that does happen is a
+/// width crop in practice.
 enum CapturedPhotoCropper {
 
     /// Pure center-crop math: given a captured image's VISUAL size (already accounting for

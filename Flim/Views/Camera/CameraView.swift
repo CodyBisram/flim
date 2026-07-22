@@ -4,11 +4,12 @@ import UIKit
 
 // MARK: - Control hit-region reporting
 //
-// The camera preview covers the full screen and owns a UIKit tap gesture for tap-to-focus.
-// Buttons floating on top of it (roll pill, flash, flip, timer, zoom pills, shutter) must
-// always win a tap over that background gesture. Each control reports its on-screen frame
-// here; `CameraView` collects them and hands the list to `CameraPreview`, which refuses to
-// recognize a focus/flip/pinch touch that starts inside any of them.
+// The camera preview (a boxed 3:4 viewfinder, not the full screen — see CameraPreview.swift)
+// owns a UIKit tap gesture for tap-to-focus. Buttons floating on top of it (roll pill, flash,
+// flip, timer, zoom pills, shutter) must always win a tap over that background gesture. Each
+// control reports its on-screen frame here; `CameraView` collects them and hands the list to
+// `CameraPreview`, which refuses to recognize a focus/flip/pinch touch that starts inside any
+// of them.
 
 private struct ControlRegionPreferenceKey: PreferenceKey {
     static var defaultValue: [CGRect] = []
@@ -99,8 +100,23 @@ struct CameraView: View {
             Color.black.ignoresSafeArea()
 
             CameraPreview(session: camera.session, camera: camera, onShutter: { shutter() }, excludedRegions: controlRegions)
-                .ignoresSafeArea()
-                // Tap-to-focus reticle.
+                // Boxed to a 3:4 viewfinder instead of the full screen — see CameraPreview.swift
+                // for why. The box must live in the band between the top bar and the zoom/shutter
+                // stack: naive centering ran it under the shutter controls, and top-anchoring ran
+                // it under the top bar. The paddings clear those two rows AND split the band's
+                // leftover slack evenly — measured on an iPhone 17 Pro the box gets ~32pt of air
+                // above (to the top bar) and below (to the zoom pills), instead of hugging one
+                // row; `.fit` keeps the box exactly 3:4 within whatever band remains, shrinking
+                // it slightly on shorter devices instead of overlapping the controls. The
+                // horizontal padding matches the top bar's 20pt insets so the box's side margins
+                // never fall under that (Pro Max otherwise landed at 8pt slivers); on smaller
+                // devices the height-limited fit yields naturally wider margins. Capture cropping
+                // is unaffected by the box's final size — it reads the preview's actual on-screen
+                // aspect ratio (see CameraViewModel.previewAspectRatio), not a screen constant.
+                .aspectRatio(3.0 / 4.0, contentMode: .fit)
+                // Tap-to-focus reticle. Attached to the box itself (before the frame/paddings)
+                // because `reticle.point` is in the preview view's own coordinate space — on the
+                // padded full-screen frame the reticle drew ~56pt above where you tapped.
                 .overlay {
                     if let reticle = camera.focusReticle {
                         RoundedRectangle(cornerRadius: 4)
@@ -112,6 +128,10 @@ struct CameraView: View {
                     }
                 }
                 .animation(.easeOut(duration: 0.2), value: camera.focusReticle)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(.top, 82)
+                .padding(.bottom, 164)
+                .padding(.horizontal, 20)
 
             // Shutter flash overlay
             Color.white

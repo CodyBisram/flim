@@ -23,11 +23,11 @@ struct CameraPreview: UIViewRepresentable {
         context.coordinator.view = view
 
         // Push the preview's REAL on-screen bounds up to the view model every layout pass,
-        // so a captured photo can later be cropped to match what this full-bleed,
-        // `.resizeAspectFill` preview actually showed (see `CameraViewModel.previewAspectRatio`).
-        // A live view's bounds are more robust than a `UIScreen` constant here, since
-        // `TARGETED_DEVICE_FAMILY` and safe-area/layout specifics can vary across build
-        // configs and devices.
+        // so a captured photo can later be cropped to match what this boxed (3:4, see
+        // CameraView.swift), `.resizeAspectFill` preview actually showed (see
+        // `CameraViewModel.previewAspectRatio`). Reading the live view's bounds, rather than
+        // hardcoding the 3:4 ratio here too, keeps the crop correct even if the box's ratio
+        // ever changes or a device's actual sensor/layout math doesn't land exactly on 3:4.
         weak var coordinator = context.coordinator
         view.onLayout = { size in
             guard size.width > 0, size.height > 0 else { return }

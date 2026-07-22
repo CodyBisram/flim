@@ -37,7 +37,7 @@ final class CameraViewModel: NSObject {
     /// inside a `Task { @MainActor in ... }` hop.
     private let previewAspectRatioLock = OSAllocatedUnfairLock<CGFloat?>(initialState: nil)
 
-    /// Live aspect ratio (width / height) the full-bleed `.resizeAspectFill` viewfinder is
+    /// Live aspect ratio (width / height) the boxed (3:4) `.resizeAspectFill` viewfinder is
     /// actually showing on screen right now, pushed up from `CameraPreview`'s real view
     /// bounds every layout pass (mirrors how `excludedRegions` is threaded from the view
     /// layer, rather than sourced from a `UIScreen` constant). `nil` until the preview has
