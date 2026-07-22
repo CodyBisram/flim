@@ -99,6 +99,21 @@ struct CameraView: View {
         ZStack {
             Color.black.ignoresSafeArea()
 
+            // Blurred bleed: a full-screen echo of the live feed behind the boxed viewfinder,
+            // so the screen feels alive edge-to-edge while the crisp box stays the one honest
+            // "this is your photo" frame. Decorative only — non-interactive (taps outside the
+            // box must keep doing nothing), heavily blurred so it can't be mistaken for real
+            // out-of-frame scene, and dimmed enough that the floating controls stay legible
+            // over a bright feed. `opaque: true` keeps the blur from feathering to transparent
+            // at the screen edges.
+            CameraBackdropPreview(session: camera.session)
+                .ignoresSafeArea()
+                .blur(radius: 24, opaque: true)
+                .allowsHitTesting(false)
+            Color.black.opacity(0.45)
+                .ignoresSafeArea()
+                .allowsHitTesting(false)
+
             CameraPreview(session: camera.session, camera: camera, onShutter: { shutter() }, excludedRegions: controlRegions)
                 // Boxed to a 3:4 viewfinder instead of the full screen — see CameraPreview.swift
                 // for why. The box must live in the band between the top bar and the zoom/shutter
