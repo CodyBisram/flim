@@ -1,4 +1,5 @@
 import SwiftUI
+import AVFoundation
 
 struct OnboardingView: View {
     @AppStorage("hasOnboarded") private var hasOnboarded = false
@@ -22,6 +23,19 @@ struct OnboardingView: View {
              title: "Share the moment.",
              body: "Post your favorites to your page, follow friends, and react to theirs. \(AppInfo.appName) is invite-only. It's just your people.")
     ]
+
+    /// Ends onboarding. If camera permission hasn't been decided yet, this requests it
+    /// first so the system dialog always follows directly from the onboarding CTA or
+    /// Skip -- mirrors the same-API call in `CameraViewModel.start()`, which will simply
+    /// see the now-decided status and proceed without prompting again.
+    private func finishOnboarding() {
+        Task { @MainActor in
+            if AVCaptureDevice.authorizationStatus(for: .video) == .notDetermined {
+                _ = await AVCaptureDevice.requestAccess(for: .video)
+            }
+            hasOnboarded = true
+        }
+    }
 
     var body: some View {
         ZStack {
@@ -58,7 +72,7 @@ struct OnboardingView: View {
                         withAnimation { page += 1 }
                     } else {
                         Haptics.tap()
-                        hasOnboarded = true
+                        finishOnboarding()
                     }
                 } label: {
                     Text(page < cards.count - 1 ? "Next" : "Take your first shot")
@@ -71,7 +85,7 @@ struct OnboardingView: View {
                 .padding(.horizontal, 28)
                 .padding(.bottom, 20)
 
-                Button("Skip") { hasOnboarded = true }
+                Button("Skip") { finishOnboarding() }
                     .font(.system(size: 13))
                     .foregroundStyle(FlimTheme.textTertiary)
                     .padding(.bottom, 24)

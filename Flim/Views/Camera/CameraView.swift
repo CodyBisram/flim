@@ -42,6 +42,17 @@ struct CameraView: View {
     // Restore the persisted roll selection once per launch — the tab re-fires onAppear every
     // time you switch back to Camera, and we don't want that to clobber a live in-session pick.
     @State private var didRestoreSelectedRoll = false
+    // Onboarding must request camera permission itself, in its own deliberate sequence
+    // (see OnboardingView.finishOnboarding()). CameraView sits underneath the onboarding
+    // fullScreenCover as tab 0, and SwiftUI still fires onAppear for content mounted behind
+    // a cover — so camera startup here is gated on onboarding being done. This gate only
+    // decides WHEN startCameraFlow() may first run, not whether it may run again: the tab
+    // re-fires onAppear on every revisit, and startCameraFlow()'s own calls (camera.start(),
+    // refreshUnsorted(), wakeFilmStrip()) are already safe to repeat, exactly as they were
+    // before this file gated anything on hasOnboarded. Do not add a run-once flag here — an
+    // earlier version of this fix did, and it silently froze the camera preview after the
+    // first tab excursion away from Camera for the rest of the app's life.
+    @AppStorage("hasOnboarded") private var hasOnboarded = false
 
     // Controls fade out when idle so the shutter stays the focal point; any
     // interaction wakes them back up.
@@ -146,20 +157,10 @@ struct CameraView: View {
             SortDeckView()
         }
         .onAppear {
-            camera.flashMode = flashMode
-            bindCapture()
-            Task { await refreshUnsorted() }
-            wakeFilmStrip()
-            Task {
-                await camera.start()
-                if let userId = auth.currentUser?.id {
-                    try? await rolls.fetchRolls(for: userId)
-                    if !didRestoreSelectedRoll {
-                        didRestoreSelectedRoll = true
-                        restoreSelectedRoll(userId: userId)
-                    }
-                }
-            }
+            if hasOnboarded { startCameraFlow() }
+        }
+        .onChange(of: hasOnboarded) { _, done in
+            if done { startCameraFlow() }
         }
         .onDisappear { camera.stopRunning() }
         .onChange(of: selectedRoll) { persistSelectedRoll() }
@@ -196,6 +197,32 @@ struct CameraView: View {
             UserDefaults.standard.set(roll.id.uuidString, forKey: key)
         } else {
             UserDefaults.standard.removeObject(forKey: key)
+        }
+    }
+
+    /// Starts (or restarts) the camera preview/session and kicks off the roll-restore fetch.
+    /// Called every time this view appears, exactly as before onboarding-gating existed —
+    /// `camera.start()`/`configure()`/`startRunning()` are already idempotent internally, and
+    /// re-running `refreshUnsorted()`/`wakeFilmStrip()` on every tab revisit is expected. The
+    /// only thing gated is WHEN it may first run: not until onboarding has finished
+    /// (`hasOnboarded == true`), since this is what triggers `AVCaptureDevice.requestAccess`
+    /// on first launch via `CameraViewModel.start()`. `onAppear` covers the "already
+    /// onboarded" case; `onChange(of: hasOnboarded)` covers finishing onboarding while this
+    /// view is already mounted underneath the cover.
+    private func startCameraFlow() {
+        camera.flashMode = flashMode
+        bindCapture()
+        Task { await refreshUnsorted() }
+        wakeFilmStrip()
+        Task {
+            await camera.start()
+            if let userId = auth.currentUser?.id {
+                try? await rolls.fetchRolls(for: userId)
+                if !didRestoreSelectedRoll {
+                    didRestoreSelectedRoll = true
+                    restoreSelectedRoll(userId: userId)
+                }
+            }
         }
     }
 
