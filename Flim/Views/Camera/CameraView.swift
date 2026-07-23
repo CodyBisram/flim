@@ -100,18 +100,19 @@ struct CameraView: View {
             Color.black.ignoresSafeArea()
 
             CameraPreview(session: camera.session, camera: camera, onShutter: { shutter() }, excludedRegions: controlRegions)
-                // A 3:4 viewfinder at full screen width, anchored to the physical top of the
-                // screen (Lapse-style): the feed runs behind the status bar and the floating
-                // top-bar pills instead of being squeezed into a band between reserved control
-                // rows, which is what makes the box this large while staying exactly 3:4 —
-                // what the box shows is still exactly the saved photo (see CameraPreview.swift
-                // and CameraViewModel.previewAspectRatio; the crop math reads this view's real
-                // on-screen bounds, so the box's size never affects capture). The zoom pills
-                // float over the feed's bottom edge; only the shutter strip below the box and
-                // the tab bar keep reserved space.
+                // A 3:4 viewfinder at full screen width — the geometric maximum for a 3:4 box
+                // on a modern iPhone, so what the box shows is still exactly the saved photo
+                // (see CameraPreview.swift and CameraViewModel.previewAspectRatio; the crop
+                // math reads this view's real on-screen bounds, so the box's size never
+                // affects capture). Vertically CENTERED between the physical screen top and
+                // the tab bar: top-anchoring piled all ~250pt of leftover slack into one black
+                // void under the box, while centering splits it into two ~125pt bands that
+                // each own a control row — the top bar floats in the upper band clear of the
+                // feed, the shutter strip fills the lower one. Zoom stays on the feed's
+                // bottom edge.
                 .aspectRatio(3.0 / 4.0, contentMode: .fit)
-                // Rounded only at the bottom: the top corners meet the physical screen edge.
-                .clipShape(UnevenRoundedRectangle(bottomLeadingRadius: 36, bottomTrailingRadius: 36))
+                // All corners rounded: the box floats between black bands on every edge.
+                .clipShape(RoundedRectangle(cornerRadius: 36))
                 // Tap-to-focus reticle. Attached to the box itself (before the outer frame)
                 // because `reticle.point` is in the preview view's own coordinate space.
                 .overlay {
@@ -131,7 +132,7 @@ struct CameraView: View {
                         .reportsControlRegion()
                         .padding(.bottom, 14)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .ignoresSafeArea(edges: .top)
 
             // Shutter flash overlay
@@ -151,11 +152,11 @@ struct CameraView: View {
                     Spacer()
                     bottomBar
                         .reportsControlRegion()
-                        // Roughly centers the 84pt shutter in the black strip between the
-                        // viewfinder's rounded bottom and the tab bar (the strip is ~241pt on
-                        // a 16e up to ~286pt on a Pro Max). Bottom-anchoring it left the
-                        // shutter floating alone at the foot of a large black void.
-                        .padding(.bottom, 86)
+                        // Centers the 84pt shutter in the ~125pt band between the centered
+                        // box's bottom edge and the tab bar (the band runs ~120pt on a 16e to
+                        // ~143pt on a Pro Max; a fixed lift keeps the shutter at a consistent
+                        // thumb height instead of drifting with device size).
+                        .padding(.bottom, 20)
                 }
 
                 coachOverlay
