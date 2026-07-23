@@ -1,6 +1,7 @@
 import SwiftUI
 import AVFoundation
 import UIKit
+import TipKit
 
 // MARK: - Control hit-region reporting
 //
@@ -49,16 +50,15 @@ struct CameraView: View {
     // a cover — so camera startup here is gated on onboarding being done. This gate only
     // decides WHEN startCameraFlow() may first run, not whether it may run again: the tab
     // re-fires onAppear on every revisit, and startCameraFlow()'s own calls (camera.start(),
-    // refreshUnsorted(), wakeFilmStrip()) are already safe to repeat, exactly as they were
+    // refreshUnsorted()) are already safe to repeat, exactly as they were
     // before this file gated anything on hasOnboarded. Do not add a run-once flag here — an
     // earlier version of this fix did, and it silently froze the camera preview after the
     // first tab excursion away from Camera for the rest of the app's life.
     @AppStorage("hasOnboarded") private var hasOnboarded = false
 
-    // Controls fade out when idle so the shutter stays the focal point; any
-    // interaction wakes them back up.
-    @State private var filmStripActive = false
-    @State private var dimTask: Task<Void, Never>?
+    // (The idle auto-dim that faded controls to 0.55 opacity is gone: it earned its keep
+    // when the pills floated over a full-bleed feed, but the top bar and shutter strip now
+    // sit on black bands off the image, where half-faded controls just look broken.)
 
     // Screen-space rects the top bar, zoom pills, and shutter/bottom pill occupy, reported
     // via `.reportsControlRegion()` below. Handed to `CameraPreview` so its tap-to-focus
@@ -99,41 +99,70 @@ struct CameraView: View {
         ZStack {
             Color.black.ignoresSafeArea()
 
-            CameraPreview(session: camera.session, camera: camera, onShutter: { shutter() }, excludedRegions: controlRegions)
-                // A 3:4 viewfinder at full screen width — the geometric maximum for a 3:4 box
-                // on a modern iPhone, so what the box shows is still exactly the saved photo
-                // (see CameraPreview.swift and CameraViewModel.previewAspectRatio; the crop
-                // math reads this view's real on-screen bounds, so the box's size never
-                // affects capture). Vertically CENTERED between the physical screen top and
-                // the tab bar: top-anchoring piled all ~250pt of leftover slack into one black
-                // void under the box, while centering splits it into two ~125pt bands that
-                // each own a control row — the top bar floats in the upper band clear of the
-                // feed, the shutter strip fills the lower one. Zoom stays on the feed's
-                // bottom edge.
-                .aspectRatio(3.0 / 4.0, contentMode: .fit)
-                // All corners rounded: the box floats between black bands on every edge.
-                .clipShape(RoundedRectangle(cornerRadius: 36))
-                // Tap-to-focus reticle. Attached to the box itself (before the outer frame)
-                // because `reticle.point` is in the preview view's own coordinate space.
-                .overlay {
-                    if let reticle = camera.focusReticle {
-                        RoundedRectangle(cornerRadius: 4)
-                            .stroke(FlimTheme.accent, lineWidth: 1.5)
-                            .frame(width: 72, height: 72)
-                            .position(reticle.point)
-                            .transition(.opacity)
-                            .allowsHitTesting(false)
+            // The viewfinder column: a flexible spacer above and the control strip below get
+            // equal shares of the leftover height, which is what keeps the box exactly
+            // centered between the physical screen top and the tab bar AND gives the shutter
+            // strip a container that is precisely the bottom band, so its contents can
+            // center themselves in it (a fixed lift drifted off-center across devices).
+            VStack(spacing: 0) {
+                Color.clear
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                CameraPreview(session: camera.session, camera: camera, onShutter: { shutter() }, excludedRegions: controlRegions)
+                    // A 3:4 viewfinder at full screen width — the geometric maximum for a 3:4
+                    // box on a modern iPhone, so what the box shows is still exactly the saved
+                    // photo (see CameraPreview.swift and CameraViewModel.previewAspectRatio;
+                    // the crop math reads this view's real on-screen bounds, so the box's size
+                    // never affects capture). The ~125pt black bands above/below are the
+                    // unavoidable remainder of a max-size 3:4 box on a ~19.5:9 screen; the
+                    // top bar floats in the upper band clear of the feed, the shutter strip
+                    // fills the lower one. Zoom stays on the feed's bottom edge.
+                    .aspectRatio(3.0 / 4.0, contentMode: .fit)
+                    // All corners rounded: the box floats between black bands on every edge.
+                    .clipShape(RoundedRectangle(cornerRadius: 36))
+                    // Tap-to-focus reticle. Attached to the box itself (before the outer
+                    // layout) because `reticle.point` is in the preview view's own space.
+                    .overlay {
+                        if let reticle = camera.focusReticle {
+                            RoundedRectangle(cornerRadius: 4)
+                                .stroke(FlimTheme.accent, lineWidth: 1.5)
+                                .frame(width: 72, height: 72)
+                                .position(reticle.point)
+                                .transition(.opacity)
+                                .allowsHitTesting(false)
+                        }
+                    }
+                    .animation(.easeOut(duration: 0.2), value: camera.focusReticle)
+                    // Zoom floats on the feed, just above the box's rounded bottom edge.
+                    .overlay(alignment: .bottom) {
+                        zoomControl
+                            .reportsControlRegion()
+                            .padding(.bottom, 14)
+                    }
+                    // Tips anchor to zero-size overlay probes, never to the functional views,
+                    // so a visible popover can never participate in the box's layout.
+                    .overlay(alignment: .top) {
+                        Color.clear
+                            .frame(width: 1, height: 1)
+                            .popoverTip(FocusTip())
+                    }
+                    // Wins the VStack's height negotiation: without this the two flexible
+                    // bands split the height evenly with the box, squeezing it to ~60% size.
+                    // Priority makes the box take its full 3:4-at-screen-width size first;
+                    // the bands then share only the true remainder.
+                    .layoutPriority(1)
+
+                // The bottom band. The container renders even when permission is denied so
+                // the box stays centered; only the controls inside are conditional.
+                ZStack {
+                    if camera.permission != .denied {
+                        bottomBar
+                            .reportsControlRegion()
                     }
                 }
-                .animation(.easeOut(duration: 0.2), value: camera.focusReticle)
-                // Zoom floats on the feed like Lapse, just above the box's rounded bottom edge.
-                .overlay(alignment: .bottom) {
-                    zoomControl
-                        .reportsControlRegion()
-                        .padding(.bottom, 14)
-                }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .ignoresSafeArea(edges: .top)
+            }
+            .ignoresSafeArea(edges: .top)
 
             // Shutter flash overlay
             Color.white
@@ -144,19 +173,12 @@ struct CameraView: View {
             if camera.permission == .denied {
                 cameraDeniedOverlay
             } else {
-                // Controls respect the safe area so they sit ABOVE the tab bar — only the
-                // camera preview / flash bleed full-screen (they ignore safe area individually).
+                // The top bar keeps its safe-area anchoring in the upper band (the shutter
+                // strip lives in the viewfinder column above, centered in the lower band).
                 VStack(spacing: 0) {
                     topBar
                         .reportsControlRegion()
                     Spacer()
-                    bottomBar
-                        .reportsControlRegion()
-                        // Centers the 84pt shutter in the ~125pt band between the centered
-                        // box's bottom edge and the tab bar (the band runs ~120pt on a 16e to
-                        // ~143pt on a Pro Max; a fixed lift keeps the shutter at a consistent
-                        // thumb height instead of drifting with device size).
-                        .padding(.bottom, 20)
                 }
 
                 coachOverlay
@@ -226,7 +248,7 @@ struct CameraView: View {
     /// Starts (or restarts) the camera preview/session and kicks off the roll-restore fetch.
     /// Called every time this view appears, exactly as before onboarding-gating existed —
     /// `camera.start()`/`configure()`/`startRunning()` are already idempotent internally, and
-    /// re-running `refreshUnsorted()`/`wakeFilmStrip()` on every tab revisit is expected. The
+    /// re-running `refreshUnsorted()` on every tab revisit is expected. The
     /// only thing gated is WHEN it may first run: not until onboarding has finished
     /// (`hasOnboarded == true`), since this is what triggers `AVCaptureDevice.requestAccess`
     /// on first launch via `CameraViewModel.start()`. `onAppear` covers the "already
@@ -236,7 +258,6 @@ struct CameraView: View {
         camera.flashMode = flashMode
         bindCapture()
         Task { await refreshUnsorted() }
-        wakeFilmStrip()
         Task {
             await camera.start()
             if let userId = auth.currentUser?.id {
@@ -260,6 +281,8 @@ struct CameraView: View {
         // at the actual capture (correctly timed, and after the flash fires). Playing our own too
         // caused a double shutter noise with flash on.
         camera.capturePhoto()
+        // Feeds VolumeShutterTip's "has taken a few shots" rule.
+        Task { await VolumeShutterTip.photoCaptured.donate() }
     }
 
     private func startCountdown() {
@@ -297,7 +320,6 @@ struct CameraView: View {
                 Button {
                     withAnimation(.snappy(duration: 0.2)) { camera.zoom(to: level) }
                     Haptics.tap()
-                    wakeFilmStrip()
                 } label: {
                     Text(active ? zoomLabel(camera.zoomFactor) : zoomLabel(level))
                         .font(.system(size: 13, weight: .semibold, design: .rounded))
@@ -313,8 +335,6 @@ struct CameraView: View {
             }
         }
         .animation(.snappy(duration: 0.2), value: camera.zoomFactor)
-        .opacity(filmStripActive ? 1 : 0.55)
-        .animation(.easeInOut(duration: 0.35), value: filmStripActive)
     }
 
     private func refreshUnsorted() async {
@@ -332,7 +352,7 @@ struct CameraView: View {
                 // (icons below are fixed 38x38). No .fixedSize here: that would defeat
                 // lineLimit/truncation and let a long roll name push the whole row off-screen
                 // (regressed with a long-named roll on both a 13 and a 17 Pro Max).
-                Button { showRollPicker = true; wakeFilmStrip() } label: {
+                Button { showRollPicker = true } label: {
                     HStack(spacing: 6) {
                         Image(systemName: selectedRoll == nil ? "person.fill" : "film.stack")
                             .font(.system(size: 12))
@@ -358,27 +378,11 @@ struct CameraView: View {
                 .accessibilityLabel("Send photos to")
                 .accessibilityValue(selectedRoll?.name ?? "Personal")
 
-                // Flip between back and front cameras. (Flash moved down beside the shutter.)
-                Button {
-                    camera.flipCamera()
-                    Haptics.tap()
-                    wakeFilmStrip()
-                } label: {
-                    Image(systemName: "arrow.triangle.2.circlepath")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .frame(width: 38, height: 38)
-                }
-                .contentShape(Capsule())
-                .glassCapsule(interactive: true)
-                .padding(.leading, 8)
-                .accessibilityLabel("Flip camera")
-
                 // Self-timer (Off → 3s → 10s). Minimal: dim when off, accent + value when set.
+                // (Flip and flash both live in the bottom strip beside the shutter now.)
                 Button {
                     selfTimerSeconds = selfTimerSeconds == 0 ? 3 : (selfTimerSeconds == 3 ? 10 : 0)
                     Haptics.tap()
-                    wakeFilmStrip()
                 } label: {
                     HStack(spacing: 3) {
                         Image(systemName: "timer").font(.system(size: 14, weight: .semibold))
@@ -439,36 +443,51 @@ struct CameraView: View {
         }
         .padding(.top, 12)
         .padding(.horizontal, 20)
-        .opacity(filmStripActive ? 1 : 0.55)
-        .animation(.easeInOut(duration: 0.35), value: filmStripActive)
-    }
-
-    /// Brings the controls to full opacity, then fades them back out after a few idle seconds.
-    private func wakeFilmStrip() {
-        filmStripActive = true
-        dimTask?.cancel()
-        dimTask = Task { @MainActor in
-            try? await Task.sleep(for: .seconds(3))
-            guard !Task.isCancelled else { return }
-            withAnimation(.easeInOut(duration: 0.5)) { filmStripActive = false }
-        }
     }
 
     // MARK: - Bottom bar (shutter)
 
+    /// The bottom-band strip: flip on the left, shutter dead center, flash on the right.
+    /// Everything centers vertically in the band via the containing ZStack; the flanking
+    /// buttons keep the shutter company so the band reads as a control strip, not a void.
     private var bottomBar: some View {
         ZStack {
             ShutterButton(isCapturing: camera.isCapturing) { shutter() }
-            // Flash sits beside the shutter, Lapse-style: it fills the control strip so the
-            // shutter isn't alone in the black band, and it thins out the floating top bar,
-            // which stacked five pills over the feed. Hidden on the front camera (no flash),
-            // exactly as it was in the top bar.
-            if camera.isFlashSupported {
-                HStack {
-                    Spacer()
+                // Zero-size tip anchor; see the viewfinder tip probe for why.
+                .overlay(alignment: .top) {
+                    Color.clear
+                        .frame(width: 1, height: 1)
+                        .popoverTip(VolumeShutterTip())
+                }
+            HStack {
+                // Flip lives here rather than the top bar: it's the most-reached-for control
+                // after the shutter, and it balances the flash on the opposite side.
+                Button {
+                    camera.flipCamera()
+                    Haptics.tap()
+                    Task { await FlipTip.flippedViaButton.donate() }
+                } label: {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 52, height: 52)
+                }
+                .contentShape(Capsule())
+                .glassCapsule(interactive: true)
+                // Zero-size tip anchor; see the viewfinder tip probe for why.
+                .overlay(alignment: .top) {
+                    Color.clear
+                        .frame(width: 1, height: 1)
+                        .popoverTip(FlipTip())
+                }
+                .accessibilityLabel("Flip camera")
+
+                Spacer()
+
+                // Hidden on the front camera (no flash), exactly as in its old top-bar spot.
+                if camera.isFlashSupported {
                     Button {
                         cycleFlash()
-                        wakeFilmStrip()
                     } label: {
                         Image(systemName: flashIcon)
                             .font(.system(size: 16, weight: .semibold))
@@ -477,12 +496,13 @@ struct CameraView: View {
                     }
                     .contentShape(Capsule())
                     .glassCapsule(interactive: true)
-                    .padding(.trailing, 44)
                     .accessibilityLabel("Flash")
                     .accessibilityValue(flashMode == .off ? "Off" : (flashMode == .auto ? "Auto" : "On"))
                 }
             }
+            .padding(.horizontal, 44)
         }
+        .frame(maxWidth: .infinity)
     }
 
     // MARK: - Glass grouping
