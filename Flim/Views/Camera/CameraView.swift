@@ -140,11 +140,22 @@ struct CameraView: View {
                             .padding(.bottom, 14)
                     }
                     // Tips anchor to zero-size overlay probes, never to the functional views,
-                    // so a visible popover can never participate in the box's layout.
-                    .overlay(alignment: .top) {
+                    // so a visible popover can never participate in the box's layout. Both
+                    // gesture tips below teach something you do TO THE FRAME ("tap the
+                    // frame", "double-tap the frame"), so both anchor to its center rather
+                    // than an edge — pointing the callout at the whole surface being taught,
+                    // not at whichever button happened to trigger the tip's display rule.
+                    // Mutually exclusive at runtime (rules never let both show at once), so
+                    // sharing one center anchor point causes no visual collision.
+                    .overlay(alignment: .center) {
                         Color.clear
                             .frame(width: 1, height: 1)
                             .popoverTip(FocusTip())
+                    }
+                    .overlay(alignment: .center) {
+                        Color.clear
+                            .frame(width: 1, height: 1)
+                            .popoverTip(FlipTip())
                     }
                     // Wins the VStack's height negotiation: without this the two flexible
                     // bands split the height evenly with the box, squeezing it to ~60% size.
@@ -163,6 +174,20 @@ struct CameraView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             .ignoresSafeArea(edges: .top)
+
+            // VolumeShutterTip teaches the physical volume rocker, not any on-screen control —
+            // there is no button to anchor it to. Its probe sits near the device's actual
+            // left edge, at roughly the volume rocker's real height (below the top bar, in
+            // the upper third of the screen, matching where the buttons sit on current
+            // iPhones), so the callout at least gestures toward the real hardware instead of
+            // pointing at an unrelated on-screen control like the shutter.
+            Color.clear
+                .frame(width: 1, height: 1)
+                .popoverTip(VolumeShutterTip())
+                .padding(.top, 190)
+                .padding(.leading, 2)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .allowsHitTesting(false)
 
             // Shutter flash overlay
             Color.white
@@ -453,12 +478,6 @@ struct CameraView: View {
     private var bottomBar: some View {
         ZStack {
             ShutterButton(isCapturing: camera.isCapturing) { shutter() }
-                // Zero-size tip anchor; see the viewfinder tip probe for why.
-                .overlay(alignment: .top) {
-                    Color.clear
-                        .frame(width: 1, height: 1)
-                        .popoverTip(VolumeShutterTip())
-                }
             HStack {
                 // Flip lives here rather than the top bar: it's the most-reached-for control
                 // after the shutter, and it balances the flash on the opposite side.
@@ -474,12 +493,6 @@ struct CameraView: View {
                 }
                 .contentShape(Capsule())
                 .glassCapsule(interactive: true)
-                // Zero-size tip anchor; see the viewfinder tip probe for why.
-                .overlay(alignment: .top) {
-                    Color.clear
-                        .frame(width: 1, height: 1)
-                        .popoverTip(FlipTip())
-                }
                 .accessibilityLabel("Flip camera")
 
                 Spacer()
