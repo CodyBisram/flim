@@ -852,6 +852,52 @@ CREATE TRIGGER auto_hide_reported_trigger
     FOR EACH ROW EXECUTE FUNCTION public.auto_hide_reported();
 
 -- ============================================================
+-- Auto-moderation, enforced at RLS (not just client-side).
+-- The four policies above/below that gate "can you see this content" (rows AND storage bytes)
+-- were defined before `hidden` existed on this table, so `NOT hidden` couldn't be added inline
+-- back then without breaking a from-scratch run of this file — redefined here instead, now that
+-- the column above is guaranteed to exist. Without this, "the client filters hidden content out"
+-- (this section's own opening comment) was the ONLY enforcement: a reported-and-hidden photo or
+-- post was still fully readable by calling the Supabase REST/Storage API directly, bypassing the
+-- app UI entirely — RLS is the actual security boundary, a client query filter is not. Owners
+-- keep seeing their own hidden photo ("photos: own photos" is untouched) — hiding is about
+-- hiding FROM OTHERS, not from yourself, and the dashboard review/restore flow above still needs
+-- a way for that to make sense.
+-- ============================================================
+DROP POLICY IF EXISTS "photos: roll members can see" ON public.photos;
+CREATE POLICY "photos: roll members can see"
+    ON public.photos FOR SELECT
+    USING (roll_id IS NOT NULL AND NOT hidden AND public.is_roll_member(roll_id));
+
+DROP POLICY IF EXISTS "posts: readable by authenticated" ON public.posts;
+CREATE POLICY "posts: readable by authenticated"
+    ON public.posts FOR SELECT TO authenticated USING (NOT hidden);
+
+DROP POLICY IF EXISTS "photos: roll members can read shared" ON storage.objects;
+CREATE POLICY "photos: roll members can read shared"
+    ON storage.objects FOR SELECT TO authenticated
+    USING (
+        bucket_id = 'photos'
+        AND EXISTS (
+            SELECT 1 FROM public.photos p
+            WHERE storage.objects.name IN (p.storage_path, p.thumb_path, p.feed_path)
+              AND p.roll_id IS NOT NULL
+              AND NOT p.hidden
+              AND public.is_roll_member(p.roll_id)
+        )
+    );
+
+DROP POLICY IF EXISTS "photos: readable when shared to a post" ON storage.objects;
+CREATE POLICY "photos: readable when shared to a post"
+    ON storage.objects FOR SELECT TO authenticated
+    USING (
+        bucket_id = 'photos'
+        AND EXISTS (SELECT 1 FROM public.posts po
+                    WHERE storage.objects.name IN (po.storage_path, po.thumb_path, po.feed_path)
+                      AND NOT po.hidden)
+    );
+
+-- ============================================================
 -- Indexes on hot query paths (Postgres does NOT auto-index foreign keys).
 -- Cheap now, and they keep the feed / rolls / activity queries index-backed as data grows.
 -- ============================================================
