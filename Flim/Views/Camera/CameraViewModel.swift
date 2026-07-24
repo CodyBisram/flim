@@ -366,7 +366,13 @@ extension CameraViewModel: AVCapturePhotoCaptureDelegate {
         Task { @MainActor in
             self.isCapturing = false
             self.flashOpacity = 0   // safety net in case the capture errored before the callbacks above fired
-            guard let data else { return }
+            guard let data else {
+                // A genuine capture failure (hardware fault, interrupted session, no file data
+                // at all) — rare, but silent otherwise: the shutter had already animated and
+                // fired its haptic as if the shot landed, with nothing to show it didn't.
+                Haptics.error()
+                return
+            }
             self.capturedData = data
             self.onPhotoCapture?(data)
         }
