@@ -25,7 +25,7 @@ struct UserProfile: Codable, Identifiable, Hashable {
 
 /// A photo a user published to their page/feed. `storagePath` + `takenAt` are denormalized
 /// from the photo so the feed needs no cross-user access to the photos table.
-struct Post: Codable, Identifiable {
+struct Post: Codable, Identifiable, Hashable {
     let id: UUID
     let userId: UUID
     let photoId: UUID
@@ -135,7 +135,7 @@ struct CommentInfo: Identifiable {
 }
 
 /// A post joined with its author, for display in the feed / on a page.
-struct FeedItem: Identifiable {
+struct FeedItem: Identifiable, Hashable {
     let post: Post
     let author: UserProfile
     var id: UUID { post.id }
@@ -154,6 +154,14 @@ struct ActivityItem: Identifiable {
     let actor: UserProfile
     let date: Date
     let postId: UUID?
+    /// The post this activity is about (nil for `.follow`). Carried directly, batch-fetched
+    /// alongside the activity rows, so a row can show a thumbnail preview and navigate
+    /// straight to the post with no second fetch at tap time.
+    var post: Post?
+    /// The post's author — usually you (fetchActivity only looks at reactions/comments on
+    /// YOUR OWN posts), but the actor themselves for `.tagged`. Resolved directly from the
+    /// fetched post rather than inferred from `kind`, so it stays correct regardless.
+    var postAuthor: UserProfile?
 }
 
 /// Emoji reactions. `all` is the default quick row; `palette` is the fuller set revealed

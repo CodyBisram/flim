@@ -528,6 +528,17 @@ final class FeedService {
             .execute().value) ?? []
     }
 
+    /// Batch-fetches posts by id — mirrors `fetchProfiles(ids:)`. Used to attach a post (for a
+    /// thumbnail + navigation) to activity rows without a query per row.
+    func fetchPosts(ids: [UUID]) async -> [UUID: Post] {
+        guard !ids.isEmpty else { return [:] }
+        let list: [Post] = (try? await supabase
+            .from("posts").select()
+            .in("id", values: ids.map(\.uuidString))
+            .execute().value) ?? []
+        return Dictionary(list.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+    }
+
     // MARK: - Reactions
 
     func fetchReactions(postId: UUID) async -> [PostReaction] {
@@ -623,6 +634,38 @@ final class FeedService {
         return url
     }
 
+    /// Signs many paths at once, reusing persisted URLs and minting only the misses in
+    /// parallel — mirrors `PhotoService.signedURLs(for:)`. Used for Activity row thumbnails,
+    /// where the caller has already deduped to one path per distinct post.
+    func signedURLs(for paths: [String]) async -> [String: URL] {
+        guard !paths.isEmpty else { return [:] }
+        var map: [String: URL] = [:]
+        var misses: [String] = []
+        for path in paths {
+            if let cached = await SignedURLStore.shared.cached(path) { map[path] = cached }
+            else { misses.append(path) }
+        }
+        guard !misses.isEmpty else { return map }
+
+        let minted = await withTaskGroup(of: (String, URL?).self) { group in
+            for path in misses {
+                group.addTask {
+                    let url = try? await supabase.storage
+                        .from("photos").createSignedURL(path: path, expiresIn: Int(SignedURLStore.ttl))
+                    return (path, url)
+                }
+            }
+            var result: [(String, URL)] = []
+            for await (path, url) in group { if let url { result.append((path, url)) } }
+            return result
+        }
+        for (path, url) in minted {
+            await SignedURLStore.shared.store(url, for: path)
+            map[path] = url
+        }
+        return map
+    }
+
     // MARK: - Activity
 
     /// Recent things others did involving you: reactions + comments on your posts, and new
@@ -702,10 +745,18 @@ final class FeedService {
 
         raws.removeAll { blockedIds.contains($0.actorId) }
         let profiles = await fetchProfiles(ids: Array(Set(raws.map(\.actorId))))
+
+        // Batch-fetch the post each row is about (nil for .follow) and its author, so a row
+        // can show a thumbnail and navigate straight to the post with no per-row query.
+        let posts = await fetchPosts(ids: Array(Set(raws.compactMap(\.postId))))
+        let postAuthors = await fetchProfiles(ids: Array(Set(posts.values.map(\.userId))))
+
         return raws
             .compactMap { raw -> ActivityItem? in
                 guard let actor = profiles[raw.actorId] else { return nil }
-                return ActivityItem(kind: raw.kind, actor: actor, date: raw.date, postId: raw.postId)
+                let post = raw.postId.flatMap { posts[$0] }
+                return ActivityItem(kind: raw.kind, actor: actor, date: raw.date, postId: raw.postId,
+                                     post: post, postAuthor: post.flatMap { postAuthors[$0.userId] })
             }
             .sorted { $0.date > $1.date }
     }
