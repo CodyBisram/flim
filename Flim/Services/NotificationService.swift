@@ -61,4 +61,14 @@ final class NotificationService {
         )
         UNUserNotificationCenter.current().add(request)
     }
+
+    /// Cancels a roll's pending develop reminder — call when a roll is deleted or left, or the
+    /// notification still fires at the original develop time claiming "Your <roll> developed"
+    /// for a roll you no longer have (deleted) or no longer belong to (left). The identifier
+    /// matches `scheduleRollDevelopNotification`'s exactly, so this is a safe no-op if nothing
+    /// was ever scheduled (roll developed with notifications off, or before anyone shot into it).
+    func cancelRollDevelopNotification(rollId: UUID) {
+        UNUserNotificationCenter.current()
+            .removePendingNotificationRequests(withIdentifiers: ["develop-roll-\(rollId.uuidString)"])
+    }
 }

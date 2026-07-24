@@ -72,8 +72,10 @@ struct RollDetailView: View {
                 // Countdown to the shared reveal — runs from the moment the roll was created,
                 // so it shows even before anyone has taken a shot.
                 if !roll.isDeveloped {
+                    // nil (not 0) while pagination is still draining — 0 legitimately means "no
+                    // shots yet", a different message from "still counting". See rollFullyPaged.
                     revealBanner(revealAt: roll.revealAt,
-                                 shots: vm.developingPhotos.count,
+                                 shots: rollFullyPaged ? vm.developingPhotos.count : nil,
                                  people: Set(vm.developingPhotos.map(\.userId)).count)
                 }
 
@@ -113,7 +115,9 @@ struct RollDetailView: View {
                         ScrollView {
                             VStack(alignment: .leading, spacing: 0) {
                                 if !vm.developingPhotos.isEmpty {
-                                    sectionHeader("\(vm.developingPhotos.count) DEVELOPING")
+                                    // Same reasoning as the reveal banner: no count in the
+                                    // header until it's the true total, not a page-1 fragment.
+                                    sectionHeader(rollFullyPaged ? "\(vm.developingPhotos.count) DEVELOPING" : "DEVELOPING")
                                     photoGrid(vm.developingPhotos, triggersLoadMore: false)
                                 }
                                 if !vm.developedPhotos.isEmpty {
@@ -198,19 +202,19 @@ struct RollDetailView: View {
             Task {
                 if let uid = auth.currentUser?.id { await feed.loadBlocked(userId: uid) }
                 await vm.loadRoll(photoService: photoService, rollId: roll.id, blockedIds: feed.blockedIds)
-                // A developed roll's photo set is final — no more captures are possible — unlike
-                // an in-progress roll or the endless personal Darkroom feed, where lazy,
-                // scroll-triggered pagination genuinely protects performance. Once developed,
-                // finish paging eagerly so "Play through the roll · N", the carousel, and the
-                // reveal below all see the roll's true total instead of only PhotoService's
-                // first 30-photo page (a roll of 60+ read "30" until the grid had been scrolled
-                // far enough to trigger more pages itself).
-                if roll.isDeveloped {
-                    while photoService.hasMore {
-                        await vm.loadMoreRoll(photoService: photoService, rollId: roll.id, blockedIds: feed.blockedIds)
-                    }
-                    rollFullyPaged = true
+                // A roll's photo set is small (a friend group's shots), not the endless, ever-
+                // growing personal Darkroom feed — where lazy, scroll-triggered pagination
+                // genuinely protects performance — so it's safe to finish paging eagerly here
+                // regardless of develop state. Without this, EVERY roll-count label read
+                // PhotoService's first-30-photo page instead of the true total: the developing
+                // banner's "N shots waiting" (the single most commonly seen roll screen, since a
+                // roll spends most of its life developing), "Play through the roll · N", the
+                // carousel, the reveal, and the develop-reminder notification's own shot count
+                // below all draw from `vm.photos` / `vm.developingPhotos` / `vm.developedPhotos`.
+                while photoService.hasMore {
+                    await vm.loadMoreRoll(photoService: photoService, rollId: roll.id, blockedIds: feed.blockedIds)
                 }
+                rollFullyPaged = true
                 // The reveal, as an event: play everyone's shots once, the first time the
                 // roll is opened after it has developed.
                 if roll.isDeveloped, !vm.developedPhotos.isEmpty,
@@ -268,6 +272,7 @@ struct RollDetailView: View {
         }
         .confirmationDialog("Delete this roll?", isPresented: $showDeleteRoll, titleVisibility: .visible) {
             Button("Delete Roll", role: .destructive) {
+                notifications.cancelRollDevelopNotification(rollId: roll.id)
                 Task {
                     try? await rollService.deleteRoll(rollId: roll.id)
                     dismiss()
@@ -280,6 +285,7 @@ struct RollDetailView: View {
         .confirmationDialog("Leave this roll?", isPresented: $showLeaveRoll, titleVisibility: .visible) {
             Button("Leave Roll", role: .destructive) {
                 guard let uid = auth.currentUser?.id else { return }
+                notifications.cancelRollDevelopNotification(rollId: roll.id)
                 Task {
                     try? await rollService.leaveRoll(rollId: roll.id, userId: uid)
                     dismiss()
@@ -362,7 +368,7 @@ struct RollDetailView: View {
         .padding(.horizontal, 2)
     }
 
-    private func revealBanner(revealAt: Date, shots: Int, people: Int) -> some View {
+    private func revealBanner(revealAt: Date, shots: Int?, people: Int) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             TimelineView(.periodic(from: .now, by: 1)) { timeline in
                 let remaining = max(0, Int(revealAt.timeIntervalSince(timeline.date)))
@@ -370,11 +376,17 @@ struct RollDetailView: View {
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(FlimTheme.accent)
             }
-            Text(shots == 0
-                 ? "No shots yet. Be the first to add one"
-                 : "\(shots) shot\(shots == 1 ? "" : "s") waiting" + (people > 1 ? " from \(people) people" : ""))
-                .font(.system(size: 12))
-                .foregroundStyle(FlimTheme.textSecondary)
+            Group {
+                if let shots {
+                    Text(shots == 0
+                         ? "No shots yet. Be the first to add one"
+                         : "\(shots) shot\(shots == 1 ? "" : "s") waiting" + (people > 1 ? " from \(people) people" : ""))
+                } else {
+                    Text("Counting shots…")
+                }
+            }
+            .font(.system(size: 12))
+            .foregroundStyle(FlimTheme.textSecondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 16).padding(.vertical, 12)
