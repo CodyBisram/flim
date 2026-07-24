@@ -7,6 +7,15 @@ final class DarkroomViewModel {
     var signedURLCache: [UUID: URL] = [:]
     var isLoading = false
     var error: String?
+    /// The Darkroom's true total kept-photo count — nil until `load()`'s dedicated count query
+    /// resolves. Deliberately separate from `developedPhotos.count`, which is capped at
+    /// whatever `PhotoService`'s pagination has loaded so far (30/page): a toolbar label reading
+    /// that count directly showed "30 shots" for anyone with 31+ kept photos until the grid had
+    /// been scrolled far enough to trigger more pages — the same undercount bug already fixed
+    /// for roll photo counts, here on the personal feed. Unlike a developed roll (finite, safe
+    /// to eager-load in full), the personal Darkroom can grow unbounded, so pagination itself
+    /// stays lazy; only the total is fetched eagerly, via a headless count query.
+    var totalCount: Int?
 
     var developingPhotos: [Photo] { photos.filter { !$0.isReady } }
     var developedPhotos: [Photo] { photos.filter(\.isReady) }
@@ -20,32 +29,36 @@ final class DarkroomViewModel {
     // MARK: - Load
 
     func load(photoService: PhotoService, userId: UUID) async {
-        isLoading = true
-        error = nil
+        await MainActor.run { isLoading = true; error = nil }
+        // Fired alongside the page fetch, not after — a headless count query, so it costs
+        // nothing extra to run concurrently and resolves before pagination would ever matter.
+        async let count = photoService.personalPhotoCount(userId: userId)
         do {
             try await photoService.fetchPersonalPhotos(userId: userId)
-            photos = photoService.photos
+            let fetched = photoService.photos
+            await MainActor.run { photos = fetched }
             await markReadyPhotos(photoService: photoService)
             await prefetchURLs(photoService: photoService)
         } catch {
-            self.error = error.localizedDescription
+            await MainActor.run { self.error = error.localizedDescription }
         }
-        isLoading = false
+        let total = await count
+        await MainActor.run { totalCount = total; isLoading = false }
         startRefreshLoop(photoService: photoService)
     }
 
     func loadRoll(photoService: PhotoService, rollId: UUID, blockedIds: Set<UUID> = []) async {
-        isLoading = true
-        error = nil
+        await MainActor.run { isLoading = true; error = nil }
         do {
             try await photoService.fetchRollPhotos(rollId: rollId, blockedIds: blockedIds)
-            photos = photoService.photos
+            let fetched = photoService.photos
+            await MainActor.run { photos = fetched }
             await markReadyPhotos(photoService: photoService)
             await prefetchURLs(photoService: photoService)
         } catch {
-            self.error = error.localizedDescription
+            await MainActor.run { self.error = error.localizedDescription }
         }
-        isLoading = false
+        await MainActor.run { isLoading = false }
     }
 
     // MARK: - Pagination (load next page when the last cell appears)
@@ -53,14 +66,16 @@ final class DarkroomViewModel {
     func loadMore(photoService: PhotoService, userId: UUID) async {
         guard photoService.hasMore, !photoService.isLoading else { return }
         try? await photoService.fetchPersonalPhotos(userId: userId, reset: false)
-        photos = photoService.photos
+        let fetched = photoService.photos
+        await MainActor.run { photos = fetched }
         await markReadyPhotos(photoService: photoService)
     }
 
     func loadMoreRoll(photoService: PhotoService, rollId: UUID, blockedIds: Set<UUID> = []) async {
         guard photoService.hasMore, !photoService.isLoading else { return }
         try? await photoService.fetchRollPhotos(rollId: rollId, reset: false, blockedIds: blockedIds)
-        photos = photoService.photos
+        let fetched = photoService.photos
+        await MainActor.run { photos = fetched }
         await markReadyPhotos(photoService: photoService)
     }
 
@@ -73,9 +88,11 @@ final class DarkroomViewModel {
         guard !ready.isEmpty else { return }
         // Grid shows the thumbnail (displayPath) — tiny download vs the full image.
         let map = await photoService.signedURLs(for: ready.map(\.displayPath))
-        for photo in ready where map[photo.displayPath] != nil {
-            signedURLCache[photo.id] = map[photo.displayPath]
-            urlExpiry[photo.id] = Date.now.addingTimeInterval(3600)
+        await MainActor.run {
+            for photo in ready where map[photo.displayPath] != nil {
+                signedURLCache[photo.id] = map[photo.displayPath]
+                urlExpiry[photo.id] = Date.now.addingTimeInterval(3600)
+            }
         }
     }
 
@@ -88,8 +105,10 @@ final class DarkroomViewModel {
         }
 
         guard let url = try? await photoService.signedURL(for: photo.displayPath) else { return nil }
-        signedURLCache[photo.id] = url
-        urlExpiry[photo.id] = Date.now.addingTimeInterval(3600)
+        await MainActor.run {
+            signedURLCache[photo.id] = url
+            urlExpiry[photo.id] = Date.now.addingTimeInterval(3600)
+        }
         return url
     }
 
@@ -98,7 +117,8 @@ final class DarkroomViewModel {
     private func markReadyPhotos(photoService: PhotoService, notify: Bool = false) async {
         let before = developedPhotos.count
         await photoService.markDevelopedIfReady()
-        photos = photoService.photos
+        let fetched = photoService.photos
+        await MainActor.run { photos = fetched }
         // Celebrate photos that develop while you're watching (not on initial load).
         if notify, developedPhotos.count > before {
             await MainActor.run { Haptics.reveal() }

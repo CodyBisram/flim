@@ -139,9 +139,9 @@ struct DarkroomView: View {
                     }
                     .accessibilityLabel("\(unsortedCount) to sort")
                 }
-            } else if !vm.developedPhotos.isEmpty {
+            } else if let total = vm.totalCount, total > 0 {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Text("\(vm.developedPhotos.count) shot\(vm.developedPhotos.count == 1 ? "" : "s")")
+                    Text("\(total) shot\(total == 1 ? "" : "s")")
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(FlimTheme.textTertiary)
                         .padding(.horizontal, 10)

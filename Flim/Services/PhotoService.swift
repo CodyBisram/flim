@@ -331,6 +331,17 @@ final class PhotoService {
         }
     }
 
+    /// The Darkroom's true total kept-photo count, same filter as `fetchPersonalPhotos` — a
+    /// headless `count: .exact` request (no rows transferred), so the toolbar's "N shots"
+    /// label can show the real total without waiting on (or being capped by) pagination.
+    func personalPhotoCount(userId: UUID) async -> Int {
+        (try? await supabase.from("photos")
+            .select("id", head: true, count: .exact)
+            .eq("user_id", value: userId.uuidString)
+            .eq("is_sorted", value: true)
+            .execute().count) ?? 0
+    }
+
     #if DEBUG
     /// DEBUG: seed a few UNSORTED instants so the sort deck can be exercised in the simulator
     /// (which has no camera to produce real captures).
@@ -404,34 +415,53 @@ final class PhotoService {
     /// Loads one page of photos (newest develop-time first), appending to `photos`. `reset`
     /// starts a fresh feed; otherwise it continues from where the last page left off. Only
     /// the visible pages are ever fetched, and signed URLs are resolved lazily per cell.
+    // Every mutation of `photos`/`hasMore`/`loadedCount`/`isLoading` below is wrapped in
+    // `MainActor.run` — this class isn't @MainActor-isolated, and once the network `await`
+    // suspends, execution resumes on a background executor by default. `photos` is read
+    // directly by SwiftUI grids/lists every time this app loads a page, so mutating it off the
+    // main thread while a render pass reads it is a real (if narrow-window) data race, not a
+    // hypothetical one — the same class of bug as the `MainActor.run` wraps already present
+    // elsewhere in this file (captureAndUpload, deletePhoto(s)), just missed here even though
+    // this is the single most-invoked mutator in the file (every Darkroom/roll list load).
     private func fetchPage(
         reset: Bool,
         blockedIds: Set<UUID> = [],
         filter: (PostgrestFilterBuilder) -> PostgrestFilterBuilder
     ) async throws {
         if reset {
-            loadedCount = 0
-            hasMore = true
-            photos = []
+            await MainActor.run {
+                loadedCount = 0
+                hasMore = true
+                photos = []
+            }
         }
         guard hasMore else { return }
 
-        isLoading = true
-        defer { isLoading = false }
+        await MainActor.run { isLoading = true }
 
         let base = supabase.from("photos").select()
-        let page: [Photo] = try await filter(base)
-            .order("develops_at", ascending: false)
-            .range(from: loadedCount, to: loadedCount + pageSize - 1)
-            .execute()
-            .value
+        let page: [Photo]
+        do {
+            page = try await filter(base)
+                .order("develops_at", ascending: false)
+                .range(from: loadedCount, to: loadedCount + pageSize - 1)
+                .execute()
+                .value
+        } catch {
+            await MainActor.run { isLoading = false }
+            throw error
+        }
 
         let visible = blockedIds.isEmpty ? page : page.filter { !blockedIds.contains($0.userId) }
-        photos.append(contentsOf: visible)
-        // Advance pagination by the raw page size (not the filtered count) so a blocked-heavy
-        // page doesn't get re-requested — the offset tracks server rows, not rendered ones.
-        loadedCount += page.count
-        if page.count < pageSize { hasMore = false }
+        await MainActor.run {
+            photos.append(contentsOf: visible)
+            // Advance pagination by the raw page size (not the filtered count) so a
+            // blocked-heavy page doesn't get re-requested — the offset tracks server rows,
+            // not rendered ones.
+            loadedCount += page.count
+            if page.count < pageSize { hasMore = false }
+            isLoading = false
+        }
     }
 
     // MARK: - Signed URLs
@@ -492,8 +522,10 @@ final class PhotoService {
                 .execute()
         }
 
-        for i in photos.indices where readyIds.contains(photos[i].id.uuidString) {
-            photos[i].isDeveloped = true
+        await MainActor.run {
+            for i in photos.indices where readyIds.contains(photos[i].id.uuidString) {
+                photos[i].isDeveloped = true
+            }
         }
     }
 }
