@@ -45,6 +45,7 @@
 		6013474B6F35E06F049139DD /* JoinRollView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35A42EF6E37ED2ED362069BA /* JoinRollView.swift */; };
 		6B14829E6DD63477E932FEDC /* FullScreenPhotoView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B7DE28ED82A77117E85EBE0 /* FullScreenPhotoView.swift */; };
 		6FDE9DF7E6D1E48B36B0FFCC /* UsernameView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF49F2D3C9EF346AAD3F41BF /* UsernameView.swift */; };
+		75EF6BCE38ECF791C4CC0D8C /* CrashReporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 498109790A8BAE9899A4F515 /* CrashReporter.swift */; };
 		793DFF7AB411740E0874DD22 /* QuickCaptureIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5F4E6A1053D1FADA991924E /* QuickCaptureIntent.swift */; };
 		81394B1696E7CFC55018DF51 /* FlimAppTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B10C6663F963898FEE63F64 /* FlimAppTests.swift */; };
 		94D54440B811F938257FD796 /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC34A455324DEE2A431A7720 /* ProfileView.swift */; };
@@ -135,6 +136,7 @@
 		409A6D3129F94E675E11C751 /* CubeLUTTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CubeLUTTests.swift; sourceTree = "<group>"; };
 		40C6E2279C5B9F7F042A3349 /* NotificationPrimerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationPrimerSheet.swift; sourceTree = "<group>"; };
 		44986F8867E5B522EBEABEE8 /* AppUser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppUser.swift; sourceTree = "<group>"; };
+		498109790A8BAE9899A4F515 /* CrashReporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CrashReporter.swift; sourceTree = "<group>"; };
 		49A4B9AB5111472363BE0ECF /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
 		49C42E0C072E983E45F3535C /* NetworkMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkMonitor.swift; sourceTree = "<group>"; };
 		4B7DE28ED82A77117E85EBE0 /* FullScreenPhotoView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FullScreenPhotoView.swift; sourceTree = "<group>"; };
@@ -346,6 +348,7 @@
 				EFC0C65109A81467AB59472B /* AuthService.swift */,
 				512ECCC06516CDBBAC8749B7 /* BrandedExport.swift */,
 				BB373195A893A3C7E6FD51C9 /* CapturedPhotoCropper.swift */,
+				498109790A8BAE9899A4F515 /* CrashReporter.swift */,
 				4EF884AA4C8711AA4738DA8C /* CubeLUT.swift */,
 				C9817482FE2AB125EC4FC2FB /* FeedService.swift */,
 				14C863F6302D9B2BFBA71B6C /* InstantFilmProcessor.swift */,
@@ -560,6 +563,7 @@
 				036CE6741E055F672A548A57 /* CapturedPhotoCropper.swift in Sources */,
 				FD353271770C9545F7CD5972 /* CommentsSheet.swift in Sources */,
 				FD944ED3A07EC2925623D43B /* ContentView.swift in Sources */,
+				75EF6BCE38ECF791C4CC0D8C /* CrashReporter.swift in Sources */,
 				F3492DCB0D6D8A98FBE699B2 /* CreateRollView.swift in Sources */,
 				F7DB8CBEBE8B5B6A7FA4EEA9 /* CubeLUT.swift in Sources */,
 				203A74E3F739D03F1FCD6248 /* DarkroomView.swift in Sources */,

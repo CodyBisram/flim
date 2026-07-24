@@ -8,6 +8,11 @@ struct FlimApp: App {
     @UIApplicationDelegateAdaptor(FlimAppDelegate.self) private var appDelegate
 
     init() {
+        // MetricKit crash/hang diagnostics — see CrashReporter for why this exists alongside
+        // Xcode Organizer's automatic crash reports. Must be added on every launch, not just
+        // the first, to receive payloads queued since the previous session.
+        CrashReporter.shared.start()
+
         // In-app tips — shown once, contextually, then remembered as seen.
         try? Tips.configure([.displayFrequency(.immediate), .datastoreLocation(.applicationDefault)])
         #if DEBUG
