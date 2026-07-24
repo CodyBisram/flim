@@ -14,6 +14,11 @@ final class CameraViewModel: NSObject {
     var capturedData: Data?
     var onPhotoCapture: ((Data) -> Void)?
 
+    /// Bumped at the start of every `capturePhoto()` call so the watchdog Task it starts can
+    /// tell whether it's still describing the current capture by the time it wakes up — see
+    /// `capturePhoto()` for why this matters.
+    private var captureGeneration = 0
+
     /// Hardware flash mode for the LED (distinct from `flashOpacity`, the on-screen
     /// shutter blink). Off by default; the camera UI cycles Off → Auto → On.
     var flashMode: AVCaptureDevice.FlashMode = .off
@@ -288,6 +293,8 @@ final class CameraViewModel: NSObject {
     func capturePhoto() {
         guard !isCapturing else { return }
         isCapturing = true
+        captureGeneration += 1
+        let generation = captureGeneration
 
         // The on-screen flash overlay is NOT triggered here anymore. A real LED flash needs a
         // beat for AE/AF + preflash metering before it actually fires, so lighting up the screen
@@ -306,6 +313,29 @@ final class CameraViewModel: NSObject {
             connection.isVideoMirrored = isFront
         }
         output.capturePhoto(with: settings, delegate: self)
+
+        // Watchdog: isCapturing/flashOpacity normally only get reset by AVFoundation's own
+        // completion callbacks below, which assumes the capture pipeline always completes
+        // promptly — it doesn't always. Reported on-device: the front-camera screen-flash
+        // overlay (the full-white screen used in place of a hardware LED) once stayed lit for
+        // ~5s, well past any real exposure + processing time, with nothing to recover from a
+        // stalled callback. Front-camera screen-flash shots are exactly the case most exposed
+        // to this — they're typically taken in dim rooms, which is also when AE/AF convergence
+        // is most likely to run long. 3s is comfortably longer than any legitimate capture
+        // (normal captures finish in well under a second) but short enough to visibly recover
+        // instead of leaving the screen — and the shutter, gated on `isCapturing` — stuck
+        // indefinitely. `generation` guards against this stepping on a capture that's
+        // genuinely still different by the time this wakes up; if AVFoundation's real
+        // callbacks eventually do fire after this gives up, they're harmless no-ops (the state
+        // they'd set is already what this set), and any photo they deliver still comes through
+        // `onPhotoCapture` normally — this never cancels the underlying capture, just stops the
+        // UI from being held hostage to it.
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(3))
+            guard generation == captureGeneration, isCapturing else { return }
+            isCapturing = false
+            withAnimation(.easeOut(duration: 0.3)) { flashOpacity = 0 }
+        }
     }
 }
 
