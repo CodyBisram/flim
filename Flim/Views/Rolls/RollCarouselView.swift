@@ -100,9 +100,16 @@ struct RollCarouselView: View {
         if let photo = current {
             VStack(spacing: 10) {
                 VStack(spacing: 2) {
-                    if let name = memberNames[photo.userId] {
-                        Text("@\(name)").font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
-                    }
+                    // Always renders (opacity 0 when the name doesn't resolve) rather than
+                    // being omitted — omitting it made the footer a different height on
+                    // photos with vs. without a resolvable member name, and since the
+                    // TabView above gets "whatever height is left" in this VStack, swiping
+                    // between such photos resized the pager mid-transition: exactly the kind
+                    // of thing that corrupts a paging TabView's internal scroll state and
+                    // shows two photos at once.
+                    Text(memberNames[photo.userId].map { "@\($0)" } ?? "@")
+                        .font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
+                        .opacity(memberNames[photo.userId] == nil ? 0 : 1)
                     Text(photo.takenAt.formatted(date: .abbreviated, time: .shortened))
                         .font(.system(size: 12, weight: .medium)).foregroundStyle(Color(white: 0.68))
                 }
