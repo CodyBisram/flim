@@ -130,6 +130,9 @@ final class FeedService {
     }
 
     /// Everyone with a page (for discovery / who-to-follow), excluding the current user.
+    /// "Suggested" people to follow — newest profiles first. Callers should `loadFollowing`
+    /// before this so `followingIds` is populated; without that call it's simply empty and this
+    /// silently degrades to "no following filter" rather than failing.
     func discoverProfiles(excluding userId: UUID) async -> [UserProfile] {
         let list: [UserProfile] = (try? await supabase
             .from("profiles").select()
@@ -137,7 +140,10 @@ final class FeedService {
             .order("created_at", ascending: false)
             .limit(50)
             .execute().value) ?? []
-        return list.filter { !blockedIds.contains($0.id) }
+        // Previously only excluded blocked users, so anyone you already follow (plus, in
+        // practice, whatever test/review accounts happened to be recent) sat in "Suggested"
+        // right alongside actual strangers to discover.
+        return list.filter { !blockedIds.contains($0.id) && !followingIds.contains($0.id) }
     }
 
     /// Server-side username search (scales past a scrollable list). Case-insensitive prefix/substring.
