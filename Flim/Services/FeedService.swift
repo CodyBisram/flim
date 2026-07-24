@@ -129,21 +129,89 @@ final class FeedService {
         return Dictionary(list.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
     }
 
-    /// Everyone with a page (for discovery / who-to-follow), excluding the current user.
-    /// "Suggested" people to follow — newest profiles first. Callers should `loadFollowing`
-    /// before this so `followingIds` is populated; without that call it's simply empty and this
-    /// silently degrades to "no following filter" rather than failing.
+    private let discoverLimit = 50
+
+    /// "Suggested" people to follow, ranked in three tiers. Roll co-membership ranks first —
+    /// this app's actual social unit is the roll (a small trusted group you shoot into
+    /// together), so "you share a roll" is a far stronger "you know this person" signal here
+    /// than a generic follow-graph mutual — then mutual follows (people followed by people you
+    /// follow), then a recency fallback to fill any remaining slots so newer or less-connected
+    /// accounts still see a full list. Within a tier, more overlap ranks higher (someone in 3 of
+    /// your rolls beats someone in 1; someone followed by 3 of your follows beats 1). Callers
+    /// should `loadFollowing` first so `followingIds` is populated for both the mutual-follow
+    /// tier and the already-following exclusion below; without that call this silently degrades
+    /// to "no following signal" rather than failing.
     func discoverProfiles(excluding userId: UUID) async -> [UserProfile] {
-        let list: [UserProfile] = (try? await supabase
-            .from("profiles").select()
-            .neq("id", value: userId.uuidString)
-            .order("created_at", ascending: false)
-            .limit(50)
+        let excluded = blockedIds.union(followingIds).union([userId])
+
+        async let rollMates = rankedRollMateIds(userId: userId, excluding: excluded)
+        async let mutuals = rankedMutualFollowIds(excluding: excluded)
+
+        var ranked: [UUID] = []
+        var seen = excluded
+        for id in await rollMates where !seen.contains(id) { ranked.append(id); seen.insert(id) }
+        for id in await mutuals where !seen.contains(id) { ranked.append(id); seen.insert(id) }
+
+        if ranked.count < discoverLimit {
+            let recent = await recentProfileIds(excluding: seen, limit: discoverLimit - ranked.count)
+            ranked.append(contentsOf: recent)
+        }
+
+        let profiles = await fetchProfiles(ids: ranked)
+        return ranked.compactMap { profiles[$0] }   // preserves tier + rank order
+    }
+
+    /// People who share at least one roll with `userId`, ranked by shared-roll count.
+    private func rankedRollMateIds(userId: UUID, excluding: Set<UUID>) async -> [UUID] {
+        struct MyRoll: Decodable { let roll_id: UUID }
+        let myRolls: [MyRoll] = (try? await supabase.from("roll_members").select("roll_id")
+            .eq("user_id", value: userId.uuidString).execute().value) ?? []
+        guard !myRolls.isEmpty else { return [] }
+
+        struct Mate: Decodable { let user_id: UUID }
+        let rows: [Mate] = (try? await supabase.from("roll_members").select("user_id")
+            .in("roll_id", values: myRolls.map(\.roll_id.uuidString))
             .execute().value) ?? []
-        // Previously only excluded blocked users, so anyone you already follow (plus, in
-        // practice, whatever test/review accounts happened to be recent) sat in "Suggested"
-        // right alongside actual strangers to discover.
-        return list.filter { !blockedIds.contains($0.id) && !followingIds.contains($0.id) }
+
+        return Self.rankByFrequency(rows.map(\.user_id), excluding: excluding)
+    }
+
+    /// People followed by people `followingIds` (this user's own follows), ranked by how many
+    /// of those follows also follow them.
+    private func rankedMutualFollowIds(excluding: Set<UUID>) async -> [UUID] {
+        guard !followingIds.isEmpty else { return [] }
+        struct Row: Decodable { let following_id: UUID }
+        let rows: [Row] = (try? await supabase.from("follows").select("following_id")
+            .in("follower_id", values: followingIds.map(\.uuidString))
+            .execute().value) ?? []
+
+        return Self.rankByFrequency(rows.map(\.following_id), excluding: excluding)
+    }
+
+    /// Counts occurrences of each id (excluding any already-decided one), then ranks
+    /// most-frequent first. Ties break on the id itself, purely so the order stays stable
+    /// across launches instead of shuffling with Dictionary's unordered iteration.
+    private static func rankByFrequency(_ ids: [UUID], excluding: Set<UUID>) -> [UUID] {
+        var counts: [UUID: Int] = [:]
+        for id in ids where !excluding.contains(id) { counts[id, default: 0] += 1 }
+        return counts.sorted {
+            $0.value != $1.value ? $0.value > $1.value : $0.key.uuidString < $1.key.uuidString
+        }.map(\.key)
+    }
+
+    /// Recency fallback for any suggestion slots the roll-mate/mutual tiers didn't fill.
+    /// Over-fetches 3x `limit` since some rows are dropped by `excluding` client-side —
+    /// comfortably covers a typical exclusion set without a second round trip; if a user
+    /// somehow excludes more than that, the list just comes back under `limit`, same as the
+    /// tolerance this whole function already has (there may not even BE `limit` users yet).
+    private func recentProfileIds(excluding: Set<UUID>, limit: Int) async -> [UUID] {
+        guard limit > 0 else { return [] }
+        struct Row: Decodable { let id: UUID }
+        let rows: [Row] = (try? await supabase.from("profiles").select("id")
+            .order("created_at", ascending: false)
+            .limit(limit * 3)
+            .execute().value) ?? []
+        return Array(rows.map(\.id).filter { !excluding.contains($0) }.prefix(limit))
     }
 
     /// Server-side username search (scales past a scrollable list). Case-insensitive prefix/substring.
