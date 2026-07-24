@@ -88,7 +88,13 @@ struct SortDeckView: View {
         return RoundedRectangle(cornerRadius: 22)
             .fill(FlimTheme.bgElevated)
             .overlay {
-                CachedImage(url: urls[photo.id], maxPixel: 1400) { $0.resizable().scaledToFill() }
+                // 2048 (the stored photo's own resolution ceiling), not the 1600 used by other
+                // full-bleed views: this card uses .scaledToFill() to cover a frame whose aspect
+                // ratio doesn't exactly match the photo's, so it magnifies the source more than a
+                // .scaledToFit() view of the same size does. At the old 1400 budget that extra
+                // magnification made the deck visibly softer than the Darkroom's full-screen view
+                // of the same photo.
+                CachedImage(url: urls[photo.id], maxPixel: 2048) { $0.resizable().scaledToFill() }
                     placeholder: { ShimmerPlaceholder(cornerRadius: 22) }
             }
             .overlay { GrainOverlay().opacity(0.4) }
