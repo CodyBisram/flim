@@ -45,16 +45,27 @@ final class FeedService {
     func follow(_ targetId: UUID, from userId: UUID) async {
         struct F: Encodable { let follower_id: UUID; let following_id: UUID }
         followingIds.insert(targetId)   // optimistic
-        _ = try? await supabase.from("follows")
-            .insert(F(follower_id: userId, following_id: targetId)).execute()
+        do {
+            try await supabase.from("follows")
+                .insert(F(follower_id: userId, following_id: targetId)).execute()
+        } catch {
+            // The insert never landed (offline, RLS, duplicate) — without this the button was
+            // stuck reading "Following" forever even though the server never recorded it.
+            followingIds.remove(targetId)
+        }
     }
 
     func unfollow(_ targetId: UUID, from userId: UUID) async {
         followingIds.remove(targetId)   // optimistic
-        _ = try? await supabase.from("follows").delete()
-            .eq("follower_id", value: userId.uuidString)
-            .eq("following_id", value: targetId.uuidString)
-            .execute()
+        do {
+            try await supabase.from("follows").delete()
+                .eq("follower_id", value: userId.uuidString)
+                .eq("following_id", value: targetId.uuidString)
+                .execute()
+        } catch {
+            // Same as above, mirrored: the delete never landed, so put the follow back.
+            followingIds.insert(targetId)
+        }
     }
 
     /// Follows tables stay fully readable server-side (so counts aren't affected by blocks), but
