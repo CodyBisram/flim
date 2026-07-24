@@ -57,10 +57,14 @@ struct ActivityFeedView: View {
                 // five — so this costs about the same as any other thumbnail row in the app.
                 let paths = Array(Set(items.compactMap { $0.post?.displayPath }))
                 let urls = await feed.signedURLs(for: paths)
-                thumbURLs = Dictionary(uniqueKeysWithValues: items.compactMap { item -> (UUID, URL)? in
+                // uniquingKeysWith, not uniqueKeysWithValues: multiple activity items legitimately
+                // share the same post (two reactions on one photo, a reaction and a comment on
+                // the same photo, several tags in one photo) — uniqueKeysWithValues crashes on
+                // the first duplicate key, which any of those ordinary cases would trigger.
+                thumbURLs = Dictionary(items.compactMap { item -> (UUID, URL)? in
                     guard let post = item.post, let url = urls[post.displayPath] else { return nil }
                     return (post.id, url)
-                })
+                }, uniquingKeysWith: { a, _ in a })
                 loaded = true
             }
         }
