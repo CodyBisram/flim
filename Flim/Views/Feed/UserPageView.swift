@@ -433,6 +433,7 @@ struct DiscoverPeopleView: View {
 /// A reusable person row (avatar + handle + bio + follow button) for people lists.
 struct PersonRow: View {
     let profile: UserProfile
+    @Environment(AuthService.self) private var auth
 
     var body: some View {
         HStack(spacing: 12) {
@@ -448,7 +449,12 @@ struct PersonRow: View {
                 }
             }
             Spacer()
-            FollowButton(userId: profile.id)
+            // Never a follow button on your own row — this list can legitimately include you
+            // (you can be your own suggestion source's neighbor, or appear in someone else's
+            // followers/following), and following yourself isn't a real action.
+            if profile.id != auth.currentUser?.id {
+                FollowButton(userId: profile.id)
+            }
         }
         .padding(.horizontal, 18).padding(.vertical, 8)
     }
