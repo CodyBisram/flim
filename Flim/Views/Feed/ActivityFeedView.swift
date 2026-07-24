@@ -1,5 +1,17 @@
 import SwiftUI
 
+/// Builds a postId -> signed thumbnail URL lookup from activity items and a path -> URL map.
+/// Multiple activity items legitimately share the same post (two reactions on one photo, a
+/// reaction and a comment on the same photo, several tags in one photo), so this must tolerate
+/// duplicate postIds — `Dictionary(uniqueKeysWithValues:)` doesn't, and crashed on exactly this
+/// once already.
+func buildActivityThumbURLs(items: [ActivityItem], urlsByPath: [String: URL]) -> [UUID: URL] {
+    Dictionary(items.compactMap { item -> (UUID, URL)? in
+        guard let post = item.post, let url = urlsByPath[post.displayPath] else { return nil }
+        return (post.id, url)
+    }, uniquingKeysWith: { a, _ in a })
+}
+
 struct ActivityFeedView: View {
     @Environment(AuthService.self) private var auth
     @Environment(FeedService.self) private var feed
@@ -57,14 +69,7 @@ struct ActivityFeedView: View {
                 // five — so this costs about the same as any other thumbnail row in the app.
                 let paths = Array(Set(items.compactMap { $0.post?.displayPath }))
                 let urls = await feed.signedURLs(for: paths)
-                // uniquingKeysWith, not uniqueKeysWithValues: multiple activity items legitimately
-                // share the same post (two reactions on one photo, a reaction and a comment on
-                // the same photo, several tags in one photo) — uniqueKeysWithValues crashes on
-                // the first duplicate key, which any of those ordinary cases would trigger.
-                thumbURLs = Dictionary(items.compactMap { item -> (UUID, URL)? in
-                    guard let post = item.post, let url = urls[post.displayPath] else { return nil }
-                    return (post.id, url)
-                }, uniquingKeysWith: { a, _ in a })
+                thumbURLs = buildActivityThumbURLs(items: items, urlsByPath: urls)
                 loaded = true
             }
         }
