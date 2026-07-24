@@ -90,19 +90,36 @@ struct ActivityFeedView: View {
             }
             .buttonStyle(.plain)
 
-            Button { openDestination(item) } label: {
-                VStack(alignment: .leading, spacing: 2) {
-                    (Text(item.actor.handle).font(.system(size: 14, weight: .semibold))
-                     + Text(" \(actionText(item.kind))").font(.system(size: 14)))
-                        .foregroundStyle(.white)
-                        .lineLimit(2)
-                        .multilineTextAlignment(.leading)
+            VStack(alignment: .leading, spacing: 2) {
+                // The handle and the action text are separate Text views (not concatenated)
+                // specifically so they can be separate tap targets — the handle alone opens
+                // the actor's profile, matching the avatar; the action text opens the post.
+                HStack(spacing: 4) {
+                    Button { profileRoute = ProfileRoute(id: item.actor.id) } label: {
+                        Text(item.actor.handle)
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .lineLimit(1)
+                            .fixedSize()
+                    }
+                    .buttonStyle(.plain)
+
+                    Button { openDestination(item) } label: {
+                        Text(actionText(item.kind))
+                            .font(.system(size: 14))
+                            .foregroundStyle(.white)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.leading)
+                    }
+                    .buttonStyle(.plain)
+                }
+                Button { openDestination(item) } label: {
                     Text(item.date.formatted(.relative(presentation: .named)))
                         .font(.system(size: 11)).foregroundStyle(FlimTheme.textTertiary)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             Button { openDestination(item) } label: { thumbnail(item) }
                 .buttonStyle(.plain)
