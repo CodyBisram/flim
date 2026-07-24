@@ -39,6 +39,11 @@ fastlane/*.log
 *.env
 .env*
 
+# LUT calibration photo pairs (docs/LUTS.md, scripts/fit_lut.py) — real photos of Cody's
+# life, never belong in git history. Kept locally so a future refit can add more pairs
+# without re-shooting the existing set.
+/pairs/
+
 # project agents + shared rules ship with the repo; local settings stay local
 !.claude/agents/
 !.claude/rules/
