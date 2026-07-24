@@ -29,6 +29,11 @@ struct RollDetailView: View {
     @State private var showCarousel = false
     @State private var isMuted = false
     @State private var showReveal = false
+    /// Flips true once a developed roll's pagination has been fully drained (see `onAppear`).
+    /// Gates the "Play through the roll" button so it appears once, already showing the true
+    /// count — without this, the button popped in after page 1 (30) and its own count label
+    /// visibly ticked upward (30 → 60 → 75) as each further page streamed in behind it.
+    @State private var rollFullyPaged = false
 
     private var revealSeenKey: String { "rollRevealSeen.\(roll.id.uuidString)" }
 
@@ -38,7 +43,7 @@ struct RollDetailView: View {
         vm.developedPhotos.sorted { $0.takenAt < $1.takenAt }
     }
     private var isFullyDeveloped: Bool {
-        roll.isDeveloped && !vm.developedPhotos.isEmpty
+        roll.isDeveloped && rollFullyPaged && !vm.developedPhotos.isEmpty
     }
 
     private let columns = [
@@ -204,6 +209,7 @@ struct RollDetailView: View {
                     while photoService.hasMore {
                         await vm.loadMoreRoll(photoService: photoService, rollId: roll.id, blockedIds: feed.blockedIds)
                     }
+                    rollFullyPaged = true
                 }
                 // The reveal, as an event: play everyone's shots once, the first time the
                 // roll is opened after it has developed.
