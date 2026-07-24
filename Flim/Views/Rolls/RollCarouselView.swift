@@ -39,6 +39,13 @@ struct RollCarouselView: View {
                                 ProgressView().tint(.white)
                             }
                         }
+                        // Without this, a page's width is only as wide as its fitted image
+                        // content, not the full TabView — the underlying paging scroll view
+                        // then sizes each page to that narrower width, so mid-roll two photos
+                        // can render side by side (each ~half-width, both fully visible) instead
+                        // of one full-bleed page. Forcing every page to claim the full bounds
+                        // keeps the paging scroll view's page width locked to the screen.
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .padding(.vertical, 8)
                         .tag(index)
                     }

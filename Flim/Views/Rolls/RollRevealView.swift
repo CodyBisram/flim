@@ -164,11 +164,17 @@ struct RollRevealView: View {
     /// before this reveal opened) never enters the deck, then resolves signed URLs and starts
     /// playback. Falls back to the photos we were handed if the re-fetch itself fails (e.g.
     /// offline) — an empty deck should mean "everything was deleted", not "the network hiccuped".
+    ///
+    /// The deck is built from `fresh`, not `photos`: `photos` is `RollDetailView`'s paginated
+    /// `vm.developedPhotos`, capped at PhotoService's 30-photo page size until the grid has been
+    /// scrolled far enough to load more. `fetchRollPhotosSnapshot` has no such cap — it's the
+    /// roll's complete current row set — so a roll of 60+ shots showed only the ~30 loaded so
+    /// far ("roll is done" summary reading 30 when the roll actually held 60+) back when this
+    /// intersected `fresh` against the truncated `photos` instead of using `fresh` directly.
     private func loadDeck() async {
         do {
             let fresh = try await photoService.fetchRollPhotosSnapshot(rollId: rollId)
-            let freshIds = Set(fresh.map(\.id))
-            deck = photos.filter { freshIds.contains($0.id) }
+            deck = fresh.sorted { $0.takenAt < $1.takenAt }
         } catch {
             deck = photos
         }

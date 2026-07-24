@@ -193,6 +193,18 @@ struct RollDetailView: View {
             Task {
                 if let uid = auth.currentUser?.id { await feed.loadBlocked(userId: uid) }
                 await vm.loadRoll(photoService: photoService, rollId: roll.id, blockedIds: feed.blockedIds)
+                // A developed roll's photo set is final — no more captures are possible — unlike
+                // an in-progress roll or the endless personal Darkroom feed, where lazy,
+                // scroll-triggered pagination genuinely protects performance. Once developed,
+                // finish paging eagerly so "Play through the roll · N", the carousel, and the
+                // reveal below all see the roll's true total instead of only PhotoService's
+                // first 30-photo page (a roll of 60+ read "30" until the grid had been scrolled
+                // far enough to trigger more pages itself).
+                if roll.isDeveloped {
+                    while photoService.hasMore {
+                        await vm.loadMoreRoll(photoService: photoService, rollId: roll.id, blockedIds: feed.blockedIds)
+                    }
+                }
                 // The reveal, as an event: play everyone's shots once, the first time the
                 // roll is opened after it has developed.
                 if roll.isDeveloped, !vm.developedPhotos.isEmpty,
