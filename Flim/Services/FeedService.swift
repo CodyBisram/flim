@@ -48,9 +48,14 @@ final class FeedService {
         do {
             try await supabase.from("follows")
                 .insert(F(follower_id: userId, following_id: targetId)).execute()
+        } catch let error as PostgrestError where error.code == "23505" {
+            // follows' PK is (follower_id, following_id): a duplicate insert means the row
+            // already exists server-side (e.g. a stale followingIds read racing this call), so
+            // the desired end state already holds — leave the optimistic insert in place rather
+            // than rolling back a follow that's actually there.
         } catch {
-            // The insert never landed (offline, RLS, duplicate) — without this the button was
-            // stuck reading "Following" forever even though the server never recorded it.
+            // The insert never landed (offline, RLS) — without this the button was stuck
+            // reading "Following" forever even though the server never recorded it.
             followingIds.remove(targetId)
         }
     }
