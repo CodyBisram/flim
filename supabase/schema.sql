@@ -853,26 +853,25 @@ CREATE TRIGGER auto_hide_reported_trigger
 
 -- ============================================================
 -- Auto-moderation, enforced at RLS (not just client-side).
--- The four policies above/below that gate "can you see this content" (rows AND storage bytes)
--- were defined before `hidden` existed on this table, so `NOT hidden` couldn't be added inline
--- back then without breaking a from-scratch run of this file — redefined here instead, now that
--- the column above is guaranteed to exist. Without this, "the client filters hidden content out"
--- (this section's own opening comment) was the ONLY enforcement: a reported-and-hidden photo or
+-- The four policies this section touches gate "can you see this content" (rows AND storage
+-- bytes) and were defined before `hidden` existed on this table, so `NOT hidden` couldn't be
+-- added inline back then without breaking a from-scratch run of this file. Without this, "the
+-- client filters hidden content out" was the ONLY enforcement: a reported-and-hidden photo or
 -- post was still fully readable by calling the Supabase REST/Storage API directly, bypassing the
 -- app UI entirely — RLS is the actual security boundary, a client query filter is not. Owners
 -- keep seeing their own hidden photo ("photos: own photos" is untouched) — hiding is about
 -- hiding FROM OTHERS, not from yourself, and the dashboard review/restore flow above still needs
 -- a way for that to make sense.
+--
+-- "photos: roll members can see" and "posts: readable by authenticated" are NOT redefined here:
+-- both are redefined again, further down, by the block-enforcement section (search
+-- "READ policies: drop the blocked party's content from every shared surface"), and since this
+-- file runs top to bottom with DROP POLICY IF EXISTS + CREATE POLICY, whichever definition runs
+-- last wins — a `NOT hidden` predicate added here would be silently discarded the moment the
+-- block-enforcement section's own CREATE POLICY for the same two names runs after it. The
+-- `NOT hidden` check for those two lives on the block-enforcement versions instead, alongside
+-- the block check, so it actually survives a full run of this file.
 -- ============================================================
-DROP POLICY IF EXISTS "photos: roll members can see" ON public.photos;
-CREATE POLICY "photos: roll members can see"
-    ON public.photos FOR SELECT
-    USING (roll_id IS NOT NULL AND NOT hidden AND public.is_roll_member(roll_id));
-
-DROP POLICY IF EXISTS "posts: readable by authenticated" ON public.posts;
-CREATE POLICY "posts: readable by authenticated"
-    ON public.posts FOR SELECT TO authenticated USING (NOT hidden);
-
 DROP POLICY IF EXISTS "photos: roll members can read shared" ON storage.objects;
 CREATE POLICY "photos: roll members can read shared"
     ON storage.objects FOR SELECT TO authenticated
@@ -1018,11 +1017,13 @@ CREATE INDEX IF NOT EXISTS blocks_blocked_idx ON public.blocks (blocked_id, bloc
 
 -- --- READ policies: drop the blocked party's content from every shared surface ---
 
--- Feed posts: hide posts authored by anyone in a block relationship with the viewer.
+-- Feed posts: hide posts authored by anyone in a block relationship with the viewer, and
+-- anything auto-hidden by moderation (see "Auto-moderation, enforced at RLS" above — this is
+-- the definition of this policy name that actually survives a full run of this file).
 DROP POLICY IF EXISTS "posts: readable by authenticated" ON public.posts;
 CREATE POLICY "posts: readable by authenticated"
     ON public.posts FOR SELECT TO authenticated
-    USING (NOT public.is_blocked_either_way(auth.uid(), user_id));
+    USING (NOT hidden AND NOT public.is_blocked_either_way(auth.uid(), user_id));
 
 -- Post comments: hide comments authored by a blocked party (even on posts you can see).
 DROP POLICY IF EXISTS "post_comments: readable" ON public.post_comments;
@@ -1048,7 +1049,9 @@ CREATE POLICY "comment_likes: readable"
     ON public.comment_likes FOR SELECT TO authenticated
     USING (NOT public.is_blocked_either_way(auth.uid(), user_id));
 
--- Shared-roll photos: hide a blocked party's photos from the roll surface. Preserves
+-- Shared-roll photos: hide a blocked party's photos from the roll surface, and anything
+-- auto-hidden by moderation (see "Auto-moderation, enforced at RLS" above — this is the
+-- definition of this policy name that actually survives a full run of this file). Preserves
 -- the existing membership check; adds the block predicate. (Own photos policy is
 -- unchanged — you can never block yourself, CHECK (blocker_id <> blocked_id).)
 DROP POLICY IF EXISTS "photos: roll members can see" ON public.photos;
@@ -1056,6 +1059,7 @@ CREATE POLICY "photos: roll members can see"
     ON public.photos FOR SELECT
     USING (
         roll_id IS NOT NULL
+        AND NOT hidden
         AND public.is_roll_member(roll_id)
         AND NOT public.is_blocked_either_way(auth.uid(), user_id)
     );
