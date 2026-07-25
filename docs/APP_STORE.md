@@ -49,6 +49,12 @@ Copy-paste-ready metadata + a screenshot plan + reviewer notes. Tweak the voice 
 
 Note: 100 chars exactly. Keywords are research-informed for Photo & Video + Social Networking categories; "disposable," "film," "camera," and "photo" are must-haves for app store visibility; "friends," "private," and "rolls" emphasize the social/closed-network angle; "grain," "analog," "vintage," and "aesthetic" signal the signature visual style.
 
+## What's New (version 1.1)
+
+> A smoother, more polished FLIM: a redesigned camera, a truer film look, and easier ways to catch up with your friends.
+>
+> Redesigned camera viewfinder: bigger, centered, and faster to shoot with, plus a few helpful tips along the way. Recalibrated film look, closer to real film than ever. Smoother, more reliable rolls: no more hiccups scrolling through a developed roll. Redesigned notifications: tap straight through to the photo, comment, or profile you're looking for. Better suggestions for who to follow. A round of reliability fixes under the hood.
+
 ## What's New (version 1.0)
 
 > FLIM is live. Shoot on film, wait for it to develop, and share with your closest friends.
