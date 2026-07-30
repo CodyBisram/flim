@@ -82,6 +82,14 @@ struct RollPhotoPagerView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding(.vertical, 12)
 
+                // Stable, like the header/footer — reads `current`, isn't baked into each
+                // page's own content. It used to live inside photoPage() itself, which meant
+                // every page carried its own copy of its handle+date; mid-swipe, with two pages
+                // partially on screen at once (completely normal for any paging view, TabView
+                // included), that showed as two competing photographer credits at once instead
+                // of one photo edge peeking in next to an otherwise-stable caption.
+                attributionLabel
+
                 bottomBar
                     .padding(.horizontal, 20)
                     .padding(.bottom, 44)
@@ -307,26 +315,14 @@ struct RollPhotoPagerView: View {
         Group {
             if let url = resolvedURLs[photo.id] {
                 CachedImage(url: url, maxPixel: 1600) { image in
-                    VStack(spacing: 10) {
-                        image
-                            .resizable()
-                            .scaledToFit()
-                            .scaleEffect(isCurrent(photo) ? scale : 1)
-                            .offset(isCurrent(photo) ? offset : .zero)
-                            .gesture(pinchToZoom)
-                            .gesture(panWhileZoomed, including: scale > 1 ? .all : .none)
-                            .onTapGesture(count: 2) { toggleZoom() }
-                        VStack(spacing: 2) {
-                            if let name = memberNames[photo.userId] {
-                                Text("@\(name)")
-                                    .font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
-                            }
-                            Text(photo.takenAt.formatted(date: .abbreviated, time: .shortened))
-                                .font(.system(size: 12, weight: .medium)).foregroundStyle(Color(white: 0.68))
-                        }
-                        .opacity(isCurrent(photo) && scale > 1 ? 0 : 1)
-                        .animation(.easeOut(duration: 0.2), value: scale > 1)
-                    }
+                    image
+                        .resizable()
+                        .scaledToFit()
+                        .scaleEffect(isCurrent(photo) ? scale : 1)
+                        .offset(isCurrent(photo) ? offset : .zero)
+                        .gesture(pinchToZoom)
+                        .gesture(panWhileZoomed, including: scale > 1 ? .all : .none)
+                        .onTapGesture(count: 2) { toggleZoom() }
                 } placeholder: {
                     ProgressView().tint(.white)
                 }
@@ -334,6 +330,23 @@ struct RollPhotoPagerView: View {
                 ProgressView().tint(.white)
             }
         }
+    }
+
+    /// The current photo's photographer + date, outside the swiping layer entirely — see the
+    /// comment at its call site in `body` for why.
+    private var attributionLabel: some View {
+        VStack(spacing: 2) {
+            if let photo = current {
+                if let name = memberNames[photo.userId] {
+                    Text("@\(name)")
+                        .font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
+                }
+                Text(photo.takenAt.formatted(date: .abbreviated, time: .shortened))
+                    .font(.system(size: 12, weight: .medium)).foregroundStyle(Color(white: 0.68))
+            }
+        }
+        .opacity(scale > 1 ? 0 : 1)
+        .animation(.easeOut(duration: 0.2), value: scale > 1)
     }
 
     private func isCurrent(_ photo: Photo) -> Bool { photo.id == current?.id }

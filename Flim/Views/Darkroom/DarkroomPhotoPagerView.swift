@@ -79,6 +79,14 @@ struct DarkroomPhotoPagerView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding(.vertical, 12)
 
+                // Stable, like the header/footer — reads `current`, isn't baked into each
+                // page's own content. It used to live inside photoPage() itself, which meant
+                // every page carried its own copy of its date; mid-swipe, with two pages
+                // partially on screen at once (completely normal for any paging view, TabView
+                // included), that showed as two competing dates instead of one photo edge
+                // peeking in next to an otherwise-stable caption.
+                dateLabel
+
                 bottomBar
                     .padding(.horizontal, 20)
                     .padding(.bottom, 44)
@@ -246,6 +254,20 @@ struct DarkroomPhotoPagerView: View {
         .background(.ultraThinMaterial)
     }
 
+    /// The current photo's date, outside the swiping layer entirely — see the comment at its
+    /// call site in `body` for why.
+    private var dateLabel: some View {
+        Group {
+            if let photo = current {
+                Text(photo.takenAt.formatted(date: .abbreviated, time: .shortened))
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Color(white: 0.68))
+            }
+        }
+        .opacity(scale > 1 ? 0 : 1)
+        .animation(.easeOut(duration: 0.2), value: scale > 1)
+    }
+
     // MARK: - Per-page content (just the photo)
 
     @ViewBuilder
@@ -253,29 +275,22 @@ struct DarkroomPhotoPagerView: View {
         Group {
             if let url = resolvedURLs[photo.id] {
                 CachedImage(url: url, maxPixel: 1600) { image in
-                    VStack(spacing: 10) {
-                        image
-                            .resizable()
-                            .scaledToFit()
-                            // Zoom state lives at the pager level (so the stable chrome and this
-                            // per-page content can both stay simple), but only the CURRENT page
-                            // should visibly reflect it — a TabView(.page) keeps neighboring
-                            // pages mounted too, and they'd otherwise zoom in lockstep.
-                            .scaleEffect(isCurrent(photo) ? scale : 1)
-                            .offset(isCurrent(photo) ? offset : .zero)
-                            .gesture(pinchToZoom)
-                            // Only active once already zoomed in (GestureMask.none otherwise),
-                            // so at the normal 1x zoom this never competes with the TabView's
-                            // own horizontal paging for a touch — the exact class of conflict
-                            // dragToDismiss caused when this pager reused FullScreenPhotoView.
-                            .gesture(panWhileZoomed, including: scale > 1 ? .all : .none)
-                            .onTapGesture(count: 2) { toggleZoom() }
-                        Text(photo.takenAt.formatted(date: .abbreviated, time: .shortened))
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(Color(white: 0.68))
-                            .opacity(isCurrent(photo) && scale > 1 ? 0 : 1)
-                            .animation(.easeOut(duration: 0.2), value: scale > 1)
-                    }
+                    image
+                        .resizable()
+                        .scaledToFit()
+                        // Zoom state lives at the pager level (so the stable chrome and this
+                        // per-page content can both stay simple), but only the CURRENT page
+                        // should visibly reflect it — a TabView(.page) keeps neighboring
+                        // pages mounted too, and they'd otherwise zoom in lockstep.
+                        .scaleEffect(isCurrent(photo) ? scale : 1)
+                        .offset(isCurrent(photo) ? offset : .zero)
+                        .gesture(pinchToZoom)
+                        // Only active once already zoomed in (GestureMask.none otherwise),
+                        // so at the normal 1x zoom this never competes with the TabView's
+                        // own horizontal paging for a touch — the exact class of conflict
+                        // dragToDismiss caused when this pager reused FullScreenPhotoView.
+                        .gesture(panWhileZoomed, including: scale > 1 ? .all : .none)
+                        .onTapGesture(count: 2) { toggleZoom() }
                 } placeholder: {
                     ProgressView().tint(.white)
                 }
