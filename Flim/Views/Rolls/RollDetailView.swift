@@ -14,7 +14,6 @@ struct RollDetailView: View {
     @State private var showMembers = false
     @Namespace private var photoNS
     @State private var selectedPhoto: Photo?
-    @State private var selectedURL: URL?
     @State private var memberNames: [UUID: String] = [:]   // userId → username, for attribution
     @State private var showRename = false
     @State private var renameDraft = ""
@@ -257,12 +256,15 @@ struct RollDetailView: View {
             }
         }
         .fullScreenCover(item: $selectedPhoto) { photo in
-            FullScreenPhotoView(photo: photo, url: selectedURL,
-                                photographer: memberNames[photo.userId],
-                                memberNames: memberNames,
-                                rollName: displayName.isEmpty ? roll.name : displayName,
-                                onDelete: { Task { await vm.loadRoll(photoService: photoService, rollId: roll.id, blockedIds: feed.blockedIds) } })
-                .navigationTransition(.zoom(sourceID: photo.id, in: photoNS))
+            RollPhotoPagerView(
+                photos: vm.developedPhotos,
+                startIndex: vm.developedPhotos.firstIndex(where: { $0.id == photo.id }) ?? 0,
+                signedURLs: vm.signedURLCache,
+                memberNames: memberNames,
+                rollName: displayName.isEmpty ? roll.name : displayName,
+                onDelete: { Task { await vm.loadRoll(photoService: photoService, rollId: roll.id, blockedIds: feed.blockedIds) } }
+            )
+            .navigationTransition(.zoom(sourceID: photo.id, in: photoNS))
         }
         .fullScreenCover(isPresented: $showCarousel) {
             RollCarouselView(photos: chronologicalDeveloped, memberNames: memberNames)
@@ -356,7 +358,6 @@ struct RollDetailView: View {
                     .onTapGesture {
                         // Can't peek before it develops — only open ready shots.
                         guard photo.isReady else { return }
-                        selectedURL = vm.signedURLCache[photo.id]
                         selectedPhoto = photo
                     }
                     .onLongPressGesture {

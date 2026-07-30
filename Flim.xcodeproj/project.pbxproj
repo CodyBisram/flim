@@ -39,6 +39,7 @@
 		4D1C56A98C6D0528C19AF61D /* SharePreviewSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76A0A3EA09696EA2921DCA7C /* SharePreviewSheet.swift */; };
 		501F195F7187429C965AE299 /* Photo.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF062148240A383A260E8EE3 /* Photo.swift */; };
 		56F026E4C4E1E30F19E98152 /* CameraViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2541CCDED4898D0604DB64EA /* CameraViewModel.swift */; };
+		570FDC46E3E2C86FC648E56B /* RollPhotoPagerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A33D22296E699F064B9D03B9 /* RollPhotoPagerView.swift */; };
 		58ACCFC04DEF968BFD005E0A /* TagPhotoSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CDE42DC73343A3669F6A4A9 /* TagPhotoSheet.swift */; };
 		58C00DA36934A8DF0C2C833B /* CameraPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1AF74B1882B2963B0A26004E /* CameraPreview.swift */; };
 		5AD497FC90DCDC3592EA12FE /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7148B48A915D24BFBDEB23E0 /* NotificationService.swift */; };
@@ -83,6 +84,7 @@
 		DFCED2D30474E53F1E6B116D /* CubeLUTTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 409A6D3129F94E675E11C751 /* CubeLUTTests.swift */; };
 		E01A141DA15C3B44C02C6CDA /* SortDeckView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F41D0B57C8881A275E755159 /* SortDeckView.swift */; };
 		E132A62DD98C56BC83EB715E /* AppInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A194AB5EE948FBA8903D086 /* AppInfo.swift */; };
+		E32D66765B2C8FFB2C8883DC /* ProfileViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E24F9D0E24ECACB558EE4F01 /* ProfileViewTests.swift */; };
 		E3917AFE742C6E4745A3292C /* MetaChip.swift in Sources */ = {isa = PBXBuildFile; fileRef = 373B00DF38CFC40848E59929 /* MetaChip.swift */; };
 		E924D1944FA4475B4E383A61 /* PhotoReadinessTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BAF7FE72763EB709B93E5BA4 /* PhotoReadinessTests.swift */; };
 		ECCE9AA4B362458687B4C9B1 /* SignedURLStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85C6F9C983DFB1E2ECF57092 /* SignedURLStore.swift */; };
@@ -177,6 +179,7 @@
 		A0DE0ABF140C6FF15019136C /* RollActivityWidgetBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollActivityWidgetBundle.swift; sourceTree = "<group>"; };
 		A0EABF568B1F50179364FE91 /* SupabaseClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseClient.swift; sourceTree = "<group>"; };
 		A1C9B65302E5927CCF5F996F /* RollRevealLiveActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollRevealLiveActivity.swift; sourceTree = "<group>"; };
+		A33D22296E699F064B9D03B9 /* RollPhotoPagerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollPhotoPagerView.swift; sourceTree = "<group>"; };
 		A34B801CAAD6D2C6557DD581 /* PhotoGridCell.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoGridCell.swift; sourceTree = "<group>"; };
 		AAB338D99E6E3C7278DE9CFA /* Flim.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Flim.entitlements; sourceTree = "<group>"; };
 		BA95E5BB427471DF71E11E56 /* CreateRollView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateRollView.swift; sourceTree = "<group>"; };
@@ -198,6 +201,7 @@
 		DC8AD03A8D1B86B86365239A /* PhotoPickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoPickerSheet.swift; sourceTree = "<group>"; };
 		DFAC10EA5BF9B35854D17FFF /* PersonPickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersonPickerSheet.swift; sourceTree = "<group>"; };
 		E1BCF6EBC279A8B682333548 /* ColorProfileTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColorProfileTests.swift; sourceTree = "<group>"; };
+		E24F9D0E24ECACB558EE4F01 /* ProfileViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileViewTests.swift; sourceTree = "<group>"; };
 		EFC0C65109A81467AB59472B /* AuthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthService.swift; sourceTree = "<group>"; };
 		F1AA5EF66C46272F42891AF4 /* RollMembersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollMembersView.swift; sourceTree = "<group>"; };
 		F2CA2F6DA98A04777C3D3C23 /* OTPView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OTPView.swift; sourceTree = "<group>"; };
@@ -446,6 +450,7 @@
 				0B10C6663F963898FEE63F64 /* FlimAppTests.swift */,
 				3F90A7FA0AD7F2B443E7E332 /* OTPInputTests.swift */,
 				BAF7FE72763EB709B93E5BA4 /* PhotoReadinessTests.swift */,
+				E24F9D0E24ECACB558EE4F01 /* ProfileViewTests.swift */,
 				86B99F48D57C1AE3CE9295E3 /* RollRevealAttributesTests.swift */,
 				8160A75F102252932FFC426A /* RollServiceTests.swift */,
 				4B7E5F0D581D43A4722CD6D9 /* RollTests.swift */,
@@ -462,6 +467,7 @@
 				5CCFCD9A339AA06647B7A1E1 /* RollCarouselView.swift */,
 				54CD52378D31EEDB7D7BE6EF /* RollDetailView.swift */,
 				F1AA5EF66C46272F42891AF4 /* RollMembersView.swift */,
+				A33D22296E699F064B9D03B9 /* RollPhotoPagerView.swift */,
 				3A7B0511BE80DC5094BD7F98 /* RollRevealView.swift */,
 				33D109A1C315CD466659A10F /* RollsView.swift */,
 			);
@@ -597,6 +603,7 @@
 				81394B1696E7CFC55018DF51 /* FlimAppTests.swift in Sources */,
 				031112E1AC8FC07603BB38AE /* OTPInputTests.swift in Sources */,
 				E924D1944FA4475B4E383A61 /* PhotoReadinessTests.swift in Sources */,
+				E32D66765B2C8FFB2C8883DC /* ProfileViewTests.swift in Sources */,
 				232A43F389F6547C475A1F7B /* RollRevealAttributesTests.swift in Sources */,
 				0BA7F7EE88D072B80A399232 /* RollServiceTests.swift in Sources */,
 				B24553011D30469838CCA923 /* RollTests.swift in Sources */,
@@ -670,6 +677,7 @@
 				05E99EC9B050D51173C5B157 /* RollDetailView.swift in Sources */,
 				FABF503D5FA8CAFBC757E315 /* RollLiveActivity.swift in Sources */,
 				EECAD4AB8FC87AFACD4A5A80 /* RollMembersView.swift in Sources */,
+				570FDC46E3E2C86FC648E56B /* RollPhotoPagerView.swift in Sources */,
 				A84BA1FDB8F9ED7F9F9579C8 /* RollRevealAttributes.swift in Sources */,
 				4BE42F2FEEBD084E5CF3A4D9 /* RollRevealView.swift in Sources */,
 				B09880D2185738A73550E7C6 /* RollService.swift in Sources */,
