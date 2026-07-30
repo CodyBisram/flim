@@ -17,6 +17,7 @@
 		1A636EF87FB2E349B9F555DC /* SupabaseClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0EABF568B1F50179364FE91 /* SupabaseClient.swift */; };
 		1E37F6744B21D26B8E8DDFAB /* BlockedUsersSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DBDD795E7211D298DCFEB50 /* BlockedUsersSheet.swift */; };
 		203A74E3F739D03F1FCD6248 /* DarkroomView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AACFEBE63C392489A62B63C /* DarkroomView.swift */; };
+		232A43F389F6547C475A1F7B /* RollRevealAttributesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86B99F48D57C1AE3CE9295E3 /* RollRevealAttributesTests.swift */; };
 		24C89EABBAFF98261AEB3ABB /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 6D3CAAA6097E82270360343F /* Assets.xcassets */; };
 		287023347895E167ECC91920 /* Haptics.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA04DBB3261C344B5DD64806 /* Haptics.swift */; };
 		29A5B8A988AD5C1A12DA61E2 /* RollActivityWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0DE0ABF140C6FF15019136C /* RollActivityWidgetBundle.swift */; };
@@ -188,6 +189,7 @@
 		8118D8FA0343F18F835415D3 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		8160A75F102252932FFC426A /* RollServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollServiceTests.swift; sourceTree = "<group>"; };
 		85C6F9C983DFB1E2ECF57092 /* SignedURLStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignedURLStore.swift; sourceTree = "<group>"; };
+		86B99F48D57C1AE3CE9295E3 /* RollRevealAttributesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollRevealAttributesTests.swift; sourceTree = "<group>"; };
 		870990313A19750FDF37E235 /* FilmStock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilmStock.swift; sourceTree = "<group>"; };
 		8BFE9FBCA04098DC6F972D9A /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		8CECD20B5ABAAC6B609C6E31 /* PhotoCommentsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoCommentsSheet.swift; sourceTree = "<group>"; };
@@ -466,6 +468,7 @@
 				0B10C6663F963898FEE63F64 /* FlimAppTests.swift */,
 				3F90A7FA0AD7F2B443E7E332 /* OTPInputTests.swift */,
 				BAF7FE72763EB709B93E5BA4 /* PhotoReadinessTests.swift */,
+				86B99F48D57C1AE3CE9295E3 /* RollRevealAttributesTests.swift */,
 				8160A75F102252932FFC426A /* RollServiceTests.swift */,
 				4B7E5F0D581D43A4722CD6D9 /* RollTests.swift */,
 			);
@@ -618,6 +621,7 @@
 				81394B1696E7CFC55018DF51 /* FlimAppTests.swift in Sources */,
 				031112E1AC8FC07603BB38AE /* OTPInputTests.swift in Sources */,
 				E924D1944FA4475B4E383A61 /* PhotoReadinessTests.swift in Sources */,
+				232A43F389F6547C475A1F7B /* RollRevealAttributesTests.swift in Sources */,
 				0BA7F7EE88D072B80A399232 /* RollServiceTests.swift in Sources */,
 				B24553011D30469838CCA923 /* RollTests.swift in Sources */,
 			);

@@ -23,7 +23,7 @@ struct RollRevealLiveActivity: Widget {
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(.white)
                         .lineLimit(1)
-                    Text(shotLabel(context.state.shotCount))
+                    Text(RollRevealAttributes.shotLabel(context.state.shotCount))
                         .font(.system(size: 12))
                         .foregroundStyle(.white.opacity(0.6))
                 }
@@ -56,7 +56,7 @@ struct RollRevealLiveActivity: Widget {
                         .lineLimit(1)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    Text(shotLabel(context.state.shotCount))
+                    Text(RollRevealAttributes.shotLabel(context.state.shotCount))
                         .font(.system(size: 12))
                         .foregroundStyle(.white.opacity(0.6))
                 }
@@ -73,9 +73,5 @@ struct RollRevealLiveActivity: Widget {
                     .foregroundStyle(accent)
             }
         }
-    }
-
-    private func shotLabel(_ count: Int) -> String {
-        count == 0 ? "Develops soon" : "\(count) shot\(count == 1 ? "" : "s") waiting"
     }
 }

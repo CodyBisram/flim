@@ -11,4 +11,11 @@ struct RollRevealAttributes: ActivityAttributes {
     }
     var rollId: String
     var rollName: String
+
+    /// The widget's shot-count line. Lives here (shared by both the app and widget extension
+    /// targets already, for the type itself) rather than in the widget's own view file, so it's
+    /// reachable from FlimTests — the extension target isn't.
+    static func shotLabel(_ count: Int) -> String {
+        count == 0 ? "Develops soon" : "\(count) shot\(count == 1 ? "" : "s") waiting"
+    }
 }
