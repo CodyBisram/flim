@@ -195,9 +195,14 @@ struct DarkroomView: View {
             }
         }
         .fullScreenCover(item: $selectedPhoto) { photo in
-            FullScreenPhotoView(photo: photo, url: selectedURL, rollName: rollName(for: photo.rollId),
-                               onDelete: { Task { await reload() } })
-                .navigationTransition(.zoom(sourceID: photo.id, in: photoNS))
+            DarkroomPhotoPagerView(
+                photos: vm.developedPhotos,
+                startIndex: vm.developedPhotos.firstIndex(where: { $0.id == photo.id }) ?? 0,
+                signedURLs: vm.signedURLCache,
+                rollName: { rollName(for: $0) },
+                onDelete: { Task { await reload() } }
+            )
+            .navigationTransition(.zoom(sourceID: photo.id, in: photoNS))
         }
         .fullScreenCover(isPresented: $showSortDeck, onDismiss: { Task { await reload() } }) {
             SortDeckView(onFinish: {})

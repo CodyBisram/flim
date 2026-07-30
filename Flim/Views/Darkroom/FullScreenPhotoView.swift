@@ -14,6 +14,10 @@ struct FullScreenPhotoView: View {
     var rollName: String? = nil
     /// Called after the photo is deleted so the parent can refresh its grid.
     var onDelete: () -> Void = {}
+    /// Off for the Darkroom's swipe-to-browse pager: reactions are a roll thing, not a personal-
+    /// library thing, and skipping both the UI and the fetch keeps a many-photo pager cheap (a
+    /// pager can hold several pages "warm" at once — see DarkroomPhotoPagerView).
+    var showsReactions: Bool = true
     @Environment(PhotoService.self) private var photoService
     @Environment(AuthService.self) private var auth
     @Environment(FeedService.self) private var feed
@@ -206,7 +210,9 @@ struct FullScreenPhotoView: View {
             }
         }
         .task {
-            reactions = await photoService.fetchReactions(photoId: photo.id)
+            if showsReactions {
+                reactions = await photoService.fetchReactions(photoId: photo.id)
+            }
             // Own or roll photo (anyone's shot, if you're in the roll) can be shared to your
             // page — this reflects whether YOU specifically already did, not the photo's owner.
             if (isOwnPhoto || isRollPhoto), let uid = auth.currentUser?.id {
@@ -257,7 +263,7 @@ struct FullScreenPhotoView: View {
     @ViewBuilder
     private var bottomBar: some View {
         VStack(spacing: 14) {
-            if photo.rollId != nil {
+            if photo.rollId != nil && showsReactions {
                 reactionBar
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
