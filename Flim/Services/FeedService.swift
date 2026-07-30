@@ -524,6 +524,19 @@ final class FeedService {
         return !rows.isEmpty
     }
 
+    /// Which of these photos have been shared to ANYONE's page — not just the caller's own, so a
+    /// roll's "shared to their page" indicator works regardless of who took the shot or who shared
+    /// it. One query for the whole roll rather than a round trip per photo.
+    func postedPhotoIds(_ ids: [UUID]) async -> Set<UUID> {
+        guard !ids.isEmpty else { return [] }
+        struct Row: Decodable { let photo_id: UUID }
+        let rows: [Row] = (try? await supabase
+            .from("posts").select("photo_id")
+            .in("photo_id", values: ids.map(\.uuidString))
+            .execute().value) ?? []
+        return Set(rows.map(\.photo_id))
+    }
+
     func fetchUserPosts(userId: UUID) async -> [Post] {
         (try? await supabase
             .from("posts").select()

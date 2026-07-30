@@ -9,6 +9,7 @@ struct RollCarouselView: View {
 
     @Environment(AuthService.self) private var auth
     @Environment(PhotoService.self) private var photoService
+    @Environment(FeedService.self) private var feed
     @Environment(\.dismiss) private var dismiss
 
     @State private var selection = 0
@@ -16,6 +17,10 @@ struct RollCarouselView: View {
     @State private var reactions: [PhotoReaction] = []
     @State private var shareItem: ShareImage?
     @State private var showComments = false
+    /// Which of this roll's photos have already been shared to someone's page — a quiet signal,
+    /// not tied to who shared it or who took the shot. Loaded once for the whole roll rather than
+    /// per-swipe, since `photos` is already the full array.
+    @State private var sharedPhotoIds: Set<UUID> = []
 
     private var current: Photo? { photos.indices.contains(selection) ? photos[selection] : nil }
 
@@ -65,6 +70,7 @@ struct RollCarouselView: View {
         }
         .onAppear { selection = min(max(startIndex, 0), max(0, photos.count - 1)) }
         .task(id: selection) { await loadAround(selection) }
+        .task { sharedPhotoIds = await feed.postedPhotoIds(photos.map(\.id)) }
     }
 
     private var header: some View {
@@ -110,8 +116,18 @@ struct RollCarouselView: View {
                     Text(memberNames[photo.userId].map { "@\($0)" } ?? "@")
                         .font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
                         .opacity(memberNames[photo.userId] == nil ? 0 : 1)
-                    Text(photo.takenAt.formatted(date: .abbreviated, time: .shortened))
-                        .font(.system(size: 12, weight: .medium)).foregroundStyle(Color(white: 0.68))
+                    // Same always-render-then-fade approach as the handle above, and for the same
+                    // reason: this row's height must never depend on per-photo state while a
+                    // paging TabView sits above it.
+                    HStack(spacing: 4) {
+                        Text(photo.takenAt.formatted(date: .abbreviated, time: .shortened))
+                            .font(.system(size: 12, weight: .medium)).foregroundStyle(Color(white: 0.68))
+                        Image(systemName: "square.and.arrow.up.fill")
+                            .font(.system(size: 9))
+                            .foregroundStyle(Color(white: 0.68))
+                            .opacity(sharedPhotoIds.contains(photo.id) ? 1 : 0)
+                            .accessibilityLabel(sharedPhotoIds.contains(photo.id) ? "Shared to a page" : "")
+                    }
                 }
                 ReactionBar(
                     defaults: PostEmoji.all,
