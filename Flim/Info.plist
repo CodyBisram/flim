@@ -35,6 +35,8 @@
 	<string>Used to take disposable photos that develop over time.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>Save your developed photos to your camera roll.</string>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
 	<key>UILaunchScreen</key>
 	<dict/>
 	<key>UISupportedInterfaceOrientations</key>
