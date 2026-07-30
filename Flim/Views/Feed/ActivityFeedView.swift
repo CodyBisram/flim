@@ -63,7 +63,14 @@ struct ActivityFeedView: View {
             .navigationDestination(item: $postRoute) { PostDetailView(item: $0) }
             .task {
                 guard let uid = auth.currentUser?.id else { loaded = true; return }
-                items = await feed.fetchActivity(userId: uid)
+                // followingIds only otherwise loads lazily from UserPageView, so a follow
+                // notification opened before visiting any profile this session would read as
+                // "not following" even when you already are. Runs alongside the activity fetch,
+                // not after, so it doesn't add to first paint.
+                async let activityTask = feed.fetchActivity(userId: uid)
+                async let followingTask: Void = loadFollowingIfNeeded(uid)
+                items = await activityTask
+                await followingTask
                 // Thumbnails are the smallest rendition in the pipeline (~30KB) and deduped
                 // by post here — five reactions on the same photo mint one signed URL, not
                 // five — so this costs about the same as any other thumbnail row in the app.
@@ -121,8 +128,12 @@ struct ActivityFeedView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            Button { openDestination(item) } label: { thumbnail(item) }
-                .buttonStyle(.plain)
+            if case .follow = item.kind {
+                followBackControl(item)
+            } else {
+                Button { openDestination(item) } label: { thumbnail(item) }
+                    .buttonStyle(.plain)
+            }
         }
         .padding(.horizontal, 18).padding(.vertical, 10)
     }
@@ -132,6 +143,21 @@ struct ActivityFeedView: View {
             postRoute = FeedItem(post: post, author: author)
         } else {
             profileRoute = ProfileRoute(id: item.actor.id)
+        }
+    }
+
+    private func loadFollowingIfNeeded(_ uid: UUID) async {
+        guard feed.followingIds.isEmpty else { return }
+        await feed.loadFollowing(userId: uid)
+    }
+
+    /// Replaces the static "someone followed you" icon: a real follow-back button if you don't
+    /// already follow them, nothing at all if you do. The old icon (a generic person+plus) showed
+    /// unconditionally, implying "add this person" even on rows where you'd already followed back.
+    @ViewBuilder
+    private func followBackControl(_ item: ActivityItem) -> some View {
+        if !feed.isFollowing(item.actor.id) {
+            FollowButton(userId: item.actor.id)
         }
     }
 
