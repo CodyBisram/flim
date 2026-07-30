@@ -26,15 +26,28 @@ struct ReactionBar: View {
     private var recents: [String] { recentsRaw.split(separator: ",").map(String.init) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(displayOrder, id: \.self) { chip($0) }
-                    plusButton
-                }
-                .padding(.trailing, 4)
+        // The picker used to be a second VStack row, included only `if expanded`, which meant
+        // this whole view's reported height changed the instant it opened. Every host of this
+        // bar (RollCarouselView, FullScreenPhotoView, FeedView, PostDetailView) sits it in a
+        // container that gives a swipeable photo pager "whatever height is left" — so opening
+        // the picker while a TabView drag was live changed the pager's height mid-transition,
+        // the same class of bug that already corrupted roll-carousel paging twice before (a
+        // page-width fix, then a footer-height fix). The picker is an overlay now instead: it
+        // draws on top of whatever's below without ever changing this view's own layout size,
+        // so expanding it can no longer destabilize a paging gesture in progress.
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(displayOrder, id: \.self) { chip($0) }
+                plusButton
             }
-            if expanded { picker }
+            .padding(.trailing, 4)
+        }
+        .overlay(alignment: .topLeading) {
+            if expanded {
+                picker
+                    .padding(.top, 44)   // clears the chip row without reserving that space always
+                    .zIndex(1)
+            }
         }
         // Hidden field the system keyboard feeds — tap 🌐 to switch to emoji and pick ANYTHING.
         .background(
