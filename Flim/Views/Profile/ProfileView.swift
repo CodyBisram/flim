@@ -1,5 +1,13 @@
 import SwiftUI
 
+/// Whether an account is the FLIM owner's — the one account Film Lab (neutral capture, for LUT
+/// calibration) stays visible to among TestFlight testers. Matches either the owner's email or
+/// their username, case-insensitively, since a client could plausibly store either with
+/// different casing than what's hardcoded here.
+func isOwnerAccount(email: String?, username: String?) -> Bool {
+    email?.lowercased() == "codyysb@gmail.com" || username?.lowercased() == "cody"
+}
+
 struct ProfileView: View {
     @Environment(AuthService.self) private var auth
     @Environment(RollService.self) private var rolls
@@ -20,6 +28,12 @@ struct ProfileView: View {
     @State private var showWipeConfirm = false
     @State private var showBlockedUsers = false
     @AppStorage(InstantFilmProcessor.neutralCaptureKey) private var neutralCapture = false
+    /// Film Lab is already TestFlight-only; restricted further to the owner's account
+    /// specifically — an unexplained "skip the FLIM look" toggle in a beta tester's own Settings
+    /// would just be confusing, not useful, and it exists purely for LUT calibration pairs.
+    private var showsFilmLab: Bool {
+        isOwnerAccount(email: auth.currentUser?.email, username: auth.currentUser?.username)
+    }
     @AppStorage("developNotificationsEnabled") private var notificationsEnabled = true
     @AppStorage("soundEffects") private var soundEffects = true
     @Environment(\.openURL) private var openURL
@@ -250,9 +264,10 @@ struct ProfileView: View {
                         settingsRow("Blocked users", icon: "hand.raised.slash")
                     }
 
-                    // Film Lab — TestFlight-only (hidden on the public App Store).
+                    // Film Lab — TestFlight-only (hidden on the public App Store), and further
+                    // restricted to the owner's account (see showsFilmLab).
                     // Neutral capture stores shots UNGRADED for LUT calibration pairs.
-                    if !AppInfo.isAppStore {
+                    if !AppInfo.isAppStore && showsFilmLab {
                         HStack {
                             Image(systemName: "testtube.2").foregroundStyle(FlimTheme.accent)
                             VStack(alignment: .leading, spacing: 2) {
