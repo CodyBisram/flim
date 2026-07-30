@@ -67,6 +67,18 @@ struct FeedView: View {
                             .padding(.vertical, 16)
                         }
                         .refreshable { await reload() }
+                        // This ScrollViewReader only mounts once feed.feed goes non-empty (the
+                        // sibling branch above is the skeleton/empty state) — a fresh view
+                        // identity, so its very first layout pass. Reported: that first pass can
+                        // land scrolled slightly below "top" (LazyVStack items still settling
+                        // their real heights as async images load in changes the content's
+                        // effective size out from under the scroll view's initial offset), and
+                        // double-tapping the Feed tab — which calls this exact scrollTo — fixes
+                        // it instantly. Firing it once on appear applies that same proven fix
+                        // automatically instead of requiring the user to find it, with no
+                        // animation since this is a silent correction before anything settles,
+                        // not a visible user-triggered reset like the double-tap is.
+                        .task { proxy.scrollTo("top", anchor: .top) }
                         .onChange(of: scrollToTop) {
                             withAnimation(.snappy) { proxy.scrollTo("top", anchor: .top) }
                         }
