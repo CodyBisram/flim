@@ -28,35 +28,45 @@ struct RollCarouselView: View {
         ZStack {
             Color.black.ignoresSafeArea()
 
-            // One vertical layout — header / flexible photo pager / footer — so the photo
-            // SHRINKS when the reaction bar expands (or the emoji keyboard rises) instead of
-            // the bar overlapping the metadata or the image.
+            // One vertical layout — header / flexible photo / footer — so the photo SHRINKS
+            // when the reaction bar expands (or the emoji keyboard rises) instead of the bar
+            // overlapping the metadata or the image.
             VStack {
                 header
 
-                TabView(selection: $selection) {
-                    ForEach(Array(photos.enumerated()), id: \.element.id) { index, photo in
-                        Group {
-                            if let url = urls[photo.id] {
-                                CachedImage(url: url, maxPixel: 1600) { $0.resizable().scaledToFit() }
-                                    placeholder: { ProgressView().tint(.white) }
-                            } else {
-                                ProgressView().tint(.white)
-                            }
+                // Deliberately not TabView(.page): three separate root-cause fixes this cycle
+                // (page-width sizing, footer-height stability, the reaction picker's own height)
+                // each closed a real way to corrupt it mid-swipe, and it was STILL reported
+                // showing two half-visible photos after all three. Rather than keep patching
+                // triggers one at a time, this is plain state (`selection`) advanced by a tap
+                // zone or a drag gesture below — the same approach RollRevealView already uses,
+                // which has never had this complaint, because there's no paging scroll view
+                // underneath to desync from its content in the first place.
+                ZStack {
+                    Group {
+                        if let photo = current, let url = urls[photo.id] {
+                            CachedImage(url: url, maxPixel: 1600) { $0.resizable().scaledToFit() }
+                                placeholder: { ProgressView().tint(.white) }
+                        } else {
+                            ProgressView().tint(.white)
                         }
-                        // Without this, a page's width is only as wide as its fitted image
-                        // content, not the full TabView — the underlying paging scroll view
-                        // then sizes each page to that narrower width, so mid-roll two photos
-                        // can render side by side (each ~half-width, both fully visible) instead
-                        // of one full-bleed page. Forcing every page to claim the full bounds
-                        // keeps the paging scroll view's page width locked to the screen.
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .padding(.vertical, 8)
-                        .tag(index)
+                    }
+                    .id(current?.id)
+                    .transition(.opacity)
+
+                    // Tap zones: left half steps back, right half steps forward.
+                    HStack(spacing: 0) {
+                        Color.clear.contentShape(Rectangle())
+                            .frame(maxWidth: .infinity)
+                            .onTapGesture { step(-1) }
+                        Color.clear.contentShape(Rectangle())
+                            .frame(maxWidth: .infinity)
+                            .onTapGesture { step(1) }
                     }
                 }
-                .tabViewStyle(.page(indexDisplayMode: .never))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(.vertical, 8)
+                .gesture(pageOrDismissGesture)
 
                 footer
             }
@@ -139,6 +149,30 @@ struct RollCarouselView: View {
             }
             .padding(.horizontal, 20).padding(.bottom, 40)
         }
+    }
+
+    /// Whichever axis moved further wins: a mostly-vertical drag past the threshold dismisses
+    /// (either direction, matching FullScreenPhotoView's own drag-to-dismiss), a mostly-
+    /// horizontal drag past a smaller threshold steps — a swipe, on top of the tap zones above,
+    /// not instead of them.
+    private var pageOrDismissGesture: some Gesture {
+        DragGesture(minimumDistance: 24)
+            .onEnded { value in
+                let h = value.translation.width
+                let v = value.translation.height
+                if abs(v) > abs(h) {
+                    if abs(v) > 120 { Haptics.tap(); dismiss() }
+                } else if abs(h) > 60 {
+                    step(h < 0 ? 1 : -1)
+                }
+            }
+    }
+
+    private func step(_ delta: Int) {
+        let next = selection + delta
+        guard photos.indices.contains(next) else { return }
+        Haptics.tap()
+        withAnimation(.easeOut(duration: 0.22)) { selection = next }
     }
 
     private func loadAround(_ index: Int) async {
