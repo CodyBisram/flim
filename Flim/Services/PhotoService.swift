@@ -393,7 +393,11 @@ final class PhotoService {
     /// the caller). RLS already hides co-members' photos bidirectionally once blocked; this is
     /// defense-in-depth for stale/offline caches.
     func fetchRollPhotos(rollId: UUID, reset: Bool = true, blockedIds: Set<UUID> = []) async throws {
-        try await fetchPage(reset: reset, blockedIds: blockedIds) {
+        // Rolls cap at 50 members and are a small, finite set, unlike the personal Darkroom's
+        // unbounded feed — a bigger page means most rolls finish in a single round trip instead
+        // of several, directly cutting how long "Play through the roll" takes to appear (it's
+        // gated on RollDetailView eagerly draining every page first).
+        try await fetchPage(reset: reset, blockedIds: blockedIds, pageSize: 100) {
             $0.eq("roll_id", value: rollId.uuidString).eq("hidden", value: false)
         }
     }
@@ -426,8 +430,10 @@ final class PhotoService {
     private func fetchPage(
         reset: Bool,
         blockedIds: Set<UUID> = [],
+        pageSize: Int? = nil,
         filter: (PostgrestFilterBuilder) -> PostgrestFilterBuilder
     ) async throws {
+        let limit = pageSize ?? self.pageSize
         if reset {
             await MainActor.run {
                 loadedCount = 0
@@ -444,7 +450,7 @@ final class PhotoService {
         do {
             page = try await filter(base)
                 .order("develops_at", ascending: false)
-                .range(from: loadedCount, to: loadedCount + pageSize - 1)
+                .range(from: loadedCount, to: loadedCount + limit - 1)
                 .execute()
                 .value
         } catch {
@@ -459,7 +465,7 @@ final class PhotoService {
             // blocked-heavy page doesn't get re-requested — the offset tracks server rows,
             // not rendered ones.
             loadedCount += page.count
-            if page.count < pageSize { hasMore = false }
+            if page.count < limit { hasMore = false }
             isLoading = false
         }
     }
