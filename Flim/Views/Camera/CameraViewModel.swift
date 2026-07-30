@@ -312,7 +312,28 @@ final class CameraViewModel: NSObject {
             connection.automaticallyAdjustsVideoMirroring = false
             connection.isVideoMirrored = isFront
         }
-        output.capturePhoto(with: settings, delegate: self)
+
+        // Front camera has no hardware LED: "flash on" here means screen-as-flash, brightening
+        // the display to light the subject instead. Triggering the capture at the same instant
+        // as the brighten (the old behavior) meant the sensor's continuous auto-exposure was
+        // still metered against the dim pre-flash scene — in a dark room, where AE had already
+        // cranked exposure way up expecting darkness, the sudden extra light blew the shot out;
+        // in a brighter room the same shot looked fine. Reported on-device as the screen-flash
+        // being "either really good or really bad" with no in-between. Brightening the screen
+        // FIRST and giving AE a beat to re-converge against the now-lit scene before triggering
+        // the actual capture means exposure is metered for the scene the sensor is about to see,
+        // not the one before the flash. 260ms is a guess at how long continuous AE needs to
+        // settle on this hardware; tune it on-device if results are still inconsistent.
+        if isFront && flashMode == .on {
+            withAnimation(.easeOut(duration: 0.12)) { flashOpacity = 1 }
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .milliseconds(260))
+                guard let self, generation == self.captureGeneration else { return }
+                self.output.capturePhoto(with: settings, delegate: self)
+            }
+        } else {
+            output.capturePhoto(with: settings, delegate: self)
+        }
 
         // Watchdog: isCapturing/flashOpacity normally only get reset by AVFoundation's own
         // completion callbacks below, which assumes the capture pipeline always completes
