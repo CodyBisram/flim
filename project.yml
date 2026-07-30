@@ -58,7 +58,7 @@ targets:
         # 1.0 shipped to the App Store and Apple closes a version's TestFlight train once
         # it's been approved (ASC rejected further 1.0 uploads with "Invalid Pre-Release
         # Train... previously approved version"). Bump this again for the next release.
-        MARKETING_VERSION: "1.1"
+        MARKETING_VERSION: "1.2"
         CURRENT_PROJECT_VERSION: "1"
       configs:
         Debug:
