@@ -42,10 +42,15 @@ struct ReactionBar: View {
             }
             .padding(.trailing, 4)
         }
-        .overlay(alignment: .topLeading) {
+        .overlay(alignment: .bottomLeading) {
             if expanded {
                 picker
-                    .padding(.top, 44)   // clears the chip row without reserving that space always
+                    // Opens UPWARD, not down: every host of this bar has the photo above and
+                    // something fixed below it (a "Share to your page" button, in the photo
+                    // pagers) — opening downward pushed the picker straight into that button
+                    // instead of clearing it, since an overlay never reserves space for anyone
+                    // below it to make room. Upward always has open photo space to expand into.
+                    .padding(.bottom, 44)
                     .zIndex(1)
             }
         }
