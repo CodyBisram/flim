@@ -591,9 +591,28 @@ DROP POLICY IF EXISTS "posts: readable by authenticated" ON public.posts;
 CREATE POLICY "posts: readable by authenticated"
     ON public.posts FOR SELECT TO authenticated USING (true);
 
+-- A post must be attributed to the caller (unchanged) AND reference a photo the caller can
+-- actually see: their own, or any photo in a roll they're a member of — sharing a roll-mate's
+-- shot to your own page is a real feature (anyone in the roll can share anything in it), not a
+-- gap. Before this, the WITH CHECK only verified the former: nothing tied photo_id to something
+-- the poster was actually allowed to see, so a forged INSERT (bypassing the app's UI, which only
+-- ever offers photo_ids it legitimately fetched) could have turned ANY photo in the database —
+-- including someone else's private, non-roll shot — into a public post, since "posts: readable
+-- by authenticated" and the storage read policy both key off the post existing, not off the
+-- underlying photo's own visibility. `NOT p.hidden` is explicit here rather than assumed via
+-- `photos`' own SELECT policies (own-photo visibility deliberately ignores hidden, so a reported
+-- photo could otherwise still be freshly shared by its owner even after auto-hiding).
 DROP POLICY IF EXISTS "posts: create own" ON public.posts;
 CREATE POLICY "posts: create own"
-    ON public.posts FOR INSERT WITH CHECK (auth.uid() = user_id);
+    ON public.posts FOR INSERT WITH CHECK (
+        auth.uid() = user_id
+        AND EXISTS (
+            SELECT 1 FROM public.photos p
+            WHERE p.id = photo_id
+              AND NOT p.hidden
+              AND (p.user_id = auth.uid() OR (p.roll_id IS NOT NULL AND public.is_roll_member(p.roll_id)))
+        )
+    );
 
 DROP POLICY IF EXISTS "posts: update own" ON public.posts;
 CREATE POLICY "posts: update own"

@@ -207,7 +207,9 @@ struct FullScreenPhotoView: View {
         }
         .task {
             reactions = await photoService.fetchReactions(photoId: photo.id)
-            if isOwnPhoto, let uid = auth.currentUser?.id {
+            // Own or roll photo (anyone's shot, if you're in the roll) can be shared to your
+            // page — this reflects whether YOU specifically already did, not the photo's owner.
+            if (isOwnPhoto || isRollPhoto), let uid = auth.currentUser?.id {
                 shared = await feed.hasPosted(photoId: photo.id, userId: uid)
             }
             // Show the grid's (cached, instant) thumbnail first, then upgrade to the full-res
@@ -259,8 +261,9 @@ struct FullScreenPhotoView: View {
                 reactionBar
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            // Prominent share-to-page action for your own photos.
-            if isOwnPhoto && !showShareComposer {
+            // Prominent share-to-page action: your own photos, and any roll photo — you're a
+            // roll member if you're able to see it at all, so who took the shot doesn't matter.
+            if (isOwnPhoto || isRollPhoto) && !showShareComposer {
                 Button { shareToPage() } label: {
                     Label(shared ? "Shared to your page" : "Share to your page",
                           systemImage: shared ? "checkmark.circle.fill" : "square.and.arrow.up")
