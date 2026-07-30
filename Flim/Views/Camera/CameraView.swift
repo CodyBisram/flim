@@ -234,6 +234,12 @@ struct CameraView: View {
         }
         .onDisappear { camera.stopRunning() }
         .onChange(of: selectedRoll) { persistSelectedRoll() }
+        // Defaults the camera to a roll you just created, until you deliberately switch away —
+        // selectedRoll is view-local state (persisted, but only restored once on appear), so a
+        // roll created elsewhere has no other way to reach an already-mounted CameraView.
+        .onReceive(NotificationCenter.default.publisher(for: .selectCameraRoll)) { note in
+            if let roll = note.object as? Roll { selectedRoll = roll }
+        }
         .sheet(isPresented: $showRollPicker) {
             RollPickerSheet(rolls: rolls.rolls, closed: rolls.closedRollIds, selected: $selectedRoll)
         }

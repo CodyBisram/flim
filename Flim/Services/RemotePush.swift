@@ -48,6 +48,11 @@ extension Notification.Name {
     static let openCamera = Notification.Name("openCamera")
     /// Posted with a roll invite code (String) when a `…//join/CODE` deep link is opened.
     static let openRollInvite = Notification.Name("openRollInvite")
+    /// Posted with the just-created Roll so the camera defaults to shooting into it, without
+    /// forcing a tab switch — CameraView's own selectedRoll is view-local @State (persisted to
+    /// UserDefaults on change, restored once on appear), so a roll created elsewhere has no other
+    /// way to reach an already-mounted CameraView.
+    static let selectCameraRoll = Notification.Name("selectCameraRoll")
 }
 
 /// App delegate: forwards the APNs token to `RemotePush`, and handles notification
