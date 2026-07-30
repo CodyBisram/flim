@@ -44,7 +44,13 @@ struct DarkroomPhotoPagerView: View {
                     url: signedURLs[photo.id],
                     rollName: rollName(photo.rollId),
                     onDelete: onDelete,
-                    showsReactions: false
+                    showsReactions: false,
+                    // dragToDismiss is a plain, unrestricted DragGesture on the image — inside
+                    // a TabView(.page) it competes with the TabView's own horizontal paging for
+                    // every touch, which is a real, sufficient reason for paging to not work at
+                    // all here. The header's X (already in FullScreenPhotoView) covers dismissal
+                    // instead.
+                    allowsDragToDismiss: false
                 )
                 // Belt-and-suspenders, matching the roll carousel's own fix: without this a
                 // page's width is only as wide as its content, which is how paging TabViews

@@ -18,6 +18,15 @@ struct FullScreenPhotoView: View {
     /// library thing, and skipping both the UI and the fetch keeps a many-photo pager cheap (a
     /// pager can hold several pages "warm" at once — see DarkroomPhotoPagerView).
     var showsReactions: Bool = true
+    /// Off for the Darkroom's swipe-to-browse pager: dragToDismiss is a plain, unrestricted
+    /// DragGesture on the image, and when this view sits inside a TabView(.page) that gesture
+    /// competes with the TabView's own horizontal paging for every touch, not just vertical
+    /// ones — winning enough of the time to make swiping between photos unreliable and, when it
+    /// doesn't win outright, to make the photo visibly detach and drag on its own instead of the
+    /// whole page transitioning together. The pager's header X (see DarkroomPhotoPagerView)
+    /// covers dismissal instead; pinch-to-zoom is unaffected, since it needs two touch points
+    /// and was never the thing competing with paging.
+    var allowsDragToDismiss: Bool = true
     @Environment(PhotoService.self) private var photoService
     @Environment(AuthService.self) private var auth
     @Environment(FeedService.self) private var feed
@@ -148,7 +157,7 @@ struct FullScreenPhotoView: View {
                                     .scaledToFit()
                                     .scaleEffect(scale)
                                     .offset(offset)
-                                    .gesture(dragToDismiss)
+                                    .gesture(dragToDismiss, including: allowsDragToDismiss ? .all : .none)
                                     .gesture(pinchToZoom)
                                     .onTapGesture(count: 2) {
                                         withAnimation(.spring(duration: 0.3)) {
