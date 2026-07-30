@@ -91,7 +91,18 @@ struct RollRevealView: View {
                     }
                     .padding(.horizontal, 16).padding(.top, 18)
 
-                    HStack {
+                    HStack(spacing: 10) {
+                        // Distinct from Skip: this leaves immediately, no summary screen. Skip
+                        // still routes through "View the roll" — with a large roll (a wedding's
+                        // worth of shots) tapping through 70 photos to leave was the complaint,
+                        // and Skip alone didn't actually solve that, since it lands on one more
+                        // screen instead of just closing.
+                        Button { Haptics.tap(); dismiss() } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundStyle(.white)
+                        }
+                        .accessibilityLabel("Close")
                         Text(rollName)
                             .font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
                         Spacer()
