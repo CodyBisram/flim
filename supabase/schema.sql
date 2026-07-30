@@ -1243,3 +1243,42 @@ ALTER TABLE public.photo_reports ADD COLUMN IF NOT EXISTS push_sent BOOLEAN NOT 
 ALTER TABLE public.user_reports  ADD COLUMN IF NOT EXISTS push_sent BOOLEAN NOT NULL DEFAULT FALSE;
 CREATE INDEX IF NOT EXISTS photo_reports_unpushed_idx ON public.photo_reports (push_sent) WHERE push_sent = FALSE;
 CREATE INDEX IF NOT EXISTS user_reports_unpushed_idx  ON public.user_reports  (push_sent) WHERE push_sent = FALSE;
+
+-- ============================================================
+-- Crash/hang/CPU-exception diagnostics (MetricKit, on-device — see CrashReporter.swift).
+-- Before this, the only way to see a hang or CPU-exception diagnostic (Xcode Organizer's
+-- Crashes tab doesn't show either) was physically connecting the exact device it happened on
+-- to Xcode and pulling its container — meaning in practice, only the owner's own test device
+-- was ever actually visible. This makes every diagnostic reach a place the owner can query.
+--
+-- Write-only from the client, deliberately: any signed-in user can log their own device's
+-- diagnostics, and a not-yet-signed-in device can log one with no user_id, but there is no
+-- SELECT policy for authenticated or anon at all. Reading this table means the Supabase
+-- Dashboard or the Management API with an owner-supplied token, both of which use the service
+-- role and bypass RLS entirely — never the app itself.
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.crash_diagnostics (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id uuid REFERENCES auth.users(id) ON DELETE SET NULL,
+    kind text NOT NULL CHECK (kind IN ('crash', 'hang', 'cpuException')),
+    detail text NOT NULL,
+    app_version text,
+    call_stack_tree text,
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS crash_diagnostics_created_at_idx ON public.crash_diagnostics (created_at DESC);
+CREATE INDEX IF NOT EXISTS crash_diagnostics_kind_idx ON public.crash_diagnostics (kind);
+
+ALTER TABLE public.crash_diagnostics ENABLE ROW LEVEL SECURITY;
+
+-- Ties an authenticated insert to the caller's own uid (can't attribute a diagnostic to
+-- someone else) and only allows a claimed-anonymous insert (no session) to carry a null
+-- user_id (can't claim to be a specific user without a valid JWT either).
+DROP POLICY IF EXISTS "crash_diagnostics: insert" ON public.crash_diagnostics;
+CREATE POLICY "crash_diagnostics: insert"
+    ON public.crash_diagnostics FOR INSERT TO anon, authenticated
+    WITH CHECK (
+        (auth.uid() IS NOT NULL AND auth.uid() = user_id)
+        OR (auth.uid() IS NULL AND user_id IS NULL)
+    );
