@@ -75,8 +75,14 @@ targets:
     dependencies:
       - package: supabase-swift
         product: Supabase
-      - target: RollActivityWidget
-        embed: true
+      # RollActivityWidget is deliberately NOT embedded yet: its own App ID + provisioning
+      # profile don't exist until the manual Developer-portal step in docs/TESTFLIGHT_SETUP.md's
+      # "Adding a new target" section happens. Embedding it now would make every Release
+      # archive fail looking for a profile that isn't there — re-add this dependency (and the
+      # matching bit in fastlane/Fastfile's provisioningProfiles map, never removed) once that's
+      # done. The target itself, and all its Swift files, stay in the project either way.
+      # - target: RollActivityWidget
+      #   embed: true
 
   RollActivityWidget:
     type: app-extension

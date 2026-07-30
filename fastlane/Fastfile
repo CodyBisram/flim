@@ -1,8 +1,12 @@
 default_platform(:ios)
 
 APP_IDENTIFIER    = "com.flim.app"
-# The Live Activity widget extension — its own bundle id, its own App ID + profile,
-# same as the main app needs. See docs/TESTFLIGHT_SETUP.md for the one-time setup.
+# The Live Activity widget extension's bundle id — defined for when it's ready, but NOT yet
+# used below: project.yml doesn't embed RollActivityWidget into Flim yet either (see its
+# comment), both waiting on the manual Developer-portal + match setup in
+# docs/TESTFLIGHT_SETUP.md's "Adding a new target" section. Wire it back into the match(...)
+# calls and provisioningProfiles below once that's done — see git history on this file for
+# exactly what that looked like.
 WIDGET_IDENTIFIER = "com.flim.app.RollActivityWidget"
 XCODEPROJ      = "Flim.xcodeproj"
 SCHEME         = "Flim"
@@ -51,7 +55,7 @@ platform :ios do
   lane :certificates do
     match(
       type:           "appstore",
-      app_identifier: [APP_IDENTIFIER, WIDGET_IDENTIFIER],
+      app_identifier: APP_IDENTIFIER,
       api_key:        asc_api_key,
       readonly:       false
     )
@@ -65,7 +69,7 @@ platform :ios do
     # Pull the shared distribution cert + profile (read-only on CI).
     match(
       type:           "appstore",
-      app_identifier: [APP_IDENTIFIER, WIDGET_IDENTIFIER],
+      app_identifier: APP_IDENTIFIER,
       api_key:        api_key,
       readonly:       is_ci
     )
@@ -81,8 +85,6 @@ platform :ios do
 
     profile_name = ENV["sigh_#{APP_IDENTIFIER}_appstore_profile-name"] ||
                    "match AppStore #{APP_IDENTIFIER}"
-    widget_profile_name = ENV["sigh_#{WIDGET_IDENTIFIER}_appstore_profile-name"] ||
-                           "match AppStore #{WIDGET_IDENTIFIER}"
 
     build_app(
       project:        XCODEPROJ,
@@ -102,10 +104,7 @@ platform :ios do
         method:        "app-store",
         signingStyle:  "manual",
         teamID:        ENV.fetch("APPLE_TEAM_ID"),
-        provisioningProfiles: {
-          APP_IDENTIFIER    => profile_name,
-          WIDGET_IDENTIFIER => widget_profile_name
-        }
+        provisioningProfiles: { APP_IDENTIFIER => profile_name }
       }
     )
 

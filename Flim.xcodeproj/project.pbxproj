@@ -65,7 +65,6 @@
 		A87C25A2CA30896A89F33F7B /* NotificationPrimerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40C6E2279C5B9F7F042A3349 /* NotificationPrimerSheet.swift */; };
 		AB3249CE1029C5382B7C55A6 /* PhotoGridCell.swift in Sources */ = {isa = PBXBuildFile; fileRef = A34B801CAAD6D2C6557DD581 /* PhotoGridCell.swift */; };
 		AD24F3CB906A687FED7FE687 /* DevelopTimingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F61787FFCEE49A74368FF8C /* DevelopTimingTests.swift */; };
-		AF5C20B2C6E0933A53FA1134 /* RollActivityWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = BF5AF4446D3DC691556A0EDD /* RollActivityWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		B09880D2185738A73550E7C6 /* RollService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 633F60D6D348ADEA4D94D263 /* RollService.swift */; };
 		B163C6D33D32933E1570FD67 /* PhotoTags.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24DE0B6E57BFD6B0DE4804A0 /* PhotoTags.swift */; };
 		B24553011D30469838CCA923 /* RollTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B7E5F0D581D43A4722CD6D9 /* RollTests.swift */; };
@@ -110,28 +109,7 @@
 			remoteGlobalIDString = 7419C4EF5A09315366044E25;
 			remoteInfo = Flim;
 		};
-		A6358C8D604A4BC9F05B3A08 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = D76C2429EDC169EF7AD0B4E8 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = FCFC81B074081F96D33F3E76;
-			remoteInfo = RollActivityWidget;
-		};
 /* End PBXContainerItemProxy section */
-
-/* Begin PBXCopyFilesBuildPhase section */
-		2B172CCE465BC7423378AEB0 /* Embed Foundation Extensions */ = {
-			isa = PBXCopyFilesBuildPhase;
-			buildActionMask = 2147483647;
-			dstPath = "";
-			dstSubfolderSpec = 13;
-			files = (
-				AF5C20B2C6E0933A53FA1134 /* RollActivityWidget.appex in Embed Foundation Extensions */,
-			);
-			name = "Embed Foundation Extensions";
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		01ECCD46517220EBFD0EC621 /* PhotoService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoService.swift; sourceTree = "<group>"; };
@@ -518,12 +496,10 @@
 				46FAAB3D3297C8421FF6DEB7 /* Sources */,
 				BAEA4E32BD8CFF4AEB3A98AE /* Resources */,
 				AB4DA97B4206F193CFDACE75 /* Frameworks */,
-				2B172CCE465BC7423378AEB0 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
-				DD4D69E1BA30E0C3389E80B2 /* PBXTargetDependency */,
 			);
 			name = Flim;
 			packageProductDependencies = (
@@ -721,11 +697,6 @@
 			isa = PBXTargetDependency;
 			target = 7419C4EF5A09315366044E25 /* Flim */;
 			targetProxy = 34BD8B9EF616EEEDFA52A09A /* PBXContainerItemProxy */;
-		};
-		DD4D69E1BA30E0C3389E80B2 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = FCFC81B074081F96D33F3E76 /* RollActivityWidget */;
-			targetProxy = A6358C8D604A4BC9F05B3A08 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
