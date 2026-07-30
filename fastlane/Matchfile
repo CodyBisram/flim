@@ -6,7 +6,9 @@ git_url(ENV["MATCH_GIT_URL"])       # e.g. https://github.com/<owner>/flim-certi
 storage_mode("git")
 
 type("appstore")                    # App Store distribution assets
-app_identifier(["com.flim.app"])
+# RollActivityWidget (the Live Activity extension) needs its own App ID + profile,
+# same as the main app — a new bundle id always does. See docs/TESTFLIGHT_SETUP.md.
+app_identifier(["com.flim.app", "com.flim.app.RollActivityWidget"])
 
 # Never let CI try to create/regen certs — it only reads what was seeded locally.
 readonly(ENV["CI"] == "true")

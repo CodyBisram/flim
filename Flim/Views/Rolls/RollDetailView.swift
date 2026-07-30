@@ -232,6 +232,17 @@ struct RollDetailView: View {
                         developsAt: roll.revealAt, photoCount: myCount
                     )
                 }
+                // Keeps the countdown Live Activity going for anyone who opens the roll while it's
+                // still developing — not just whoever created it, since sync() starts one fresh if
+                // nothing's running yet. Ends it once developed; there's no push-driven lifecycle,
+                // so this only fires the next time the roll is opened after reveal, not the instant
+                // it happens.
+                if roll.isDeveloped {
+                    RollLiveActivity.end(rollId: roll.id)
+                } else {
+                    RollLiveActivity.sync(rollId: roll.id, rollName: displayName.isEmpty ? roll.name : displayName,
+                                          revealAt: roll.revealAt, shotCount: vm.developingPhotos.count)
+                }
             }
             Task {
                 if let members = try? await rollService.fetchMembers(for: roll.id) {

@@ -42,6 +42,7 @@ targets:
         NSCameraUsageDescription: "Used to take disposable photos that develop over time."
         NSPhotoLibraryAddUsageDescription: "Save your developed photos to your camera roll."
         UIUserInterfaceStyle: Dark
+        NSSupportsLiveActivities: true
         CFBundleURLTypes:
           - CFBundleURLSchemes:
               # Kept as com.lapse.app to match the Supabase auth redirect allowlist.
@@ -74,6 +75,51 @@ targets:
     dependencies:
       - package: supabase-swift
         product: Supabase
+      - target: RollActivityWidget
+        embed: true
+
+  RollActivityWidget:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: RollActivityWidget
+      # Shared with the app target — see the file's own header comment for why this is a second
+      # explicit source entry instead of a shared framework.
+      - path: Flim/Models/RollRevealAttributes.swift
+    info:
+      path: RollActivityWidget/Info.plist
+      properties:
+        CFBundleDisplayName: FLIM
+        # An extension's CFBundleVersion must match its containing app's, or App Store Connect
+        # rejects the upload. CURRENT_PROJECT_VERSION arrives correctly via CI's xcargs (applies
+        # project-wide, not per-target), but MARKETING_VERSION only exists as a literal on the
+        # Flim target's own settings below — mirrored as a literal here too since nothing
+        # propagates it automatically. Bumping MARKETING_VERSION means updating both targets.
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.flim.app.RollActivityWidget
+        SWIFT_VERSION: "5.9"
+        DEVELOPMENT_TEAM: DCU7GHRVUQ
+        TARGETED_DEVICE_FAMILY: "1"
+        SKIP_INSTALL: YES
+        GENERATE_INFOPLIST_FILE: YES
+        MARKETING_VERSION: "1.2"
+        CURRENT_PROJECT_VERSION: "1"
+      configs:
+        Debug:
+          CODE_SIGN_STYLE: Automatic
+        Release:
+          # Needs its own "match AppStore com.flim.app.RollActivityWidget" profile before this
+          # builds in CI — a new bundle ID needs a new App ID + profile in the Developer portal
+          # first, which is a manual, one-time step (see the commit message for this target).
+          CODE_SIGN_STYLE: Manual
+          CODE_SIGN_IDENTITY: "Apple Distribution"
+          PROVISIONING_PROFILE_SPECIFIER: "match AppStore com.flim.app.RollActivityWidget"
 
   FlimTests:
     type: bundle.unit-test

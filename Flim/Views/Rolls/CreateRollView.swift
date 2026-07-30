@@ -141,7 +141,9 @@ struct CreateRollView: View {
         isCreating = true
         error = nil
         do {
-            createdRoll = try await rolls.createRoll(name: name.trimmingCharacters(in: .whitespaces), createdBy: userId)
+            let roll = try await rolls.createRoll(name: name.trimmingCharacters(in: .whitespaces), createdBy: userId)
+            createdRoll = roll
+            RollLiveActivity.sync(rollId: roll.id, rollName: roll.name, revealAt: roll.revealAt, shotCount: 0)
             Haptics.reveal()
         } catch {
             self.error = error.localizedDescription

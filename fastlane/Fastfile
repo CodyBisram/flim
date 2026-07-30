@@ -1,6 +1,9 @@
 default_platform(:ios)
 
-APP_IDENTIFIER = "com.flim.app"
+APP_IDENTIFIER    = "com.flim.app"
+# The Live Activity widget extension — its own bundle id, its own App ID + profile,
+# same as the main app needs. See docs/TESTFLIGHT_SETUP.md for the one-time setup.
+WIDGET_IDENTIFIER = "com.flim.app.RollActivityWidget"
 XCODEPROJ      = "Flim.xcodeproj"
 SCHEME         = "Flim"
 
@@ -48,7 +51,7 @@ platform :ios do
   lane :certificates do
     match(
       type:           "appstore",
-      app_identifier: APP_IDENTIFIER,
+      app_identifier: [APP_IDENTIFIER, WIDGET_IDENTIFIER],
       api_key:        asc_api_key,
       readonly:       false
     )
@@ -62,7 +65,7 @@ platform :ios do
     # Pull the shared distribution cert + profile (read-only on CI).
     match(
       type:           "appstore",
-      app_identifier: APP_IDENTIFIER,
+      app_identifier: [APP_IDENTIFIER, WIDGET_IDENTIFIER],
       api_key:        api_key,
       readonly:       is_ci
     )
@@ -78,6 +81,8 @@ platform :ios do
 
     profile_name = ENV["sigh_#{APP_IDENTIFIER}_appstore_profile-name"] ||
                    "match AppStore #{APP_IDENTIFIER}"
+    widget_profile_name = ENV["sigh_#{WIDGET_IDENTIFIER}_appstore_profile-name"] ||
+                           "match AppStore #{WIDGET_IDENTIFIER}"
 
     build_app(
       project:        XCODEPROJ,
@@ -97,7 +102,10 @@ platform :ios do
         method:        "app-store",
         signingStyle:  "manual",
         teamID:        ENV.fetch("APPLE_TEAM_ID"),
-        provisioningProfiles: { APP_IDENTIFIER => profile_name }
+        provisioningProfiles: {
+          APP_IDENTIFIER    => profile_name,
+          WIDGET_IDENTIFIER => widget_profile_name
+        }
       }
     )
 

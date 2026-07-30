@@ -189,4 +189,28 @@ If you outgrow it: deploy only on version tags, or move to Xcode Cloud (25 free 
   (`brew install ruby` or use rbenv); the system Ruby 2.6 is too old for some gems.
 - **Xcode version mismatch on the runner**: if `latest-stable` isn't Xcode 26.x yet,
   pin `xcode-version:` in `.github/workflows/ios-testflight.yml` to the exact version.
+
+---
+
+## Adding a new target (app extension, widget, etc.)
+
+Every extra target needs its own bundle id, App ID, and provisioning profile — the
+main app's profile only covers the main app. As of the RollActivityWidget Live
+Activity extension (`com.flim.app.RollActivityWidget`), the Fastfile and Matchfile
+already know how to manage more than one identifier, so adding another later means:
+
+1. **(Apple)** Register the new bundle id as its own App ID: same as Step 1 above,
+   just a different **Bundle ID**. Most extensions don't need Push Notifications
+   ticked — only tick capabilities the extension's own entitlements actually use.
+2. Add the new bundle id to `fastlane/Matchfile`'s `app_identifier([...])` array.
+3. Add a matching constant near `WIDGET_IDENTIFIER` in `fastlane/Fastfile`, and add
+   it to both `match(...)` calls' `app_identifier:` arrays and the `beta` lane's
+   `provisioningProfiles:` map (profile name pattern: `"match AppStore <bundle id>"`).
+4. **Re-run Step 6** (`bundle exec fastlane certificates`) locally — this fetches or
+   creates the new profile alongside the existing one and pushes both to the match
+   repo. CI stays read-only; it can't create the new profile itself.
+
+Skipping step 4 is the failure mode to expect: the code builds fine locally (Debug
+uses automatic signing) and even builds in CI right up until the signed Release
+archive/export step, which fails looking for a profile that doesn't exist yet.
 </content>
