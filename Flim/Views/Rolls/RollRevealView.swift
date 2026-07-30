@@ -116,10 +116,24 @@ struct RollRevealView: View {
             }
         }
         .statusBarHidden()
+        .gesture(swipeToDismiss)
         .task {
             await loadDeck()
         }
         .onDisappear { advanceTask?.cancel() }
+    }
+
+    /// A vertical swipe exits immediately, same threshold and gesture as FullScreenPhotoView's
+    /// drag-to-dismiss — a second way out alongside the X button, for a roll big enough that
+    /// reaching up to tap it isn't the natural gesture.
+    private var swipeToDismiss: some Gesture {
+        DragGesture()
+            .onEnded { value in
+                if abs(value.translation.height) > 120 {
+                    Haptics.tap()
+                    dismiss()
+                }
+            }
     }
 
     private var summary: some View {
