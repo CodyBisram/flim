@@ -7,7 +7,7 @@ import Supabase
 final class RollService {
     var rolls: [Roll] = []
     var memberCounts: [UUID: Int] = [:]
-    var coverPaths: [UUID: String] = [:]   // roll id → latest developed photo's storage path
+    var coverPaths: [UUID: String] = [:]   // roll id → cover thumbnail path (thumb_path preferred)
     /// Rolls whose reveal (created_at + delay) has passed — closed to new shots.
     var closedRollIds: Set<UUID> { Set(rolls.filter(\.isDeveloped).map(\.id)) }
     var isLoading = false
@@ -108,14 +108,18 @@ final class RollService {
         await loadCovers(rollIds: rollIds)
     }
 
-    /// Latest developed photo per roll → its storage path, for the roll cover thumbnail.
-    /// "Developed" = develops_at has passed (independent of the is_developed flag sync).
+    /// Latest developed photo per roll → the path used for the roll cover thumbnail.
+    /// Prefers `thumb_path` (the ~120px rendition) over `storage_path` (the full ~2048px stored
+    /// image): the cover renders in a 54pt box, so downloading and decoding the full image for it
+    /// is pure waste on a tab users hit constantly. Falls back to storage_path only when a shot
+    /// has no thumb rendition. "Developed" = develops_at has passed (independent of the
+    /// is_developed flag sync).
     private func loadCovers(rollIds: [String]) async {
-        struct CoverRow: Decodable { let roll_id: UUID; let storage_path: String }
+        struct CoverRow: Decodable { let roll_id: UUID; let storage_path: String; let thumb_path: String? }
         let nowISO = ISO8601DateFormatter().string(from: Date.now)
         let rows: [CoverRow] = (try? await supabase
             .from("photos")
-            .select("roll_id,storage_path")
+            .select("roll_id,storage_path,thumb_path")
             .in("roll_id", values: rollIds)
             .eq("hidden", value: false)
             .lte("develops_at", value: nowISO)
@@ -123,13 +127,20 @@ final class RollService {
             .execute()
             .value) ?? []
 
+        // storage_path → thumb_path, so a creator-chosen cover (stored as a storage_path) can
+        // still resolve to its thumbnail rendition rather than downloading the full image.
+        var thumbForStorage: [String: String] = [:]
+        for row in rows { thumbForStorage[row.storage_path] = row.thumb_path }
+
         var covers: [UUID: String] = [:]
         for row in rows where covers[row.roll_id] == nil {
-            covers[row.roll_id] = row.storage_path   // first per roll = latest (desc order)
+            covers[row.roll_id] = row.thumb_path ?? row.storage_path   // first per roll = latest
         }
-        // A creator-chosen cover overrides the latest-developed default.
-        for roll in rolls where roll.coverPath != nil {
-            covers[roll.id] = roll.coverPath
+        // A creator-chosen cover overrides the latest-developed default — resolve it to the same
+        // thumbnail rendition when we have it, else the full path as a last resort.
+        for roll in rolls {
+            guard let chosen = roll.coverPath else { continue }
+            covers[roll.id] = thumbForStorage[chosen] ?? chosen
         }
         coverPaths = covers
     }

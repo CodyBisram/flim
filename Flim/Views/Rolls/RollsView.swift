@@ -106,6 +106,7 @@ struct RollsView: View {
                         RollRow(roll: roll,
                                 memberCount: rolls.memberCounts[roll.id],
                                 coverURL: coverURLs[roll.id],
+                                coverPath: rolls.coverPaths[roll.id],
                                 isMuted: mutedRolls.contains(roll.id))
                     }
                     .listRowBackground(Color(white: 0.08))
@@ -168,11 +169,12 @@ private struct RollRow: View {
     let roll: Roll
     var memberCount: Int?
     var coverURL: URL?
+    var coverPath: String?
     var isMuted: Bool = false
 
     var body: some View {
         HStack(spacing: 14) {
-            RollCover(roll: roll, coverURL: coverURL)
+            RollCover(roll: roll, coverURL: coverURL, coverPath: coverPath)
 
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 6) {
@@ -236,6 +238,7 @@ private struct RollRow: View {
 private struct RollCover: View {
     let roll: Roll
     var coverURL: URL?
+    var coverPath: String?
 
     var body: some View {
         RoundedRectangle(cornerRadius: 13, style: .continuous)
@@ -244,7 +247,11 @@ private struct RollCover: View {
             .frame(width: 54, height: 54)
             .overlay {
                 if let coverURL {
-                    AsyncImage(url: coverURL) { image in
+                    // CachedImage (not AsyncImage): downsamples the decode to the 54pt box and
+                    // caches to memory + disk, so revisiting the Rolls tab or scrolling a row
+                    // back doesn't re-download and re-decode the image every time. cacheKey is
+                    // the path (token-independent) so a rotated signed URL still hits the cache.
+                    CachedImage(url: coverURL, maxPixel: 120, cacheKey: coverPath) { image in
                         image.resizable().scaledToFill()
                     } placeholder: {
                         Color.clear
