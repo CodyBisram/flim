@@ -520,13 +520,15 @@ final class PhotoService {
 
         guard !readyIds.isEmpty else { return }
 
-        for id in readyIds {
-            _ = try? await supabase
-                .from("photos")
-                .update(["is_developed": true])
-                .eq("id", value: id)
-                .execute()
-        }
+        // One UPDATE for the whole batch, not one round-trip per photo. This runs on initial
+        // Darkroom load, every pagination page, and the 60-second refresh poll — a batch of, say,
+        // 30 shots that just crossed their develop time was firing 30 sequential network writes
+        // while the user waited. `deletePhotos` already batches this way with `.in()`.
+        _ = try? await supabase
+            .from("photos")
+            .update(["is_developed": true])
+            .in("id", values: readyIds)
+            .execute()
 
         await MainActor.run {
             for i in photos.indices where readyIds.contains(photos[i].id.uuidString) {
