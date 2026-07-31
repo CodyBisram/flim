@@ -37,10 +37,9 @@ struct RollDetailView: View {
     private var revealSeenKey: String { "rollRevealSeen.\(roll.id.uuidString)" }
 
     private var isCreator: Bool { auth.currentUser?.id == roll.createdBy }
-    /// Developed shots oldest → newest, for the flip-through carousel.
-    private var chronologicalDeveloped: [Photo] {
-        vm.developedPhotos.sorted { $0.takenAt < $1.takenAt }
-    }
+    /// Developed shots oldest → newest, for the flip-through carousel — cached on the view model
+    /// (recomputed only when the roll's photos change) rather than sorted on every access.
+    private var chronologicalDeveloped: [Photo] { vm.chronologicalDeveloped }
     private var isFullyDeveloped: Bool {
         roll.isDeveloped && rollFullyPaged && !vm.developedPhotos.isEmpty
     }

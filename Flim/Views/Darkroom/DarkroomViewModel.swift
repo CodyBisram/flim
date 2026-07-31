@@ -3,7 +3,9 @@ import Observation
 
 @Observable
 final class DarkroomViewModel {
-    var photos: [Photo] = []
+    var photos: [Photo] = [] {
+        didSet { recomputeSplits() }
+    }
     var signedURLCache: [UUID: URL] = [:]
     var isLoading = false
     var error: String?
@@ -17,8 +19,24 @@ final class DarkroomViewModel {
     /// stays lazy; only the total is fetched eagerly, via a headless count query.
     var totalCount: Int?
 
-    var developingPhotos: [Photo] { photos.filter { !$0.isReady } }
-    var developedPhotos: [Photo] { photos.filter(\.isReady) }
+    /// Split by `isReady` (time-based), cached and recomputed only when `photos` is assigned —
+    /// not on every access. `DarkroomView.body` reads these ~8 times per evaluation and
+    /// re-evaluates on scroll and on the 60s poll; as computed properties they filtered the whole
+    /// array every single read. A photo crossing its develop threshold moves buckets on the next
+    /// `photos` assignment, which the 60s poll (`markReadyPhotos`) performs precisely when the
+    /// ready set changes — the same 60s cadence the develop-reveal haptic already runs on.
+    private(set) var developingPhotos: [Photo] = []
+    private(set) var developedPhotos: [Photo] = []
+    /// Developed shots oldest → newest, for the roll carousel and reveal. Cached here (rather
+    /// than sorted at each call site in RollDetailView) so re-presenting either surface doesn't
+    /// re-sort; recomputed alongside the splits when `photos` changes.
+    private(set) var chronologicalDeveloped: [Photo] = []
+
+    private func recomputeSplits() {
+        developingPhotos = photos.filter { !$0.isReady }
+        developedPhotos = photos.filter(\.isReady)
+        chronologicalDeveloped = developedPhotos.sorted { $0.takenAt < $1.takenAt }
+    }
 
     // Tracks when each cached URL expires so we can refresh before they 404
     private var urlExpiry: [UUID: Date] = [:]
@@ -118,6 +136,15 @@ final class DarkroomViewModel {
         let before = developedPhotos.count
         await photoService.markDevelopedIfReady()
         let fetched = photoService.photos
+        // Only reassign when the developed set actually changed. The 60s poll otherwise
+        // replaced the entire `photos` array every minute even when nothing had developed —
+        // and because the array backs the grid's ForEach, that re-diffed the whole grid (and,
+        // now, recomputed the cached splits above) on a timer for no reason. `isReady` is
+        // time-based, so comparing ready-id sets is exactly what catches a photo that crossed
+        // its develop threshold since the last poll.
+        let fetchedReadyIds = Set(fetched.filter(\.isReady).map(\.id))
+        let currentReadyIds = Set(developedPhotos.map(\.id))
+        guard fetchedReadyIds != currentReadyIds else { return }
         await MainActor.run { photos = fetched }
         // Celebrate photos that develop while you're watching (not on initial load).
         if notify, developedPhotos.count > before {
