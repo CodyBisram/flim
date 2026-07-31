@@ -194,19 +194,19 @@ If you outgrow it: deploy only on version tags, or move to Xcode Cloud (25 free 
 
 ## Adding a new target (app extension, widget, etc.)
 
-Every extra target needs its own bundle id, App ID, and provisioning profile — the
+Every extra target needs its own bundle id, App ID, and provisioning profile, the
 main app's profile only covers the main app. As of the RollActivityWidget Live
 Activity extension (`com.flim.app.RollActivityWidget`), the Fastfile and Matchfile
 already know how to manage more than one identifier, so adding another later means:
 
 1. **(Apple)** Register the new bundle id as its own App ID: same as Step 1 above,
    just a different **Bundle ID**. Most extensions don't need Push Notifications
-   ticked — only tick capabilities the extension's own entitlements actually use.
+   ticked, only tick capabilities the extension's own entitlements actually use.
 2. Add the new bundle id to `fastlane/Matchfile`'s `app_identifier([...])` array.
 3. Add a matching constant near `WIDGET_IDENTIFIER` in `fastlane/Fastfile`, and add
    it to both `match(...)` calls' `app_identifier:` arrays and the `beta` lane's
    `provisioningProfiles:` map (profile name pattern: `"match AppStore <bundle id>"`).
-4. **Re-run Step 6** (`bundle exec fastlane certificates`) locally — this fetches or
+4. **Re-run Step 6** (`bundle exec fastlane certificates`) locally, this fetches or
    creates the new profile alongside the existing one and pushes both to the match
    repo. CI stays read-only; it can't create the new profile itself.
 

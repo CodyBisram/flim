@@ -85,6 +85,12 @@ nav a:hover { color: var(--text); text-decoration: none; }
 .hero h1 span { color: var(--accent); }
 .hero .tagline { font-size: clamp(18px, 5vw, 22px); color: var(--text); margin-top: 20px; font-weight: 300; }
 .hero p.sub { color: var(--text-dim); margin-top: 18px; max-width: 520px; margin-left: auto; margin-right: auto; }
+.hero .cta {
+  display: inline-block; margin-top: 32px;
+  background: var(--accent); color: #111; font-weight: 600; font-size: 16px;
+  padding: 14px 34px; border-radius: 999px;
+}
+.hero .cta:hover { text-decoration: none; filter: brightness(1.06); }
 
 .features {
   display: grid;
@@ -92,7 +98,6 @@ nav a:hover { color: var(--text); text-decoration: none; }
   gap: 18px; margin: clamp(40px, 8vw, 64px) 0;
 }
 .feature { background: var(--bg-elevated); border: 1px solid var(--line); border-radius: 16px; padding: 24px; text-align: left; }
-.feature .ic { font-size: 22px; margin-bottom: 10px; }
 .feature h3 { font-size: 16px; margin-bottom: 6px; }
 .feature p { font-size: 14px; color: var(--text-dim); }
 

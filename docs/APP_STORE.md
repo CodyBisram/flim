@@ -114,7 +114,7 @@ FLIM includes user-generated content (photos, comments, tags, reactions). Apple'
   so they're visible without physically connecting the affected device to Xcode. Linked to the
   account only when the device happens to be signed in at the time (nullable otherwise); not
   used for tracking, advertising, or any purpose beyond fixing bugs. Not readable through the
-  app or its API by any user, including the account it's linked to — owner-only, via the
+  app or its API by any user, including the account it's linked to, owner-only, via the
   Supabase Dashboard.
 
 ### Tracking / Analytics
