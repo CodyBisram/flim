@@ -15,6 +15,8 @@ struct UserPageView: View {
     @State private var loaded = false
     @State private var followList: FollowList?
     @State private var showSettings = false
+    @State private var showEditProfile = false
+    @State private var showInvite = false
     @State private var showBlockConfirm = false
     @State private var showReportConfirm = false
     @State private var reportedToast = false
@@ -114,6 +116,12 @@ struct UserPageView: View {
         .sheet(isPresented: $showSettings, onDismiss: { Task { await load() } }) {
             ProfileView()
         }
+        .sheet(isPresented: $showEditProfile, onDismiss: { Task { await load() } }) {
+            EditProfileView()
+        }
+        .sheet(isPresented: $showInvite) {
+            InviteSheet()
+        }
         .fullScreenCover(isPresented: $showAvatarViewer) {
             ImageViewer(url: avatarURL)
         }
@@ -173,6 +181,27 @@ struct UserPageView: View {
                         .padding(.vertical, 11)
                         .background(isFollowing ? Color.white.opacity(0.12) : FlimTheme.accent, in: Capsule())
                         .overlay(Capsule().strokeBorder(isFollowing ? Color.white.opacity(0.2) : .clear, lineWidth: 1))
+                }
+                .padding(.horizontal, 40)
+                .padding(.top, 2)
+            } else if isSelf {
+                // Editing your identity happens here, on your profile — not inside the settings
+                // sheet. Invite friends sits beside it as the accent action, since bringing your
+                // circle in is the point of an invite-only app.
+                HStack(spacing: 10) {
+                    Button { showEditProfile = true } label: {
+                        Text("Edit profile")
+                            .font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
+                            .frame(maxWidth: .infinity).padding(.vertical, 11)
+                            .background(Color.white.opacity(0.12), in: Capsule())
+                            .overlay(Capsule().strokeBorder(Color.white.opacity(0.2), lineWidth: 1))
+                    }
+                    Button { showInvite = true } label: {
+                        Label("Invite", systemImage: "person.badge.plus")
+                            .font(.system(size: 14, weight: .semibold)).foregroundStyle(.black)
+                            .frame(maxWidth: .infinity).padding(.vertical, 11)
+                            .background(FlimTheme.accent, in: Capsule())
+                    }
                 }
                 .padding(.horizontal, 40)
                 .padding(.top, 2)
