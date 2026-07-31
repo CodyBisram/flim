@@ -393,9 +393,14 @@ final class FeedService {
             .in("comment_id", values: comments.map(\.id.uuidString)).execute().value) ?? []
         let profiles = await fetchProfiles(ids: Array(Set(comments.map(\.userId))))
 
+        // Group likes by comment once, rather than scanning the whole likes array per comment
+        // (O(comments × likes) on the main actor). Negligible at a page of ~15 posts, but it
+        // degrades quadratically if a post ever accrues many comments and likes.
+        let likesByComment = Dictionary(grouping: likes, by: \.comment_id)
+
         var byPost: [UUID: [CommentInfo]] = [:]
         for comment in comments {
-            let commentLikes = likes.filter { $0.comment_id == comment.id }
+            let commentLikes = likesByComment[comment.id] ?? []
             let info = CommentInfo(comment: comment, author: profiles[comment.userId],
                                    likeCount: commentLikes.count,
                                    likedByMe: commentLikes.contains { $0.user_id == currentUserId })
@@ -598,8 +603,11 @@ final class FeedService {
             .execute().value) ?? []
         let profiles = await fetchProfiles(ids: Array(Set(comments.map(\.userId))))
 
+        // Group likes by comment once (see batchComments for the same reasoning) instead of
+        // rescanning all likes per comment.
+        let likesByComment = Dictionary(grouping: likes, by: \.comment_id)
         let items = comments.map { comment -> CommentInfo in
-            let commentLikes = likes.filter { $0.comment_id == comment.id }
+            let commentLikes = likesByComment[comment.id] ?? []
             return CommentInfo(comment: comment,
                                author: profiles[comment.userId],
                                likeCount: commentLikes.count,
@@ -712,54 +720,23 @@ final class FeedService {
         return total
     }
 
+    private struct ActivityRaw { let kind: ActivityItem.Kind; let actorId: UUID; let date: Date; let postId: UUID? }
+
     func fetchActivity(userId: UUID) async -> [ActivityItem] {
-        struct Raw { let kind: ActivityItem.Kind; let actorId: UUID; let date: Date; let postId: UUID? }
-        var raws: [Raw] = []
+        // The three source branches (activity on your posts, new followers, tags of you) are
+        // independent round-trip sets — run them concurrently instead of one after another. The
+        // block refresh is independent too; it just has to finish before the filter below. The
+        // rows are already RLS-clean of blocked-either-way activity, but this view can be reached
+        // without the Feed tab ever loading, and re-checking protects anything cached pre-block.
+        async let blockedDone: Void = loadBlocked(userId: userId)
+        async let ownPostRaws = activityOnOwnPosts(userId: userId)
+        async let followRaws = activityFollows(userId: userId)
+        async let taggedRaws = activityTagged(userId: userId)
 
-        // The rows themselves are already clean (RLS hides blocked-either-way activity), but
-        // refresh + re-check blockedIds anyway — this view can be reached without the Feed tab
-        // ever loading first, and it protects against anything cached before a block landed.
-        await loadBlocked(userId: userId)
-
-        let postIds = await fetchUserPosts(userId: userId).map(\.id.uuidString)
-        if !postIds.isEmpty {
-            struct R: Decodable { let user_id: UUID; let emoji: String; let created_at: Date; let post_id: UUID }
-            let rs: [R] = (try? await supabase.from("post_reactions")
-                .select("user_id,emoji,created_at,post_id")
-                .in("post_id", values: postIds)
-                .neq("user_id", value: userId.uuidString)
-                .order("created_at", ascending: false).limit(40).execute().value) ?? []
-            raws += rs.map { Raw(kind: .like($0.emoji), actorId: $0.user_id, date: $0.created_at, postId: $0.post_id) }
-
-            struct C: Decodable { let user_id: UUID; let body: String; let created_at: Date; let post_id: UUID }
-            let cs: [C] = (try? await supabase.from("post_comments")
-                .select("user_id,body,created_at,post_id")
-                .in("post_id", values: postIds)
-                .neq("user_id", value: userId.uuidString)
-                .order("created_at", ascending: false).limit(40).execute().value) ?? []
-            raws += cs.map { Raw(kind: .comment($0.body), actorId: $0.user_id, date: $0.created_at, postId: $0.post_id) }
-        }
-
-        struct F: Decodable { let follower_id: UUID; let created_at: Date }
-        let fs: [F] = (try? await supabase.from("follows")
-            .select("follower_id,created_at")
-            .eq("following_id", value: userId.uuidString)
-            .order("created_at", ascending: false).limit(40).execute().value) ?? []
-        raws += fs.map { Raw(kind: .follow, actorId: $0.follower_id, date: $0.created_at, postId: nil) }
-
-        // Photos you were tagged in — the actor is the post's author.
-        struct T: Decodable {
-            let post_id: UUID; let created_at: Date; let posts: P?
-            struct P: Decodable { let user_id: UUID }
-        }
-        let ts: [T] = (try? await supabase.from("post_tags")
-            .select("post_id,created_at,posts(user_id)")
-            .eq("tagged_user_id", value: userId.uuidString)
-            .order("created_at", ascending: false).limit(40).execute().value) ?? []
-        raws += ts.compactMap { t in
-            guard let author = t.posts?.user_id, author != userId else { return nil }
-            return Raw(kind: .tagged, actorId: author, date: t.created_at, postId: t.post_id)
-        }
+        await blockedDone
+        var raws = await ownPostRaws
+        raws += await followRaws
+        raws += await taggedRaws
 
         raws.removeAll { blockedIds.contains($0.actorId) }
         let profiles = await fetchProfiles(ids: Array(Set(raws.map(\.actorId))))
@@ -777,6 +754,60 @@ final class FeedService {
                                      post: post, postAuthor: post.flatMap { postAuthors[$0.userId] })
             }
             .sorted { $0.date > $1.date }
+    }
+
+    /// Reactions + comments on the caller's own posts. The two pulls both key off the same post
+    /// id set, so they run concurrently once that set is known.
+    private func activityOnOwnPosts(userId: UUID) async -> [ActivityRaw] {
+        let postIds = await fetchUserPosts(userId: userId).map(\.id.uuidString)
+        guard !postIds.isEmpty else { return [] }
+
+        async let reactions: [ActivityRaw] = {
+            struct R: Decodable { let user_id: UUID; let emoji: String; let created_at: Date; let post_id: UUID }
+            let rs: [R] = (try? await supabase.from("post_reactions")
+                .select("user_id,emoji,created_at,post_id")
+                .in("post_id", values: postIds)
+                .neq("user_id", value: userId.uuidString)
+                .order("created_at", ascending: false).limit(40).execute().value) ?? []
+            return rs.map { ActivityRaw(kind: .like($0.emoji), actorId: $0.user_id, date: $0.created_at, postId: $0.post_id) }
+        }()
+
+        async let comments: [ActivityRaw] = {
+            struct C: Decodable { let user_id: UUID; let body: String; let created_at: Date; let post_id: UUID }
+            let cs: [C] = (try? await supabase.from("post_comments")
+                .select("user_id,body,created_at,post_id")
+                .in("post_id", values: postIds)
+                .neq("user_id", value: userId.uuidString)
+                .order("created_at", ascending: false).limit(40).execute().value) ?? []
+            return cs.map { ActivityRaw(kind: .comment($0.body), actorId: $0.user_id, date: $0.created_at, postId: $0.post_id) }
+        }()
+
+        return await reactions + comments
+    }
+
+    private func activityFollows(userId: UUID) async -> [ActivityRaw] {
+        struct F: Decodable { let follower_id: UUID; let created_at: Date }
+        let fs: [F] = (try? await supabase.from("follows")
+            .select("follower_id,created_at")
+            .eq("following_id", value: userId.uuidString)
+            .order("created_at", ascending: false).limit(40).execute().value) ?? []
+        return fs.map { ActivityRaw(kind: .follow, actorId: $0.follower_id, date: $0.created_at, postId: nil) }
+    }
+
+    /// Photos you were tagged in — the actor is the post's author.
+    private func activityTagged(userId: UUID) async -> [ActivityRaw] {
+        struct T: Decodable {
+            let post_id: UUID; let created_at: Date; let posts: P?
+            struct P: Decodable { let user_id: UUID }
+        }
+        let ts: [T] = (try? await supabase.from("post_tags")
+            .select("post_id,created_at,posts(user_id)")
+            .eq("tagged_user_id", value: userId.uuidString)
+            .order("created_at", ascending: false).limit(40).execute().value) ?? []
+        return ts.compactMap { t in
+            guard let author = t.posts?.user_id, author != userId else { return nil }
+            return ActivityRaw(kind: .tagged, actorId: author, date: t.created_at, postId: t.post_id)
+        }
     }
 
     #if DEBUG

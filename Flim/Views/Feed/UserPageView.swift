@@ -290,9 +290,12 @@ struct UserPageView: View {
         if feed.followingIds.isEmpty, let uid = auth.currentUser?.id { await feed.loadFollowing(userId: uid) }
         if let uid = auth.currentUser?.id { await feed.loadBlocked(userId: uid) }
         if let path = profile?.avatarPath { avatarURL = await feed.signedURL(for: path) }
-        // Cover = chosen cover, else the newest shared shot, else the avatar.
+        // Cover = chosen cover, else the newest shared shot, else the avatar. The newest-shot
+        // fallback uses cardPath (the ~1400px feed rendition), not storagePath (the full ~2048px
+        // stored image): the cover renders at maxPixel 1000, so downloading the full file for it
+        // is ~3x the bytes for no visible gain.
         if let cover = profile?.coverPath { coverURL = await feed.signedURL(for: cover) }
-        else if let newest = posts.first?.storagePath { coverURL = await feed.signedURL(for: newest) }
+        else if let newest = posts.first?.cardPath { coverURL = await feed.signedURL(for: newest) }
         else { coverURL = avatarURL }
         loaded = true
     }
