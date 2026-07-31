@@ -13,8 +13,8 @@
 -- OTP. No inviter match returns FALSE and writes nothing.
 --
 -- Rate gate is GLOBAL, not per-actor: 30 attempts per rolling hour across
--- every caller, full stop. Per-IP/per-email keying would defeat nothing —
--- an attacker brute-forcing the 36^6 code keyspace rotates both trivially —
+-- every caller, full stop. Per-IP/per-email keying would defeat nothing, 
+-- an attacker brute-forcing the 36^6 code keyspace rotates both trivially, 
 -- and it would need its own indexing/cleanup for no real benefit. A flat
 -- global gate is simpler, can't be bypassed by rotating identity, and
 -- 30/hour is far above any real invite flow while still crushing the
@@ -29,13 +29,13 @@
 -- RETURN TRUE is idempotent by design: ON CONFLICT DO NOTHING on the
 -- allowed_emails insert plus an unconditional RETURN TRUE means redeeming
 -- the same valid code for the same email twice (double-tap, client retry)
--- is always safe, never errors, never writes a second row — and it closes
+-- is always safe, never errors, never writes a second row, and it closes
 -- an email-enumeration side channel, since "already allowed" and "freshly
 -- allowed" look identical to the caller.
 -- ============================================================
 
 -- 1. Singleton rate-gate table. RLS on, no policies, and every role's
---    implicit privileges are stripped — reachable only from inside
+--    implicit privileges are stripped, reachable only from inside
 --    redeem_invite()'s SECURITY DEFINER body.
 CREATE TABLE IF NOT EXISTS public.redeem_invite_rate (
     id           BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (id),
@@ -49,7 +49,7 @@ REVOKE ALL ON public.redeem_invite_rate FROM PUBLIC, anon, authenticated;
 -- 2. Forward-compat hook for scarce invites ("this code works N times").
 --    Nullable; NULL = unlimited, which is every existing row and everything
 --    v1 enforces. redeem_invite() does not read or decrement this column
---    yet — wiring it in later is additive, no shape change needed.
+--    yet, wiring it in later is additive, no shape change needed.
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS invite_uses_remaining INT;
 
 -- 3. The RPC itself.
@@ -101,7 +101,7 @@ $$;
 -- 4. Grants: explicit REVOKE-then-GRANT-to-both, not just one role. The
 --    outage lesson documented at is_blocked_either_way in schema.sql is that
 --    a client-callable function's EXECUTE grants must be spelled out for
---    every role that calls it — SECURITY DEFINER only changes whose
+--    every role that calls it, SECURITY DEFINER only changes whose
 --    privileges the BODY runs with, it does not substitute for the caller
 --    needing EXECUTE. redeem_invite is called pre-sign-in (anon) and is
 --    harmless to also allow post-sign-in (authenticated), same shape as

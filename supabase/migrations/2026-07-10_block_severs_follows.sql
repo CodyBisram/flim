@@ -2,7 +2,7 @@
 -- Migration: blocking severs BOTH follow edges (follower-count asymmetry fix)
 -- Paste into Supabase Dashboard -> SQL Editor and run once.
 -- Idempotent: safe to re-run. Already mirrored in schema.sql.
--- No client changes depend on this — the app's optimistic unfollow in
+-- No client changes depend on this, the app's optimistic unfollow in
 -- FeedService.block() still runs (now redundant server-side but harmless), so
 -- there is NO run-before-push gate here. Run it whenever.
 --
@@ -11,7 +11,7 @@
 -- B→A survived every block: the blocker dropped out of the blocked user's
 -- follower LIST (client filters blockedIds) but the follower COUNT stayed put
 -- (counts count raw rows), while the following count fell correctly. Observed
--- live after Sabirah blocked Cody — looked broken.
+-- live after Sabirah blocked Cody, looked broken.
 --
 -- Fix: an AFTER INSERT trigger on blocks deletes both edges between the pair,
 -- either direction. SECURITY DEFINER so it bypasses the follows DELETE policy
@@ -23,7 +23,7 @@
 
 -- 1. Trigger function: nuke both follow edges between blocker and blocked.
 --    Trigger functions are invoked by the trigger mechanism, not by a client
---    role via RPC, so no role needs EXECUTE — revoke from PUBLIC/anon/
+--    role via RPC, so no role needs EXECUTE, revoke from PUBLIC/anon/
 --    authenticated to match the auto_hide_reported convention in schema.sql.
 CREATE OR REPLACE FUNCTION public.block_severs_follows()
 RETURNS TRIGGER
@@ -50,7 +50,7 @@ CREATE TRIGGER block_severs_follows_trigger
 
 -- 3. One-time backfill: delete any surviving follow edge between a pair that
 --    CURRENTLY has a block row in either direction (cleans the Sabirah↔Cody
---    leftover). Idempotent — re-running finds nothing after the first pass.
+--    leftover). Idempotent, re-running finds nothing after the first pass.
 DELETE FROM public.follows f
 WHERE EXISTS (
     SELECT 1 FROM public.blocks b

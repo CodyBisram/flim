@@ -1,18 +1,18 @@
 // ============================================================
-// FLIM — send-develop-push  (Supabase Edge Function, Deno)
+// FLIM, send-develop-push  (Supabase Edge Function, Deno)
 //
 // Scheduled (e.g. every minute) function that finds photos which have just
-// developed in a shared roll and sends ONE APNs push per (roll, recipient) —
+// developed in a shared roll and sends ONE APNs push per (roll, recipient), 
 // regardless of how many shots the roll holds.
 //
 // Recipient rule: only roll-mates who took ZERO shots in the developed batch.
 // Anyone who shot into the roll already got a LOCAL "your roll developed"
 // notification on their own device at capture time (NotificationService
-// .scheduleRollDevelopNotification — one per roll), so pushing them again would
+// .scheduleRollDevelopNotification, one per roll), so pushing them again would
 // double-notify the same event. The remote push exists for the OTHER members,
 // who took no shots and would otherwise never learn the roll is ready.
 //
-// Personal instants (roll_id NULL) develop immediately and never push — the
+// Personal instants (roll_id NULL) develop immediately and never push, the
 // `roll_id is not null` filter below excludes them.
 //
 // Deploy:
@@ -118,7 +118,7 @@ async function sendPush(deviceToken: string, title: string, body: string): Promi
 
 Deno.serve(async () => {
   // 1. Photos that have developed, belong to a roll, and haven't pushed yet.
-  //    Personal instants (roll_id NULL) are excluded — they develop immediately
+  //    Personal instants (roll_id NULL) are excluded, they develop immediately
   //    and never generate a remote push.
   const { data: photos, error } = await supabase
     .from("photos")

@@ -1,5 +1,5 @@
 -- ============================================================
--- FLIM — remote push: device token storage
+-- FLIM, remote push: device token storage
 -- Run in the Supabase SQL editor AFTER schema.sql.
 -- Needed only for REMOTE push (a roll-mate's photo developing on
 -- their device). The app's local notifications cover "your own photo

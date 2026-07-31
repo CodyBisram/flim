@@ -4,7 +4,7 @@
 -- Idempotent: safe to re-run. Already mirrored in schema.sql.
 --
 -- Bug: the Jul 8 egress work added a ~1400px feed rendition (posts.feed_path /
--- photos.feed_path, uploaded as <id>_feed.jpg) that feed cards download — but
+-- photos.feed_path, uploaded as <id>_feed.jpg) that feed cards download, but
 -- the storage SELECT policies still whitelisted only (storage_path, thumb_path).
 -- Result: nobody could sign anyone ELSE's feed image (400 on createSignedURL);
 -- authors were unaffected (own-folder policy), so it only surfaced cross-account

@@ -1,10 +1,12 @@
 // ============================================================
-// FLIM — send-social-push  (Supabase Edge Function, Deno)
+// FLIM send-social-push  (Supabase Edge Function, Deno)
 //
 // Scheduled (e.g. every minute) function that notifies a post's OWNER when
-// someone else comments or reacts on their post. Reactions are batched per
-// person (one push listing that person's emoji), so a burst of reactions from
-// one friend is a single notification — the way Lapse did it, not one-per-emoji.
+// someone else comments or reacts on their post, and a roll photo's OWNER when
+// someone reacts to their roll shot (the reveal pull-back loop). Reactions are
+// batched per person (one push listing that person's emoji), so a burst of
+// reactions from one friend is a single notification, the way Lapse did it, not
+// one-per-emoji.
 //
 // Also notifies the APP OWNER whenever a content report lands (photo_reports /
 // user_reports) so UGC can be actioned within 24h (App Store Guideline 1.2).
@@ -251,6 +253,52 @@ Deno.serve(async () => {
     }
 
     await supabase.from("photo_comments").update({ push_sent: true }).in("id", g.items.map((it) => it.id));
+  }
+
+  // ---- Roll photo reactions: notify the photo's OWNER (never self), batched per reactor.
+  //      This is the reveal's pull-back loop: a reaction left during the reveal pings whoever
+  //      shot it, so even someone who revealed early (and saw it thin) gets drawn back once the
+  //      group responds. Skip anyone who muted the roll. Same batch shape as post reactions,
+  //      plus the roll-mute check from the photo-comments block above.
+  const { data: photoReactions } = await supabase
+    .from("photo_reactions")
+    .select("id, photo_id, user_id, emoji, photos(user_id, roll_id)")
+    .eq("push_sent", false);
+
+  const rxByKey = new Map<string, {
+    ownerId?: string; rollId?: string; reactorId: string; emojis: string[]; ids: string[];
+  }>();
+  for (const r of photoReactions ?? []) {
+    const meta = (r as { photos?: { user_id?: string; roll_id?: string } }).photos;
+    const key = `${r.photo_id}|${r.user_id}`;
+    const g = rxByKey.get(key) ??
+      { ownerId: meta?.user_id, rollId: meta?.roll_id, reactorId: r.user_id, emojis: [], ids: [] };
+    g.emojis.push(r.emoji);
+    g.ids.push(r.id);
+    rxByKey.set(key, g);
+  }
+
+  // Cache roll mutes per roll so a burst of reactions across one roll doesn't re-query it.
+  const mutesByRoll = new Map<string, Set<string>>();
+  async function mutedInRoll(rollId?: string): Promise<Set<string>> {
+    if (!rollId) return new Set();
+    const cached = mutesByRoll.get(rollId);
+    if (cached) return cached;
+    const { data: m } = await supabase.from("roll_notification_mutes").select("user_id").eq("roll_id", rollId);
+    const set = new Set<string>((m ?? []).map((x) => x.user_id));
+    mutesByRoll.set(rollId, set);
+    return set;
+  }
+
+  for (const g of rxByKey.values()) {
+    if (g.ownerId && g.ownerId !== g.reactorId && !(await mutedInRoll(g.rollId)).has(g.ownerId)) {
+      const name = await handle(g.reactorId);
+      const emojis = [...new Set(g.emojis)].join(" ");
+      for (const token of await tokensFor(g.ownerId)) {
+        if (await sendPush(token, `${name} reacted ${emojis}`, "to your photo")) sent++;
+      }
+    }
+    await supabase.from("photo_reactions").update({ push_sent: true }).in("id", g.ids);
   }
 
   // ---- Content reports → notify the app OWNER (Guideline 1.2, act within 24h).

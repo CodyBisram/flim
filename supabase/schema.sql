@@ -1,5 +1,5 @@
 -- ============================================================
--- FLIM — Supabase schema
+-- FLIM, Supabase schema
 -- Run this in the Supabase SQL editor (Dashboard → SQL Editor).
 -- Safe to re-run: policies/functions are dropped & recreated.
 -- ============================================================
@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS public.rolls (
     created_at  TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Roll membership (max 50 enforced in the join function — keep in sync with Roll.memberCap)
+-- Roll membership (max 50 enforced in the join function, keep in sync with Roll.memberCap)
 CREATE TABLE IF NOT EXISTS public.roll_members (
     roll_id     UUID NOT NULL REFERENCES public.rolls(id) ON DELETE CASCADE,
     user_id     UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
@@ -51,7 +51,7 @@ CREATE TABLE IF NOT EXISTS public.photos (
     is_developed BOOLEAN DEFAULT FALSE
 );
 -- Small thumbnail uploaded alongside the full image (grids/feeds load ~30KB not MBs). Added
--- here — before the storage policies that reference it — so a fresh run has the column ready.
+-- here, before the storage policies that reference it, so a fresh run has the column ready.
 ALTER TABLE public.photos ADD COLUMN IF NOT EXISTS thumb_path TEXT;
 
 -- ============================================================
@@ -59,7 +59,7 @@ ALTER TABLE public.photos ADD COLUMN IF NOT EXISTS thumb_path TEXT;
 -- Called from the client BEFORE auth (the user has no session yet), so it
 -- must be reachable by the `anon` role. SECURITY DEFINER lets it read the
 -- allowlist table while RLS keeps that table otherwise unreadable. Returns
--- TRUE/FALSE only — it never reveals the list itself.
+-- TRUE/FALSE only, it never reveals the list itself.
 -- ============================================================
 CREATE OR REPLACE FUNCTION public.is_email_allowed(p_email TEXT)
 RETURNS BOOLEAN
@@ -100,13 +100,13 @@ CREATE TABLE IF NOT EXISTS public.redeem_invite_rate (
 );
 INSERT INTO public.redeem_invite_rate (id) VALUES (TRUE) ON CONFLICT DO NOTHING;
 ALTER TABLE public.redeem_invite_rate ENABLE ROW LEVEL SECURITY;
--- No policies, and every role's implicit table privileges are stripped below —
+-- No policies, and every role's implicit table privileges are stripped below, 
 -- this row is readable/writable only from inside redeem_invite()'s definer body.
 REVOKE ALL ON public.redeem_invite_rate FROM PUBLIC, anon, authenticated;
 
 -- Forward-compat hook for scarce invites (e.g. "this code works N times").
 -- NULL = unlimited, which is what every existing row gets and what v1 enforces
--- for everyone — redeem_invite() does not read or decrement this column yet.
+-- for everyone, redeem_invite() does not read or decrement this column yet.
 -- Wiring it in later is additive: no shape change needed when that ships.
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS invite_uses_remaining INT;
 
@@ -153,9 +153,9 @@ BEGIN
     --
     -- ON CONFLICT DO NOTHING + unconditional RETURN TRUE: whether v_email was
     -- already on the allowlist or was just added is indistinguishable to the
-    -- caller, by design. This is what makes the RPC idempotent — redeeming the
+    -- caller, by design. This is what makes the RPC idempotent, redeeming the
     -- same valid code for the same email twice (double-tap, client retry) is
-    -- always safe, never errors, and never writes a second row — and it also
+    -- always safe, never errors, and never writes a second row, and it also
     -- closes an email-enumeration side channel: a caller can't use the return
     -- value to learn whether an email was allowed before they submitted it.
     INSERT INTO public.allowed_emails (email, note)
@@ -169,7 +169,7 @@ $$;
 -- Explicit REVOKE-then-GRANT-to-both, not just one role: the outage lesson
 -- documented at is_blocked_either_way below is that a client-callable
 -- function's EXECUTE grants must be spelled out for every role that calls it,
--- because SECURITY DEFINER only changes whose privileges the BODY runs with —
+-- because SECURITY DEFINER only changes whose privileges the BODY runs with, 
 -- it does not substitute for the caller needing EXECUTE. redeem_invite is
 -- called pre-sign-in (anon) and is harmless to also allow post-sign-in
 -- (authenticated), same shape as is_email_allowed.
@@ -199,7 +199,7 @@ $$;
 
 -- ============================================================
 -- Join-by-code RPC. Looks up a roll by invite code, enforces the
--- 50-member cap, and inserts membership atomically — all with definer
+-- 50-member cap, and inserts membership atomically, all with definer
 -- rights so a not-yet-member can join without being able to read every
 -- roll in the table. Call from the client via supabase.rpc("join_roll").
 -- ============================================================
@@ -306,7 +306,7 @@ CREATE POLICY "roll_members: own membership"
     ON public.roll_members FOR SELECT
     USING (user_id = auth.uid());
 
--- See fellow members — uses the SECURITY DEFINER helper to avoid recursion.
+-- See fellow members, uses the SECURITY DEFINER helper to avoid recursion.
 DROP POLICY IF EXISTS "roll_members: can see fellow members" ON public.roll_members;
 CREATE POLICY "roll_members: can see fellow members"
     ON public.roll_members FOR SELECT
@@ -377,11 +377,11 @@ CREATE POLICY "photos: can delete own"
     USING (auth.uid() = user_id);
 
 -- ============================================================
--- Storage — private "photos" bucket + per-user RLS policies.
+-- Storage, private "photos" bucket + per-user RLS policies.
 -- Photos are stored under "<owner_uid>/<photo_id>.jpg"; roll-mates read shared
 -- photos via short-lived signed URLs minted by the owner's client, so a per-user
 -- policy is sufficient. Without these policies, uploads fail with a 403
--- "new row violates row-level security policy" — i.e. capture won't work.
+-- "new row violates row-level security policy", i.e. capture won't work.
 -- ============================================================
 
 -- Create the private bucket if it doesn't exist (Public OFF).
@@ -416,7 +416,7 @@ CREATE POLICY "photos: delete own folder"
         AND (storage.foldername(name))[1] = auth.uid()::text
     );
 
--- Roll members can read a photo that belongs to a roll they're in — this is what
+-- Roll members can read a photo that belongs to a roll they're in, this is what
 -- lets shared-roll photos (and roll cover thumbnails) load for everyone, not just
 -- the photo's owner. Joins the storage object back to its photos row by path.
 DROP POLICY IF EXISTS "photos: roll members can read shared" ON storage.objects;
@@ -453,7 +453,7 @@ $$;
 GRANT EXECUTE ON FUNCTION public.delete_account() TO authenticated;
 
 -- ============================================================
--- Content reports (UGC safety — Guideline 1.2). A user can report a photo they can
+-- Content reports (UGC safety, Guideline 1.2). A user can report a photo they can
 -- see; the row is write-only from the client (no SELECT policy) and reviewed out-of-band.
 -- ============================================================
 CREATE TABLE IF NOT EXISTS public.photo_reports (
@@ -536,10 +536,10 @@ CREATE POLICY "reactions: remove own"
 -- publishes to their page/feed), and reactions + comments on those posts.
 -- ============================================================
 
--- Public profile view — exposes only safe fields (NO email / invite code), readable
+-- Public profile view, exposes only safe fields (NO email / invite code), readable
 -- by any signed-in user so you can browse pages, follow people, and see comment authors.
 -- New columns must be appended at the END for CREATE OR REPLACE VIEW (Postgres can't
--- reorder/rename existing view columns) — decode is by name in the app, so order is irrelevant.
+-- reorder/rename existing view columns), decode is by name in the app, so order is irrelevant.
 CREATE OR REPLACE VIEW public.profiles AS
     SELECT id, username, avatar_path, bio, created_at, display_name, cover_path
     FROM public.users;
@@ -592,12 +592,12 @@ CREATE POLICY "posts: readable by authenticated"
     ON public.posts FOR SELECT TO authenticated USING (true);
 
 -- A post must be attributed to the caller (unchanged) AND reference a photo the caller can
--- actually see: their own, or any photo in a roll they're a member of — sharing a roll-mate's
+-- actually see: their own, or any photo in a roll they're a member of, sharing a roll-mate's
 -- shot to your own page is a real feature (anyone in the roll can share anything in it), not a
 -- gap. Before this, the WITH CHECK only verified the former: nothing tied photo_id to something
 -- the poster was actually allowed to see, so a forged INSERT (bypassing the app's UI, which only
--- ever offers photo_ids it legitimately fetched) could have turned ANY photo in the database —
--- including someone else's private, non-roll shot — into a public post, since "posts: readable
+-- ever offers photo_ids it legitimately fetched) could have turned ANY photo in the database, 
+-- including someone else's private, non-roll shot, into a public post, since "posts: readable
 -- by authenticated" and the storage read policy both key off the post existing, not off the
 -- underlying photo's own visibility. `NOT p.hidden` is explicit here rather than assumed via
 -- `photos`' own SELECT policies (own-photo visibility deliberately ignores hidden, so a reported
@@ -624,7 +624,7 @@ CREATE POLICY "posts: delete own"
 
 -- A photo shared to a post is readable in Storage by any signed-in user.
 -- ⚠️ Every rendition column must be listed here. When a new rendition path is
--- added to posts (thumb_path, feed_path, …), it MUST be added to this IN list —
+-- added to posts (thumb_path, feed_path, …), it MUST be added to this IN list, 
 -- feed_path was missed for 2 days and no one could load anyone else's feed
 -- images (sign → 400; authors unaffected via the own-folder policy, so it
 -- only surfaces cross-account).
@@ -877,8 +877,8 @@ CREATE TRIGGER auto_hide_reported_trigger
 -- added inline back then without breaking a from-scratch run of this file. Without this, "the
 -- client filters hidden content out" was the ONLY enforcement: a reported-and-hidden photo or
 -- post was still fully readable by calling the Supabase REST/Storage API directly, bypassing the
--- app UI entirely — RLS is the actual security boundary, a client query filter is not. Owners
--- keep seeing their own hidden photo ("photos: own photos" is untouched) — hiding is about
+-- app UI entirely, RLS is the actual security boundary, a client query filter is not. Owners
+-- keep seeing their own hidden photo ("photos: own photos" is untouched), hiding is about
 -- hiding FROM OTHERS, not from yourself, and the dashboard review/restore flow above still needs
 -- a way for that to make sense.
 --
@@ -886,7 +886,7 @@ CREATE TRIGGER auto_hide_reported_trigger
 -- both are redefined again, further down, by the block-enforcement section (search
 -- "READ policies: drop the blocked party's content from every shared surface"), and since this
 -- file runs top to bottom with DROP POLICY IF EXISTS + CREATE POLICY, whichever definition runs
--- last wins — a `NOT hidden` predicate added here would be silently discarded the moment the
+-- last wins, a `NOT hidden` predicate added here would be silently discarded the moment the
 -- block-enforcement section's own CREATE POLICY for the same two names runs after it. The
 -- `NOT hidden` check for those two lives on the block-enforcement versions instead, alongside
 -- the block check, so it actually survives a full run of this file.
@@ -934,7 +934,7 @@ CREATE INDEX IF NOT EXISTS blocks_blocker_idx          ON public.blocks (blocker
 
 -- ============================================================
 -- Feed-size rendition (egress): a ~1400px mid-size JPEG uploaded alongside the full image.
--- The feed downloads this (~250KB) instead of the full 2048px file (~700KB) — pixel-identical
+-- The feed downloads this (~250KB) instead of the full 2048px file (~700KB), pixel-identical
 -- at feed-card width. Full image still used for full-screen / zoom / save. Older photos have
 -- NULL and fall back to storage_path.
 -- ============================================================
@@ -990,7 +990,7 @@ GRANT EXECUTE ON FUNCTION public.is_email_allowed(text) TO anon, authenticated;
 -- Accepted advisor remainders (intentional):
 --  * allowed_emails: RLS on, no policies = deny-all to clients (read via is_email_allowed only).
 --  * pg_net in public: the extension does not support SET SCHEMA; its callable API lives in `net`.
---  * leaked-password protection (HIBP): Pro-plan feature — enable in dashboard after upgrading.
+--  * leaked-password protection (HIBP): Pro-plan feature, enable in dashboard after upgrading.
 
 -- ============================================================
 -- Block enforcement at the RLS level (App Store Guideline 1.2).
@@ -1003,10 +1003,10 @@ GRANT EXECUTE ON FUNCTION public.is_email_allowed(text) TO anon, authenticated;
 -- `blocks` has an owner-only SELECT policy, so a policy on some OTHER table
 -- (posts, comments, …) can't read it directly. This SECURITY DEFINER helper
 -- runs with owner rights (bypassing blocks' RLS internally) and returns only a
--- boolean — the same pattern as is_roll_member. STABLE + pinned search_path.
+-- boolean, the same pattern as is_roll_member. STABLE + pinned search_path.
 --
 -- ⚠️ Grants: `authenticated` MUST keep EXECUTE. SECURITY DEFINER only controls
--- whose privileges the function BODY runs with — the querying role still needs
+-- whose privileges the function BODY runs with, the querying role still needs
 -- EXECUTE to call it, and RLS policies evaluate as the querying role. Revoking
 -- authenticated here took production down ("permission denied for function
 -- is_blocked_either_way" on every read/write). Same grant shape as
@@ -1037,7 +1037,7 @@ CREATE INDEX IF NOT EXISTS blocks_blocked_idx ON public.blocks (blocked_id, bloc
 -- --- READ policies: drop the blocked party's content from every shared surface ---
 
 -- Feed posts: hide posts authored by anyone in a block relationship with the viewer, and
--- anything auto-hidden by moderation (see "Auto-moderation, enforced at RLS" above — this is
+-- anything auto-hidden by moderation (see "Auto-moderation, enforced at RLS" above, this is
 -- the definition of this policy name that actually survives a full run of this file).
 DROP POLICY IF EXISTS "posts: readable by authenticated" ON public.posts;
 CREATE POLICY "posts: readable by authenticated"
@@ -1069,10 +1069,10 @@ CREATE POLICY "comment_likes: readable"
     USING (NOT public.is_blocked_either_way(auth.uid(), user_id));
 
 -- Shared-roll photos: hide a blocked party's photos from the roll surface, and anything
--- auto-hidden by moderation (see "Auto-moderation, enforced at RLS" above — this is the
+-- auto-hidden by moderation (see "Auto-moderation, enforced at RLS" above, this is the
 -- definition of this policy name that actually survives a full run of this file). Preserves
 -- the existing membership check; adds the block predicate. (Own photos policy is
--- unchanged — you can never block yourself, CHECK (blocker_id <> blocked_id).)
+-- unchanged, you can never block yourself, CHECK (blocker_id <> blocked_id).)
 DROP POLICY IF EXISTS "photos: roll members can see" ON public.photos;
 CREATE POLICY "photos: roll members can see"
     ON public.photos FOR SELECT
@@ -1165,7 +1165,7 @@ CREATE POLICY "follows: create own"
         AND NOT public.is_blocked_either_way(auth.uid(), following_id)
     );
 
--- What RLS deliberately does NOT cover (must stay a client-side filter) — see the
+-- What RLS deliberately does NOT cover (must stay a client-side filter), see the
 -- report handed to the Swift agent:
 --  * public.profiles / public.users rows: readable by every signed-in user by design
 --    (comment authors, page browsing). Hiding a blocked user's whole profile row would
@@ -1184,7 +1184,7 @@ CREATE POLICY "follows: create own"
 -- Block severs the follow graph (fixes a follower-count asymmetry).
 --
 -- When A blocks B, the client optimistically deletes A→B (unfollow). But the
--- follows DELETE policy is `follower_id = auth.uid()` — A can delete only its
+-- follows DELETE policy is `follower_id = auth.uid()`, A can delete only its
 -- OWN follower_id row, never B's B→A row. So B→A survived every block:
 --   - the blocker vanished from the blocked user's follower LIST (the client
 --     filters blockedIds out of the list), but
@@ -1195,12 +1195,12 @@ CREATE POLICY "follows: create own"
 -- Fix it server-side and BIDIRECTIONALLY: an AFTER INSERT trigger on blocks
 -- deletes BOTH follow edges between the pair (follower/following either way).
 -- SECURITY DEFINER so it runs with owner rights and bypasses the follows DELETE
--- policy — the client role could never delete the counterparty's row. Pinned
+-- policy, the client role could never delete the counterparty's row. Pinned
 -- search_path = public, same as the other definer/trigger functions.
 --
 -- Grants: a trigger function is invoked by the trigger mechanism, NOT called by
 -- a client role via RPC, so no role needs EXECUTE on it. We still revoke from
--- PUBLIC/anon/authenticated to match the auto_hide_reported convention above —
+-- PUBLIC/anon/authenticated to match the auto_hide_reported convention above, 
 -- nothing can call it directly. The blocks INSERT policy (blocker_id =
 -- auth.uid()) is unchanged; the trigger just fires after a legit block lands.
 -- All blocks come from the client table INSERT (FeedService.block); there is no
@@ -1227,10 +1227,10 @@ CREATE TRIGGER block_severs_follows_trigger
     FOR EACH ROW EXECUTE FUNCTION public.block_severs_follows();
 
 -- ============================================================
--- Report notifications (App Store Guideline 1.2 — act on UGC reports within 24h).
+-- Report notifications (App Store Guideline 1.2, act on UGC reports within 24h).
 -- The auto_hide_reported trigger above hides content at >= 2 distinct reporters,
 -- but nothing told the owner a report happened. Rather than add a pg_net trigger
--- (which would need the service key + function URL in the DB — deliberately not
+-- (which would need the service key + function URL in the DB, deliberately not
 -- how push works here), we reuse the existing scheduled poll + push_sent pattern:
 -- the every-1-minute send-social-push Edge Function scans photo_reports and
 -- user_reports for push_sent = FALSE and pushes to the OWNER's device_tokens
@@ -1245,17 +1245,17 @@ CREATE INDEX IF NOT EXISTS photo_reports_unpushed_idx ON public.photo_reports (p
 CREATE INDEX IF NOT EXISTS user_reports_unpushed_idx  ON public.user_reports  (push_sent) WHERE push_sent = FALSE;
 
 -- ============================================================
--- Crash/hang/CPU-exception diagnostics (MetricKit, on-device — see CrashReporter.swift).
+-- Crash/hang/CPU-exception diagnostics (MetricKit, on-device, see CrashReporter.swift).
 -- Before this, the only way to see a hang or CPU-exception diagnostic (Xcode Organizer's
 -- Crashes tab doesn't show either) was physically connecting the exact device it happened on
--- to Xcode and pulling its container — meaning in practice, only the owner's own test device
+-- to Xcode and pulling its container, meaning in practice, only the owner's own test device
 -- was ever actually visible. This makes every diagnostic reach a place the owner can query.
 --
 -- Write-only from the client, deliberately: any signed-in user can log their own device's
 -- diagnostics, and a not-yet-signed-in device can log one with no user_id, but there is no
 -- SELECT policy for authenticated or anon at all. Reading this table means the Supabase
 -- Dashboard or the Management API with an owner-supplied token, both of which use the service
--- role and bypass RLS entirely — never the app itself.
+-- role and bypass RLS entirely, never the app itself.
 -- ============================================================
 CREATE TABLE IF NOT EXISTS public.crash_diagnostics (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -1282,3 +1282,45 @@ CREATE POLICY "crash_diagnostics: insert"
         (auth.uid() IS NOT NULL AND auth.uid() = user_id)
         OR (auth.uid() IS NULL AND user_id IS NULL)
     );
+
+-- ============================================================
+-- Roll-photo reaction pushes (the reveal's "communal" pull-back loop).
+-- When someone reacts to a roll photo, notify the photo's OWNER (never self), so a reaction
+-- left during the reveal pulls its owner back even if they revealed early and saw it thin.
+-- Same poll + push_sent-flag pattern as post reactions and reports: send-social-push scans
+-- unpushed rows every minute, batches per reactor, respects roll_notification_mutes, flips
+-- the flag. push_sent defaults FALSE, which is also the normal in-flight state for a brand
+-- new reaction awaiting its push, so the one-time backfill that marks pre-existing reactions
+-- as already handled is NOT run here (an unconditional `UPDATE ... WHERE push_sent = FALSE`
+-- in this always-safe-to-re-run file would permanently drop the push for every reaction
+-- currently pending send). That backfill lives once, guarded, in
+-- supabase/migrations/2026-07-31_photo_reactions_push_backfill.sql.
+-- ============================================================
+ALTER TABLE public.photo_reactions ADD COLUMN IF NOT EXISTS push_sent BOOLEAN NOT NULL DEFAULT FALSE;
+CREATE INDEX IF NOT EXISTS photo_reactions_unpushed_idx ON public.photo_reactions (push_sent) WHERE push_sent = FALSE;
+
+-- ============================================================
+-- Roll reveal views (the async "communal" presence: "you're the Nth of M to open this roll").
+-- One row per member who has opened a roll's reveal. Lets the reveal show how many of the group
+-- have seen it yet, so it feels shared even though everyone arrives at their own time, without
+-- any realtime infra. A member records their own view; any member can read the roster's views
+-- for a roll they belong to (is_roll_member gates both). PK makes re-opening idempotent.
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.roll_reveal_views (
+    roll_id   uuid NOT NULL REFERENCES public.rolls(id) ON DELETE CASCADE,
+    user_id   uuid NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+    viewed_at timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (roll_id, user_id)
+);
+
+ALTER TABLE public.roll_reveal_views ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "reveal_views: record own" ON public.roll_reveal_views;
+CREATE POLICY "reveal_views: record own"
+    ON public.roll_reveal_views FOR INSERT TO authenticated
+    WITH CHECK (auth.uid() = user_id AND public.is_roll_member(roll_id));
+
+DROP POLICY IF EXISTS "reveal_views: read for member rolls" ON public.roll_reveal_views;
+CREATE POLICY "reveal_views: read for member rolls"
+    ON public.roll_reveal_views FOR SELECT TO authenticated
+    USING (public.is_roll_member(roll_id));

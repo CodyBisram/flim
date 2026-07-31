@@ -8,7 +8,7 @@
 
 -- 1. Helper: bidirectional block check (SECURITY DEFINER so policies on other
 --    tables can read the owner-only `blocks` table). Revoked from PUBLIC/anon
---    only — `authenticated` MUST keep EXECUTE: RLS policies evaluate as the
+--    only, `authenticated` MUST keep EXECUTE: RLS policies evaluate as the
 --    querying role, which needs EXECUTE to call the function (SECURITY DEFINER
 --    only affects the body's privileges). Revoking authenticated = full outage.
 CREATE OR REPLACE FUNCTION public.is_blocked_either_way(a UUID, b UUID)
