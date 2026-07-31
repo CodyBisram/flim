@@ -2,7 +2,7 @@ import Foundation
 
 /// Persists long-lived signed URLs to disk, keyed by storage path, so the SAME URL is reused
 /// across launches. Two wins: Supabase's CDN can actually cache the response (an identical URL is
-/// an edge hit — a new token each time would miss), and cold starts skip the re-signing
+/// an edge hit, a new token each time would miss), and cold starts skip the re-signing
 /// round-trips. Signed URLs are regenerable, so the Caches dir is the right home.
 actor SignedURLStore {
     static let shared = SignedURLStore()

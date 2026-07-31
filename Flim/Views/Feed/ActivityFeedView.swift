@@ -3,7 +3,7 @@ import SwiftUI
 /// Builds a postId -> signed thumbnail URL lookup from activity items and a path -> URL map.
 /// Multiple activity items legitimately share the same post (two reactions on one photo, a
 /// reaction and a comment on the same photo, several tags in one photo), so this must tolerate
-/// duplicate postIds — `Dictionary(uniqueKeysWithValues:)` doesn't, and crashed on exactly this
+/// duplicate postIds, `Dictionary(uniqueKeysWithValues:)` doesn't, and crashed on exactly this
 /// once already.
 func buildActivityThumbURLs(items: [ActivityItem], urlsByPath: [String: URL]) -> [UUID: URL] {
     Dictionary(items.compactMap { item -> (UUID, URL)? in
@@ -72,8 +72,8 @@ struct ActivityFeedView: View {
                 items = await activityTask
                 await followingTask
                 // Thumbnails are the smallest rendition in the pipeline (~30KB) and deduped
-                // by post here — five reactions on the same photo mint one signed URL, not
-                // five — so this costs about the same as any other thumbnail row in the app.
+                // by post here, five reactions on the same photo mint one signed URL, not
+                // five, so this costs about the same as any other thumbnail row in the app.
                 let paths = Array(Set(items.compactMap { $0.post?.displayPath }))
                 let urls = await feed.signedURLs(for: paths)
                 thumbURLs = buildActivityThumbURLs(items: items, urlsByPath: urls)
@@ -85,21 +85,17 @@ struct ActivityFeedView: View {
 
     /// Two tap regions per row: the avatar opens the actor's profile; everything else (the
     /// action sentence, date, and photo preview) opens the post it's about. `.follow` has no
-    /// post, so both regions land on the same place there — there's nothing else to open.
+    /// post, so both regions land on the same place there, there's nothing else to open.
     private func row(_ item: ActivityItem) -> some View {
         HStack(spacing: 12) {
             Button { profileRoute = ProfileRoute(id: item.actor.id) } label: {
-                Circle()
-                    .fill(FlimTheme.accent.opacity(0.18))
-                    .frame(width: 40, height: 40)
-                    .overlay(Text(String(item.actor.handle.dropFirst().prefix(1)).uppercased())
-                        .font(.system(size: 15, weight: .thin)).foregroundStyle(FlimTheme.accent))
+                AvatarView(path: item.actor.avatarPath, name: item.actor.username, size: 40)
             }
             .buttonStyle(.plain)
 
             VStack(alignment: .leading, spacing: 2) {
                 // The handle and the action text are separate Text views (not concatenated)
-                // specifically so they can be separate tap targets — the handle alone opens
+                // specifically so they can be separate tap targets, the handle alone opens
                 // the actor's profile, matching the avatar; the action text opens the post.
                 HStack(spacing: 4) {
                     Button { profileRoute = ProfileRoute(id: item.actor.id) } label: {
@@ -163,7 +159,7 @@ struct ActivityFeedView: View {
 
     /// A photo preview with a small badge for what happened (matching the reaction emoji, or
     /// a comment/tag icon), for anything that's about a post. `.follow` keeps the plain
-    /// person icon — there's no photo to show.
+    /// person icon, there's no photo to show.
     @ViewBuilder
     private func thumbnail(_ item: ActivityItem) -> some View {
         if let post = item.post {
@@ -194,7 +190,7 @@ struct ActivityFeedView: View {
     }
 
     /// A small corner badge notched into the thumbnail (the FlimTheme.bg stroke matches the
-    /// screen background, cutting the badge visually out of the photo) — the reaction emoji
+    /// screen background, cutting the badge visually out of the photo), the reaction emoji
     /// itself for a like, or an icon for what else can happen to a post.
     @ViewBuilder
     private func badge(_ kind: ActivityItem.Kind) -> some View {

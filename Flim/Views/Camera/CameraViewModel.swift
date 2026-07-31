@@ -15,7 +15,7 @@ final class CameraViewModel: NSObject {
     var onPhotoCapture: ((Data) -> Void)?
 
     /// Bumped at the start of every `capturePhoto()` call so the watchdog Task it starts can
-    /// tell whether it's still describing the current capture by the time it wakes up — see
+    /// tell whether it's still describing the current capture by the time it wakes up, see
     /// `capturePhoto()` for why this matters.
     private var captureGeneration = 0
 
@@ -36,7 +36,7 @@ final class CameraViewModel: NSObject {
     /// Backing storage for `previewAspectRatio`, guarded by a lock: written from the main
     /// thread (`CameraPreview.PreviewView.layoutSubviews`) and read from
     /// `AVCapturePhotoOutput`'s delegate queue in `photoOutput(_:didFinishProcessingPhoto:error:)`
-    /// — this file already documents elsewhere that delegate callbacks arrive off-main (see
+    ///, this file already documents elsewhere that delegate callbacks arrive off-main (see
     /// the flash-overlay handling above), so this cross-thread value needs the same kind of
     /// synchronization, unlike the plain properties above that are only ever mutated from
     /// inside a `Task { @MainActor in ... }` hop.
@@ -46,7 +46,7 @@ final class CameraViewModel: NSObject {
     /// actually showing on screen right now, pushed up from `CameraPreview`'s real view
     /// bounds every layout pass (mirrors how `excludedRegions` is threaded from the view
     /// layer, rather than sourced from a `UIScreen` constant). `nil` until the preview has
-    /// laid out at least once. Used to crop the captured photo down to what was framed —
+    /// laid out at least once. Used to crop the captured photo down to what was framed, 
     /// see `photoOutput(_:didFinishProcessingPhoto:error:)`.
     var previewAspectRatio: CGFloat? {
         get { previewAspectRatioLock.withLock { $0 } }
@@ -100,23 +100,23 @@ final class CameraViewModel: NSObject {
     }
 
     /// The `.photo` preset's default format pick optimizes for full-resolution stills, not
-    /// a smooth preview — on most devices that pick tops out at 24-30fps, which read as
+    /// a smooth preview, on most devices that pick tops out at 24-30fps, which read as
     /// visibly choppier panning next to Lapse's 60fps viewfinder. This looks for a format
     /// that is a PARITY match for that `.photo` baseline (same or better photo resolution,
-    /// same field of view, same pixel format, and — for virtual multi-lens devices — the
+    /// same field of view, same pixel format, and, for virtual multi-lens devices, the
     /// same constituent-lens zoom breakpoints) and only differs in frame rate. That keeps
     /// the fast path structurally identical to the default pick, just faster: it can never
     /// silently drop a lens (0.5× pill disappearing), narrow the field of view, change the
     /// pixel format (e.g. HDR x420 vs 420f), pick a format whose live video stream is a
     /// pathologically small fraction of what it advertises for stills (a format can claim a
     /// full-res `supportedMaxPhotoDimensions` while actually streaming a tiny binned/upscaled
-    /// preview — the still photo looks fine but the live feed reads as pixelated), or win a
+    /// preview, the still photo looks fine but the live feed reads as pixelated), or win a
     /// tie by undocumented array order, because a non-matching format is never a candidate in
     /// the first place. If nothing beats the baseline's frame rate under those constraints,
-    /// this leaves `.photo`'s own pick alone — preview smoothness is never traded for photo
+    /// this leaves `.photo`'s own pick alone, preview smoothness is never traded for photo
     /// quality, zoom behavior, or live resolution.
     private func configurePreviewFormat(for device: AVCaptureDevice) {
-        // The `.photo` preset's own pick, captured before anything is touched — every
+        // The `.photo` preset's own pick, captured before anything is touched, every
         // candidate below is compared against THIS, not the global best across formats.
         let baseline = device.activeFormat
         let baselineSwitchOverFactors = device.virtualDeviceSwitchOverVideoZoomFactors
@@ -133,7 +133,7 @@ final class CameraViewModel: NSObject {
             guard format.formatDescription.mediaSubType == baselineSubType else { return false }
             // Self-referential check, not a cross-format one: a format is only suspect when
             // ITS OWN live video stream is a pathologically small fraction of ITS OWN
-            // advertised photo size — the literal signature of "advertises big stills,
+            // advertised photo size, the literal signature of "advertises big stills,
             // streams a tiny binned/upscaled preview." Comparing against some OTHER format's
             // (e.g. the baseline's) video area would wrongly punish legitimate high-frame-rate
             // formats that bin their video proportionally to go faster, which is normal and
@@ -161,19 +161,19 @@ final class CameraViewModel: NSObject {
         let ceiling = target.videoSupportedFrameRateRanges.map(\.maxFrameRate).max() ?? 30
         guard ceiling > 30.5 else { return }
         let targetFPS = min(ceiling, 60)
-        // The candidate must actually declare support for the fps we're about to request —
+        // The candidate must actually declare support for the fps we're about to request, 
         // `maxFrameRate` alone doesn't guarantee every rate up to it is achievable.
         guard target.videoSupportedFrameRateRanges.contains(where: {
             $0.minFrameRate <= targetFPS && targetFPS <= $0.maxFrameRate
         }) else { return }
 
         guard (try? device.lockForConfiguration()) != nil else { return }
-        // Manual format selection needs input-priority — `.photo` would otherwise snap the
+        // Manual format selection needs input-priority, `.photo` would otherwise snap the
         // format back to its own pick the moment configuration commits.
         session.sessionPreset = .inputPriority
         device.activeFormat = target
         // The constituent-lens switch-over breakpoints can only be verified once the format
-        // is actually active — this is a no-op equality check on non-virtual devices (both
+        // is actually active, this is a no-op equality check on non-virtual devices (both
         // arrays are empty). If activating the format changed them, the 0.5×/1×/2× pill
         // mapping would silently break, so revert to the untouched baseline instead.
         guard device.virtualDeviceSwitchOverVideoZoomFactors == baselineSwitchOverFactors else {
@@ -184,7 +184,7 @@ final class CameraViewModel: NSObject {
         }
         // Only cap the ceiling at 60fps; leave the floor at the format's own default so
         // auto exposure can still legitimately drop the frame rate in low light (expected
-        // behavior — not fought here).
+        // behavior, not fought here).
         device.activeVideoMinFrameDuration = CMTime(value: 1, timescale: Int32(targetFPS))
         device.unlockForConfiguration()
 
@@ -208,7 +208,7 @@ final class CameraViewModel: NSObject {
     func flipCamera() {
         cameraPosition = isFront ? .back : .front
         session.beginConfiguration()
-        // Reset to the known-good baseline before re-deriving it for the new lens —
+        // Reset to the known-good baseline before re-deriving it for the new lens, 
         // `configurePreviewFormat(for:)` (called from `addVideoInput`) only upgrades to
         // `.inputPriority` when it finds a format that beats this, so a lens without a
         // faster-than-30fps full-res option deterministically lands back on `.photo`
@@ -298,7 +298,7 @@ final class CameraViewModel: NSObject {
 
         // The on-screen flash overlay is NOT triggered here anymore. A real LED flash needs a
         // beat for AE/AF + preflash metering before it actually fires, so lighting up the screen
-        // at tap time made the white flash arrive a full 1-2s before the real flash — reading as
+        // at tap time made the white flash arrive a full 1-2s before the real flash, reading as
         // a glitch on-device. The overlay is now driven by the capture delegate's
         // willCapturePhotoFor/didCapturePhotoFor callbacks below, which fire right as the real
         // exposure happens.
@@ -316,7 +316,7 @@ final class CameraViewModel: NSObject {
         // Front camera has no hardware LED: "flash on" here means screen-as-flash, brightening
         // the display to light the subject instead. Triggering the capture at the same instant
         // as the brighten (the old behavior) meant the sensor's continuous auto-exposure was
-        // still metered against the dim pre-flash scene — in a dark room, where AE had already
+        // still metered against the dim pre-flash scene, in a dark room, where AE had already
         // cranked exposure way up expecting darkness, the sudden extra light blew the shot out;
         // in a brighter room the same shot looked fine. Reported on-device as the screen-flash
         // being "either really good or really bad" with no in-between. Brightening the screen
@@ -337,19 +337,19 @@ final class CameraViewModel: NSObject {
 
         // Watchdog: isCapturing/flashOpacity normally only get reset by AVFoundation's own
         // completion callbacks below, which assumes the capture pipeline always completes
-        // promptly — it doesn't always. Reported on-device: the front-camera screen-flash
+        // promptly, it doesn't always. Reported on-device: the front-camera screen-flash
         // overlay (the full-white screen used in place of a hardware LED) once stayed lit for
         // ~5s, well past any real exposure + processing time, with nothing to recover from a
         // stalled callback. Front-camera screen-flash shots are exactly the case most exposed
-        // to this — they're typically taken in dim rooms, which is also when AE/AF convergence
+        // to this, they're typically taken in dim rooms, which is also when AE/AF convergence
         // is most likely to run long. 3s is comfortably longer than any legitimate capture
         // (normal captures finish in well under a second) but short enough to visibly recover
-        // instead of leaving the screen — and the shutter, gated on `isCapturing` — stuck
+        // instead of leaving the screen, and the shutter, gated on `isCapturing`, stuck
         // indefinitely. `generation` guards against this stepping on a capture that's
         // genuinely still different by the time this wakes up; if AVFoundation's real
         // callbacks eventually do fire after this gives up, they're harmless no-ops (the state
         // they'd set is already what this set), and any photo they deliver still comes through
-        // `onPhotoCapture` normally — this never cancels the underlying capture, just stops the
+        // `onPhotoCapture` normally, this never cancels the underlying capture, just stops the
         // UI from being held hostage to it.
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(3))
@@ -363,26 +363,26 @@ final class CameraViewModel: NSObject {
 // MARK: - AVCapturePhotoCaptureDelegate
 
 extension CameraViewModel: AVCapturePhotoCaptureDelegate {
-    /// Fires right as the real exposure begins (after AE/AF + any preflash metering) — this is
+    /// Fires right as the real exposure begins (after AE/AF + any preflash metering), this is
     /// the correct moment for a flash-adjacent overlay, not the shutter tap.
     func photoOutput(
         _ output: AVCapturePhotoOutput,
         willCapturePhotoFor resolvedSettings: AVCaptureResolvedPhotoSettings
     ) {
         if resolvedSettings.isFlashEnabled {
-            // The rear LED is about to fire — it IS the flash. A white screen overlay on top of
+            // The rear LED is about to fire, it IS the flash. A white screen overlay on top of
             // it reads as a glitch, so the rear+flash case shows no overlay at all.
             return
         }
         // Front camera has no LED, so an explicit "flash on" there means screen-as-flash: brighten
         // the display itself in place of hardware flash, timed to the real exposure. Every other
         // no-flash shot (front or rear) keeps a subtle blink so the shutter still feels responsive.
-        // Delegate callbacks arrive on AVFoundation's queue, not main — hop before touching UI state.
+        // Delegate callbacks arrive on AVFoundation's queue, not main, hop before touching UI state.
         let opacity: Double = (isFront && flashMode == .on) ? 1 : 0.35
         Task { @MainActor in self.flashOpacity = opacity }
     }
 
-    /// Fires once the exposure itself is finished — fade the overlay out here so its length always
+    /// Fires once the exposure itself is finished, fade the overlay out here so its length always
     /// tracks the real capture instead of a timer guessed at tap time.
     func photoOutput(
         _ output: AVCapturePhotoOutput,
@@ -407,7 +407,7 @@ extension CameraViewModel: AVCapturePhotoCaptureDelegate {
         // synchronously, on this delegate's own background queue (like `fileDataRepresentation()`
         // just above) since decode/redraw/re-encode is real CPU work that shouldn't run after
         // the `@MainActor` hop below. Falls back to the untouched bytes if the aspect ratio
-        // isn't known yet or the crop fails — a photo must never be lost to this.
+        // isn't known yet or the crop fails, a photo must never be lost to this.
         let data = rawData.flatMap { raw -> Data in
             guard let targetAspectRatio = previewAspectRatio,
                   let cropped = CapturedPhotoCropper.croppedJPEGData(from: raw, targetAspectRatio: targetAspectRatio)
@@ -419,7 +419,7 @@ extension CameraViewModel: AVCapturePhotoCaptureDelegate {
             self.flashOpacity = 0   // safety net in case the capture errored before the callbacks above fired
             guard let data else {
                 // A genuine capture failure (hardware fault, interrupted session, no file data
-                // at all) — rare, but silent otherwise: the shutter had already animated and
+                // at all), rare, but silent otherwise: the shutter had already animated and
                 // fired its haptic as if the shot landed, with nothing to show it didn't.
                 Haptics.error()
                 return

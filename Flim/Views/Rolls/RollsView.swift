@@ -98,22 +98,37 @@ struct RollsView: View {
         }
     }
 
+    /// A developed roll the user hasn't opened the reveal for yet, the "your photos are ready"
+    /// state. `rollRevealSeen.<id>` is set in RollDetailView the first time the reveal plays.
+    private func isReadyToReveal(_ roll: Roll) -> Bool {
+        roll.isDeveloped && !UserDefaults.standard.bool(forKey: "rollRevealSeen.\(roll.id.uuidString)")
+    }
+
+    /// Ready-to-reveal rolls first (the whole reason to open the app), then everything else in its
+    /// existing newest-first order. Explicit partition so the ordering is obviously stable.
+    private var sortedRolls: [Roll] {
+        let ready = rolls.rolls.filter(isReadyToReveal)
+        let rest = rolls.rolls.filter { !isReadyToReveal($0) }
+        return ready + rest
+    }
+
     private var rollList: some View {
         ScrollViewReader { proxy in
             List {
-                ForEach(rolls.rolls) { roll in
+                ForEach(sortedRolls) { roll in
                     NavigationLink(value: roll) {
                         RollRow(roll: roll,
                                 memberCount: rolls.memberCounts[roll.id],
                                 coverURL: coverURLs[roll.id],
                                 coverPath: rolls.coverPaths[roll.id],
-                                isMuted: mutedRolls.contains(roll.id))
+                                isMuted: mutedRolls.contains(roll.id),
+                                isReadyToReveal: isReadyToReveal(roll))
                     }
                     .listRowBackground(Color(white: 0.08))
                     .listRowSeparatorTint(Color(white: 0.15))
                     .swipeActions(edge: .trailing) {
                         // Members leave via swipe; creators delete from inside the roll (too
-                        // destructive for a swipe — it removes the roll for everyone).
+                        // destructive for a swipe, it removes the roll for everyone).
                         if !isCreator(roll) {
                             Button(role: .destructive) { rollToLeave = roll } label: {
                                 Label("Leave", systemImage: "rectangle.portrait.and.arrow.right")
@@ -126,7 +141,7 @@ struct RollsView: View {
             .scrollContentBackground(.hidden)
             .refreshable { await load() }
             .onChange(of: scrollToTop) {
-                withAnimation(.snappy) { proxy.scrollTo(rolls.rolls.first?.id, anchor: .top) }
+                withAnimation(.snappy) { proxy.scrollTo(sortedRolls.first?.id, anchor: .top) }
             }
         }
         .confirmationDialog("Leave this roll?", isPresented: Binding(get: { rollToLeave != nil }, set: { if !$0 { rollToLeave = nil } }), presenting: rollToLeave) { roll in
@@ -171,6 +186,7 @@ private struct RollRow: View {
     var coverURL: URL?
     var coverPath: String?
     var isMuted: Bool = false
+    var isReadyToReveal: Bool = false
 
     var body: some View {
         HStack(spacing: 14) {
@@ -207,8 +223,20 @@ private struct RollRow: View {
                     .background(FlimTheme.accentSoft, in: Capsule())
                 }
 
-                // Reveal status — the clock runs from when the roll was created.
-                if roll.isDeveloped {
+                // Reveal status, the clock runs from when the roll was created.
+                if isReadyToReveal {
+                    // Developed and NOT yet opened: the one thing that should pull you into the
+                    // app, so it's loud (filled accent pill, not the muted grey "Developed" chip)
+                    // and this row is sorted to the top of the list.
+                    HStack(spacing: 5) {
+                        Image(systemName: "sparkles").font(.system(size: 10, weight: .bold))
+                        Text("Ready to reveal").font(.system(size: 11, weight: .semibold))
+                    }
+                    .foregroundStyle(.black)
+                    .padding(.horizontal, 10).padding(.vertical, 4)
+                    .background(FlimTheme.accent, in: Capsule())
+                    .accessibilityLabel("Ready to reveal, tap to open")
+                } else if roll.isDeveloped {
                     MetaChip(icon: "checkmark.seal.fill", text: "Developed",
                              color: FlimTheme.textTertiary, textSize: 11)
                 } else {
@@ -269,7 +297,7 @@ private struct RollCover: View {
             )
     }
 
-    /// Deterministic hue from the roll's UUID bytes — stable across launches.
+    /// Deterministic hue from the roll's UUID bytes, stable across launches.
     static func gradient(for roll: Roll) -> [Color] {
         let bytes = withUnsafeBytes(of: roll.id.uuid) { Array($0) }
         let sum = bytes.reduce(0) { $0 + Int($1) }

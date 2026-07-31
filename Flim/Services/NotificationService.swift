@@ -2,9 +2,9 @@ import Observation
 import UserNotifications
 
 /// Local notifications for the "your photo developed" moment. This works fully offline
-/// with no backend — when you capture a photo we schedule a local notification for its
+/// with no backend, when you capture a photo we schedule a local notification for its
 /// `develops_at`. (Remote push, for roll-mates' photos developing on *their* devices,
-/// is handled separately by the Supabase Edge Function — see `supabase/push/`.)
+/// is handled separately by the Supabase Edge Function, see `supabase/push/`.)
 @MainActor
 @Observable
 final class NotificationService {
@@ -13,8 +13,8 @@ final class NotificationService {
     /// Asks for permission the first time it matters (call right before scheduling).
     /// No-ops once the user has already decided. When permission is in hand we also
     /// register for remote (APNs) push so roll-mates' develop notifications can arrive
-    /// via the Supabase Edge Function — see RemotePush + supabase/push/.
-    /// True when the OS hasn't been asked yet — used to decide whether to show the soft primer
+    /// via the Supabase Edge Function, see RemotePush + supabase/push/.
+    /// True when the OS hasn't been asked yet, used to decide whether to show the soft primer
     /// (asking with context) before the one-shot system prompt.
     func isUndetermined() async -> Bool {
         await UNUserNotificationCenter.current().notificationSettings().authorizationStatus == .notDetermined
@@ -62,7 +62,7 @@ final class NotificationService {
         UNUserNotificationCenter.current().add(request)
     }
 
-    /// Cancels a roll's pending develop reminder — call when a roll is deleted or left, or the
+    /// Cancels a roll's pending develop reminder, call when a roll is deleted or left, or the
     /// notification still fires at the original develop time claiming "Your <roll> developed"
     /// for a roll you no longer have (deleted) or no longer belong to (left). The identifier
     /// matches `scheduleRollDevelopNotification`'s exactly, so this is a safe no-op if nothing

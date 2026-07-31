@@ -16,7 +16,7 @@ struct Photo: Codable, Identifiable {
     var isSorted: Bool = true
 
     var isReady: Bool { Date.now >= developsAt }
-    /// Path to use in grids/feeds — the thumbnail if present, else the full image.
+    /// Path to use in grids/feeds, the thumbnail if present, else the full image.
     var displayPath: String { thumbPath ?? storagePath }
 
     var timeUntilDeveloped: TimeInterval { developsAt.timeIntervalSinceNow }
@@ -50,7 +50,7 @@ struct PhotoReaction: Codable, Identifiable {
     }
 }
 
-// Insert-only payload — omits auto-generated fields
+// Insert-only payload, omits auto-generated fields
 struct InsertPhoto: Encodable {
     let id: UUID
     let userId: UUID

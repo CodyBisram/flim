@@ -1,22 +1,24 @@
 import SwiftUI
 
 /// The roll reveal, as an event: the first time you open a roll after it develops, everyone's
-/// shots play as a full-screen, story-style slideshow — each print "develops" in front of you
+/// shots play as a full-screen, story-style slideshow, each print "develops" in front of you
 /// (blurred + washed → sharp), with the photographer's handle. Tap to step, skip anytime.
 struct RollRevealView: View {
     let rollId: UUID
     let rollName: String
-    /// Chronological, developed — as of the moment the caller last fetched. Re-verified against
+    /// Chronological, developed, as of the moment the caller last fetched. Re-verified against
     /// the server on appear (see `.task` below) so a shot deleted after that fetch (but before
     /// this member opened the reveal) never enters the deck.
     let photos: [Photo]
     let memberNames: [UUID: String]
 
     @Environment(PhotoService.self) private var photoService
+    @Environment(AuthService.self) private var auth
+    @Environment(RollService.self) private var rollService
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    // The deck actually being played — starts empty and is populated by the fresh fetch, so a
+    // The deck actually being played, starts empty and is populated by the fresh fetch, so a
     // photo deleted between the caller's fetch and this view opening never gets a frame.
     @State private var deck: [Photo] = []
     @State private var index = 0
@@ -25,6 +27,16 @@ struct RollRevealView: View {
     @State private var showSummary = false
     @State private var isEmpty = false
     @State private var advanceTask: Task<Void, Never>?
+    /// Reactions across the whole deck, keyed by photo id, batch-loaded once in loadDeck. Includes
+    /// the reactions others left BEFORE you opened the reveal, so the moment feels communal, you
+    /// see the group's response accreting even though everyone arrives at their own time.
+    @State private var reactionsByPhoto: [UUID: [PhotoReaction]] = [:]
+    /// Set once you interact with the current shot (react, or open the picker). While true, the
+    /// auto-advance timer is held off so a slide never yanks away mid-reaction. Reset per photo.
+    @State private var engaged = false
+    /// The group's progress through this reveal ("you're the Nth of M to open it"), recorded and
+    /// fetched on open. Shown on the summary card so the roll feels shared, not solitary.
+    @State private var presence: RollService.RevealPresence?
 
     var body: some View {
         ZStack {
@@ -56,21 +68,8 @@ struct RollRevealView: View {
                 .padding(.top, 84)
                 .padding(.bottom, 96)
 
-                // Photographer + shot number, under the action.
-                VStack {
-                    Spacer()
-                    VStack(spacing: 3) {
-                        if let name = memberNames[photo.userId] {
-                            Text("@\(name)")
-                                .font(.system(size: 15, weight: .semibold)).foregroundStyle(.white)
-                        }
-                        Text("\(index + 1) of \(deck.count)")
-                            .font(.system(size: 12)).foregroundStyle(Color(white: 0.6))
-                    }
-                    .padding(.bottom, 40)
-                }
-
-                // Tap zones: left third = back, rest = forward.
+                // Tap zones: left third = back, rest = forward. BEHIND the credit + reaction bar
+                // below, so tapping a reaction chip never also advances the slide.
                 HStack(spacing: 0) {
                     Color.clear.contentShape(Rectangle())
                         .frame(maxWidth: .infinity)
@@ -78,6 +77,24 @@ struct RollRevealView: View {
                     Color.clear.contentShape(Rectangle())
                         .frame(maxWidth: .infinity)
                         .onTapGesture { step(1) }
+                }
+
+                // Photographer + shot number + the reaction bar, above the tap zones.
+                VStack {
+                    Spacer()
+                    VStack(spacing: 10) {
+                        VStack(spacing: 3) {
+                            if let name = memberNames[photo.userId] {
+                                Text("@\(name)")
+                                    .font(.system(size: 15, weight: .semibold)).foregroundStyle(.white)
+                            }
+                            Text("\(index + 1) of \(deck.count)")
+                                .font(.system(size: 12)).foregroundStyle(Color(white: 0.6))
+                        }
+                        reactionBar(for: photo)
+                            .padding(.horizontal, 20)
+                    }
+                    .padding(.bottom, 40)
                 }
 
                 // Story-style progress + skip.
@@ -93,7 +110,7 @@ struct RollRevealView: View {
 
                     HStack(spacing: 10) {
                         // Distinct from Skip: this leaves immediately, no summary screen. Skip
-                        // still routes through "View the roll" — with a large roll (a wedding's
+                        // still routes through "View the roll", with a large roll (a wedding's
                         // worth of shots) tapping through 70 photos to leave was the complaint,
                         // and Skip alone didn't actually solve that, since it lands on one more
                         // screen instead of just closing.
@@ -123,9 +140,49 @@ struct RollRevealView: View {
         .onDisappear { advanceTask?.cancel() }
     }
 
-    /// A vertical swipe exits immediately, same threshold and gesture as FullScreenPhotoView's
-    /// drag-to-dismiss — a second way out alongside the X button, for a roll big enough that
-    /// reaching up to tap it isn't the natural gesture.
+    /// The reaction bar for a shot, wired to the deck-wide reaction cache. React to each print as
+    /// it develops, and see what others already left. Interacting holds the auto-advance so a
+    /// slide doesn't pull away mid-reaction.
+    private func reactionBar(for photo: Photo) -> some View {
+        let reactions = reactionsByPhoto[photo.id] ?? []
+        return ReactionBar(
+            defaults: PostEmoji.all,
+            counts: Dictionary(grouping: reactions, by: \.emoji).mapValues(\.count),
+            mine: Set(reactions.filter { $0.userId == auth.currentUser?.id }.map(\.emoji))
+        ) { emoji in
+            holdAutoAdvance()
+            toggleReaction(emoji, on: photo)
+        }
+        .id(photo.id)   // fresh bar per photo as the reveal steps
+    }
+
+    /// Optimistically toggle the current user's reaction, then persist. Mirrors the carousel /
+    /// full-screen viewer, and the same reaction feeds Piece 2's pull-back notification server-side.
+    private func toggleReaction(_ emoji: String, on photo: Photo) {
+        guard let uid = auth.currentUser?.id else { return }
+        var list = reactionsByPhoto[photo.id] ?? []
+        let mine = list.contains { $0.emoji == emoji && $0.userId == uid }
+        if mine {
+            list.removeAll { $0.emoji == emoji && $0.userId == uid }
+            reactionsByPhoto[photo.id] = list
+            Task { await photoService.removeReaction(photoId: photo.id, emoji: emoji, userId: uid) }
+        } else {
+            list.append(PhotoReaction(id: UUID(), photoId: photo.id, userId: uid, emoji: emoji))
+            reactionsByPhoto[photo.id] = list
+            Task { await photoService.addReaction(photoId: photo.id, emoji: emoji, userId: uid) }
+        }
+    }
+
+    /// Cancels the current shot's auto-advance so it stays put while you're reacting. You step
+    /// forward yourself (tap the right zone) when ready. Engaged viewers set their own pace;
+    /// passive viewers keep the auto-play.
+    private func holdAutoAdvance() {
+        engaged = true
+        advanceTask?.cancel()
+    }
+
+    /// A vertical swipe past 120pt exits immediately, a second way out alongside the X button,
+    /// for a roll big enough that reaching up to tap it isn't the natural gesture.
     private var swipeToDismiss: some Gesture {
         DragGesture()
             .onEnded { value in
@@ -134,6 +191,13 @@ struct RollRevealView: View {
                     dismiss()
                 }
             }
+    }
+
+    /// Copy for the group-progress line. Being first is its own little reward; after that it's
+    /// framed as the group ("N of M have opened it") so the roll reads as shared.
+    private func presenceText(_ p: RollService.RevealPresence) -> String {
+        if p.position == 1 { return "You're first to open this roll" }
+        return "\(p.position) of \(p.total) have opened this roll"
     }
 
     private var summary: some View {
@@ -145,6 +209,18 @@ struct RollRevealView: View {
                 .font(.system(size: 24, weight: .light)).foregroundStyle(.white)
             Text("\(deck.count) shot\(deck.count == 1 ? "" : "s") · developed together")
                 .font(.system(size: 14)).foregroundStyle(Color(white: 0.6))
+
+            // The communal signal: where you land in the group's reveal, so it feels shared even
+            // though everyone opens at their own time.
+            if let presence {
+                Label(presenceText(presence), systemImage: presence.position == 1 ? "sparkles" : "person.2.fill")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(FlimTheme.accent)
+                    .padding(.horizontal, 14).padding(.vertical, 8)
+                    .background(FlimTheme.accentSoft, in: Capsule())
+                    .padding(.top, 2)
+            }
+
             Button {
                 Haptics.tap()
                 dismiss()
@@ -188,12 +264,12 @@ struct RollRevealView: View {
     /// Re-fetches the roll's CURRENT photos so a shot deleted after the caller's own fetch (but
     /// before this reveal opened) never enters the deck, then resolves signed URLs and starts
     /// playback. Falls back to the photos we were handed if the re-fetch itself fails (e.g.
-    /// offline) — an empty deck should mean "everything was deleted", not "the network hiccuped".
+    /// offline), an empty deck should mean "everything was deleted", not "the network hiccuped".
     ///
     /// The deck is built from `fresh`, not `photos`: `photos` is `RollDetailView`'s paginated
     /// `vm.developedPhotos`, capped at PhotoService's 30-photo page size until the grid has been
-    /// scrolled far enough to load more. `fetchRollPhotosSnapshot` has no such cap — it's the
-    /// roll's complete current row set — so a roll of 60+ shots showed only the ~30 loaded so
+    /// scrolled far enough to load more. `fetchRollPhotosSnapshot` has no such cap, it's the
+    /// roll's complete current row set, so a roll of 60+ shots showed only the ~30 loaded so
     /// far ("roll is done" summary reading 30 when the roll actually held 60+) back when this
     /// intersected `fresh` against the truncated `photos` instead of using `fresh` directly.
     private func loadDeck() async {
@@ -208,17 +284,28 @@ struct RollRevealView: View {
             return
         }
         urls = await photoService.signedURLs(for: deck.map(\.storagePath))
+        reactionsByPhoto = await photoService.fetchReactions(photoIds: deck.map(\.id))
+        // The reveal is the app's marquee moment, mark it with the chime (SoundFX gates on the
+        // sound-effects setting itself). Previously only the lesser Darkroom sparkle overlay
+        // played it; the actual story reveal was silent.
+        SoundFX.reveal()
+        // Record that we opened it and learn the group's progress, shown on the summary card.
+        if let uid = auth.currentUser?.id {
+            presence = await rollService.recordRevealView(rollId: rollId, userId: uid)
+        }
         develop()
     }
 
-    /// Runs the develop animation for the current photo, then auto-advances.
+    /// Runs the develop animation for the current photo, then auto-advances, unless you've
+    /// engaged with this shot (started reacting), in which case it waits for you to step forward.
     private func develop() {
         developed = false
+        engaged = false
         withAnimation(.easeOut(duration: reduceMotion ? 0 : 1.4)) { developed = true }
         advanceTask?.cancel()
         advanceTask = Task {
             try? await Task.sleep(for: .seconds(3.4))
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, !engaged else { return }
             step(1)
         }
     }
@@ -235,7 +322,7 @@ struct RollRevealView: View {
     }
 
     /// The current frame's image failed to load (deleted between fetch and play, or any other
-    /// load failure) — drop it and move straight to the next one. No dead frame, no stall on
+    /// load failure), drop it and move straight to the next one. No dead frame, no stall on
     /// the auto-advance timer.
     private func skipDeadFrame(_ photoId: UUID) {
         guard let deadIndex = deck.firstIndex(where: { $0.id == photoId }) else { return }

@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Overlay for a shared photo: a small tag indicator (bottom-left) that reveals name labels pinned
 /// at each tagged person's (x, y). Tapping a label opens that profile. Apply via `.overlay { }` on
-/// the photo — the labels position within the photo's own frame.
+/// the photo, the labels position within the photo's own frame.
 struct PhotoTags: View {
     let tags: [PostTag]
     let profiles: [UUID: UserProfile]
@@ -31,7 +31,7 @@ struct PhotoTags: View {
                         }
                     }
 
-                    // Indicator — tap to toggle the labels.
+                    // Indicator, tap to toggle the labels.
                     Button { withAnimation(.snappy(duration: 0.25)) { showLabels.toggle() } } label: {
                         Image(systemName: "person.fill")
                             .font(.system(size: 12, weight: .semibold))

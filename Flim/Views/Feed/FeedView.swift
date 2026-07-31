@@ -25,7 +25,7 @@ struct FeedView: View {
 
                 if feed.feed.isEmpty {
                     if feed.isLoadingFeed || !didLoad {
-                        // Show skeletons until the first load actually completes — never flash
+                        // Show skeletons until the first load actually completes, never flash
                         // the "quiet" empty state before we know whether the feed is empty.
                         ScrollView {
                             VStack(spacing: 20) {
@@ -68,12 +68,12 @@ struct FeedView: View {
                         }
                         .refreshable { await reload() }
                         // This ScrollViewReader only mounts once feed.feed goes non-empty (the
-                        // sibling branch above is the skeleton/empty state) — a fresh view
+                        // sibling branch above is the skeleton/empty state), a fresh view
                         // identity, so its very first layout pass. Reported: that first pass can
                         // land scrolled slightly below "top" (LazyVStack items still settling
                         // their real heights as async images load in changes the content's
                         // effective size out from under the scroll view's initial offset), and
-                        // double-tapping the Feed tab — which calls this exact scrollTo — fixes
+                        // double-tapping the Feed tab, which calls this exact scrollTo, fixes
                         // it instantly. Firing it once on appear applies that same proven fix
                         // automatically instead of requiring the user to find it, with no
                         // animation since this is a silent correction before anything settles,
@@ -196,7 +196,7 @@ struct FeedView: View {
                 }
             }
 
-            // Greeting on its own line — the name gets full width and shrinks if it's long.
+            // Greeting on its own line, the name gets full width and shrinks if it's long.
             VStack(alignment: .leading, spacing: 1) {
                 Text("\(timeGreeting),")
                     .font(.system(size: 14, weight: .medium))
@@ -344,7 +344,7 @@ struct FeedPostCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            // Author row — handle/time on the left, options ••• on the right.
+            // Author row, handle/time on the left, options ••• on the right.
             HStack(spacing: 10) {
                 Button { route = ProfileRoute(id: item.author.id) } label: {
                     HStack(spacing: 10) {
@@ -379,7 +379,7 @@ struct FeedPostCard: View {
                 .accessibilityLabel("Post options")
             }
 
-            // The print — shown at its native aspect (no square crop). Single tap opens it,
+            // The print, shown at its native aspect (no square crop). Single tap opens it,
             // double tap likes it (with a heart burst). A 3:4 default sizes the placeholder so
             // there's no layout jump before the image resolves.
             Group {
@@ -487,7 +487,7 @@ struct FeedPostCard: View {
         .task {
             url = await feed.signedURL(for: post.cardPath)   // 1400px rendition (falls back to full)
             if let path = item.author.avatarPath { avatarURL = await feed.signedURL(for: path) }
-            // reactions + comments already loaded in the feed batch — no per-card query.
+            // reactions + comments already loaded in the feed batch, no per-card query.
         }
         .sheet(isPresented: $showComments) {
             CommentsSheet(post: post)

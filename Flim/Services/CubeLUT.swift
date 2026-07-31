@@ -12,7 +12,7 @@ enum CubeLUT {
         let data: Data   // Float32 RGBA, dimension³ × 4 values
     }
 
-    // Parsing a .cube on every capture is wasteful — cache by resource name (nil = tried + failed).
+    // Parsing a .cube on every capture is wasteful, cache by resource name (nil = tried + failed).
     private static var cache: [String: Loaded?] = [:]
 
     /// Returns the parsed LUT for a bundle resource name, or nil if it's missing/malformed.
@@ -59,7 +59,7 @@ enum CubeLUT {
             if line.first?.isLetter == true { continue }
             let parts = line.split(separator: " ").compactMap { Float($0) }
             if parts.count == 3 {
-                // .cube orders red fastest — same layout CIColorCube expects — so append in order.
+                // .cube orders red fastest, same layout CIColorCube expects, so append in order.
                 values.append(contentsOf: [parts[0], parts[1], parts[2], 1.0])
             }
         }

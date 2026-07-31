@@ -3,7 +3,7 @@ import XCTest
 
 /// `buildActivityThumbURLs` builds the Activity screen's postId -> signed-thumbnail-URL lookup.
 /// The regression this guards against: it used to use `Dictionary(uniqueKeysWithValues:)`,
-/// which fatally crashes on a duplicate key — and multiple activity items legitimately share
+/// which fatally crashes on a duplicate key, and multiple activity items legitimately share
 /// the same post (two reactions on one photo, a reaction and a comment on the same photo,
 /// several tags in one photo), so that crashed the app the instant Activity was opened with
 /// any of those ordinary, common cases in the list.
@@ -23,7 +23,7 @@ final class ActivityFeedViewTests: XCTestCase {
                      post: post, postAuthor: post.map { _ in profile() })
     }
 
-    /// Two reactions on the same photo — the exact shape that used to crash the app.
+    /// Two reactions on the same photo, the exact shape that used to crash the app.
     func testMultipleItemsSharingAPostDoNotCrashAndProduceOneEntry() {
         let shared = post(thumbPath: "shared.jpg")
         let url = URL(string: "https://example.com/shared.jpg")!
@@ -38,7 +38,7 @@ final class ActivityFeedViewTests: XCTestCase {
         XCTAssertEqual(result[shared.id], url)
     }
 
-    /// `.follow` items carry no post — they must not appear in the thumbnail lookup at all.
+    /// `.follow` items carry no post, they must not appear in the thumbnail lookup at all.
     func testFollowItemsAreExcluded() {
         let items = [item(kind: .follow)]
         XCTAssertTrue(buildActivityThumbURLs(items: items, urlsByPath: [:]).isEmpty)

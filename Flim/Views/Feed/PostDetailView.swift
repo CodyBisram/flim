@@ -242,7 +242,7 @@ struct PostDetailView: View {
     private func toggleCommentLike(_ info: CommentInfo) {
         guard let uid = auth.currentUser?.id else { return }
         Haptics.tap()
-        // Optimistic update — local list AND the shared feed cache, so the feed card reflects
+        // Optimistic update, local list AND the shared feed cache, so the feed card reflects
         // the change immediately instead of staying stale until a refresh.
         if let i = comments.firstIndex(where: { $0.id == info.id }) {
             comments[i].likedByMe.toggle()

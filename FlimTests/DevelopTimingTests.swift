@@ -16,8 +16,8 @@ final class DevelopTimingTests: XCTestCase {
     }
 
     func testRollShotsUseTheRollsFixedReveal() {
-        // The reveal is set from the roll's creation, so every shot uses it exactly —
-        // independent of `now` — and the whole roll unlocks together.
+        // The reveal is set from the roll's creation, so every shot uses it exactly, 
+        // independent of `now`, and the whole roll unlocks together.
         let reveal = Date(timeIntervalSince1970: 2_000_000)
         let date = PhotoService.developDate(
             rollId: UUID(), rollReveal: reveal, now: now,

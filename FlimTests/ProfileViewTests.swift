@@ -1,7 +1,7 @@
 import XCTest
 @testable import Flim
 
-/// `isOwnerAccount` — gates Film Lab (neutral capture) to a single account among TestFlight
+/// `isOwnerAccount`, gates Film Lab (neutral capture) to a single account among TestFlight
 /// testers.
 final class ProfileViewTests: XCTestCase {
 

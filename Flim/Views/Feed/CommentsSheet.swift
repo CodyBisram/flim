@@ -48,7 +48,7 @@ struct CommentsSheet: View {
             .toolbarColorScheme(.dark, for: .navigationBar)
             .navigationDestination(item: $route) { UserPageView(userId: $0.id) }
         }
-        // Not full-screen — opens at ~3/4 (like IG) with the feed peeking above; draggable to full.
+        // Not full-screen, opens at ~3/4 (like IG) with the feed peeking above; draggable to full.
         .presentationDetents([.fraction(0.75), .large])
         .presentationDragIndicator(.visible)
         .task { await reload() }
@@ -134,7 +134,7 @@ struct CommentsSheet: View {
             let ok = await feed.commentOnPost(post.id, body: body, userId: uid)   // updates the shared cache
             sending = false
             if !ok {
-                draft = body   // don't lose what they typed — restore and let them retry
+                draft = body   // don't lose what they typed, restore and let them retry
                 Haptics.error()
             }
         }

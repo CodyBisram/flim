@@ -29,7 +29,7 @@ struct ReactionBar: View {
         // The picker used to be a second VStack row, included only `if expanded`, which meant
         // this whole view's reported height changed the instant it opened. Every host of this
         // bar (RollCarouselView, FullScreenPhotoView, FeedView, PostDetailView) sits it in a
-        // container that gives a swipeable photo pager "whatever height is left" — so opening
+        // container that gives a swipeable photo pager "whatever height is left", so opening
         // the picker while a TabView drag was live changed the pager's height mid-transition,
         // the same class of bug that already corrupted roll-carousel paging twice before (a
         // page-width fix, then a footer-height fix). The picker is an overlay now instead: it
@@ -45,16 +45,16 @@ struct ReactionBar: View {
         .overlay(alignment: .bottomLeading) {
             if expanded {
                 picker
-                    // Opens UPWARD, not down: every host of this bar has the photo above and
-                    // something fixed below it (a "Share to your page" button, in the photo
-                    // pagers) — opening downward pushed the picker straight into that button
-                    // instead of clearing it, since an overlay never reserves space for anyone
-                    // below it to make room. Upward always has open photo space to expand into.
+                    // Opens UPWARD as an overlay (never changes this bar's own height, which
+                    // would corrupt the photo pager it sits under), floating just above the chip
+                    // row. It's an OPAQUE elevated tray, so while open it cleanly covers the
+                    // photographer handle + date sitting behind it instead of letting them bleed
+                    // through (the old near-transparent row read as a collision with the caption).
                     .padding(.bottom, 44)
                     .zIndex(1)
             }
         }
-        // Hidden field the system keyboard feeds — tap 🌐 to switch to emoji and pick ANYTHING.
+        // Hidden field the system keyboard feeds, tap 🌐 to switch to emoji and pick ANYTHING.
         .background(
             TextField("", text: $typed)
                 .focused($keyboardFocused)
@@ -71,7 +71,7 @@ struct ReactionBar: View {
         }
     }
 
-    /// Reacted emojis first (by count), then the remaining defaults. Recomputed on each appear — so
+    /// Reacted emojis first (by count), then the remaining defaults. Recomputed on each appear, so
     /// re-entering promotes what people reacted with, but it holds still while you're looking.
     private func rebuildOrder() {
         let reacted = counts.filter { $0.value > 0 }
@@ -83,7 +83,7 @@ struct ReactionBar: View {
     private var picker: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 4) {
-                // Any emoji — opens the keyboard so you can pick literally anything.
+                // Any emoji, opens the keyboard so you can pick literally anything.
                 Button { keyboardFocused = true } label: {
                     Image(systemName: "keyboard")
                         .font(.system(size: 18)).foregroundStyle(.white)
@@ -99,10 +99,20 @@ struct ReactionBar: View {
                     }
                 }
             }
-            .padding(.horizontal, 4).padding(.vertical, 6)
+            .padding(.horizontal, 6).padding(.vertical, 8)
         }
-        .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 14))
-        .transition(.opacity.combined(with: .move(edge: .top)))
+        // An OPAQUE, elevated tray: a solid dark fill (not the old ~6% white wash) so the handle
+        // and date behind it are fully hidden while the picker is open, a hairline border and
+        // shadow so it reads as a panel floating above the photo, and a fixed width cap so it
+        // doesn't stretch edge-to-edge on wide screens.
+        .frame(maxWidth: 320, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(FlimTheme.bgElevated)
+                .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
+                .shadow(color: .black.opacity(0.5), radius: 16, y: 6)
+        )
+        .transition(.opacity.combined(with: .move(edge: .bottom)))
     }
 
     /// Recently-used first, then the rest of the palette (deduped).
@@ -163,10 +173,10 @@ struct ReactionBar: View {
     }
 
     /// React, and make sure the emoji is visible in the row (appended if new) WITHOUT reshuffling
-    /// existing chips — the reacted-to-front re-sort only happens on the next appear.
+    /// existing chips, the reacted-to-front re-sort only happens on the next appear.
     private func react(_ emoji: String, fromPicker: Bool = false) {
         if !displayOrder.contains(emoji) { displayOrder.append(emoji) }
-        // Bounce feedback — pop the chip, then settle.
+        // Bounce feedback, pop the chip, then settle.
         pressed = emoji
         Haptics.tap()
         Task { try? await Task.sleep(for: .milliseconds(140)); pressed = nil }

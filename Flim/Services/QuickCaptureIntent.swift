@@ -1,7 +1,7 @@
 import AppIntents
 import Foundation
 
-/// "Take a FLIM Photo" — opens the app straight to the camera. Powers Siri, the Action Button,
+/// "Take a FLIM Photo", opens the app straight to the camera. Powers Siri, the Action Button,
 /// Spotlight, and the Shortcuts app. (Camera is the default tab, so even a cold launch lands right;
 /// a warm launch gets nudged over by the notification.)
 struct OpenCameraIntent: AppIntent {

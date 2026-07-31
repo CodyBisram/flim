@@ -73,23 +73,21 @@ struct RollMembersView: View {
                             ForEach(members) { member in
                                 // roll_members stays fully readable server-side (so the "x/cap"
                                 // count is accurate), but a blocked co-member's identity is
-                                // omitted from the roster — no name, no avatar initial.
+                                // omitted from the roster, no name, no avatar initial.
                                 let isBlocked = feed.isBlocked(member.id)
                                 HStack(spacing: 12) {
-                                    Circle()
-                                        .fill(Color(white: 0.15))
-                                        .frame(width: 36, height: 36)
-                                        .overlay {
-                                            if isBlocked {
-                                                Image(systemName: "hand.raised.slash")
-                                                    .font(.system(size: 13))
-                                                    .foregroundStyle(Color(white: 0.4))
-                                            } else {
-                                                Text(String((member.username ?? "?").prefix(1)).uppercased())
-                                                    .font(.system(size: 14, weight: .medium))
-                                                    .foregroundStyle(Color(white: 0.7))
-                                            }
-                                        }
+                                    if isBlocked {
+                                        // A blocked co-member's identity stays omitted: no name,
+                                        // no avatar, just the blocked glyph.
+                                        Circle()
+                                            .fill(Color(white: 0.15))
+                                            .frame(width: 36, height: 36)
+                                            .overlay(Image(systemName: "hand.raised.slash")
+                                                .font(.system(size: 13))
+                                                .foregroundStyle(Color(white: 0.4)))
+                                    } else {
+                                        AvatarView(path: member.avatarPath, name: member.username, size: 36)
+                                    }
 
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(isBlocked ? "Blocked user" : "@\(member.username ?? "unknown")")
@@ -147,7 +145,7 @@ struct RollMembersView: View {
     }
 
     /// Fetches the roster, surfacing a real error + retry instead of a silently-empty list
-    /// when the fetch fails (network, RLS, etc.) — matches RollsView's load pattern.
+    /// when the fetch fails (network, RLS, etc.), matches RollsView's load pattern.
     private func load() async {
         isLoading = true
         loadError = nil

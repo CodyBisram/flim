@@ -6,20 +6,20 @@ struct FilmParams: Hashable {
     var tint: CGFloat               // target neutral tint; + greener, - magenta
     var saturation: CGFloat
     var contrast: CGFloat
-    var blackLift: CGFloat          // tone-curve floor — fades the blacks (0 = true black)
-    var highlightRolloff: CGFloat   // tone-curve ceiling — softens highlights (1 = pure white)
+    var blackLift: CGFloat          // tone-curve floor, fades the blacks (0 = true black)
+    var highlightRolloff: CGFloat   // tone-curve ceiling, softens highlights (1 = pure white)
     var vignetteIntensity: CGFloat
     var vignetteRadius: CGFloat
-    var grain: CGFloat              // 0...~0.12 — opacity of the baked grain layer
+    var grain: CGFloat              // 0...~0.12, opacity of the baked grain layer
     var bloom: CGFloat              // halation / glow on highlights
     var monochrome: Bool
     /// Optional `.cube` 3D LUT (bundle resource name, no extension). When set and the file loads,
-    /// it replaces the parametric color grade (saturation/contrast/temperature/tone-curve) — grain,
+    /// it replaces the parametric color grade (saturation/contrast/temperature/tone-curve), grain,
     /// bloom, and vignette still apply on top. Drop a `.cube` file into the app and set this to use it.
     var lut: String? = nil
 }
 
-/// A selectable film look. While FLIM is invite-only, every pack ships free — there is
+/// A selectable film look. While FLIM is invite-only, every pack ships free, there is
 /// no paywall and no StoreKit gating. (Monetization was intentionally removed; re-add a
 /// gating field here if packs ever go premium again.)
 struct FilmStock: Identifiable, Hashable {
@@ -30,7 +30,7 @@ struct FilmStock: Identifiable, Hashable {
 
     // MARK: - Swatch
 
-    /// A two-stop gradient that previews the look on a film chip — derived from the
+    /// A two-stop gradient that previews the look on a film chip, derived from the
     /// recipe (warmth, saturation, monochrome) so it stays honest if params are tweaked.
     var swatch: [Color] {
         if params.monochrome {
@@ -60,7 +60,7 @@ struct FilmStock: Identifiable, Hashable {
             // Lapse-matched tone, so heavy bloom/vignette would re-haze what the data fixed.
             vignetteIntensity: 0.75, vignetteRadius: 1.7,
             grain: 0.06, bloom: 0.18, monochrome: false,
-            // Color grade fitted from real (FLIM-neutral, Lapse) same-scene pairs — see
+            // Color grade fitted from real (FLIM-neutral, Lapse) same-scene pairs, see
             // docs/LUTS.md + scripts/fit_lut.py. Pairs with scene-adaptive exposure in
             // InstantFilmProcessor (dark scenes get lifted BEFORE this LUT, like Lapse does).
             lut: "flim"

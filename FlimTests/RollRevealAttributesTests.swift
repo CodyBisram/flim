@@ -1,7 +1,7 @@
 import XCTest
 @testable import Flim
 
-/// `RollRevealAttributes.shotLabel` — the Live Activity widget's shot-count line.
+/// `RollRevealAttributes.shotLabel`, the Live Activity widget's shot-count line.
 final class RollRevealAttributesTests: XCTestCase {
 
     func testZeroShotsReadsDevelopsSoonNotZeroShotsWaiting() {

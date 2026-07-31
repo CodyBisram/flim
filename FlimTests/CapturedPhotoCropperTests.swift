@@ -13,7 +13,7 @@ final class CapturedPhotoCropperTests: XCTestCase {
 
     private let epsilon: CGFloat = 0.01
 
-    /// Captured proportionally WIDER than the target — the diagnosed real-world case:
+    /// Captured proportionally WIDER than the target, the diagnosed real-world case:
     /// a roughly-square/landscape-ish captured frame against a much narrower preview must
     /// crop WIDTH and keep the full height, centered.
     func testCapturedWiderThanTargetCropsWidth() {
@@ -29,7 +29,7 @@ final class CapturedPhotoCropperTests: XCTestCase {
         XCTAssertLessThan(rect.width, captured.width, "width axis must actually be the one cropped")
     }
 
-    /// Captured proportionally NARROWER/TALLER than the target — crops height, keeps full
+    /// Captured proportionally NARROWER/TALLER than the target, crops height, keeps full
     /// width, centered. Not the shape of the real camera bug, but the function must handle
     /// it symmetrically for completeness.
     func testCapturedNarrowerThanTargetCropsHeight() {
@@ -44,7 +44,7 @@ final class CapturedPhotoCropperTests: XCTestCase {
         XCTAssertLessThan(rect.height, captured.height, "height axis must actually be the one cropped")
     }
 
-    /// Aspect ratios already match (within epsilon) — a no-op crop, full rect returned
+    /// Aspect ratios already match (within epsilon), a no-op crop, full rect returned
     /// unchanged, so `croppedJPEGData` skips re-encoding entirely.
     func testCapturedEqualToTargetIsNoOp() {
         let captured = CGSize(width: 390, height: 844)
@@ -75,7 +75,7 @@ final class CapturedPhotoCropperTests: XCTestCase {
     // MARK: - croppedJPEGData end-to-end (synthetic image, no camera needed)
 
     /// Builds a synthetic JPEG of an exact pixel size, upright ("up") orientation, standing
-    /// in for a decoded capture — the orientation-normalization / re-encode path itself is
+    /// in for a decoded capture, the orientation-normalization / re-encode path itself is
     /// exercised here (decode → crop → bake to "up" → re-encode), not just the rect math.
     private func syntheticJPEG(size: CGSize) -> Data {
         let format = UIGraphicsImageRendererFormat()
@@ -115,7 +115,7 @@ final class CapturedPhotoCropperTests: XCTestCase {
     // MARK: - Orientation (the upside-down regression this fix guards against)
 
     /// Builds a synthetic JPEG with an ASYMMETRIC top/bottom split (top half white, bottom
-    /// half black) so a vertical flip is unambiguously detectable — unlike a size-only check,
+    /// half black) so a vertical flip is unambiguously detectable, unlike a size-only check,
     /// which a vertically-flipped image would still pass.
     private func topBottomSplitJPEG(size: CGSize) -> Data {
         let format = UIGraphicsImageRendererFormat()
@@ -131,7 +131,7 @@ final class CapturedPhotoCropperTests: XCTestCase {
     }
 
     /// Reads the raw RGBA bytes of a `UIImage` by drawing it into a known, plain top-left,
-    /// Y-down sRGB buffer — independent of `CapturedPhotoCropper`'s own drawing path, so this
+    /// Y-down sRGB buffer, independent of `CapturedPhotoCropper`'s own drawing path, so this
     /// sampling itself can't hide the same bug it's meant to catch.
     private func pixel(_ image: UIImage, x: Int, y: Int) -> (r: UInt8, g: UInt8, b: UInt8) {
         let width = Int(image.size.width)
@@ -159,11 +159,11 @@ final class CapturedPhotoCropperTests: XCTestCase {
     }
 
     /// Proves the fix: an asymmetric top(white)/bottom(black) source, run through a WIDTH
-    /// crop (the real-world shape of the bug — see `testRealWorldPortraitCaptureCropsWidthMeaningfully`),
+    /// crop (the real-world shape of the bug, see `testRealWorldPortraitCaptureCropsWidthMeaningfully`),
     /// must still have white on top and black on bottom in the output. Before the Y-flip fix,
     /// this would fail (output flipped: black on top, white on bottom), while the existing
-    /// `testCroppedJPEGDataProducesExpectedPixelWidth` test — which only checks size and
-    /// orientation tag, never pixel content — would still have passed, so it never caught this
+    /// `testCroppedJPEGDataProducesExpectedPixelWidth` test, which only checks size and
+    /// orientation tag, never pixel content, would still have passed, so it never caught this
     /// regression.
     func testCroppedJPEGDataPreservesVerticalOrientation() throws {
         let capturedSize = CGSize(width: 400, height: 300)   // forces a width-only crop

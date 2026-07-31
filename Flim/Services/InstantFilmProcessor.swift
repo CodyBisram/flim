@@ -5,11 +5,11 @@ import ImageIO
 /// Bakes an instant-camera film look into a captured photo at capture time, so the
 /// developed reveal already carries the aesthetic with no view-time processing.
 enum InstantFilmProcessor {
-    // CIContext is expensive to build — create once and reuse for every capture.
+    // CIContext is expensive to build, create once and reuse for every capture.
     private static let context = CIContext()
 
     /// The one declared color space for the whole exported chain. sRGB is the safe universal
-    /// choice — it's what shared-photo consumers (Messages/web/Android) assume for untagged
+    /// choice, it's what shared-photo consumers (Messages/web/Android) assume for untagged
     /// JPEGs, and it's the space the LUT was fitted in. Every JPEG we write is rendered into
     /// this space AND tagged with its ICC profile so it reads identically outside the app.
     private static let outputColorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
@@ -17,7 +17,7 @@ enum InstantFilmProcessor {
     /// Renders a finished CIImage to sRGB JPEG bytes with the sRGB ICC profile embedded.
     /// `createCGImage(colorSpace:)` pins the output to sRGB (previously it inherited the
     /// context default, and `UIImage.jpegData` then wrote an UNTAGGED JPEG). We encode via
-    /// CGImageDestination with the color space set explicitly so the ICC tag is guaranteed —
+    /// CGImageDestination with the color space set explicitly so the ICC tag is guaranteed, 
     /// UIImage.jpegData does not reliably embed a profile from a bare CGImage.
     private static func srgbJPEG(_ image: CIImage, quality: CGFloat) -> Data? {
         guard let cg = context.createCGImage(
@@ -30,7 +30,7 @@ enum InstantFilmProcessor {
     /// guess the color space. CGImageDestination writes the ICC bytes of the CGImage's OWN
     /// color space; callers pass an sRGB-tagged CGImage (from `createCGImage(colorSpace:)` or
     /// a thumbnail of our own sRGB output), so the file carries the sRGB profile. Falls back to
-    /// `UIImage.jpegData` only if the destination can't be built — a photo must not be lost.
+    /// `UIImage.jpegData` only if the destination can't be built, a photo must not be lost.
     private static func encodeJPEG(_ cg: CGImage, quality: CGFloat) -> Data? {
         // Guarantee the CGImage is sRGB before encoding; if it somehow isn't (e.g. a thumbnail
         // of an untagged fallback original), redraw it into sRGB so the embedded ICC is honest.
@@ -68,12 +68,12 @@ enum InstantFilmProcessor {
     }
 
     /// A small JPEG thumbnail (longest edge ~`maxPixel` × 2, for retina grids) of an already
-    /// processed photo — uploaded alongside the full image so grids/feeds download ~30KB, not MBs.
+    /// processed photo, uploaded alongside the full image so grids/feeds download ~30KB, not MBs.
     static func thumbnail(from data: Data, maxPixel: CGFloat = 400) -> Data? {
         rendition(from: data, longEdge: maxPixel * 2, quality: 0.8)
     }
 
-    /// The feed-card rendition: ~1400px long edge — pixel-identical at feed width on a 3x screen,
+    /// The feed-card rendition: ~1400px long edge, pixel-identical at feed width on a 3x screen,
     /// but ~1/3 the bytes of the stored full image. Cuts the feed's first-view egress ~65%.
     static func feedRendition(from data: Data) -> Data? {
         rendition(from: data, longEdge: 1400, quality: 0.82)
@@ -91,7 +91,7 @@ enum InstantFilmProcessor {
         guard let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
         // Re-encode through CGImageDestination so the downscaled rendition keeps an ICC tag.
         // The source here is our own sRGB-tagged full JPEG, so the thumbnail CGImage is already
-        // sRGB; encodeJPEG embeds the profile (UIImage.jpegData would drop it — the export bug).
+        // sRGB; encodeJPEG embeds the profile (UIImage.jpegData would drop it, the export bug).
         return encodeJPEG(cg, quality: quality)
     }
 
@@ -101,7 +101,7 @@ enum InstantFilmProcessor {
     private static let maxStoredEdge: CGFloat = 2048
 
     /// TestFlight-only calibration mode (Settings → Film Lab): stores the capture with NO grade,
-    /// grain, vignette, or bloom — the neutral half of a (neutral, Lapse) pair for LUT fitting.
+    /// grain, vignette, or bloom, the neutral half of a (neutral, Lapse) pair for LUT fitting.
     static let neutralCaptureKey = "neutralCapture"
 
     private static func processSync(_ data: Data, stock: FilmStock) -> Data? {
@@ -123,15 +123,15 @@ enum InstantFilmProcessor {
             }
             // Render + tag sRGB like every other export. Pixel values are unchanged from the
             // old untagged path (the context already resolved to sRGB); fit_lut.py reads these
-            // via PIL, which assumes sRGB for untagged input — so the fit sees the same numbers,
+            // via PIL, which assumes sRGB for untagged input, so the fit sees the same numbers,
             // now correctly tagged.
             return srgbJPEG(neutral, quality: 0.92)
         }
 
-        // Scene-adaptive exposure, deliberately GENTLE — night must stay night (a city
+        // Scene-adaptive exposure, deliberately GENTLE, night must stay night (a city
         // skyline can't get daylighted), so only truly underexposed scenes get a nudge.
         // Mirrors scripts/fit_lut.py normalize_exposure exactly (the LUT was fitted against
-        // inputs normalized with this formula — keep them in sync).
+        // inputs normalized with this formula, keep them in sync).
         var graded = source
         let meanLum = averageLuminance(of: source, extent: extent)
         let ev = min(0.5, max(0, 0.6 * log2(0.18 / max(meanLum, 0.0001))))
@@ -139,19 +139,18 @@ enum InstantFilmProcessor {
             graded = graded.applyingFilter("CIExposureAdjust", parameters: ["inputEV": ev])
         }
 
-        // Dark scenes also get bloom scaled way down — halation over a night scene spreads
+        // Dark scenes also get bloom scaled way down, halation over a night scene spreads
         // every point light into milky haze and lifts the blacks (the washed-skyline bug).
         var params = stock.params
         if meanLum < 0.22 {
             params.bloom *= max(0.35, meanLum / 0.22)
         }
 
-        // Filter at FULL resolution — this matches the original look. Grain and bloom render
-        // relative to the native pixel size; downscaling *before* filtering (a past egress tweak)
-        // made the grain coarse and the bloom too strong. So bake the look first…
-        var image = filtered(graded, params: params, extent: extent, grain: true)
+        // Color grade + bloom at FULL resolution (bloom's glow reads best against native pixel
+        // detail), WITHOUT grain yet.
+        var image = filtered(graded, params: params, extent: extent)
 
-        // …then downscale the finished image to the storage cap (keeps egress sane, look intact).
+        // Downscale the graded image to the storage cap (keeps egress sane, look intact).
         let longEdge = max(extent.width, extent.height)
         if longEdge > maxStoredEdge {
             image = image.applyingFilter("CILanczosScaleTransform", parameters: [
@@ -159,6 +158,12 @@ enum InstantFilmProcessor {
                 kCIInputAspectRatioKey: 1.0
             ])
         }
+
+        // Grain LAST, at the final stored resolution. Baking it at full 12MP and THEN downscaling
+        // to 2048 averaged ~4 noise pixels into 1, collapsing grain into near-invisible flat
+        // static. Applied here it keeps its density and texture at the size shots are actually
+        // viewed. (Only grain moves post-downscale; color and bloom stay full-res above.)
+        image = grainOverlay(on: image, amount: params.grain)
         // LUT input space: we deliberately do NOT insert a P3→sRGB conversion before the grade.
         // The look was signed off with the source flowing into the CI graph exactly as it does
         // here, and CubeLUT.apply already declares the cube's own working space (sRGB) to
@@ -167,7 +172,7 @@ enum InstantFilmProcessor {
         return srgbJPEG(image, quality: 0.85)
     }
 
-    /// Mean scene luminance (0–1) via CIAreaAverage — drives the adaptive dark-scene exposure.
+    /// Mean scene luminance (0–1) via CIAreaAverage, drives the adaptive dark-scene exposure.
     private static func averageLuminance(of image: CIImage, extent: CGRect) -> CGFloat {
         guard let avg = CIFilter(name: "CIAreaAverage", parameters: [
             kCIInputImageKey: image, kCIInputExtentKey: CIVector(cgRect: extent)])?.outputImage else { return 0.5 }
@@ -179,10 +184,10 @@ enum InstantFilmProcessor {
     }
 
     /// The film look as a pure CIImage → CIImage transform, applied at CAPTURE time only.
-    /// The live viewfinder deliberately shows the RAW, ungraded preview — this is a
+    /// The live viewfinder deliberately shows the RAW, ungraded preview, this is a
     /// disposable/instant-camera app: you don't see the developed result until it develops.
     /// So this is the source of truth for the baked look, not for what the viewfinder shows.
-    static func filtered(_ input: CIImage, params p: FilmParams, extent: CGRect, grain: Bool) -> CIImage {
+    static func filtered(_ input: CIImage, params p: FilmParams, extent: CGRect) -> CIImage {
         var image: CIImage
 
         // Color grade: a .cube LUT if one is set and loads, otherwise the parametric chain.
@@ -202,7 +207,7 @@ enum InstantFilmProcessor {
                 "inputTargetNeutral": CIVector(x: p.temperature, y: p.tint)
             ])
 
-            // 3. Tone curve — lift the blacks and roll off the highlights for that faded film feel.
+            // 3. Tone curve, lift the blacks and roll off the highlights for that faded film feel.
             image = image.applyingFilter("CIToneCurve", parameters: [
                 "inputPoint0": CIVector(x: 0.0, y: p.blackLift),
                 "inputPoint1": CIVector(x: 0.25, y: 0.25 + p.blackLift * 0.4),
@@ -214,9 +219,14 @@ enum InstantFilmProcessor {
 
         // 4. Halation / bloom glow on the highlights. Bloom grows the extent, so crop back.
         if p.bloom > 0 {
+            // Radius scales with the image's own long edge, not a fixed pixel count, so the glow
+            // is the same softness on any sensor resolution, and it survives the later downscale
+            // to 2048 as a soft, wide halation rather than the tight ~3px edge-sharpen a fixed 6px
+            // radius collapsed into. (0.005 ≈ a ~20px radius on a 12MP frame, ~10px once stored.)
+            let bloomRadius = max(6.0, max(extent.width, extent.height) * 0.005)
             image = image
                 .applyingFilter("CIBloom", parameters: [
-                    kCIInputRadiusKey: 6.0,
+                    kCIInputRadiusKey: bloomRadius,
                     kCIInputIntensityKey: p.bloom
                 ])
                 .cropped(to: extent)
@@ -228,22 +238,33 @@ enum InstantFilmProcessor {
             kCIInputRadiusKey: p.vignetteRadius
         ])
 
-        // 6. Fine film grain — desaturated random noise composited at low opacity.
-        if grain, p.grain > 0, let noise = CIFilter(name: "CIRandomGenerator")?.outputImage {
-            let grainLayer = noise
-                .cropped(to: extent)
-                .applyingFilter("CIColorControls", parameters: [
-                    kCIInputSaturationKey: 0,
-                    kCIInputContrastKey: 1
-                ])
-                .applyingFilter("CIColorMatrix", parameters: [
-                    "inputAVector": CIVector(x: 0, y: 0, z: 0, w: p.grain)
-                ])
-            image = grainLayer.applyingFilter("CISourceOverCompositing", parameters: [
-                kCIInputBackgroundImageKey: image
-            ])
-        }
-
+        // Grain is applied separately, after the storage downscale (see processSync +
+        // grainOverlay) so it stays visible at the size shots are actually viewed.
         return image
+    }
+
+    /// Fine film grain, composited at the FINAL stored resolution. The noise is upscaled a touch
+    /// first: Lanczos-interpolating random noise correlates neighbouring samples into soft grain
+    /// clumps, which reads as organic film grain instead of harsh 1px digital static. Desaturated,
+    /// low opacity (`amount`).
+    private static func grainOverlay(on image: CIImage, amount: CGFloat) -> CIImage {
+        let extent = image.extent
+        guard amount > 0, !extent.isInfinite, !extent.isEmpty,
+              let noise = CIFilter(name: "CIRandomGenerator")?.outputImage else { return image }
+        let grainLayer = noise
+            .applyingFilter("CILanczosScaleTransform", parameters: [
+                kCIInputScaleKey: 1.5, kCIInputAspectRatioKey: 1.0
+            ])
+            .cropped(to: extent)
+            .applyingFilter("CIColorControls", parameters: [
+                kCIInputSaturationKey: 0,
+                kCIInputContrastKey: 1
+            ])
+            .applyingFilter("CIColorMatrix", parameters: [
+                "inputAVector": CIVector(x: 0, y: 0, z: 0, w: amount)
+            ])
+        return grainLayer.applyingFilter("CISourceOverCompositing", parameters: [
+            kCIInputBackgroundImageKey: image
+        ])
     }
 }

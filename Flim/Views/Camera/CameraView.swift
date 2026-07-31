@@ -5,7 +5,7 @@ import TipKit
 
 // MARK: - Control hit-region reporting
 //
-// The camera preview (a boxed 3:4 viewfinder, not the full screen — see CameraPreview.swift)
+// The camera preview (a boxed 3:4 viewfinder, not the full screen, see CameraPreview.swift)
 // owns a UIKit tap gesture for tap-to-focus. Buttons floating on top of it (roll pill, flash,
 // flip, timer, zoom pills, shutter) must always win a tap over that background gesture. Each
 // control reports its on-screen frame here; `CameraView` collects them and hands the list to
@@ -41,17 +41,17 @@ struct CameraView: View {
     @State private var camera = CameraViewModel()
     @State private var selectedRoll: Roll? = nil
     @State private var showRollPicker = false
-    // Restore the persisted roll selection once per launch — the tab re-fires onAppear every
+    // Restore the persisted roll selection once per launch, the tab re-fires onAppear every
     // time you switch back to Camera, and we don't want that to clobber a live in-session pick.
     @State private var didRestoreSelectedRoll = false
     // Onboarding must request camera permission itself, in its own deliberate sequence
     // (see OnboardingView.finishOnboarding()). CameraView sits underneath the onboarding
     // fullScreenCover as tab 0, and SwiftUI still fires onAppear for content mounted behind
-    // a cover — so camera startup here is gated on onboarding being done. This gate only
+    // a cover, so camera startup here is gated on onboarding being done. This gate only
     // decides WHEN startCameraFlow() may first run, not whether it may run again: the tab
     // re-fires onAppear on every revisit, and startCameraFlow()'s own calls (camera.start(),
     // refreshUnsorted()) are already safe to repeat, exactly as they were
-    // before this file gated anything on hasOnboarded. Do not add a run-once flag here — an
+    // before this file gated anything on hasOnboarded. Do not add a run-once flag here, an
     // earlier version of this fix did, and it silently froze the camera preview after the
     // first tab excursion away from Camera for the rest of the app's life.
     @AppStorage("hasOnboarded") private var hasOnboarded = false
@@ -109,7 +109,7 @@ struct CameraView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
 
                 CameraPreview(session: camera.session, camera: camera, onShutter: { shutter() }, excludedRegions: controlRegions)
-                    // A 3:4 viewfinder at full screen width — the geometric maximum for a 3:4
+                    // A 3:4 viewfinder at full screen width, the geometric maximum for a 3:4
                     // box on a modern iPhone, so what the box shows is still exactly the saved
                     // photo (see CameraPreview.swift and CameraViewModel.previewAspectRatio;
                     // the crop math reads this view's real on-screen bounds, so the box's size
@@ -143,7 +143,7 @@ struct CameraView: View {
                     // so a visible popover can never participate in the box's layout. Both
                     // gesture tips below teach something you do TO THE FRAME ("tap the
                     // frame", "double-tap the frame"), so both anchor to its center rather
-                    // than an edge — pointing the callout at the whole surface being taught,
+                    // than an edge, pointing the callout at the whole surface being taught,
                     // not at whichever button happened to trigger the tip's display rule.
                     // Mutually exclusive at runtime (rules never let both show at once), so
                     // sharing one center anchor point causes no visual collision.
@@ -175,7 +175,7 @@ struct CameraView: View {
             }
             .ignoresSafeArea(edges: .top)
 
-            // VolumeShutterTip teaches the physical volume rocker, not any on-screen control —
+            // VolumeShutterTip teaches the physical volume rocker, not any on-screen control, 
             // there is no button to anchor it to. Its probe sits near the device's actual
             // left edge, at roughly the volume rocker's real height (below the top bar, in
             // the upper third of the screen, matching where the buttons sit on current
@@ -234,7 +234,7 @@ struct CameraView: View {
         }
         .onDisappear { camera.stopRunning() }
         .onChange(of: selectedRoll) { persistSelectedRoll() }
-        // Defaults the camera to a roll you just created, until you deliberately switch away —
+        // Defaults the camera to a roll you just created, until you deliberately switch away, 
         // selectedRoll is view-local state (persisted, but only restored once on appear), so a
         // roll created elsewhere has no other way to reach an already-mounted CameraView.
         .onReceive(NotificationCenter.default.publisher(for: .selectCameraRoll)) { note in
@@ -254,7 +254,7 @@ struct CameraView: View {
 
     private func selectedRollKey(for userId: UUID) -> String { "selectedRollId.\(userId.uuidString)" }
 
-    /// Restores the last-picked roll ONLY if it still exists and hasn't developed yet — a
+    /// Restores the last-picked roll ONLY if it still exists and hasn't developed yet, a
     /// developed roll can't take new shots, so we fall back to Personal in that case.
     private func restoreSelectedRoll(userId: UUID) {
         guard let raw = UserDefaults.standard.string(forKey: selectedRollKey(for: userId)),
@@ -277,7 +277,7 @@ struct CameraView: View {
     }
 
     /// Starts (or restarts) the camera preview/session and kicks off the roll-restore fetch.
-    /// Called every time this view appears, exactly as before onboarding-gating existed —
+    /// Called every time this view appears, exactly as before onboarding-gating existed, 
     /// `camera.start()`/`configure()`/`startRunning()` are already idempotent internally, and
     /// re-running `refreshUnsorted()` on every tab revisit is expected. The
     /// only thing gated is WHEN it may first run: not until onboarding has finished
@@ -308,7 +308,7 @@ struct CameraView: View {
 
     private func capture() {
         Haptics.shutter()
-        // No app shutter sound — AVCapturePhotoOutput plays the system camera-shutter sound itself
+        // No app shutter sound, AVCapturePhotoOutput plays the system camera-shutter sound itself
         // at the actual capture (correctly timed, and after the flash fires). Playing our own too
         // caused a double shutter noise with flash on.
         camera.capturePhoto()
@@ -379,7 +379,7 @@ struct CameraView: View {
     private var topBar: some View {
         glassGroup {
             HStack {
-                // Roll target selector — this pill is the ONLY compressible element in the row
+                // Roll target selector, this pill is the ONLY compressible element in the row
                 // (icons below are fixed 38x38). No .fixedSize here: that would defeat
                 // lineLimit/truncation and let a long roll name push the whole row off-screen
                 // (regressed with a long-named roll on both a 13 and a 17 Pro Max).
@@ -394,7 +394,7 @@ struct CameraView: View {
                         Image(systemName: "chevron.down")
                             .font(.system(size: 10, weight: .semibold))
                     }
-                    // A roll target should be unmistakable at a glance — accent-tinted with a
+                    // A roll target should be unmistakable at a glance, accent-tinted with a
                     // matching ring when a roll is selected; neutral white for Personal.
                     .foregroundStyle(selectedRoll == nil ? .white : FlimTheme.accent)
                     .padding(.horizontal, 14)
@@ -433,7 +433,7 @@ struct CameraView: View {
 
                 Spacer()
 
-                // Upload status — compact spinner only, so it can't crowd the top row.
+                // Upload status, compact spinner only, so it can't crowd the top row.
                 if photos.isUploading {
                     ProgressView().tint(.white).controlSize(.mini)
                         .frame(width: 38, height: 38)
@@ -456,7 +456,7 @@ struct CameraView: View {
                         .background(Color(red: 0.8, green: 0.2, blue: 0.2).opacity(0.85), in: Capsule())
                     }
                 } else if unsortedCount > 0 {
-                    // Shortcut into the sort deck — sits where the "Developing…" pill does.
+                    // Shortcut into the sort deck, sits where the "Developing…" pill does.
                     Button { showSortDeck = true } label: {
                         HStack(spacing: 5) {
                             Image(systemName: "square.stack.3d.up.fill").font(.system(size: 12))
@@ -627,7 +627,7 @@ struct CameraView: View {
                 await refreshUnsorted()   // keep the "to sort" count live as shots come in
                 guard notificationsEnabled else { return }
                 // Personal instants are ready immediately (no reminder). Roll shots share a
-                // reveal — schedule ONE collapsed notification per roll, with your shot count.
+                // reveal, schedule ONE collapsed notification per roll, with your shot count.
                 if let rollId, let rollName {
                     await notifications.requestAuthorizationIfNeeded()
                     let count = photos.photos.filter { $0.rollId == rollId && $0.userId == userId }.count

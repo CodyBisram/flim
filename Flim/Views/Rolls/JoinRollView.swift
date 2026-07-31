@@ -81,6 +81,9 @@ struct JoinRollView: View {
                     .foregroundStyle(Color(red: 1, green: 0.4, blue: 0.4))
             }
 
+            // Say what joining a roll actually means before they commit.
+            RevealPromiseNote()
+
             Spacer()
 
             PrimaryButton(title: "Join Roll", isLoading: isJoining, disabled: code.count < 6) {
@@ -103,6 +106,8 @@ struct JoinRollView: View {
                     .font(.system(size: 26, weight: .thin))
                     .foregroundStyle(.white)
             }
+            RevealPromiseNote()
+                .padding(.horizontal, 4)
             Spacer()
             PrimaryButton(title: "Done") { dismiss() }
         }

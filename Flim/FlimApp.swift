@@ -4,16 +4,16 @@ import TipKit
 @main
 struct FlimApp: App {
     // Registered so APNs token callbacks are handled once Push Notifications is enabled.
-    // Inert until RemotePush.register() is called — see RemotePush.swift.
+    // Inert until RemotePush.register() is called, see RemotePush.swift.
     @UIApplicationDelegateAdaptor(FlimAppDelegate.self) private var appDelegate
 
     init() {
-        // MetricKit crash/hang diagnostics — see CrashReporter for why this exists alongside
+        // MetricKit crash/hang diagnostics, see CrashReporter for why this exists alongside
         // Xcode Organizer's automatic crash reports. Must be added on every launch, not just
         // the first, to receive payloads queued since the previous session.
         CrashReporter.shared.start()
 
-        // In-app tips — shown once, contextually, then remembered as seen.
+        // In-app tips, shown once, contextually, then remembered as seen.
         try? Tips.configure([.displayFrequency(.immediate), .datastoreLocation(.applicationDefault)])
         #if DEBUG
         // Clean screenshots: -noTips suppresses TipKit overlays in the Simulator.

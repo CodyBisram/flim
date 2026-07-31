@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// A tight icon + value pair — e.g. "👥 1", "✓ Developed", "⏳ Reveals in 4h".
+/// A tight icon + value pair, e.g. "👥 1", "✓ Developed", "⏳ Reveals in 4h".
 /// Keeps the icon and its label coupled (Gestalt proximity) and consistent everywhere
 /// metadata rows appear (rolls, darkroom, feed).
 struct MetaChip: View {

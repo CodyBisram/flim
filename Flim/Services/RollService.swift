@@ -8,7 +8,7 @@ final class RollService {
     var rolls: [Roll] = []
     var memberCounts: [UUID: Int] = [:]
     var coverPaths: [UUID: String] = [:]   // roll id → cover thumbnail path (thumb_path preferred)
-    /// Rolls whose reveal (created_at + delay) has passed — closed to new shots.
+    /// Rolls whose reveal (created_at + delay) has passed, closed to new shots.
     var closedRollIds: Set<UUID> { Set(rolls.filter(\.isDeveloped).map(\.id)) }
     var isLoading = false
     var error: String?
@@ -53,7 +53,7 @@ final class RollService {
 
         do {
             // SECURITY DEFINER RPC does the lookup, 10-member cap, and membership
-            // insert atomically — a not-yet-member can't read the rolls table directly.
+            // insert atomically, a not-yet-member can't read the rolls table directly.
             let roll: Roll = try await supabase
                 .rpc("join_roll", params: JoinParams(p_code: inviteCode))
                 .execute()
@@ -136,7 +136,7 @@ final class RollService {
         for row in rows where covers[row.roll_id] == nil {
             covers[row.roll_id] = row.thumb_path ?? row.storage_path   // first per roll = latest
         }
-        // A creator-chosen cover overrides the latest-developed default — resolve it to the same
+        // A creator-chosen cover overrides the latest-developed default, resolve it to the same
         // thumbnail rendition when we have it, else the full path as a last resort.
         for roll in rolls {
             guard let chosen = roll.coverPath else { continue }
@@ -161,6 +161,35 @@ final class RollService {
         memberCounts = counts
     }
 
+    // MARK: - Reveal presence (async "communal" signal)
+
+    /// The group's progress through a roll's reveal: how many members have opened it, and how
+    /// many there are. Async, no realtime, the roll feels shared even though everyone arrives at
+    /// their own time.
+    struct RevealPresence { let position: Int; let total: Int }
+
+    /// Records that the current user opened this roll's reveal (idempotent, a duplicate insert on
+    /// the PK just no-ops), then returns their position and the member total. `position` counts
+    /// the current user, so the very first opener sees position 1.
+    func recordRevealView(rollId: UUID, userId: UUID) async -> RevealPresence? {
+        struct V: Encodable { let roll_id: UUID; let user_id: UUID }
+        // A repeat open throws a 23505 on the PK; harmless, the view's already recorded.
+        _ = try? await supabase.from("roll_reveal_views")
+            .insert(V(roll_id: rollId, user_id: userId)).execute()
+
+        let viewers = (try? await supabase.from("roll_reveal_views")
+            .select("user_id", head: true, count: .exact)
+            .eq("roll_id", value: rollId.uuidString)
+            .execute().count) ?? 0
+        let members = (try? await supabase.from("roll_members")
+            .select("user_id", head: true, count: .exact)
+            .eq("roll_id", value: rollId.uuidString)
+            .execute().count) ?? 0
+        guard viewers > 0 else { return nil }
+        // total can't sensibly be below viewers (e.g. a just-left member); clamp so copy reads right.
+        return RevealPresence(position: viewers, total: max(members, viewers))
+    }
+
     // MARK: - Fetch members of a roll
 
     func fetchMembers(for rollId: UUID) async throws -> [AppUser] {
@@ -174,7 +203,7 @@ final class RollService {
         let userIds = memberRows.map(\.userId.uuidString)
         guard !userIds.isEmpty else { return [] }
 
-        // `profiles` (not `users`) — the safe-columns view every other cross-user read in this
+        // `profiles` (not `users`), the safe-columns view every other cross-user read in this
         // app uses post column-grant hardening (see FeedService). Roll rosters only need
         // username/avatar/etc, never email/invite_code.
         return try await supabase
@@ -225,7 +254,7 @@ final class RollService {
         coverPaths[rollId] = nil
     }
 
-    /// The current user leaves a roll — drops their membership and removes it locally.
+    /// The current user leaves a roll, drops their membership and removes it locally.
     func leaveRoll(rollId: UUID, userId: UUID) async throws {
         try await removeMember(rollId: rollId, userId: userId)
         rolls.removeAll { $0.id == rollId }

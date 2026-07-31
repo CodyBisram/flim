@@ -3,7 +3,7 @@ import XCTest
 
 /// `RollService.mapJoinRollError` translates the `join_roll` RPC's `RAISE EXCEPTION` message
 /// text into a friendly `RollError`. `RollService` is `@MainActor`, so these tests hop to the
-/// main actor too — XCTest's async test methods handle the actor hop fine.
+/// main actor too, XCTest's async test methods handle the actor hop fine.
 @MainActor
 final class RollServiceTests: XCTestCase {
     func testRollFullMessageMapsToFullError() async {

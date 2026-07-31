@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Whether an account is the FLIM owner's — the one account Film Lab (neutral capture, for LUT
+/// Whether an account is the FLIM owner's: the one account Film Lab (neutral capture, for LUT
 /// calibration) stays visible to among TestFlight testers. Matches either the owner's email or
 /// their username, case-insensitively, since a client could plausibly store either with
 /// different casing than what's hardcoded here.
@@ -8,10 +8,10 @@ func isOwnerAccount(email: String?, username: String?) -> Bool {
     email?.lowercased() == "codyysb@gmail.com" || username?.lowercased() == "cody"
 }
 
-/// Settings — grouped into labeled sections. Deliberately NO profile-identity editing here:
+/// Settings, grouped into labeled sections. Deliberately NO profile-identity editing here:
 /// that lives in `EditProfileView`, reached from the public profile itself (UserPageView), so you
 /// edit your profile where you see it instead of inside a settings sheet layered on top of it.
-/// The invite code likewise moved out to `InviteSheet` (surfaced on the profile) — it's the
+/// The invite code likewise moved out to `InviteSheet` (surfaced on the profile). It's the
 /// growth affordance, not a preference, and it doesn't belong buried between two toggles.
 struct ProfileView: View {
     @Environment(AuthService.self) private var auth
@@ -32,7 +32,7 @@ struct ProfileView: View {
     @AppStorage("accentColor") private var accentColor = "amber"
 
     /// Film Lab is already TestFlight-only; restricted further to the owner's account
-    /// specifically — an unexplained "skip the FLIM look" toggle in a beta tester's own Settings
+    /// specifically. An unexplained "skip the FLIM look" toggle in a beta tester's own Settings
     /// would just be confusing, not useful, and it exists purely for LUT calibration pairs.
     private var showsFilmLab: Bool {
         isOwnerAccount(email: auth.currentUser?.email, username: auth.currentUser?.username)
@@ -66,7 +66,7 @@ struct ProfileView: View {
                     linkRow("Terms of Service", icon: "doc.text") { openURL(AppInfo.termsURL) }
                 } header: { sectionHeader("Support & Legal") }
 
-                // Film Lab — TestFlight-only (hidden on the public App Store), owner's account only.
+                // Film Lab: TestFlight-only (hidden on the public App Store), owner's account only.
                 if !AppInfo.isAppStore && showsFilmLab {
                     Section {
                         Toggle(isOn: $neutralCapture) {
@@ -121,6 +121,10 @@ struct ProfileView: View {
                         .padding(.top, 8)
                 }
                 .listRowBackground(FlimTheme.bgElevated)
+                // Sign Out and Delete Account are centered, different-weight actions. The
+                // default inset row separator between them reads as a stray hairline rather than
+                // a divider, so drop it and let the two sit as one danger block.
+                .listRowSeparator(.hidden)
             }
             .listStyle(.insetGrouped)
             .scrollContentBackground(.hidden)
@@ -221,7 +225,7 @@ struct ProfileView: View {
 
 // MARK: - Edit profile (identity)
 
-/// Everything about your public identity, edited in one place — reached from your own profile
+/// Everything about your public identity, edited in one place, reached from your own profile
 /// page (UserPageView) rather than from a settings sheet layered on top of it. Each field opens
 /// its existing, validated editor sheet; avatar and cover use the shared photo picker.
 struct EditProfileView: View {
@@ -370,7 +374,7 @@ struct EditProfileView: View {
 
 // MARK: - Invite friends
 
-/// The personal invite code — the growth affordance, surfaced from the profile rather than
+/// The personal invite code: the growth affordance, surfaced from the profile rather than
 /// buried in settings. Big code, copy, and a share sheet.
 struct InviteSheet: View {
     @Environment(AuthService.self) private var auth

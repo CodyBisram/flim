@@ -30,7 +30,7 @@ struct Roll: Codable, Identifiable, Hashable {
 
     /// When this roll unlocks for everyone.
     var revealAt: Date { createdAt.addingTimeInterval(Self.developDelay) }
-    /// True once the reveal has passed — the roll is closed to new shots.
+    /// True once the reveal has passed, the roll is closed to new shots.
     var isDeveloped: Bool { isDeveloped(now: .now) }
 
     /// Testable seam for `isDeveloped`: whether the roll has developed as of `now`. The reveal

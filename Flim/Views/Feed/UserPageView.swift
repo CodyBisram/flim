@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// A user's public page — profile header + their shared photos grouped into monthly chapters.
+/// A user's public page, profile header + their shared photos grouped into monthly chapters.
 struct UserPageView: View {
     let userId: UUID
     @Environment(AuthService.self) private var auth
@@ -170,7 +170,7 @@ struct UserPageView: View {
                 Button { followList = .following } label: { stat("\(following)", "following") }
             }
 
-            // No follow affordance on a blocked account — the dedicated blocked-state panel
+            // No follow affordance on a blocked account, the dedicated blocked-state panel
             // below (with its own Unblock) replaces it.
             if !isSelf && !isBlocked {
                 Button { toggleFollow() } label: {
@@ -185,7 +185,7 @@ struct UserPageView: View {
                 .padding(.horizontal, 40)
                 .padding(.top, 2)
             } else if isSelf {
-                // Editing your identity happens here, on your profile — not inside the settings
+                // Editing your identity happens here, on your profile, not inside the settings
                 // sheet. Invite friends sits beside it as the accent action, since bringing your
                 // circle in is the point of an invite-only app.
                 HStack(spacing: 10) {
@@ -269,7 +269,7 @@ struct UserPageView: View {
         .padding(.top, 40)
     }
 
-    /// Replaces the post grid + follow affordance for a blocked account — mirrors
+    /// Replaces the post grid + follow affordance for a blocked account, mirrors
     /// BlockedUsersSheet's language and Unblock pill so the undo path stays consistent.
     private var blockedState: some View {
         VStack(spacing: 10) {
@@ -469,11 +469,7 @@ struct PersonRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Circle()
-                .fill(FlimTheme.accent.opacity(0.18))
-                .frame(width: 42, height: 42)
-                .overlay(Text(String(profile.handle.dropFirst().prefix(1)).uppercased())
-                    .font(.system(size: 16, weight: .thin)).foregroundStyle(FlimTheme.accent))
+            AvatarView(path: profile.avatarPath, name: profile.username, size: 42)
             VStack(alignment: .leading, spacing: 2) {
                 Text(profile.handle).font(.system(size: 15, weight: .medium)).foregroundStyle(.white)
                 if let bio = profile.bio, !bio.isEmpty {
@@ -481,7 +477,7 @@ struct PersonRow: View {
                 }
             }
             Spacer()
-            // Never a follow button on your own row — this list can legitimately include you
+            // Never a follow button on your own row, this list can legitimately include you
             // (you can be your own suggestion source's neighbor, or appear in someone else's
             // followers/following), and following yourself isn't a real action.
             if profile.id != auth.currentUser?.id {

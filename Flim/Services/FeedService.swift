@@ -51,10 +51,10 @@ final class FeedService {
         } catch let error as PostgrestError where error.code == "23505" {
             // follows' PK is (follower_id, following_id): a duplicate insert means the row
             // already exists server-side (e.g. a stale followingIds read racing this call), so
-            // the desired end state already holds — leave the optimistic insert in place rather
+            // the desired end state already holds, leave the optimistic insert in place rather
             // than rolling back a follow that's actually there.
         } catch {
-            // The insert never landed (offline, RLS) — without this the button was stuck
+            // The insert never landed (offline, RLS), without this the button was stuck
             // reading "Following" forever even though the server never recorded it.
             followingIds.remove(targetId)
         }
@@ -74,7 +74,7 @@ final class FeedService {
     }
 
     /// Follows tables stay fully readable server-side (so counts aren't affected by blocks), but
-    /// the *rendered lists* filter blocked users out client-side — defense-in-depth over RLS.
+    /// the *rendered lists* filter blocked users out client-side, defense-in-depth over RLS.
     func fetchFollowers(of userId: UUID) async -> [UserProfile] {
         struct Row: Decodable { let follower_id: UUID }
         let rows: [Row] = (try? await supabase.from("follows").select("follower_id")
@@ -117,7 +117,7 @@ final class FeedService {
         return list.first
     }
 
-    /// Look up a profile by username (case-insensitive) — used to resolve a tapped @mention.
+    /// Look up a profile by username (case-insensitive), used to resolve a tapped @mention.
     func fetchProfile(username: String) async -> UserProfile? {
         let list: [UserProfile] = (try? await supabase
             .from("profiles").select().ilike("username", value: username).limit(1)
@@ -136,10 +136,10 @@ final class FeedService {
 
     private let discoverLimit = 50
 
-    /// "Suggested" people to follow, ranked in three tiers. Roll co-membership ranks first —
+    /// "Suggested" people to follow, ranked in three tiers. Roll co-membership ranks first, 
     /// this app's actual social unit is the roll (a small trusted group you shoot into
     /// together), so "you share a roll" is a far stronger "you know this person" signal here
-    /// than a generic follow-graph mutual — then mutual follows (people followed by people you
+    /// than a generic follow-graph mutual, then mutual follows (people followed by people you
     /// follow), then a recency fallback to fill any remaining slots so newer or less-connected
     /// accounts still see a full list. Within a tier, more overlap ranks higher (someone in 3 of
     /// your rolls beats someone in 1; someone followed by 3 of your follows beats 1). Callers
@@ -205,7 +205,7 @@ final class FeedService {
     }
 
     /// Recency fallback for any suggestion slots the roll-mate/mutual tiers didn't fill.
-    /// Over-fetches 3x `limit` since some rows are dropped by `excluding` client-side —
+    /// Over-fetches 3x `limit` since some rows are dropped by `excluding` client-side, 
     /// comfortably covers a typical exclusion set without a second round trip; if a user
     /// somehow excludes more than that, the list just comes back under `limit`, same as the
     /// tolerance this whole function already has (there may not even BE `limit` users yet).
@@ -317,7 +317,7 @@ final class FeedService {
         var authorIds = Array(followingIds)
         authorIds.append(currentUserId)
 
-        // Keep pulling pages until we have visible items — so a page that's entirely blocked
+        // Keep pulling pages until we have visible items, so a page that's entirely blocked
         // users doesn't leave nothing to trigger the next load (which would stall pagination).
         var items: [FeedItem] = []
         while hasMoreFeed, items.isEmpty {
@@ -446,7 +446,7 @@ final class FeedService {
         return created != nil
     }
 
-    /// Fetches the feed without assigning it — used to check for new posts without disturbing
+    /// Fetches the feed without assigning it, used to check for new posts without disturbing
     /// the current scroll position.
     func peekFeed(currentUserId: UUID) async -> [FeedItem] {
         followingIds = await fetchFollowingIds(userId: currentUserId)
@@ -529,7 +529,7 @@ final class FeedService {
         return !rows.isEmpty
     }
 
-    /// Which of these photos have been shared to ANYONE's page — not just the caller's own, so a
+    /// Which of these photos have been shared to ANYONE's page, not just the caller's own, so a
     /// roll's "shared to their page" indicator works regardless of who took the shot or who shared
     /// it. One query for the whole roll rather than a round trip per photo.
     func postedPhotoIds(_ ids: [UUID]) async -> Set<UUID> {
@@ -551,7 +551,7 @@ final class FeedService {
             .execute().value) ?? []
     }
 
-    /// Batch-fetches posts by id — mirrors `fetchProfiles(ids:)`. Used to attach a post (for a
+    /// Batch-fetches posts by id, mirrors `fetchProfiles(ids:)`. Used to attach a post (for a
     /// thumbnail + navigation) to activity rows without a query per row.
     func fetchPosts(ids: [UUID]) async -> [UUID: Post] {
         guard !ids.isEmpty else { return [:] }
@@ -661,7 +661,7 @@ final class FeedService {
     }
 
     /// Signs many paths at once, reusing persisted URLs and minting only the misses in
-    /// parallel — mirrors `PhotoService.signedURLs(for:)`. Used for Activity row thumbnails,
+    /// parallel, mirrors `PhotoService.signedURLs(for:)`. Used for Activity row thumbnails,
     /// where the caller has already deduped to one path per distinct post.
     func signedURLs(for paths: [String]) async -> [String: URL] {
         guard !paths.isEmpty else { return [:] }
@@ -696,7 +696,7 @@ final class FeedService {
 
     /// Recent things others did involving you: reactions + comments on your posts, and new
     /// followers. Merged and sorted newest-first.
-    /// A lightweight unread count for the Activity bell — fetches only `created_at` of activity
+    /// A lightweight unread count for the Activity bell, fetches only `created_at` of activity
     /// since `since` (no bodies, no profile lookups), unlike the full `fetchActivity`.
     func unreadActivityCount(userId: UUID, since: Date) async -> Int {
         struct Row: Decodable { let created_at: Date }
@@ -724,7 +724,7 @@ final class FeedService {
 
     func fetchActivity(userId: UUID) async -> [ActivityItem] {
         // The three source branches (activity on your posts, new followers, tags of you) are
-        // independent round-trip sets — run them concurrently instead of one after another. The
+        // independent round-trip sets, run them concurrently instead of one after another. The
         // block refresh is independent too; it just has to finish before the filter below. The
         // rows are already RLS-clean of blocked-either-way activity, but this view can be reached
         // without the Feed tab ever loading, and re-checking protects anything cached pre-block.
@@ -794,7 +794,7 @@ final class FeedService {
         return fs.map { ActivityRaw(kind: .follow, actorId: $0.follower_id, date: $0.created_at, postId: nil) }
     }
 
-    /// Photos you were tagged in — the actor is the post's author.
+    /// Photos you were tagged in, the actor is the post's author.
     private func activityTagged(userId: UUID) async -> [ActivityRaw] {
         struct T: Decodable {
             let post_id: UUID; let created_at: Date; let posts: P?
@@ -814,7 +814,7 @@ final class FeedService {
     /// DEBUG-only: publishes several of the signed-in user's photos to their page and adds
     /// reactions + a comment, so the whole feed / post-detail / reaction / comment pipeline
     /// can be eyeballed in the simulator on real data. (Cross-user *follows* still require a
-    /// second real account — public.users FKs auth.users, so fake followable users can't be
+    /// second real account, public.users FKs auth.users, so fake followable users can't be
     /// created client-side.)
     var isSeeding = false
 

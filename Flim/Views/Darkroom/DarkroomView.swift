@@ -165,7 +165,7 @@ struct DarkroomView: View {
                 .background(.ultraThinMaterial)
             }
         }
-        // Undo toast — deletes are deferred a few seconds so an accidental tap is recoverable.
+        // Undo toast, deletes are deferred a few seconds so an accidental tap is recoverable.
         .overlay(alignment: .bottom) {
             if showUndoToast {
                 HStack(spacing: 14) {
@@ -195,7 +195,7 @@ struct DarkroomView: View {
             }
         }
         .fullScreenCover(item: $selectedPhoto) { photo in
-            DarkroomPhotoPagerView(
+            PhotoPagerView(
                 photos: vm.developedPhotos,
                 startIndex: vm.developedPhotos.firstIndex(where: { $0.id == photo.id }) ?? 0,
                 signedURLs: vm.signedURLCache,
@@ -274,7 +274,7 @@ struct DarkroomView: View {
 
     /// Optimistically hides the selected photos and shows an Undo toast; the real (irreversible)
     /// server delete only commits after a few seconds if the user doesn't undo. Roll shots are
-    /// shared, so if the selection includes any, confirm first (naming the roll) — personal
+    /// shared, so if the selection includes any, confirm first (naming the roll), personal
     /// photos keep the existing instant-hide-then-undo behavior.
     private func deleteSelected() {
         let toDelete = (vm.developedPhotos + vm.developingPhotos).filter { selectedIDs.contains($0.id) }
@@ -288,7 +288,7 @@ struct DarkroomView: View {
         }
     }
 
-    /// The roll-name message for a batch that includes shared shots — names the roll if every
+    /// The roll-name message for a batch that includes shared shots, names the roll if every
     /// roll shot in the batch belongs to the same one, else falls back to generic wording.
     private func rollDeleteMessage(for batch: [Photo]) -> String {
         rollDeleteConfirmationMessage(forRollNames: batch.map { rollName(for: $0.rollId) })
@@ -319,7 +319,7 @@ struct DarkroomView: View {
         undoTask?.cancel()
         showUndoToast = false
         pendingDelete = []
-        Task { await reload() }   // restore from the server — nothing was actually deleted
+        Task { await reload() }   // restore from the server, nothing was actually deleted
     }
 
     /// Flush a still-pending delete immediately (e.g. leaving the view or starting a new delete).
@@ -428,7 +428,7 @@ struct DarkroomView: View {
     private func checkForReveal() {
         let now = Date().timeIntervalSince1970
         if lastRevealCheck > 0, !showReveal, !isSelecting {
-            // Roll shots only — personal instants get the sort deck as their reveal moment.
+            // Roll shots only, personal instants get the sort deck as their reveal moment.
             let newlyReady = vm.developedPhotos.filter {
                 $0.rollId != nil && $0.developsAt.timeIntervalSince1970 > lastRevealCheck && $0.isReady
             }
@@ -488,7 +488,7 @@ struct DarkroomView: View {
         .transition(.opacity)
         .onAppear {
             if reduceMotion {
-                revealAnim = true   // no spring/scale — appear settled
+                revealAnim = true   // no spring/scale, appear settled
             } else {
                 revealAnim = false
                 withAnimation(.spring(response: 0.55, dampingFraction: 0.68).delay(0.05)) { revealAnim = true }

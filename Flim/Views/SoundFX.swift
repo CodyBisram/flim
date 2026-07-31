@@ -1,7 +1,7 @@
 import AudioToolbox
 import Foundation
 
-/// Tiny sound cues for the moments that earn them — the shutter and the reveal. Uses built-in
+/// Tiny sound cues for the moments that earn them, the shutter and the reveal. Uses built-in
 /// system sounds (no bundled assets) and is gated by a Settings toggle so it's never forced.
 enum SoundFX {
     private static var enabled: Bool {

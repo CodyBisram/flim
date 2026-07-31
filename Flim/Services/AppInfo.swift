@@ -1,7 +1,7 @@
 import Foundation
 import UIKit
 
-/// App metadata + distribution channel — used for the Settings footer, feedback email, and to
+/// App metadata + distribution channel, used for the Settings footer, feedback email, and to
 /// gate TestFlight-only surfaces (like Film Lab's neutral capture) so they can't ship to the
 /// public App Store.
 enum AppInfo {
@@ -16,7 +16,10 @@ enum AppInfo {
     static let privacyPolicyURL = URL(string: "https://flim-app.com/privacy")!
     static let termsURL = URL(string: "https://flim-app.com/terms")!
 
-    /// A roll invite as a real https link — tappable in Messages. It lands on flim-app.com/join
+    /// The public App Store listing.
+    static let appStoreURL = URL(string: "https://apps.apple.com/us/app/flim-disposable-camera/id6786079629")!
+
+    /// A roll invite as a real https link, tappable in Messages. It lands on flim-app.com/join
     /// (which shows the code + an "Open" button), and opens the app directly once the
     /// Associated Domains entitlement is live (universal links).
     static func rollInviteLink(code: String) -> URL {
@@ -29,9 +32,11 @@ enum AppInfo {
     }
 
     /// The share-sheet message for inviting someone to join the app itself with a personal
-    /// invite code.
+    /// invite code. A personal invite goes to someone who doesn't have the app yet, so it links
+    /// straight to the App Store (not the flim-app.com homepage, which used to dead-end on a
+    /// "coming soon" page); the code is entered at sign-up.
     static func personalInviteMessage(code: String) -> String {
-        "Join me on \(appName)! Use invite code \(code) when you sign up: https://flim-app.com"
+        "Join me on \(appName)! Install it here: \(appStoreURL.absoluteString)\nThen enter invite code \(code) when you sign up."
     }
 
     /// e.g. "1.0 (42)"
@@ -41,7 +46,7 @@ enum AppInfo {
         return "\(v) (\(b))"
     }
 
-    /// True ONLY for a public App Store build (production receipt). DEBUG and TestFlight are false —
+    /// True ONLY for a public App Store build (production receipt). DEBUG and TestFlight are false,
     /// so TestFlight-only surfaces stay available while testing but auto-disappear on public release.
     static var isAppStore: Bool {
         #if DEBUG

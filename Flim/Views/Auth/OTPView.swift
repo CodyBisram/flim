@@ -11,7 +11,7 @@ struct OTPView: View {
     @State private var error: String?
 
     // Sanitizes on the same write that delivers autofill/paste/typed input, rather than
-    // correcting after the fact in a separate onChange — a follow-up onChange that rewrites
+    // correcting after the fact in a separate onChange, a follow-up onChange that rewrites
     // the bound value can race with the system's one-time-code autofill transaction and drop
     // the insertion. Strips non-digits (autofill sometimes appends a trailing space) and clamps
     // to `length` instead of rejecting the whole string. Shared by the digit field's binding and
@@ -111,10 +111,10 @@ private struct OTPField: View {
                 }
             }
 
-            // A real, full-size text field laid over the boxes — its text and cursor are invisible,
+            // A real, full-size text field laid over the boxes, its text and cursor are invisible,
             // so the boxes show the code, but because it's a proper full-size field, one-time-code
             // autofill (tap the keyboard suggestion) and paste land reliably. It must actually span
-            // the full width (not just its own intrinsic, near-zero width for an empty string) —
+            // the full width (not just its own intrinsic, near-zero width for an empty string), 
             // a narrow/undersized field is unreliable as an autofill insertion target.
             TextField("", text: sanitizedCode)
                 .keyboardType(.numberPad)

@@ -24,7 +24,7 @@ final class ColorProfileTests: XCTestCase {
         return image.jpegData(compressionQuality: 0.9)!
     }
 
-    /// True iff the JPEG data carries an ICC/color profile marker readable by ImageIO —
+    /// True iff the JPEG data carries an ICC/color profile marker readable by ImageIO, 
     /// the exact thing external viewers look for. Also returns the named profile if present.
     private func profileInfo(_ data: Data) -> (hasProfile: Bool, name: String?) {
         guard let src = CGImageSourceCreateWithData(data as CFData, nil),

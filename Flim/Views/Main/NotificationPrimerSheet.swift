@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// A friendly, in-app "ask" shown before the one-shot iOS permission prompt. Framing the value
-/// first (the reveal + reactions) lifts opt-in rates — and the real system prompt only fires if
+/// first (the reveal + reactions) lifts opt-in rates, and the real system prompt only fires if
 /// they tap "Turn on," so a "Not now" never burns the single OS request.
 struct NotificationPrimerSheet: View {
     @Environment(NotificationService.self) private var notifications

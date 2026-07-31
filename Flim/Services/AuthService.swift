@@ -60,7 +60,7 @@ final class AuthService {
     // send below, and signs in with a password (see `verifyOTP`) rather than a real
     // one-time code. This account holds zero privileged data, exists only so App Review
     // can sign in, and should be deleted from Supabase Auth once the app is approved.
-    // Not a general bypass — unreachable by any other email string.
+    // Not a general bypass, unreachable by any other email string.
     private static let reviewEmail = "review@flim-app.com"
     private static let reviewCode = "482915"
     private static let reviewPassword = reviewCode + "-flim-app-review-only"
@@ -82,7 +82,7 @@ final class AuthService {
     func sendOTP(email: String) async throws {
         let normalized = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         if Self.isReviewEmail(normalized) {
-            // No inbox to send to, and the review account isn't on the invite allowlist —
+            // No inbox to send to, and the review account isn't on the invite allowlist, 
             // skip straight to the code screen.
             pendingEmail = normalized
             return
@@ -107,7 +107,7 @@ final class AuthService {
     /// Redeems an invite code for `email`, allowlisting it server-side. Returns `true` if the
     /// code was valid (also `true`, idempotently, if the email was already allowlisted).
     /// `false` means the code doesn't exist. The caller is responsible for proceeding via
-    /// `sendOTP(email:)` on success — `is_email_allowed` stays the single source of truth there.
+    /// `sendOTP(email:)` on success, `is_email_allowed` stays the single source of truth there.
     func redeemInvite(code: String, email: String) async throws -> Bool {
         let normalizedCode = Self.normalizeInviteCode(code)
         let normalizedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -188,10 +188,10 @@ final class AuthService {
         }
 
         // Table-level SELECT on `users` is revoked (column-scoped grants only), which the
-        // ON CONFLICT machinery behind `.upsert()` needs even with `return=minimal` — it 403s.
+        // ON CONFLICT machinery behind `.upsert()` needs even with `return=minimal`, it 403s.
         // So: insert first (this is the first-ever write for a new account). If the row
         // already exists (id PK conflict, e.g. re-running onboarding), fall back to a plain
-        // update. Both use `return=minimal` and never chain `.select()` — that too needs
+        // update. Both use `return=minimal` and never chain `.select()`, that too needs
         // table-level SELECT and 403s.
         do {
             _ = try await supabase
@@ -218,7 +218,7 @@ final class AuthService {
                 throw AuthError.usernameTaken
             }
         }
-        // Refetch via the RPC — plain selects can't read email/invite_code (column grants).
+        // Refetch via the RPC, plain selects can't read email/invite_code (column grants).
         currentUser = try await fetchUserProfile(id: userId)
     }
 
@@ -289,7 +289,7 @@ final class AuthService {
     /// Duplicates a photo into a fresh object in the user's own folder, returning its path.
     private func copyToOwnedObject(from sourcePath: String, prefix: String, userId: UUID, maxPixel: CGFloat) async -> String? {
         guard let raw = try? await supabase.storage.from("photos").download(path: sourcePath) else { return nil }
-        // Downscale the copy — an avatar/cover never needs the full image (saves storage + egress).
+        // Downscale the copy, an avatar/cover never needs the full image (saves storage + egress).
         let data = InstantFilmProcessor.thumbnail(from: raw, maxPixel: maxPixel) ?? raw
         let dest = "\(userId.uuidString.lowercased())/\(prefix)-\(UUID().uuidString.lowercased()).jpg"
         do {
@@ -315,7 +315,7 @@ final class AuthService {
     /// The `delete_account` RPC removes the auth user, which cascades to the profile, rolls,
     /// memberships, photos, and reports. Then we clear the local session.
     func deleteAccount() async throws {
-        // Remove the user's stored image files first — the RPC cascades the DB rows but
+        // Remove the user's stored image files first, the RPC cascades the DB rows but
         // not the physical objects in Storage, which would otherwise be orphaned.
         if let session = try? await supabase.auth.session {
             struct PathRow: Decodable { let storage_path: String }
@@ -339,7 +339,7 @@ final class AuthService {
 
     // MARK: - Helpers
 
-    /// The signed-in user's FULL row — email + invite_code are hidden from plain table selects
+    /// The signed-in user's FULL row, email + invite_code are hidden from plain table selects
     /// by column-level grants, so the own row comes through the locked-down get_own_profile RPC.
     private func fetchUserProfile(id: UUID) async throws -> AppUser? {
         try? await supabase.rpc("get_own_profile").single().execute().value
@@ -370,7 +370,7 @@ final class AuthService {
     }
 
     /// Trims and uppercases an invite code before sending it to `redeem_invite`. The server
-    /// normalizes too — this is purely for consistent client-side UX (e.g. matching what the
+    /// normalizes too, this is purely for consistent client-side UX (e.g. matching what the
     /// user sees echoed back on a failure).
     static func normalizeInviteCode(_ code: String) -> String {
         code.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()

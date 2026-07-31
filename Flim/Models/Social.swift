@@ -1,6 +1,6 @@
 import Foundation
 
-/// Public profile of any user (from the `profiles` view — no email / invite code).
+/// Public profile of any user (from the `profiles` view, no email / invite code).
 struct UserProfile: Codable, Identifiable, Hashable {
     let id: UUID
     var username: String?
@@ -31,15 +31,15 @@ struct Post: Codable, Identifiable, Hashable {
     let photoId: UUID
     let storagePath: String
     var thumbPath: String?
-    /// Mid-size (~1400px) rendition — what feed cards download; nil on older posts.
+    /// Mid-size (~1400px) rendition, what feed cards download; nil on older posts.
     var feedPath: String?
     let takenAt: Date
     var caption: String?
     let createdAt: Date
 
-    /// Path for grid thumbnails — the thumbnail if present, else the full image.
+    /// Path for grid thumbnails, the thumbnail if present, else the full image.
     var displayPath: String { thumbPath ?? storagePath }
-    /// Path for the feed card — mid-size rendition if present, else the full image.
+    /// Path for the feed card, mid-size rendition if present, else the full image.
     var cardPath: String { feedPath ?? storagePath }
 
     enum CodingKeys: String, CodingKey {
@@ -141,7 +141,7 @@ struct FeedItem: Identifiable, Hashable {
     var id: UUID { post.id }
 }
 
-/// One line in the Activity screen — something someone did involving you.
+/// One line in the Activity screen, something someone did involving you.
 struct ActivityItem: Identifiable {
     enum Kind {
         case like(String)      // emoji
@@ -158,7 +158,7 @@ struct ActivityItem: Identifiable {
     /// alongside the activity rows, so a row can show a thumbnail preview and navigate
     /// straight to the post with no second fetch at tap time.
     var post: Post?
-    /// The post's author — usually you (fetchActivity only looks at reactions/comments on
+    /// The post's author, usually you (fetchActivity only looks at reactions/comments on
     /// YOUR OWN posts), but the actor themselves for `.tagged`. Resolved directly from the
     /// fetched post rather than inferred from `kind`, so it stays correct regardless.
     var postAuthor: UserProfile?

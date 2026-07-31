@@ -5,7 +5,7 @@ import Supabase
 /// Pure auth helpers. (The Sign-in-with-Apple nonce/hash tests live on the OAuth branch
 /// where that code exists.)
 ///
-/// `AuthService` is `@MainActor`, so these tests hop to the main actor too — XCTest's
+/// `AuthService` is `@MainActor`, so these tests hop to the main actor too, XCTest's
 /// async test methods handle the actor hop fine.
 @MainActor
 final class AuthHelpersTests: XCTestCase {
@@ -31,7 +31,7 @@ final class AuthHelpersTests: XCTestCase {
     // MARK: - isPrimaryKeyConflict
 
     /// A real Postgres 23505 naming the `users` primary key constraint (a re-run of onboarding
-    /// hitting an already-inserted row) must route as "row already exists" — the insert-then-
+    /// hitting an already-inserted row) must route as "row already exists", the insert-then-
     /// update fallback in `setUsername`.
     func testPrimaryKeyConflictOnUsersPkeyRoutesAsRowAlreadyExists() async {
         let error = PostgrestError(
@@ -42,7 +42,7 @@ final class AuthHelpersTests: XCTestCase {
         XCTAssertTrue(AuthService.isPrimaryKeyConflict(error))
     }
 
-    /// A 23505 naming the `username` unique constraint must NOT be mistaken for the PK conflict —
+    /// A 23505 naming the `username` unique constraint must NOT be mistaken for the PK conflict, 
     /// it routes to `AuthError.usernameTaken` instead.
     func testUsernameUniqueConstraintConflictRoutesAsUsernameTaken() async {
         let error = PostgrestError(

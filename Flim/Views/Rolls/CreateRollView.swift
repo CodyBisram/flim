@@ -99,6 +99,9 @@ struct CreateRollView: View {
                 .padding(.horizontal, 28)
                 .glassCard(cornerRadius: 16)
 
+            // The hook, said the moment the roll exists: everyone's shots come back together.
+            RevealPromiseNote()
+
             // Copy the code, or share the invite (a tappable https link) straight to friends.
             HStack(spacing: 12) {
                 Button {
@@ -152,5 +155,35 @@ struct CreateRollView: View {
             self.error = error.localizedDescription
         }
         isCreating = false
+    }
+}
+
+/// The roll's core hook, stated in one line: everyone shoots into it, and it all reveals
+/// together after the develop delay. Shown at create + join so the promise lands before someone
+/// is already inside a roll. The delay text is derived from `Roll.developDelay`, so it reads "12
+/// hours" on release and the shortened debug value automatically.
+struct RevealPromiseNote: View {
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "hourglass")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(FlimTheme.accent)
+            Text("Everyone shoots into it. All the shots reveal together, \(Self.delayText) after the roll starts.")
+                .font(.system(size: 13))
+                .foregroundStyle(FlimTheme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.horizontal, 14).padding(.vertical, 11)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(FlimTheme.accentSoft, in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    /// A human phrase for the develop delay, so the copy tracks the constant rather than
+    /// hardcoding "12 hours" (which would read wrong in a DEBUG build's 2-minute delay).
+    private static var delayText: String {
+        let hours = Int(Roll.developDelay / 3600)
+        if hours >= 1 { return hours == 1 ? "1 hour" : "\(hours) hours" }
+        let minutes = max(1, Int(Roll.developDelay / 60))
+        return minutes == 1 ? "1 minute" : "\(minutes) minutes"
     }
 }

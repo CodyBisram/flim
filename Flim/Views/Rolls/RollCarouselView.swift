@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// A full-screen, swipeable walk through a developed roll — every shot in chronological order,
+/// A full-screen, swipeable walk through a developed roll, every shot in chronological order,
 /// with the current photo's date, who took it, and reactions.
 struct RollCarouselView: View {
     let photos: [Photo]                    // developed, sorted oldest → newest
@@ -17,7 +17,7 @@ struct RollCarouselView: View {
     @State private var reactions: [PhotoReaction] = []
     @State private var shareItem: ShareImage?
     @State private var showComments = false
-    /// Which of this roll's photos have already been shared to someone's page — a quiet signal,
+    /// Which of this roll's photos have already been shared to someone's page, a quiet signal,
     /// not tied to who shared it or who took the shot. Loaded once for the whole roll rather than
     /// per-swipe, since `photos` is already the full array.
     @State private var sharedPhotoIds: Set<UUID> = []
@@ -28,7 +28,7 @@ struct RollCarouselView: View {
         ZStack {
             Color.black.ignoresSafeArea()
 
-            // One vertical layout — header / flexible photo / footer — so the photo SHRINKS
+            // One vertical layout, header / flexible photo / footer, so the photo SHRINKS
             // when the reaction bar expands (or the emoji keyboard rises) instead of the bar
             // overlapping the metadata or the image.
             VStack {
@@ -39,7 +39,7 @@ struct RollCarouselView: View {
                 // each closed a real way to corrupt it mid-swipe, and it was STILL reported
                 // showing two half-visible photos after all three. Rather than keep patching
                 // triggers one at a time, this is plain state (`selection`) advanced by a tap
-                // zone or a drag gesture below — the same approach RollRevealView already uses,
+                // zone or a drag gesture below, the same approach RollRevealView already uses,
                 // which has never had this complaint, because there's no paging scroll view
                 // underneath to desync from its content in the first place.
                 ZStack {
@@ -117,7 +117,7 @@ struct RollCarouselView: View {
             VStack(spacing: 10) {
                 VStack(spacing: 2) {
                     // Always renders (opacity 0 when the name doesn't resolve) rather than
-                    // being omitted — omitting it made the footer a different height on
+                    // being omitted, omitting it made the footer a different height on
                     // photos with vs. without a resolvable member name, and since the
                     // TabView above gets "whatever height is left" in this VStack, swiping
                     // between such photos resized the pager mid-transition: exactly the kind
@@ -152,9 +152,8 @@ struct RollCarouselView: View {
     }
 
     /// Whichever axis moved further wins: a mostly-vertical drag past the threshold dismisses
-    /// (either direction, matching FullScreenPhotoView's own drag-to-dismiss), a mostly-
-    /// horizontal drag past a smaller threshold steps — a swipe, on top of the tap zones above,
-    /// not instead of them.
+    /// (either direction), a mostly-horizontal drag past a smaller threshold steps, a swipe, on
+    /// top of the tap zones above, not instead of them.
     private var pageOrDismissGesture: some Gesture {
         DragGesture(minimumDistance: 24)
             .onEnded { value in

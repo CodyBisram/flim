@@ -78,7 +78,7 @@ extension View {
 
 // MARK: - Error state
 
-/// Shown when a load fails and there's nothing cached to display — a friendly message plus
+/// Shown when a load fails and there's nothing cached to display, a friendly message plus
 /// a Retry button, so a flaky network doesn't leave the user staring at a blank screen.
 struct ErrorState: View {
     var title: String = "Couldn't load"

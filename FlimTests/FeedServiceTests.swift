@@ -2,7 +2,7 @@ import XCTest
 @testable import Flim
 
 /// `FeedService`'s pure cache-maintenance helpers. `FeedService` is `@MainActor`, so these tests
-/// hop to the main actor too — XCTest's async test methods handle the actor hop fine.
+/// hop to the main actor too, XCTest's async test methods handle the actor hop fine.
 @MainActor
 final class FeedServiceTests: XCTestCase {
 

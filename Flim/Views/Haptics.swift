@@ -1,6 +1,6 @@
 import UIKit
 
-/// Lightweight haptic helpers for the moments that should feel tactile —
+/// Lightweight haptic helpers for the moments that should feel tactile, 
 /// the shutter press and a photo reveal.
 enum Haptics {
     static func tap() {

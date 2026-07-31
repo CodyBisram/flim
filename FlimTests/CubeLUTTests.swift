@@ -1,7 +1,7 @@
 import XCTest
 @testable import Flim
 
-/// `CubeLUT.parse(contents:)` — the core `.cube` text parser, isolated from the bundle-file
+/// `CubeLUT.parse(contents:)`, the core `.cube` text parser, isolated from the bundle-file
 /// loading wrapper so it can run against in-memory fixtures.
 final class CubeLUTTests: XCTestCase {
     /// A well-formed minimal cube: LUT_3D_SIZE 2 (2×2×2 = 8 entries), each a distinct RGB triple.
@@ -37,7 +37,7 @@ final class CubeLUTTests: XCTestCase {
     }
 
     func testMismatchedValueCountReturnsNil() {
-        // Claims LUT_3D_SIZE 2 (needs 8 triples) but only provides 4 — must not crash, just fail.
+        // Claims LUT_3D_SIZE 2 (needs 8 triples) but only provides 4, must not crash, just fail.
         let truncated = """
         LUT_3D_SIZE 2
         0.0 0.0 0.0
@@ -62,7 +62,7 @@ final class CubeLUTTests: XCTestCase {
         XCTAssertNil(CubeLUT.parse(contents: noSizeLine))
     }
 
-    /// The parser claims case-insensitivity on the size directive (`line.uppercased()`) — this
+    /// The parser claims case-insensitivity on the size directive (`line.uppercased()`), this
     /// pins that down, previously unverified.
     func testLowercaseLUT3DSizeLineIsHandled() throws {
         let lowercase = wellFormedCube.replacingOccurrences(of: "LUT_3D_SIZE", with: "lut_3d_size")

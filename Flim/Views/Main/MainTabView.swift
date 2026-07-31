@@ -2,7 +2,7 @@ import SwiftUI
 
 struct MainTabView: View {
     @State private var selected = 0
-    /// Per-tab counter — bumped when you re-tap the tab you're already on, so that tab scrolls to top.
+    /// Per-tab counter, bumped when you re-tap the tab you're already on, so that tab scrolls to top.
     @State private var scrollSignal: [Int: Int] = [:]
     @AppStorage("hasOnboarded") private var hasOnboarded = false
     @AppStorage("accentColor") private var accentColor = "amber"   // re-tints on change
@@ -67,7 +67,7 @@ struct MainTabView: View {
             }
         }
         // Tint via the OBSERVED accentColor (not the static FlimTheme.accent) so the tab bar
-        // re-tints the moment the user picks a new accent — the static read never invalidates
+        // re-tints the moment the user picks a new accent, the static read never invalidates
         // this view, which left the old color until a relaunch.
         .tint((FlimAccent(rawValue: accentColor) ?? .amber).color)
         .overlay(alignment: .top) {
@@ -86,9 +86,9 @@ struct MainTabView: View {
             OnboardingView()
         }
         #if DEBUG
-        // `-openPhotoFullscreen` — same viewer the darkroom/roll grids use.
+        // `-openPhotoFullscreen`, the same unified viewer the darkroom/roll grids use.
         .fullScreenCover(item: $debugFullscreenPhoto) { photo in
-            FullScreenPhotoView(photo: photo, url: nil)
+            PhotoPagerView(photos: [photo], signedURLs: [:])
         }
         #endif
         .sheet(isPresented: $showNotifPrimer, onDismiss: { didShowNotifPrimer = true }) {
@@ -107,7 +107,7 @@ struct MainTabView: View {
         .onReceive(NotificationCenter.default.publisher(for: .openCamera)) { _ in
             selected = 0
         }
-        // Show the soft primer once — after onboarding, with context — instead of a cold
+        // Show the soft primer once, after onboarding, with context, instead of a cold
         // system prompt on first launch (which gets denied far more often).
         .onChange(of: hasOnboarded) { _, done in if done { maybeShowNotifPrimer() } }
         .onAppear {

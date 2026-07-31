@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Everyone you've blocked, with an Unblock button per row — the undo path for a
+/// Everyone you've blocked, with an Unblock button per row, the undo path for a
 /// mis-tapped "Block". Reached from Settings.
 struct BlockedUsersSheet: View {
     @Environment(AuthService.self) private var auth

@@ -2,7 +2,7 @@ import Foundation
 import Observation
 import Supabase
 
-// Personal "instants" are ready immediately — they land unsorted and are triaged in the sort
+// Personal "instants" are ready immediately, they land unsorted and are triaged in the sort
 // deck (archive → Darkroom, publish → Feed). Shared rolls still develop TOGETHER: every shot
 // in a roll reveals at one time, set by the roll's first contribution + 12h. (Debug shortens
 // the roll delay so the group-reveal loop is testable without waiting half a day.)
@@ -24,7 +24,7 @@ final class PhotoService {
     var hasFailedUploads: Bool { !failedUploads.isEmpty }
 
     // Serial capture pipeline. Chaining each shot onto the previous one keeps bursts from
-    // racing on the shared Core Image context or on `photos`/`failedUploads` — the race
+    // racing on the shared Core Image context or on `photos`/`failedUploads`, the race
     // that was making rapid multi-shot capture fail and prompt a retry.
     private var pipeline: Task<Void, Never>?
 
@@ -50,7 +50,7 @@ final class PhotoService {
 
         let photoId = UUID()
         // Lowercased to match Postgres `auth.uid()::text` (lowercase) in the storage RLS
-        // policy — Swift's uuidString is uppercase, which would 403 the upload otherwise.
+        // policy, Swift's uuidString is uppercase, which would 403 the upload otherwise.
         let path = "\(userId.uuidString.lowercased())/\(photoId.uuidString.lowercased()).jpg"
         let developsAt = await developDate(forRoll: rollId)
 
@@ -59,7 +59,7 @@ final class PhotoService {
                 .from("photos")
                 .upload(path, data: imageData, options: FileOptions(contentType: "image/jpeg"))
 
-            // Upload a small thumbnail alongside it (best-effort — grids load this instead
+            // Upload a small thumbnail alongside it (best-effort, grids load this instead
             // of the multi-MB original). Same folder, so the owner's read policy already covers it.
             var thumbPath: String? = nil
             if let thumbData = InstantFilmProcessor.thumbnail(from: imageData) {
@@ -70,7 +70,7 @@ final class PhotoService {
                 }
             }
 
-            // And a ~1400px feed rendition (best-effort) — what feed cards download instead of
+            // And a ~1400px feed rendition (best-effort), what feed cards download instead of
             // the full image: pixel-identical at card width, ~1/3 the egress.
             var feedPath: String? = nil
             if let feedData = InstantFilmProcessor.feedRendition(from: imageData) {
@@ -131,7 +131,7 @@ final class PhotoService {
 
     /// When a freshly captured shot should develop. Personal shots use the short "instant"
     /// delay. Roll shots develop TOGETHER at a time fixed when the ROLL WAS CREATED
-    /// (created_at + delay), so the deadline is the same for everyone from the very start —
+    /// (created_at + delay), so the deadline is the same for everyone from the very start, 
     /// it does not depend on when the first photo is taken.
     private func developDate(forRoll rollId: UUID?) async -> Date {
         var reveal: Date?
@@ -146,7 +146,7 @@ final class PhotoService {
 
     /// Pure develop-time policy (unit-tested): personal shots develop after `personalDelay`;
     /// roll shots use the roll's fixed `rollReveal` (created_at + delay) so the whole roll
-    /// unlocks together. `rollReveal` is nil only if the roll can't be read — then we fall
+    /// unlocks together. `rollReveal` is nil only if the roll can't be read, then we fall
     /// back to now + delay.
     static func developDate(
         rollId: UUID?, rollReveal: Date?, now: Date,
@@ -171,7 +171,7 @@ final class PhotoService {
 
     // MARK: - Delete
 
-    /// Deletes a photo the current user owns — removes the storage object and the row,
+    /// Deletes a photo the current user owns, removes the storage object and the row,
     /// then drops it from the in-memory list. Best-effort on storage (the row is the
     /// source of truth the grid reads from).
     func deletePhoto(_ photo: Photo) async {
@@ -188,7 +188,7 @@ final class PhotoService {
         }
     }
 
-    /// Deletes several photos in one round trip (one storage call + one DB call) — far faster
+    /// Deletes several photos in one round trip (one storage call + one DB call), far faster
     /// than looping `deletePhoto` for multi-select.
     func deletePhotos(_ toDelete: [Photo]) async {
         guard !toDelete.isEmpty else { return }
@@ -207,7 +207,7 @@ final class PhotoService {
     /// resets your egress baseline. Only reachable from a gated Settings button (not public).
     func deleteAllMyData(userId: UUID) async {
         let uid = userId.uuidString.lowercased()
-        // Remove all objects in the user's folder (may be paginated — loop until empty).
+        // Remove all objects in the user's folder (may be paginated, loop until empty).
         while true {
             guard let objects = try? await supabase.storage.from("photos")
                 .list(path: uid, options: SearchOptions(limit: 1000)), !objects.isEmpty else { break }
@@ -255,6 +255,20 @@ final class PhotoService {
             .value) ?? []
     }
 
+    /// Reactions for a whole set of photos in one query, grouped by photo id. Used by the roll
+    /// reveal so a deck's reactions load once up front instead of a round trip per shot as each
+    /// develops.
+    func fetchReactions(photoIds: [UUID]) async -> [UUID: [PhotoReaction]] {
+        guard !photoIds.isEmpty else { return [:] }
+        let all: [PhotoReaction] = (try? await supabase
+            .from("photo_reactions")
+            .select()
+            .in("photo_id", values: photoIds.map(\.uuidString))
+            .execute()
+            .value) ?? []
+        return Dictionary(grouping: all, by: \.photoId)
+    }
+
     func addReaction(photoId: UUID, emoji: String, userId: UUID) async {
         struct R: Encodable { let photo_id: UUID; let user_id: UUID; let emoji: String }
         _ = try? await supabase
@@ -275,7 +289,7 @@ final class PhotoService {
 
     // MARK: - Roll photo comments
 
-    /// `blockedIds` is the signed-in user's own block list (owned by FeedService — passed in by the
+    /// `blockedIds` is the signed-in user's own block list (owned by FeedService, passed in by the
     /// caller rather than fetched here). RLS already hides these bidirectionally; this is
     /// defense-in-depth for stale/offline caches.
     func fetchPhotoComments(photoId: UUID, blockedIds: Set<UUID> = []) async -> [PhotoComment] {
@@ -331,7 +345,7 @@ final class PhotoService {
         }
     }
 
-    /// The Darkroom's true total kept-photo count, same filter as `fetchPersonalPhotos` — a
+    /// The Darkroom's true total kept-photo count, same filter as `fetchPersonalPhotos`, a
     /// headless `count: .exact` request (no rows transferred), so the toolbar's "N shots"
     /// label can show the real total without waiting on (or being capped by) pagination.
     func personalPhotoCount(userId: UUID) async -> Int {
@@ -361,7 +375,7 @@ final class PhotoService {
     }
     #endif
 
-    /// All of the user's Darkroom photos (sorted = kept), newest first — for the profile-photo
+    /// All of the user's Darkroom photos (sorted = kept), newest first, for the profile-photo
     /// / cover picker. Returns without touching the shared `photos` feed.
     func fetchDarkroom(userId: UUID) async -> [Photo] {
         (try? await supabase
@@ -389,12 +403,12 @@ final class PhotoService {
             .eq("id", value: photoId.uuidString).execute()
     }
 
-    /// `blockedIds` is the signed-in user's own block list (owned by FeedService — passed in by
+    /// `blockedIds` is the signed-in user's own block list (owned by FeedService, passed in by
     /// the caller). RLS already hides co-members' photos bidirectionally once blocked; this is
     /// defense-in-depth for stale/offline caches.
     func fetchRollPhotos(rollId: UUID, reset: Bool = true, blockedIds: Set<UUID> = []) async throws {
         // Rolls cap at 50 members and are a small, finite set, unlike the personal Darkroom's
-        // unbounded feed — a bigger page means most rolls finish in a single round trip instead
+        // unbounded feed, a bigger page means most rolls finish in a single round trip instead
         // of several, directly cutting how long "Play through the roll" takes to appear (it's
         // gated on RollDetailView eagerly draining every page first).
         try await fetchPage(reset: reset, blockedIds: blockedIds, pageSize: 100) {
@@ -402,7 +416,7 @@ final class PhotoService {
         }
     }
 
-    /// A standalone snapshot of a roll's CURRENT photo rows — same filter as `fetchRollPhotos`,
+    /// A standalone snapshot of a roll's CURRENT photo rows, same filter as `fetchRollPhotos`,
     /// but doesn't touch the shared `photos` list or its pagination state. Used to refresh the
     /// reveal slideshow's deck right before it plays, so a shot deleted after the roll developed
     /// (but before this member watched) is dropped instead of showing as a dead frame.
@@ -420,11 +434,11 @@ final class PhotoService {
     /// starts a fresh feed; otherwise it continues from where the last page left off. Only
     /// the visible pages are ever fetched, and signed URLs are resolved lazily per cell.
     // Every mutation of `photos`/`hasMore`/`loadedCount`/`isLoading` below is wrapped in
-    // `MainActor.run` — this class isn't @MainActor-isolated, and once the network `await`
+    // `MainActor.run`, this class isn't @MainActor-isolated, and once the network `await`
     // suspends, execution resumes on a background executor by default. `photos` is read
     // directly by SwiftUI grids/lists every time this app loads a page, so mutating it off the
     // main thread while a render pass reads it is a real (if narrow-window) data race, not a
-    // hypothetical one — the same class of bug as the `MainActor.run` wraps already present
+    // hypothetical one, the same class of bug as the `MainActor.run` wraps already present
     // elsewhere in this file (captureAndUpload, deletePhoto(s)), just missed here even though
     // this is the single most-invoked mutator in the file (every Darkroom/roll list load).
     private func fetchPage(
@@ -462,7 +476,7 @@ final class PhotoService {
         await MainActor.run {
             photos.append(contentsOf: visible)
             // Advance pagination by the raw page size (not the filtered count) so a
-            // blocked-heavy page doesn't get re-requested — the offset tracks server rows,
+            // blocked-heavy page doesn't get re-requested, the offset tracks server rows,
             // not rendered ones.
             loadedCount += page.count
             if page.count < limit { hasMore = false }
@@ -521,7 +535,7 @@ final class PhotoService {
         guard !readyIds.isEmpty else { return }
 
         // One UPDATE for the whole batch, not one round-trip per photo. This runs on initial
-        // Darkroom load, every pagination page, and the 60-second refresh poll — a batch of, say,
+        // Darkroom load, every pagination page, and the 60-second refresh poll, a batch of, say,
         // 30 shots that just crossed their develop time was firing 30 sequential network writes
         // while the user waited. `deletePhotos` already batches this way with `.in()`.
         _ = try? await supabase
@@ -581,11 +595,11 @@ extension PhotoService {
                 print("[seed] FAILED photo \(i + 1): \(error)")
             }
         }
-        print("[seed] done — userId=\(userId)")
+        print("[seed] done, userId=\(userId)")
     }
 
     /// DEBUG-only: fetches a single photo by id for the `-openPhotoFullscreen` launch-arg
-    /// screenshot flow. RLS on `photos` already gates this to owner/roll-member/shared-to-feed —
+    /// screenshot flow. RLS on `photos` already gates this to owner/roll-member/shared-to-feed, 
     /// returns nil (graceful no-op) if the photo doesn't exist or isn't visible to this account.
     func fetchPhoto(id: UUID) async -> Photo? {
         let rows: [Photo] = (try? await supabase

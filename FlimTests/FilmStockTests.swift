@@ -1,7 +1,7 @@
 import XCTest
 @testable import Flim
 
-/// The film catalog + look lookup. FLIM ships a single, signature look — see
+/// The film catalog + look lookup. FLIM ships a single, signature look, see
 /// `FilmStock.swift`. These tests lock down that shape and the invariants of
 /// `FilmStock.original` that the rest of the app (grading, swatches) depends on.
 final class FilmStockTests: XCTestCase {

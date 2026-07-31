@@ -9,22 +9,22 @@ final class DarkroomViewModel {
     var signedURLCache: [UUID: URL] = [:]
     var isLoading = false
     var error: String?
-    /// The Darkroom's true total kept-photo count — nil until `load()`'s dedicated count query
+    /// The Darkroom's true total kept-photo count, nil until `load()`'s dedicated count query
     /// resolves. Deliberately separate from `developedPhotos.count`, which is capped at
     /// whatever `PhotoService`'s pagination has loaded so far (30/page): a toolbar label reading
     /// that count directly showed "30 shots" for anyone with 31+ kept photos until the grid had
-    /// been scrolled far enough to trigger more pages — the same undercount bug already fixed
+    /// been scrolled far enough to trigger more pages, the same undercount bug already fixed
     /// for roll photo counts, here on the personal feed. Unlike a developed roll (finite, safe
     /// to eager-load in full), the personal Darkroom can grow unbounded, so pagination itself
     /// stays lazy; only the total is fetched eagerly, via a headless count query.
     var totalCount: Int?
 
-    /// Split by `isReady` (time-based), cached and recomputed only when `photos` is assigned —
+    /// Split by `isReady` (time-based), cached and recomputed only when `photos` is assigned, 
     /// not on every access. `DarkroomView.body` reads these ~8 times per evaluation and
     /// re-evaluates on scroll and on the 60s poll; as computed properties they filtered the whole
     /// array every single read. A photo crossing its develop threshold moves buckets on the next
     /// `photos` assignment, which the 60s poll (`markReadyPhotos`) performs precisely when the
-    /// ready set changes — the same 60s cadence the develop-reveal haptic already runs on.
+    /// ready set changes, the same 60s cadence the develop-reveal haptic already runs on.
     private(set) var developingPhotos: [Photo] = []
     private(set) var developedPhotos: [Photo] = []
     /// Developed shots oldest → newest, for the roll carousel and reveal. Cached here (rather
@@ -48,7 +48,7 @@ final class DarkroomViewModel {
 
     func load(photoService: PhotoService, userId: UUID) async {
         await MainActor.run { isLoading = true; error = nil }
-        // Fired alongside the page fetch, not after — a headless count query, so it costs
+        // Fired alongside the page fetch, not after, a headless count query, so it costs
         // nothing extra to run concurrently and resolves before pagination would ever matter.
         async let count = photoService.personalPhotoCount(userId: userId)
         do {
@@ -104,7 +104,7 @@ final class DarkroomViewModel {
     func prefetchURLs(photoService: PhotoService) async {
         let ready = photos.filter { $0.isReady && signedURLCache[$0.id] == nil }
         guard !ready.isEmpty else { return }
-        // Grid shows the thumbnail (displayPath) — tiny download vs the full image.
+        // Grid shows the thumbnail (displayPath), tiny download vs the full image.
         let map = await photoService.signedURLs(for: ready.map(\.displayPath))
         await MainActor.run {
             for photo in ready where map[photo.displayPath] != nil {
@@ -137,7 +137,7 @@ final class DarkroomViewModel {
         await photoService.markDevelopedIfReady()
         let fetched = photoService.photos
         // Only reassign when the developed set actually changed. The 60s poll otherwise
-        // replaced the entire `photos` array every minute even when nothing had developed —
+        // replaced the entire `photos` array every minute even when nothing had developed, 
         // and because the array backs the grid's ForEach, that re-diffed the whole grid (and,
         // now, recomputed the cached splits above) on a timer for no reason. `isReady` is
         // time-based, so comparing ready-id sets is exactly what catches a photo that crossed

@@ -63,7 +63,7 @@ struct PhotoGridCell: View {
                         .font(.system(size: 14, weight: .ultraLight))
                         .foregroundStyle(FlimTheme.accent.opacity(0.8))
 
-                    // TimelineView fires once per second — no external timer needed
+                    // TimelineView fires once per second, no external timer needed
                     TimelineView(.periodic(from: .now, by: 1)) { timeline in
                         Text(countdown(at: timeline.date))
                             .font(.system(size: 11, weight: .medium, design: .monospaced))
@@ -101,7 +101,7 @@ struct PhotoGridCell: View {
 
 // MARK: - Loading skeleton
 
-/// A shimmering placeholder grid shown while the Darkroom loads — feels faster and more
+/// A shimmering placeholder grid shown while the Darkroom loads, feels faster and more
 /// finished than a bare spinner.
 struct LoadingGrid: View {
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 2), count: 3)
@@ -122,7 +122,7 @@ struct LoadingGrid: View {
 
 /// In-memory cache of *downsampled* decoded images, keyed by URL + target size. Full-res
 /// camera photos are many megabytes decoded; caching a screen-sized (or thumbnail-sized)
-/// version keeps memory low so entries aren't evicted — which is what made opening a photo
+/// version keeps memory low so entries aren't evicted, which is what made opening a photo
 /// slow (the full image had to be re-downloaded and re-decoded every time).
 enum ImageCache {
     static let shared: NSCache<NSString, UIImage> = {
@@ -143,7 +143,7 @@ enum DiskImageCache {
         return d
     }()
 
-    /// A stable (across-launch) filename hash — String.hashValue is randomized per process.
+    /// A stable (across-launch) filename hash, String.hashValue is randomized per process.
     private static func file(_ key: String) -> URL {
         var h: UInt64 = 5381
         for b in key.utf8 { h = (h &* 33) &+ UInt64(b) }
@@ -164,7 +164,7 @@ enum DiskImageCache {
         }
     }
 
-    /// Keep the cache bounded — delete the oldest files if it exceeds `maxBytes`. Run at launch.
+    /// Keep the cache bounded, delete the oldest files if it exceeds `maxBytes`. Run at launch.
     static func trim(maxBytes: Int = 200 * 1024 * 1024) {
         Task.detached(priority: .background) {
             let fm = FileManager.default
@@ -190,10 +190,10 @@ struct CachedImage<Content: View, Placeholder: View>: View {
     let url: URL?
     /// Longest-edge target in points; the image is downsampled to this (× screen scale).
     var maxPixel: CGFloat = 1600
-    /// A stable storage path, if known — lets the image load from cache before a URL is resolved
+    /// A stable storage path, if known, lets the image load from cache before a URL is resolved
     /// (instant on cold launch) and survive new signed-URL tokens.
     var cacheKey: String? = nil
-    /// Called once when the load fails (network error, or the object no longer exists — e.g. it
+    /// Called once when the load fails (network error, or the object no longer exists, e.g. it
     /// was deleted after a caller resolved its signed URL). Most call sites just show the built-in
     /// retry tile; a slideshow can use this to skip the frame instead.
     var onFailure: (() -> Void)? = nil
@@ -211,7 +211,7 @@ struct CachedImage<Content: View, Placeholder: View>: View {
             if let uiImage {
                 content(Image(uiImage: uiImage)).opacity(shown ? 1 : 0)
             } else if failed {
-                // Graceful failure instead of shimmering forever — tap to retry.
+                // Graceful failure instead of shimmering forever, tap to retry.
                 Rectangle().fill(Color.white.opacity(0.04))
                     .overlay {
                         Image(systemName: "arrow.clockwise")
@@ -230,7 +230,7 @@ struct CachedImage<Content: View, Placeholder: View>: View {
 
     private func load() async {
         failed = false
-        // Try the caches by stable key first — this can hit before any URL is resolved.
+        // Try the caches by stable key first, this can hit before any URL is resolved.
         if let key = cacheKey {
             let memKey = "\(key)|\(Int(maxPixel))" as NSString
             if let cached = ImageCache.shared.object(forKey: memKey) { uiImage = cached; shown = true; return }
@@ -297,7 +297,7 @@ enum ImageLoader {
     }
 
     /// Decodes `data` directly to a thumbnail no larger than `maxPixel` (× scale) on its longest
-    /// edge — fast and low-memory, without ever fully decoding the original.
+    /// edge, fast and low-memory, without ever fully decoding the original.
     private static func downsample(data: Data, maxPixel: CGFloat, scale: CGFloat) async -> UIImage? {
         await Task.detached(priority: .userInitiated) {
             let srcOptions = [kCGImageSourceShouldCache: false] as CFDictionary
@@ -322,7 +322,7 @@ enum ImageLoader {
 
 struct GrainOverlay: View {
     var body: some View {
-        // A single pre-rendered noise tile, reused everywhere — vs a Canvas that re-drew
+        // A single pre-rendered noise tile, reused everywhere, vs a Canvas that re-drew
         // hundreds of random dots on every render (costly while scrolling a grid).
         Image(uiImage: Self.tile)
             .resizable(resizingMode: .tile)

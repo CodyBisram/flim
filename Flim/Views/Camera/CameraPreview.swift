@@ -67,7 +67,7 @@ struct CameraPreview: UIViewRepresentable {
         override class var layerClass: AnyClass { AVCaptureVideoPreviewLayer.self }
         var previewLayer: AVCaptureVideoPreviewLayer { layer as! AVCaptureVideoPreviewLayer }
 
-        /// Fires with this view's real bounds every layout pass — the mechanism for pushing
+        /// Fires with this view's real bounds every layout pass, the mechanism for pushing
         /// the live preview's aspect ratio up to `CameraViewModel` (see `makeUIView` above).
         var onLayout: ((CGSize) -> Void)?
 

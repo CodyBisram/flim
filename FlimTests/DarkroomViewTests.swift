@@ -14,7 +14,7 @@ final class DarkroomViewTests: XCTestCase {
         XCTAssertEqual(message, "This shot is in a shared roll. Deleting removes it for everyone.")
     }
 
-    /// A batch mixing a shared-roll shot and a personal (non-roll, nil) shot must not crash —
+    /// A batch mixing a shared-roll shot and a personal (non-roll, nil) shot must not crash, 
     /// the personal `nil` is dropped and the single remaining roll name is used.
     func testMixedRollAndPersonalBatchDoesNotCrash() {
         let message = rollDeleteConfirmationMessage(forRollNames: [nil, "Summer Trip"])

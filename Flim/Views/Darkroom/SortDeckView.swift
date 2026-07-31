@@ -28,7 +28,7 @@ struct SortDeckView: View {
             VStack(spacing: 0) {
                 header
                 if cards.isEmpty && loaded {
-                    // Nothing left to sort — return to the previous screen (no "all sorted" wall).
+                    // Nothing left to sort, return to the previous screen (no "all sorted" wall).
                     Color.clear.onAppear { closeDeck() }
                 } else {
                     GeometryReader { geo in
@@ -47,7 +47,7 @@ struct SortDeckView: View {
         }
         .task { await load() }
         .onDisappear {
-            // Safety net if dismissed some other way — commit any still-held action.
+            // Safety net if dismissed some other way, commit any still-held action.
             if let p = lastPhoto, let a = lastAction {
                 lastPhoto = nil; lastAction = nil
                 Task { await commit(p, a) }
@@ -175,7 +175,7 @@ struct SortDeckView: View {
         case .trash:   withAnimation(.easeIn(duration: 0.25)) { drag = CGSize(width: 0, height: 900) }
         }
 
-        // The previous swipe can no longer be undone — commit it now, and hold this one.
+        // The previous swipe can no longer be undone, commit it now, and hold this one.
         if let p = lastPhoto, let a = lastAction {
             lastPhoto = nil; lastAction = nil
             Task { await commit(p, a) }

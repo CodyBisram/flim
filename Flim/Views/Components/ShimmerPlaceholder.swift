@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// A dark placeholder box with a soft highlight sweeping across it — shown where content
+/// A dark placeholder box with a soft highlight sweeping across it, shown where content
 /// (usually a photo) will appear while it loads, so the layout is stable and the wait reads
 /// as intentional rather than broken.
 struct ShimmerPlaceholder: View {

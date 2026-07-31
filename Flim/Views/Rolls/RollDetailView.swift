@@ -30,14 +30,14 @@ struct RollDetailView: View {
     @State private var showReveal = false
     /// Flips true once a developed roll's pagination has been fully drained (see `onAppear`).
     /// Gates the "Play through the roll" button so it appears once, already showing the true
-    /// count — without this, the button popped in after page 1 (30) and its own count label
+    /// count, without this, the button popped in after page 1 (30) and its own count label
     /// visibly ticked upward (30 → 60 → 75) as each further page streamed in behind it.
     @State private var rollFullyPaged = false
 
     private var revealSeenKey: String { "rollRevealSeen.\(roll.id.uuidString)" }
 
     private var isCreator: Bool { auth.currentUser?.id == roll.createdBy }
-    /// Developed shots oldest → newest, for the flip-through carousel — cached on the view model
+    /// Developed shots oldest → newest, for the flip-through carousel, cached on the view model
     /// (recomputed only when the roll's photos change) rather than sorted on every access.
     private var chronologicalDeveloped: [Photo] { vm.chronologicalDeveloped }
     private var isFullyDeveloped: Bool {
@@ -67,10 +67,10 @@ struct RollDetailView: View {
                         .padding(.bottom, 8)
                 }
 
-                // Countdown to the shared reveal — runs from the moment the roll was created,
+                // Countdown to the shared reveal, runs from the moment the roll was created,
                 // so it shows even before anyone has taken a shot.
                 if !roll.isDeveloped {
-                    // nil (not 0) while pagination is still draining — 0 legitimately means "no
+                    // nil (not 0) while pagination is still draining, 0 legitimately means "no
                     // shots yet", a different message from "still counting". See rollFullyPaged.
                     revealBanner(revealAt: roll.revealAt,
                                  shots: rollFullyPaged ? vm.developingPhotos.count : nil,
@@ -201,8 +201,8 @@ struct RollDetailView: View {
                 if let uid = auth.currentUser?.id { await feed.loadBlocked(userId: uid) }
                 await vm.loadRoll(photoService: photoService, rollId: roll.id, blockedIds: feed.blockedIds)
                 // A roll's photo set is small (a friend group's shots), not the endless, ever-
-                // growing personal Darkroom feed — where lazy, scroll-triggered pagination
-                // genuinely protects performance — so it's safe to finish paging eagerly here
+                // growing personal Darkroom feed, where lazy, scroll-triggered pagination
+                // genuinely protects performance, so it's safe to finish paging eagerly here
                 // regardless of develop state. Without this, EVERY roll-count label read
                 // PhotoService's first-30-photo page instead of the true total: the developing
                 // banner's "N shots waiting" (the single most commonly seen roll screen, since a
@@ -220,7 +220,7 @@ struct RollDetailView: View {
                     UserDefaults.standard.set(true, forKey: revealSeenKey)
                     showReveal = true
                 }
-                // Ensure EVERY member gets a develop reminder — even those who didn't shoot.
+                // Ensure EVERY member gets a develop reminder, even those who didn't shoot.
                 // The reveal is fixed at the roll's creation, so this works with zero photos too.
                 if notificationsEnabled, !roll.isDeveloped {
                     let myCount = vm.photos.filter { $0.userId == auth.currentUser?.id }.count
@@ -231,7 +231,7 @@ struct RollDetailView: View {
                     )
                 }
                 // Keeps the countdown Live Activity going for anyone who opens the roll while it's
-                // still developing — not just whoever created it, since sync() starts one fresh if
+                // still developing, not just whoever created it, since sync() starts one fresh if
                 // nothing's running yet. Ends it once developed; there's no push-driven lifecycle,
                 // so this only fires the next time the roll is opened after reveal, not the instant
                 // it happens.
@@ -255,12 +255,17 @@ struct RollDetailView: View {
             }
         }
         .fullScreenCover(item: $selectedPhoto) { photo in
-            RollPhotoPagerView(
+            PhotoPagerView(
                 photos: vm.developedPhotos,
                 startIndex: vm.developedPhotos.firstIndex(where: { $0.id == photo.id }) ?? 0,
                 signedURLs: vm.signedURLCache,
+                showsReactions: true,
+                showsComments: true,
+                showsAttribution: true,
                 memberNames: memberNames,
-                rollName: displayName.isEmpty ? roll.name : displayName,
+                // Every photo here belongs to this roll, so the delete-confirmation name is
+                // always this roll's, regardless of the (all-identical) rollId.
+                rollName: { _ in displayName.isEmpty ? roll.name : displayName },
                 onDelete: { Task { await vm.loadRoll(photoService: photoService, rollId: roll.id, blockedIds: feed.blockedIds) } }
             )
             .navigationTransition(.zoom(sourceID: photo.id, in: photoNS))
@@ -355,7 +360,7 @@ struct RollDetailView: View {
                 PhotoGridCell(photo: photo, signedURL: vm.signedURLCache[photo.id], showsCountdown: false)
                     .matchedTransitionSource(id: photo.id, in: photoNS)
                     .onTapGesture {
-                        // Can't peek before it develops — only open ready shots.
+                        // Can't peek before it develops, only open ready shots.
                         guard photo.isReady else { return }
                         selectedPhoto = photo
                     }

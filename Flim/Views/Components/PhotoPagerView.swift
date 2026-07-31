@@ -1,21 +1,31 @@
 import SwiftUI
 
-/// Swipeable walk through a roll's own photo grid, opened at whichever photo was tapped — same
-/// "only the photo changes as you swipe" architecture as DarkroomPhotoPagerView (header and
-/// footer declared once, outside the TabView, reading whichever photo is current rather than
-/// being recreated on every swipe), but with the full feature set the Darkroom pager
-/// deliberately drops: a roll's grid can show anyone's shots, not just your own, so this keeps
-/// reactions, comments, photographer attribution, and the own-vs-report branch that
-/// FullScreenPhotoView also has. Deliberately NOT used for "Play through the roll"
-/// (RollCarouselView) — that's a separate, sequential story-style experience with its own
-/// reasons for existing; this is specifically for tapping into the grid, which had no swipe
-/// capability at all before this (FullScreenPhotoView on its own shows exactly one photo).
-struct RollPhotoPagerView: View {
-    let photos: [Photo]              // same order as the grid — newest-first
+/// The single swipeable full-screen photo viewer, opened at whichever grid photo was tapped.
+/// One component for both the Darkroom and a roll's grid (it replaced three near-duplicate views:
+/// FullScreenPhotoView, DarkroomPhotoPagerView, RollPhotoPagerView, which had drifted apart and
+/// carried three verbatim copies of the share composer). Feature flags cover the differences:
+/// the Darkroom shows own photos only (no reactions/comments/attribution, just a date), a roll
+/// grid shows everyone's shots (reactions, comments, photographer handle, and the
+/// own-vs-report branch, all derived per photo).
+///
+/// Architecture: header and footer are declared ONCE, outside the TabView, reading whichever
+/// photo is current. Only the image (plus its own zoom state) lives inside each swiped page, so
+/// mid-swipe you never see two competing captions/credits. Report-vs-manage is derived from
+/// ownership, so a Darkroom (all-own) never shows report and a roll shows it per photo, with no
+/// extra flag.
+struct PhotoPagerView: View {
+    let photos: [Photo]                 // same order as the grid
     var startIndex: Int = 0
+    /// Grid's already-resolved thumbnail URLs, keyed by photo id, seeds each page instantly.
     let signedURLs: [UUID: URL]
-    let memberNames: [UUID: String]
-    let rollName: String
+    var showsReactions: Bool = false
+    var showsComments: Bool = false
+    /// Show the photographer's @handle above the date (roll grid); off shows the date alone.
+    var showsAttribution: Bool = false
+    var memberNames: [UUID: String] = [:]
+    /// The roll name for a given photo's rollId (nil for a personal, non-roll shot), used only in
+    /// the delete-confirmation wording. A roll grid passes a closure returning its own name.
+    var rollName: (UUID?) -> String? = { _ in nil }
     var onDelete: () -> Void = {}
 
     @Environment(PhotoService.self) private var photoService
@@ -24,9 +34,9 @@ struct RollPhotoPagerView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var selection: Int
-    /// Upgraded from the seeded thumbnail to full-res lazily, windowed to the photos around
-    /// `selection` — a TabView(.page) can hold more than just the current page "warm" at once,
-    /// so eagerly resolving every photo in a big roll would mean many redundant fetches at once.
+    /// Upgraded from the seeded thumbnail to full-res lazily, windowed to ±1 around `selection`,
+    /// a TabView(.page) keeps neighboring pages warm, so eagerly resolving a whole big roll would
+    /// fire many redundant fetches at once.
     @State private var resolvedURLs: [UUID: URL] = [:]
     @State private var sharedIds: Set<UUID> = []
     @State private var reportedIds: Set<UUID> = []
@@ -45,7 +55,7 @@ struct RollPhotoPagerView: View {
     @State private var showTagSheet = false
     @State private var showComments = false
     @State private var showSharedToast = false
-    /// Captured when an action starts, rather than re-derived from `current` when it finishes —
+    /// Captured when an action starts, rather than re-derived from `current` when it finishes,
     /// defensive against `selection` changing while a sheet/dialog is open.
     @State private var composerPhoto: Photo?
     @State private var commentsPhoto: Photo?
@@ -54,10 +64,15 @@ struct RollPhotoPagerView: View {
     private var current: Photo? { photos.indices.contains(selection) ? photos[selection] : nil }
 
     init(photos: [Photo], startIndex: Int = 0, signedURLs: [UUID: URL],
-         memberNames: [UUID: String], rollName: String, onDelete: @escaping () -> Void = {}) {
+         showsReactions: Bool = false, showsComments: Bool = false, showsAttribution: Bool = false,
+         memberNames: [UUID: String] = [:], rollName: @escaping (UUID?) -> String? = { _ in nil },
+         onDelete: @escaping () -> Void = {}) {
         self.photos = photos
         self.startIndex = startIndex
         self.signedURLs = signedURLs
+        self.showsReactions = showsReactions
+        self.showsComments = showsComments
+        self.showsAttribution = showsAttribution
         self.memberNames = memberNames
         self.rollName = rollName
         self.onDelete = onDelete
@@ -82,13 +97,7 @@ struct RollPhotoPagerView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding(.vertical, 12)
 
-                // Stable, like the header/footer — reads `current`, isn't baked into each
-                // page's own content. It used to live inside photoPage() itself, which meant
-                // every page carried its own copy of its handle+date; mid-swipe, with two pages
-                // partially on screen at once (completely normal for any paging view, TabView
-                // included), that showed as two competing photographer credits at once instead
-                // of one photo edge peeking in next to an otherwise-stable caption.
-                attributionLabel
+                captionLabel
 
                 bottomBar
                     .padding(.horizontal, 20)
@@ -116,6 +125,7 @@ struct RollPhotoPagerView: View {
             }
         }
         .onChange(of: selection) { _, _ in
+            // Fresh photo, fresh zoom state (otherwise the last photo's zoom carries over).
             scale = 1; offset = .zero; lastOffset = .zero
             Task { await resolveAround(selection) }
         }
@@ -132,7 +142,7 @@ struct RollPhotoPagerView: View {
             }
             Button("Cancel", role: .cancel) { pendingDeletePhoto = nil }
         } message: {
-            Text("This shot is in the roll \"\(rollName)\". Deleting removes it for everyone.")
+            Text(deleteMessage(pendingDeletePhoto))
         }
         .confirmationDialog("Report this photo?", isPresented: $showReportConfirm, titleVisibility: .visible) {
             Button("Report", role: .destructive) {
@@ -171,16 +181,16 @@ struct RollPhotoPagerView: View {
                 }
                 .accessibilityLabel("Close")
                 Spacer()
-                // Every photo here is in a roll (this is a roll's own grid), so unlike
-                // FullScreenPhotoView, comments are never conditional.
-                Button { commentsPhoto = photo; showComments = true } label: {
-                    Image(systemName: "bubble.right")
-                        .font(.system(size: 15, weight: .medium))
-                        .foregroundStyle(.white)
-                        .padding(12)
-                        .glassCapsule(interactive: true)
+                if showsComments {
+                    Button { commentsPhoto = photo; showComments = true } label: {
+                        Image(systemName: "bubble.right")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundStyle(.white)
+                            .padding(12)
+                            .glassCapsule(interactive: true)
+                    }
+                    .accessibilityLabel("Comments")
                 }
-                .accessibilityLabel("Comments")
                 Button {
                     if let url = resolvedURLs[photo.id],
                        let image = ImageCache.shared.object(forKey: "\(url.absoluteString)|1600" as NSString) {
@@ -194,6 +204,9 @@ struct RollPhotoPagerView: View {
                         .glassCapsule(interactive: true)
                 }
                 .accessibilityLabel("Share photo")
+                // Own photo, a manage menu (set avatar / delete). Someone else's (only possible on
+                // a roll grid), report. Derived from ownership, so a Darkroom of all-own photos
+                // never shows report without needing a flag.
                 if isOwnPhoto {
                     Menu {
                         Button {
@@ -235,16 +248,18 @@ struct RollPhotoPagerView: View {
     private var bottomBar: some View {
         if let photo = current {
             VStack(spacing: 14) {
-                ReactionBar(
-                    defaults: PostEmoji.all,
-                    counts: Dictionary(grouping: reactions, by: \.emoji).mapValues(\.count),
-                    mine: Set(reactions.filter { $0.userId == auth.currentUser?.id }.map(\.emoji))
-                ) { toggleReaction($0, on: photo) }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                if showsReactions {
+                    ReactionBar(
+                        defaults: PostEmoji.all,
+                        counts: Dictionary(grouping: reactions, by: \.emoji).mapValues(\.count),
+                        mine: Set(reactions.filter { $0.userId == auth.currentUser?.id }.map(\.emoji))
+                    ) { toggleReaction($0, on: photo) }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
 
-                // Any roll photo — you're a member if you can see it at all, so who took the
-                // shot doesn't matter.
-                if !showShareComposer {
+                // Own photos, and any roll photo (you're a member if you can see it), can be
+                // shared to your page.
+                if (photo.userId == auth.currentUser?.id || photo.rollId != nil), !showShareComposer {
                     let shared = sharedIds.contains(photo.id)
                     Button { shareToPage(photo) } label: {
                         Label(shared ? "Shared to your page" : "Share to your page",
@@ -318,9 +333,13 @@ struct RollPhotoPagerView: View {
                     image
                         .resizable()
                         .scaledToFit()
+                        // Zoom state lives at the pager level, but only the CURRENT page reflects
+                        // it, a TabView(.page) keeps neighbors mounted and they'd zoom in lockstep.
                         .scaleEffect(isCurrent(photo) ? scale : 1)
                         .offset(isCurrent(photo) ? offset : .zero)
                         .gesture(pinchToZoom)
+                        // Pan is only active once zoomed in (GestureMask.none otherwise), so at 1x
+                        // it never competes with the TabView's horizontal paging for a touch.
                         .gesture(panWhileZoomed, including: scale > 1 ? .all : .none)
                         .onTapGesture(count: 2) { toggleZoom() }
                 } placeholder: {
@@ -332,12 +351,12 @@ struct RollPhotoPagerView: View {
         }
     }
 
-    /// The current photo's photographer + date, outside the swiping layer entirely — see the
-    /// comment at its call site in `body` for why.
-    private var attributionLabel: some View {
+    /// The current photo's caption, outside the swiping layer: the photographer @handle (roll
+    /// grid, when `showsAttribution`) above the date; the date alone otherwise.
+    private var captionLabel: some View {
         VStack(spacing: 2) {
             if let photo = current {
-                if let name = memberNames[photo.userId] {
+                if showsAttribution, let name = memberNames[photo.userId] {
                     Text("@\(name)")
                         .font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
                 }
@@ -350,6 +369,13 @@ struct RollPhotoPagerView: View {
     }
 
     private func isCurrent(_ photo: Photo) -> Bool { photo.id == current?.id }
+
+    private func deleteMessage(_ photo: Photo?) -> String {
+        if let name = rollName(photo?.rollId) {
+            return "This shot is in the roll \"\(name)\". Deleting removes it for everyone."
+        }
+        return "This can't be undone."
+    }
 
     // MARK: - Actions
 
@@ -377,6 +403,7 @@ struct RollPhotoPagerView: View {
                 try? await Task.sleep(for: .seconds(2))
                 withAnimation { showSharedToast = false }
             } catch {
+                // Didn't reach the server, un-mark so the Share button comes back for a retry.
                 sharedIds.remove(photo.id)
                 Haptics.error()
             }
@@ -409,11 +436,11 @@ struct RollPhotoPagerView: View {
         }
     }
 
-    /// Resolves full-res URLs for the photos around `index` (windowed, not the whole roll), and
-    /// refetches share state + reactions for the current photo specifically — those are live
-    /// social data (unlike URLs, which don't change), so they're re-read on every swipe rather
-    /// than cached once.
+    /// Resolves full-res URLs and share state for the ±1 window around `index`, and (when the roll
+    /// grid shows reactions) refetches the current photo's reactions. URLs don't change so they're
+    /// resolved once; share/reaction state is live so it's re-read as you swipe.
     private func resolveAround(_ index: Int) async {
+        guard let uid = auth.currentUser?.id else { return }
         for i in [index - 1, index, index + 1] where photos.indices.contains(i) {
             let photo = photos[i]
             if resolvedURLs[photo.id] == nil {
@@ -422,30 +449,22 @@ struct RollPhotoPagerView: View {
                     resolvedURLs[photo.id] = full
                 }
             }
+            if !sharedIds.contains(photo.id), await feed.hasPosted(photoId: photo.id, userId: uid) {
+                sharedIds.insert(photo.id)
+            }
         }
-        guard let photo = current else { return }
+        guard showsReactions, let photo = current else { return }
         let id = photo.id
-        async let sharedTask = hasSharedCurrentPhoto(id)
-        async let reactionsTask = photoService.fetchReactions(photoId: id)
-        let (isShared, fetchedReactions) = await (sharedTask, reactionsTask)
-        // Guard against fast swipes: only apply if this is still the visible photo.
-        guard current?.id == id else { return }
-        if isShared { sharedIds.insert(id) }
-        reactions = fetchedReactions
-    }
-
-    private func hasSharedCurrentPhoto(_ photoId: UUID) async -> Bool {
-        guard let uid = auth.currentUser?.id else { return false }
-        return await feed.hasPosted(photoId: photoId, userId: uid)
+        let fetched = await photoService.fetchReactions(photoId: id)
+        guard current?.id == id else { return }   // fast-swipe guard
+        reactions = fetched
     }
 
     // MARK: - Gestures
 
     private var pinchToZoom: some Gesture {
         MagnificationGesture()
-            .onChanged { value in
-                scale = min(3, max(1, value))
-            }
+            .onChanged { value in scale = min(3, max(1, value)) }
             .onEnded { _ in
                 withAnimation(.spring(duration: 0.3)) {
                     if scale < 1.2 { scale = 1; offset = .zero; lastOffset = .zero }
