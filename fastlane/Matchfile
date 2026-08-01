@@ -6,12 +6,9 @@ git_url(ENV["MATCH_GIT_URL"])       # e.g. https://github.com/<owner>/flim-certi
 storage_mode("git")
 
 type("appstore")                    # App Store distribution assets
-# RollActivityWidget will need its own App ID + profile once it's actually embedded (see
-# project.yml's Flim target dependencies for why it isn't yet) — readonly match would fail
-# looking for a profile that doesn't exist in the certs repo if it were listed here already.
-# Add "com.flim.app.RollActivityWidget" back once docs/TESTFLIGHT_SETUP.md's "Adding a new
-# target" section has been run for it.
-app_identifier(["com.flim.app"])
+# Both the app and its embedded Live Activity widget extension — each needs its own
+# App ID + profile, and the archive can't sign without both present in the certs repo.
+app_identifier(["com.flim.app", "com.flim.app.RollActivityWidget"])
 
 # Never let CI try to create/regen certs — it only reads what was seeded locally.
 readonly(ENV["CI"] == "true")
