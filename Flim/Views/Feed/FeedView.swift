@@ -279,12 +279,17 @@ struct FeedView: View {
     }
 
     /// Warm the image cache for the loaded posts so they appear instantly as you scroll.
+    ///
+    /// Signs the whole page in ONE batched call. This used to loop `signedURL(for:)` one post at
+    /// a time, and each miss is a round-trip, so on a cold cache (first launch, or after the
+    /// 7-day URL TTL lapses) a 15-post page spent fifteen sequential round-trips before the
+    /// first image byte was requested. `signedURLs(for:)` mints the misses in parallel.
     private func prefetchFeedImages() async {
-        var items: [(url: URL, cacheKey: String?)] = []
-        for item in feed.feed {
-            if let u = await feed.signedURL(for: item.post.cardPath) {
-                items.append((u, item.post.cardPath))
-            }
+        let paths = feed.feed.map(\.post.cardPath)
+        guard !paths.isEmpty else { return }
+        let urls = await feed.signedURLs(for: Array(Set(paths)))
+        let items = paths.compactMap { path -> (url: URL, cacheKey: String?)? in
+            urls[path].map { ($0, path) }
         }
         ImageLoader.prefetch(items, maxPixel: 1400, scale: displayScale)
     }

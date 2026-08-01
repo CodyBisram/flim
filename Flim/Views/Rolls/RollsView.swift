@@ -94,11 +94,15 @@ struct RollsView: View {
     }
 
     /// Mints signed URLs for each roll's cover path (skips ones already resolved).
+    /// Signs every unresolved cover in one batched call. This used to sign them one at a time in
+    /// a loop, so on a cold cache the list's covers appeared one per round-trip, top to bottom,
+    /// instead of together.
     private func resolveCovers() async {
-        for (rollId, path) in rolls.coverPaths where coverURLs[rollId] == nil {
-            if let url = try? await photos.signedURL(for: path) {
-                coverURLs[rollId] = url
-            }
+        let pending = rolls.coverPaths.filter { coverURLs[$0.key] == nil }
+        guard !pending.isEmpty else { return }
+        let urls = await photos.signedURLs(for: Array(Set(pending.values)))
+        for (rollId, path) in pending {
+            if let url = urls[path] { coverURLs[rollId] = url }
         }
     }
 

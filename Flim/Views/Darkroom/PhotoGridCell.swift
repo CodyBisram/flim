@@ -128,8 +128,21 @@ enum ImageCache {
     static let shared: NSCache<NSString, UIImage> = {
         let cache = NSCache<NSString, UIImage>()
         cache.countLimit = 300
+        // A count limit alone doesn't bound memory: these entries are DECODED bitmaps, and a
+        // feed-card image (1400px long edge) is ~10MB decoded, so 300 of them is gigabytes.
+        // Without a cost limit, NSCache only sheds under system memory pressure, which for a
+        // foreground app tends to arrive as a jetsam kill rather than a graceful eviction.
+        cache.totalCostLimit = 96 * 1024 * 1024
         return cache
     }()
+
+    /// Inserts with the image's decoded byte size as its cost, so `totalCostLimit` is meaningful.
+    /// Always use this instead of `setObject(_:forKey:)`, an entry inserted without a cost counts
+    /// as zero and can never trigger eviction.
+    static func set(_ image: UIImage, forKey key: NSString) {
+        let cost = image.cgImage.map { $0.bytesPerRow * $0.height } ?? 0
+        shared.setObject(image, forKey: key, cost: cost)
+    }
 }
 
 /// A persistent, on-disk cache of downsampled JPEGs. Keyed by the storage PATH (not the signed
@@ -235,7 +248,7 @@ struct CachedImage<Content: View, Placeholder: View>: View {
             let memKey = "\(key)|\(Int(maxPixel))" as NSString
             if let cached = ImageCache.shared.object(forKey: memKey) { uiImage = cached; shown = true; return }
             if let disk = await DiskImageCache.load("\(key)|\(Int(maxPixel))") {
-                ImageCache.shared.setObject(disk, forKey: memKey)
+                ImageCache.set(disk, forKey: memKey)
                 uiImage = disk; shown = true; return
             }
         }
@@ -275,23 +288,43 @@ enum ImageLoader {
 
         let diskKey = cacheKey.map { "\($0)|\(Int(maxPixel))" } ?? "\(url.path)|\(Int(maxPixel))"
         if let disk = await DiskImageCache.load(diskKey) {
-            ImageCache.shared.setObject(disk, forKey: memKey)
+            ImageCache.set(disk, forKey: memKey)
             return disk
         }
 
         guard let (data, _) = try? await URLSession.shared.data(from: url) else { return nil }
         guard let image = await downsample(data: data, maxPixel: maxPixel, scale: scale) else { return nil }
-        ImageCache.shared.setObject(image, forKey: memKey)
+        ImageCache.set(image, forKey: memKey)
         DiskImageCache.save(image, key: diskKey)
         return image
     }
 
     /// Warm the cache for upcoming cells (fire-and-forget, low priority). Pass the same cacheKey
     /// the views use, or the prefetched image won't be found.
-    static func prefetch(_ items: [(url: URL, cacheKey: String?)], maxPixel: CGFloat, scale: CGFloat) {
-        for item in items {
-            Task.detached(priority: .utility) {
-                _ = await fetch(url: item.url, maxPixel: maxPixel, scale: scale, cacheKey: item.cacheKey)
+    ///
+    /// Capped at `maxConcurrent` in flight. This used to spawn one detached task per item with no
+    /// limit, so warming a 75-shot roll queued 75 downloads at once; URLSession allows ~6
+    /// connections per host, so the cells the user is actually looking at ended up waiting behind
+    /// a queue of images they hadn't scrolled to yet, and prefetching made first paint SLOWER.
+    /// The cap leaves headroom under that limit for the visible cells' own requests.
+    static func prefetch(_ items: [(url: URL, cacheKey: String?)], maxPixel: CGFloat, scale: CGFloat,
+                         maxConcurrent: Int = 4) {
+        guard !items.isEmpty else { return }
+        Task.detached(priority: .utility) {
+            await withTaskGroup(of: Void.self) { group in
+                var next = 0
+                let limit = min(maxConcurrent, items.count)
+                while next < limit {
+                    let item = items[next]
+                    group.addTask { _ = await fetch(url: item.url, maxPixel: maxPixel, scale: scale, cacheKey: item.cacheKey) }
+                    next += 1
+                }
+                // Start the next item only as one finishes, keeping `limit` in flight.
+                while await group.next() != nil, next < items.count {
+                    let item = items[next]
+                    group.addTask { _ = await fetch(url: item.url, maxPixel: maxPixel, scale: scale, cacheKey: item.cacheKey) }
+                    next += 1
+                }
             }
         }
     }
