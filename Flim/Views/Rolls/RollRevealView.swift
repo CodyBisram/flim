@@ -16,6 +16,7 @@ struct RollRevealView: View {
     @Environment(AuthService.self) private var auth
     @Environment(RollService.self) private var rollService
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.displayScale) private var displayScale
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     // The deck actually being played, starts empty and is populated by the fresh fetch, so a
@@ -130,6 +131,10 @@ struct RollRevealView: View {
                     .padding(.horizontal, 20).padding(.top, 12)
                     Spacer()
                 }
+            } else {
+                // Still loading the deck, which now includes decoding the first print (see
+                // loadDeck). A bare black screen for that whole wait read as a hang.
+                ProgressView().tint(.white)
             }
         }
         .statusBarHidden()
@@ -285,6 +290,25 @@ struct RollRevealView: View {
         }
         urls = await photoService.signedURLs(for: deck.map(\.storagePath))
         reactionsByPhoto = await photoService.fetchReactions(photoIds: deck.map(\.id))
+
+        // Wait for the FIRST print to be decoded and in cache before starting the show.
+        //
+        // `develop()` runs a 1.4s blur-to-sharp animation and arms a 3.4s auto-advance the instant
+        // it's called. It used to be called here with the image still downloading, so the develop
+        // animation played against a spinner and the opening slide could burn its entire turn
+        // blank and then advance: the first shot of a reveal appearing blurry or not at all.
+        // Whoever opens the reveal is waiting on this screen either way; spending that wait on the
+        // photo means the animation has something to actually develop.
+        if let first = deck.first, let url = urls[first.storagePath] {
+            // No cacheKey, matching what the CachedImage above asks for; a different key here
+            // would warm an entry the view never looks for.
+            _ = await ImageLoader.fetch(url: url, maxPixel: 1600, scale: displayScale)
+        }
+        // The rest warm in the background so later slides are ready before their turn comes up.
+        let upcoming: [(url: URL, cacheKey: String?)] = deck.dropFirst().compactMap { photo in
+            urls[photo.storagePath].map { (url: $0, cacheKey: nil) }
+        }
+        ImageLoader.prefetch(upcoming, maxPixel: 1600, scale: displayScale)
         // The reveal is the app's marquee moment, mark it with the chime (SoundFX gates on the
         // sound-effects setting itself). Previously only the lesser Darkroom sparkle overlay
         // played it; the actual story reveal was silent.
