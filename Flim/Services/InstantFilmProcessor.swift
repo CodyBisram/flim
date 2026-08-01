@@ -150,7 +150,20 @@ enum InstantFilmProcessor {
         // detail), WITHOUT grain yet.
         var image = filtered(graded, params: params, extent: extent)
 
-        // Downscale the graded image to the storage cap (keeps egress sane, look intact).
+        // Grain at FULL resolution too, BEFORE the downscale below. This is the original ordering
+        // and it is deliberate.
+        //
+        // Grain was moved to after the downscale at one point, on the reasoning that averaging
+        // ~4 noise pixels into 1 was collapsing it into near-invisible static. It does average it
+        // down, and that averaging is exactly what makes it read as FILM: sub-pixel noise
+        // resolving into soft, slightly clumped texture. Applied after the downscale instead, each
+        // noise sample survives as a discrete 1-2px speck at final resolution, which reads as
+        // dirt or sensor dust rather than grain, worst of all on flat evenly-lit surfaces where
+        // there is no detail to sit inside. Reducing the amount only made it fainter dirt; the
+        // problem was never the strength, it was the scale.
+        image = grainOverlay(on: image, amount: params.grain)
+
+        // Downscale the finished image to the storage cap (keeps egress sane, look intact).
         let longEdge = max(extent.width, extent.height)
         if longEdge > maxStoredEdge {
             image = image.applyingFilter("CILanczosScaleTransform", parameters: [
@@ -158,12 +171,6 @@ enum InstantFilmProcessor {
                 kCIInputAspectRatioKey: 1.0
             ])
         }
-
-        // Grain LAST, at the final stored resolution. Baking it at full 12MP and THEN downscaling
-        // to 2048 averaged ~4 noise pixels into 1, collapsing grain into near-invisible flat
-        // static. Applied here it keeps its density and texture at the size shots are actually
-        // viewed. (Only grain moves post-downscale; color and bloom stay full-res above.)
-        image = grainOverlay(on: image, amount: params.grain)
         // LUT input space: we deliberately do NOT insert a P3→sRGB conversion before the grade.
         // The look was signed off with the source flowing into the CI graph exactly as it does
         // here, and CubeLUT.apply already declares the cube's own working space (sRGB) to
@@ -243,18 +250,19 @@ enum InstantFilmProcessor {
         return image
     }
 
-    /// Fine film grain, composited at the FINAL stored resolution. The noise is upscaled a touch
-    /// first: Lanczos-interpolating random noise correlates neighbouring samples into soft grain
-    /// clumps, which reads as organic film grain instead of harsh 1px digital static. Desaturated,
-    /// low opacity (`amount`).
+    /// Fine film grain: desaturated random noise composited at low opacity, at FULL sensor
+    /// resolution (see the call site) so the storage downscale averages it into soft film-like
+    /// texture rather than leaving discrete specks.
+    ///
+    /// Deliberately no Lanczos pre-upscale of the noise. That was added to fake grain clumping
+    /// back when this ran at the final stored resolution and single-pixel noise looked like
+    /// static; interpolating random samples is a poor substitute for the real averaging the
+    /// downscale does, and it is unnecessary now that the ordering is restored.
     private static func grainOverlay(on image: CIImage, amount: CGFloat) -> CIImage {
         let extent = image.extent
         guard amount > 0, !extent.isInfinite, !extent.isEmpty,
               let noise = CIFilter(name: "CIRandomGenerator")?.outputImage else { return image }
         let grainLayer = noise
-            .applyingFilter("CILanczosScaleTransform", parameters: [
-                kCIInputScaleKey: 1.5, kCIInputAspectRatioKey: 1.0
-            ])
             .cropped(to: extent)
             .applyingFilter("CIColorControls", parameters: [
                 kCIInputSaturationKey: 0,

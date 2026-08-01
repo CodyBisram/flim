@@ -59,13 +59,14 @@ struct FilmStock: Identifiable, Hashable {
             // Softer physical effects with the LUT: the fitted grade already carries the
             // Lapse-matched tone, so heavy bloom/vignette would re-haze what the data fixed.
             vignetteIntensity: 0.75, vignetteRadius: 1.7,
-            // Grain dialled back from 0.06. `CIRandomGenerator` spans full black to full white and
-            // is composited source-over, so `amount` is the maximum a pixel can be pulled toward
-            // an arbitrary value, and the black end of that range reads as hard dark specks. They
-            // are worst on flat, evenly-lit, low-detail surfaces (a plain wall) where there is no
-            // image texture to hide them, which is exactly where it was reported as too heavy.
-            // Halving the amount halves how dark any individual speck can go.
-            grain: 0.03, bloom: 0.18, monochrome: false,
+            // Back to the original 0.06. Briefly halved to 0.03 while chasing grain that read as
+            // dirt; that was treating the wrong variable. The character comes from WHERE grain is
+            // applied in the pipeline (full resolution, before the storage downscale, see
+            // InstantFilmProcessor.processSync), not from how strong it is, and at half strength
+            // it was simply fainter dirt. With the ordering restored this is the value the look
+            // was originally signed off with, and it now gets averaged down by the downscale the
+            // way it was meant to.
+            grain: 0.06, bloom: 0.18, monochrome: false,
             // Color grade fitted from real (FLIM-neutral, Lapse) same-scene pairs, see
             // docs/LUTS.md + scripts/fit_lut.py. Pairs with scene-adaptive exposure in
             // InstantFilmProcessor (dark scenes get lifted BEFORE this LUT, like Lapse does).
