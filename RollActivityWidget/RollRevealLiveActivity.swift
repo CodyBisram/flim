@@ -45,8 +45,12 @@ struct RollRevealLiveActivity: Widget {
                         .foregroundStyle(accent)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
+                    // Same clipping risk as the compact region, with more room to work in.
                     Text(timerInterval: Date()...context.state.revealAt, countsDown: true)
                         .monospacedDigit()
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
                         .foregroundStyle(accent)
                 }
                 DynamicIslandExpandedRegion(.center) {
@@ -64,10 +68,17 @@ struct RollRevealLiveActivity: Widget {
                 Image(systemName: "hourglass")
                     .foregroundStyle(accent)
             } compactTrailing: {
+                // A 12-hour countdown renders as "11:59:32" — far wider than the 40pt this
+                // used to be pinned to, so it truncated to "11:...". The compact region is
+                // narrow by design, so scale the digits down to fit rather than clip them:
+                // a truncated countdown is worse than a small one.
                 Text(timerInterval: Date()...context.state.revealAt, countsDown: true)
                     .monospacedDigit()
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
                     .foregroundStyle(accent)
-                    .frame(width: 40)
+                    .frame(maxWidth: 66)
             } minimal: {
                 Image(systemName: "hourglass")
                     .foregroundStyle(accent)
