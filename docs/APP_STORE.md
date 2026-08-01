@@ -152,12 +152,21 @@ These are 6.9" device captures (1320x2868 pixels) ready for App Store Connect.
 
 ## Reviewer notes (App Store Connect → App Review Information)
 
+> ⚠️ **The fixed-code reviewer path was removed from `AuthService` after 1.0 was approved.**
+> It shipped only to get 1.0 through review and is no longer in the binary. **Apple reviews
+> every update too**, so before submitting the next version you must re-establish some way for
+> a reviewer to sign in to an invite-only app. Options, roughly in order of preference:
+>
+> 1. Allowlist a reviewer email and hand over a real inbox the reviewer can check (e.g. a
+>    dedicated mailbox with credentials in Review Notes) so the normal OTP flow just works.
+> 2. Re-add a scoped, time-boxed fixed-code branch for one submission, then strip it again.
+> 3. Ship a read-only demo mode that needs no account at all.
+>
+> Whatever you pick, update the sign-in steps below before pasting this into App Store Connect.
+
 > **FLIM is invite-only.** To demo the app:
 >
-> **Sign-in:**
-> 1. Open FLIM, enter the email **review@flim-app.com**, and continue.
-> 2. On the code screen, enter: **482915**
->    (No email is sent for this review account. The code above works directly, so no inbox access is needed.)
+> **Sign-in:** *(fill in per the decision above)*
 >
 > **What to check:**
 > - **Camera:** Tap the shutter to take a photo. Personal shots develop immediately and appear in the Darkroom; shots taken into a shared roll develop together 12 hours after the roll was created.
@@ -170,8 +179,8 @@ These are 6.9" device captures (1320x2868 pixels) ready for App Store Connect.
 > **Account access:** The reviewer account has full functionality. Photos uploaded by the reviewer are visible in the Darkroom and deletable via the ••• menu. The account can be created/deleted between review cycles; accounts older than 30 days with no posts are auto-deleted.
 
 **Setup before submission:**
-1. Create the demo account: Supabase Dashboard → Authentication → Add User → email `review@flim-app.com`, password `482915-flim-app-review-only`, auto-confirm ON. (No allowlist entry needed; the review path skips the invite gate and OTP send.)
-2. Sign in once yourself with the flow above to set the username and confirm it works end-to-end.
+1. Establish a reviewer sign-in path (see the warning above) and write the exact steps into the Sign-in block.
+2. Sign in once yourself with that flow to set the username and confirm it works end-to-end.
 3. Pre-seed test data (optional but recommended): follow a test account from the review account, create a roll, take a few photos so the reviewer sees a non-empty app.
 
-**Technical detail:** the review path is a fixed-code branch in `AuthService` gated on the exact email `review@flim-app.com`: entering that email skips the OTP send, and the code `482915` signs in via a password credential derived in-app. It is unreachable for any other email, holds no privileged data, and the Supabase Auth user should be **deleted after approval** (the code path can stay; it's inert without the user).
+**History:** 1.0 shipped with a fixed-code branch in `AuthService` gated on the exact email `review@flim-app.com` (that email skipped the OTP send; the code `482915` signed in via a password credential derived in-app). It was removed after approval so no hardcoded credential ships in the public binary. The matching Supabase Auth user should be deleted too if it still exists.

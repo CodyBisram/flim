@@ -6,14 +6,20 @@ Do these in order. Copy for the listing itself lives in `APP_STORE.md`; this is 
 
 ## 1. Reviewer demo account (~10 min)
 
+⚠️ 1.0's fixed-code reviewer path (`review@flim-app.com` + `482915`) was **removed from
+`AuthService`** after approval, so it no longer exists in the app. Every update gets reviewed
+too, so re-establish reviewer access before the next submission. See the warning at the top of
+`APP_STORE.md` → "Reviewer notes" for the options.
+
+The account setup itself, once you've picked an approach:
+
 1. Supabase Dashboard → Authentication → Users → **Add user**
-   - Email: `review@flim-app.com` (or any inbox you control)
-   - Password: something strong you'll paste into Review Notes
+   - Email: an inbox you actually control (the reviewer needs to read the OTP)
    - ✅ Auto-confirm
 2. SQL editor:
    ```sql
    INSERT INTO public.allowed_emails (email, note)
-   VALUES ('review@flim-app.com', 'App Review demo')
+   VALUES ('<reviewer email>', 'App Review demo')
    ON CONFLICT (email) DO NOTHING;
    ```
 3. Sign into the app as the reviewer once: pick a username, shoot 1–2 photos,
@@ -45,9 +51,8 @@ user-generated content = YES; moderation in place = YES (report, block,
 auto-removal). Everything else (violence, gambling, etc.) = NO. Expect 12+/17+.
 
 **App Review Information:**
-- Sign-in required: YES → email: `review@flim-app.com`, password: `<the one you set>`
-- Notes: paste the reviewer blurb from `APP_STORE.md` (mentions the
-  "Have a password? Sign in" path and that photos develop in ~60s).
+- Sign-in required: YES → the reviewer credentials from step 1
+- Notes: paste the reviewer blurb from `APP_STORE.md` (mention that photos develop in ~60s).
 - Contact: your name + phone + email.
 
 **Version info:** What's New for 1.0:

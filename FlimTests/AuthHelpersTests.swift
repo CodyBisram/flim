@@ -59,28 +59,4 @@ final class AuthHelpersTests: XCTestCase {
         let error = PostgrestError(detail: nil, code: "42501", message: "permission denied for table users")
         XCTAssertFalse(AuthService.isPrimaryKeyConflict(error))
     }
-
-    // MARK: - App Review demo account predicates
-
-    func testExactReviewEmailMatchesAfterNormalization() async {
-        XCTAssertTrue(AuthService.isReviewEmail("review@flim-app.com"))
-        XCTAssertTrue(AuthService.isReviewEmail("  review@flim-app.com  "))
-    }
-
-    func testCaseVariationOfReviewEmailStillMatches() async {
-        XCTAssertTrue(AuthService.isReviewEmail("Review@Flim-App.com"))
-        XCTAssertTrue(AuthService.isReviewEmail("REVIEW@FLIM-APP.COM"))
-    }
-
-    func testSimilarButDifferentEmailDoesNotMatch() async {
-        XCTAssertFalse(AuthService.isReviewEmail("xreview@flim-app.com"))
-        XCTAssertFalse(AuthService.isReviewEmail("review@flim-app.com.evil.com"))
-        XCTAssertFalse(AuthService.isReviewEmail("reviews@flim-app.com"))
-    }
-
-    func testReviewCodeMatchesExactlyOnly() async {
-        XCTAssertTrue(AuthService.isReviewCode("482915"))
-        XCTAssertFalse(AuthService.isReviewCode("482916"))
-        XCTAssertFalse(AuthService.isReviewCode(""))
-    }
 }
