@@ -97,6 +97,34 @@ final class CameraViewModel: NSObject {
         // the ultra-wide's 1.0 raw factor on devices where the format swap actually happens.
         configurePreviewFormat(for: device)
         configureZoomBaseline(for: device)
+        resumeContinuousFocus(on: device)
+    }
+
+    /// Puts the device back into CONTINUOUS focus + exposure, metering at the centre.
+    ///
+    /// Set explicitly rather than relying on the device default, and re-applied after every
+    /// tap-to-focus (see `subjectAreaDidChange`) and on every lens flip. `focus(atDevicePoint:)`
+    /// uses `.autoFocus`/`.autoExpose`, which are ONE-SHOT modes: the device converges once and
+    /// then holds that focus distance and exposure indefinitely. Nothing used to restore
+    /// continuous afterwards, so a single tap on the viewfinder locked focus for the rest of the
+    /// session, and any later shot framed at a different distance came out soft.
+    private func resumeContinuousFocus(on device: AVCaptureDevice) {
+        guard (try? device.lockForConfiguration()) != nil else { return }
+        if device.isFocusPointOfInterestSupported {
+            device.focusPointOfInterest = CGPoint(x: 0.5, y: 0.5)
+        }
+        if device.isFocusModeSupported(.continuousAutoFocus) {
+            device.focusMode = .continuousAutoFocus
+        }
+        if device.isExposurePointOfInterestSupported {
+            device.exposurePointOfInterest = CGPoint(x: 0.5, y: 0.5)
+        }
+        if device.isExposureModeSupported(.continuousAutoExposure) {
+            device.exposureMode = .continuousAutoExposure
+        }
+        // Only meaningful while a one-shot lock is in effect; turned on by a tap, off here.
+        device.isSubjectAreaChangeMonitoringEnabled = false
+        device.unlockForConfiguration()
     }
 
     /// The `.photo` preset's default format pick optimizes for full-resolution stills, not
@@ -207,6 +235,9 @@ final class CameraViewModel: NSObject {
     /// Switches between the back and front cameras.
     func flipCamera() {
         cameraPosition = isFront ? .back : .front
+        // A pending handback belongs to the lens being swapped out; `addVideoInput` puts the new
+        // one into continuous focus itself.
+        subjectAreaTask?.cancel()
         session.beginConfiguration()
         // Reset to the known-good baseline before re-deriving it for the new lens, 
         // `configurePreviewFormat(for:)` (called from `addVideoInput`) only upgrades to
@@ -224,6 +255,9 @@ final class CameraViewModel: NSObject {
     /// The screen point of the last tap-to-focus, for a brief reticle. `nil` when hidden.
     struct FocusReticle: Equatable { let id = UUID(); let point: CGPoint }
     var focusReticle: FocusReticle?
+
+    /// Live only between a tap-to-focus and the handback to continuous focus that follows it.
+    private var subjectAreaTask: Task<Void, Never>?
 
     private var currentDevice: AVCaptureDevice? {
         session.inputs.compactMap { $0 as? AVCaptureDeviceInput }.first?.device
@@ -252,15 +286,48 @@ final class CameraViewModel: NSObject {
     }
 
     /// Tap-to-focus + set exposure at a device point (0–1), plus a reticle at the view point.
+    ///
+    /// A deliberate, TEMPORARY override of the continuous focus the camera otherwise runs in.
+    /// `.autoFocus`/`.autoExpose` converge once and then hold, so subject-area monitoring is
+    /// switched on here and `subjectAreaDidChange` hands control back to continuous once the
+    /// scene moves on. Without that handback a single tap locked focus for the whole session,
+    /// which is the likeliest explanation for shots that come back soft after someone tapped
+    /// once to focus on something close and then photographed something else.
     func focus(atDevicePoint devicePoint: CGPoint, viewPoint: CGPoint) {
         if let device = currentDevice, (try? device.lockForConfiguration()) != nil {
-            if device.isFocusPointOfInterestSupported { device.focusPointOfInterest = devicePoint; device.focusMode = .autoFocus }
-            if device.isExposurePointOfInterestSupported { device.exposurePointOfInterest = devicePoint; device.exposureMode = .autoExpose }
+            if device.isFocusPointOfInterestSupported, device.isFocusModeSupported(.autoFocus) {
+                device.focusPointOfInterest = devicePoint
+                device.focusMode = .autoFocus
+            }
+            if device.isExposurePointOfInterestSupported, device.isExposureModeSupported(.autoExpose) {
+                device.exposurePointOfInterest = devicePoint
+                device.exposureMode = .autoExpose
+            }
+            device.isSubjectAreaChangeMonitoringEnabled = true
             device.unlockForConfiguration()
         }
         let reticle = FocusReticle(point: viewPoint)
         focusReticle = reticle
         Task { try? await Task.sleep(for: .seconds(1)); if focusReticle?.id == reticle.id { focusReticle = nil } }
+        observeSubjectAreaChange()
+    }
+
+    /// Waits for the one subject-area-change notification that follows a tap-to-focus (the scene
+    /// in front of the lens moved enough that the locked focus/exposure no longer describes it)
+    /// and hands control back to continuous. This is what makes a tap a temporary override rather
+    /// than a lock that outlives the shot it was meant for.
+    private func observeSubjectAreaChange() {
+        subjectAreaTask?.cancel()
+        subjectAreaTask = Task { [weak self] in
+            let notifications = NotificationCenter.default.notifications(
+                named: AVCaptureDevice.subjectAreaDidChangeNotification
+            )
+            for await _ in notifications {
+                guard let self, !Task.isCancelled else { return }
+                if let device = self.currentDevice { self.resumeContinuousFocus(on: device) }
+                return   // one handback per tap; the next tap re-arms this
+            }
+        }
     }
 
     /// `displayZoom` is what the user sees (0.5×, 1×, 2×…). Convert to the device's raw factor.

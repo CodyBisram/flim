@@ -117,6 +117,12 @@ struct UserPageView: View {
         } message: {
             Text("Flag this account for review.")
         }
+        .navigationDestination(for: FeedItem.self) { item in
+            // The tapped thumbnail expands into the detail view instead of cross-fading,
+            // matching how the Darkroom and roll grids already open a photo.
+            PostDetailView(item: item)
+                .navigationTransition(.zoom(sourceID: item.post.id, in: postNS))
+        }
         .task { await load() }
         .sheet(item: $followList) { list in
             FollowListView(userId: userId, mode: list)
@@ -256,13 +262,14 @@ struct UserPageView: View {
             LazyVGrid(columns: columns, spacing: 3) {
                 ForEach(posts) { post in
                     if let author = profile {
-                        NavigationLink {
-                            PostDetailView(item: FeedItem(post: post, author: author))
-                                // The tapped thumbnail expands into the detail view instead of
-                                // cross-fading, matching how the Darkroom and roll grids already
-                                // open a photo.
-                                .navigationTransition(.zoom(sourceID: post.id, in: postNS))
-                        } label: {
+                        // Value-based, NOT NavigationLink { destination } label: {}. The inline
+                        // form builds a destination view per link, and inside a LazyVGrid those
+                        // get recycled along with their cells while KEEPING their @State, so
+                        // tapping one photo could push a detail view left over from a different
+                        // one: the wrong photo, and sometimes one that opened straight into its
+                        // full-screen ImageViewer because the previous visit's `showViewer` was
+                        // still true. One destination factory below fixes both.
+                        NavigationLink(value: FeedItem(post: post, author: author)) {
                             PostThumb(path: post.displayPath)
                         }
                         .buttonStyle(.plain)

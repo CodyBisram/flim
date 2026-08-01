@@ -132,7 +132,16 @@ enum ImageCache {
         // feed-card image (1400px long edge) is ~10MB decoded, so 300 of them is gigabytes.
         // Without a cost limit, NSCache only sheds under system memory pressure, which for a
         // foreground app tends to arrive as a jetsam kill rather than a graceful eviction.
-        cache.totalCostLimit = 96 * 1024 * 1024
+        //
+        // DO NOT TIGHTEN THIS WITHOUT DOING THE ARITHMETIC. It is a backstop against the
+        // pathological case, NOT a working-set target. A Darkroom grid thumbnail is requested at
+        // maxPixel 400, which `downsample` multiplies by the screen scale, so it decodes to
+        // ~1200px: about 4MB each, and a 3-column grid keeps a dozen-plus on screen at once. An
+        // earlier 96MB limit here held barely ~20 of them, so cells were evicted while still
+        // near the viewport and reloaded from disk asynchronously, which showed up as tiles that
+        // stayed blank until you scrolled them off and back. 300MB leaves the normal working set
+        // untouched while still capping the 300-entry worst case at something survivable.
+        cache.totalCostLimit = 300 * 1024 * 1024
         return cache
     }()
 
