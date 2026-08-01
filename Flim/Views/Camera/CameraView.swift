@@ -133,6 +133,10 @@ struct CameraView: View {
                         }
                     }
                     .animation(.easeOut(duration: 0.2), value: camera.focusReticle)
+                    // Where the camera has found a subject. Same coordinate space as the reticle
+                    // above, and attached to the box for the same reason.
+                    .overlay { faceIndicators }
+                    .animation(.easeOut(duration: 0.18), value: camera.faceRects)
                     // Zoom floats on the feed, just above the box's rounded bottom edge.
                     .overlay(alignment: .bottom) {
                         zoomControl
@@ -285,6 +289,33 @@ struct CameraView: View {
     /// on first launch via `CameraViewModel.start()`. `onAppear` covers the "already
     /// onboarded" case; `onChange(of: hasOnboarded)` covers finishing onboarding while this
     /// view is already mounted underneath the cover.
+    /// Hairline rectangles over the faces the camera has found, in the preview view's own
+    /// coordinate space (converted in `CameraPreview`).
+    ///
+    /// Deliberately minimal: accent-tinted, sub-point stroke, no labels, no corner ticks, no
+    /// count. It should read as the camera quietly paying attention rather than as a HUD, so it
+    /// stays legible against both a bright sky and a dark room without ever becoming the subject.
+    /// Suppressed while the tap-to-focus reticle is up, so a tap gives one clear answer instead of
+    /// two overlapping boxes.
+    @ViewBuilder
+    private var faceIndicators: some View {
+        if camera.focusReticle == nil, !camera.faceRects.isEmpty {
+            ZStack {
+                // Indexed rather than keyed on the rect: the values change every detection frame,
+                // and identity-per-value would make each one a fresh insert, so they'd flicker
+                // instead of gliding.
+                ForEach(Array(camera.faceRects.enumerated()), id: \.offset) { _, rect in
+                    RoundedRectangle(cornerRadius: 3, style: .continuous)
+                        .strokeBorder(FlimTheme.accent.opacity(0.75), lineWidth: 0.75)
+                        .frame(width: rect.width, height: rect.height)
+                        .position(x: rect.midX, y: rect.midY)
+                }
+            }
+            .allowsHitTesting(false)
+            .transition(.opacity)
+        }
+    }
+
     private func startCameraFlow() {
         camera.flashMode = flashMode
         // Warm the Taptic Engine while the camera spins up, so the shutter's haptic fires with

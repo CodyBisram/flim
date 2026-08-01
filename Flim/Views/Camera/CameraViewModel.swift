@@ -8,6 +8,14 @@ import os
 final class CameraViewModel: NSObject {
     let session = AVCaptureSession()
     private let output = AVCapturePhotoOutput()
+    /// Face detection, purely to draw the viewfinder's focus rectangles. Nothing about capture or
+    /// the film look reads this.
+    let metadataOutput = AVCaptureMetadataOutput()
+
+    /// Detected faces as rects in the PREVIEW VIEW's own coordinate space, already converted from
+    /// the metadata coordinate space (which is buffer-relative, and mirrored on the front camera)
+    /// by `CameraPreview`, the only place that owns the preview layer needed to do it.
+    var faceRects: [CGRect] = []
 
     var flashOpacity: Double = 0
     var isCapturing = false
@@ -81,6 +89,15 @@ final class CameraViewModel: NSObject {
         // `output.maxPhotoDimensions` against an output that's already attached.
         if session.canAddOutput(output) {
             session.addOutput(output)
+        }
+        if session.canAddOutput(metadataOutput) {
+            session.addOutput(metadataOutput)
+            // Must be assigned AFTER the output joins a session, before that the available types
+            // list is empty and this silently no-ops. Filtered against what's actually available
+            // so a device without face metadata degrades to no rectangles rather than trapping.
+            if metadataOutput.availableMetadataObjectTypes.contains(.face) {
+                metadataOutput.metadataObjectTypes = [.face]
+            }
         }
         addVideoInput()
         session.commitConfiguration()
@@ -248,6 +265,12 @@ final class CameraViewModel: NSObject {
         session.inputs.forEach { session.removeInput($0) }
         addVideoInput()   // re-reads the new lens layout + resets zoom to 1×
         session.commitConfiguration()
+        // Faces belong to the lens we just swapped away from; the new one reports its own.
+        faceRects = []
+        // Re-assert after the reconfiguration, swapping the input can clear the requested types.
+        if metadataOutput.availableMetadataObjectTypes.contains(.face) {
+            metadataOutput.metadataObjectTypes = [.face]
+        }
     }
 
     // MARK: - Focus & zoom
@@ -349,6 +372,9 @@ final class CameraViewModel: NSObject {
 
     func stopRunning() {
         guard session.isRunning else { return }
+        // No more metadata is coming, so the last frame's rectangles would otherwise still be on
+        // screen when the viewfinder comes back, hanging over a scene that has since changed.
+        faceRects = []
         Task.detached(priority: .userInitiated) { [weak self] in
             self?.session.stopRunning()
         }

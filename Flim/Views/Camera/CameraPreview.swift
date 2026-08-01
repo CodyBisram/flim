@@ -3,6 +3,23 @@ import UIKit
 import AVFoundation
 import AVKit
 
+/// True when two sets of face rectangles are close enough that redrawing would be wasted work.
+///
+/// Face metadata arrives at the video frame rate and jitters by a pixel or two even on a
+/// perfectly still subject. Publishing every frame would invalidate the whole viewfinder 30-60
+/// times a second for movement nobody can see, so an update only goes through once something has
+/// actually moved. Free function so the threshold is testable.
+func faceRectsAreSettled(_ a: [CGRect], _ b: [CGRect], tolerance: CGFloat = 4) -> Bool {
+    guard a.count == b.count else { return false }
+    for (lhs, rhs) in zip(a, b) {
+        if abs(lhs.minX - rhs.minX) > tolerance { return false }
+        if abs(lhs.minY - rhs.minY) > tolerance { return false }
+        if abs(lhs.width - rhs.width) > tolerance { return false }
+        if abs(lhs.height - rhs.height) > tolerance { return false }
+    }
+    return true
+}
+
 struct CameraPreview: UIViewRepresentable {
     let session: AVCaptureSession
     let camera: CameraViewModel
@@ -48,6 +65,13 @@ struct CameraPreview: UIViewRepresentable {
         pinch.delegate = context.coordinator
         view.addGestureRecognizer(pinch)
 
+        // Face rectangles. The delegate lives here rather than on the view model because
+        // converting a metadata object's bounds into on-screen coordinates requires the preview
+        // layer (the metadata space is buffer-relative, rotated with the connection, and mirrored
+        // on the front camera); `transformedMetadataObject(for:)` is the only thing that gets all
+        // of that right. Main queue so the layer read and the model write are both safe.
+        camera.metadataOutput.setMetadataObjectsDelegate(context.coordinator, queue: .main)
+
         // Hardware volume button as a shutter (the sanctioned API).
         if #available(iOS 17.2, *) {
             let interaction = AVCaptureEventInteraction { event in
@@ -77,7 +101,7 @@ struct CameraPreview: UIViewRepresentable {
         }
     }
 
-    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate, AVCaptureMetadataOutputObjectsDelegate {
         let camera: CameraViewModel
         var onShutter: () -> Void
         weak var view: PreviewView?
@@ -115,6 +139,26 @@ struct CameraPreview: UIViewRepresentable {
         @objc func pinch(_ gesture: UIPinchGestureRecognizer) {
             if gesture.state == .began { zoomBase = camera.currentZoom }
             camera.zoom(to: zoomBase * gesture.scale)
+        }
+
+        // MARK: - Face metadata
+
+        func metadataOutput(_ output: AVCaptureMetadataOutput,
+                            didOutput metadataObjects: [AVMetadataObject],
+                            from connection: AVCaptureConnection) {
+            guard let view else { return }
+            let maxWidth: CGFloat = view.bounds.width * 0.95
+            var rects: [CGRect] = []
+            for object in metadataObjects {
+                guard let transformed = view.previewLayer.transformedMetadataObject(for: object) else { continue }
+                let bounds: CGRect = transformed.bounds
+                // A rect that spans nearly the whole preview is a detector artefact, not a face,
+                // and drawing it reads as the viewfinder flashing a border.
+                guard bounds.width > 8, bounds.height > 8, bounds.width < maxWidth else { continue }
+                rects.append(bounds)
+            }
+            guard !faceRectsAreSettled(rects, camera.faceRects) else { return }
+            camera.faceRects = rects
         }
     }
 }

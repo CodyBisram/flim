@@ -1,5 +1,21 @@
 import SwiftUI
 
+/// How far the photo follows the finger during a paging swipe. At the first and last shot it
+/// resists instead of sliding into blank space, so overswiping reads as a wall rather than as
+/// dead input. Free function so the feel is testable without a view.
+func pagingDragOffset(width: CGFloat, index: Int, count: Int, resistance: CGFloat = 0.2) -> CGFloat {
+    let atStart = index == 0 && width > 0
+    let atEnd = index == count - 1 && width < 0
+    return (atStart || atEnd) ? width * resistance : width
+}
+
+/// Which way a finished horizontal drag should page: -1 back, +1 forward, or nil when it didn't
+/// travel far enough to count as a swipe.
+func pagingStep(forDragWidth width: CGFloat, threshold: CGFloat = 60) -> Int? {
+    guard abs(width) > threshold else { return nil }
+    return width < 0 ? 1 : -1
+}
+
 /// The single swipeable full-screen photo viewer, opened at whichever grid photo was tapped.
 /// One component for both the Darkroom and a roll's grid (it replaced three near-duplicate views:
 /// FullScreenPhotoView, DarkroomPhotoPagerView, RollPhotoPagerView, which had drifted apart and
@@ -8,9 +24,9 @@ import SwiftUI
 /// grid shows everyone's shots (reactions, comments, photographer handle, and the
 /// own-vs-report branch, all derived per photo).
 ///
-/// Architecture: header and footer are declared ONCE, outside the TabView, reading whichever
-/// photo is current. Only the image (plus its own zoom state) lives inside each swiped page, so
-/// mid-swipe you never see two competing captions/credits. Report-vs-manage is derived from
+/// Architecture: header and footer are declared ONCE, outside the pager, reading whichever photo
+/// is current. Only the image (plus its own zoom state) is swapped as you swipe, so mid-swipe you
+/// never see two competing captions/credits. Report-vs-manage is derived from
 /// ownership, so a Darkroom (all-own) never shows report and a roll shows it per photo, with no
 /// extra flag.
 struct PhotoPagerView: View {
@@ -31,12 +47,13 @@ struct PhotoPagerView: View {
     @Environment(PhotoService.self) private var photoService
     @Environment(AuthService.self) private var auth
     @Environment(FeedService.self) private var feed
+    @Environment(\.displayScale) private var displayScale
     @Environment(\.dismiss) private var dismiss
 
     @State private var selection: Int
-    /// Upgraded from the seeded thumbnail to full-res lazily, windowed to ±1 around `selection`,
-    /// a TabView(.page) keeps neighboring pages warm, so eagerly resolving a whole big roll would
-    /// fire many redundant fetches at once.
+    /// Upgraded from the seeded thumbnail to full-res lazily, windowed to ±1 around `selection`
+    /// (the neighbours you can reach with one swipe), so opening a big roll doesn't fire a fetch
+    /// for every shot in it at once.
     @State private var resolvedURLs: [UUID: URL] = [:]
     @State private var sharedIds: Set<UUID> = []
     @State private var reportedIds: Set<UUID> = []
@@ -44,6 +61,8 @@ struct PhotoPagerView: View {
     @State private var scale: CGFloat = 1
     @State private var offset: CGSize = .zero
     @State private var lastOffset: CGSize = .zero
+    /// Live horizontal offset while a paging swipe is in progress; always settles back to 0.
+    @State private var dragX: CGFloat = 0
     @State private var showDeleteConfirm = false
     @State private var isDeleting = false
     @State private var pendingDeletePhoto: Photo?
@@ -86,16 +105,9 @@ struct PhotoPagerView: View {
             VStack {
                 header
 
-                TabView(selection: $selection) {
-                    ForEach(Array(photos.enumerated()), id: \.element.id) { index, photo in
-                        photoPage(photo)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .tag(index)
-                    }
-                }
-                .tabViewStyle(.page(indexDisplayMode: .never))
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .padding(.vertical, 12)
+                pager
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .padding(.vertical, 12)
 
                 captionLabel
 
@@ -126,7 +138,7 @@ struct PhotoPagerView: View {
         }
         .onChange(of: selection) { _, _ in
             // Fresh photo, fresh zoom state (otherwise the last photo's zoom carries over).
-            scale = 1; offset = .zero; lastOffset = .zero
+            scale = 1; offset = .zero; lastOffset = .zero; dragX = 0
             Task { await resolveAround(selection) }
         }
         .task { await resolveAround(selection) }
@@ -329,7 +341,52 @@ struct PhotoPagerView: View {
         .background(.ultraThinMaterial)
     }
 
-    // MARK: - Per-page content (just the photo)
+    // MARK: - Pager
+
+    /// One photo at a time, swapped by a horizontal swipe.
+    ///
+    /// Deliberately NOT `TabView(.page)`. That keeps neighbouring pages mounted, and three
+    /// separate root-cause fixes for it (page-width sizing, footer-height stability, the reaction
+    /// picker's own height) each closed a real way for it to desync mid-swipe, yet a swipe could
+    /// still settle showing a sliver of the next photo. RollCarouselView abandoned TabView for
+    /// plain state and has never had the complaint. This is the same approach and keeps the
+    /// swipe: only the current photo is ever mounted, so there is no neighbour that CAN leak
+    /// into frame, rather than a neighbour that is supposed to stay hidden.
+    private var pager: some View {
+        ZStack {
+            if let photo = current {
+                photoPage(photo)
+                    .id(photo.id)
+                    .transition(.opacity)
+                    .offset(x: dragX)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .contentShape(Rectangle())
+        // At 1x the swipe pages; once zoomed in, `panWhileZoomed` owns the drag instead.
+        .gesture(swipeToPage, including: scale > 1 ? .none : .all)
+    }
+
+    /// Follows the finger, damped at both ends so the first and last shot feel like walls rather
+    /// than dead input, and commits past a threshold.
+    private var swipeToPage: some Gesture {
+        DragGesture(minimumDistance: 20)
+            .onChanged { value in
+                dragX = pagingDragOffset(width: value.translation.width,
+                                         index: selection, count: photos.count)
+            }
+            .onEnded { value in
+                withAnimation(.easeOut(duration: 0.18)) { dragX = 0 }
+                if let delta = pagingStep(forDragWidth: value.translation.width) { step(delta) }
+            }
+    }
+
+    private func step(_ delta: Int) {
+        let next = selection + delta
+        guard photos.indices.contains(next) else { return }
+        Haptics.tap()
+        withAnimation(.easeOut(duration: 0.22)) { selection = next }
+    }
 
     @ViewBuilder
     private func photoPage(_ photo: Photo) -> some View {
@@ -339,13 +396,11 @@ struct PhotoPagerView: View {
                     image
                         .resizable()
                         .scaledToFit()
-                        // Zoom state lives at the pager level, but only the CURRENT page reflects
-                        // it, a TabView(.page) keeps neighbors mounted and they'd zoom in lockstep.
-                        .scaleEffect(isCurrent(photo) ? scale : 1)
-                        .offset(isCurrent(photo) ? offset : .zero)
+                        .scaleEffect(scale)
+                        .offset(offset)
                         .gesture(pinchToZoom)
                         // Pan is only active once zoomed in (GestureMask.none otherwise), so at 1x
-                        // it never competes with the TabView's horizontal paging for a touch.
+                        // it never competes with the swipe above for a touch.
                         .gesture(panWhileZoomed, including: scale > 1 ? .all : .none)
                         .onTapGesture(count: 2) { toggleZoom() }
                 } placeholder: {
@@ -373,8 +428,6 @@ struct PhotoPagerView: View {
         .opacity(scale > 1 ? 0 : 1)
         .animation(.easeOut(duration: 0.2), value: scale > 1)
     }
-
-    private func isCurrent(_ photo: Photo) -> Bool { photo.id == current?.id }
 
     private func deleteMessage(_ photo: Photo?) -> String {
         if let name = rollName(photo?.rollId) {
@@ -462,6 +515,16 @@ struct PhotoPagerView: View {
                 sharedIds.insert(photo.id)
             }
         }
+        // Warm the neighbours' decoded images, not just their URLs. TabView(.page) used to keep
+        // the adjacent pages mounted, so they were already decoded by the time you swiped; the
+        // pager mounts only the current photo now, so without this a swipe could land on a
+        // spinner. `cacheKey: nil` deliberately matches what `photoPage` requests, a different
+        // key here would warm an entry the view never looks for.
+        let neighbours: [(url: URL, cacheKey: String?)] = [index - 1, index + 1]
+            .filter { photos.indices.contains($0) }
+            .compactMap { resolvedURLs[photos[$0].id].map { (url: $0, cacheKey: nil) } }
+        ImageLoader.prefetch(neighbours, maxPixel: 1600, scale: displayScale)
+
         guard showsReactions, let photo = current else { return }
         let id = photo.id
         let fetched = await photoService.fetchReactions(photoId: id)
