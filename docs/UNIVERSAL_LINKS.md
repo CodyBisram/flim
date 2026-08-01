@@ -8,20 +8,27 @@
 - The AASA file is live at `/.well-known/apple-app-site-association` (served as JSON).
 
 ## The upgrade: link opens the app DIRECTLY (universal links)
-One missing piece: the **Associated Domains** entitlement. Not added yet on purpose:
-the match provisioning profile doesn't include the capability, so adding the entitlement
-now would fail the next TestFlight build's signing.
+
+⚠️ **Step 3 is DONE and committed, but the entitlement cannot ship until steps 1–2 are.**
+An entitlement the provisioning profile doesn't carry fails the signed archive/export, the
+same way the widget's missing profile did. Do not push the entitlement commit before the
+profile is regenerated.
 
 Steps, in order (10 min, needs whoever runs match):
 1. **Developer portal** → Identifiers → `com.flim.app` → enable **Associated Domains** → Save.
+   *(Not done — needs the account holder's Apple ID + 2FA.)*
 2. **Regenerate the match profiles** so they pick up the capability:
    `bundle exec fastlane match appstore --force` (and `development --force` if used locally).
-3. **Flip the associated-domains entitlement** in `Flim/Flim.entitlements` (+ project.yml):
-   ```xml
-   <key>com.apple.developer.associated-domains</key>
-   <array><string>applinks:flim-app.com</string></array>
-   ```
+   *(Not done — needs the ASC API key + MATCH_PASSWORD.)*
+3. ~~Flip the associated-domains entitlement~~ **DONE.** Declared in `project.yml` under the
+   Flim target's `entitlements.properties`, which is where it belongs — xcodegen generates
+   `Flim/Flim.entitlements` from it, so editing that file directly gets overwritten.
 4. Push → build → install. iOS fetches the AASA on install; `/join/*` links then open FLIM
    directly, no landing page stop.
+
+**Verified already live (2026-08-01):** the AASA responds `200` with
+`content-type: application/json` and no redirect, declaring `DCU7GHRVUQ.com.flim.app` for
+`/join/*`. `FlimApp.swift` parses the https shape. So the server and client halves are ready
+and only the signing capability is outstanding.
 
 Nothing else changes. The landing page stays as the fallback for people without the app.

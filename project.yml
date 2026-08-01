@@ -25,6 +25,13 @@ targets:
         # Resolved per build config: development (Debug) / production (Release).
         # Distribution/TestFlight builds require production, so this must vary.
         aps-environment: $(APS_ENVIRONMENT)
+        # Makes https://flim-app.com/join/CODE open the app directly instead of dead-ending on
+        # the web landing page. The AASA at /.well-known/apple-app-site-association is already
+        # live and correct (DCU7GHRVUQ.com.flim.app, /join/*), so this entitlement is the last
+        # piece. It signs ONLY if the match profile carries the Associated Domains capability —
+        # enable it on the App ID, then re-run match --force, or the archive fails.
+        com.apple.developer.associated-domains:
+          - applinks:flim-app.com
     info:
       path: Flim/Info.plist
       properties:
