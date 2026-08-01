@@ -39,6 +39,12 @@ fastlane/*.log
 *.env
 .env*
 
+# Local clone of the private match repo (wiggapony0925/flim-certificates). Signing assets
+# live in THEIR own repo, never nested in this one — fastlane clones MATCH_GIT_URL into a
+# temp dir on its own and never reads this path. Kept ignored so a local checkout here
+# can't be committed by accident.
+/certs/
+
 # LUT calibration photo pairs (docs/LUTS.md, scripts/fit_lut.py) — real photos of Cody's
 # life, never belong in git history. Kept locally so a future refit can add more pairs
 # without re-shooting the existing set.
