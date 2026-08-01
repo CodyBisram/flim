@@ -92,15 +92,24 @@ final class CameraViewModel: NSObject {
         }
         if session.canAddOutput(metadataOutput) {
             session.addOutput(metadataOutput)
-            // Must be assigned AFTER the output joins a session, before that the available types
-            // list is empty and this silently no-ops. Filtered against what's actually available
-            // so a device without face metadata degrades to no rectangles rather than trapping.
-            if metadataOutput.availableMetadataObjectTypes.contains(.face) {
-                metadataOutput.metadataObjectTypes = [.face]
-            }
         }
         addVideoInput()
         session.commitConfiguration()
+        enableFaceMetadata()
+    }
+
+    /// Requests face metadata for the viewfinder's focus rectangles.
+    ///
+    /// Must run AFTER the video input is in place and the configuration is committed.
+    /// `availableMetadataObjectTypes` is derived from the output's active CONNECTION, not merely
+    /// from having joined a session, so while the session still has no input the list is empty.
+    /// The guard below is required (assigning an unsupported type raises), but asked too early it
+    /// silently answers "no faces here" on every device, which is exactly how the first version of
+    /// this shipped with face detection permanently disabled. Hence: after the input, after the
+    /// commit, every time the session is reconfigured.
+    private func enableFaceMetadata() {
+        guard metadataOutput.availableMetadataObjectTypes.contains(.face) else { return }
+        metadataOutput.metadataObjectTypes = [.face]
     }
 
     private func addVideoInput() {
@@ -267,10 +276,7 @@ final class CameraViewModel: NSObject {
         session.commitConfiguration()
         // Faces belong to the lens we just swapped away from; the new one reports its own.
         faceRects = []
-        // Re-assert after the reconfiguration, swapping the input can clear the requested types.
-        if metadataOutput.availableMetadataObjectTypes.contains(.face) {
-            metadataOutput.metadataObjectTypes = [.face]
-        }
+        enableFaceMetadata()   // swapping the input can clear the requested types
     }
 
     // MARK: - Focus & zoom
