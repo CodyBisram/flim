@@ -255,6 +255,11 @@ struct PhotoPagerView: View {
                         counts: Dictionary(grouping: reactions, by: \.emoji).mapValues(\.count),
                         mine: Set(reactions.filter { $0.userId == auth.currentUser?.id }.map(\.emoji))
                     ) { toggleReaction($0, on: photo) }
+                    // Fresh reaction bar per photo, matching RollCarouselView. Without this the
+                    // bar is ONE instance for the whole pager session, so it sorted itself once
+                    // against the first photo's reactions and every photo you swiped to after
+                    // that kept that order.
+                    .id(photo.id)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
@@ -442,6 +447,9 @@ struct PhotoPagerView: View {
     /// resolved once; share/reaction state is live so it's re-read as you swipe.
     private func resolveAround(_ index: Int) async {
         guard let uid = auth.currentUser?.id else { return }
+        // Same fix as RollCarouselView: the refetch at the end of this function is async, so
+        // without clearing, the bar shows the PREVIOUS photo's counts under the new photo.
+        if showsReactions { reactions = [] }
         for i in [index - 1, index, index + 1] where photos.indices.contains(i) {
             let photo = photos[i]
             if resolvedURLs[photo.id] == nil {

@@ -1,6 +1,16 @@
 import SwiftUI
 import TipKit
 
+/// Reacted emojis first (most-reacted first, ties broken alphabetically so the order is stable),
+/// then whichever defaults nobody has used. A free function, like
+/// `rollDeleteConfirmationMessage`, so the rule itself is testable without standing up a view.
+func reactionDisplayOrder(counts: [String: Int], defaults: [String]) -> [String] {
+    let reacted = counts.filter { $0.value > 0 }
+        .sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }
+        .map(\.key)
+    return reacted + defaults.filter { !reacted.contains($0) }
+}
+
 /// A reaction row: chips (with counts) in a horizontal scroll that never clips, and a "+" opens a
 /// picker of recents + a big palette + an "any emoji" keyboard entry. The order stays stable while
 /// you're looking (tapping never reshuffles it) and re-sorts reacted-to-front on the next appear.
@@ -18,6 +28,9 @@ struct ReactionBar: View {
 
     @State private var expanded = false
     @State private var displayOrder: [String] = []
+    /// True once `displayOrder` has been built from a real (non-empty) `counts`, or once you've
+    /// tapped something. Gates the one-shot re-sort in `onChange(of: counts)` below.
+    @State private var orderSeeded = false
     @State private var pressed: String?
     @State private var typed = ""
     @FocusState private var keyboardFocused: Bool
@@ -63,6 +76,22 @@ struct ReactionBar: View {
                 .allowsHitTesting(false)
         )
         .onAppear { rebuildOrder() }
+        .onChange(of: counts) { _, new in
+            // Per-photo hosts (the roll carousel, the photo pager) fetch a photo's reactions
+            // ASYNCHRONOUSLY, so `counts` was still empty when this bar appeared and the rebuild
+            // above promoted nothing, leaving a reacted emoji at its default index. With
+            // PostEmoji.all being five entries, a single 😂 sat dead centre forever, which is how
+            // this was spotted. Re-sort once, when the real counts actually land.
+            //
+            // The feed never hit this: FeedService batch-loads reactions before its cards render,
+            // so its bars appear with `counts` already populated.
+            //
+            // Strictly once. After seeding, the order must hold still while you're looking at it,
+            // so tapping a chip never reshuffles the row under your finger, and `react()` seeds
+            // too, so a count change caused by your OWN tap can't trigger this either.
+            guard !orderSeeded, !new.isEmpty else { return }
+            rebuildOrder()
+        }
         .onChange(of: typed) { _, new in
             guard !new.isEmpty else { return }
             if let emoji = new.first(where: Self.isEmoji) { react(String(emoji), fromPicker: true) }
@@ -74,10 +103,8 @@ struct ReactionBar: View {
     /// Reacted emojis first (by count), then the remaining defaults. Recomputed on each appear, so
     /// re-entering promotes what people reacted with, but it holds still while you're looking.
     private func rebuildOrder() {
-        let reacted = counts.filter { $0.value > 0 }
-            .sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }
-            .map(\.key)
-        displayOrder = reacted + defaults.filter { !reacted.contains($0) }
+        displayOrder = reactionDisplayOrder(counts: counts, defaults: defaults)
+        if !counts.isEmpty { orderSeeded = true }
     }
 
     private var picker: some View {
@@ -175,6 +202,7 @@ struct ReactionBar: View {
     /// React, and make sure the emoji is visible in the row (appended if new) WITHOUT reshuffling
     /// existing chips, the reacted-to-front re-sort only happens on the next appear.
     private func react(_ emoji: String, fromPicker: Bool = false) {
+        orderSeeded = true   // your own tap must never trigger the one-shot re-sort above
         if !displayOrder.contains(emoji) { displayOrder.append(emoji) }
         // Bounce feedback, pop the chip, then settle.
         pressed = emoji

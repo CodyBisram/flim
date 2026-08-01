@@ -175,6 +175,11 @@ struct RollCarouselView: View {
     }
 
     private func loadAround(_ index: Int) async {
+        // Drop the previous photo's reactions the moment the photo changes. The fetch below is
+        // async, so until it lands this state still holds the LAST photo's reactions, and the
+        // bar was rendering those counts and highlights underneath the NEW photo, then seeding
+        // its emoji order from them.
+        reactions = []
         for i in [index - 1, index, index + 1] where photos.indices.contains(i) {
             let photo = photos[i]
             if urls[photo.id] == nil { urls[photo.id] = try? await photoService.signedURL(for: photo.storagePath) }

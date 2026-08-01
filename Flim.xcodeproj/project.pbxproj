@@ -81,6 +81,7 @@
 		D1044E118206CD6EDF9692B3 /* Roll.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A0B87FE1069C71306456DFF /* Roll.swift */; };
 		D6AF2874BDE882049A03C270 /* PersonPickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = DFAC10EA5BF9B35854D17FFF /* PersonPickerSheet.swift */; };
 		D86D45FEC7A4EA89A268B87B /* PhotoPickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC8AD03A8D1B86B86365239A /* PhotoPickerSheet.swift */; };
+		DAEB96A018A4AC97A9C2B097 /* ReactionBarTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09D7D1B34FF3ABA360DFCCC6 /* ReactionBarTests.swift */; };
 		DF79D7CBD7A4684626EF2080 /* ActivityFeedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F4E26878DAFF415FB6B4644 /* ActivityFeedView.swift */; };
 		DFCED2D30474E53F1E6B116D /* CubeLUTTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 409A6D3129F94E675E11C751 /* CubeLUTTests.swift */; };
 		E01A141DA15C3B44C02C6CDA /* SortDeckView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F41D0B57C8881A275E755159 /* SortDeckView.swift */; };
@@ -139,6 +140,7 @@
 		01ECCD46517220EBFD0EC621 /* PhotoService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoService.swift; sourceTree = "<group>"; };
 		01F7C56CF5A21FB71964CFEB /* FlimApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlimApp.swift; sourceTree = "<group>"; };
 		060BA5995DD93E64A494A2E4 /* DarkroomViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DarkroomViewModel.swift; sourceTree = "<group>"; };
+		09D7D1B34FF3ABA360DFCCC6 /* ReactionBarTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReactionBarTests.swift; sourceTree = "<group>"; };
 		0A093E4509E9F7972F5B26E7 /* MainTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabView.swift; sourceTree = "<group>"; };
 		0B10C6663F963898FEE63F64 /* FlimAppTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlimAppTests.swift; sourceTree = "<group>"; };
 		0F4E26878DAFF415FB6B4644 /* ActivityFeedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityFeedView.swift; sourceTree = "<group>"; };
@@ -474,6 +476,7 @@
 				3F90A7FA0AD7F2B443E7E332 /* OTPInputTests.swift */,
 				BAF7FE72763EB709B93E5BA4 /* PhotoReadinessTests.swift */,
 				E24F9D0E24ECACB558EE4F01 /* ProfileViewTests.swift */,
+				09D7D1B34FF3ABA360DFCCC6 /* ReactionBarTests.swift */,
 				86B99F48D57C1AE3CE9295E3 /* RollRevealAttributesTests.swift */,
 				8160A75F102252932FFC426A /* RollServiceTests.swift */,
 				4B7E5F0D581D43A4722CD6D9 /* RollTests.swift */,
@@ -628,6 +631,7 @@
 				031112E1AC8FC07603BB38AE /* OTPInputTests.swift in Sources */,
 				E924D1944FA4475B4E383A61 /* PhotoReadinessTests.swift in Sources */,
 				E32D66765B2C8FFB2C8883DC /* ProfileViewTests.swift in Sources */,
+				DAEB96A018A4AC97A9C2B097 /* ReactionBarTests.swift in Sources */,
 				232A43F389F6547C475A1F7B /* RollRevealAttributesTests.swift in Sources */,
 				0BA7F7EE88D072B80A399232 /* RollServiceTests.swift in Sources */,
 				B24553011D30469838CCA923 /* RollTests.swift in Sources */,
