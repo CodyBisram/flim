@@ -40,6 +40,9 @@ struct DarkroomView: View {
     @State private var showRollDeleteConfirm = false
     @State private var pendingRollDeleteBatch: [Photo] = []
     @State private var shareItem: ShareImage?
+    /// Set by the grid's "Tag people" action so the viewer opens straight into the share
+    /// composer's tag step. Cleared on dismiss so a later ordinary tap opens the photo normally.
+    @State private var openForTagging = false
 
     private let columns = [
         GridItem(.flexible(), spacing: 2),
@@ -196,13 +199,14 @@ struct DarkroomView: View {
                 #endif
             }
         }
-        .fullScreenCover(item: $selectedPhoto) { photo in
+        .fullScreenCover(item: $selectedPhoto, onDismiss: { openForTagging = false }) { photo in
             PhotoPagerView(
                 photos: vm.developedPhotos,
                 startIndex: vm.developedPhotos.firstIndex(where: { $0.id == photo.id }) ?? 0,
                 signedURLs: vm.signedURLCache,
                 rollName: { rollName(for: $0) },
-                onDelete: { Task { await reload() } }
+                onDelete: { Task { await reload() } },
+                startTagging: openForTagging
             )
             .navigationTransition(.zoom(sourceID: photo.id, in: photoNS))
         }
@@ -268,6 +272,14 @@ struct DarkroomView: View {
     @ViewBuilder
     private func developedMenu(_ photo: Photo) -> some View {
         Button { beginSelecting(photo.id) } label: { Label("Select", systemImage: "checkmark.circle") }
+        // Tags belong to a post, so there is nothing to attach them to until the photo is being
+        // shared. This opens the viewer straight into the share composer with the tag sheet up,
+        // so tagging is one action from the grid rather than three.
+        Button {
+            selectedURL = vm.signedURLCache[photo.id]
+            openForTagging = true
+            selectedPhoto = photo
+        } label: { Label("Tag people", systemImage: "person.crop.circle.badge.plus") }
         Button { share(photo) } label: { Label("Share", systemImage: "square.and.arrow.up") }
         Button {
             Haptics.tap()

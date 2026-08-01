@@ -18,6 +18,8 @@ struct PostDetailView: View {
     @State private var showDeleteConfirm = false
     @State private var reportedToast = false
     @State private var route: ProfileRoute?
+    @State private var showEditTags = false
+    @State private var editingTags: [PendingTag] = []
     @Environment(\.dismiss) private var dismiss
     @FocusState private var commentFocused: Bool
 
@@ -66,9 +68,18 @@ struct PostDetailView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     if isOwn {
+                        Button { beginEditingTags() } label: {
+                            Label((feed.tagsByPost[post.id] ?? []).isEmpty ? "Tag people" : "Edit tags",
+                                  systemImage: "person.crop.circle.badge.plus")
+                        }
                         Button { saveToCameraRoll() } label: { Label("Save to Camera Roll", systemImage: "square.and.arrow.down") }
                         Button(role: .destructive) { showDeleteConfirm = true } label: { Label("Delete post", systemImage: "trash") }
                     } else {
+                        if let uid = auth.currentUser?.id, feed.isTagged(uid, in: post.id) {
+                            Button { removeMyTag() } label: {
+                                Label("Remove me from this photo", systemImage: "person.crop.circle.badge.xmark")
+                            }
+                        }
                         Button { showReportConfirm = true } label: { Label("Report", systemImage: "flag") }
                         Button(role: .destructive) { showBlockConfirm = true } label: { Label("Block \(item.author.handle)", systemImage: "hand.raised") }
                     }
@@ -89,6 +100,11 @@ struct PostDetailView: View {
         }
         .fullScreenCover(isPresented: $showViewer) { ImageViewer(url: url) }
         .sheet(item: $shareItem) { SharePreviewSheet(photo: $0.image) }
+        .sheet(isPresented: $showEditTags) {
+            TagPhotoSheet(url: url, tags: $editingTags) {
+                Task { await feed.setTags(editingTags, on: post.id) }
+            }
+        }
         .confirmationDialog("Delete this post?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
             Button("Delete", role: .destructive) {
                 Haptics.warning()
@@ -125,6 +141,20 @@ struct PostDetailView: View {
             Text("You won't see each other's posts, and they'll be unfollowed.")
         }
         .task { await load() }
+    }
+
+    /// Seeds the editor from the post's current tags, so saving doesn't wipe what's there.
+    private func beginEditingTags() {
+        editingTags = (feed.tagsByPost[post.id] ?? []).compactMap { tag in
+            feed.tagProfiles[tag.taggedUserId].map { PendingTag(user: $0, x: tag.x, y: tag.y) }
+        }
+        showEditTags = true
+    }
+
+    private func removeMyTag() {
+        guard let uid = auth.currentUser?.id else { return }
+        Haptics.tap()
+        Task { await feed.removeMyTag(from: post.id, userId: uid) }
     }
 
     private func saveToCameraRoll() {

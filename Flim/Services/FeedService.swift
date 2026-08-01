@@ -376,6 +376,61 @@ final class FeedService {
         tagProfiles.merge(profs) { _, new in new }
     }
 
+    /// Replaces a post's tags with `tags`, as a diff: only rows that actually changed are written.
+    ///
+    /// Tags could previously only be set at the moment a photo was shared, so a forgotten tag
+    /// meant deleting the post and re-sharing it. RLS lets the post's owner both add and remove,
+    /// so editing after the fact needed no policy change, only this.
+    ///
+    /// Diffed rather than delete-all-then-reinsert so that re-saving without changes is a no-op:
+    /// a blanket rewrite would churn `created_at`, and re-inserting an unchanged tag would look
+    /// like a brand new tag to anything watching the table (a re-notification for a tag the
+    /// person already has).
+    func setTags(_ tags: [PendingTag], on postId: UUID) async {
+        let existing = tagsByPost[postId] ?? []
+        let existingIds = Set(existing.map(\.taggedUserId))
+        let desiredIds = Set(tags.map(\.user.id))
+
+        for tag in existing where !desiredIds.contains(tag.taggedUserId) {
+            try? await supabase.from("post_tags").delete().eq("id", value: tag.id.uuidString).execute()
+        }
+        struct NewTag: Encodable {
+            let post_id: UUID; let tagged_user_id: UUID; let x: Double; let y: Double
+        }
+        for tag in tags where !existingIds.contains(tag.user.id) {
+            try? await supabase.from("post_tags")
+                .insert(NewTag(post_id: postId, tagged_user_id: tag.user.id, x: tag.x, y: tag.y))
+                .execute()
+        }
+        // A moved tag is a position change on a row that already exists.
+        for tag in tags {
+            guard let row = existing.first(where: { $0.taggedUserId == tag.user.id }),
+                  abs(row.x - tag.x) > 0.001 || abs(row.y - tag.y) > 0.001 else { continue }
+            struct Move: Encodable { let x: Double; let y: Double }
+            try? await supabase.from("post_tags").update(Move(x: tag.x, y: tag.y))
+                .eq("id", value: row.id.uuidString).execute()
+        }
+        await loadTags(for: postId)
+    }
+
+    /// Withdraws the current user's own tag from someone else's photo.
+    ///
+    /// Relies on the `post_tags: tagged user removes self` policy (see
+    /// supabase/migrations/2026-08-01_tag_self_removal.sql). Scoped by `tagged_user_id` as well as
+    /// post so it can never take anyone else's tag down, even if called wrongly.
+    func removeMyTag(from postId: UUID, userId: UUID) async {
+        try? await supabase.from("post_tags").delete()
+            .eq("post_id", value: postId.uuidString)
+            .eq("tagged_user_id", value: userId.uuidString)
+            .execute()
+        await loadTags(for: postId)
+    }
+
+    /// Whether the current user is tagged in a post (drives the "remove me" affordance).
+    func isTagged(_ userId: UUID, in postId: UUID) -> Bool {
+        (tagsByPost[postId] ?? []).contains { $0.taggedUserId == userId }
+    }
+
     /// Batch-loads photo tags + the tagged users' profiles for a page of posts.
     private func batchTags(postIds: [UUID]) async -> ([UUID: [PostTag]], [UUID: UserProfile]) {
         guard !postIds.isEmpty else { return ([:], [:]) }

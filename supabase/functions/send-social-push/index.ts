@@ -132,6 +132,27 @@ async function ownerTokens(): Promise<string[]> {
   return [...new Set(tokens)];
 }
 
+// --- @mentions. Mirrors Flim/Models/Mentions.swift: an @ only starts a mention at a word
+//     boundary (so an email address doesn't mention its domain), and a username is letters,
+//     digits and underscore, matching AuthService.isValidUsername. Usernames are stored
+//     lowercased, so the lookup is too.
+function mentionedUsernames(text: string): string[] {
+  const found = new Set<string>();
+  for (const match of text.matchAll(/(^|\s)@([A-Za-z0-9_]+)/g)) {
+    found.add(match[2].toLowerCase());
+  }
+  return [...found];
+}
+
+/// Resolves mentioned handles to user ids, dropping any that match nobody (a typo, or someone who
+/// has since changed their username).
+async function mentionedUserIds(text: string): Promise<string[]> {
+  const names = mentionedUsernames(text);
+  if (names.length === 0) return [];
+  const { data } = await supabase.from("users").select("id").in("username", names);
+  return (data ?? []).map((u) => u.id as string);
+}
+
 Deno.serve(async () => {
   let sent = 0;
 
@@ -145,9 +166,20 @@ Deno.serve(async () => {
     const ownerId = (c as { posts?: { user_id?: string } }).posts?.user_id;
     const name = await handle(c.user_id);
     const preview = c.body.length > 90 ? c.body.slice(0, 87) + "…" : c.body;
+    // Tracks who has already been pushed for this comment, so someone who is BOTH the post owner
+    // and @mentioned in it gets one notification rather than two.
+    const notified = new Set<string>([c.user_id]);
     if (ownerId && ownerId !== c.user_id) {
+      notified.add(ownerId);
       for (const token of await tokensFor(ownerId)) {
         if (await sendPush(token, `${name} commented`, preview)) sent++;
+      }
+    }
+    for (const uid of await mentionedUserIds(c.body)) {
+      if (notified.has(uid)) continue;
+      notified.add(uid);
+      for (const token of await tokensFor(uid)) {
+        if (await sendPush(token, `${name} mentioned you`, preview)) sent++;
       }
     }
     await supabase.from("post_comments").update({ push_sent: true }).eq("id", c.id);

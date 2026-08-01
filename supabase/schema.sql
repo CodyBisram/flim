@@ -1324,3 +1324,16 @@ DROP POLICY IF EXISTS "reveal_views: read for member rolls" ON public.roll_revea
 CREATE POLICY "reveal_views: read for member rolls"
     ON public.roll_reveal_views FOR SELECT TO authenticated
     USING (public.is_roll_member(roll_id));
+
+-- ============================================================
+-- Tag self-removal. Being tagged used to be one-way: post_tags allowed DELETE only to the post's
+-- owner, so the only person who could untag you was the person who tagged you. Postgres ORs
+-- permissive policies, so this adds to the owner policy rather than replacing it, and is scoped
+-- to your own row only: it grants no ability to remove anyone else's tag, and INSERT is untouched
+-- so it cannot be used to ADD a tag. Applied separately as
+-- supabase/migrations/2026-08-01_tag_self_removal.sql.
+-- ============================================================
+DROP POLICY IF EXISTS "post_tags: tagged user removes self" ON public.post_tags;
+CREATE POLICY "post_tags: tagged user removes self"
+    ON public.post_tags FOR DELETE TO authenticated
+    USING (tagged_user_id = auth.uid());

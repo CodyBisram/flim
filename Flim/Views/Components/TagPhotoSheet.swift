@@ -5,6 +5,9 @@ import SwiftUI
 struct TagPhotoSheet: View {
     let url: URL?
     @Binding var tags: [PendingTag]
+    /// Called when Done is tapped. The share composer leaves this empty (it persists the tags as
+    /// part of creating the post); editing an already-shared photo uses it to save the changes.
+    var onDone: () -> Void = {}
 
     @Environment(\.dismiss) private var dismiss
     @State private var showPicker = false
@@ -54,7 +57,8 @@ struct TagPhotoSheet: View {
             .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { dismiss() }.foregroundStyle(FlimTheme.accent).fontWeight(.semibold)
+                    Button("Done") { onDone(); dismiss() }
+                        .foregroundStyle(FlimTheme.accent).fontWeight(.semibold)
                 }
             }
         }

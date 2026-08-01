@@ -323,6 +323,8 @@ struct FeedPostCard: View {
     @State private var showBlockConfirm = false
     @State private var showEditCaption = false
     @State private var captionDraft = ""
+    @State private var showEditTags = false
+    @State private var editingTags: [PendingTag] = []
     @State private var reportedToast = false
     @State private var shareItem: ShareImage?
     @FocusState private var commentFocused: Bool
@@ -449,8 +451,15 @@ struct FeedPostCard: View {
                                 Button { route = ProfileRoute(id: info.comment.userId) } label: {
                                     Text(info.handle).font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
                                 }
-                                Text(info.comment.body).font(.system(size: 14)).foregroundStyle(.white)
-                                    .lineLimit(2).multilineTextAlignment(.leading)
+                                MentionText(text: info.comment.body) { username in
+                                    Haptics.tap()
+                                    Task {
+                                        if let profile = await feed.fetchProfile(username: username) {
+                                            route = ProfileRoute(id: profile.id)
+                                        }
+                                    }
+                                }
+                                .lineLimit(2).multilineTextAlignment(.leading)
                             }
                             Spacer(minLength: 8)
                             Button { likeComment(info) } label: {
@@ -501,6 +510,11 @@ struct FeedPostCard: View {
         }
         .navigationDestination(item: $route) { UserPageView(userId: $0.id) }
         .sheet(item: $shareItem) { SharePreviewSheet(photo: $0.image) }
+        .sheet(isPresented: $showEditTags) {
+            TagPhotoSheet(url: url, tags: $editingTags) {
+                Task { await feed.setTags(editingTags, on: post.id) }
+            }
+        }
         .sheet(isPresented: $showEditCaption) {
             EditCaptionSheet(caption: $captionDraft) {
                 guard let uid = auth.currentUser?.id else { return }
@@ -557,12 +571,37 @@ struct FeedPostCard: View {
     private var postActions: some View {
         if isOwn {
             Button { captionDraft = post.caption ?? ""; showEditCaption = true } label: { Label("Edit caption", systemImage: "pencil") }
+            Button { beginEditingTags() } label: {
+                Label(tagCount == 0 ? "Tag people" : "Edit tags", systemImage: "person.crop.circle.badge.plus")
+            }
             Button { saveToCameraRoll() } label: { Label("Save to Camera Roll", systemImage: "square.and.arrow.down") }
             Button(role: .destructive) { showDeleteConfirm = true } label: { Label("Delete post", systemImage: "trash") }
         } else {
+            // Only offered when you're actually in the photo. Withdrawing your own tag is allowed
+            // by RLS regardless of who posted it (2026-08-01_tag_self_removal.sql).
+            if let uid = auth.currentUser?.id, feed.isTagged(uid, in: post.id) {
+                Button { removeMyTag() } label: { Label("Remove me from this photo", systemImage: "person.crop.circle.badge.xmark") }
+            }
             Button { showReportConfirm = true } label: { Label("Report", systemImage: "flag") }
             Button(role: .destructive) { showBlockConfirm = true } label: { Label("Block \(item.author.handle)", systemImage: "hand.raised") }
         }
+    }
+
+    private var tagCount: Int { (feed.tagsByPost[post.id] ?? []).count }
+
+    /// Seeds the tag editor from what's already on the post, so editing starts from the current
+    /// state rather than a blank slate that would wipe existing tags on save.
+    private func beginEditingTags() {
+        editingTags = (feed.tagsByPost[post.id] ?? []).compactMap { tag in
+            feed.tagProfiles[tag.taggedUserId].map { PendingTag(user: $0, x: tag.x, y: tag.y) }
+        }
+        showEditTags = true
+    }
+
+    private func removeMyTag() {
+        guard let uid = auth.currentUser?.id else { return }
+        Haptics.tap()
+        Task { await feed.removeMyTag(from: post.id, userId: uid) }
     }
 
     private func saveToCameraRoll() {

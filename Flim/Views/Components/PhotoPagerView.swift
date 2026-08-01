@@ -43,6 +43,11 @@ struct PhotoPagerView: View {
     /// the delete-confirmation wording. A roll grid passes a closure returning its own name.
     var rollName: (UUID?) -> String? = { _ in nil }
     var onDelete: () -> Void = {}
+    /// Opens straight into the share-to-page composer with the tag sheet already up. Lets the
+    /// Darkroom's "Tag people" action land on tagging directly: tags belong to a POST, so there's
+    /// nothing to attach them to until the photo is being shared, and this makes that one step
+    /// instead of "open the photo, find Share, then find Tag people".
+    var startTagging: Bool = false
 
     @Environment(PhotoService.self) private var photoService
     @Environment(AuthService.self) private var auth
@@ -72,6 +77,8 @@ struct PhotoPagerView: View {
     @State private var shareCaptionDraft = ""
     @State private var pendingTags: [PendingTag] = []
     @State private var showTagSheet = false
+    /// `startTagging` must fire once, not on every re-resolve as you swipe away and back.
+    @State private var didAutoOpenTagging = false
     @State private var showComments = false
     @State private var showSharedToast = false
     /// Captured when an action starts, rather than re-derived from `current` when it finishes,
@@ -85,7 +92,8 @@ struct PhotoPagerView: View {
     init(photos: [Photo], startIndex: Int = 0, signedURLs: [UUID: URL],
          showsReactions: Bool = false, showsComments: Bool = false, showsAttribution: Bool = false,
          memberNames: [UUID: String] = [:], rollName: @escaping (UUID?) -> String? = { _ in nil },
-         onDelete: @escaping () -> Void = {}) {
+         onDelete: @escaping () -> Void = {}, startTagging: Bool = false) {
+        self.startTagging = startTagging
         self.photos = photos
         self.startIndex = startIndex
         self.signedURLs = signedURLs
@@ -141,7 +149,16 @@ struct PhotoPagerView: View {
             scale = 1; offset = .zero; lastOffset = .zero; dragX = 0
             Task { await resolveAround(selection) }
         }
-        .task { await resolveAround(selection) }
+        .task {
+            await resolveAround(selection)
+            // After resolveAround, not before: the tag sheet renders the photo from
+            // `resolvedURLs`, so opening it any earlier would show an empty frame to tag onto.
+            if startTagging, !didAutoOpenTagging, let photo = current {
+                didAutoOpenTagging = true
+                shareToPage(photo)
+                showTagSheet = true
+            }
+        }
         .confirmationDialog("Delete this photo?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
             Button("Delete", role: .destructive) {
                 guard let photo = pendingDeletePhoto else { return }
