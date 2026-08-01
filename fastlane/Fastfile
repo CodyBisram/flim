@@ -1,12 +1,10 @@
 default_platform(:ios)
 
 APP_IDENTIFIER    = "com.flim.app"
-# The Live Activity widget extension's bundle id — defined for when it's ready, but NOT yet
-# used below: project.yml doesn't embed RollActivityWidget into Flim yet either (see its
-# comment), both waiting on the manual Developer-portal + match setup in
-# docs/TESTFLIGHT_SETUP.md's "Adding a new target" section. Wire it back into the match(...)
-# calls and provisioningProfiles below once that's done — see git history on this file for
-# exactly what that looked like.
+# The Live Activity widget extension — its own bundle id, App ID, and profile, same as the
+# main app needs. Used in both match(...) calls and the beta lane's provisioningProfiles map
+# below; project.yml embeds the target into the app. See docs/TESTFLIGHT_SETUP.md's "Adding a
+# new target" for the one-time setup this already went through.
 WIDGET_IDENTIFIER = "com.flim.app.RollActivityWidget"
 XCODEPROJ      = "Flim.xcodeproj"
 SCHEME         = "Flim"
