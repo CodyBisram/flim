@@ -11,6 +11,9 @@ struct CreateRollView: View {
     @State private var createdRoll: Roll?
     @State private var error: String?
     @State private var copied = false
+    /// The form fits a medium sheet; the success state (code card + promise note + two button
+    /// rows) does not, so it grows to large on create rather than overflowing the detent.
+    @State private var detent: PresentationDetent = .medium
 
     var body: some View {
         NavigationStack {
@@ -38,7 +41,7 @@ struct CreateRollView: View {
             }
         }
         .presentationBackground(FlimTheme.bg)
-        .presentationDetents([.medium])
+        .presentationDetents([.medium, .large], selection: $detent)
     }
 
     private var formView: some View {
@@ -75,63 +78,71 @@ struct CreateRollView: View {
     }
 
     private func successView(roll: Roll) -> some View {
-        VStack(spacing: 24) {
-            Spacer()
+        // Everything above Done scrolls, so a short device (or Dynamic Type) shrinks the
+        // scrollable middle instead of pushing the checkmark into the nav bar and Done off
+        // the bottom edge — the failure mode when this was a plain Spacer-padded VStack.
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(spacing: 24) {
+                    Image(systemName: "checkmark.circle")
+                        .font(.system(size: 48, weight: .ultraLight))
+                        .foregroundStyle(FlimTheme.accent)
 
-            Image(systemName: "checkmark.circle")
-                .font(.system(size: 48, weight: .ultraLight))
-                .foregroundStyle(FlimTheme.accent)
+                    VStack(spacing: 8) {
+                        Text(roll.name)
+                            .font(.system(size: 22, weight: .thin))
+                            .foregroundStyle(.white)
+                        Text("Share this code with friends")
+                            .font(.system(size: 14))
+                            .foregroundStyle(Color(white: 0.5))
+                    }
 
-            VStack(spacing: 8) {
-                Text(roll.name)
-                    .font(.system(size: 22, weight: .thin))
-                    .foregroundStyle(.white)
-                Text("Share this code with friends")
-                    .font(.system(size: 14))
-                    .foregroundStyle(Color(white: 0.5))
-            }
+                    Text(roll.inviteCode)
+                        .font(.system(size: 36, weight: .thin, design: .monospaced))
+                        .tracking(8)
+                        .foregroundStyle(.white)
+                        .padding(.vertical, 20)
+                        .padding(.horizontal, 28)
+                        .glassCard(cornerRadius: 16)
 
-            Text(roll.inviteCode)
-                .font(.system(size: 36, weight: .thin, design: .monospaced))
-                .tracking(8)
-                .foregroundStyle(.white)
-                .padding(.vertical, 20)
-                .padding(.horizontal, 28)
-                .glassCard(cornerRadius: 16)
+                    // The hook, said the moment the roll exists: everyone's shots come back together.
+                    RevealPromiseNote()
 
-            // The hook, said the moment the roll exists: everyone's shots come back together.
-            RevealPromiseNote()
+                    // Copy the code, or share the invite (a tappable https link) straight to friends.
+                    HStack(spacing: 12) {
+                        Button {
+                            UIPasteboard.general.string = roll.inviteCode
+                            Haptics.tap()
+                            withAnimation(.snappy(duration: 0.2)) { copied = true }
+                        } label: {
+                            Label(copied ? "Copied" : "Copy code",
+                                  systemImage: copied ? "checkmark" : "doc.on.doc")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(copied ? FlimTheme.accent : .white)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 13)
+                                .glassCapsule(interactive: true)
+                                .contentTransition(.symbolEffect(.replace))
+                        }
 
-            // Copy the code, or share the invite (a tappable https link) straight to friends.
-            HStack(spacing: 12) {
-                Button {
-                    UIPasteboard.general.string = roll.inviteCode
-                    Haptics.tap()
-                    withAnimation(.snappy(duration: 0.2)) { copied = true }
-                } label: {
-                    Label(copied ? "Copied" : "Copy code",
-                          systemImage: copied ? "checkmark" : "doc.on.doc")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(copied ? FlimTheme.accent : .white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 13)
-                        .glassCapsule(interactive: true)
-                        .contentTransition(.symbolEffect(.replace))
+                        ShareLink(item: AppInfo.rollInviteMessage(rollName: roll.name, code: roll.inviteCode)) {
+                            Label("Share", systemImage: "square.and.arrow.up")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(.black)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 13)
+                                .background(FlimTheme.accent, in: Capsule())
+                        }
+                        .simultaneousGesture(TapGesture().onEnded { Haptics.tap() })
+                    }
+                    .padding(.horizontal, 4)
                 }
-
-                ShareLink(item: AppInfo.rollInviteMessage(rollName: roll.name, code: roll.inviteCode)) {
-                    Label("Share", systemImage: "square.and.arrow.up")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(.black)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 13)
-                        .background(FlimTheme.accent, in: Capsule())
-                }
-                .simultaneousGesture(TapGesture().onEnded { Haptics.tap() })
+                .frame(maxWidth: .infinity)
+                .padding(.top, 20)
+                .padding(.bottom, 24)
             }
-            .padding(.horizontal, 4)
-
-            Spacer()
+            // No rubber-banding when the content already fits the large detent.
+            .scrollBounceBehavior(.basedOnSize)
 
             PrimaryButton(title: "Done") {
                 dismiss()
@@ -145,7 +156,10 @@ struct CreateRollView: View {
         error = nil
         do {
             let roll = try await rolls.createRoll(name: name.trimmingCharacters(in: .whitespaces), createdBy: userId)
-            createdRoll = roll
+            withAnimation(.snappy(duration: 0.3)) {
+                createdRoll = roll
+                detent = .large
+            }
             RollLiveActivity.sync(rollId: roll.id, rollName: roll.name, revealAt: roll.revealAt, shotCount: 0)
             // The camera should default to shooting into a roll you just made until you
             // deliberately switch away from it.
