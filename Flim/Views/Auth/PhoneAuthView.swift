@@ -152,7 +152,7 @@ struct EmailAuthView: View {
         do {
             let valid = try await auth.redeemInvite(code: inviteCode, email: email)
             if valid {
-                Haptics.reveal()
+                Haptics.success()
                 showInviteSection = false
                 inviteCode = ""
                 await send()

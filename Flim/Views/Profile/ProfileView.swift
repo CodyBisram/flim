@@ -142,6 +142,7 @@ struct ProfileView: View {
             }
             .confirmationDialog("Delete your account?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
                 Button("Delete Everything", role: .destructive) {
+                    Haptics.warning()
                     isDeleting = true
                     Task {
                         do {
@@ -165,6 +166,7 @@ struct ProfileView: View {
             .confirmationDialog("Wipe all your test data?", isPresented: $showWipeConfirm, titleVisibility: .visible) {
                 Button("Wipe Everything", role: .destructive) {
                     guard let uid = auth.currentUser?.id else { return }
+                    Haptics.warning()
                     Task { await photos.deleteAllMyData(userId: uid) }
                 }
                 Button("Cancel", role: .cancel) {}

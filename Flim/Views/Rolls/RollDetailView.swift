@@ -8,6 +8,7 @@ struct RollDetailView: View {
     @Environment(AuthService.self) private var auth
     @Environment(NotificationService.self) private var notifications
     @Environment(FeedService.self) private var feed
+    @Environment(\.displayScale) private var displayScale
     @Environment(\.dismiss) private var dismiss
     @AppStorage("developNotificationsEnabled") private var notificationsEnabled = true
     @State private var vm = DarkroomViewModel()
@@ -26,6 +27,7 @@ struct RollDetailView: View {
     @State private var coverToast = false
     @State private var showLeaveRoll = false
     @State private var showCarousel = false
+    @State private var shareItem: ShareImage?
     @State private var isMuted = false
     @State private var showReveal = false
     /// Flips true once a developed roll's pagination has been fully drained (see `onAppear`).
@@ -95,6 +97,12 @@ struct RollDetailView: View {
                 Group {
                     if vm.isLoading && vm.photos.isEmpty {
                         ProgressView().tint(.white)
+                    } else if let error = vm.error, vm.photos.isEmpty {
+                        // The view model has always tracked this; the roll grid just never showed
+                        // it, so a failed load looked like an empty roll.
+                        ErrorState(message: error) {
+                            await vm.loadRoll(photoService: photoService, rollId: roll.id, blockedIds: feed.blockedIds)
+                        }
                     } else if vm.photos.isEmpty {
                         VStack(spacing: 10) {
                             Image(systemName: "photo.on.rectangle.angled")
@@ -126,6 +134,7 @@ struct RollDetailView: View {
                         }
                         .refreshable {
                             await vm.loadRoll(photoService: photoService, rollId: roll.id, blockedIds: feed.blockedIds)
+                            warmGridThumbnails()   // no-op for anything already cached
                         }
                     }
                 }
@@ -213,6 +222,12 @@ struct RollDetailView: View {
                     await vm.loadMoreRoll(photoService: photoService, rollId: roll.id, blockedIds: feed.blockedIds)
                 }
                 rollFullyPaged = true
+                // Only loadRoll batches signed URLs; loadMoreRoll doesn't, so every photo past
+                // the first page used to mint its own URL round-trip as it scrolled into view.
+                // One batched call for the whole (now fully paged) roll instead, then warm the
+                // thumbnails those URLs point at.
+                await vm.prefetchURLs(photoService: photoService)
+                warmGridThumbnails()
                 // The reveal, as an event: play everyone's shots once, the first time the
                 // roll is opened after it has developed.
                 if roll.isDeveloped, !vm.developedPhotos.isEmpty,
@@ -280,6 +295,7 @@ struct RollDetailView: View {
         .sheet(isPresented: $showMembers) {
             RollMembersView(roll: roll)
         }
+        .sheet(item: $shareItem) { SharePreviewSheet(photo: $0.image) }
         .sheet(isPresented: $showShareAll) {
             ActivityView(items: shareImages)
         }
@@ -289,6 +305,7 @@ struct RollDetailView: View {
         }
         .confirmationDialog("Delete this roll?", isPresented: $showDeleteRoll, titleVisibility: .visible) {
             Button("Delete Roll", role: .destructive) {
+                Haptics.warning()
                 notifications.cancelRollDevelopNotification(rollId: roll.id)
                 Task {
                     try? await rollService.deleteRoll(rollId: roll.id)
@@ -302,6 +319,7 @@ struct RollDetailView: View {
         .confirmationDialog("Leave this roll?", isPresented: $showLeaveRoll, titleVisibility: .visible) {
             Button("Leave Roll", role: .destructive) {
                 guard let uid = auth.currentUser?.id else { return }
+                Haptics.warning()
                 notifications.cancelRollDevelopNotification(rollId: roll.id)
                 Task {
                     try? await rollService.leaveRoll(rollId: roll.id, userId: uid)
@@ -342,6 +360,63 @@ struct RollDetailView: View {
         }
     }
 
+    /// Long-press actions on a roll photo. Setting the cover used to be a bare long-press with
+    /// nothing on screen announcing it existed, so only whoever wrote it knew it was there; it's
+    /// a named menu item now, next to the actions that previously meant opening the shot first.
+    @ViewBuilder
+    private func photoMenu(_ photo: Photo) -> some View {
+        if photo.isReady {
+            if isCreator {
+                Button { setCover(photo) } label: { Label("Use as roll cover", systemImage: "rectangle.on.rectangle") }
+            }
+            Button { share(photo) } label: { Label("Share", systemImage: "square.and.arrow.up") }
+        } else {
+            // Nothing to act on until the roll develops, but an empty menu would just flash a
+            // blank card, so say why instead.
+            Text("Develops with the roll")
+        }
+    }
+
+    /// Warms the grid's thumbnails so cells don't pop in on a fast scroll, mirroring what the
+    /// Darkroom grid already does at the same size.
+    ///
+    /// Deliberately the ~30KB `displayPath` thumbnail at 400pt, NOT the full 2048px image: a
+    /// 75-shot roll costs roughly 2MB warmed this way, and most of it isn't even extra egress,
+    /// since anything scrolled past would be downloaded anyway, just later and with a visible
+    /// gap. The carousel is intentionally left alone for the same reason inverted, it shows full
+    /// images, so warming a whole roll there would be tens of megabytes; its TabView already
+    /// keeps the neighbouring pages loaded.
+    ///
+    /// Developed shots only. A developing one has no viewable image and no resolved URL.
+    private func warmGridThumbnails() {
+        let items = vm.developedPhotos.compactMap { photo -> (url: URL, cacheKey: String?)? in
+            vm.signedURLCache[photo.id].map { ($0, photo.displayPath) }
+        }
+        guard !items.isEmpty else { return }
+        ImageLoader.prefetch(items, maxPixel: 400, scale: displayScale)
+    }
+
+    private func setCover(_ photo: Photo) {
+        Haptics.select()
+        Task { await rollService.setRollCover(rollId: roll.id, path: photo.storagePath) }
+        withAnimation { coverToast = true }
+        Task { try? await Task.sleep(for: .seconds(1.6)); withAnimation { coverToast = false } }
+    }
+
+    /// Pulls the full-res file down and hands it to the share composer.
+    private func share(_ photo: Photo) {
+        Haptics.tap()
+        Task {
+            guard let url = try? await photoService.signedURL(for: photo.storagePath),
+                  let (data, _) = try? await URLSession.shared.data(from: url),
+                  let image = UIImage(data: data) else {
+                Haptics.error()
+                return
+            }
+            shareItem = ShareImage(image: image)
+        }
+    }
+
     private func sectionHeader(_ title: String) -> some View {
         HStack {
             Text(title)
@@ -364,13 +439,7 @@ struct RollDetailView: View {
                         guard photo.isReady else { return }
                         selectedPhoto = photo
                     }
-                    .onLongPressGesture {
-                        guard isCreator, photo.isReady else { return }
-                        Haptics.select()
-                        Task { await rollService.setRollCover(rollId: roll.id, path: photo.storagePath) }
-                        withAnimation { coverToast = true }
-                        Task { try? await Task.sleep(for: .seconds(1.6)); withAnimation { coverToast = false } }
-                    }
+                    .contextMenu { photoMenu(photo) }
                     .task {
                         if photo.isReady, vm.signedURLCache[photo.id] == nil {
                             _ = await vm.signedURL(for: photo, photoService: photoService)

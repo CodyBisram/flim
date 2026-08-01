@@ -91,6 +91,7 @@ struct PostDetailView: View {
         .sheet(item: $shareItem) { SharePreviewSheet(photo: $0.image) }
         .confirmationDialog("Delete this post?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
             Button("Delete", role: .destructive) {
+                Haptics.warning()
                 Task { await feed.deletePost(id: post.id); dismiss() }
             }
             Button("Cancel", role: .cancel) {}
@@ -100,6 +101,7 @@ struct PostDetailView: View {
         .confirmationDialog("Report this photo?", isPresented: $showReportConfirm, titleVisibility: .visible) {
             Button("Report", role: .destructive) {
                 guard let uid = auth.currentUser?.id else { return }
+                Haptics.success()   // the report went through, matching the toast
                 Task { await feed.reportPost(post, from: uid) }
                 withAnimation { reportedToast = true }
                 Task { try? await Task.sleep(for: .seconds(2)); withAnimation { reportedToast = false } }
@@ -111,6 +113,7 @@ struct PostDetailView: View {
         .confirmationDialog("Block \(item.author.handle)?", isPresented: $showBlockConfirm, titleVisibility: .visible) {
             Button("Block", role: .destructive) {
                 guard let uid = auth.currentUser?.id else { return }
+                Haptics.warning()
                 Task {
                     await feed.block(post.userId, from: uid)
                     feed.feed.removeAll { $0.author.id == post.userId }

@@ -34,6 +34,11 @@ struct FeedView: View {
                             .padding(.horizontal, 16).padding(.vertical, 16)
                         }
                         .disabled(true)
+                    } else if let error = feed.feedError {
+                        // A failed load is not an empty feed, don't tell someone with no signal
+                        // that nobody they follow has posted.
+                        ErrorState(message: error) { await reload() }
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else {
                         emptyState
                     }
@@ -361,14 +366,7 @@ struct FeedPostCard: View {
                 }
                 Spacer()
                 Menu {
-                    if isOwn {
-                        Button { captionDraft = post.caption ?? ""; showEditCaption = true } label: { Label("Edit caption", systemImage: "pencil") }
-                        Button { saveToCameraRoll() } label: { Label("Save to Camera Roll", systemImage: "square.and.arrow.down") }
-                        Button(role: .destructive) { showDeleteConfirm = true } label: { Label("Delete post", systemImage: "trash") }
-                    } else {
-                        Button { showReportConfirm = true } label: { Label("Report", systemImage: "flag") }
-                        Button(role: .destructive) { showBlockConfirm = true } label: { Label("Block \(item.author.handle)", systemImage: "hand.raised") }
-                    }
+                    postActions
                 } label: {
                     Image(systemName: "ellipsis")
                         .font(.system(size: 16, weight: .bold))
@@ -410,6 +408,10 @@ struct FeedPostCard: View {
                 .clipShape(RoundedRectangle(cornerRadius: 12))
                 .contentShape(Rectangle())
                 .onTapGesture(count: 2) { doubleTapLike() }
+                // The same actions as the ••• button above, on the photo itself. Long-press is
+                // where people already reach for these, and it puts them on the thing being
+                // acted on instead of a 34pt target in the corner.
+                .contextMenu { postActions }
                 .accessibilityElement()
                 .accessibilityLabel("Photo by \(item.author.handle)")
                 .accessibilityHint("Double-tap to like, or react below")
@@ -511,7 +513,10 @@ struct FeedPostCard: View {
             }
         }
         .confirmationDialog("Delete this post?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
-            Button("Delete", role: .destructive) { Task { await feed.deletePost(id: post.id) } }
+            Button("Delete", role: .destructive) {
+                Haptics.warning()
+                Task { await feed.deletePost(id: post.id) }
+            }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("It's removed from your page and feed. The photo stays in your Darkroom.")
@@ -519,6 +524,7 @@ struct FeedPostCard: View {
         .confirmationDialog("Report this photo?", isPresented: $showReportConfirm, titleVisibility: .visible) {
             Button("Report", role: .destructive) {
                 guard let uid = auth.currentUser?.id else { return }
+                Haptics.success()   // the report went through, matching the toast
                 Task { await feed.reportPost(post, from: uid) }
                 withAnimation { reportedToast = true }
                 Task { try? await Task.sleep(for: .seconds(2)); withAnimation { reportedToast = false } }
@@ -530,12 +536,27 @@ struct FeedPostCard: View {
         .confirmationDialog("Block \(item.author.handle)?", isPresented: $showBlockConfirm, titleVisibility: .visible) {
             Button("Block", role: .destructive) {
                 guard let uid = auth.currentUser?.id else { return }
+                Haptics.warning()
                 Task { await feed.block(post.userId, from: uid) }
                 withAnimation { feed.feed.removeAll { $0.author.id == post.userId } }
             }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("You won't see each other's posts, and they'll be unfollowed.")
+        }
+    }
+
+    /// Declared once and used by both the ••• menu and the photo's long-press menu, so the two
+    /// can't drift apart as actions are added.
+    @ViewBuilder
+    private var postActions: some View {
+        if isOwn {
+            Button { captionDraft = post.caption ?? ""; showEditCaption = true } label: { Label("Edit caption", systemImage: "pencil") }
+            Button { saveToCameraRoll() } label: { Label("Save to Camera Roll", systemImage: "square.and.arrow.down") }
+            Button(role: .destructive) { showDeleteConfirm = true } label: { Label("Delete post", systemImage: "trash") }
+        } else {
+            Button { showReportConfirm = true } label: { Label("Report", systemImage: "flag") }
+            Button(role: .destructive) { showBlockConfirm = true } label: { Label("Block \(item.author.handle)", systemImage: "hand.raised") }
         }
     }
 

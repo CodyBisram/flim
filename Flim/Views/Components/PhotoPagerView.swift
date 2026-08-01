@@ -133,6 +133,7 @@ struct PhotoPagerView: View {
         .confirmationDialog("Delete this photo?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
             Button("Delete", role: .destructive) {
                 guard let photo = pendingDeletePhoto else { return }
+                Haptics.warning()
                 isDeleting = true
                 Task {
                     await photoService.deletePhoto(photo)
@@ -150,7 +151,7 @@ struct PhotoPagerView: View {
                 Task {
                     await photoService.reportPhoto(photo)
                     reportedIds.insert(photo.id)
-                    Haptics.tap()
+                    Haptics.success()   // the report went through, matching the toast
                 }
             }
             Button("Cancel", role: .cancel) {}
@@ -398,7 +399,7 @@ struct PhotoPagerView: View {
         Task {
             do {
                 try await feed.createPost(photo: photo, caption: caption, userId: uid, tags: tags)
-                Haptics.reveal()
+                Haptics.success()
                 withAnimation { showSharedToast = true }
                 try? await Task.sleep(for: .seconds(2))
                 withAnimation { showSharedToast = false }

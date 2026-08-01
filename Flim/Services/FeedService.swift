@@ -10,6 +10,11 @@ final class FeedService {
     var feed: [FeedItem] = []
     var followingIds: Set<UUID> = []
     var isLoadingFeed = false
+    /// Set when a feed page fails to load, so an unreachable server reads as "couldn't load,
+    /// retry" rather than as an empty feed. Cleared on the next successful page.
+    var feedError: String?
+    /// The same, for the activity list.
+    var activityError: String?
 
     // Reactions + comments for the loaded feed, batch-fetched once per page (vs a query per
     // card). Feed cards read + mutate these, so they're the single source of truth.
@@ -321,13 +326,23 @@ final class FeedService {
         // users doesn't leave nothing to trigger the next load (which would stall pagination).
         var items: [FeedItem] = []
         while hasMoreFeed, items.isEmpty {
-            let posts: [Post] = (try? await supabase
-                .from("posts").select()
-                .in("user_id", values: authorIds.map(\.uuidString))
-                .eq("hidden", value: false)
-                .order("created_at", ascending: false)
-                .range(from: feedOffset, to: feedOffset + feedPageSize - 1)
-                .execute().value) ?? []
+            let posts: [Post]
+            do {
+                posts = try await supabase
+                    .from("posts").select()
+                    .in("user_id", values: authorIds.map(\.uuidString))
+                    .eq("hidden", value: false)
+                    .order("created_at", ascending: false)
+                    .range(from: feedOffset, to: feedOffset + feedPageSize - 1)
+                    .execute().value
+            } catch {
+                // A failed page must not look like the end of the feed: `?? []` here meant a
+                // dropped connection set hasMoreFeed = false and left the view showing the
+                // "It's quiet in here" empty state, as if nobody had posted.
+                feedError = error.localizedDescription
+                return
+            }
+            feedError = nil
 
             feedOffset += posts.count
             if posts.count < feedPageSize { hasMoreFeed = false }
@@ -734,9 +749,19 @@ final class FeedService {
         async let taggedRaws = activityTagged(userId: userId)
 
         await blockedDone
-        var raws = await ownPostRaws
-        raws += await followRaws
-        raws += await taggedRaws
+        var raws: [ActivityRaw]
+        do {
+            // These three used to swallow their errors, so an unreachable server produced an
+            // empty array indistinguishable from a genuinely quiet account, and the view said
+            // "No activity yet". Surfaced instead, so the view can offer a retry.
+            raws = try await ownPostRaws
+            raws += try await followRaws
+            raws += try await taggedRaws
+            activityError = nil
+        } catch {
+            activityError = error.localizedDescription
+            return []
+        }
 
         raws.removeAll { blockedIds.contains($0.actorId) }
         let profiles = await fetchProfiles(ids: Array(Set(raws.map(\.actorId))))
@@ -758,52 +783,52 @@ final class FeedService {
 
     /// Reactions + comments on the caller's own posts. The two pulls both key off the same post
     /// id set, so they run concurrently once that set is known.
-    private func activityOnOwnPosts(userId: UUID) async -> [ActivityRaw] {
+    private func activityOnOwnPosts(userId: UUID) async throws -> [ActivityRaw] {
         let postIds = await fetchUserPosts(userId: userId).map(\.id.uuidString)
         guard !postIds.isEmpty else { return [] }
 
         async let reactions: [ActivityRaw] = {
             struct R: Decodable { let user_id: UUID; let emoji: String; let created_at: Date; let post_id: UUID }
-            let rs: [R] = (try? await supabase.from("post_reactions")
+            let rs: [R] = try await supabase.from("post_reactions")
                 .select("user_id,emoji,created_at,post_id")
                 .in("post_id", values: postIds)
                 .neq("user_id", value: userId.uuidString)
-                .order("created_at", ascending: false).limit(40).execute().value) ?? []
+                .order("created_at", ascending: false).limit(40).execute().value
             return rs.map { ActivityRaw(kind: .like($0.emoji), actorId: $0.user_id, date: $0.created_at, postId: $0.post_id) }
         }()
 
         async let comments: [ActivityRaw] = {
             struct C: Decodable { let user_id: UUID; let body: String; let created_at: Date; let post_id: UUID }
-            let cs: [C] = (try? await supabase.from("post_comments")
+            let cs: [C] = try await supabase.from("post_comments")
                 .select("user_id,body,created_at,post_id")
                 .in("post_id", values: postIds)
                 .neq("user_id", value: userId.uuidString)
-                .order("created_at", ascending: false).limit(40).execute().value) ?? []
+                .order("created_at", ascending: false).limit(40).execute().value
             return cs.map { ActivityRaw(kind: .comment($0.body), actorId: $0.user_id, date: $0.created_at, postId: $0.post_id) }
         }()
 
-        return await reactions + comments
+        return try await reactions + comments
     }
 
-    private func activityFollows(userId: UUID) async -> [ActivityRaw] {
+    private func activityFollows(userId: UUID) async throws -> [ActivityRaw] {
         struct F: Decodable { let follower_id: UUID; let created_at: Date }
-        let fs: [F] = (try? await supabase.from("follows")
+        let fs: [F] = try await supabase.from("follows")
             .select("follower_id,created_at")
             .eq("following_id", value: userId.uuidString)
-            .order("created_at", ascending: false).limit(40).execute().value) ?? []
+            .order("created_at", ascending: false).limit(40).execute().value
         return fs.map { ActivityRaw(kind: .follow, actorId: $0.follower_id, date: $0.created_at, postId: nil) }
     }
 
     /// Photos you were tagged in, the actor is the post's author.
-    private func activityTagged(userId: UUID) async -> [ActivityRaw] {
+    private func activityTagged(userId: UUID) async throws -> [ActivityRaw] {
         struct T: Decodable {
             let post_id: UUID; let created_at: Date; let posts: P?
             struct P: Decodable { let user_id: UUID }
         }
-        let ts: [T] = (try? await supabase.from("post_tags")
+        let ts: [T] = try await supabase.from("post_tags")
             .select("post_id,created_at,posts(user_id)")
             .eq("tagged_user_id", value: userId.uuidString)
-            .order("created_at", ascending: false).limit(40).execute().value) ?? []
+            .order("created_at", ascending: false).limit(40).execute().value
         return ts.compactMap { t in
             guard let author = t.posts?.user_id, author != userId else { return nil }
             return ActivityRaw(kind: .tagged, actorId: author, date: t.created_at, postId: t.post_id)

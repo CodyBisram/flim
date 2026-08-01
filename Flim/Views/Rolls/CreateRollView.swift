@@ -164,7 +164,7 @@ struct CreateRollView: View {
             // The camera should default to shooting into a roll you just made until you
             // deliberately switch away from it.
             NotificationCenter.default.post(name: .selectCameraRoll, object: roll)
-            Haptics.reveal()
+            Haptics.success()
         } catch {
             self.error = error.localizedDescription
         }

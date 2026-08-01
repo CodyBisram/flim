@@ -287,6 +287,9 @@ struct CameraView: View {
     /// view is already mounted underneath the cover.
     private func startCameraFlow() {
         camera.flashMode = flashMode
+        // Warm the Taptic Engine while the camera spins up, so the shutter's haptic fires with
+        // the press instead of trailing it the first time.
+        Haptics.prepare()
         bindCapture()
         Task { await refreshUnsorted() }
         Task {

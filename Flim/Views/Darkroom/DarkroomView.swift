@@ -1,5 +1,6 @@
 import SwiftUI
 import TipKit
+import UIKit
 
 /// Builds the roll-delete confirmation message from each photo's already-resolved roll name
 /// (`nil` for a personal, non-roll photo). A batch that resolves to exactly one shared roll
@@ -38,6 +39,7 @@ struct DarkroomView: View {
     @State private var showSortDeck = false
     @State private var showRollDeleteConfirm = false
     @State private var pendingRollDeleteBatch: [Photo] = []
+    @State private var shareItem: ShareImage?
 
     private let columns = [
         GridItem(.flexible(), spacing: 2),
@@ -207,8 +209,10 @@ struct DarkroomView: View {
         .fullScreenCover(isPresented: $showSortDeck, onDismiss: { Task { await reload() } }) {
             SortDeckView(onFinish: {})
         }
+        .sheet(item: $shareItem) { SharePreviewSheet(photo: $0.image) }
         .confirmationDialog("Delete this photo?", isPresented: $showRollDeleteConfirm, titleVisibility: .visible) {
             Button("Delete", role: .destructive) {
+                Haptics.warning()
                 let batch = pendingRollDeleteBatch
                 pendingRollDeleteBatch = []
                 commitDeleteBatch(batch)
@@ -248,9 +252,51 @@ struct DarkroomView: View {
                     PhotoGridCell(photo: photo, signedURL: nil, rollName: rollName(for: photo.rollId))
                         .overlay { if isSelecting { selectionMark(photo.id) } }
                         .onTapGesture { if isSelecting { toggleSelect(photo.id) } }
-                        .onLongPressGesture { beginSelecting(photo.id) }
+                        .contextMenu { developingMenu(photo) }
                 }
             }
+        }
+    }
+
+    // MARK: - Grid long-press menu
+
+    /// Long-press actions on a developed shot. This replaces the old bare long-press-to-select
+    /// gesture: selecting is still one item in here, alongside the actions that until now
+    /// required opening the photo full-screen first. A context menu and an `onLongPressGesture`
+    /// on the same cell would compete for the gesture, so the menu subsumes it rather than
+    /// stacking on top.
+    @ViewBuilder
+    private func developedMenu(_ photo: Photo) -> some View {
+        Button { beginSelecting(photo.id) } label: { Label("Select", systemImage: "checkmark.circle") }
+        Button { share(photo) } label: { Label("Share", systemImage: "square.and.arrow.up") }
+        Button {
+            Haptics.tap()
+            Task { await auth.setAvatar(fromPhotoPath: photo.storagePath) }
+        } label: { Label("Set as profile photo", systemImage: "person.crop.circle") }
+        Divider()
+        Button(role: .destructive) { requestDelete([photo]) } label: { Label("Delete", systemImage: "trash") }
+    }
+
+    /// A still-developing shot has no viewable image yet, so its menu is select + delete only.
+    @ViewBuilder
+    private func developingMenu(_ photo: Photo) -> some View {
+        Button { beginSelecting(photo.id) } label: { Label("Select", systemImage: "checkmark.circle") }
+        Divider()
+        Button(role: .destructive) { requestDelete([photo]) } label: { Label("Delete", systemImage: "trash") }
+    }
+
+    /// Pulls the full-res file down and hands it to the share composer, the same path the feed
+    /// card's "Save to Camera Roll" uses.
+    private func share(_ photo: Photo) {
+        Haptics.tap()
+        Task {
+            guard let url = try? await photoService.signedURL(for: photo.storagePath),
+                  let (data, _) = try? await URLSession.shared.data(from: url),
+                  let image = UIImage(data: data) else {
+                Haptics.error()
+                return
+            }
+            shareItem = ShareImage(image: image)
         }
     }
 
@@ -272,18 +318,25 @@ struct DarkroomView: View {
         Haptics.tap()
     }
 
-    /// Optimistically hides the selected photos and shows an Undo toast; the real (irreversible)
-    /// server delete only commits after a few seconds if the user doesn't undo. Roll shots are
-    /// shared, so if the selection includes any, confirm first (naming the roll), personal
-    /// photos keep the existing instant-hide-then-undo behavior.
     private func deleteSelected() {
-        let toDelete = (vm.developedPhotos + vm.developingPhotos).filter { selectedIDs.contains($0.id) }
+        requestDelete((vm.developedPhotos + vm.developingPhotos).filter { selectedIDs.contains($0.id) })
+    }
+
+    /// Optimistically hides the photos and shows an Undo toast; the real (irreversible) server
+    /// delete only commits after a few seconds if the user doesn't undo. Roll shots are shared,
+    /// so if the batch includes any, confirm first (naming the roll), personal photos keep the
+    /// instant-hide-then-undo behavior. The single delete entry point for both the selection
+    /// toolbar and a cell's long-press menu, so a one-photo delete gets the same confirmation
+    /// a batch does.
+    private func requestDelete(_ toDelete: [Photo]) {
         guard !toDelete.isEmpty else { return }
 
         if toDelete.contains(where: { $0.rollId != nil }) {
+            // No haptic yet, nothing destructive has happened until the dialog is confirmed.
             pendingRollDeleteBatch = toDelete
             showRollDeleteConfirm = true
         } else {
+            Haptics.warning()
             commitDeleteBatch(toDelete)
         }
     }
@@ -370,7 +423,7 @@ struct DarkroomView: View {
                                 selectedPhoto = photo
                             }
                         }
-                        .onLongPressGesture { beginSelecting(photo.id) }
+                        .contextMenu { developedMenu(photo) }
                         .task {
                             if vm.signedURLCache[photo.id] == nil {
                                 _ = await vm.signedURL(for: photo, photoService: photoService)

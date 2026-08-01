@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// Instagram-style comments sheet: a scrollable list of everyone's comments (no avatars, compact
 /// "15m / 3h / 5w" timestamps), a composer, and per-comment likes. Presented from the feed's
@@ -87,6 +88,16 @@ struct CommentsSheet: View {
                 }
             }
         }
+        .contextMenu {
+            Button {
+                UIPasteboard.general.string = info.comment.body
+                Haptics.tap()
+            } label: { Label("Copy", systemImage: "doc.on.doc") }
+            if info.comment.userId == auth.currentUser?.id {
+                Divider()
+                Button(role: .destructive) { delete(info) } label: { Label("Delete", systemImage: "trash") }
+            }
+        }
     }
 
     private var composer: some View {
@@ -147,6 +158,7 @@ struct CommentsSheet: View {
     }
 
     private func delete(_ info: CommentInfo) {
+        Haptics.tap()   // reversible and self-contained, so a plain tap, not the warning buzz
         Task {
             await feed.deleteComment(id: info.comment.id)
             await reload()

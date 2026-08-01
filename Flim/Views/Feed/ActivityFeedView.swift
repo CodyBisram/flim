@@ -23,13 +23,16 @@ struct ActivityFeedView: View {
     @State private var thumbURLs: [UUID: URL] = [:]
     @State private var profileRoute: ProfileRoute?
     @State private var postRoute: FeedItem?
+    @Namespace private var postNS
 
     var body: some View {
         NavigationStack {
             ZStack {
                 FlimTheme.bg.ignoresSafeArea()
 
-                if items.isEmpty && loaded {
+                if let error = feed.activityError, items.isEmpty, loaded {
+                    ErrorState(message: error) { await load() }
+                } else if items.isEmpty && loaded {
                     VStack(spacing: 10) {
                         Image(systemName: "bell.slash")
                             .font(.system(size: 26, weight: .ultraLight))
@@ -60,27 +63,34 @@ struct ActivityFeedView: View {
                 }
             }
             .navigationDestination(item: $profileRoute) { UserPageView(userId: $0.id) }
-            .navigationDestination(item: $postRoute) { PostDetailView(item: $0) }
-            .task {
-                guard let uid = auth.currentUser?.id else { loaded = true; return }
-                // followingIds only otherwise loads lazily from UserPageView, so a follow
-                // notification opened before visiting any profile this session would read as
-                // "not following" even when you already are. Runs alongside the activity fetch,
-                // not after, so it doesn't add to first paint.
-                async let activityTask = feed.fetchActivity(userId: uid)
-                async let followingTask: Void = loadFollowingIfNeeded(uid)
-                items = await activityTask
-                await followingTask
-                // Thumbnails are the smallest rendition in the pipeline (~30KB) and deduped
-                // by post here, five reactions on the same photo mint one signed URL, not
-                // five, so this costs about the same as any other thumbnail row in the app.
-                let paths = Array(Set(items.compactMap { $0.post?.displayPath }))
-                let urls = await feed.signedURLs(for: paths)
-                thumbURLs = buildActivityThumbURLs(items: items, urlsByPath: urls)
-                loaded = true
+            .navigationDestination(item: $postRoute) { item in
+                // The row's thumbnail is the photo being opened, so it expands into the detail
+                // view rather than cross-fading.
+                PostDetailView(item: item)
+                    .navigationTransition(.zoom(sourceID: item.post.id, in: postNS))
             }
+            .task { await load() }
         }
         .presentationBackground(FlimTheme.bg)
+    }
+
+    private func load() async {
+        guard let uid = auth.currentUser?.id else { loaded = true; return }
+        // followingIds only otherwise loads lazily from UserPageView, so a follow
+        // notification opened before visiting any profile this session would read as
+        // "not following" even when you already are. Runs alongside the activity fetch,
+        // not after, so it doesn't add to first paint.
+        async let activityTask = feed.fetchActivity(userId: uid)
+        async let followingTask: Void = loadFollowingIfNeeded(uid)
+        items = await activityTask
+        await followingTask
+        // Thumbnails are the smallest rendition in the pipeline (~30KB) and deduped
+        // by post here, five reactions on the same photo mint one signed URL, not
+        // five, so this costs about the same as any other thumbnail row in the app.
+        let paths = Array(Set(items.compactMap { $0.post?.displayPath }))
+        let urls = await feed.signedURLs(for: paths)
+        thumbURLs = buildActivityThumbURLs(items: items, urlsByPath: urls)
+        loaded = true
     }
 
     /// Two tap regions per row: the avatar opens the actor's profile; everything else (the
@@ -129,6 +139,7 @@ struct ActivityFeedView: View {
             } else {
                 Button { openDestination(item) } label: { thumbnail(item) }
                     .buttonStyle(.plain)
+                    .matchedTransitionSource(id: item.post?.id ?? item.id, in: postNS)
             }
         }
         .padding(.horizontal, 18).padding(.vertical, 10)

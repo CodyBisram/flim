@@ -21,6 +21,7 @@ struct UserPageView: View {
     @State private var showReportConfirm = false
     @State private var reportedToast = false
     @State private var showAvatarViewer = false
+    @Namespace private var postNS
     @Environment(\.dismiss) private var dismiss
 
     private var isSelf: Bool { userId == auth.currentUser?.id }
@@ -38,6 +39,11 @@ struct UserPageView: View {
                         pageHeader(topInset: geo.safeAreaInsets.top)
                         if isBlocked {
                             blockedState
+                        } else if loaded && profile == nil {
+                            // No profile came back, so the page has nothing real on it. Offer a
+                            // retry instead of an empty grid under a blank header.
+                            ErrorState(message: "Couldn't load this profile.") { await load() }
+                                .padding(.top, 30)
                         } else if posts.isEmpty && loaded {
                             emptyState
                         } else {
@@ -92,6 +98,7 @@ struct UserPageView: View {
         .confirmationDialog("Block \(profile?.handle ?? "this user")?", isPresented: $showBlockConfirm, titleVisibility: .visible) {
             Button("Block", role: .destructive) {
                 guard let uid = auth.currentUser?.id else { return }
+                Haptics.warning()
                 Task { await feed.block(userId, from: uid); dismiss() }
             }
             Button("Cancel", role: .cancel) {}
@@ -101,6 +108,7 @@ struct UserPageView: View {
         .confirmationDialog("Report \(profile?.handle ?? "this user")?", isPresented: $showReportConfirm, titleVisibility: .visible) {
             Button("Report", role: .destructive) {
                 guard let uid = auth.currentUser?.id else { return }
+                Haptics.success()   // the report went through, matching the toast
                 Task { await feed.reportUser(userId, from: uid) }
                 withAnimation { reportedToast = true }
                 Task { try? await Task.sleep(for: .seconds(2)); withAnimation { reportedToast = false } }
@@ -248,10 +256,17 @@ struct UserPageView: View {
             LazyVGrid(columns: columns, spacing: 3) {
                 ForEach(posts) { post in
                     if let author = profile {
-                        NavigationLink { PostDetailView(item: FeedItem(post: post, author: author)) } label: {
+                        NavigationLink {
+                            PostDetailView(item: FeedItem(post: post, author: author))
+                                // The tapped thumbnail expands into the detail view instead of
+                                // cross-fading, matching how the Darkroom and roll grids already
+                                // open a photo.
+                                .navigationTransition(.zoom(sourceID: post.id, in: postNS))
+                        } label: {
                             PostThumb(path: post.displayPath)
                         }
                         .buttonStyle(.plain)
+                        .matchedTransitionSource(id: post.id, in: postNS)
                     }
                 }
             }

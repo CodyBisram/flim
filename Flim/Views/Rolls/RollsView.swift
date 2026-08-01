@@ -11,6 +11,7 @@ struct RollsView: View {
     @State private var loadError: String?
     @State private var rollToLeave: Roll?
     @State private var mutedRolls: Set<UUID> = []
+    @State private var inviteShareRoll: Roll?
 
     private func isCreator(_ roll: Roll) -> Bool { auth.currentUser?.id == roll.createdBy }
 
@@ -67,6 +68,9 @@ struct RollsView: View {
         .sheet(isPresented: $showJoin) {
             JoinRollView()
         }
+        .sheet(item: $inviteShareRoll) { roll in
+            ActivityView(items: [AppInfo.rollInviteMessage(rollName: roll.name, code: roll.inviteCode)])
+        }
         .onAppear { Task { await load() } }
         .onChange(of: rolls.coverPaths) {
             Task { await resolveCovers() }
@@ -96,6 +100,34 @@ struct RollsView: View {
                 coverURLs[rollId] = url
             }
         }
+    }
+
+    /// Long-press actions on a roll row. Muting was previously reachable only from inside the
+    /// roll's own ••• menu, even though this row is where the muted bell is actually shown, and
+    /// inviting meant opening the roll first. Leaving stays a swipe action too; both paths run
+    /// through the same confirmation.
+    @ViewBuilder
+    private func rollMenu(_ roll: Roll) -> some View {
+        Button { inviteShareRoll = roll } label: { Label("Share invite", systemImage: "square.and.arrow.up") }
+        Button { toggleMute(roll) } label: {
+            let muted = mutedRolls.contains(roll.id)
+            Label(muted ? "Unmute notifications" : "Mute notifications",
+                  systemImage: muted ? "bell.slash" : "bell")
+        }
+        if !isCreator(roll) {
+            Divider()
+            Button(role: .destructive) { rollToLeave = roll } label: {
+                Label("Leave roll", systemImage: "rectangle.portrait.and.arrow.right")
+            }
+        }
+    }
+
+    private func toggleMute(_ roll: Roll) {
+        guard let uid = auth.currentUser?.id else { return }
+        let muted = !mutedRolls.contains(roll.id)
+        Haptics.tap()
+        if muted { mutedRolls.insert(roll.id) } else { mutedRolls.remove(roll.id) }   // optimistic
+        Task { await photos.setRollMuted(muted, rollId: roll.id, userId: uid) }
     }
 
     /// A developed roll the user hasn't opened the reveal for yet, the "your photos are ready"
@@ -135,6 +167,7 @@ struct RollsView: View {
                             }
                         }
                     }
+                    .contextMenu { rollMenu(roll) }
                 }
             }
             .listStyle(.plain)
@@ -146,6 +179,7 @@ struct RollsView: View {
         }
         .confirmationDialog("Leave this roll?", isPresented: Binding(get: { rollToLeave != nil }, set: { if !$0 { rollToLeave = nil } }), presenting: rollToLeave) { roll in
             Button("Leave Roll", role: .destructive) {
+                Haptics.warning()
                 guard let uid = auth.currentUser?.id else { return }
                 Task { try? await rolls.leaveRoll(rollId: roll.id, userId: uid); await load() }
             }
