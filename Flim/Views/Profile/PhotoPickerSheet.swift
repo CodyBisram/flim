@@ -1,9 +1,17 @@
 import SwiftUI
+import PhotosUI
 
-/// A grid of the user's Darkroom photos for choosing a profile photo or cover.
+/// The user's Darkroom photos for choosing a profile photo or cover, plus a way in from the
+/// device photo library.
+///
+/// The library option uses `PhotosPicker`, which is backed by the out-of-process system picker,
+/// so it needs no photo-library permission and the app only ever receives the one image the user
+/// chose. That's why there's no Info.plist usage string to go with this.
 struct PhotoPickerSheet: View {
     let title: String
     let onPick: (String) -> Void   // the chosen photo's storage path
+    /// Raw data for a photo picked from the device library. Omit to offer Darkroom photos only.
+    var onPickLibraryImage: ((Data) -> Void)? = nil
 
     @Environment(AuthService.self) private var auth
     @Environment(PhotoService.self) private var photoService
@@ -12,6 +20,8 @@ struct PhotoPickerSheet: View {
     @State private var photos: [Photo] = []
     @State private var urls: [UUID: URL] = [:]
     @State private var loaded = false
+    @State private var libraryItem: PhotosPickerItem?
+    @State private var importing = false
 
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 3), count: 3)
 
@@ -25,6 +35,11 @@ struct PhotoPickerSheet: View {
                             .font(.system(size: 30, weight: .ultraLight)).foregroundStyle(FlimTheme.textTertiary)
                         Text("No photos in your Darkroom yet")
                             .font(.system(size: 14)).foregroundStyle(FlimTheme.textTertiary)
+                        if onPickLibraryImage != nil {
+                            // Used to be a dead end for anyone who hadn't shot yet.
+                            Text("Choose one from your library below.")
+                                .font(.system(size: 13)).foregroundStyle(FlimTheme.textTertiary)
+                        }
                     }
                 } else {
                     ScrollView {
@@ -52,6 +67,37 @@ struct PhotoPickerSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .flimInlineTitle(title)
             .toolbarColorScheme(.dark, for: .navigationBar)
+            .safeAreaInset(edge: .bottom) {
+                if let onPickLibraryImage {
+                    PhotosPicker(selection: $libraryItem, matching: .images, photoLibrary: .shared()) {
+                        Label(importing ? "Adding…" : "Choose from Library", systemImage: "photo.on.rectangle")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(.black)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 13)
+                            .background(FlimTheme.accent, in: Capsule())
+                    }
+                    .disabled(importing)
+                    .padding(.horizontal, 20).padding(.vertical, 10)
+                    .background(.ultraThinMaterial)
+                    .onChange(of: libraryItem) { _, item in
+                        guard let item else { return }
+                        importing = true
+                        Task {
+                            // loadTransferable hands back the ORIGINAL file bytes, which for a
+                            // modern iPhone shot is several MB of HEIC. AuthService downscales
+                            // before upload, so nothing that size is ever stored or served.
+                            let data = try? await item.loadTransferable(type: Data.self)
+                            importing = false
+                            libraryItem = nil
+                            guard let data else { Haptics.error(); return }
+                            Haptics.tap()
+                            onPickLibraryImage(data)
+                            dismiss()
+                        }
+                    }
+                }
+            }
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Cancel") { dismiss() }.foregroundStyle(.white)

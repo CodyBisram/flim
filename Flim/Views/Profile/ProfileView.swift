@@ -299,11 +299,15 @@ struct EditProfileView: View {
             .sheet(isPresented: $showAvatarPicker) {
                 PhotoPickerSheet(title: "Profile Photo") { path in
                     Task { await auth.setAvatar(fromPhotoPath: path) }
+                } onPickLibraryImage: { data in
+                    Task { await auth.setAvatar(fromImageData: data) }
                 }
             }
             .sheet(isPresented: $showCoverPicker) {
                 PhotoPickerSheet(title: "Cover Photo") { path in
                     Task { await auth.setCover(fromPhotoPath: path) }
+                } onPickLibraryImage: { data in
+                    Task { await auth.setCover(fromImageData: data) }
                 }
             }
             .task { await refreshAvatar() }

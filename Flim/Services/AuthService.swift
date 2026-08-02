@@ -221,8 +221,22 @@ final class AuthService {
     /// Sets the profile avatar from one of the user's photos. Copies the image into its own
     /// Storage object so the avatar survives the source photo being deleted.
     func setAvatar(fromPhotoPath sourcePath: String) async {
+        guard let raw = try? await supabase.storage.from("photos").download(path: sourcePath) else { return }
+        await setAvatar(fromImageData: raw)
+    }
+
+    /// Sets the profile avatar from raw image data the user picked out of their photo library.
+    ///
+    /// Deliberately does NOT run the FLIM look over it. The grade is fitted against our own
+    /// capture pipeline, so a camera-roll photo that some other app already processed would be
+    /// graded twice and come out wrong. It also keeps "a FLIM photo" meaning something specific
+    /// rather than a filter anything can be pushed through.
+    ///
+    /// Downscaled to the same 256pt an avatar copied from a Darkroom shot gets, so an imported
+    /// picture can't quietly become the largest object in the bucket.
+    func setAvatar(fromImageData raw: Data) async {
         guard let session = try? await supabase.auth.session,
-              let dest = await copyToOwnedObject(from: sourcePath, prefix: "avatar", userId: session.user.id, maxPixel: 256)
+              let dest = await uploadOwnedImage(raw, prefix: "avatar", userId: session.user.id, maxPixel: 256)
         else { return }
         let old = currentUser?.avatarPath
         struct Update: Encodable { let avatar_path: String }
@@ -236,8 +250,15 @@ final class AuthService {
 
     /// Sets the profile cover/header from one of the user's photos (its own Storage copy).
     func setCover(fromPhotoPath sourcePath: String) async {
+        guard let raw = try? await supabase.storage.from("photos").download(path: sourcePath) else { return }
+        await setCover(fromImageData: raw)
+    }
+
+    /// Sets the cover from a picked library photo. Same reasoning as `setAvatar(fromImageData:)`:
+    /// no FLIM grade on an imported picture, and downscaled to the cover's own 640pt cap.
+    func setCover(fromImageData raw: Data) async {
         guard let session = try? await supabase.auth.session,
-              let dest = await copyToOwnedObject(from: sourcePath, prefix: "cover", userId: session.user.id, maxPixel: 640)
+              let dest = await uploadOwnedImage(raw, prefix: "cover", userId: session.user.id, maxPixel: 640)
         else { return }
         let old = currentUser?.coverPath
         struct Update: Encodable { let cover_path: String }
@@ -249,10 +270,14 @@ final class AuthService {
         cleanupOldCopy(old, keeping: dest, prefix: "cover")
     }
 
-    /// Duplicates a photo into a fresh object in the user's own folder, returning its path.
-    private func copyToOwnedObject(from sourcePath: String, prefix: String, userId: UUID, maxPixel: CGFloat) async -> String? {
-        guard let raw = try? await supabase.storage.from("photos").download(path: sourcePath) else { return nil }
-        // Downscale the copy, an avatar/cover never needs the full image (saves storage + egress).
+    /// Writes image data into a fresh object in the user's own folder, returning its path.
+    ///
+    /// Shared by both sources: a Darkroom shot (downloaded first, so the avatar survives the
+    /// source photo being deleted) and a photo picked from the library. Neither is graded, and
+    /// both land at the same size cap, so where a profile picture came from makes no difference
+    /// to what gets stored.
+    private func uploadOwnedImage(_ raw: Data, prefix: String, userId: UUID, maxPixel: CGFloat) async -> String? {
+        // Downscale, an avatar/cover never needs the full image (saves storage + egress).
         let data = InstantFilmProcessor.thumbnail(from: raw, maxPixel: maxPixel) ?? raw
         let dest = "\(userId.uuidString.lowercased())/\(prefix)-\(UUID().uuidString.lowercased()).jpg"
         do {
