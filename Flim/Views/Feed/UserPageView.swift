@@ -117,12 +117,6 @@ struct UserPageView: View {
         } message: {
             Text("Flag this account for review.")
         }
-        .navigationDestination(for: FeedItem.self) { item in
-            // The tapped thumbnail expands into the detail view instead of cross-fading,
-            // matching how the Darkroom and roll grids already open a photo.
-            PostDetailView(item: item)
-                .navigationTransition(.zoom(sourceID: item.post.id, in: postNS))
-        }
         .task { await load() }
         .sheet(item: $followList) { list in
             FollowListView(userId: userId, mode: list)
@@ -262,14 +256,30 @@ struct UserPageView: View {
             LazyVGrid(columns: columns, spacing: 3) {
                 ForEach(posts) { post in
                     if let author = profile {
-                        // Value-based, NOT NavigationLink { destination } label: {}. The inline
-                        // form builds a destination view per link, and inside a LazyVGrid those
-                        // get recycled along with their cells while KEEPING their @State, so
-                        // tapping one photo could push a detail view left over from a different
-                        // one: the wrong photo, and sometimes one that opened straight into its
-                        // full-screen ImageViewer because the previous visit's `showViewer` was
-                        // still true. One destination factory below fixes both.
-                        NavigationLink(value: FeedItem(post: post, author: author)) {
+                        // `.id(post.id)` on the destination is load-bearing, don't remove it.
+                        //
+                        // The inline form builds a destination view per link, and inside a
+                        // LazyVGrid those get recycled along with their cells while KEEPING their
+                        // @State, so tapping one photo could push a detail view left over from a
+                        // different one: the wrong photo, and sometimes one that opened straight
+                        // into its full-screen ImageViewer because the previous visit's
+                        // `showViewer` was still true. Tying the destination's identity to the
+                        // post makes a recycled cell's destination a different view rather than
+                        // the same one with stale state.
+                        //
+                        // This was briefly value-based (NavigationLink(value:) plus a single
+                        // navigationDestination(for: FeedItem.self)), which is the tidier fix for
+                        // that bug, but the links came out dead: tapping a photo did nothing and
+                        // the page just appeared to reload. NavigationLink(value:) renders
+                        // DISABLED when the stack can't resolve a destination for its type, and a
+                        // disabled plain-styled link is indistinguishable from an unresponsive
+                        // one. Not worth another round of guessing at why it didn't resolve here
+                        // when this form navigates and the identity fix is a one-liner.
+                        NavigationLink {
+                            PostDetailView(item: FeedItem(post: post, author: author))
+                                .id(post.id)
+                                .navigationTransition(.zoom(sourceID: post.id, in: postNS))
+                        } label: {
                             PostThumb(path: post.displayPath)
                         }
                         .buttonStyle(.plain)
