@@ -1,6 +1,17 @@
 import SwiftUI
 import UIKit
 
+/// Whether a finished drag on the post detail view should pop back.
+///
+/// Deliberately strict: a clearly-vertical DOWNWARD drag, far enough to be deliberate, and only
+/// when the scroll was already at the very top. Anywhere else a downward drag means "scroll up",
+/// and stealing it would make a long comment thread feel broken. Free function so the thresholds
+/// are testable without a scroll view.
+func shouldDismissPostDetail(translation: CGSize, atTop: Bool, threshold: CGFloat = 110) -> Bool {
+    guard atTop, translation.height > threshold else { return false }
+    return translation.height > abs(translation.width)
+}
+
 struct PostDetailView: View {
     let item: FeedItem
     @Environment(AuthService.self) private var auth
@@ -20,6 +31,9 @@ struct PostDetailView: View {
     @State private var route: ProfileRoute?
     @State private var showEditTags = false
     @State private var editingTags: [PendingTag] = []
+    /// Swipe-down-to-go-back state: only armed at the top of the scroll.
+    @State private var atTop = true
+    @State private var dragY: CGFloat = 0
     @Environment(\.dismiss) private var dismiss
     @FocusState private var commentFocused: Bool
 
@@ -60,6 +74,32 @@ struct PostDetailView: View {
                 }
                 .padding(16)
             }
+            // Tracks whether the content is at the very top, which is the only place the
+            // swipe-down below is allowed to take over from scrolling.
+            .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, y in
+                atTop = y <= 0.5
+            }
+            .offset(y: dragY)
+            // simultaneousGesture, NOT gesture: the ScrollView keeps its own scrolling entirely
+            // intact and this only rides alongside it. Swiping down to go back came free with the
+            // zoom transition; that had to be removed because it broke which photo this screen
+            // opened, so the gesture is reimplemented on its own here.
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 12)
+                    .onChanged { value in
+                        guard atTop, value.translation.height > 0,
+                              value.translation.height > abs(value.translation.width) else { return }
+                        dragY = value.translation.height * 0.6   // damped, so it follows without racing away
+                    }
+                    .onEnded { value in
+                        let dismissing = shouldDismissPostDetail(translation: value.translation, atTop: atTop)
+                        withAnimation(.easeOut(duration: 0.2)) { dragY = 0 }
+                        if dismissing {
+                            Haptics.tap()
+                            dismiss()
+                        }
+                    }
+            )
         }
         .navigationBarTitleDisplayMode(.inline)
         .toolbarColorScheme(.dark, for: .navigationBar)
