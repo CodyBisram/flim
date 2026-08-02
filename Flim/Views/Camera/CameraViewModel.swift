@@ -27,6 +27,11 @@ final class CameraViewModel: NSObject {
     /// `capturePhoto()` for why this matters.
     private var captureGeneration = 0
 
+    /// True between `willCapturePhotoFor` (exposure beginning) and `didCapturePhotoFor` (exposure
+    /// done). The watchdog reads this so it never tears down the screen flash while the sensor is
+    /// genuinely mid-exposure, which would darken the shot it was lighting.
+    private var isExposing = false
+
     /// Hardware flash mode for the LED (distinct from `flashOpacity`, the on-screen
     /// shutter blink). Off by default; the camera UI cycles Off → Auto → On.
     var flashMode: AVCaptureDevice.FlashMode = .off
@@ -426,36 +431,66 @@ final class CameraViewModel: NSObject {
         if isFront && flashMode == .on {
             withAnimation(.easeOut(duration: 0.12)) { flashOpacity = 1 }
             Task { @MainActor [weak self] in
-                try? await Task.sleep(for: .milliseconds(260))
-                guard let self, generation == self.captureGeneration else { return }
+                guard let self else { return }
+                await self.waitForExposureToSettle()
+                guard generation == self.captureGeneration else { return }
                 self.output.capturePhoto(with: settings, delegate: self)
+                self.startCaptureWatchdog(generation: generation)
             }
         } else {
             output.capturePhoto(with: settings, delegate: self)
+            startCaptureWatchdog(generation: generation)
+        }
+    }
+
+    /// Waits for continuous auto-exposure to actually settle against the newly-lit scene.
+    ///
+    /// Replaces a flat 260ms guess. That was wrong in both directions: in a lit room AE
+    /// re-converges almost immediately, so it was pure added latency on every single front-flash
+    /// shot, and in a dim room, which is when anyone reaches for the screen flash, 260ms is
+    /// nowhere near enough, so the shot metered against a half-adapted scene. That is the
+    /// "either really good or really bad, no in-between" behaviour, still half-present after the
+    /// fixed wait was introduced.
+    ///
+    /// Capped so a scene AE can never settle on (a pitch-dark room) still takes a photo rather
+    /// than hanging on the white screen forever.
+    private func waitForExposureToSettle(cap: Duration = .milliseconds(700)) async {
+        guard let device = currentDevice else { return }
+        // A short beat first: `isAdjustingExposure` doesn't flip true the instant the scene
+        // changes, so polling immediately would read "settled" from before the screen lit up.
+        try? await Task.sleep(for: .milliseconds(60))
+        let deadline = ContinuousClock.now.advanced(by: cap)
+        while device.isAdjustingExposure, ContinuousClock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+    }
+
+    /// Recovers the UI if AVFoundation's completion callbacks never arrive.
+    ///
+    /// Timed from when the capture is actually TRIGGERED, not from the shutter tap. It used to
+    /// start at tap, which on the front-flash path meant the pre-capture wait above, plus
+    /// however long AE/AF convergence took, was spent inside the watchdog's own budget. In a dim
+    /// room, exactly the case this exists for, convergence can eat most of three seconds, so the
+    /// watchdog could fire DURING a perfectly healthy exposure and kill the screen flash
+    /// mid-shot, darkening the very photo it was lighting.
+    ///
+    /// It also refuses to clear the overlay while an exposure is genuinely in flight (between
+    /// `willCapturePhotoFor` and `didCapturePhotoFor`), extending once instead, so a slow but
+    /// working capture is never cut short. Only a capture that is still unfinished after that
+    /// gets forcibly reset.
+    @MainActor
+    private func startCaptureWatchdog(generation: Int) {
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(3))
+            guard let self, generation == self.captureGeneration, self.isCapturing else { return }
+            if self.isExposing {
+                try? await Task.sleep(for: .seconds(2))
+                guard generation == self.captureGeneration, self.isCapturing else { return }
+            }
+            self.isCapturing = false
+            withAnimation(.easeOut(duration: 0.3)) { self.flashOpacity = 0 }
         }
 
-        // Watchdog: isCapturing/flashOpacity normally only get reset by AVFoundation's own
-        // completion callbacks below, which assumes the capture pipeline always completes
-        // promptly, it doesn't always. Reported on-device: the front-camera screen-flash
-        // overlay (the full-white screen used in place of a hardware LED) once stayed lit for
-        // ~5s, well past any real exposure + processing time, with nothing to recover from a
-        // stalled callback. Front-camera screen-flash shots are exactly the case most exposed
-        // to this, they're typically taken in dim rooms, which is also when AE/AF convergence
-        // is most likely to run long. 3s is comfortably longer than any legitimate capture
-        // (normal captures finish in well under a second) but short enough to visibly recover
-        // instead of leaving the screen, and the shutter, gated on `isCapturing`, stuck
-        // indefinitely. `generation` guards against this stepping on a capture that's
-        // genuinely still different by the time this wakes up; if AVFoundation's real
-        // callbacks eventually do fire after this gives up, they're harmless no-ops (the state
-        // they'd set is already what this set), and any photo they deliver still comes through
-        // `onPhotoCapture` normally, this never cancels the underlying capture, just stops the
-        // UI from being held hostage to it.
-        Task { @MainActor in
-            try? await Task.sleep(for: .seconds(3))
-            guard generation == captureGeneration, isCapturing else { return }
-            isCapturing = false
-            withAnimation(.easeOut(duration: 0.3)) { flashOpacity = 0 }
-        }
     }
 }
 
@@ -478,7 +513,10 @@ extension CameraViewModel: AVCapturePhotoCaptureDelegate {
         // no-flash shot (front or rear) keeps a subtle blink so the shutter still feels responsive.
         // Delegate callbacks arrive on AVFoundation's queue, not main, hop before touching UI state.
         let opacity: Double = (isFront && flashMode == .on) ? 1 : 0.35
-        Task { @MainActor in self.flashOpacity = opacity }
+        Task { @MainActor in
+            self.isExposing = true
+            self.flashOpacity = opacity
+        }
     }
 
     /// Fires once the exposure itself is finished, fade the overlay out here so its length always
@@ -489,6 +527,7 @@ extension CameraViewModel: AVCapturePhotoCaptureDelegate {
     ) {
         let fade = resolvedSettings.isFlashEnabled ? 0.15 : 0.3
         Task { @MainActor in
+            self.isExposing = false
             withAnimation(.easeOut(duration: fade)) { self.flashOpacity = 0 }
         }
     }
