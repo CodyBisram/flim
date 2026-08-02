@@ -16,6 +16,33 @@ import ImageIO
 /// width crop in practice.
 enum CapturedPhotoCropper {
 
+    /// The band of viewfinder aspect ratios worth cropping against.
+    ///
+    /// Deliberately NOT enforced inside `centerCropRect`, which stays pure geometry that works
+    /// for any two aspect ratios. This is a policy about what THIS app's viewfinder can be, so
+    /// it's applied where `previewAspectRatio` is read at capture time.
+    ///
+    /// The app is portrait-only and the viewfinder is a fixed 3:4 box (0.75), so a target outside
+    /// this band did not come from the box, it came from a bad measurement. `previewAspectRatio`
+    /// is written from the preview view's LIVE bounds on every layout pass, so a transient pass,
+    /// before `.aspectRatio(3:4)` has settled, during a tab change, or any other momentary
+    /// layout, can briefly report something near a full-screen ratio (~0.46 on a 19.5:9 phone).
+    /// A photo captured against that value gets center-cropped to 0.46: roughly 40% of the frame
+    /// width thrown away, symmetric, so subjects at the far LEFT and far RIGHT disappear while
+    /// the middle of the shot looks perfectly normal. That is the reported symptom exactly, and
+    /// it would be intermittent, since it depends on catching a bad layout pass.
+    ///
+    /// Refusing to crop on an implausible target can only ever preserve MORE of the photo than
+    /// the viewfinder showed, which is the safe direction to fail: the worst case is a shot with
+    /// slightly wider edges than framed, versus the current worst case of silently deleting the
+    /// people standing at the sides.
+    static let plausibleTargetAspectRange: ClosedRange<CGFloat> = 0.6...0.95
+
+    /// Whether `targetAspectRatio` is close enough to the viewfinder's real shape to trust.
+    static func isPlausibleTargetAspect(_ targetAspectRatio: CGFloat) -> Bool {
+        plausibleTargetAspectRange.contains(targetAspectRatio)
+    }
+
     /// Pure center-crop math: given a captured image's VISUAL size (already accounting for
     /// any EXIF rotation, see `croppedJPEGData` below) and the aspect ratio (width / height)
     /// the live preview showed, returns the rect, in that same visual coordinate space, to

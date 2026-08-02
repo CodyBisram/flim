@@ -243,4 +243,39 @@ final class CapturedPhotoCropperTests: XCTestCase {
             "crop step must preserve the ORIGINAL P3 profile, not silently coerce to sRGB; got \(croppedProfile.name ?? "nil")"
         )
     }
+
+    // MARK: - Implausible target guard (capture-time policy, not the geometry)
+
+    /// The reported bug: subjects at the far left and far right missing from the saved photo
+    /// while the middle looked fine. `previewAspectRatio` is written from the preview's LIVE
+    /// bounds every layout pass, so a transient pass can report a near-full-screen ratio, and a
+    /// 4:3 capture cropped to that loses ~40% of its width, symmetrically.
+    ///
+    /// The guard lives at the capture call site, not in `centerCropRect`, which stays pure
+    /// geometry, hence testing the predicate rather than the crop here.
+    func testTheRealViewfinderAspectIsTrusted() {
+        XCTAssertTrue(CapturedPhotoCropper.isPlausibleTargetAspect(0.75))
+        // Layout rounding around the real 3:4 box must keep working.
+        XCTAssertTrue(CapturedPhotoCropper.isPlausibleTargetAspect(0.748))
+        XCTAssertTrue(CapturedPhotoCropper.isPlausibleTargetAspect(0.752))
+    }
+
+    func testFullScreenishTargetIsRejected() {
+        // ~0.46 was legitimate when the viewfinder was full-screen; it cannot be now that the
+        // viewfinder is a fixed 3:4 box, so reaching capture means a bad measurement.
+        XCTAssertFalse(CapturedPhotoCropper.isPlausibleTargetAspect(390.0 / 844.0))
+    }
+
+    func testOtherImpossibleTargetsAreRejected() {
+        XCTAssertFalse(CapturedPhotoCropper.isPlausibleTargetAspect(1.78))   // landscape 16:9
+        XCTAssertFalse(CapturedPhotoCropper.isPlausibleTargetAspect(0))
+        XCTAssertFalse(CapturedPhotoCropper.isPlausibleTargetAspect(-1))
+    }
+
+    func testSkippingTheCropKeepsMoreOfThePhotoNotLess() {
+        // Failing safe means the saved photo can only ever be wider than framed, never narrower.
+        let sensor = CGSize(width: 3024, height: 4032)
+        let framed = CapturedPhotoCropper.centerCropRect(capturedSize: sensor, targetAspectRatio: 0.75)
+        XCTAssertGreaterThanOrEqual(sensor.width, framed.width)
+    }
 }

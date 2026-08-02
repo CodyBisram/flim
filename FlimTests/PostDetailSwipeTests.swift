@@ -40,4 +40,30 @@ final class PostDetailSwipeTests: XCTestCase {
         // Real thumbs don't swipe in straight lines.
         XCTAssertTrue(shouldDismissPostDetail(translation: drag(60, 220), atTop: true))
     }
+
+    // MARK: - Sideways swipe back
+
+    func testRightwardSwipeGoesBack() {
+        XCTAssertTrue(shouldDismissPostDetailSideways(translation: drag(200, 0)))
+    }
+
+    func testLeftwardSwipeNeverGoesBack() {
+        // Leftward is "forward" on iOS; closing on it would be backwards.
+        XCTAssertFalse(shouldDismissPostDetailSideways(translation: drag(-250, 0)))
+    }
+
+    func testShortSidewaysDragDoesNotGoBack() {
+        XCTAssertFalse(shouldDismissPostDetailSideways(translation: drag(50, 0)))
+    }
+
+    func testMostlyVerticalDragIsNotASidewaysSwipe() {
+        // Scrolling with a bit of horizontal wobble must not close the screen.
+        XCTAssertFalse(shouldDismissPostDetailSideways(translation: drag(120, 300)))
+    }
+
+    func testSidewaysSwipeWorksEvenScrolledDown() {
+        // Unlike the downward gesture, this never competes with scrolling, so it isn't gated
+        // on being at the top.
+        XCTAssertTrue(shouldDismissPostDetailSideways(translation: drag(200, 20)))
+    }
 }

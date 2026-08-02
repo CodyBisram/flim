@@ -509,6 +509,19 @@ extension CameraViewModel: AVCapturePhotoCaptureDelegate {
         // isn't known yet or the crop fails, a photo must never be lost to this.
         let data = rawData.flatMap { raw -> Data in
             guard let targetAspectRatio = previewAspectRatio,
+                  // `previewAspectRatio` is written from the preview view's LIVE bounds on every
+                  // layout pass, so a transient pass (before `.aspectRatio(3:4)` settles, during a
+                  // tab change, any momentary layout) can briefly report something near a
+                  // full-screen ratio. Cropping a 4:3 capture to ~0.46 throws away roughly 40% of
+                  // the frame width, symmetrically, so subjects at the far left and far right
+                  // vanish while the middle of the shot looks completely normal, intermittently,
+                  // depending on catching a bad layout pass. The viewfinder is a fixed 3:4 box, so
+                  // anything outside that band did not come from it.
+                  //
+                  // Skipping the crop can only ever keep MORE of the photo than was framed, which
+                  // is the safe direction: slightly wider edges beats deleting whoever was
+                  // standing at the sides.
+                  CapturedPhotoCropper.isPlausibleTargetAspect(targetAspectRatio),
                   let cropped = CapturedPhotoCropper.croppedJPEGData(from: raw, targetAspectRatio: targetAspectRatio)
             else { return raw }
             return cropped

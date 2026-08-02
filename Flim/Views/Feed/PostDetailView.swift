@@ -12,6 +12,18 @@ func shouldDismissPostDetail(translation: CGSize, atTop: Bool, threshold: CGFloa
     return translation.height > abs(translation.width)
 }
 
+/// Whether a finished drag should pop back as a sideways swipe.
+///
+/// Rightward only, the direction iOS already means "back"; a leftward swipe means "forward" and
+/// must not close anything. Works anywhere in the scroll, not just at the top, because a
+/// horizontal drag never competes with vertical scrolling, which is why this can be the more
+/// forgiving of the two gestures. It widens the system's own left-EDGE swipe to the whole screen
+/// rather than replacing it.
+func shouldDismissPostDetailSideways(translation: CGSize, threshold: CGFloat = 90) -> Bool {
+    guard translation.width > threshold else { return false }
+    return translation.width > abs(translation.height)
+}
+
 struct PostDetailView: View {
     let item: FeedItem
     @Environment(AuthService.self) private var auth
@@ -34,6 +46,7 @@ struct PostDetailView: View {
     /// Swipe-down-to-go-back state: only armed at the top of the scroll.
     @State private var atTop = true
     @State private var dragY: CGFloat = 0
+    @State private var dragX: CGFloat = 0
     @Environment(\.dismiss) private var dismiss
     @FocusState private var commentFocused: Bool
 
@@ -79,7 +92,7 @@ struct PostDetailView: View {
             .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, y in
                 atTop = y <= 0.5
             }
-            .offset(y: dragY)
+            .offset(x: dragX, y: dragY)
             // simultaneousGesture, NOT gesture: the ScrollView keeps its own scrolling entirely
             // intact and this only rides alongside it. Swiping down to go back came free with the
             // zoom transition; that had to be removed because it broke which photo this screen
@@ -87,13 +100,22 @@ struct PostDetailView: View {
             .simultaneousGesture(
                 DragGesture(minimumDistance: 12)
                     .onChanged { value in
-                        guard atTop, value.translation.height > 0,
-                              value.translation.height > abs(value.translation.width) else { return }
-                        dragY = value.translation.height * 0.6   // damped, so it follows without racing away
+                        // Rightward drags follow horizontally (swipe back), downward drags follow
+                        // vertically (swipe out), and each only while it's the dominant axis, so
+                        // the content never slides diagonally.
+                        let horizontal = value.translation.width > abs(value.translation.height)
+                        if horizontal, value.translation.width > 0 {
+                            dragX = value.translation.width * 0.6
+                            dragY = 0
+                        } else if atTop, value.translation.height > 0 {
+                            dragY = value.translation.height * 0.6   // damped, follows without racing away
+                            dragX = 0
+                        }
                     }
                     .onEnded { value in
                         let dismissing = shouldDismissPostDetail(translation: value.translation, atTop: atTop)
-                        withAnimation(.easeOut(duration: 0.2)) { dragY = 0 }
+                            || shouldDismissPostDetailSideways(translation: value.translation)
+                        withAnimation(.easeOut(duration: 0.2)) { dragY = 0; dragX = 0 }
                         if dismissing {
                             Haptics.tap()
                             dismiss()
