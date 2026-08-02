@@ -21,10 +21,6 @@ struct UserPageView: View {
     @State private var showReportConfirm = false
     @State private var reportedToast = false
     @State private var showAvatarViewer = false
-    /// The post being opened from the grid. Set on TAP, so the pushed detail view can never be
-    /// one that was built for a different photo.
-    @State private var openPost: FeedItem?
-    @Namespace private var postNS
     @Environment(\.dismiss) private var dismiss
 
     private var isSelf: Bool { userId == auth.currentUser?.id }
@@ -119,10 +115,6 @@ struct UserPageView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Flag this account for review.")
-        }
-        .navigationDestination(item: $openPost) { item in
-            PostDetailView(item: item)
-                .navigationTransition(.zoom(sourceID: item.post.id, in: postNS))
         }
         .task { await load() }
         .sheet(item: $followList) { list in
@@ -263,32 +255,25 @@ struct UserPageView: View {
             LazyVGrid(columns: columns, spacing: 3) {
                 ForEach(posts) { post in
                     if let author = profile {
-                        // Item-based: the tapped post is captured when you TAP, not when the cell
-                        // is built. This is the third form this grid has had, so the history is
-                        // worth keeping.
+                        // DO NOT add a zoom transition here. This grid opened the wrong photo
+                        // through four attempted fixes, and the only thing the broken versions
+                        // ever had in common was the `matchedTransitionSource` +
+                        // `navigationTransition(.zoom:)` pair added on top of this link. Three
+                        // different navigation forms were tried underneath it (eager destination,
+                        // value-based, item-based) and every one misbehaved while those two
+                        // modifiers were present: it pushed the detail view built for a
+                        // previously-opened post, carrying that instance's state, so a tap could
+                        // land on the earlier photo already showing its full-screen viewer.
                         //
-                        // `NavigationLink { PostDetailView(...) }` builds a destination per cell
-                        // up front. Inside a LazyVGrid those cells recycle, and a link could push
-                        // the destination built for a DIFFERENT post: the wrong photo, and
-                        // sometimes one that opened straight into its full-screen ImageViewer
-                        // because that instance's `showViewer` was still true from a previous
-                        // visit. Adding `.id(post.id)` to the destination didn't help, and
-                        // couldn't: if the link captured a stale post then the id derived from it
-                        // was stale too.
-                        //
-                        // `NavigationLink(value:)` with `navigationDestination(for:)` fixes the
-                        // capture properly, but the links came out DEAD here (a link renders
-                        // disabled when the stack can't resolve a destination for its type, which
-                        // under .buttonStyle(.plain) is indistinguishable from an unresponsive
-                        // tap). Rather than keep guessing at why it didn't resolve, this uses the
-                        // item-based form that ActivityFeedView already opens PostDetailView with.
-                        Button {
-                            openPost = FeedItem(post: post, author: author)
-                        } label: {
+                        // This is the plain push the screen shipped with and used correctly for
+                        // the app's entire life before that commit. The zoom is a cosmetic upgrade
+                        // and was not worth the cost; the Darkroom and roll grids still have
+                        // theirs, and they are fine because they present via fullScreenCover(item:)
+                        // rather than a navigation push.
+                        NavigationLink { PostDetailView(item: FeedItem(post: post, author: author)) } label: {
                             PostThumb(path: post.displayPath)
                         }
                         .buttonStyle(.plain)
-                        .matchedTransitionSource(id: post.id, in: postNS)
                     }
                 }
             }

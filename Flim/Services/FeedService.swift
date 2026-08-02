@@ -392,13 +392,13 @@ final class FeedService {
         let desiredIds = Set(tags.map(\.user.id))
 
         for tag in existing where !desiredIds.contains(tag.taggedUserId) {
-            try? await supabase.from("post_tags").delete().eq("id", value: tag.id.uuidString).execute()
+            _ = try? await supabase.from("post_tags").delete().eq("id", value: tag.id.uuidString).execute()
         }
         struct NewTag: Encodable {
             let post_id: UUID; let tagged_user_id: UUID; let x: Double; let y: Double
         }
         for tag in tags where !existingIds.contains(tag.user.id) {
-            try? await supabase.from("post_tags")
+            _ = try? await supabase.from("post_tags")
                 .insert(NewTag(post_id: postId, tagged_user_id: tag.user.id, x: tag.x, y: tag.y))
                 .execute()
         }
@@ -407,7 +407,7 @@ final class FeedService {
             guard let row = existing.first(where: { $0.taggedUserId == tag.user.id }),
                   abs(row.x - tag.x) > 0.001 || abs(row.y - tag.y) > 0.001 else { continue }
             struct Move: Encodable { let x: Double; let y: Double }
-            try? await supabase.from("post_tags").update(Move(x: tag.x, y: tag.y))
+            _ = try? await supabase.from("post_tags").update(Move(x: tag.x, y: tag.y))
                 .eq("id", value: row.id.uuidString).execute()
         }
         await loadTags(for: postId)
@@ -419,7 +419,7 @@ final class FeedService {
     /// supabase/migrations/2026-08-01_tag_self_removal.sql). Scoped by `tagged_user_id` as well as
     /// post so it can never take anyone else's tag down, even if called wrongly.
     func removeMyTag(from postId: UUID, userId: UUID) async {
-        try? await supabase.from("post_tags").delete()
+        _ = try? await supabase.from("post_tags").delete()
             .eq("post_id", value: postId.uuidString)
             .eq("tagged_user_id", value: userId.uuidString)
             .execute()

@@ -23,7 +23,6 @@ struct ActivityFeedView: View {
     @State private var thumbURLs: [UUID: URL] = [:]
     @State private var profileRoute: ProfileRoute?
     @State private var postRoute: FeedItem?
-    @Namespace private var postNS
 
     var body: some View {
         NavigationStack {
@@ -63,12 +62,12 @@ struct ActivityFeedView: View {
                 }
             }
             .navigationDestination(item: $profileRoute) { UserPageView(userId: $0.id) }
-            .navigationDestination(item: $postRoute) { item in
-                // The row's thumbnail is the photo being opened, so it expands into the detail
-                // view rather than cross-fading.
-                PostDetailView(item: item)
-                    .navigationTransition(.zoom(sourceID: item.post.id, in: postNS))
-            }
+            // No zoom transition here either. The identical pair of modifiers on the profile
+            // grid's push to this same destination caused it to open a previously-opened post,
+            // and survived three different navigation forms underneath it. This one was added in
+            // the same commit and has never been verified; it is not worth carrying a construct
+            // that has already cost four attempts elsewhere for an animation nobody asked for.
+            .navigationDestination(item: $postRoute) { PostDetailView(item: $0) }
             .task { await load() }
         }
         .presentationBackground(FlimTheme.bg)
@@ -139,7 +138,6 @@ struct ActivityFeedView: View {
             } else {
                 Button { openDestination(item) } label: { thumbnail(item) }
                     .buttonStyle(.plain)
-                    .matchedTransitionSource(id: item.post?.id ?? item.id, in: postNS)
             }
         }
         .padding(.horizontal, 18).padding(.vertical, 10)
