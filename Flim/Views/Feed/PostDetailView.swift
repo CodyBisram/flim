@@ -140,7 +140,16 @@ struct PostDetailView: View {
         } message: {
             Text("You won't see each other's posts, and they'll be unfollowed.")
         }
-        .task { await load() }
+        // Keyed on the post, so everything below re-runs if this view is ever handed a different
+        // one rather than being rebuilt. Belt and braces alongside the caller passing the tapped
+        // post explicitly: a plain `.task` would not re-run on a reused instance, which is how
+        // this screen once opened showing the PREVIOUS photo.
+        .task(id: post.id) {
+            // A reused instance would otherwise arrive with the last visit's viewer still flagged
+            // open, presenting the bare full-screen image over a photo you just tapped into.
+            showViewer = false
+            await load()
+        }
     }
 
     /// Seeds the editor from the post's current tags, so saving doesn't wipe what's there.

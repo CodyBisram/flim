@@ -21,6 +21,9 @@ struct UserPageView: View {
     @State private var showReportConfirm = false
     @State private var reportedToast = false
     @State private var showAvatarViewer = false
+    /// The post being opened from the grid. Set on TAP, so the pushed detail view can never be
+    /// one that was built for a different photo.
+    @State private var openPost: FeedItem?
     @Namespace private var postNS
     @Environment(\.dismiss) private var dismiss
 
@@ -116,6 +119,10 @@ struct UserPageView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Flag this account for review.")
+        }
+        .navigationDestination(item: $openPost) { item in
+            PostDetailView(item: item)
+                .navigationTransition(.zoom(sourceID: item.post.id, in: postNS))
         }
         .task { await load() }
         .sheet(item: $followList) { list in
@@ -256,29 +263,27 @@ struct UserPageView: View {
             LazyVGrid(columns: columns, spacing: 3) {
                 ForEach(posts) { post in
                     if let author = profile {
-                        // `.id(post.id)` on the destination is load-bearing, don't remove it.
+                        // Item-based: the tapped post is captured when you TAP, not when the cell
+                        // is built. This is the third form this grid has had, so the history is
+                        // worth keeping.
                         //
-                        // The inline form builds a destination view per link, and inside a
-                        // LazyVGrid those get recycled along with their cells while KEEPING their
-                        // @State, so tapping one photo could push a detail view left over from a
-                        // different one: the wrong photo, and sometimes one that opened straight
-                        // into its full-screen ImageViewer because the previous visit's
-                        // `showViewer` was still true. Tying the destination's identity to the
-                        // post makes a recycled cell's destination a different view rather than
-                        // the same one with stale state.
+                        // `NavigationLink { PostDetailView(...) }` builds a destination per cell
+                        // up front. Inside a LazyVGrid those cells recycle, and a link could push
+                        // the destination built for a DIFFERENT post: the wrong photo, and
+                        // sometimes one that opened straight into its full-screen ImageViewer
+                        // because that instance's `showViewer` was still true from a previous
+                        // visit. Adding `.id(post.id)` to the destination didn't help, and
+                        // couldn't: if the link captured a stale post then the id derived from it
+                        // was stale too.
                         //
-                        // This was briefly value-based (NavigationLink(value:) plus a single
-                        // navigationDestination(for: FeedItem.self)), which is the tidier fix for
-                        // that bug, but the links came out dead: tapping a photo did nothing and
-                        // the page just appeared to reload. NavigationLink(value:) renders
-                        // DISABLED when the stack can't resolve a destination for its type, and a
-                        // disabled plain-styled link is indistinguishable from an unresponsive
-                        // one. Not worth another round of guessing at why it didn't resolve here
-                        // when this form navigates and the identity fix is a one-liner.
-                        NavigationLink {
-                            PostDetailView(item: FeedItem(post: post, author: author))
-                                .id(post.id)
-                                .navigationTransition(.zoom(sourceID: post.id, in: postNS))
+                        // `NavigationLink(value:)` with `navigationDestination(for:)` fixes the
+                        // capture properly, but the links came out DEAD here (a link renders
+                        // disabled when the stack can't resolve a destination for its type, which
+                        // under .buttonStyle(.plain) is indistinguishable from an unresponsive
+                        // tap). Rather than keep guessing at why it didn't resolve, this uses the
+                        // item-based form that ActivityFeedView already opens PostDetailView with.
+                        Button {
+                            openPost = FeedItem(post: post, author: author)
                         } label: {
                             PostThumb(path: post.displayPath)
                         }
