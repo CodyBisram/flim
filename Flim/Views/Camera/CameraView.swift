@@ -399,6 +399,39 @@ struct CameraView: View {
 
     // MARK: - Top bar
 
+    /// "18m left" inside the roll capsule, once the roll is within an hour of developing.
+    ///
+    /// This is the only place the approaching reveal can change what someone DOES, because at
+    /// reveal the roll closes to new shots: the last hour is the last chance to add to it, and the
+    /// camera is the screen you're on when that matters. Hence "left" rather than a countdown to
+    /// an event, which is what the Rolls list already says.
+    ///
+    /// `fixedSize` and a raised layout priority on purpose. The capsule is the one compressible
+    /// element in the top bar, and a long roll name previously pushed the whole row off-screen; the
+    /// name still truncates, but the countdown must not, or the one piece of urgent information
+    /// would be the first thing dropped.
+    private struct RollClosingLabel: View {
+        let roll: Roll
+
+        var body: some View {
+            // Ticks every second so the final under-a-minute window counts down properly. Scoped
+            // to this label alone, so nothing else in the camera's top bar re-evaluates with it.
+            TimelineView(.periodic(from: .now, by: 1)) { tl in
+                if let label = RollImminence.closingLabel(roll: roll, now: tl.date) {
+                    HStack(spacing: 5) {
+                        Text("·").foregroundStyle(FlimTheme.accent.opacity(0.5))
+                        Text(label)
+                            .font(.system(size: 12, weight: .semibold))
+                            .monospacedDigit()
+                    }
+                    .fixedSize()
+                    .layoutPriority(1)
+                    .accessibilityLabel("\(label) to add photos to this roll")
+                }
+            }
+        }
+    }
+
     private var topBar: some View {
         glassGroup {
             HStack {
@@ -414,6 +447,9 @@ struct CameraView: View {
                             .font(.system(size: 13, weight: .medium))
                             .lineLimit(1)
                             .truncationMode(.tail)
+                        if let selectedRoll {
+                            RollClosingLabel(roll: selectedRoll)
+                        }
                         Image(systemName: "chevron.down")
                             .font(.system(size: 10, weight: .semibold))
                     }

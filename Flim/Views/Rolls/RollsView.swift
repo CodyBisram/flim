@@ -152,12 +152,10 @@ struct RollsView: View {
         roll.isDeveloped && !UserDefaults.standard.bool(forKey: "rollRevealSeen.\(roll.id.uuidString)")
     }
 
-    /// Ready-to-reveal rolls first (the whole reason to open the app), then everything else in its
-    /// existing newest-first order. Explicit partition so the ordering is obviously stable.
+    /// Ready to reveal, then still-open rolls by soonest reveal, then the archive. See
+    /// `RollImminence.sorted`, which holds the reasoning and the tests.
     private var sortedRolls: [Roll] {
-        let ready = rolls.rolls.filter(isReadyToReveal)
-        let rest = rolls.rolls.filter { !isReadyToReveal($0) }
-        return ready + rest
+        RollImminence.sorted(rolls.rolls, now: .now, isReadyToReveal: isReadyToReveal)
     }
 
     private var rollList: some View {
@@ -345,6 +343,39 @@ private struct RollCover: View {
                 RoundedRectangle(cornerRadius: 13, style: .continuous)
                     .strokeBorder(.white.opacity(0.14), lineWidth: 1)
             )
+            .overlay { developProgressRing }
+            // Padded so the ring's stroke has room outside the cover's own border instead of
+            // sitting on top of it.
+            .padding(2)
+    }
+
+    /// A ring tracing the cover's edge as the roll fills its develop window.
+    ///
+    /// Text alone wasn't enough: "Reveals in 20m" and "Reveals in 8h" were the same chip at the
+    /// same weight, and nobody reads digits while scanning. A ring is readable at a glance with no
+    /// text and, unlike a pulsing or colour-escalating chip, adds no motion to a list, which is
+    /// the kind of noise the tooltips were removed for.
+    @ViewBuilder
+    private var developProgressRing: some View {
+        if !roll.isDeveloped {
+            // Once a minute is plenty for a 12-hour window and matches the countdown chip's tick.
+            TimelineView(.periodic(from: .now, by: 60)) { tl in
+                let progress = RollImminence.progress(roll: roll, now: tl.date)
+                ZStack {
+                    RoundedRectangle(cornerRadius: 15, style: .continuous)
+                        .inset(by: -2)
+                        .stroke(.white.opacity(0.10), lineWidth: 2)
+                    RoundedRectangle(cornerRadius: 15, style: .continuous)
+                        .inset(by: -2)
+                        .trim(from: 0, to: progress)
+                        .stroke(FlimTheme.accent, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                        // Starts the fill at the top edge rather than mid-right, so a nearly-full
+                        // ring reads as nearly-round rather than lopsided.
+                        .rotationEffect(.degrees(-90))
+                }
+                .accessibilityHidden(true)   // the row's countdown chip already says this in words
+            }
+        }
     }
 
     /// Deterministic hue from the roll's UUID bytes, stable across launches.
