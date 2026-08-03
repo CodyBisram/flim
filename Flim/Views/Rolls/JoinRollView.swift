@@ -118,7 +118,12 @@ struct JoinRollView: View {
         isJoining = true
         error = nil
         do {
-            joinedRoll = try await rolls.joinRoll(inviteCode: code, userId: userId)
+            let roll = try await rolls.joinRoll(inviteCode: code, userId: userId)
+            joinedRoll = roll
+            // Point the camera at the roll you just joined, the same as creating one does. This
+            // was missing entirely: only CreateRollView ever selected a roll, so joining one and
+            // going to shoot put you into Personal with no indication anything was wrong.
+            CameraRollSelection.select(roll, for: userId)
             Haptics.success()
         } catch {
             self.error = error.localizedDescription

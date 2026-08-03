@@ -7,7 +7,14 @@ struct RollsView: View {
     @Environment(PhotoService.self) private var photos
     @State private var showCreate = false
     @State private var showJoin = false
-    @State private var coverURLs: [UUID: URL] = [:]
+    /// Signed cover URLs keyed by STORAGE PATH, not by roll id.
+    ///
+    /// Keyed by roll id, changing a roll's cover left the old URL in place forever: the resolve
+    /// below skips anything that already has an entry, and that roll did, pointing at the
+    /// PREVIOUS cover. The new cover only appeared after a relaunch, when this started empty
+    /// again. A signed URL belongs to a path, so keying it by path means a new cover is a new key
+    /// and resolves on sight, while an unchanged one still costs nothing.
+    @State private var coverURLs: [String: URL] = [:]
     @State private var loadError: String?
     @State private var rollToLeave: Roll?
     @State private var mutedRolls: Set<UUID> = []
@@ -93,17 +100,14 @@ struct RollsView: View {
         }
     }
 
-    /// Mints signed URLs for each roll's cover path (skips ones already resolved).
-    /// Signs every unresolved cover in one batched call. This used to sign them one at a time in
+    /// Signs every not-yet-resolved cover PATH in one batched call. This used to sign them one at a time in
     /// a loop, so on a cold cache the list's covers appeared one per round-trip, top to bottom,
     /// instead of together.
     private func resolveCovers() async {
-        let pending = rolls.coverPaths.filter { coverURLs[$0.key] == nil }
+        let pending = Set(rolls.coverPaths.values).filter { coverURLs[$0] == nil }
         guard !pending.isEmpty else { return }
-        let urls = await photos.signedURLs(for: Array(Set(pending.values)))
-        for (rollId, path) in pending {
-            if let url = urls[path] { coverURLs[rollId] = url }
-        }
+        let urls = await photos.signedURLs(for: Array(pending))
+        for (path, url) in urls { coverURLs[path] = url }
     }
 
     /// Long-press actions on a roll row. Muting was previously reachable only from inside the
@@ -155,7 +159,7 @@ struct RollsView: View {
                     NavigationLink(value: roll) {
                         RollRow(roll: roll,
                                 memberCount: rolls.memberCounts[roll.id],
-                                coverURL: coverURLs[roll.id],
+                                coverURL: rolls.coverPaths[roll.id].flatMap { coverURLs[$0] },
                                 coverPath: rolls.coverPaths[roll.id],
                                 isMuted: mutedRolls.contains(roll.id),
                                 isReadyToReveal: isReadyToReveal(roll))

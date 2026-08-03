@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		00BBB08060A6E0EDD72BBA2E /* FilmStockTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB2A4DF8A1879B929C3C4CB4 /* FilmStockTests.swift */; };
+		01890D8287BBB9653910F4ED /* CameraRollSelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9AE61FE9182CC567D4698F8A /* CameraRollSelection.swift */; };
 		031112E1AC8FC07603BB38AE /* OTPInputTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F90A7FA0AD7F2B443E7E332 /* OTPInputTests.swift */; };
 		036CE6741E055F672A548A57 /* CapturedPhotoCropper.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB373195A893A3C7E6FD51C9 /* CapturedPhotoCropper.swift */; };
 		05E99EC9B050D51173C5B157 /* RollDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54CD52378D31EEDB7D7BE6EF /* RollDetailView.swift */; };
@@ -210,6 +211,7 @@
 		8CECD20B5ABAAC6B609C6E31 /* PhotoCommentsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoCommentsSheet.swift; sourceTree = "<group>"; };
 		8EDAF1C30F86C4126A7783EC /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		950384B61AF8316D3517594E /* PostDetailSwipeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PostDetailSwipeTests.swift; sourceTree = "<group>"; };
+		9AE61FE9182CC567D4698F8A /* CameraRollSelection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraRollSelection.swift; sourceTree = "<group>"; };
 		9BE06A9CEC95AF492BDBD575 /* PrimaryButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrimaryButton.swift; sourceTree = "<group>"; };
 		9F609967CE45299259DA37AC /* PostDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PostDetailView.swift; sourceTree = "<group>"; };
 		A0DE0ABF140C6FF15019136C /* RollActivityWidgetBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollActivityWidgetBundle.swift; sourceTree = "<group>"; };
@@ -426,6 +428,7 @@
 				5A194AB5EE948FBA8903D086 /* AppInfo.swift */,
 				EFC0C65109A81467AB59472B /* AuthService.swift */,
 				512ECCC06516CDBBAC8749B7 /* BrandedExport.swift */,
+				9AE61FE9182CC567D4698F8A /* CameraRollSelection.swift */,
 				BB373195A893A3C7E6FD51C9 /* CapturedPhotoCropper.swift */,
 				498109790A8BAE9899A4F515 /* CrashReporter.swift */,
 				4EF884AA4C8711AA4738DA8C /* CubeLUT.swift */,
@@ -691,6 +694,7 @@
 				1E37F6744B21D26B8E8DDFAB /* BlockedUsersSheet.swift in Sources */,
 				A738DE58BF36527DC94CBF12 /* BrandedExport.swift in Sources */,
 				58C00DA36934A8DF0C2C833B /* CameraPreview.swift in Sources */,
+				01890D8287BBB9653910F4ED /* CameraRollSelection.swift in Sources */,
 				B5E40248AEAEF1C69C495751 /* CameraView.swift in Sources */,
 				56F026E4C4E1E30F19E98152 /* CameraViewModel.swift in Sources */,
 				036CE6741E055F672A548A57 /* CapturedPhotoCropper.swift in Sources */,

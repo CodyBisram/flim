@@ -40,9 +40,6 @@ struct CameraView: View {
     @State private var camera = CameraViewModel()
     @State private var selectedRoll: Roll? = nil
     @State private var showRollPicker = false
-    // Restore the persisted roll selection once per launch, the tab re-fires onAppear every
-    // time you switch back to Camera, and we don't want that to clobber a live in-session pick.
-    @State private var didRestoreSelectedRoll = false
     // Onboarding must request camera permission itself, in its own deliberate sequence
     // (see OnboardingView.finishOnboarding()). CameraView sits underneath the onboarding
     // fullScreenCover as tab 0, and SwiftUI still fires onAppear for content mounted behind
@@ -252,28 +249,28 @@ struct CameraView: View {
     // RollDetailView's per-roll key pattern) so switching accounts on one device can't leak
     // one user's roll pick into another's camera.
 
-    private func selectedRollKey(for userId: UUID) -> String { "selectedRollId.\(userId.uuidString)" }
-
-    /// Restores the last-picked roll ONLY if it still exists and hasn't developed yet, a
-    /// developed roll can't take new shots, so we fall back to Personal in that case.
+    /// Adopts the persisted pick if it still exists and hasn't developed yet, a developed roll
+    /// can't take new shots, so we fall back to Personal in that case.
+    ///
+    /// Runs on EVERY appearance, not once per launch. The once-only guard existed so returning to
+    /// the Camera tab couldn't clobber a live in-session pick, but every pick is persisted the
+    /// moment it's made (`onChange(of: selectedRoll)` below), so the stored value IS the live
+    /// pick and re-reading can only ever restore what was last chosen. Running once was also what
+    /// made a roll created or joined from another tab fail to take effect: nothing re-read the
+    /// value it had written.
     private func restoreSelectedRoll(userId: UUID) {
-        guard let raw = UserDefaults.standard.string(forKey: selectedRollKey(for: userId)),
-              let savedId = UUID(uuidString: raw) else { return }
+        guard let savedId = CameraRollSelection.savedRollId(for: userId) else { return }
         if let roll = rolls.rolls.first(where: { $0.id == savedId }), !roll.isDeveloped {
             selectedRoll = roll
         } else {
-            UserDefaults.standard.removeObject(forKey: selectedRollKey(for: userId))
+            CameraRollSelection.save(nil, for: userId)
+            selectedRoll = nil
         }
     }
 
     private func persistSelectedRoll() {
         guard let userId = auth.currentUser?.id else { return }
-        let key = selectedRollKey(for: userId)
-        if let roll = selectedRoll {
-            UserDefaults.standard.set(roll.id.uuidString, forKey: key)
-        } else {
-            UserDefaults.standard.removeObject(forKey: key)
-        }
+        CameraRollSelection.save(selectedRoll?.id, for: userId)
     }
 
     /// Starts (or restarts) the camera preview/session and kicks off the roll-restore fetch.
@@ -323,10 +320,7 @@ struct CameraView: View {
             await camera.start()
             if let userId = auth.currentUser?.id {
                 try? await rolls.fetchRolls(for: userId)
-                if !didRestoreSelectedRoll {
-                    didRestoreSelectedRoll = true
-                    restoreSelectedRoll(userId: userId)
-                }
+                restoreSelectedRoll(userId: userId)
             }
         }
     }
