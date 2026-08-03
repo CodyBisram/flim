@@ -34,6 +34,11 @@ struct FlimApp: App {
                 .environment(feed)
                 .environment(network)
                 .preferredColorScheme(.dark)
+                // Text scales with the user's Dynamic Type setting, up to the ceiling declared in
+                // FlimTypeScale. The ceiling exists because several surfaces here are
+                // fixed-geometry (the camera's 38x38 control row, the story-style reveal, capsule
+                // chips holding a roll name) and break rather than reflow past it. See FlimFont.
+                .flimDynamicTypeCeiling()
                 .onOpenURL { url in
                     if let code = FlimApp.routeInviteCode(from: url) {
                         NotificationCenter.default.post(name: .openRollInvite, object: code)

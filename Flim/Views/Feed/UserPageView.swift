@@ -160,14 +160,14 @@ struct UserPageView: View {
 
             VStack(spacing: 2) {
                 Text(profile?.name ?? "…")
-                    .font(.system(size: 22, weight: .light)).foregroundStyle(.white)
+                    .flimFont(22, weight: .light, relativeTo: .title3).foregroundStyle(.white)
                 Text(profile?.handle ?? "@…")
-                    .font(.system(size: 13)).foregroundStyle(FlimTheme.textTertiary)
+                    .flimFont(13, relativeTo: .subheadline).foregroundStyle(FlimTheme.textTertiary)
             }
 
             if let bio = profile?.bio, !bio.isEmpty {
                 Text(bio)
-                    .font(.system(size: 14)).foregroundStyle(FlimTheme.textSecondary)
+                    .flimFont(14, relativeTo: .subheadline).foregroundStyle(FlimTheme.textSecondary)
                     .multilineTextAlignment(.center).padding(.horizontal, 40)
             }
 
@@ -182,7 +182,7 @@ struct UserPageView: View {
             if !isSelf && !isBlocked {
                 Button { toggleFollow() } label: {
                     Text(isFollowing ? "Following" : "Follow")
-                        .font(.system(size: 14, weight: .semibold))
+                        .flimFont(14, weight: .semibold, relativeTo: .subheadline)
                         .foregroundStyle(isFollowing ? .white : .black)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 11)
@@ -198,7 +198,7 @@ struct UserPageView: View {
                 HStack(spacing: 10) {
                     Button { showEditProfile = true } label: {
                         Text("Edit profile")
-                            .font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
+                            .flimFont(14, weight: .semibold, relativeTo: .subheadline).foregroundStyle(.white)
                             .frame(maxWidth: .infinity).padding(.vertical, 11)
                             .background(Color.white.opacity(0.12), in: Capsule())
                             .overlay(Capsule().strokeBorder(Color.white.opacity(0.2), lineWidth: 1))
@@ -225,7 +225,7 @@ struct UserPageView: View {
                     CachedImage(url: avatarURL, maxPixel: 220) { $0.resizable().scaledToFill() } placeholder: { Color.clear }
                 } else {
                     Text(String((profile?.username ?? "?").prefix(1)).uppercased())
-                        .font(.system(size: 32, weight: .thin)).foregroundStyle(FlimTheme.accent)
+                        .flimFont(32, weight: .thin, relativeTo: .title3).foregroundStyle(FlimTheme.accent)
                 }
             }
             .clipShape(Circle())
@@ -235,10 +235,10 @@ struct UserPageView: View {
 
     private func stat(_ value: String, _ label: String) -> some View {
         VStack(spacing: 2) {
-            Text(value).font(.system(size: 16, weight: .medium)).foregroundStyle(.white)
+            Text(value).flimFont(16, weight: .medium, relativeTo: .body).foregroundStyle(.white)
                 .contentTransition(.numericText())
                 .animation(.snappy(duration: 0.28), value: value)
-            Text(label).font(.system(size: 11)).foregroundStyle(FlimTheme.textTertiary)
+            Text(label).flimFont(11, relativeTo: .caption).foregroundStyle(FlimTheme.textTertiary)
         }
     }
 
@@ -246,7 +246,7 @@ struct UserPageView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
                 Text(label.uppercased())
-                    .font(.system(size: 12, weight: .medium)).tracking(2)
+                    .flimFont(12, weight: .medium, relativeTo: .caption).tracking(2)
                     .foregroundStyle(FlimTheme.textSecondary)
                 Rectangle().fill(Color.white.opacity(0.08)).frame(height: 1)
             }
@@ -286,7 +286,7 @@ struct UserPageView: View {
             Image(systemName: "square.stack.3d.up.slash")
                 .font(.system(size: 26, weight: .ultraLight)).foregroundStyle(FlimTheme.textTertiary)
             Text(isSelf ? "You haven't shared anything yet" : "No shared photos yet")
-                .font(.system(size: 14)).foregroundStyle(FlimTheme.textTertiary)
+                .flimFont(14, relativeTo: .subheadline).foregroundStyle(FlimTheme.textTertiary)
         }
         .padding(.top, 40)
     }
@@ -298,9 +298,9 @@ struct UserPageView: View {
             Image(systemName: "hand.raised.slash")
                 .font(.system(size: 26, weight: .ultraLight)).foregroundStyle(FlimTheme.textTertiary)
             Text("You blocked \(profile?.handle ?? "this account")")
-                .font(.system(size: 15, weight: .medium)).foregroundStyle(.white)
+                .flimFont(15, weight: .medium, relativeTo: .body).foregroundStyle(.white)
             Text("You won't see their posts, and they won't see yours.")
-                .font(.system(size: 13)).foregroundStyle(FlimTheme.textTertiary)
+                .flimFont(13, relativeTo: .subheadline).foregroundStyle(FlimTheme.textTertiary)
                 .multilineTextAlignment(.center).padding(.horizontal, 40)
             Button {
                 guard let uid = auth.currentUser?.id else { return }
@@ -308,7 +308,7 @@ struct UserPageView: View {
                 Task { await feed.unblock(userId, from: uid) }
             } label: {
                 Text("Unblock")
-                    .font(.system(size: 13, weight: .semibold)).foregroundStyle(.black)
+                    .flimFont(13, weight: .semibold, relativeTo: .subheadline).foregroundStyle(.black)
                     .padding(.horizontal, 18).padding(.vertical, 9)
                     .background(FlimTheme.accent, in: Capsule())
             }
@@ -412,7 +412,7 @@ struct DiscoverPeopleView: View {
                         Text(searchText.isEmpty
                              ? "No one else here yet. Invite some friends!"
                              : "No one matches “\(searchText)”")
-                            .font(.system(size: 14)).foregroundStyle(FlimTheme.textTertiary)
+                            .flimFont(14, relativeTo: .subheadline).foregroundStyle(FlimTheme.textTertiary)
                             .multilineTextAlignment(.center).padding(40)
                         Spacer()
                     } else {
@@ -420,7 +420,7 @@ struct DiscoverPeopleView: View {
                             LazyVStack(alignment: .leading, spacing: 4) {
                                 if searchText.isEmpty && !profiles.isEmpty {
                                     Text("SUGGESTED")
-                                        .font(.system(size: 11, weight: .medium)).tracking(2)
+                                        .flimFont(11, weight: .medium, relativeTo: .caption).tracking(2)
                                         .foregroundStyle(FlimTheme.textTertiary)
                                         .padding(.horizontal, 20).padding(.top, 10).padding(.bottom, 2)
                                 }
@@ -494,9 +494,9 @@ struct PersonRow: View {
         HStack(spacing: 12) {
             AvatarView(path: profile.avatarPath, name: profile.username, size: 42)
             VStack(alignment: .leading, spacing: 2) {
-                Text(profile.handle).font(.system(size: 15, weight: .medium)).foregroundStyle(.white)
+                Text(profile.handle).flimFont(15, weight: .medium, relativeTo: .body).foregroundStyle(.white)
                 if let bio = profile.bio, !bio.isEmpty {
-                    Text(bio).font(.system(size: 12)).foregroundStyle(FlimTheme.textTertiary).lineLimit(1)
+                    Text(bio).flimFont(12, relativeTo: .caption).foregroundStyle(FlimTheme.textTertiary).lineLimit(1)
                 }
             }
             Spacer()
@@ -534,7 +534,7 @@ struct FollowListView: View {
                 FlimTheme.bg.ignoresSafeArea()
                 if profiles.isEmpty && loaded {
                     Text(mode == .followers ? "No followers yet" : "Not following anyone yet")
-                        .font(.system(size: 14)).foregroundStyle(FlimTheme.textTertiary).padding(40)
+                        .flimFont(14, relativeTo: .subheadline).foregroundStyle(FlimTheme.textTertiary).padding(40)
                 } else {
                     ScrollView {
                         LazyVStack(spacing: 4) {
@@ -589,7 +589,7 @@ struct FollowButton: View {
             }
         } label: {
             Text(following ? "Following" : "Follow")
-                .font(.system(size: 13, weight: .semibold))
+                .flimFont(13, weight: .semibold, relativeTo: .subheadline)
                 .foregroundStyle(following ? .white : .black)
                 .padding(.horizontal, 16).padding(.vertical, 7)
                 .background(following ? Color.white.opacity(0.12) : FlimTheme.accent, in: Capsule())

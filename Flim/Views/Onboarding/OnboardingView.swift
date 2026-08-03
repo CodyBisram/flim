@@ -50,10 +50,10 @@ struct OnboardingView: View {
                                 .font(.system(size: 52, weight: .ultraLight))
                                 .foregroundStyle(FlimTheme.accent)
                             Text(card.title)
-                                .font(.system(size: 30, weight: .thin))
+                                .flimFont(30, weight: .thin, relativeTo: .title3)
                                 .foregroundStyle(.white)
                             Text(card.body)
-                                .font(.system(size: 15))
+                                .flimFont(15, relativeTo: .body)
                                 .foregroundStyle(FlimTheme.textSecondary)
                                 .multilineTextAlignment(.center)
                                 .lineSpacing(3)
@@ -76,7 +76,7 @@ struct OnboardingView: View {
                     }
                 } label: {
                     Text(page < cards.count - 1 ? "Next" : "Take your first shot")
-                        .font(.system(size: 16, weight: .semibold))
+                        .flimFont(16, weight: .semibold, relativeTo: .body)
                         .foregroundStyle(.black)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 16)
@@ -86,7 +86,7 @@ struct OnboardingView: View {
                 .padding(.bottom, 20)
 
                 Button("Skip") { finishOnboarding() }
-                    .font(.system(size: 13))
+                    .flimFont(13, relativeTo: .subheadline)
                     .foregroundStyle(FlimTheme.textTertiary)
                     .padding(.bottom, 24)
             }

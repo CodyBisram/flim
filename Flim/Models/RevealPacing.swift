@@ -37,6 +37,29 @@ enum RevealPacing {
     /// Vertical travel that dismisses the reveal.
     static let dismissThreshold: CGFloat = 120
 
+    // MARK: - Prefetch
+
+    /// How many slides ahead to warm.
+    ///
+    /// The reveal used to hand the prefetcher the ENTIRE deck. `ImageLoader.prefetch` caps
+    /// concurrency but not count, so a wedding-sized roll started seventy downloads the instant
+    /// the reveal opened, competing for bandwidth with the very first print someone was waiting
+    /// to see, and charging egress for every photo even when they left after two.
+    ///
+    /// Six is comfortably more than the eye can get through: at ~6.4s a slide that is forty
+    /// seconds of runway, and the window slides forward as the deck advances.
+    static let prefetchWindow = 6
+
+    /// The slice of a deck worth warming from `index`.
+    ///
+    /// Starts at the CURRENT slide rather than the next one: re-entering a reveal, or stepping
+    /// backwards, must not find the photo on screen unwarmed.
+    static func prefetchRange(from index: Int, count: Int, window: Int = prefetchWindow) -> Range<Int> {
+        guard count > 0, window > 0 else { return 0..<0 }
+        let start = min(max(0, index), count)
+        return start..<min(start + window, count)
+    }
+
     /// Fraction of the screen width, from the left, that steps BACKWARD.
     static let backZone: CGFloat = 1.0 / 3.0
 

@@ -14,7 +14,30 @@ private let rollDevelopDelay: TimeInterval = 2 * 60
 private let rollDevelopDelay: TimeInterval = 12 * 3600
 #endif
 
+/// Pinned to the main actor, like every other `@Observable` service in the app.
+///
+/// It was the one exception. Its state was instead kept safe by hand-wrapping each mutation in
+/// `MainActor.run`, and the comment on `fetchPage` recorded that the resulting race was "real (if
+/// narrow-window), not hypothetical" — written after exactly that wrapping had been forgotten on
+/// this file's most-invoked mutator. That is the shape of a crash we have on record: SwiftUI
+/// reading observable state on the main thread inside `libswiftObservation` while a background
+/// thread writes it.
+///
+/// An audit found the discipline holding, but correctness that depends on every future edit
+/// remembering a convention is not correctness. Isolation makes it the compiler's problem.
+///
+/// The two things that made this more than an annotation, both now handled: `uploadRenditions`
+/// encoded JPEGs synchronously (moved to a detached task), and `InstantFilmProcessor.process`
+/// already ran detached. Network `await`s are fine to resume on the main actor — they suspend
+/// rather than block — so nothing here holds up a frame.
+///
+/// The existing `await MainActor.run { }` wraps below are now redundant and are deliberately left
+/// in place for this release. Unwrapping a dozen of them is pure hygiene with no behavioural
+/// gain, and 1.2's whole point is being the steadiest release yet, so it is not the moment to
+/// churn every mutation site in the file. They are harmless: a hop to the actor you are already
+/// on. Remove them opportunistically when a function is being edited anyway.
 @Observable
+@MainActor
 final class PhotoService {
     /// ONE PAGE of whatever query ran last, not a total and not scoped to any particular roll.
     ///
@@ -164,12 +187,21 @@ final class PhotoService {
                 return nil
             }
 
+            // Encoded OFF the main actor. Both of these do an ImageIO downsample plus a JPEG
+            // encode, tens of milliseconds each on a full-resolution capture, and this class is
+            // now @MainActor-isolated, so leaving them inline would stutter the UI on every shot.
+            // The detached task is what makes that annotation safe rather than a regression.
+            let (thumbData, feedData) = await Task.detached(priority: .utility) {
+                (InstantFilmProcessor.thumbnail(from: imageData),
+                 InstantFilmProcessor.feedRendition(from: imageData))
+            }.value
+
             var thumbPath: String?
-            if let thumbData = InstantFilmProcessor.thumbnail(from: imageData) {
+            if let thumbData {
                 thumbPath = await upload(thumbData, to: "\(prefix)_thumb.jpg")
             }
             var feedPath: String?
-            if let feedData = InstantFilmProcessor.feedRendition(from: imageData) {
+            if let feedData {
                 feedPath = await upload(feedData, to: "\(prefix)_feed.jpg")
             }
             guard thumbPath != nil || feedPath != nil else { return }
@@ -222,7 +254,11 @@ final class PhotoService {
     /// roll shots use the roll's fixed `rollReveal` (created_at + delay) so the whole roll
     /// unlocks together. `rollReveal` is nil only if the roll can't be read, then we fall
     /// back to now + delay.
-    static func developDate(
+    /// `nonisolated` because it is pure policy: inputs in, a Date out, no access to any state on
+    /// this class. Isolating the type would otherwise drag this along with it and force every
+    /// caller, including the tests that exist precisely to exercise it without a service, onto the
+    /// main actor for no reason.
+    nonisolated static func developDate(
         rollId: UUID?, rollReveal: Date?, now: Date,
         personalDelay: TimeInterval, rollDelay: TimeInterval
     ) -> Date {

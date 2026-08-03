@@ -180,7 +180,7 @@ struct FeedView: View {
                         .overlay(alignment: .topTrailing) {
                             if unreadActivity > 0 {
                                 Text(unreadActivity > 9 ? "9+" : "\(unreadActivity)")
-                                    .font(.system(size: 10, weight: .bold))
+                                    .flimFont(10, weight: .bold, relativeTo: .caption)
                                     .foregroundStyle(.white)
                                     .padding(.horizontal, 5).padding(.vertical, 1)
                                     .background(Color.red, in: Capsule())
@@ -212,7 +212,7 @@ struct FeedView: View {
                                     CachedImage(url: myAvatarURL, maxPixel: 100) { $0.resizable().scaledToFill() } placeholder: { Color.clear }
                                 } else {
                                     Text(String((auth.currentUser?.username ?? "?").prefix(1)).uppercased())
-                                        .font(.system(size: 14, weight: .thin)).foregroundStyle(FlimTheme.accent)
+                                        .flimFont(14, weight: .thin, relativeTo: .subheadline).foregroundStyle(FlimTheme.accent)
                                 }
                             }
                             .clipShape(Circle())
@@ -225,10 +225,10 @@ struct FeedView: View {
             // Greeting on its own line, the name gets full width and shrinks if it's long.
             VStack(alignment: .leading, spacing: 1) {
                 Text("\(timeGreeting),")
-                    .font(.system(size: 14, weight: .medium))
+                    .flimFont(14, weight: .medium, relativeTo: .subheadline)
                     .foregroundStyle(FlimTheme.textTertiary)
                 Text(auth.currentUser?.friendlyName ?? "there")
-                    .font(.system(size: 28, weight: .light))
+                    .flimFont(28, weight: .light, relativeTo: .title3)
                     .tracking(0.5)
                     .foregroundStyle(FlimTheme.textPrimary)
                     .lineLimit(1)
@@ -248,24 +248,24 @@ struct FeedView: View {
                 .font(.system(size: 30, weight: .ultraLight))
                 .foregroundStyle(FlimTheme.accent)
             Text("It's quiet in here")
-                .font(.system(size: 19, weight: .thin))
+                .flimFont(19, weight: .thin, relativeTo: .body)
                 .foregroundStyle(.white)
             Text("Follow friends to see what they share, or take the first shot yourself.")
-                .font(.system(size: 13))
+                .flimFont(13, relativeTo: .subheadline)
                 .foregroundStyle(FlimTheme.textTertiary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 50)
             HStack(spacing: 10) {
                 Button { showDiscover = true } label: {
                     Text("Find friends")
-                        .font(.system(size: 14, weight: .semibold))
+                        .flimFont(14, weight: .semibold, relativeTo: .subheadline)
                         .foregroundStyle(.black)
                         .padding(.horizontal, 20).padding(.vertical, 11)
                         .background(FlimTheme.accent, in: Capsule())
                 }
                 Button { NotificationCenter.default.post(name: .openCamera, object: nil) } label: {
                     Text("Take a shot")
-                        .font(.system(size: 14, weight: .semibold))
+                        .flimFont(14, weight: .semibold, relativeTo: .subheadline)
                         .foregroundStyle(.white)
                         .padding(.horizontal, 20).padding(.vertical, 11)
                         .background(Color.white.opacity(0.12), in: Capsule())
@@ -277,7 +277,7 @@ struct FeedView: View {
                 Task { if let uid = auth.currentUser?.id { await feed.seedFeedDemo(userId: uid, photoService: photos) } }
             } label: {
                 Text(feed.isSeeding ? "Seeding…" : "Seed demo feed (DEBUG)")
-                    .font(.system(size: 13))
+                    .flimFont(13, relativeTo: .subheadline)
                     .foregroundStyle(FlimTheme.textTertiary)
             }
             .disabled(feed.isSeeding)
@@ -383,10 +383,10 @@ struct FeedPostCard: View {
                         avatar
                         VStack(alignment: .leading, spacing: 1) {
                             Text(item.author.handle)
-                                .font(.system(size: 14, weight: .semibold))
+                                .flimFont(14, weight: .semibold, relativeTo: .subheadline)
                                 .foregroundStyle(.white)
                             Text(post.createdAt.formatted(.relative(presentation: .named)))
-                                .font(.system(size: 11))
+                                .flimFont(11, relativeTo: .caption)
                                 .foregroundStyle(FlimTheme.textTertiary)
                         }
                     }
@@ -444,7 +444,7 @@ struct FeedPostCard: View {
                 .accessibilityHint("Double-tap to like, or react below")
 
             if let caption = post.caption, !caption.isEmpty {
-                Text(caption).font(.system(size: 14)).foregroundStyle(FlimTheme.textSecondary)
+                Text(caption).flimFont(14, relativeTo: .subheadline).foregroundStyle(FlimTheme.textSecondary)
             }
 
             // Emoji reactions (inline picker). Comment access lives in the preview + composer below.
@@ -460,7 +460,7 @@ struct FeedPostCard: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Button { showComments = true } label: {
                         Text("View all \(comments.count) comments")
-                            .font(.system(size: 12)).foregroundStyle(FlimTheme.textTertiary)
+                            .flimFont(12, relativeTo: .caption).foregroundStyle(FlimTheme.textTertiary)
                             .contentTransition(.numericText())
                             .animation(.snappy(duration: 0.28), value: comments.count)
                     }
@@ -468,7 +468,7 @@ struct FeedPostCard: View {
                         HStack(alignment: .top, spacing: 8) {
                             HStack(alignment: .top, spacing: 4) {
                                 Button { route = ProfileRoute(id: info.comment.userId) } label: {
-                                    Text(info.handle).font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
+                                    Text(info.handle).flimFont(14, weight: .semibold, relativeTo: .subheadline).foregroundStyle(.white)
                                 }
                                 MentionText(text: info.comment.body) { username in
                                     Haptics.tap()
@@ -484,7 +484,7 @@ struct FeedPostCard: View {
                             Button { likeComment(info) } label: {
                                 HStack(spacing: 3) {
                                     if info.likeCount > 0 {
-                                        Text("\(info.likeCount)").font(.system(size: 11)).foregroundStyle(FlimTheme.textTertiary)
+                                        Text("\(info.likeCount)").flimFont(11, relativeTo: .caption).foregroundStyle(FlimTheme.textTertiary)
                                             .contentTransition(.numericText())
                                     }
                                     Image(systemName: info.likedByMe ? "heart.fill" : "heart")
@@ -501,23 +501,8 @@ struct FeedPostCard: View {
             }
 
             // Inline comment composer
-            MentionSuggestions(draft: $draft)
-            HStack(spacing: 8) {
-                TextField("Add a comment…", text: $draft, axis: .vertical)
-                    .lineLimit(1...3)
-                    .focused($commentFocused)
-                    .font(.system(size: 14)).foregroundStyle(.white).tint(FlimTheme.accent)
-                    .padding(.horizontal, 12).padding(.vertical, 8)
-                    .background(Color.white.opacity(0.06), in: Capsule())
-                if canSend {
-                    Button { sendComment() } label: {
-                        Image(systemName: "arrow.up.circle.fill").font(.system(size: 26)).foregroundStyle(FlimTheme.accent)
-                    }
-                    .accessibilityLabel("Send comment")
-                    .transition(.scale.combined(with: .opacity))
-                }
-            }
-            .animation(.snappy(duration: 0.2), value: canSend)
+            CommentComposer(draft: $draft, style: .inlineCard,
+                            focus: $commentFocused) { sendComment() }
         }
         .padding(14)
         .background(FlimTheme.bgElevated, in: RoundedRectangle(cornerRadius: 20))
@@ -643,7 +628,7 @@ struct FeedPostCard: View {
                     CachedImage(url: avatarURL, maxPixel: 100) { $0.resizable().scaledToFill() } placeholder: { Color.clear }
                 } else {
                     Text(String(item.author.handle.dropFirst().prefix(1)).uppercased())
-                        .font(.system(size: 14, weight: .thin))
+                        .flimFont(14, weight: .thin, relativeTo: .subheadline)
                         .foregroundStyle(FlimTheme.accent)
                 }
             }
@@ -706,7 +691,7 @@ private struct EditCaptionSheet: View {
                 VStack {
                     TextField("Add a caption…", text: $caption, axis: .vertical)
                         .lineLimit(1...5)
-                        .font(.system(size: 16)).foregroundStyle(.white).tint(FlimTheme.accent)
+                        .flimFont(16, relativeTo: .body).foregroundStyle(.white).tint(FlimTheme.accent)
                         .focused($focused)
                         .padding(14)
                         .background(FlimTheme.bgElevated, in: RoundedRectangle(cornerRadius: 12))

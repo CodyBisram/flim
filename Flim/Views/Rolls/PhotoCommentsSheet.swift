@@ -30,9 +30,9 @@ struct PhotoCommentsSheet: View {
                             Spacer()
                             Image(systemName: "bubble.left.and.bubble.right")
                                 .font(.system(size: 28, weight: .ultraLight)).foregroundStyle(FlimTheme.textTertiary)
-                            Text("No comments yet").font(.system(size: 15)).foregroundStyle(.white)
+                            Text("No comments yet").flimFont(15, relativeTo: .body).foregroundStyle(.white)
                             Text("Start the conversation on this shot.")
-                                .font(.system(size: 13)).foregroundStyle(FlimTheme.textTertiary)
+                                .flimFont(13, relativeTo: .subheadline).foregroundStyle(FlimTheme.textTertiary)
                             Spacer()
                         }
                         .frame(maxWidth: .infinity)
@@ -66,10 +66,10 @@ struct PhotoCommentsSheet: View {
                 HStack(spacing: 6) {
                     Button { route = ProfileRoute(id: comment.userId) } label: {
                         Text(handle(comment.userId))
-                            .font(.system(size: 13, weight: .semibold)).foregroundStyle(.white)
+                            .flimFont(13, weight: .semibold, relativeTo: .subheadline).foregroundStyle(.white)
                     }
                     Text(comment.createdAt.formatted(.relative(presentation: .named)))
-                        .font(.system(size: 10)).foregroundStyle(FlimTheme.textTertiary)
+                        .flimFont(10, relativeTo: .caption).foregroundStyle(FlimTheme.textTertiary)
                     if comment.userId == auth.currentUser?.id {
                         Button { delete(comment) } label: {
                             Image(systemName: "xmark").font(.system(size: 9)).foregroundStyle(FlimTheme.textTertiary)
@@ -86,26 +86,10 @@ struct PhotoCommentsSheet: View {
     }
 
     private var composer: some View {
-        VStack(spacing: 8) {
-            MentionSuggestions(draft: $draft)
-            HStack(spacing: 10) {
-                TextField("Add a comment…", text: $draft, axis: .vertical)
-                    .lineLimit(1...4)
-                    .font(.system(size: 15)).foregroundStyle(.white).tint(FlimTheme.accent)
-                    .focused($focused)
-                    .padding(.horizontal, 14).padding(.vertical, 10)
-                    .background(FlimTheme.bgElevated, in: Capsule())
-                Button { send() } label: {
-                    Image(systemName: "arrow.up.circle.fill")
-                        .font(.system(size: 30))
-                        .foregroundStyle(canSend ? FlimTheme.accent : FlimTheme.textTertiary)
-                }
-                .disabled(!canSend || sending)
-            .accessibilityLabel("Send comment")
-            }
-        }
-        .padding(.horizontal, 16).padding(.vertical, 10)
-        .background(FlimTheme.bg)
+        CommentComposer(draft: $draft, style: .surface, isSending: sending,
+                        focus: $focused) { send() }
+            .padding(.horizontal, 16).padding(.vertical, 10)
+            .background(FlimTheme.bg)
     }
 
     private func handle(_ userId: UUID) -> String {

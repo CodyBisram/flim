@@ -19,17 +19,17 @@ struct UsernameView: View {
 
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Pick a username.")
-                        .font(.system(size: 28, weight: .thin))
+                        .flimFont(28, weight: .thin, relativeTo: .title3)
                         .foregroundStyle(.white)
                     Text("3–20 characters, letters and numbers only.")
-                        .font(.system(size: 15))
+                        .flimFont(15, relativeTo: .body)
                         .foregroundStyle(Color(white: 0.5))
                 }
                 .padding(.bottom, 40)
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text("USERNAME")
-                        .font(.system(size: 11, weight: .medium))
+                        .flimFont(11, weight: .medium, relativeTo: .caption)
                         .tracking(2)
                         .foregroundStyle(Color(white: 0.4))
 
@@ -39,7 +39,7 @@ struct UsernameView: View {
                         TextField("", text: $username, prompt: Text("yourname").foregroundStyle(Color(white: 0.3)))
                             .autocorrectionDisabled()
                             .textInputAutocapitalization(.never)
-                            .font(.system(size: 17))
+                            .flimFont(17, relativeTo: .body)
                             .foregroundStyle(.white)
                             .tint(.white)
                     }
@@ -54,14 +54,14 @@ struct UsernameView: View {
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text("WHAT SHOULD WE CALL YOU? (OPTIONAL)")
-                        .font(.system(size: 11, weight: .medium))
+                        .flimFont(11, weight: .medium, relativeTo: .caption)
                         .tracking(2)
                         .foregroundStyle(Color(white: 0.4))
 
                     TextField("", text: $name, prompt: Text("First name").foregroundStyle(Color(white: 0.3)))
                         .textContentType(.givenName)
                         .autocorrectionDisabled()
-                        .font(.system(size: 17))
+                        .flimFont(17, relativeTo: .body)
                         .foregroundStyle(.white)
                         .tint(.white)
                         .padding(.horizontal, 16)
@@ -72,7 +72,7 @@ struct UsernameView: View {
 
                 VStack(alignment: .leading, spacing: 10) {
                     Text("PICK YOUR COLOR")
-                        .font(.system(size: 11, weight: .medium)).tracking(2)
+                        .flimFont(11, weight: .medium, relativeTo: .caption).tracking(2)
                         .foregroundStyle(Color(white: 0.4))
                     HStack(spacing: 14) {
                         ForEach(FlimAccent.allCases) { swatch in
@@ -88,7 +88,7 @@ struct UsernameView: View {
 
                 if let error {
                     Text(error)
-                        .font(.system(size: 13))
+                        .flimFont(13, relativeTo: .subheadline)
                         .foregroundStyle(Color(red: 1, green: 0.4, blue: 0.4))
                         .padding(.top, 8)
                 }

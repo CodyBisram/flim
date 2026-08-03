@@ -34,7 +34,7 @@ struct RollMembersView: View {
                     // Invite code banner
                     VStack(spacing: 6) {
                         Text("INVITE CODE")
-                            .font(.system(size: 11, weight: .medium))
+                            .flimFont(11, weight: .medium, relativeTo: .caption)
                             .tracking(2)
                             .foregroundStyle(Color(white: 0.4))
                         Button {
@@ -91,11 +91,11 @@ struct RollMembersView: View {
 
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(isBlocked ? "Blocked user" : "@\(member.username ?? "unknown")")
-                                            .font(.system(size: 15, weight: .medium))
+                                            .flimFont(15, weight: .medium, relativeTo: .body)
                                             .foregroundStyle(isBlocked ? Color(white: 0.45) : .white)
                                         if member.id == roll.createdBy {
                                             Text("Creator")
-                                                .font(.system(size: 11))
+                                                .flimFont(11, relativeTo: .caption)
                                                 .foregroundStyle(Color(white: 0.4))
                                         }
                                     }
@@ -104,7 +104,7 @@ struct RollMembersView: View {
 
                                     if member.id == auth.currentUser?.id {
                                         Text("You")
-                                            .font(.system(size: 12))
+                                            .flimFont(12, relativeTo: .caption)
                                             .foregroundStyle(Color(white: 0.4))
                                     }
                                 }

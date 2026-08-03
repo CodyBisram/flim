@@ -47,19 +47,50 @@ final class CrashReporter: NSObject, MXMetricManagerSubscriber {
 
     func didReceive(_ payloads: [MXDiagnosticPayload]) {
         for payload in payloads {
+            // `timeStampEnd` is when the diagnostic window closed, i.e. approximately when the
+            // crash happened. Recorded because the row's `created_at` is when it was UPLOADED,
+            // and MetricKit only hands payloads over on a LATER launch: six diagnostics arriving
+            // at 19:48 look like six crashes at 19:48 when they are really a flush at app start.
+            // Every statement anyone makes about when crashes happen is wrong without this.
             for diagnostic in payload.crashDiagnostics ?? [] {
                 record(kind: "crash", detail: Self.crashSummary(diagnostic),
-                       appVersion: diagnostic.applicationVersion, tree: diagnostic.callStackTree)
+                       diagnostic: diagnostic, tree: diagnostic.callStackTree,
+                       occurredAt: payload.timeStampEnd)
             }
             for diagnostic in payload.hangDiagnostics ?? [] {
                 record(kind: "hang", detail: "\(diagnostic.hangDuration)",
-                       appVersion: diagnostic.applicationVersion, tree: diagnostic.callStackTree)
+                       diagnostic: diagnostic, tree: diagnostic.callStackTree,
+                       occurredAt: payload.timeStampEnd)
             }
             for diagnostic in payload.cpuExceptionDiagnostics ?? [] {
                 record(kind: "cpuException", detail: "\(diagnostic.totalCPUTime)",
-                       appVersion: diagnostic.applicationVersion, tree: diagnostic.callStackTree)
+                       diagnostic: diagnostic, tree: diagnostic.callStackTree,
+                       occurredAt: payload.timeStampEnd)
             }
         }
+    }
+
+    /// Everything recorded about one diagnostic, in one value.
+    ///
+    /// Introduced because the fields were previously threaded individually through `record`,
+    /// `retryPendingUploads` and `upload`, and adding one meant editing three signatures and the
+    /// on-disk format in lockstep. Any field missed in that dance is silently dropped only for
+    /// diagnostics that were retried, which is the hardest case to notice.
+    private struct Record {
+        let id: String
+        let kind: String
+        let detail: String
+        let appVersion: String
+        /// The BUILD, not just "1.2". Every CI build of a version has its own dSYM and a stack can
+        /// only be symbolicated by its exact match, so without this you cannot tell which artifact
+        /// to reach for. It is recoverable from the binary UUID buried in the call-stack JSON;
+        /// this makes it a column instead of an excavation.
+        let appBuild: String
+        let osVersion: String
+        let deviceModel: String
+        let occurredAt: Date
+        /// Call stack tree, already serialised to JSON.
+        let tree: String
     }
 
     /// A one-line cause for a crash row: why iOS killed the process, plus the exception/signal it
@@ -77,16 +108,36 @@ final class CrashReporter: NSObject, MXMetricManagerSubscriber {
         return parts.isEmpty ? "unknown" : parts.joined(separator: " · ")
     }
 
-    private func record(kind: String, detail: String, appVersion: String, tree: MXCallStackTree) {
+    // `tree` is passed separately because `callStackTree` lives on each concrete diagnostic
+    // subclass, not on the MXDiagnostic base; `metaData` and `applicationVersion` do live on the
+    // base, which is why the diagnostic itself is still worth taking.
+    private func record(kind: String, detail: String, diagnostic: MXDiagnostic,
+                        tree: MXCallStackTree, occurredAt: Date) {
         logger.fault("[\(kind, privacy: .public)] \(detail, privacy: .public)")
         let treeData = tree.jsonRepresentation()
         let treeJSONObject = (try? JSONSerialization.jsonObject(with: treeData)) ?? [:]
-        let id = UUID().uuidString
+        let meta = diagnostic.metaData
+        let record = Record(
+            id: UUID().uuidString,
+            kind: kind,
+            detail: detail,
+            appVersion: diagnostic.applicationVersion,
+            appBuild: meta.applicationBuildVersion,
+            osVersion: meta.osVersion,
+            deviceModel: meta.deviceType,
+            occurredAt: occurredAt,
+            tree: String(data: treeData, encoding: .utf8) ?? "{}"
+        )
+
         let entry: [String: Any] = [
-            "id": id,
-            "kind": kind,
-            "detail": detail,
-            "appVersion": appVersion,
+            "id": record.id,
+            "kind": record.kind,
+            "detail": record.detail,
+            "appVersion": record.appVersion,
+            "appBuild": record.appBuild,
+            "osVersion": record.osVersion,
+            "deviceModel": record.deviceModel,
+            "occurredAt": ISO8601DateFormatter().string(from: record.occurredAt),
             "loggedAt": ISO8601DateFormatter().string(from: .now),
             // False until the insert lands. `retryPendingUploads()` re-sends anything still
             // false on a later launch, so a diagnostic captured while offline isn't lost.
@@ -97,8 +148,7 @@ final class CrashReporter: NSObject, MXMetricManagerSubscriber {
            let text = String(data: line, encoding: .utf8) {
             append(text)
         }
-        let treeString = String(data: treeData, encoding: .utf8) ?? "{}"
-        upload(id: id, kind: kind, detail: detail, appVersion: appVersion, callStackTree: treeString)
+        upload(record)
     }
 
     /// Re-sends diagnostics that were captured but never reached the server.
@@ -121,7 +171,20 @@ final class CrashReporter: NSObject, MXMetricManagerSubscriber {
                           let data = try? JSONSerialization.data(withJSONObject: object) else { return nil }
                     return String(data: data, encoding: .utf8)
                 } ?? "{}"
-                self.upload(id: id, kind: kind, detail: detail, appVersion: appVersion, callStackTree: tree)
+                // The new fields are read leniently: an entry written by a previous version of the
+                // app has none of them, and a pending diagnostic from before an update is exactly
+                // the kind a retry exists to rescue. Missing means unknown, never a dropped row.
+                let occurred = (entry["occurredAt"] as? String)
+                    .flatMap { ISO8601DateFormatter().date(from: $0) }
+                    ?? (entry["loggedAt"] as? String).flatMap { ISO8601DateFormatter().date(from: $0) }
+                    ?? Date.now
+                self.upload(Record(
+                    id: id, kind: kind, detail: detail, appVersion: appVersion,
+                    appBuild: entry["appBuild"] as? String ?? "unknown",
+                    osVersion: entry["osVersion"] as? String ?? "unknown",
+                    deviceModel: entry["deviceModel"] as? String ?? "unknown",
+                    occurredAt: occurred, tree: tree
+                ))
             }
         }
     }
@@ -174,22 +237,28 @@ final class CrashReporter: NSObject, MXMetricManagerSubscriber {
     /// user_id is nil for a diagnostic that arrives before the device has ever signed in; RLS
     /// requires exactly that pairing (a real session's own uid, or no session and no claimed
     /// uid) so a forged upload can't attribute diagnostics to someone else.
-    private func upload(id: String, kind: String, detail: String, appVersion: String, callStackTree: String) {
+    private func upload(_ record: Record) {
         struct Insert: Encodable {
             let user_id: UUID?
             let kind: String
             let detail: String
             let app_version: String
+            let app_build: String
+            let os_version: String
+            let device_model: String
+            let occurred_at: Date
             let call_stack_tree: String
         }
         Task { [weak self] in
             let userId = (try? await supabase.auth.session)?.user.id
-            let insert = Insert(user_id: userId, kind: kind, detail: detail,
-                                 app_version: appVersion, call_stack_tree: callStackTree)
+            let insert = Insert(user_id: userId, kind: record.kind, detail: record.detail,
+                                app_version: record.appVersion, app_build: record.appBuild,
+                                os_version: record.osVersion, device_model: record.deviceModel,
+                                occurred_at: record.occurredAt, call_stack_tree: record.tree)
             do {
                 try await supabase.from("crash_diagnostics").insert(insert).execute()
                 // Only now is it safe to stop retrying this one.
-                self?.markUploaded(id)
+                self?.markUploaded(record.id)
             } catch {
                 // Left flagged pending; `retryPendingUploads()` picks it up next launch.
                 self?.logger.error("crash diagnostic upload failed, will retry next launch")

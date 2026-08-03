@@ -30,7 +30,7 @@ struct MentionSuggestions: View {
                                 HStack(spacing: 6) {
                                     AvatarView(path: profile.avatarPath, name: profile.username, size: 22)
                                     Text(profile.handle)
-                                        .font(.system(size: 13, weight: .medium))
+                                        .flimFont(13, weight: .medium, relativeTo: .subheadline)
                                         .foregroundStyle(.white)
                                 }
                                 .padding(.horizontal, 8).padding(.vertical, 5)

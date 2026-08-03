@@ -73,7 +73,7 @@ struct ProfileView: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("Neutral capture").foregroundStyle(.white)
                                 Text("Shots skip the FLIM look (LUT calibration)")
-                                    .font(.system(size: 11)).foregroundStyle(FlimTheme.textTertiary)
+                                    .flimFont(11, relativeTo: .caption).foregroundStyle(FlimTheme.textTertiary)
                             }
                         }
                         .tint(FlimTheme.accent)
@@ -96,7 +96,7 @@ struct ProfileView: View {
                         Task { try? await auth.signOut(); dismiss() }
                     } label: {
                         Text("Sign Out")
-                            .font(.system(size: 15, weight: .medium))
+                            .flimFont(15, weight: .medium, relativeTo: .body)
                             .foregroundStyle(Color(red: 1, green: 0.35, blue: 0.35))
                             .frame(maxWidth: .infinity)
                     }
@@ -106,7 +106,7 @@ struct ProfileView: View {
                                 ProgressView().tint(FlimTheme.textSecondary)
                             } else {
                                 Text("Delete Account")
-                                    .font(.system(size: 13))
+                                    .flimFont(13, relativeTo: .subheadline)
                                     .foregroundStyle(FlimTheme.textTertiary)
                             }
                         }
@@ -115,7 +115,7 @@ struct ProfileView: View {
                     .disabled(isDeleting)
                 } footer: {
                     Text("\(AppInfo.appName) \(AppInfo.versionString)")
-                        .font(.system(size: 11))
+                        .flimFont(11, relativeTo: .caption)
                         .foregroundStyle(FlimTheme.textTertiary.opacity(0.7))
                         .frame(maxWidth: .infinity, alignment: .center)
                         .padding(.top, 8)
@@ -182,7 +182,7 @@ struct ProfileView: View {
 
     private func sectionHeader(_ text: String) -> some View {
         Text(text.uppercased())
-            .font(.system(size: 11, weight: .medium)).tracking(2)
+            .flimFont(11, weight: .medium, relativeTo: .caption).tracking(2)
             .foregroundStyle(FlimTheme.textTertiary)
     }
 
@@ -193,7 +193,7 @@ struct ProfileView: View {
                     .font(.system(size: 15))
                     .foregroundStyle(FlimTheme.accent)
                     .frame(width: 22)
-                Text(title).font(.system(size: 15)).foregroundStyle(.white)
+                Text(title).flimFont(15, relativeTo: .body).foregroundStyle(.white)
                 Spacer()
                 Image(systemName: "chevron.right")
                     .font(.system(size: 12, weight: .semibold))
@@ -332,7 +332,7 @@ struct EditProfileView: View {
                         }
                     } else {
                         Text(String((auth.currentUser?.username ?? "?").prefix(1)).uppercased())
-                            .font(.system(size: 34, weight: .thin))
+                            .flimFont(34, weight: .thin, relativeTo: .title3)
                             .foregroundStyle(FlimTheme.accent)
                     }
                 }
@@ -355,10 +355,10 @@ struct EditProfileView: View {
     private func editRow(_ title: String, value: String, isPlaceholder: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack {
-                Text(title).font(.system(size: 15)).foregroundStyle(.white)
+                Text(title).flimFont(15, relativeTo: .body).foregroundStyle(.white)
                 Spacer()
                 Text(value)
-                    .font(.system(size: 15))
+                    .flimFont(15, relativeTo: .body)
                     .foregroundStyle(isPlaceholder ? FlimTheme.textTertiary : FlimTheme.textSecondary)
                     .lineLimit(1)
                 Image(systemName: "chevron.right")
@@ -394,7 +394,7 @@ struct InviteSheet: View {
                 FlimTheme.bg.ignoresSafeArea()
                 VStack(spacing: 20) {
                     Text("Share this code so friends can add you on \(AppInfo.appName).")
-                        .font(.system(size: 14))
+                        .flimFont(14, relativeTo: .subheadline)
                         .foregroundStyle(FlimTheme.textSecondary)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 40)
@@ -469,13 +469,13 @@ private struct EditBioSheet: View {
                 VStack(alignment: .leading, spacing: 12) {
                     TextField("A little about you…", text: $bio, axis: .vertical)
                         .lineLimit(1...4)
-                        .font(.system(size: 17))
+                        .flimFont(17, relativeTo: .body)
                         .foregroundStyle(.white)
                         .tint(.white)
                         .padding(16)
                         .background(Color(white: 0.1), in: RoundedRectangle(cornerRadius: 12))
                     Text("\(bio.count)/140")
-                        .font(.system(size: 12))
+                        .flimFont(12, relativeTo: .caption)
                         .foregroundStyle(FlimTheme.textTertiary)
                     Spacer()
                 }
@@ -519,11 +519,11 @@ private struct EditNameSheet: View {
                 FlimTheme.bg.ignoresSafeArea()
                 VStack(alignment: .leading, spacing: 12) {
                     Text("What should we call you?")
-                        .font(.system(size: 13)).foregroundStyle(FlimTheme.textTertiary)
+                        .flimFont(13, relativeTo: .subheadline).foregroundStyle(FlimTheme.textTertiary)
                     TextField("First name", text: $name)
                         .textContentType(.givenName)
                         .autocorrectionDisabled()
-                        .font(.system(size: 17))
+                        .flimFont(17, relativeTo: .body)
                         .foregroundStyle(.white)
                         .tint(.white)
                         .padding(16)
@@ -573,7 +573,7 @@ private struct EditUsernameSheet: View {
 
                 VStack(alignment: .leading, spacing: 20) {
                     Text("USERNAME")
-                        .font(.system(size: 11, weight: .medium))
+                        .flimFont(11, weight: .medium, relativeTo: .caption)
                         .tracking(2)
                         .foregroundStyle(FlimTheme.textTertiary)
                         .padding(.top, 24)
@@ -583,7 +583,7 @@ private struct EditUsernameSheet: View {
                         TextField("", text: $username, prompt: Text("yourname").foregroundStyle(Color(white: 0.3)))
                             .autocorrectionDisabled()
                             .textInputAutocapitalization(.never)
-                            .font(.system(size: 17))
+                            .flimFont(17, relativeTo: .body)
                             .foregroundStyle(.white)
                             .tint(.white)
                     }
@@ -593,7 +593,7 @@ private struct EditUsernameSheet: View {
 
                     if let error {
                         Text(error)
-                            .font(.system(size: 13))
+                            .flimFont(13, relativeTo: .subheadline)
                             .foregroundStyle(Color(red: 1, green: 0.4, blue: 0.4))
                     }
 

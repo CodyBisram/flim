@@ -3,6 +3,7 @@ import SwiftUI
 /// A full-screen, swipeable walk through a developed roll, every shot in chronological order,
 /// with the current photo's date, who took it, and reactions.
 struct RollCarouselView: View {
+    @State private var profileRoute: ProfileRoute?
     let photos: [Photo]                    // developed, sorted oldest → newest
     let memberNames: [UUID: String]
     var startIndex: Int = 0
@@ -72,6 +73,11 @@ struct RollCarouselView: View {
             }
         }
         .statusBarHidden()
+        // Presented rather than pushed: this view is a full-screen cover with no navigation
+        // stack of its own, so it carries the stack the profile needs.
+        .sheet(item: $profileRoute) { route in
+            NavigationStack { UserPageView(userId: route.id) }
+        }
         .sheet(item: $shareItem) { SharePreviewSheet(photo: $0.image) }
         .sheet(isPresented: $showComments) {
             if let photo = current {
@@ -125,9 +131,19 @@ struct RollCarouselView: View {
                     // between such photos resized the pager mid-transition: exactly the kind
                     // of thing that corrupts a paging TabView's internal scroll state and
                     // shows two photos at once.
-                    Text(memberNames[photo.userId].map { "@\($0)" } ?? "@")
-                        .font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
-                        .opacity(memberNames[photo.userId] == nil ? 0 : 1)
+                    // Wrapped in a Button so the handle opens that person's profile. The
+                    // always-render-then-fade shape above is preserved exactly: a Button sizes to
+                    // its label, so the footer's height still cannot vary per photo, which is what
+                    // the comment above is protecting. Disabled when the name hasn't resolved, so
+                    // an invisible label is never tappable.
+                    Button { profileRoute = ProfileRoute(id: photo.userId) } label: {
+                        Text(memberNames[photo.userId].map { "@\($0)" } ?? "@")
+                            .flimFont(14, weight: .semibold, relativeTo: .subheadline)
+                            .foregroundStyle(.white)
+                            .opacity(memberNames[photo.userId] == nil ? 0 : 1)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(memberNames[photo.userId] == nil)
                     // Same always-render-then-fade approach as the handle above, and for the same
                     // reason: this row's height must never depend on per-photo state while a
                     // paging TabView sits above it.

@@ -109,10 +109,10 @@ struct RollDetailView: View {
                                 .font(.system(size: 36, weight: .ultraLight))
                                 .foregroundStyle(FlimTheme.accent.opacity(0.8))
                             Text("No photos in this roll yet.")
-                                .font(.system(size: 15, weight: .light))
+                                .flimFont(15, weight: .light, relativeTo: .body)
                                 .foregroundStyle(FlimTheme.textSecondary)
                             Text("Take a photo and send it to \"\(roll.name)\".")
-                                .font(.system(size: 13))
+                                .flimFont(13, relativeTo: .subheadline)
                                 .foregroundStyle(FlimTheme.textTertiary)
                                 .multilineTextAlignment(.center)
                                 .padding(.horizontal, 40)
@@ -450,7 +450,7 @@ struct RollDetailView: View {
     private func sectionHeader(_ title: String) -> some View {
         HStack {
             Text(title)
-                .font(.system(size: 11, weight: .medium)).tracking(2)
+                .flimFont(11, weight: .medium, relativeTo: .caption).tracking(2)
                 .foregroundStyle(Color(white: 0.4))
             Spacer()
         }
@@ -500,7 +500,7 @@ struct RollDetailView: View {
                     Text("Counting shots…")
                 }
             }
-            .font(.system(size: 12))
+            .flimFont(12, relativeTo: .caption)
             .foregroundStyle(FlimTheme.textSecondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)

@@ -38,6 +38,7 @@ struct PhotoPagerView: View {
     var showsComments: Bool = false
     /// Show the photographer's @handle above the date (roll grid); off shows the date alone.
     var showsAttribution: Bool = false
+    @State private var profileRoute: ProfileRoute?
     var memberNames: [UUID: String] = [:]
     /// The roll name for a given photo's rollId (nil for a personal, non-roll shot), used only in
     /// the delete-confirmation wording. A roll grid passes a closure returning its own name.
@@ -186,6 +187,11 @@ struct PhotoPagerView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Flag this for review. Thanks for keeping \(AppInfo.appName) safe.")
+        }
+        // Presented rather than pushed: this view is a full-screen cover with no navigation
+        // stack of its own, so it carries the stack the profile needs.
+        .sheet(item: $profileRoute) { route in
+            NavigationStack { UserPageView(userId: route.id) }
         }
         .sheet(item: $shareItem) { item in
             SharePreviewSheet(photo: item.image)
@@ -435,8 +441,16 @@ struct PhotoPagerView: View {
         VStack(spacing: 2) {
             if let photo = current {
                 if showsAttribution, let name = memberNames[photo.userId] {
-                    Text("@\(name)")
-                        .font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
+                    // Tappable, like every other handle in the app. It was a plain Text here, so
+                    // the one place you are looking straight at someone's photograph was the one
+                    // place their name did nothing.
+                    Button { profileRoute = ProfileRoute(id: photo.userId) } label: {
+                        Text("@\(name)")
+                            .flimFont(14, weight: .semibold, relativeTo: .subheadline)
+                            .foregroundStyle(.white)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Opens @\(name)'s profile")
                 }
                 Text(photo.takenAt.formatted(date: .abbreviated, time: .shortened))
                     .font(.system(size: 12, weight: .medium)).foregroundStyle(Color(white: 0.68))

@@ -40,9 +40,9 @@ struct ActivityFeedView: View {
                             .font(.system(size: 26, weight: .ultraLight))
                             .foregroundStyle(FlimTheme.textTertiary)
                         Text("No activity yet")
-                            .font(.system(size: 14)).foregroundStyle(FlimTheme.textTertiary)
+                            .flimFont(14, relativeTo: .subheadline).foregroundStyle(FlimTheme.textTertiary)
                         Text("Reactions, comments, tags, and new followers will show up here.")
-                            .font(.system(size: 12)).foregroundStyle(FlimTheme.textTertiary)
+                            .flimFont(12, relativeTo: .caption).foregroundStyle(FlimTheme.textTertiary)
                             .multilineTextAlignment(.center).padding(.horizontal, 50)
                     }
                 } else if !loaded {
@@ -118,7 +118,7 @@ struct ActivityFeedView: View {
     private func sectionHeader(_ section: ActivitySection) -> some View {
         HStack {
             Text(section.title)
-                .font(.system(size: 13, weight: .semibold))
+                .flimFont(13, weight: .semibold, relativeTo: .subheadline)
                 .foregroundStyle(section == .new ? FlimTheme.accent : FlimTheme.textSecondary)
             Spacer()
         }
@@ -144,7 +144,7 @@ struct ActivityFeedView: View {
                 HStack(spacing: 4) {
                     Button { profileRoute = ProfileRoute(id: item.actor.id) } label: {
                         Text(item.actor.handle)
-                            .font(.system(size: 14, weight: .semibold))
+                            .flimFont(14, weight: .semibold, relativeTo: .subheadline)
                             .foregroundStyle(.white)
                             .lineLimit(1)
                             .fixedSize()
@@ -153,7 +153,7 @@ struct ActivityFeedView: View {
 
                     Button { openDestination(item) } label: {
                         Text(actionText(item.kind))
-                            .font(.system(size: 14))
+                            .flimFont(14, relativeTo: .subheadline)
                             .foregroundStyle(.white)
                             .lineLimit(2)
                             .multilineTextAlignment(.leading)
@@ -162,7 +162,7 @@ struct ActivityFeedView: View {
                 }
                 Button { openDestination(item) } label: {
                     Text(item.date.formatted(.relative(presentation: .named)))
-                        .font(.system(size: 11)).foregroundStyle(FlimTheme.textTertiary)
+                        .flimFont(11, relativeTo: .caption).foregroundStyle(FlimTheme.textTertiary)
                 }
                 .buttonStyle(.plain)
             }
@@ -241,7 +241,7 @@ struct ActivityFeedView: View {
         switch kind {
         case .like(let emoji):
             Text(emoji)
-                .font(.system(size: 11))
+                .flimFont(11, relativeTo: .caption)
                 .frame(width: 20, height: 20)
                 .background(FlimTheme.bg, in: Circle())
                 .overlay(Circle().stroke(FlimTheme.bg, lineWidth: 2))

@@ -50,12 +50,12 @@ struct CreateRollView: View {
 
             VStack(alignment: .leading, spacing: 6) {
                 Text("ROLL NAME")
-                    .font(.system(size: 11, weight: .medium))
+                    .flimFont(11, weight: .medium, relativeTo: .caption)
                     .tracking(2)
                     .foregroundStyle(Color(white: 0.4))
 
                 TextField("", text: $name, prompt: Text("Summer Road Trip").foregroundStyle(Color(white: 0.3)))
-                    .font(.system(size: 17))
+                    .flimFont(17, relativeTo: .body)
                     .foregroundStyle(.white)
                     .tint(.white)
                     .padding(.horizontal, 16)
@@ -65,7 +65,7 @@ struct CreateRollView: View {
 
             if let error {
                 Text(error)
-                    .font(.system(size: 13))
+                    .flimFont(13, relativeTo: .subheadline)
                     .foregroundStyle(Color(red: 1, green: 0.4, blue: 0.4))
             }
 
@@ -90,10 +90,10 @@ struct CreateRollView: View {
 
                     VStack(spacing: 8) {
                         Text(roll.name)
-                            .font(.system(size: 22, weight: .thin))
+                            .flimFont(22, weight: .thin, relativeTo: .title3)
                             .foregroundStyle(.white)
                         Text("Share this code with friends")
-                            .font(.system(size: 14))
+                            .flimFont(14, relativeTo: .subheadline)
                             .foregroundStyle(Color(white: 0.5))
                     }
 
@@ -183,7 +183,7 @@ struct RevealPromiseNote: View {
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(FlimTheme.accent)
             Text("Everyone shoots into it. All the shots reveal together, \(Self.delayText) after the roll starts.")
-                .font(.system(size: 13))
+                .flimFont(13, relativeTo: .subheadline)
                 .foregroundStyle(FlimTheme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }

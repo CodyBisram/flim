@@ -61,10 +61,10 @@ struct CommentsSheet: View {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
                     Button { route = ProfileRoute(id: info.comment.userId) } label: {
-                        Text(info.handle).font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
+                        Text(info.handle).flimFont(14, weight: .semibold, relativeTo: .subheadline).foregroundStyle(.white)
                     }
                     Text(Self.compactTime(info.comment.createdAt))
-                        .font(.system(size: 12)).foregroundStyle(FlimTheme.textTertiary)
+                        .flimFont(12, relativeTo: .caption).foregroundStyle(FlimTheme.textTertiary)
                     if info.comment.userId == auth.currentUser?.id {
                         Button { delete(info) } label: {
                             Image(systemName: "xmark").font(.system(size: 10)).foregroundStyle(FlimTheme.textTertiary)
@@ -85,7 +85,7 @@ struct CommentsSheet: View {
                         .foregroundStyle(info.likedByMe ? FlimTheme.accent : FlimTheme.textTertiary)
                         .symbolEffect(.bounce, value: info.likedByMe)
                     if info.likeCount > 0 {
-                        Text("\(info.likeCount)").font(.system(size: 11)).foregroundStyle(FlimTheme.textTertiary)
+                        Text("\(info.likeCount)").flimFont(11, relativeTo: .caption).foregroundStyle(FlimTheme.textTertiary)
                             .contentTransition(.numericText())
                     }
                 }
@@ -117,30 +117,19 @@ struct CommentsSheet: View {
     }
 
     private var composer: some View {
-        HStack(spacing: 10) {
-            TextField("Add a comment…", text: $draft, axis: .vertical)
-                .lineLimit(1...4)
-                .font(.system(size: 15)).foregroundStyle(.white).tint(FlimTheme.accent)
-                .focused($focused)
-                .padding(.horizontal, 14).padding(.vertical, 10)
-                .background(FlimTheme.bgElevated, in: Capsule())
-            Button { send() } label: {
-                Image(systemName: "arrow.up.circle.fill")
-                    .font(.system(size: 30))
-                    .foregroundStyle(canSend ? FlimTheme.accent : FlimTheme.textTertiary)
-            }
-            .disabled(!canSend || sending)
-            .accessibilityLabel("Send comment")
-        }
-        .padding(.horizontal, 16).padding(.vertical, 10)
-        .background(.ultraThinMaterial)
+        // Suggestions are placed by the body above, outside the material, so they aren't
+        // requested here.
+        CommentComposer(draft: $draft, style: .surface, isSending: sending,
+                        showsMentionSuggestions: false, focus: $focused) { send() }
+            .padding(.horizontal, 16).padding(.vertical, 10)
+            .background(.ultraThinMaterial)
     }
 
     private var emptyState: some View {
         VStack(spacing: 6) {
             Spacer()
-            Text("No comments yet").font(.system(size: 16, weight: .medium)).foregroundStyle(.white)
-            Text("Be the first to comment.").font(.system(size: 13)).foregroundStyle(FlimTheme.textTertiary)
+            Text("No comments yet").flimFont(16, weight: .medium, relativeTo: .body).foregroundStyle(.white)
+            Text("Be the first to comment.").flimFont(13, relativeTo: .subheadline).foregroundStyle(FlimTheme.textTertiary)
             Spacer()
         }
         .frame(maxWidth: .infinity)

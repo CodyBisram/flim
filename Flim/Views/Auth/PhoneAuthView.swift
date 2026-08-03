@@ -24,7 +24,7 @@ struct EmailAuthView: View {
 
                 VStack(alignment: .leading, spacing: 8) {
                     Text(AppInfo.appName)
-                        .font(.system(size: 34, weight: .thin))
+                        .flimFont(34, weight: .thin, relativeTo: .title3)
                         .tracking(12)
                         .foregroundStyle(.white)
                     Text("Shoot now. See it later. Enter your email to get started.")
@@ -35,7 +35,7 @@ struct EmailAuthView: View {
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text("EMAIL")
-                        .font(.system(size: 11, weight: .medium))
+                        .flimFont(11, weight: .medium, relativeTo: .caption)
                         .tracking(2)
                         .foregroundStyle(Color(white: 0.4))
 
@@ -44,7 +44,7 @@ struct EmailAuthView: View {
                         .textContentType(.emailAddress)
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
-                        .font(.system(size: 17))
+                        .flimFont(17, relativeTo: .body)
                         .foregroundStyle(.white)
                         .tint(.white)
                         .padding(.horizontal, 16)
@@ -54,7 +54,7 @@ struct EmailAuthView: View {
 
                 if let error {
                     Text(error)
-                        .font(.system(size: 13))
+                        .flimFont(13, relativeTo: .subheadline)
                         .foregroundStyle(Color(red: 1, green: 0.4, blue: 0.4))
                         .padding(.top, 8)
                 }
@@ -87,10 +87,10 @@ struct EmailAuthView: View {
     private var inviteSection: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Have an invite code?")
-                .font(.system(size: 14, weight: .medium))
+                .flimFont(14, weight: .medium, relativeTo: .subheadline)
                 .foregroundStyle(.white)
             Text("Enter it below and we'll get you straight in.")
-                .font(.system(size: 12))
+                .flimFont(12, relativeTo: .caption)
                 .foregroundStyle(Color(white: 0.5))
 
             TextField("", text: $inviteCode, prompt: Text("ABC123").foregroundStyle(Color(white: 0.3)))
@@ -111,7 +111,7 @@ struct EmailAuthView: View {
 
             if let inviteError {
                 Text(inviteError)
-                    .font(.system(size: 13))
+                    .flimFont(13, relativeTo: .subheadline)
                     .foregroundStyle(Color(red: 1, green: 0.4, blue: 0.4))
                     .padding(.top, 4)
             }

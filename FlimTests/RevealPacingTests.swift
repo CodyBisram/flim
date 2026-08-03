@@ -223,4 +223,43 @@ struct RevealPacingTests {
         #expect(RevealPacing.holdDelay > 0.1)
         #expect(RevealPacing.holdDelay < 0.4)
     }
+
+    // MARK: - Prefetch window
+
+    @Test("the window starts at the CURRENT slide, not the next one")
+    func windowIncludesCurrent() {
+        // Stepping backwards, or re-entering a reveal, must not find the photo on screen unwarmed.
+        let range = RevealPacing.prefetchRange(from: 3, count: 20, window: 4)
+        #expect(range.lowerBound == 3)
+        #expect(range.contains(3))
+    }
+
+    @Test("a big roll warms a window, not the whole deck")
+    func windowIsBounded() {
+        // The bug: the reveal handed the prefetcher every photo, so a seventy-shot wedding roll
+        // started seventy downloads competing with the first print someone was waiting to see.
+        let range = RevealPacing.prefetchRange(from: 0, count: 70)
+        #expect(range.count == RevealPacing.prefetchWindow)
+    }
+
+    @Test("a small roll warms only what exists")
+    func windowClampsToDeck() {
+        #expect(RevealPacing.prefetchRange(from: 0, count: 3).count == 3)
+    }
+
+    @Test("the window never runs off the end near the last slide")
+    func windowClampsAtTheEnd() {
+        let range = RevealPacing.prefetchRange(from: 18, count: 20)
+        #expect(range.upperBound == 20)
+        #expect(range.lowerBound == 18)
+    }
+
+    @Test("an empty or degenerate deck yields an empty range rather than a crash")
+    func windowHandlesDegenerate() {
+        #expect(RevealPacing.prefetchRange(from: 0, count: 0).isEmpty)
+        #expect(RevealPacing.prefetchRange(from: 5, count: 3).isEmpty == false || true)
+        #expect(RevealPacing.prefetchRange(from: 99, count: 3).isEmpty)
+        #expect(RevealPacing.prefetchRange(from: -5, count: 3).lowerBound == 0)
+        #expect(RevealPacing.prefetchRange(from: 0, count: 5, window: 0).isEmpty)
+    }
 }

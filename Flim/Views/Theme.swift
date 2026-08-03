@@ -50,7 +50,7 @@ struct FlimNavTitle: View {
 
     var body: some View {
         Text(text)
-            .font(.system(size: 34, weight: .light))
+            .flimFont(34, weight: .light, relativeTo: .title3)
             .tracking(0.5)
             .foregroundStyle(FlimTheme.textPrimary)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -68,7 +68,7 @@ extension View {
         toolbar {
             ToolbarItem(placement: .principal) {
                 Text(text)
-                    .font(.system(size: 17, weight: .light))
+                    .flimFont(17, weight: .light, relativeTo: .body)
                     .tracking(0.5)
                     .foregroundStyle(FlimTheme.textPrimary)
             }

@@ -77,7 +77,7 @@ struct PostDetailView: View {
                         .onTapGesture { if url != nil { showViewer = true } }
 
                     if let caption = post.caption, !caption.isEmpty {
-                        Text(caption).font(.system(size: 15)).foregroundStyle(.white)
+                        Text(caption).flimFont(15, relativeTo: .body).foregroundStyle(.white)
                     }
 
                     reactionBar
@@ -267,13 +267,13 @@ struct PostDetailView: View {
                         .fill(FlimTheme.accent.opacity(0.18))
                         .frame(width: 34, height: 34)
                         .overlay(Text(String(item.author.handle.dropFirst().prefix(1)).uppercased())
-                            .font(.system(size: 14, weight: .thin)).foregroundStyle(FlimTheme.accent))
-                    Text(item.author.handle).font(.system(size: 15, weight: .semibold)).foregroundStyle(.white)
+                            .flimFont(14, weight: .thin, relativeTo: .subheadline).foregroundStyle(FlimTheme.accent))
+                    Text(item.author.handle).flimFont(15, weight: .semibold, relativeTo: .body).foregroundStyle(.white)
                 }
             }
             Spacer()
             Text(post.takenAt.formatted(date: .abbreviated, time: .omitted))
-                .font(.system(size: 12)).foregroundStyle(FlimTheme.textTertiary)
+                .flimFont(12, relativeTo: .caption).foregroundStyle(FlimTheme.textTertiary)
         }
     }
 
@@ -288,7 +288,7 @@ struct PostDetailView: View {
     private var commentsSection: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text(comments.isEmpty ? "No comments yet" : "\(comments.count) comment\(comments.count == 1 ? "" : "s")")
-                .font(.system(size: 11, weight: .medium)).tracking(1.5)
+                .flimFont(11, weight: .medium, relativeTo: .caption).tracking(1.5)
                 .foregroundStyle(FlimTheme.textTertiary)
 
             ForEach(comments) { info in
@@ -297,10 +297,10 @@ struct PostDetailView: View {
                         HStack(spacing: 6) {
                             Button { route = ProfileRoute(id: info.comment.userId) } label: {
                                 Text(info.handle)
-                                    .font(.system(size: 13, weight: .semibold)).foregroundStyle(.white)
+                                    .flimFont(13, weight: .semibold, relativeTo: .subheadline).foregroundStyle(.white)
                             }
                             Text(info.comment.createdAt.formatted(.relative(presentation: .named)))
-                                .font(.system(size: 10)).foregroundStyle(FlimTheme.textTertiary)
+                                .flimFont(10, relativeTo: .caption).foregroundStyle(FlimTheme.textTertiary)
                             if info.comment.userId == auth.currentUser?.id {
                                 Button { delete(info) } label: {
                                     Image(systemName: "xmark").font(.system(size: 9)).foregroundStyle(FlimTheme.textTertiary)
@@ -325,7 +325,7 @@ struct PostDetailView: View {
                                 .foregroundStyle(info.likedByMe ? FlimTheme.accent : FlimTheme.textTertiary)
                                 .symbolEffect(.bounce, value: info.likedByMe)
                             if info.likeCount > 0 {
-                                Text("\(info.likeCount)").font(.system(size: 10)).foregroundStyle(FlimTheme.textTertiary)
+                                Text("\(info.likeCount)").flimFont(10, relativeTo: .caption).foregroundStyle(FlimTheme.textTertiary)
                             }
                         }
                     }
@@ -335,28 +335,10 @@ struct PostDetailView: View {
     }
 
     private var commentInput: some View {
-        VStack(spacing: 8) {
-            MentionSuggestions(draft: $draft)
-            HStack(spacing: 10) {
-                TextField("Add a comment…", text: $draft, axis: .vertical)
-                    .lineLimit(1...3)
-                    .font(.system(size: 15))
-                    .foregroundStyle(.white)
-                    .tint(FlimTheme.accent)
-                    .focused($commentFocused)
-                    .padding(.horizontal, 14).padding(.vertical, 10)
-                    .background(FlimTheme.bgElevated, in: Capsule())
-                Button { send() } label: {
-                    Image(systemName: "arrow.up.circle.fill")
-                        .font(.system(size: 30))
-                        .foregroundStyle(canSend ? FlimTheme.accent : FlimTheme.textTertiary)
-                }
-                .disabled(!canSend || sending)
-            .accessibilityLabel("Send comment")
-            }
-        }
-        .padding(.horizontal, 16).padding(.vertical, 10)
-        .background(.ultraThinMaterial)
+        CommentComposer(draft: $draft, style: .surface, isSending: sending,
+                        focus: $commentFocused) { send() }
+            .padding(.horizontal, 16).padding(.vertical, 10)
+            .background(.ultraThinMaterial)
     }
 
     private var canSend: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }

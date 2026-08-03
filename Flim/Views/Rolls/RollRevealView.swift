@@ -66,6 +66,7 @@ struct RollRevealView: View {
     @State private var holdTask: Task<Void, Never>?
     /// Latched once a press has moved far enough to be a swipe, so it can't turn back into a hold.
     @State private var holdCancelled = false
+    @State private var profileRoute: ProfileRoute?
 
     var body: some View {
         ZStack {
@@ -131,8 +132,20 @@ struct RollRevealView: View {
                     VStack(spacing: 10) {
                         VStack(spacing: 3) {
                             if let name = memberNames[photo.userId] {
-                                Text("@\(name)")
-                                    .font(.system(size: 15, weight: .semibold)).foregroundStyle(.white)
+                                // Tappable here too, but it must hold the auto-advance first:
+                                // opening a profile over a running slideshow would otherwise let
+                                // the deck keep stepping behind the sheet, so you'd come back to
+                                // a different photo than the one whose credit you tapped.
+                                Button {
+                                    holdAutoAdvance()
+                                    profileRoute = ProfileRoute(id: photo.userId)
+                                } label: {
+                                    Text("@\(name)")
+                                        .flimFont(15, weight: .semibold, relativeTo: .body)
+                                        .foregroundStyle(.white)
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityHint("Opens @\(name)'s profile and pauses the reveal")
                             }
                             Text("\(index + 1) of \(deck.count)")
                                 .font(.system(size: 12)).foregroundStyle(Color(white: 0.6))
@@ -186,6 +199,9 @@ struct RollRevealView: View {
         }
         .statusBarHidden()
         .animation(.easeOut(duration: 0.22), value: paused)
+        .sheet(item: $profileRoute) { route in
+            NavigationStack { UserPageView(userId: route.id) }
+        }
         .task {
             await loadDeck()
         }
@@ -496,13 +512,10 @@ struct RollRevealView: View {
                 _ = await ImageLoader.fetch(url: url, maxPixel: 1600, scale: displayScale)
             }
         }
-        // Every full rendition warms in the background, the first one included: it has 1.4s of
-        // develop animation to arrive in, and it only has to beat the blur clearing, not the frame
-        // appearing.
-        let full: [(url: URL, cacheKey: String?)] = deck.compactMap { photo in
-            urls[photo.viewPath].map { (url: $0, cacheKey: nil) }
-        }
-        ImageLoader.prefetch(full, maxPixel: 1600, scale: displayScale)
+        // Full renditions warm in the background, the first one included: it has the develop
+        // animation to arrive in, and only has to beat the blur clearing, not the frame appearing.
+        // Bounded to a sliding window, see prefetchAhead.
+        prefetchAhead(from: 0)
         // The reveal is the app's marquee moment, mark it with the chime (SoundFX gates on the
         // sound-effects setting itself). Previously only the lesser Darkroom sparkle overlay
         // played it; the actual story reveal was silent.
@@ -532,8 +545,21 @@ struct RollRevealView: View {
             finish()
         } else if next >= 0 {
             index = next
+            prefetchAhead(from: next)
             develop()
         }
+    }
+
+    /// Warms a bounded window of upcoming slides instead of the whole deck.
+    ///
+    /// Already-cached entries are cheap no-ops in ImageLoader, so re-calling this on every step
+    /// costs nothing and keeps the runway ahead of the viewer however they move through the roll.
+    private func prefetchAhead(from index: Int) {
+        let range = RevealPacing.prefetchRange(from: index, count: deck.count)
+        let items: [(url: URL, cacheKey: String?)] = deck[range].compactMap { photo in
+            urls[photo.viewPath].map { (url: $0, cacheKey: nil) }
+        }
+        ImageLoader.prefetch(items, maxPixel: 1600, scale: displayScale)
     }
 
     /// The current frame's image failed to load (deleted between fetch and play, or any other

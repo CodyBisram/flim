@@ -29,10 +29,10 @@ struct OTPView: View {
 
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Check your email.")
-                        .font(.system(size: 28, weight: .thin))
+                        .flimFont(28, weight: .thin, relativeTo: .title3)
                         .foregroundStyle(.white)
                     Text("Enter the \(otpLength)-digit code we sent you.")
-                        .font(.system(size: 15))
+                        .flimFont(15, relativeTo: .body)
                         .foregroundStyle(Color(white: 0.5))
                 }
                 .padding(.bottom, 40)
@@ -56,7 +56,7 @@ struct OTPView: View {
 
                 if let error {
                     Text(error)
-                        .font(.system(size: 13))
+                        .flimFont(13, relativeTo: .subheadline)
                         .foregroundStyle(Color(red: 1, green: 0.4, blue: 0.4))
                         .padding(.top, 12)
                 }

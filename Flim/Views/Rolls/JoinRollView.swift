@@ -55,7 +55,7 @@ struct JoinRollView: View {
 
             VStack(alignment: .leading, spacing: 6) {
                 Text("INVITE CODE")
-                    .font(.system(size: 11, weight: .medium))
+                    .flimFont(11, weight: .medium, relativeTo: .caption)
                     .tracking(2)
                     .foregroundStyle(Color(white: 0.4))
 
@@ -77,7 +77,7 @@ struct JoinRollView: View {
 
             if let error {
                 Text(error)
-                    .font(.system(size: 13))
+                    .flimFont(13, relativeTo: .subheadline)
                     .foregroundStyle(Color(red: 1, green: 0.4, blue: 0.4))
             }
 
@@ -100,10 +100,10 @@ struct JoinRollView: View {
                 .foregroundStyle(FlimTheme.accent)
             VStack(spacing: 8) {
                 Text("You joined")
-                    .font(.system(size: 14))
+                    .flimFont(14, relativeTo: .subheadline)
                     .foregroundStyle(Color(white: 0.5))
                 Text(roll.name)
-                    .font(.system(size: 26, weight: .thin))
+                    .flimFont(26, weight: .thin, relativeTo: .title3)
                     .foregroundStyle(.white)
             }
             RevealPromiseNote()
