@@ -184,7 +184,7 @@ struct RollCarouselView: View {
         reactions = []
         for i in [index - 1, index, index + 1] where photos.indices.contains(i) {
             let photo = photos[i]
-            if urls[photo.id] == nil { urls[photo.id] = try? await photoService.signedURL(for: photo.storagePath) }
+            if urls[photo.id] == nil { urls[photo.id] = try? await photoService.signedURL(for: photo.viewPath) }
         }
         if let photo = current {
             // Guard against fast swipes: only apply the fetch if this is still the visible photo.

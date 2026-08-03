@@ -1337,3 +1337,16 @@ DROP POLICY IF EXISTS "post_tags: tagged user removes self" ON public.post_tags;
 CREATE POLICY "post_tags: tagged user removes self"
     ON public.post_tags FOR DELETE TO authenticated
     USING (tagged_user_id = auth.uid());
+
+-- ============================================================
+-- Daily digest state. One row per user, recording the last time they were sent a "your friends
+-- posted" digest, so the hourly job is idempotent and a missed run rolls into the next one rather
+-- than dropping a day's posts. RLS is ON with NO policies: only the service role (which bypasses
+-- RLS) ever touches this, and no client has any business reading delivery bookkeeping. Applied
+-- separately as supabase/migrations/2026-08-03_daily_digest_state.sql.
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.digest_state (
+    user_id      uuid PRIMARY KEY REFERENCES public.users(id) ON DELETE CASCADE,
+    last_sent_at timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE public.digest_state ENABLE ROW LEVEL SECURITY;

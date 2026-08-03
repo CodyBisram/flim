@@ -50,7 +50,7 @@ struct RollRevealView: View {
             } else if let photo = deck[safe: index] {
                 // The photo, developing in front of you.
                 Group {
-                    if let url = urls[photo.storagePath] {
+                    if let url = urls[photo.viewPath] {
                         CachedImage(url: url, maxPixel: 1600, onFailure: { skipDeadFrame(photo.id) }) { image in
                             image
                                 .resizable()
@@ -288,7 +288,7 @@ struct RollRevealView: View {
             isEmpty = true
             return
         }
-        urls = await photoService.signedURLs(for: deck.map(\.storagePath))
+        urls = await photoService.signedURLs(for: deck.map(\.viewPath))
         reactionsByPhoto = await photoService.fetchReactions(photoIds: deck.map(\.id))
 
         // Wait for the FIRST print to be decoded and in cache before starting the show.
@@ -299,14 +299,14 @@ struct RollRevealView: View {
         // blank and then advance: the first shot of a reveal appearing blurry or not at all.
         // Whoever opens the reveal is waiting on this screen either way; spending that wait on the
         // photo means the animation has something to actually develop.
-        if let first = deck.first, let url = urls[first.storagePath] {
+        if let first = deck.first, let url = urls[first.viewPath] {
             // No cacheKey, matching what the CachedImage above asks for; a different key here
             // would warm an entry the view never looks for.
             _ = await ImageLoader.fetch(url: url, maxPixel: 1600, scale: displayScale)
         }
         // The rest warm in the background so later slides are ready before their turn comes up.
         let upcoming: [(url: URL, cacheKey: String?)] = deck.dropFirst().compactMap { photo in
-            urls[photo.storagePath].map { (url: $0, cacheKey: nil) }
+            urls[photo.viewPath].map { (url: $0, cacheKey: nil) }
         }
         ImageLoader.prefetch(upcoming, maxPixel: 1600, scale: displayScale)
         // The reveal is the app's marquee moment, mark it with the chime (SoundFX gates on the

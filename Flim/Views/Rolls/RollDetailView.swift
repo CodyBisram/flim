@@ -224,6 +224,15 @@ struct RollDetailView: View {
                 // roll spends most of its life developing), "Play through the roll · N", the
                 // carousel, the reveal, and the develop-reminder notification's own shot count
                 // below all draw from `vm.photos` / `vm.developingPhotos` / `vm.developedPhotos`.
+                // If this roll is about to play its reveal, start pulling the first print NOW,
+                // in parallel with the paging below rather than after it. The reveal waits for
+                // that image before it starts (otherwise the develop animation plays over an
+                // empty frame), so every second of the drain that isn't also spent downloading
+                // is a second the user spends looking at a spinner.
+                if roll.isDeveloped, !UserDefaults.standard.bool(forKey: revealSeenKey) {
+                    warmFirstRevealPrint()
+                }
+
                 while photoService.hasMore {
                     await vm.loadMoreRoll(photoService: photoService, rollId: roll.id, blockedIds: feed.blockedIds)
                 }
@@ -380,6 +389,21 @@ struct RollDetailView: View {
             // Nothing to act on until the roll develops, but an empty menu would just flash a
             // blank card, so say why instead.
             Text("Develops with the roll")
+        }
+    }
+
+    /// Pulls the roll's earliest developed print into cache, at the size and cache key the reveal
+    /// will ask for, so the slideshow can start on an image that's already there.
+    ///
+    /// Fire-and-forget: if it doesn't finish in time the reveal waits for it itself, exactly as
+    /// before. This only removes dead time, it isn't load-bearing.
+    private func warmFirstRevealPrint() {
+        guard let first = vm.chronologicalDeveloped.first else { return }
+        Task {
+            guard let url = try? await photoService.signedURL(for: first.viewPath) else { return }
+            // `cacheKey: nil` and maxPixel 1600 match what RollRevealView requests; a different
+            // key or size would warm an entry the reveal never looks for.
+            _ = await ImageLoader.fetch(url: url, maxPixel: 1600, scale: displayScale)
         }
     }
 

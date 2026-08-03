@@ -19,6 +19,15 @@ struct Photo: Codable, Identifiable {
     /// Path to use in grids/feeds, the thumbnail if present, else the full image.
     var displayPath: String { thumbPath ?? storagePath }
 
+    /// What a full-screen viewer that can't ZOOM should download: the ~1400px rendition, which is
+    /// already wider than any phone screen at 3x, so it is pixel-identical to the full 2048px
+    /// image here for roughly a third of the bytes.
+    ///
+    /// Use this for the reveal and the roll carousel. NOT for `PhotoPagerView`, which pinch-zooms
+    /// to 3x and genuinely needs the full image. Falls back to the full image for photos taken
+    /// before renditions existed, or whose rendition upload hasn't landed yet.
+    var viewPath: String { feedPath ?? storagePath }
+
     var timeUntilDeveloped: TimeInterval { developsAt.timeIntervalSinceNow }
 
     enum CodingKeys: String, CodingKey {
