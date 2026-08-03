@@ -49,7 +49,12 @@ struct ActivityFeedView: View {
                     ProgressView().tint(.white)
                 } else {
                     ScrollView {
-                        LazyVStack(spacing: 2, pinnedViews: [.sectionHeaders]) {
+                        // NOT pinned. A pinned header floats over the rows passing beneath it,
+                        // and since the header is only as tall as its own text, avatars and
+                        // thumbnails slid out either side of it and overlapped the label. Making
+                        // the header opaque enough to hide them would mean a bar sitting over the
+                        // list permanently. These just scroll away with their section.
+                        LazyVStack(spacing: 2) {
                             ForEach(sections, id: \.section.id) { group in
                                 Section {
                                     ForEach(group.items) { row($0) }
@@ -107,8 +112,9 @@ struct ActivityFeedView: View {
         groupedActivity(items, date: \.date, seenBefore: seenBefore)
     }
 
-    /// Pinned so the heading stays visible while you scroll through a long stretch of one day,
-    /// which is the only reason a date header earns its space.
+    /// A little extra room above each heading (except the first) so a section reads as a break in
+    /// the list rather than another row. No background needed now that it isn't pinned: nothing
+    /// ever passes underneath it.
     private func sectionHeader(_ section: ActivitySection) -> some View {
         HStack {
             Text(section.title)
@@ -117,8 +123,8 @@ struct ActivityFeedView: View {
             Spacer()
         }
         .padding(.horizontal, 18)
-        .padding(.vertical, 8)
-        .background(FlimTheme.bg)
+        .padding(.top, section == sections.first?.section ? 4 : 20)
+        .padding(.bottom, 8)
     }
 
     /// Two tap regions per row: the avatar opens the actor's profile; everything else (the
