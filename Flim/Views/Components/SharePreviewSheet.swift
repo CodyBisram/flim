@@ -51,9 +51,9 @@ struct SharePreviewSheet: View {
                                 .foregroundStyle(withFrame ? FlimTheme.accent : FlimTheme.textTertiary)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("\(AppInfo.appName) print frame")
-                                    .font(.system(size: 15, weight: .medium)).foregroundStyle(.white)
+                                    .flimFont(15, weight: .medium, relativeTo: .body).foregroundStyle(.white)
                                 Text(withFrame ? "Shared as an instant print" : "Shared as the plain photo")
-                                    .font(.system(size: 12)).foregroundStyle(FlimTheme.textTertiary)
+                                    .flimFont(12, relativeTo: .caption).foregroundStyle(FlimTheme.textTertiary)
                                     .contentTransition(.opacity)
                             }
                             Spacer()

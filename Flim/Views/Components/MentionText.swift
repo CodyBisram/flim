@@ -7,10 +7,27 @@ import SwiftUI
 /// into a row of buttons would break wrapping mid-sentence.
 struct MentionText: View {
     let text: String
-    var size: CGFloat = 14
+    /// Scaled with Dynamic Type.
+    ///
+    /// This renders the BODY of every comment in all four comment surfaces, so leaving it fixed
+    /// meant the comments sheet's own chrome grew with the user's text size while the comments
+    /// themselves stayed 14pt: the single most visible inconsistency the type pass could have
+    /// left behind, on the most text-heavy screen in the app.
+    ///
+    /// Held as `@ScaledMetric` rather than styled with `.flimFont` because the size goes into an
+    /// AttributedString run, not onto a view, so a view modifier can't reach it.
+    @ScaledMetric private var size: CGFloat
     var color: Color = .white
     /// The tapped mention's lowercased username.
     let onMention: (String) -> Void
+
+    init(text: String, size: CGFloat = 14, color: Color = .white,
+         onMention: @escaping (String) -> Void) {
+        self.text = text
+        _size = ScaledMetric(wrappedValue: size, relativeTo: .body)
+        self.color = color
+        self.onMention = onMention
+    }
 
     private static let scheme = "flim-mention"
 

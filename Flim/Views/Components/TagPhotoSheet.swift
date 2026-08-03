@@ -19,7 +19,7 @@ struct TagPhotoSheet: View {
                 FlimTheme.bg.ignoresSafeArea()
                 VStack(spacing: 14) {
                     Text(tags.isEmpty ? "Tap the photo to tag someone" : "Tap a tag to remove it")
-                        .font(.system(size: 13)).foregroundStyle(FlimTheme.textTertiary)
+                        .flimFont(13, relativeTo: .subheadline).foregroundStyle(FlimTheme.textTertiary)
                         .padding(.top, 8)
 
                     GeometryReader { geo in
@@ -75,7 +75,7 @@ struct TagPhotoSheet: View {
     private func tagMarker(_ tag: PendingTag) -> some View {
         HStack(spacing: 4) {
             Text(tag.user.handle)
-                .font(.system(size: 12, weight: .semibold)).foregroundStyle(.white)
+                .flimFont(12, weight: .semibold, relativeTo: .caption).foregroundStyle(.white)
             Image(systemName: "xmark").font(.system(size: 9, weight: .bold)).foregroundStyle(.white.opacity(0.7))
         }
         .padding(.horizontal, 9).padding(.vertical, 5)

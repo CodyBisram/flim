@@ -82,16 +82,16 @@ struct PersonPickerSheet: View {
                 .frame(width: 38, height: 38)
                 .overlay {
                     Text((profile.username ?? "?").prefix(1).uppercased())
-                        .font(.system(size: 16, weight: .semibold)).foregroundStyle(FlimTheme.accent)
+                        .flimFont(16, weight: .semibold, relativeTo: .body).foregroundStyle(FlimTheme.accent)
                 }
             VStack(alignment: .leading, spacing: 1) {
-                Text(profile.name).font(.system(size: 15, weight: .medium)).foregroundStyle(.white)
-                Text(profile.handle).font(.system(size: 12)).foregroundStyle(FlimTheme.textTertiary)
+                Text(profile.name).flimFont(15, weight: .medium, relativeTo: .body).foregroundStyle(.white)
+                Text(profile.handle).flimFont(12, relativeTo: .caption).foregroundStyle(FlimTheme.textTertiary)
             }
             Spacer()
             if mutualIds.contains(profile.id) {
                 Text("friend")
-                    .font(.system(size: 11, weight: .medium)).foregroundStyle(FlimTheme.accent)
+                    .flimFont(11, weight: .medium, relativeTo: .caption).foregroundStyle(FlimTheme.accent)
                     .padding(.horizontal, 8).padding(.vertical, 3)
                     .background(FlimTheme.accent.opacity(0.15), in: Capsule())
             }
@@ -105,7 +105,7 @@ struct PersonPickerSheet: View {
             Image(systemName: "person.2").font(.system(size: 32, weight: .ultraLight))
                 .foregroundStyle(FlimTheme.textTertiary)
             Text(query.isEmpty ? "Follow people to tag them." : "No matches.")
-                .font(.system(size: 14)).foregroundStyle(FlimTheme.textSecondary)
+                .flimFont(14, relativeTo: .subheadline).foregroundStyle(FlimTheme.textSecondary)
             Spacer()
         }
         .frame(maxWidth: .infinity)
