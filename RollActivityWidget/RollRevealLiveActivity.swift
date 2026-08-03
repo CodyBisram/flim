@@ -28,12 +28,22 @@ struct RollRevealLiveActivity: Widget {
                         .foregroundStyle(.white.opacity(0.6))
                 }
                 Spacer(minLength: 8)
-                Text(timerInterval: Date()...context.state.revealAt, countsDown: true)
-                    .font(.system(size: 15, weight: .semibold, design: .rounded))
-                    .monospacedDigit()
-                    .foregroundStyle(accent)
-                    .multilineTextAlignment(.trailing)
-                    .frame(minWidth: 56)
+                // Guarded range, see RollRevealAttributes.countdownRange. `Date()...revealAt`
+                // traps the instant revealAt is in the past, which is the normal end of this
+                // activity's life, and it is the crash we had on record.
+                Group {
+                    if RollRevealAttributes.hasRevealed(context.state.revealAt) {
+                        Text("Ready")
+                    } else {
+                        Text(timerInterval: RollRevealAttributes.countdownRange(to: context.state.revealAt),
+                             countsDown: true)
+                            .monospacedDigit()
+                    }
+                }
+                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                .foregroundStyle(accent)
+                .multilineTextAlignment(.trailing)
+                .frame(minWidth: 56)
             }
             .padding(16)
             .activityBackgroundTint(.black)
@@ -46,10 +56,17 @@ struct RollRevealLiveActivity: Widget {
                 }
                 DynamicIslandExpandedRegion(.trailing) {
                     // Same clipping risk as the compact region, with more room to work in.
-                    Text(timerInterval: Date()...context.state.revealAt, countsDown: true)
-                        .monospacedDigit()
-                        .font(.system(size: 15, weight: .semibold, design: .rounded))
-                        .lineLimit(1)
+                    Group {
+                        if RollRevealAttributes.hasRevealed(context.state.revealAt) {
+                            Text("Ready")
+                        } else {
+                            Text(timerInterval: RollRevealAttributes.countdownRange(to: context.state.revealAt),
+                                 countsDown: true)
+                                .monospacedDigit()
+                        }
+                    }
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    .lineLimit(1)
                         .minimumScaleFactor(0.7)
                         .foregroundStyle(accent)
                 }
@@ -72,12 +89,19 @@ struct RollRevealLiveActivity: Widget {
                 // used to be pinned to, so it truncated to "11:...". The compact region is
                 // narrow by design, so scale the digits down to fit rather than clip them:
                 // a truncated countdown is worse than a small one.
-                Text(timerInterval: Date()...context.state.revealAt, countsDown: true)
-                    .monospacedDigit()
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.6)
-                    .foregroundStyle(accent)
+                Group {
+                    if RollRevealAttributes.hasRevealed(context.state.revealAt) {
+                        Text("Ready")
+                    } else {
+                        Text(timerInterval: RollRevealAttributes.countdownRange(to: context.state.revealAt),
+                             countsDown: true)
+                            .monospacedDigit()
+                    }
+                }
+                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+                .foregroundStyle(accent)
                     .frame(maxWidth: 66)
             } minimal: {
                 Image(systemName: "hourglass")

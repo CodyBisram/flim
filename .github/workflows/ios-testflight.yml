@@ -106,9 +106,13 @@ jobs:
       # until now the only surviving copy was the one Apple keeps behind the developer account,
       # which is why crash triage required Xcode Organizer and therefore someone else's Apple ID.
       #
-      # 400 days rather than the 90-day default: a crash arriving from an older build after the
-      # artifact expires is unsymbolicatable again, and MetricKit delivers on a LATER launch, so
-      # reports routinely arrive long after the build that produced them.
+      # retention-days is set to the maximum GitHub allows this repo. It is PUBLIC, and public
+      # repos are hard-capped at 90 days regardless of what is requested here (the API reports
+      # maximum_allowed_days: 90); private repos allow up to 400. Asking for more is silently
+      # clamped, so the number below is aspirational and 90 is what you actually get. That matters
+      # because MetricKit delivers diagnostics on a LATER launch, so crash reports routinely arrive
+      # long after the build that produced them: past 90 days a crash becomes unreadable again.
+      # Making the repo private is what would actually buy the longer window.
       - name: Archive dSYM for crash symbolication
         if: always()
         uses: actions/upload-artifact@v4
