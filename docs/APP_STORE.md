@@ -51,16 +51,32 @@ Note: 100 chars exactly. Keywords are research-informed for Photo & Video + Soci
 
 ## What's New (version 1.2)
 
-> Tag people any time, mention friends in comments, and a camera that focuses when you need it to.
+> **⚠️ PASTE ONLY THE INDENTED BLOCK BELOW.** Everything under "Ship notes" is internal.
 
-> Tag people after you've shared, not just as you post, and remove yourself from any photo you're tagged in. Mention friends in comments with @. Long-press almost anything for its actions: photos, rolls, comments. Use a photo from your library as your profile picture. A camera that keeps focusing after you tap, so shots don't come back soft, with a subtle marker on the faces it finds. Film grain is back to the softer look it should always have had. Plus swipe to leave a photo, and a long list of fixes to how photos load, open, and hold their place.
+    A better reveal, a warmer film look, and a profile picture you can frame yourself.
 
-Notes for whoever ships this (delete before pasting into App Store Connect):
-- "keeps focusing after you tap" is the tap-to-focus lock fix. Worth calling out because it silently
-  affected every photo taken after the first viewfinder tap in a session.
-- Do NOT claim the crash fix specifically; the one crash on record is diagnosed but unconfirmed.
-- The tooltips that 1.1's notes advertised ("a few helpful tips along the way") are gone in 1.2.
-  Nothing in the copy above references them, but don't reuse 1.1's paragraph verbatim.
+    Rolls now show how close they are to developing, and whichever develops soonest sits at the top. On the camera, a roll about to close tells you how long you have left to shoot into it.
+
+    The reveal plays slower, so each photo has room to land, with a bar that fills as it goes. Press and hold to stop on one you like. The first photo appears straight away instead of making you wait for it.
+
+    A warmer film look. Bright windows and streetlights now bleed a soft red glow the way real film does, and grain sits where film puts it: through the midtones, not across a clear sky.
+
+    Choose exactly which part of a photo becomes your profile picture. Sorting your shots now shows the whole frame, so nothing hides past the edges.
+
+    Tag people any time, not just as you post, and remove yourself from any photo you are tagged in. Mention friends in comments with @. Other people's reactions now appear while you are still looking. One notification a day rounds up what your friends posted, instead of one for every photo, and your notifications are grouped by when they happened.
+
+    Text now follows your device's text size setting. Plus a fix for a crash in the lock screen countdown, and a long list of smaller fixes to how photos load, open, and hold their place.
+
+### Ship notes (internal, do NOT paste)
+
+- The lock screen crash IS claimable this time. It was symbolicated from our own crash reports
+  (`RollRevealLiveActivity.swift:31`, a ClosedRange built from `Date()...revealAt` that trapped the
+  moment the reveal passed) and fixed in `c08b68d`. This supersedes the earlier note that said not
+  to claim a crash fix, which was written when the only crash on record was unidentified.
+- The one crash still unexplained is from 31 July and predates dSYM archiving. Do not reference it.
+- 1.1's notes advertised "a few helpful tips along the way". Those tooltips are GONE in 1.2.
+  Nothing above references them; do not reuse 1.1's paragraph.
+- No em dashes in any user-facing copy.
 
 ## What's New (version 1.1)
 
@@ -112,7 +128,12 @@ FLIM includes user-generated content (photos, comments, tags, reactions). Apple'
 - **Email address**: sign-in + account recovery. Not used for marketing or third-party sharing. Readable by the user only (column-level grants hide it from other users).
 
 ### User Content
-- **Photos**: user-captured images, uploaded to encrypted private Storage. Accessible only to the user and roll members / followers (RLS-enforced).
+- **Photos**: user-captured images, uploaded to encrypted private Storage. Accessible only to the
+  user and roll members / followers (RLS-enforced). As of 1.2 a photo chosen from the device
+  library can also be used as a profile picture or cover. That goes through `PhotosPicker`, the
+  out-of-process system picker, so the app receives only the single image the user picked and
+  needs no photo-library permission (hence no `NSPhotoLibraryUsageDescription`). The cropped
+  result is uploaded like any other user content.
 - **Comments, reactions, tags**: social interactions on photos and posts. Stored per social item (post/photo).
 
 ### Identifiers
@@ -128,7 +149,11 @@ FLIM includes user-generated content (photos, comments, tags, reactions). Apple'
   account only when the device happens to be signed in at the time (nullable otherwise); not
   used for tracking, advertising, or any purpose beyond fixing bugs. Not readable through the
   app or its API by any user, including the account it's linked to, owner-only, via the
-  Supabase Dashboard.
+  Supabase Dashboard. As of 1.2 each diagnostic also carries the app build number, the OS
+  version, the device MODEL (e.g. "iPhone17,1", a hardware class, not a device identifier) and
+  the time the diagnostic window closed. All four exist to make a crash actionable: which build
+  to symbolicate against, and whether a crash is widespread or one device. Still no analytics,
+  no advertising identifier, and nothing that identifies a device across installs.
 
 ### Tracking / Analytics
 - **None.** No analytics SDK, no advertising, no third-party tracking. One-way social graph (follows) is optional; blocking is bidirectional and RLS-enforced.
@@ -165,17 +190,29 @@ These are 6.9" device captures (1320x2868 pixels) ready for App Store Connect.
 
 ## Reviewer notes (App Store Connect → App Review Information)
 
-> ⚠️ **The fixed-code reviewer path was removed from `AuthService` after 1.0 was approved.**
-> It shipped only to get 1.0 through review and is no longer in the binary. **Apple reviews
-> every update too**, so before submitting the next version you must re-establish some way for
-> a reviewer to sign in to an invite-only app. Options, roughly in order of preference:
+> ## ⚠️ SUBMISSION BLOCKER: there is no way for a reviewer to sign in
 >
-> 1. Allowlist a reviewer email and hand over a real inbox the reviewer can check (e.g. a
->    dedicated mailbox with credentials in Review Notes) so the normal OTP flow just works.
-> 2. Re-add a scoped, time-boxed fixed-code branch for one submission, then strip it again.
-> 3. Ship a read-only demo mode that needs no account at all.
+> Verified against the current source: `AuthService` contains no reviewer path, no fixed code, no
+> allowlisted email. FLIM is invite-only and sign-in is email OTP, so a reviewer who installs the
+> build reaches the email screen and stops there. **Apple reviews every update, not just the
+> first**, and an app a reviewer cannot get into is rejected on sight. 1.0 passed because it
+> shipped a fixed-code branch that was deliberately stripped after approval.
 >
-> Whatever you pick, update the sign-in steps below before pasting this into App Store Connect.
+> This is not a copy problem; it has to be built and shipped in the submitted binary, so it
+> gates the whole submission. Pick one:
+>
+> 1. **Allowlist a reviewer email backed by a real inbox** (recommended). Create a dedicated
+>    mailbox, allowlist it so it skips the invite requirement, and put the mailbox credentials in
+>    App Review Information. The normal OTP flow then just works, nothing fake ships, and access
+>    is revoked by deleting the account. Costs one small change in `AuthService` plus a mailbox.
+> 2. **Re-add a scoped, time-boxed fixed-code branch** for this submission and strip it after.
+>    Fastest, and it means shipping a hardcoded credential in a public binary. Only if 1 is not
+>    possible before submitting.
+> 3. **A read-only demo mode** needing no account. Cleanest for reviewers, most work, and it is a
+>    new user-facing surface in a release whose whole point is stability. Not for 1.2.
+>
+> **Recommendation: option 1.** Whichever you pick, fill in the Sign-in block below and sign in
+> once yourself with that exact flow before submitting.
 
 > **FLIM is invite-only.** To demo the app:
 >
