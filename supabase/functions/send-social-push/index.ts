@@ -118,6 +118,48 @@ async function tokensFor(userId: string): Promise<string[]> {
   return (data ?? []).map((t) => t.token);
 }
 
+// --- Blocks. This function runs with the SERVICE ROLE, so RLS is bypassed entirely and
+//     `is_blocked_either_way` never applies here. Every notification path has to ask explicitly.
+//
+//     Without this, blocking severed visibility but not contact: a blocked person could comment
+//     on your post, mention you, tag you, or react, and you'd still get the push, even though RLS
+//     correctly hid the content itself so tapping the notification showed you nothing. Blocking
+//     has to mean the other person can't reach you, notifications included.
+const blockCache = new Map<string, boolean>();
+
+async function blockedEitherWay(a: string, b: string): Promise<boolean> {
+  if (a === b) return false;
+  const key = [a, b].sort().join("|");
+  const cached = blockCache.get(key);
+  if (cached !== undefined) return cached;
+  const { data } = await supabase
+    .from("blocks")
+    .select("blocker_id")
+    .or(`and(blocker_id.eq.${a},blocked_id.eq.${b}),and(blocker_id.eq.${b},blocked_id.eq.${a})`)
+    .limit(1);
+  const blocked = (data ?? []).length > 0;
+  blockCache.set(key, blocked);
+  return blocked;
+}
+
+/// Sends one notification from `fromId` to `toId`, unless either has blocked the other, or they
+/// are the same person. The single door every user-to-user push goes through, so a new
+/// notification type can't forget the check.
+async function notify(
+  toId: string | undefined,
+  fromId: string,
+  title: string,
+  body: string,
+): Promise<number> {
+  if (!toId || toId === fromId) return 0;
+  if (await blockedEitherWay(toId, fromId)) return 0;
+  let sent = 0;
+  for (const token of await tokensFor(toId)) {
+    if (await sendPush(token, title, body)) sent++;
+  }
+  return sent;
+}
+
 // --- App owner: the single place the owner is named. Matches the `note = 'owner'`
 //     seed in allowed_emails (schema.sql). Report notifications go to whichever
 //     account(s) sign in with this email; resolved by email (case-insensitive) so
@@ -169,18 +211,19 @@ Deno.serve(async () => {
     // Tracks who has already been pushed for this comment, so someone who is BOTH the post owner
     // and @mentioned in it gets one notification rather than two.
     const notified = new Set<string>([c.user_id]);
-    if (ownerId && ownerId !== c.user_id) {
+    if (ownerId) {
       notified.add(ownerId);
-      for (const token of await tokensFor(ownerId)) {
-        if (await sendPush(token, `${name} commented`, preview)) sent++;
-      }
+      sent += await notify(ownerId, c.user_id, `${name} commented`, preview);
     }
+    // Capped: one comment can name any number of people, and without a limit a single comment
+    // could fan out into dozens of pushes. Five is generous for a real conversation and useless
+    // as a megaphone.
+    let mentionPushes = 0;
     for (const uid of await mentionedUserIds(c.body)) {
-      if (notified.has(uid)) continue;
+      if (notified.has(uid) || mentionPushes >= 5) continue;
       notified.add(uid);
-      for (const token of await tokensFor(uid)) {
-        if (await sendPush(token, `${name} mentioned you`, preview)) sent++;
-      }
+      mentionPushes++;
+      sent += await notify(uid, c.user_id, `${name} mentioned you`, preview);
     }
     await supabase.from("post_comments").update({ push_sent: true }).eq("id", c.id);
   }
@@ -200,9 +243,7 @@ Deno.serve(async () => {
       const uid = t.tagged_user_id as string;
       if (!notified.has(uid)) {
         notified.add(uid);
-        for (const token of await tokensFor(uid)) {
-          if (await sendPush(token, `${name} tagged you`, "in a photo")) sent++;
-        }
+        sent += await notify(uid, p.user_id, `${name} tagged you`, "in a photo");
       }
     }
     await supabase.from("posts").update({ push_sent: true }).eq("id", p.id);
@@ -228,9 +269,7 @@ Deno.serve(async () => {
     if (g.ownerId && g.ownerId !== g.reactorId) {
       const name = await handle(g.reactorId);
       const emojis = [...new Set(g.emojis)].join(" ");
-      for (const token of await tokensFor(g.ownerId)) {
-        if (await sendPush(token, `${name} reacted ${emojis}`, "to your photo")) sent++;
-      }
+      sent += await notify(g.ownerId, g.reactorId, `${name} reacted ${emojis}`, "to your photo");
     }
     await supabase.from("post_reactions").update({ push_sent: true }).in("id", g.ids);
   }
@@ -279,9 +318,9 @@ Deno.serve(async () => {
         title = `${fromOthers.length} new comments`;
         body = "on a roll photo";
       }
-      for (const token of await tokensFor(recipient)) {
-        if (await sendPush(token, title, body)) sent++;
-      }
+      // `fromOthers[0].userId` is the sole/most recent commenter; blocks are checked against
+      // them, so a blocked person can't reach you through a roll photo either.
+      sent += await notify(recipient, fromOthers[0].userId, title, body);
     }
 
     await supabase.from("photo_comments").update({ push_sent: true }).in("id", g.items.map((it) => it.id));
@@ -326,9 +365,7 @@ Deno.serve(async () => {
     if (g.ownerId && g.ownerId !== g.reactorId && !(await mutedInRoll(g.rollId)).has(g.ownerId)) {
       const name = await handle(g.reactorId);
       const emojis = [...new Set(g.emojis)].join(" ");
-      for (const token of await tokensFor(g.ownerId)) {
-        if (await sendPush(token, `${name} reacted ${emojis}`, "to your photo")) sent++;
-      }
+      sent += await notify(g.ownerId, g.reactorId, `${name} reacted ${emojis}`, "to your photo");
     }
     await supabase.from("photo_reactions").update({ push_sent: true }).in("id", g.ids);
   }
