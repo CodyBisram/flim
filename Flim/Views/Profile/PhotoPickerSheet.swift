@@ -145,6 +145,7 @@ struct ImageViewer: View {
                         Image(systemName: "xmark").font(.system(size: 16, weight: .medium))
                             .foregroundStyle(.white).padding(12).glassCapsule(interactive: true)
                     }
+                    .accessibilityLabel("Close")
                     Spacer()
                 }
                 .padding(.horizontal, 20).padding(.top, 20)

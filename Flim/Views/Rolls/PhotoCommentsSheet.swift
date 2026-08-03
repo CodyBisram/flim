@@ -97,6 +97,7 @@ struct PhotoCommentsSheet: View {
                         .foregroundStyle(canSend ? FlimTheme.accent : FlimTheme.textTertiary)
                 }
                 .disabled(!canSend || sending)
+            .accessibilityLabel("Send comment")
             }
         }
         .padding(.horizontal, 16).padding(.vertical, 10)

@@ -135,14 +135,15 @@ struct SortDeckView: View {
 
     private var controls: some View {
         HStack(spacing: 26) {
-            circleButton("tray.and.arrow.down", tint: FlimTheme.accent, size: 54) { performSwipe(.archive) }
-            circleButton("trash", tint: .red, size: 64) { performSwipe(.trash) }
-            circleButton("paperplane.fill", tint: .green, size: 54) { performSwipe(.publish) }
+            circleButton("tray.and.arrow.down", tint: FlimTheme.accent, size: 54, label: "Archive to Darkroom") { performSwipe(.archive) }
+            circleButton("trash", tint: .red, size: 64, label: "Delete photo") { performSwipe(.trash) }
+            circleButton("paperplane.fill", tint: .green, size: 54, label: "Keep and share") { performSwipe(.publish) }
         }
         .padding(.bottom, 30).padding(.top, 10)
     }
 
-    private func circleButton(_ icon: String, tint: Color, size: CGFloat, action: @escaping () -> Void) -> some View {
+    /// `label` is required: these are icon-only, so without it VoiceOver announces "button".
+    private func circleButton(_ icon: String, tint: Color, size: CGFloat, label: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: icon)
                 .font(.system(size: size * 0.36, weight: .medium))
@@ -151,6 +152,7 @@ struct SortDeckView: View {
                 .background(Color.white.opacity(0.08), in: Circle())
                 .overlay(Circle().stroke(tint.opacity(0.4), lineWidth: 1))
         }
+        .accessibilityLabel(label)
     }
 
     // MARK: - Gestures & actions

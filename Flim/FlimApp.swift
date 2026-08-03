@@ -1,5 +1,4 @@
 import SwiftUI
-import TipKit
 
 @main
 struct FlimApp: App {
@@ -14,10 +13,7 @@ struct FlimApp: App {
         CrashReporter.shared.start()
 
         // In-app tips, shown once, contextually, then remembered as seen.
-        try? Tips.configure([.displayFrequency(.immediate), .datastoreLocation(.applicationDefault)])
         #if DEBUG
-        // Clean screenshots: -noTips suppresses TipKit overlays in the Simulator.
-        if ProcessInfo.processInfo.arguments.contains("-noTips") { Tips.hideAllTipsForTesting() }
         #endif
     }
 

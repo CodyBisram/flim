@@ -91,6 +91,7 @@ struct CommentsSheet: View {
                         Button { delete(info) } label: {
                             Image(systemName: "xmark").font(.system(size: 10)).foregroundStyle(FlimTheme.textTertiary)
                         }
+                        .accessibilityLabel("Delete your comment")
                     }
                 }
                 MentionText(text: info.comment.body, color: FlimTheme.textSecondary) { username in
@@ -111,6 +112,7 @@ struct CommentsSheet: View {
                     }
                 }
             }
+            .accessibilityLabel(info.likedByMe ? "Unlike comment" : "Like comment")
         }
         .contextMenu {
             Button {
@@ -180,6 +182,7 @@ struct CommentsSheet: View {
                     .foregroundStyle(canSend ? FlimTheme.accent : FlimTheme.textTertiary)
             }
             .disabled(!canSend || sending)
+            .accessibilityLabel("Send comment")
         }
         .padding(.horizontal, 16).padding(.vertical, 10)
         .background(.ultraThinMaterial)

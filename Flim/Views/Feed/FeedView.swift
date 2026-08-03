@@ -48,7 +48,7 @@ struct FeedView: View {
                             LazyVStack(spacing: 20) {
                                 Color.clear.frame(height: 0).id("top")
                                 ForEach(feed.feed) { item in
-                                    FeedPostCard(item: item, showReactTip: item.id == feed.feed.first?.id)
+                                    FeedPostCard(item: item)
                                         .scrollTransition { content, phase in
                                             content
                                                 .opacity(phase.isIdentity ? 1 : 0.55)
@@ -308,7 +308,6 @@ struct FeedView: View {
 struct FeedPostCard: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let item: FeedItem
-    var showReactTip: Bool = false
     @Environment(AuthService.self) private var auth
     @Environment(FeedService.self) private var feed
 
@@ -431,8 +430,7 @@ struct FeedPostCard: View {
             ReactionBar(
                 defaults: PostEmoji.all,
                 counts: Dictionary(grouping: reactions, by: \.emoji).mapValues(\.count),
-                mine: Set(reactions.filter { $0.userId == auth.currentUser?.id }.map(\.emoji)),
-                showTip: showReactTip
+                mine: Set(reactions.filter { $0.userId == auth.currentUser?.id }.map(\.emoji))
             ) { toggleReaction($0) }
 
             // Comment preview → @handle taps to their page; "View all" is the ONLY way
@@ -493,6 +491,7 @@ struct FeedPostCard: View {
                     Button { sendComment() } label: {
                         Image(systemName: "arrow.up.circle.fill").font(.system(size: 26)).foregroundStyle(FlimTheme.accent)
                     }
+                    .accessibilityLabel("Send comment")
                     .transition(.scale.combined(with: .opacity))
                 }
             }

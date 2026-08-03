@@ -1,7 +1,6 @@
 import SwiftUI
 import AVFoundation
 import UIKit
-import TipKit
 
 // MARK: - Control hit-region reporting
 //
@@ -154,12 +153,10 @@ struct CameraView: View {
                     .overlay(alignment: .center) {
                         Color.clear
                             .frame(width: 1, height: 1)
-                            .popoverTip(FocusTip())
                     }
                     .overlay(alignment: .center) {
                         Color.clear
                             .frame(width: 1, height: 1)
-                            .popoverTip(FlipTip())
                     }
                     // Wins the VStack's height negotiation: without this the two flexible
                     // bands split the height evenly with the box, squeezing it to ~60% size.
@@ -187,7 +184,6 @@ struct CameraView: View {
             // pointing at an unrelated on-screen control like the shutter.
             Color.clear
                 .frame(width: 1, height: 1)
-                .popoverTip(VolumeShutterTip())
                 .padding(.top, 190)
                 .padding(.leading, 2)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -347,7 +343,6 @@ struct CameraView: View {
         // caused a double shutter noise with flash on.
         camera.capturePhoto()
         // Feeds VolumeShutterTip's "has taken a few shots" rule.
-        Task { await VolumeShutterTip.photoCaptured.donate() }
     }
 
     private func startCountdown() {
@@ -524,7 +519,6 @@ struct CameraView: View {
                 Button {
                     camera.flipCamera()
                     Haptics.tap()
-                    Task { await FlipTip.flippedViaButton.donate() }
                 } label: {
                     Image(systemName: "arrow.triangle.2.circlepath")
                         .font(.system(size: 16, weight: .semibold))

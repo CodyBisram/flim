@@ -1,5 +1,4 @@
 import SwiftUI
-import TipKit
 import UIKit
 
 /// Builds the roll-delete confirmation message from each photo's already-resolved roll name
@@ -109,10 +108,8 @@ struct DarkroomView: View {
                     Button(isSelecting ? "Cancel" : "Select") {
                         isSelecting.toggle()
                         selectedIDs = []
-                        SelectTip().invalidate(reason: .actionPerformed)   // used it → dismiss the tip
                     }
                     .foregroundStyle(.white)
-                    .popoverTip(SelectTip())
                 }
             }
             #if DEBUG
@@ -199,6 +196,8 @@ struct DarkroomView: View {
                 #endif
             }
         }
+        // The 60s develop poll only needs to run while this screen is on it.
+        .onDisappear { vm.stopRefreshing() }
         .fullScreenCover(item: $selectedPhoto, onDismiss: { openForTagging = false }) { photo in
             PhotoPagerView(
                 photos: vm.developedPhotos,

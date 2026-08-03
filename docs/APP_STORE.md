@@ -49,6 +49,19 @@ Copy-paste-ready metadata + a screenshot plan + reviewer notes. Tweak the voice 
 
 Note: 100 chars exactly. Keywords are research-informed for Photo & Video + Social Networking categories; "disposable," "film," "camera," and "photo" are must-haves for app store visibility; "friends," "private," and "rolls" emphasize the social/closed-network angle; "grain," "analog," "vintage," and "aesthetic" signal the signature visual style.
 
+## What's New (version 1.2)
+
+> Tag people any time, mention friends in comments, and a camera that focuses when you need it to.
+
+> Tag people after you've shared, not just as you post, and remove yourself from any photo you're tagged in. Mention friends in comments with @. Long-press almost anything for its actions: photos, rolls, comments. Use a photo from your library as your profile picture. A camera that keeps focusing after you tap, so shots don't come back soft, with a subtle marker on the faces it finds. Film grain is back to the softer look it should always have had. Plus swipe to leave a photo, and a long list of fixes to how photos load, open, and hold their place.
+
+Notes for whoever ships this (delete before pasting into App Store Connect):
+- "keeps focusing after you tap" is the tap-to-focus lock fix. Worth calling out because it silently
+  affected every photo taken after the first viewfinder tap in a session.
+- Do NOT claim the crash fix specifically; the one crash on record is diagnosed but unconfirmed.
+- The tooltips that 1.1's notes advertised ("a few helpful tips along the way") are gone in 1.2.
+  Nothing in the copy above references them, but don't reuse 1.1's paragraph verbatim.
+
 ## What's New (version 1.1)
 
 > A smoother, more polished FLIM: a redesigned camera, a truer film look, and easier ways to catch up with your friends.

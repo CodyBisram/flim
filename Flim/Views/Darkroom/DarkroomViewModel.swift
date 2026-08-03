@@ -1,6 +1,21 @@
 import Foundation
 import Observation
 
+/// Main-actor isolated, like every service in the app.
+///
+/// This was the one `@Observable` type in the codebase with no isolation at all. Most mutations
+/// already hopped through `await MainActor.run`, but several READS didn't: `photos.filter` +
+/// `signedURLCache` in `prefetchURLs`, `developedPhotos.count` in `markReadyPhotos`, and the
+/// `refreshTask` assignment in `startRefreshLoop`. `@Observable` registers every property access
+/// with the observation system, so a read off the main actor while SwiftUI is reading the same
+/// property on it is a data race, not merely untidy.
+///
+/// That is the shape of the one crash on record (2026-07-31, 1.2): main thread inside
+/// libswiftObservation, another thread inside Flim/SwiftUI, camera session live. Unproven without
+/// symbolication, but this is the only unisolated observable state in the app and the Darkroom
+/// polls every 60s while it's on screen. Isolating it makes the compiler enforce what the
+/// scattered `MainActor.run` calls were trying to achieve by hand.
+@MainActor
 @Observable
 final class DarkroomViewModel {
     var photos: [Photo] = [] {
@@ -42,7 +57,17 @@ final class DarkroomViewModel {
     private var urlExpiry: [UUID: Date] = [:]
     private var refreshTask: Task<Void, Never>?
 
-    deinit { refreshTask?.cancel() }
+    /// Stops the 60s develop poll. Call from the view's `onDisappear`.
+    ///
+    /// This used to be `deinit { refreshTask?.cancel() }`, which can't work under main-actor
+    /// isolation: `deinit` is nonisolated, so it may not touch isolated state. It was also never
+    /// load-bearing, the loop captures `self` weakly, so it already exits on its next wake after
+    /// the view model goes away. Making it explicit just stops it a poll sooner, and without
+    /// reaching for `nonisolated(unsafe)` to paper over the isolation.
+    func stopRefreshing() {
+        refreshTask?.cancel()
+        refreshTask = nil
+    }
 
     // MARK: - Load
 

@@ -474,6 +474,7 @@ struct DiscoverPeopleView: View {
                 Button { searchText = "" } label: {
                     Image(systemName: "xmark.circle.fill").foregroundStyle(FlimTheme.textTertiary)
                 }
+                .accessibilityLabel("Clear search")
             }
         }
         .font(.system(size: 15))

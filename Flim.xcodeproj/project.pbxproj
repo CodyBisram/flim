@@ -22,7 +22,6 @@
 		287023347895E167ECC91920 /* Haptics.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA04DBB3261C344B5DD64806 /* Haptics.swift */; };
 		29A5B8A988AD5C1A12DA61E2 /* RollActivityWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0DE0ABF140C6FF15019136C /* RollActivityWidgetBundle.swift */; };
 		2AE813EB776EADC01EEF7A24 /* ActivityFeedViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D86D048DA64F5454E17D0F34 /* ActivityFeedViewTests.swift */; };
-		2D79A1965A02C47AB1AADE6D /* Tips.swift in Sources */ = {isa = PBXBuildFile; fileRef = 105ECDBD3955C30D1FDE432D /* Tips.swift */; };
 		2EDCE64ACD1C1B9060F4B36B /* UserPageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 799578BF49AD244204751AC0 /* UserPageView.swift */; };
 		322A5492683DD8B6D58B77C6 /* RollsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33D109A1C315CD466659A10F /* RollsView.swift */; };
 		3329F6BEB76AA76B288DE250 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49A4B9AB5111472363BE0ECF /* OnboardingView.swift */; };
@@ -152,7 +151,6 @@
 		0F4E26878DAFF415FB6B4644 /* ActivityFeedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityFeedView.swift; sourceTree = "<group>"; };
 		0F61787FFCEE49A74368FF8C /* DevelopTimingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevelopTimingTests.swift; sourceTree = "<group>"; };
 		0FA5444D3CDCB4379BF00F72 /* Social.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Social.swift; sourceTree = "<group>"; };
-		105ECDBD3955C30D1FDE432D /* Tips.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tips.swift; sourceTree = "<group>"; };
 		121F65D393ABD1CC13DA0186 /* SplashView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplashView.swift; sourceTree = "<group>"; };
 		14C863F6302D9B2BFBA71B6C /* InstantFilmProcessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InstantFilmProcessor.swift; sourceTree = "<group>"; };
 		17436C2A3F9564EB8D028D07 /* flim.cube */ = {isa = PBXFileReference; path = flim.cube; sourceTree = "<group>"; };
@@ -401,7 +399,6 @@
 				FA04DBB3261C344B5DD64806 /* Haptics.swift */,
 				57C3947082A0D5033379C318 /* SoundFX.swift */,
 				8118D8FA0343F18F835415D3 /* Theme.swift */,
-				105ECDBD3955C30D1FDE432D /* Tips.swift */,
 				59442940A66724C5875B4D6C /* Auth */,
 				C01D7301DE4DAAF31EF5976E /* Camera */,
 				2BD73808C59340731B731131 /* Components */,
@@ -744,7 +741,6 @@
 				1A636EF87FB2E349B9F555DC /* SupabaseClient.swift in Sources */,
 				58ACCFC04DEF968BFD005E0A /* TagPhotoSheet.swift in Sources */,
 				F8B7B0BD9EA2812E69282C03 /* Theme.swift in Sources */,
-				2D79A1965A02C47AB1AADE6D /* Tips.swift in Sources */,
 				2EDCE64ACD1C1B9060F4B36B /* UserPageView.swift in Sources */,
 				6FDE9DF7E6D1E48B36B0FFCC /* UsernameView.swift in Sources */,
 			);

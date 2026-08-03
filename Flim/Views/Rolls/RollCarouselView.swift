@@ -89,6 +89,7 @@ struct RollCarouselView: View {
                 Image(systemName: "xmark").font(.system(size: 16, weight: .medium))
                     .foregroundStyle(.white).padding(12).glassCapsule(interactive: true)
             }
+            .accessibilityLabel("Close")
             Spacer()
             Text("\(selection + 1) / \(photos.count)")
                 .font(.system(size: 13, weight: .semibold)).foregroundStyle(.white)
@@ -107,6 +108,7 @@ struct RollCarouselView: View {
                 Image(systemName: "square.and.arrow.up").font(.system(size: 15, weight: .medium))
                     .foregroundStyle(.white).padding(12).glassCapsule(interactive: true)
             }
+            .accessibilityLabel("Share this photo")
         }
         .padding(.horizontal, 20).padding(.top, 20)
     }

@@ -13,13 +13,24 @@ control you have. We keep it short because we collect very little.
   shown to other users (e.g. on your page and in shared rolls).
 - **Photos you take**: stored so they can develop and appear in your Darkroom, in rolls you share
   them to, and on your feed if you publish them.
+- **Photos you choose from your library** *(only if you pick one)*: if you set a profile or cover
+  photo from your device's photo library, that single image is uploaded and stored like any other
+  profile photo. We use Apple's system photo picker, so the app is never granted access to your
+  library, only to the one image you select, and we never scan or read anything else in it.
 - **Social activity**: posts you publish, comments and emoji reactions you make, who you follow,
   and the rolls you create or join, so content reaches the right people.
+- **Tags and mentions**: who you tag in a photo and who you @mention in a comment. These link your
+  account to theirs, are visible to anyone who can see the photo or comment, and are used to notify
+  the person involved. Anyone tagged in a photo can remove that tag themselves at any time.
 - **Safety data**: users you block and any content or accounts you report, so we can review them.
 - **A device push token** *(only if you enable notifications)*: to tell you when your roll
   develops and when friends react to or comment on your posts.
 - **Basic technical info**: app version and iOS version, included when you send feedback so we can
   reproduce issues.
+- **Crash and performance diagnostics**: if the app crashes, hangs, or overuses the processor, iOS
+  gives us a technical report (app version and a stack trace of where it happened) so we can fix
+  it. These contain no photos and no message content, and are tied to your account only so a
+  repeated problem can be traced to one device rather than assumed to be widespread.
 
 We do **not** collect your contacts, location, or advertising identifiers, and we do **not** sell
 your data or use third-party ad tracking.
@@ -50,6 +61,7 @@ needed to operate the app.
 
 - **Delete a photo** at any time from the full-screen view; **delete a post** to remove it from your feed.
 - **Block** or **report** a user or a photo; **leave a roll**, or (as its creator) remove a member.
+- **Remove a tag of yourself** from any photo, whoever posted it, from that photo's menu.
 - **Turn notifications on/off** in Settings.
 - **Delete your account** from Profile → Delete Account. This permanently removes your account,
   photos, posts, rolls, and reports, and cannot be undone.

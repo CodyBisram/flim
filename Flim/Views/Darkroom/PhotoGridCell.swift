@@ -186,6 +186,28 @@ enum DiskImageCache {
         }
     }
 
+    /// The ORIGINAL downloaded bytes for a storage path, before any downsampling.
+    ///
+    /// The sized caches above key on `path|maxPixel`, so the same file requested at two sizes was
+    /// two entries and, more importantly, two DOWNLOADS. The Activity list asks for `displayPath`
+    /// at 88 while every grid asks for the same file at 400, so opening Activity re-fetched
+    /// thumbnails already sitting on the device. Keeping the raw bytes under a size-independent
+    /// key means the second size downsamples locally instead of going back to the network.
+    ///
+    /// Deliberately in the same directory as the sized entries, so `trim()` bounds it too without
+    /// a second budget to keep in sync.
+    static func loadRaw(path: String) async -> Data? {
+        await Task.detached(priority: .userInitiated) {
+            try? Data(contentsOf: file("raw|" + path))
+        }.value
+    }
+
+    static func saveRaw(_ data: Data, path: String) {
+        Task.detached(priority: .background) {
+            try? data.write(to: file("raw|" + path), options: .atomic)
+        }
+    }
+
     /// Keep the cache bounded, delete the oldest files if it exceeds `maxBytes`. Run at launch.
     static func trim(maxBytes: Int = 200 * 1024 * 1024) {
         Task.detached(priority: .background) {
@@ -301,10 +323,21 @@ enum ImageLoader {
             return disk
         }
 
+        // Before going to the network, check whether these exact bytes were already downloaded
+        // for a DIFFERENT size. Only possible with a stable path; a URL-keyed entry carries a
+        // token that changes, so there'd be nothing to match on.
+        if let cacheKey, let raw = await DiskImageCache.loadRaw(path: cacheKey),
+           let image = await downsample(data: raw, maxPixel: maxPixel, scale: scale) {
+            ImageCache.set(image, forKey: memKey)
+            DiskImageCache.save(image, key: diskKey)
+            return image
+        }
+
         guard let (data, _) = try? await URLSession.shared.data(from: url) else { return nil }
         guard let image = await downsample(data: data, maxPixel: maxPixel, scale: scale) else { return nil }
         ImageCache.set(image, forKey: memKey)
         DiskImageCache.save(image, key: diskKey)
+        if let cacheKey { DiskImageCache.saveRaw(data, path: cacheKey) }
         return image
     }
 
