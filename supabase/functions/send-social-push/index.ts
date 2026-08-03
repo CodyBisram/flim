@@ -22,7 +22,12 @@
 // SUPABASE_SERVICE_ROLE_KEY are injected automatically.
 // ============================================================
 
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+// Pinned deliberately. An unpinned `@2` re-resolves to the newest 2.x on EVERY deploy, so an
+// upstream publishing problem breaks deploys of code that hasn't changed: 2.112.0 ships without a
+// denonext build of its auth-js dependency, which 404s at bundle time and made this function
+// undeployable while the running copy carried on fine. A pin means the version only moves when
+// someone moves it.
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.111.0";
 
 const APNS_KEY_ID = Deno.env.get("APNS_KEY_ID")!;
 const APNS_TEAM_ID = Deno.env.get("APNS_TEAM_ID")!;
