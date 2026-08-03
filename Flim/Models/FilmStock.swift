@@ -12,6 +12,13 @@ struct FilmParams: Hashable {
     var vignetteRadius: CGFloat
     var grain: CGFloat              // 0...~0.12, opacity of the baked grain layer
     var bloom: CGFloat              // halation / glow on highlights
+    /// How far the halation glow is tinted toward red. 0 reproduces the neutral white bloom this
+    /// used to be; 1 is fully warm. Real halation is warm because light passes through the
+    /// emulsion, scatters off the film base and bounces back, and the anti-halation layer absorbs
+    /// shorter wavelengths first, so what bleeds back is red-orange. It is the fringe you see
+    /// around bright windows and streetlights on film, and no LUT can produce it, because it is a
+    /// spatial effect (light spreading into neighbouring pixels) rather than a per-pixel remap.
+    var halationWarmth: CGFloat = 0.75
     var monochrome: Bool
     /// Optional `.cube` 3D LUT (bundle resource name, no extension). When set and the file loads,
     /// it replaces the parametric color grade (saturation/contrast/temperature/tone-curve), grain,
@@ -66,7 +73,7 @@ struct FilmStock: Identifiable, Hashable {
             // it was simply fainter dirt. With the ordering restored this is the value the look
             // was originally signed off with, and it now gets averaged down by the downscale the
             // way it was meant to.
-            grain: 0.06, bloom: 0.18, monochrome: false,
+            grain: 0.06, bloom: 0.18, halationWarmth: 0.75, monochrome: false,
             // Color grade fitted from real (FLIM-neutral, Lapse) same-scene pairs, see
             // docs/LUTS.md + scripts/fit_lut.py. Pairs with scene-adaptive exposure in
             // InstantFilmProcessor (dark scenes get lifted BEFORE this LUT, like Lapse does).

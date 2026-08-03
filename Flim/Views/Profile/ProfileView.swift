@@ -297,9 +297,10 @@ struct EditProfileView: View {
                 EditBioSheet(current: auth.currentUser?.bio ?? "")
             }
             .sheet(isPresented: $showAvatarPicker) {
-                PhotoPickerSheet(title: "Profile Photo") { path in
-                    Task { await auth.setAvatar(fromPhotoPath: path) }
-                } onPickLibraryImage: { data in
+                // Both sources go through the 1:1 cropper, so the user picks WHICH square of the
+                // photo becomes their avatar. Without it the downscaler centre-cropped, and a
+                // face that wasn't dead centre came out as a shoulder.
+                PhotoPickerSheet(title: "Profile Photo") { _ in } onPickCropped: { data in
                     Task { await auth.setAvatar(fromImageData: data) }
                 }
             }

@@ -7,6 +7,7 @@ struct FeedView: View {
     @Environment(FeedService.self) private var feed
     @Environment(PhotoService.self) private var photos
     @Environment(\.displayScale) private var displayScale
+    @Environment(\.scenePhase) private var scenePhase
 
     @State private var showDiscover = false
     @State private var showActivity = false
@@ -118,6 +119,17 @@ struct FeedView: View {
         .task {
             if let path = auth.currentUser?.avatarPath { myAvatarURL = await feed.signedURL(for: path) }
             if feed.feed.isEmpty { await reload() } else { didLoad = true; await checkNewPosts() }
+        }
+        // The feed refreshes reactions on RETURN to the foreground rather than on a timer. The
+        // detail view polls because attention is on one photo there; here the same pacing would
+        // mean repeatedly refetching a screenful of posts the user is scrolling past, for the one
+        // in ten that changed. Coming back to the app is the moment stale counts are noticeable.
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active, !feed.feed.isEmpty else { return }
+            Task {
+                await feed.refreshReactions(
+                    postIds: LiveRefresh.postsToRefresh(feed.feed).map(\.post.id))
+            }
         }
         .sheet(isPresented: $showDiscover) {
             DiscoverPeopleView()

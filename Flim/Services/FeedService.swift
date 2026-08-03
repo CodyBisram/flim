@@ -19,6 +19,9 @@ final class FeedService {
     // Reactions + comments for the loaded feed, batch-fetched once per page (vs a query per
     // card). Feed cards read + mutate these, so they're the single source of truth.
     var reactionsByPost: [UUID: [PostReaction]] = [:]
+    /// Posts with a reaction write in flight. `refreshReactions` skips these so a poll can't
+    /// clobber an optimistic toggle with a server read taken before the write landed.
+    private var reactionWritesInFlight: Set<UUID> = []
     var commentsByPost: [UUID: [CommentInfo]] = [:]
     /// Photo tags per post, and the profiles of tagged users (for their labels).
     var tagsByPost: [UUID: [PostTag]] = [:]
@@ -506,6 +509,12 @@ final class FeedService {
         var current = before
         let landed: Bool
 
+        // Marked in-flight for the whole write, so a background refresh landing mid-tap can't
+        // overwrite the optimistic state with a server read that predates it, which would show
+        // the reaction popping off and back on.
+        reactionWritesInFlight.insert(postId)
+        defer { reactionWritesInFlight.remove(postId) }
+
         if current.contains(where: { $0.emoji == emoji && $0.userId == userId }) {
             current.removeAll { $0.emoji == emoji && $0.userId == userId }
             reactionsByPost[postId] = current
@@ -521,6 +530,28 @@ final class FeedService {
             // that just failed, and would leave the wrong state on screen until it returned.
             reactionsByPost[postId] = before
             Haptics.error()
+        }
+    }
+
+    /// Re-reads reactions for posts that are on screen, so someone else's reaction appears while
+    /// you're holding the app instead of only after you navigate somewhere that refetches.
+    ///
+    /// The app was otherwise entirely act-to-update: three people could react to your photo while
+    /// you were looking at it and nothing would move. The reaction bar already has the bounce and
+    /// the rolling count built for this moment, they just never fired for anyone but you.
+    ///
+    /// Deliberately narrow. It refreshes only the posts a caller says are visible, only reactions
+    /// (not comments or tags), and skips any post with a write in flight. Polling the whole feed
+    /// would turn a quiet app into a steady stream of requests for the one row in ten that
+    /// changed, and reactions are the only thing cheap and lively enough to be worth the traffic.
+    func refreshReactions(postIds: [UUID]) async {
+        let wanted = postIds.filter { !reactionWritesInFlight.contains($0) }
+        guard !wanted.isEmpty else { return }
+        let fresh = await batchReactions(postIds: wanted)
+        for id in wanted where !reactionWritesInFlight.contains(id) {
+            // Assigned per post rather than merged, so a reaction someone REMOVED disappears.
+            // `merge` would only ever add, leaving withdrawn reactions on screen forever.
+            reactionsByPost[id] = fresh[id] ?? []
         }
     }
 

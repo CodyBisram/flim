@@ -48,6 +48,7 @@ struct PostDetailView: View {
     @State private var dragY: CGFloat = 0
     @State private var dragX: CGFloat = 0
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
     @FocusState private var commentFocused: Bool
 
     private var post: Post { item.post }
@@ -212,6 +213,26 @@ struct PostDetailView: View {
             showViewer = false
             await load()
         }
+        // Someone else's reaction lands while you're looking at the photo, instead of only after
+        // you leave and come back. Keyed on scenePhase as well as the post so a backgrounded app
+        // isn't polling, and so returning to the foreground restarts at the fast interval.
+        .task(id: LivePollKey(postId: post.id, active: scenePhase == .active)) {
+            guard scenePhase == .active else { return }
+            let startedAt = Date.now
+            while !Task.isCancelled {
+                guard let delay = LiveRefresh.reactionPollDelay(elapsed: Date.now.timeIntervalSince(startedAt))
+                else { return }
+                try? await Task.sleep(for: .seconds(delay))
+                guard !Task.isCancelled else { return }
+                await feed.refreshReactions(postIds: [post.id])
+            }
+        }
+    }
+
+    /// Restarts the poll when either the post or the foreground state changes.
+    private struct LivePollKey: Equatable {
+        let postId: UUID
+        let active: Bool
     }
 
     /// Seeds the editor from the post's current tags, so saving doesn't wipe what's there.

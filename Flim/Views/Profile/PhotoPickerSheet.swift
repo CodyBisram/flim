@@ -12,6 +12,13 @@ struct PhotoPickerSheet: View {
     let onPick: (String) -> Void   // the chosen photo's storage path
     /// Raw data for a photo picked from the device library. Omit to offer Darkroom photos only.
     var onPickLibraryImage: ((Data) -> Void)? = nil
+    /// When set, BOTH sources route through a 1:1 crop step and deliver the cropped JPEG bytes
+    /// here instead of calling `onPick` / `onPickLibraryImage`.
+    ///
+    /// The crop is presented from inside this sheet rather than from the caller, so a Darkroom
+    /// pick and a library pick converge on one path, and so the cropper isn't racing this sheet's
+    /// own dismissal (presenting a cover from the parent while a sheet is dismissing drops it).
+    var onPickCropped: ((Data) -> Void)? = nil
 
     @Environment(AuthService.self) private var auth
     @Environment(PhotoService.self) private var photoService
@@ -22,6 +29,14 @@ struct PhotoPickerSheet: View {
     @State private var loaded = false
     @State private var libraryItem: PhotosPickerItem?
     @State private var importing = false
+    @State private var cropSource: CropSource?
+
+    /// Identifiable so the cropper can be presented with `fullScreenCover(item:)`, which ties the
+    /// presentation to the data instead of to a separate bool that can drift out of sync with it.
+    private struct CropSource: Identifiable {
+        let id = UUID()
+        let data: Data
+    }
 
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 3), count: 3)
 
@@ -35,7 +50,7 @@ struct PhotoPickerSheet: View {
                             .font(.system(size: 30, weight: .ultraLight)).foregroundStyle(FlimTheme.textTertiary)
                         Text("No photos in your Darkroom yet")
                             .font(.system(size: 14)).foregroundStyle(FlimTheme.textTertiary)
-                        if onPickLibraryImage != nil {
+                        if onPickLibraryImage != nil || onPickCropped != nil {
                             // Used to be a dead end for anyone who hadn't shot yet.
                             Text("Choose one from your library below.")
                                 .font(.system(size: 13)).foregroundStyle(FlimTheme.textTertiary)
@@ -46,8 +61,7 @@ struct PhotoPickerSheet: View {
                         LazyVGrid(columns: columns, spacing: 3) {
                             ForEach(photos) { photo in
                                 Button {
-                                    onPick(photo.storagePath)
-                                    dismiss()
+                                    choose(photo)
                                 } label: {
                                     Color.clear
                                         .aspectRatio(1, contentMode: .fit)
@@ -68,7 +82,10 @@ struct PhotoPickerSheet: View {
             .flimInlineTitle(title)
             .toolbarColorScheme(.dark, for: .navigationBar)
             .safeAreaInset(edge: .bottom) {
-                if let onPickLibraryImage {
+                // Either delivery route offers the library. Gating this on `onPickLibraryImage`
+                // alone would hide the button entirely from the cropping callers, which pass only
+                // `onPickCropped`.
+                if onPickLibraryImage != nil || onPickCropped != nil {
                     PhotosPicker(selection: $libraryItem, matching: .images, photoLibrary: .shared()) {
                         Label(importing ? "Adding…" : "Choose from Library", systemImage: "photo.on.rectangle")
                             .font(.system(size: 15, weight: .semibold))
@@ -92,8 +109,12 @@ struct PhotoPickerSheet: View {
                             libraryItem = nil
                             guard let data else { Haptics.error(); return }
                             Haptics.tap()
-                            onPickLibraryImage(data)
-                            dismiss()
+                            if onPickCropped != nil {
+                                cropSource = CropSource(data: data)
+                            } else {
+                                onPickLibraryImage?(data)
+                                dismiss()
+                            }
                         }
                     }
                 }
@@ -101,6 +122,12 @@ struct PhotoPickerSheet: View {
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Cancel") { dismiss() }.foregroundStyle(.white)
+                }
+            }
+            .fullScreenCover(item: $cropSource) { source in
+                SquareCropSheet(imageData: source.data, title: title) { cropped in
+                    onPickCropped?(cropped)
+                    dismiss()
                 }
             }
             .task {
@@ -113,6 +140,26 @@ struct PhotoPickerSheet: View {
             }
         }
         .presentationBackground(FlimTheme.bg)
+    }
+
+    /// A Darkroom photo goes straight through unless a crop was requested, in which case its
+    /// bytes are fetched first so the cropper has something to show. The spinner state is shared
+    /// with the library import, so only one import can be in flight either way.
+    private func choose(_ photo: Photo) {
+        guard onPickCropped != nil else {
+            onPick(photo.storagePath)
+            dismiss()
+            return
+        }
+        guard !importing else { return }
+        importing = true
+        Task {
+            let data = await auth.imageData(atPath: photo.storagePath)
+            importing = false
+            guard let data else { Haptics.error(); return }
+            Haptics.tap()
+            cropSource = CropSource(data: data)
+        }
     }
 }
 

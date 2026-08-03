@@ -221,8 +221,15 @@ final class AuthService {
     /// Sets the profile avatar from one of the user's photos. Copies the image into its own
     /// Storage object so the avatar survives the source photo being deleted.
     func setAvatar(fromPhotoPath sourcePath: String) async {
-        guard let raw = try? await supabase.storage.from("photos").download(path: sourcePath) else { return }
+        guard let raw = await imageData(atPath: sourcePath) else { return }
         await setAvatar(fromImageData: raw)
+    }
+
+    /// Downloads a stored image so a caller can work with the bytes before setting them, which is
+    /// what the profile cropper needs: it has to show the photo before it can crop it. Kept on the
+    /// service rather than reached for from a view, so nothing outside a service talks to Storage.
+    func imageData(atPath path: String) async -> Data? {
+        try? await supabase.storage.from("photos").download(path: path)
     }
 
     /// Sets the profile avatar from raw image data the user picked out of their photo library.
