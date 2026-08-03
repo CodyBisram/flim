@@ -14,6 +14,8 @@ struct FeedView: View {
     @State private var hasNewPosts = false
     @State private var didLoad = false
     @State private var unreadActivity = 0
+    /// The previous `lastActivitySeen`, handed to Activity so it can show a "New" section.
+    @State private var activitySeenBefore: Date?
     @AppStorage("lastActivitySeen") private var lastActivitySeen: Double = 0
 
     var body: some View {
@@ -121,7 +123,7 @@ struct FeedView: View {
             DiscoverPeopleView()
         }
         .sheet(isPresented: $showActivity) {
-            ActivityFeedView()
+            ActivityFeedView(seenBefore: activitySeenBefore)
         }
     }
 
@@ -146,6 +148,13 @@ struct FeedView: View {
                 .accessibilityLabel("Seed demo feed")
                 #endif
                 Button {
+                    // Capture the PREVIOUS visit before stamping this one, so Activity can put
+                    // what you haven't looked at under "New". Stamping first (which this has
+                    // always done, to clear the badge immediately) would otherwise leave the
+                    // sheet with nothing to compare against.
+                    activitySeenBefore = lastActivitySeen > 0
+                        ? Date(timeIntervalSince1970: lastActivitySeen)
+                        : nil
                     lastActivitySeen = Date().timeIntervalSince1970
                     unreadActivity = 0
                     showActivity = true

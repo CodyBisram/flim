@@ -23,6 +23,9 @@ struct ActivityFeedView: View {
     @State private var thumbURLs: [UUID: URL] = [:]
     @State private var profileRoute: ProfileRoute?
     @State private var postRoute: FeedItem?
+    /// When Activity was last opened, captured BEFORE this visit stamped it. Anything newer sits
+    /// under "New". nil means no New section (first ever visit, or the caller didn't pass one).
+    var seenBefore: Date?
 
     var body: some View {
         NavigationStack {
@@ -46,8 +49,14 @@ struct ActivityFeedView: View {
                     ProgressView().tint(.white)
                 } else {
                     ScrollView {
-                        LazyVStack(spacing: 2) {
-                            ForEach(items) { row($0) }
+                        LazyVStack(spacing: 2, pinnedViews: [.sectionHeaders]) {
+                            ForEach(sections, id: \.section.id) { group in
+                                Section {
+                                    ForEach(group.items) { row($0) }
+                                } header: {
+                                    sectionHeader(group.section)
+                                }
+                            }
                         }
                         .padding(.vertical, 8)
                     }
@@ -90,6 +99,26 @@ struct ActivityFeedView: View {
         let urls = await feed.signedURLs(for: paths)
         thumbURLs = buildActivityThumbURLs(items: items, urlsByPath: urls)
         loaded = true
+    }
+
+    /// The rows grouped by when they happened. `items` already arrives newest-first, so grouping
+    /// preserves that within each section.
+    private var sections: [(section: ActivitySection, items: [ActivityItem])] {
+        groupedActivity(items, date: \.date, seenBefore: seenBefore)
+    }
+
+    /// Pinned so the heading stays visible while you scroll through a long stretch of one day,
+    /// which is the only reason a date header earns its space.
+    private func sectionHeader(_ section: ActivitySection) -> some View {
+        HStack {
+            Text(section.title)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(section == .new ? FlimTheme.accent : FlimTheme.textSecondary)
+            Spacer()
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 8)
+        .background(FlimTheme.bg)
     }
 
     /// Two tap regions per row: the avatar opens the actor's profile; everything else (the
