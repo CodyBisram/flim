@@ -78,7 +78,7 @@ final class DarkroomViewModel {
         async let count = photoService.personalPhotoCount(userId: userId)
         do {
             try await photoService.fetchPersonalPhotos(userId: userId)
-            let fetched = photoService.photos
+            let fetched = photoService.loadedPhotos
             await MainActor.run { photos = fetched }
             await markReadyPhotos(photoService: photoService)
             await prefetchURLs(photoService: photoService)
@@ -94,7 +94,7 @@ final class DarkroomViewModel {
         await MainActor.run { isLoading = true; error = nil }
         do {
             try await photoService.fetchRollPhotos(rollId: rollId, blockedIds: blockedIds)
-            let fetched = photoService.photos
+            let fetched = photoService.loadedPhotos
             await MainActor.run { photos = fetched }
             await markReadyPhotos(photoService: photoService)
             await prefetchURLs(photoService: photoService)
@@ -109,7 +109,7 @@ final class DarkroomViewModel {
     func loadMore(photoService: PhotoService, userId: UUID) async {
         guard photoService.hasMore, !photoService.isLoading else { return }
         try? await photoService.fetchPersonalPhotos(userId: userId, reset: false)
-        let fetched = photoService.photos
+        let fetched = photoService.loadedPhotos
         await MainActor.run { photos = fetched }
         await markReadyPhotos(photoService: photoService)
     }
@@ -117,7 +117,7 @@ final class DarkroomViewModel {
     func loadMoreRoll(photoService: PhotoService, rollId: UUID, blockedIds: Set<UUID> = []) async {
         guard photoService.hasMore, !photoService.isLoading else { return }
         try? await photoService.fetchRollPhotos(rollId: rollId, reset: false, blockedIds: blockedIds)
-        let fetched = photoService.photos
+        let fetched = photoService.loadedPhotos
         await MainActor.run { photos = fetched }
         await markReadyPhotos(photoService: photoService)
     }
@@ -160,7 +160,7 @@ final class DarkroomViewModel {
     private func markReadyPhotos(photoService: PhotoService, notify: Bool = false) async {
         let before = developedPhotos.count
         await photoService.markDevelopedIfReady()
-        let fetched = photoService.photos
+        let fetched = photoService.loadedPhotos
         // Only reassign when the developed set actually changed. The 60s poll otherwise
         // replaced the entire `photos` array every minute even when nothing had developed, 
         // and because the array backs the grid's ForEach, that re-diffed the whole grid (and,

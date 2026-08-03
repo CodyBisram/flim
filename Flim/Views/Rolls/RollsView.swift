@@ -135,7 +135,15 @@ struct RollsView: View {
         let muted = !mutedRolls.contains(roll.id)
         Haptics.tap()
         if muted { mutedRolls.insert(roll.id) } else { mutedRolls.remove(roll.id) }   // optimistic
-        Task { await photos.setRollMuted(muted, rollId: roll.id, userId: uid) }
+        Task {
+            guard await photos.setRollMuted(muted, rollId: roll.id, userId: uid) else {
+                // Put the bell back. A bell that says muted on a roll that still notifies is
+                // worse than one that plainly didn't change.
+                if muted { mutedRolls.remove(roll.id) } else { mutedRolls.insert(roll.id) }
+                Haptics.error()
+                return
+            }
+        }
     }
 
     /// A developed roll the user hasn't opened the reveal for yet, the "your photos are ready"

@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import Supabase
+import os
 
 // Personal "instants" are ready immediately, they land unsorted and are triaged in the sort
 // deck (archive → Darkroom, publish → Feed). Shared rolls still develop TOGETHER: every shot
@@ -15,7 +16,14 @@ private let rollDevelopDelay: TimeInterval = 12 * 3600
 
 @Observable
 final class PhotoService {
-    var photos: [Photo] = []
+    /// ONE PAGE of whatever query ran last, not a total and not scoped to any particular roll.
+    ///
+    /// Named `loadedPhotos`, not `photos`, deliberately. As `photos` it read like "the photos",
+    /// and counting it has now produced three separate bugs: two roll-count labels showing a
+    /// page-1 fragment, and the develop reminder reporting a shot count from an unrelated query.
+    /// If you want a total, ask the server (`personalPhotoCount`, `rollPhotoCount`); if you want
+    /// every photo in a roll, drain the pages first (see RollDetailView's `rollFullyPaged`).
+    var loadedPhotos: [Photo] = []
     var isUploading = false
     var isLoading = false
     var uploadError: String?
@@ -36,12 +44,39 @@ final class PhotoService {
                         onFinish: @escaping (Photo) async -> Void) {
         let previous = pipeline
         pipeline = Task {
+            let queuedAt = ContinuousClock.now
             await previous?.value
+
+            // Timed in three parts, because "a photo takes a while to appear" has three possible
+            // causes with three different fixes, and guessing between them is how you optimise
+            // the wrong one. `waited` is time spent queued behind earlier shots in a burst,
+            // `filtered` is the Core Image graph at full sensor resolution, `uploaded` is the
+            // three storage writes plus the row insert. Read with:
+            //   log stream --predicate 'subsystem == "com.flim.app"' --info
+            let startedAt = ContinuousClock.now
             let processed = await InstantFilmProcessor.process(rawData, stock: stock) ?? rawData
-            if let photo = await captureAndUpload(imageData: processed, userId: userId, rollId: rollId) {
-                await onFinish(photo)
-            }
+            let filteredAt = ContinuousClock.now
+
+            let photo = await captureAndUpload(imageData: processed, userId: userId, rollId: rollId)
+            let finishedAt = ContinuousClock.now
+
+            let waited = Self.seconds(queuedAt.duration(to: startedAt))
+            let filtering = Self.seconds(startedAt.duration(to: filteredAt))
+            let uploading = Self.seconds(filteredAt.duration(to: finishedAt))
+            Self.captureLog.info(
+                "capture waited=\(waited, privacy: .public)s filtered=\(filtering, privacy: .public)s uploaded=\(uploading, privacy: .public)s ok=\(photo != nil, privacy: .public)"
+            )
+
+            if let photo { await onFinish(photo) }
         }
+    }
+
+    private static let captureLog = Logger(subsystem: "com.flim.app", category: "capture")
+
+    /// `Duration` to seconds. `.seconds` is a static factory on Duration, not a read accessor,
+    /// so the components have to be recombined by hand.
+    private static func seconds(_ d: Duration) -> Double {
+        Double(d.components.seconds) + Double(d.components.attoseconds) / 1e18
     }
 
     @discardableResult
@@ -59,35 +94,24 @@ final class PhotoService {
                 .from("photos")
                 .upload(path, data: imageData, options: FileOptions(contentType: "image/jpeg"))
 
-            // Upload a small thumbnail alongside it (best-effort, grids load this instead
-            // of the multi-MB original). Same folder, so the owner's read policy already covers it.
-            var thumbPath: String? = nil
-            if let thumbData = InstantFilmProcessor.thumbnail(from: imageData) {
-                let tPath = "\(userId.uuidString.lowercased())/\(photoId.uuidString.lowercased())_thumb.jpg"
-                if (try? await supabase.storage.from("photos")
-                    .upload(tPath, data: thumbData, options: FileOptions(contentType: "image/jpeg"))) != nil {
-                    thumbPath = tPath
-                }
-            }
-
-            // And a ~1400px feed rendition (best-effort), what feed cards download instead of
-            // the full image: pixel-identical at card width, ~1/3 the egress.
-            var feedPath: String? = nil
-            if let feedData = InstantFilmProcessor.feedRendition(from: imageData) {
-                let fPath = "\(userId.uuidString.lowercased())/\(photoId.uuidString.lowercased())_feed.jpg"
-                if (try? await supabase.storage.from("photos")
-                    .upload(fPath, data: feedData, options: FileOptions(contentType: "image/jpeg"))) != nil {
-                    feedPath = fPath
-                }
-            }
-
+            // The photo EXISTS once the full image and its row are in. The thumbnail and feed
+            // renditions follow in the background and patch the row when they land.
+            //
+            // All three uploads used to have to finish before the photo existed at all, so the
+            // shot the user was waiting on carried roughly 3x the bytes at exactly the moment
+            // they were waiting, and a network that died between the second and third upload
+            // failed the WHOLE capture and queued a full retry of work that had already
+            // succeeded. Both rendition columns are nullable and fall back to the full image
+            // (that's how pre-rendition photos still display), so a photo with neither is a
+            // supported state rather than a broken one, it just costs more egress until the
+            // patch lands.
             let payload = InsertPhoto(
                 id: photoId,
                 userId: userId,
                 rollId: rollId,
                 storagePath: path,
-                thumbPath: thumbPath,
-                feedPath: feedPath,
+                thumbPath: nil,
+                feedPath: nil,
                 developsAt: developsAt,
                 // Roll shots skip the deck; personal instants start unsorted for triage.
                 isSorted: rollId != nil
@@ -102,9 +126,10 @@ final class PhotoService {
                 .value
 
             await MainActor.run {
-                photos.insert(inserted, at: 0)
+                loadedPhotos.insert(inserted, at: 0)
                 isUploading = false
             }
+            uploadRenditions(photoId: photoId, userId: userId, imageData: imageData)
             return inserted
         } catch {
             await MainActor.run {
@@ -113,6 +138,55 @@ final class PhotoService {
                 isUploading = false
             }
             return nil
+        }
+    }
+
+    /// Generates and uploads the thumbnail + feed renditions after the photo already exists, then
+    /// patches the row and the local copy.
+    ///
+    /// Deliberately not awaited by the caller: the capture is already complete and saved by the
+    /// time this runs. Retried once, because the common failure here is a brief network dropout
+    /// right after a capture, and the cost of never retrying is that every future view of this
+    /// photo downloads the full image instead of a ~30KB thumbnail, forever.
+    private func uploadRenditions(photoId: UUID, userId: UUID, imageData: Data) {
+        Task { [weak self] in
+            guard let self else { return }
+            let prefix = "\(userId.uuidString.lowercased())/\(photoId.uuidString.lowercased())"
+
+            func upload(_ data: Data, to path: String) async -> String? {
+                for attempt in 0..<2 {
+                    if (try? await supabase.storage.from("photos")
+                        .upload(path, data: data, options: FileOptions(contentType: "image/jpeg"))) != nil {
+                        return path
+                    }
+                    if attempt == 0 { try? await Task.sleep(for: .seconds(3)) }
+                }
+                return nil
+            }
+
+            var thumbPath: String?
+            if let thumbData = InstantFilmProcessor.thumbnail(from: imageData) {
+                thumbPath = await upload(thumbData, to: "\(prefix)_thumb.jpg")
+            }
+            var feedPath: String?
+            if let feedData = InstantFilmProcessor.feedRendition(from: imageData) {
+                feedPath = await upload(feedData, to: "\(prefix)_feed.jpg")
+            }
+            guard thumbPath != nil || feedPath != nil else { return }
+
+            struct Patch: Encodable { let thumb_path: String?; let feed_path: String? }
+            _ = try? await supabase.from("photos")
+                .update(Patch(thumb_path: thumbPath, feed_path: feedPath))
+                .eq("id", value: photoId.uuidString)
+                .execute()
+
+            // Keep the in-memory copy in step, or the grid keeps pulling the full image for this
+            // photo until something refetches it from the server.
+            await MainActor.run {
+                guard let i = self.loadedPhotos.firstIndex(where: { $0.id == photoId }) else { return }
+                if let thumbPath { self.loadedPhotos[i].thumbPath = thumbPath }
+                if let feedPath { self.loadedPhotos[i].feedPath = feedPath }
+            }
         }
     }
 
@@ -182,7 +256,7 @@ final class PhotoService {
                 .delete()
                 .eq("id", value: photo.id.uuidString)
                 .execute()
-            await MainActor.run { photos.removeAll { $0.id == photo.id } }
+            await MainActor.run { loadedPhotos.removeAll { $0.id == photo.id } }
         } catch {
             await MainActor.run { uploadError = error.localizedDescription }
         }
@@ -196,7 +270,7 @@ final class PhotoService {
         _ = try? await supabase.storage.from("photos").remove(paths: toDelete.flatMap { [$0.storagePath, $0.thumbPath].compactMap { $0 } })
         do {
             try await supabase.from("photos").delete().in("id", values: ids).execute()
-            await MainActor.run { photos.removeAll { ids.contains($0.id.uuidString) } }
+            await MainActor.run { loadedPhotos.removeAll { ids.contains($0.id.uuidString) } }
         } catch {
             await MainActor.run { uploadError = error.localizedDescription }
         }
@@ -217,7 +291,7 @@ final class PhotoService {
         }
         // Delete photo rows (cascades to posts, reactions, comments).
         _ = try? await supabase.from("photos").delete().eq("user_id", value: userId.uuidString).execute()
-        await MainActor.run { photos = []; failedUploads = [] }
+        await MainActor.run { loadedPhotos = []; failedUploads = [] }
     }
 
     /// Files a content report against a photo (UGC safety). Write-only from the client.
@@ -321,13 +395,29 @@ final class PhotoService {
         return Set(rows.map(\.roll_id))
     }
 
-    func setRollMuted(_ muted: Bool, rollId: UUID, userId: UUID) async {
-        if muted {
-            struct M: Encodable { let roll_id: UUID; let user_id: UUID }
-            _ = try? await supabase.from("roll_notification_mutes").insert(M(roll_id: rollId, user_id: userId)).execute()
-        } else {
-            _ = try? await supabase.from("roll_notification_mutes").delete()
-                .eq("roll_id", value: rollId.uuidString).eq("user_id", value: userId.uuidString).execute()
+    /// Returns whether the change actually landed, so an optimistic bell can undo itself.
+    ///
+    /// This used to swallow its result. A failed write left a muted-looking bell on a roll that
+    /// still notified you, which is the worst direction for this to fail: you don't find out from
+    /// the UI, you find out from a notification you thought you'd switched off.
+    @discardableResult
+    func setRollMuted(_ muted: Bool, rollId: UUID, userId: UUID) async -> Bool {
+        do {
+            if muted {
+                struct M: Encodable { let roll_id: UUID; let user_id: UUID }
+                try await supabase.from("roll_notification_mutes")
+                    .insert(M(roll_id: rollId, user_id: userId)).execute()
+            } else {
+                try await supabase.from("roll_notification_mutes").delete()
+                    .eq("roll_id", value: rollId.uuidString)
+                    .eq("user_id", value: userId.uuidString).execute()
+            }
+            return true
+        } catch let error as PostgrestError where error.code == "23505" {
+            // Already muted server-side; the desired end state holds.
+            return true
+        } catch {
+            return false
         }
     }
 
@@ -353,6 +443,21 @@ final class PhotoService {
             .select("id", head: true, count: .exact)
             .eq("user_id", value: userId.uuidString)
             .eq("is_sorted", value: true)
+            .execute().count) ?? 0
+    }
+
+    /// How many shots this user has put into a roll, counted on the SERVER.
+    ///
+    /// Exists because counting `loadedPhotos` cannot answer this. That array holds one page of
+    /// whatever query ran last, which may be a different roll, or the personal Darkroom, or
+    /// nothing yet. The develop reminder's "N shots" was being derived that way and could report
+    /// a count from an unrelated query. Same headless `count: .exact` shape as above, so it
+    /// transfers no rows.
+    func rollPhotoCount(rollId: UUID, userId: UUID) async -> Int {
+        (try? await supabase.from("photos")
+            .select("id", head: true, count: .exact)
+            .eq("roll_id", value: rollId.uuidString)
+            .eq("user_id", value: userId.uuidString)
             .execute().count) ?? 0
     }
 
@@ -452,7 +557,7 @@ final class PhotoService {
             await MainActor.run {
                 loadedCount = 0
                 hasMore = true
-                photos = []
+                loadedPhotos = []
             }
         }
         guard hasMore else { return }
@@ -474,7 +579,7 @@ final class PhotoService {
 
         let visible = blockedIds.isEmpty ? page : page.filter { !blockedIds.contains($0.userId) }
         await MainActor.run {
-            photos.append(contentsOf: visible)
+            loadedPhotos.append(contentsOf: visible)
             // Advance pagination by the raw page size (not the filtered count) so a
             // blocked-heavy page doesn't get re-requested, the offset tracks server rows,
             // not rendered ones.
@@ -528,7 +633,7 @@ final class PhotoService {
     // MARK: - Mark developed
 
     func markDevelopedIfReady() async {
-        let readyIds = photos
+        let readyIds = loadedPhotos
             .filter { $0.isReady && !$0.isDeveloped }
             .map(\.id.uuidString)
 
@@ -545,8 +650,8 @@ final class PhotoService {
             .execute()
 
         await MainActor.run {
-            for i in photos.indices where readyIds.contains(photos[i].id.uuidString) {
-                photos[i].isDeveloped = true
+            for i in loadedPhotos.indices where readyIds.contains(loadedPhotos[i].id.uuidString) {
+                loadedPhotos[i].isDeveloped = true
             }
         }
     }
@@ -588,7 +693,7 @@ extension PhotoService {
                 let inserted: Photo = try await supabase
                     .from("photos")
                     .insert(payload).select().single().execute().value
-                photos.insert(inserted, at: 0)
+                loadedPhotos.insert(inserted, at: 0)
                 print("[seed] inserted photo \(i + 1) at \(path)")
             } catch {
                 uploadError = error.localizedDescription

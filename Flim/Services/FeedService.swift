@@ -493,16 +493,34 @@ final class FeedService {
 
     /// Optimistic react/unreact that updates the shared cache (so cards stay in sync as they
     /// recycle) + the server.
+    /// Toggles the current user's reaction, updating the shared cache immediately so every card
+    /// showing this post reflects it, then rolling back if the write never landed.
+    ///
+    /// Without the rollback, a reaction made in a dead zone stayed on screen indefinitely: you'd
+    /// see your own emoji highlighted and nobody else would ever see it, with nothing to indicate
+    /// anything had gone wrong. `follow`/`unfollow` above have always restored on failure for
+    /// exactly this reason; reactions never got the same treatment. The roll-photo equivalents
+    /// happen to be safe already because they refetch afterwards, so only this path could strand.
     func reactToPost(_ postId: UUID, emoji: String, userId: UUID) async {
-        var current = reactionsByPost[postId] ?? []
+        let before = reactionsByPost[postId] ?? []
+        var current = before
+        let landed: Bool
+
         if current.contains(where: { $0.emoji == emoji && $0.userId == userId }) {
             current.removeAll { $0.emoji == emoji && $0.userId == userId }
             reactionsByPost[postId] = current
-            await removeReaction(postId: postId, emoji: emoji, userId: userId)
+            landed = await removeReaction(postId: postId, emoji: emoji, userId: userId)
         } else {
             current.append(PostReaction(id: UUID(), postId: postId, userId: userId, emoji: emoji))
             reactionsByPost[postId] = current
-            await addReaction(postId: postId, emoji: emoji, userId: userId)
+            landed = await addReaction(postId: postId, emoji: emoji, userId: userId)
+        }
+
+        if !landed {
+            // Put it back exactly as it was, rather than refetching: a refetch needs the network
+            // that just failed, and would leave the wrong state on screen until it returned.
+            reactionsByPost[postId] = before
+            Haptics.error()
         }
     }
 
@@ -641,17 +659,35 @@ final class FeedService {
         return rows.filter { !blockedIds.contains($0.userId) }
     }
 
-    func addReaction(postId: UUID, emoji: String, userId: UUID) async {
+    /// Returns whether the write actually landed, so an optimistic UI can undo itself.
+    @discardableResult
+    func addReaction(postId: UUID, emoji: String, userId: UUID) async -> Bool {
         struct R: Encodable { let post_id: UUID; let user_id: UUID; let emoji: String }
-        _ = try? await supabase.from("post_reactions")
-            .insert(R(post_id: postId, user_id: userId, emoji: emoji)).execute()
+        do {
+            try await supabase.from("post_reactions")
+                .insert(R(post_id: postId, user_id: userId, emoji: emoji)).execute()
+            return true
+        } catch let error as PostgrestError where error.code == "23505" {
+            // Duplicate key: the reaction is already on the server, so the end state the caller
+            // wanted already holds. Same reasoning as `follow`, a race is not a failure.
+            return true
+        } catch {
+            return false
+        }
     }
 
-    func removeReaction(postId: UUID, emoji: String, userId: UUID) async {
-        _ = try? await supabase.from("post_reactions").delete()
-            .eq("post_id", value: postId.uuidString)
-            .eq("user_id", value: userId.uuidString)
-            .eq("emoji", value: emoji).execute()
+    /// Returns whether the delete actually landed, so an optimistic UI can undo itself.
+    @discardableResult
+    func removeReaction(postId: UUID, emoji: String, userId: UUID) async -> Bool {
+        do {
+            try await supabase.from("post_reactions").delete()
+                .eq("post_id", value: postId.uuidString)
+                .eq("user_id", value: userId.uuidString)
+                .eq("emoji", value: emoji).execute()
+            return true
+        } catch {
+            return false
+        }
     }
 
     // MARK: - Comments
@@ -904,7 +940,7 @@ final class FeedService {
 
         // Make sure there are some photos to publish.
         try? await photoService.fetchPersonalPhotos(userId: userId)
-        if photoService.photos.isEmpty {
+        if photoService.loadedPhotos.isEmpty {
             await photoService.seedDemoPhotos(userId: userId)
         }
 
@@ -912,7 +948,7 @@ final class FeedService {
             "golden hour on the roof 🌅", "downtown, 35mm", "she said cheese",
             "sunday morning", "keepers only", "roll #3"
         ]
-        for (i, photo) in photoService.photos.prefix(6).enumerated() {
+        for (i, photo) in photoService.loadedPhotos.prefix(6).enumerated() {
             if await hasPosted(photoId: photo.id, userId: userId) { continue }
             try? await createPost(photo: photo, caption: captions[i % captions.count], userId: userId)
         }

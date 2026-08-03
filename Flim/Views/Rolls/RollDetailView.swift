@@ -178,8 +178,14 @@ struct RollDetailView: View {
                     // Silence this roll's comment/reaction notifications without leaving it.
                     Button {
                         guard let uid = auth.currentUser?.id else { return }
-                        isMuted.toggle()
-                        Task { await photoService.setRollMuted(isMuted, rollId: roll.id, userId: uid) }
+                        let wanted = !isMuted
+                        isMuted = wanted   // optimistic
+                        Task {
+                            if await !photoService.setRollMuted(wanted, rollId: roll.id, userId: uid) {
+                                isMuted = !wanted   // the write never landed; don't claim it did
+                                Haptics.error()
+                            }
+                        }
                     } label: {
                         Label(isMuted ? "Unmute notifications" : "Mute notifications",
                               systemImage: isMuted ? "bell.slash" : "bell")

@@ -304,6 +304,18 @@ Deno.serve(async () => {
       muted = new Set((m ?? []).map((x) => x.user_id));
     }
 
+    // People @mentioned in these comments who aren't already in the thread. Mentions used to be
+    // scanned on post_comments only, so an @ on a ROLL photo highlighted and linked in the app
+    // and notified nobody. A mention is an explicit summons; it should reach someone whether or
+    // not they've commented on that photo before.
+    const mentioned = new Set<string>();
+    for (const it of g.items) {
+      for (const uid of await mentionedUserIds(it.body)) mentioned.add(uid);
+    }
+    for (const uid of mentioned) {
+      if (!muted.has(uid)) thread.add(uid);
+    }
+
     for (const recipient of thread) {
       if (muted.has(recipient)) continue;
       const fromOthers = g.items.filter((it) => it.userId !== recipient);  // never notify about your own

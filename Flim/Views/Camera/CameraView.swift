@@ -652,7 +652,10 @@ struct CameraView: View {
                 // reveal, schedule ONE collapsed notification per roll, with your shot count.
                 if let rollId, let rollName {
                     await notifications.requestAuthorizationIfNeeded()
-                    let count = photos.photos.filter { $0.rollId == rollId && $0.userId == userId }.count
+                    // Counted on the server. This used to filter the loaded page, which holds
+                    // one page of whatever query ran last and may not be this roll at all, so the
+                    // reminder could quote a number from somewhere else entirely.
+                    let count = await photos.rollPhotoCount(rollId: rollId, userId: userId)
                     await notifications.scheduleRollDevelopNotification(
                         rollId: rollId, rollName: rollName,
                         developsAt: photo.developsAt, photoCount: count
