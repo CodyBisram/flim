@@ -13,7 +13,11 @@ enum AuthError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .notInvited:
-            return "This email isn’t on the invite list yet. \(AppInfo.appName) is invite-only, so ask whoever invited you to add you."
+            // The sign-in screen no longer shows this: needing an invite is the expected state for
+            // a new person, so it opens the code field and says what to do next instead. Kept as a
+            // sane fallback for any other caller, and reworded, because the old text ("ask whoever
+            // invited you to add you") sent people to fetch the code they were already holding.
+            return "\(AppInfo.appName) is invite-only. Enter the invite code a friend sent you to join."
         case .usernameTaken:
             return "That username’s taken. Try another."
         case .rateLimited:
