@@ -22,6 +22,26 @@ struct SortDeckView: View {
     private enum SortAction { case archive, publish, trash }
     private let threshold: CGFloat = 110
 
+    /// Captures are a fixed 3:4 (see `CapturedPhotoCropper`), so the card is too. Anything else
+    /// means the triage screen shows a different picture than the one that gets developed.
+    static let cardAspect: CGFloat = 3.0 / 4.0
+
+    /// The largest 3:4 card that fits the available area.
+    ///
+    /// A complete 3:4 photo still fills ~82% of the height the old full-bleed card used, so
+    /// honesty costs about a sixth of the card and buys back the ~18% of every frame that was
+    /// being hidden.
+    static func cardSize(in area: CGSize) -> CGSize {
+        guard area.width > 0, area.height > 0 else { return area }
+        let heightIfFullWidth = area.width / cardAspect
+        if heightIfFullWidth <= area.height {
+            return CGSize(width: area.width, height: heightIfFullWidth)
+        }
+        // A short, wide area (landscape, or a small phone): fit to height instead so the card
+        // never overflows the space it was given.
+        return CGSize(width: area.height * cardAspect, height: area.height)
+    }
+
     var body: some View {
         ZStack {
             FlimTheme.bg.ignoresSafeArea()
@@ -85,24 +105,37 @@ struct SortDeckView: View {
 
     private func card(_ photo: Photo, index: Int, area: CGSize) -> some View {
         let isTop = index == 0
+        let size = Self.cardSize(in: area)
         return RoundedRectangle(cornerRadius: 22)
             .fill(FlimTheme.bgElevated)
             .overlay {
-                // 2048 (the stored photo's own resolution ceiling), not the 1600 used by other
-                // full-bleed views: this card uses .scaledToFill() to cover a frame whose aspect
-                // ratio doesn't exactly match the photo's, so it magnifies the source more than a
-                // .scaledToFit() view of the same size does. At the old 1400 budget that extra
-                // magnification made the deck visibly softer than the Darkroom's full-screen view
-                // of the same photo.
-                CachedImage(url: urls[photo.id], maxPixel: 2048) { $0.resizable().scaledToFill() }
+                // scaledToFit inside a 3:4 card, so what you judge is the whole photograph.
+                //
+                // This used to be scaledToFill into a card that filled the available area, which
+                // is much taller than 3:4, so it scaled the photo to the card's HEIGHT and let the
+                // sides run off: roughly 18% of the frame's width, ~9% off each edge. This is the
+                // screen where you decide what to keep and what to share, so the call was being
+                // made on less than the file contains, and you would never find out what you
+                // missed, because the thing you could not see is the thing you did not know to
+                // look for. Someone standing at the edge of the frame was invisible here and
+                // present in the developed shot.
+                //
+                // 1600 rather than the old 2048: that budget existed to cover the extra
+                // magnification scaledToFill applied. Fitting a 3:4 photo into a 3:4 card is 1:1,
+                // so it now matches the full-screen viewer's budget.
+                CachedImage(url: urls[photo.id], maxPixel: 1600) { $0.resizable().scaledToFit() }
                     placeholder: { ShimmerPlaceholder(cornerRadius: 22) }
             }
-            .overlay { GrainOverlay().opacity(0.4) }
+            // No decorative GrainOverlay here, unlike the feed and the grid. Those screens are
+            // presentational; this one is evaluative, and adding texture the file does not have to
+            // the screen whose job is judging image quality works against itself. The Darkroom's
+            // own full-screen viewer doesn't add it either, so the deck now agrees with the view
+            // you would check the photo in.
             .overlay { if isTop { dragLabels } }
             .clipShape(RoundedRectangle(cornerRadius: 22))
             .overlay(RoundedRectangle(cornerRadius: 22).stroke(Color.white.opacity(0.08), lineWidth: 1))
             .shadow(color: .black.opacity(0.5), radius: 14, y: 8)
-            .frame(width: area.width, height: area.height)
+            .frame(width: size.width, height: size.height)
             .scaleEffect(isTop ? 1 : 1 - CGFloat(index) * 0.04)
             .offset(y: isTop ? 0 : CGFloat(index) * 14)
             .offset(isTop ? drag : .zero)

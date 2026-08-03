@@ -9,13 +9,24 @@ import Foundation
 /// someone pauses to look at one.
 enum RevealPacing {
 
+    /// How long the blur-to-sharp develop animation runs at the start of every slide.
+    ///
+    /// This is not spare time. For its whole length the photograph is deliberately unreadable, so
+    /// it cannot count toward looking at the picture.
+    static let developDuration: TimeInterval = 1.4
+
+    /// How long the photograph is actually LOOKABLE, once developed.
+    ///
+    /// 5s, the Stories pace for something you are meant to look at rather than skim.
+    static let viewingDuration: TimeInterval = 5
+
     /// How long a shot stays up on its own.
     ///
-    /// 5s, up from 3.4s. This is the first time anyone is seeing these photographs and it is the
-    /// moment the whole app is built around; 3.4s is a pace for skimming something you have
-    /// already seen. Stories use about this for a photo, so it is also the pace people arrive
-    /// already knowing.
-    static let slideDuration: TimeInterval = 5
+    /// Develop plus viewing, not 5s flat. A flat 5s was the bug behind "it still feels like four
+    /// seconds": the develop animation ate the first 1.4s of every slide, leaving 3.6s of actual
+    /// photograph, which is very close to the 3.4s this was supposed to have replaced. Counting
+    /// the countdown from the moment the photo becomes visible is the only way 5s means 5s.
+    static let slideDuration: TimeInterval = developDuration + viewingDuration
 
     /// How long a finger must rest before a press becomes a hold rather than a tap.
     static let holdDelay: TimeInterval = 0.22

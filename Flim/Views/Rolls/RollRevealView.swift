@@ -50,11 +50,17 @@ struct RollRevealView: View {
     /// tested. This view owns the state machine and the pixels.
     private static let slideDuration = RevealPacing.slideDuration
 
+    /// This slide's length. Reduce Motion skips the develop animation entirely, so there is no
+    /// unreadable phase to allow for and the slide is just the viewing time.
+    private var currentSlideDuration: TimeInterval {
+        reduceMotion ? RevealPacing.viewingDuration : RevealPacing.slideDuration
+    }
+
     /// When the current slide is due to advance. Drives the filling progress segment, and is
     /// rewritten on resume so a paused slide gets its remaining time back rather than restarting.
     @State private var slideEndsAt: Date?
     /// Time left on the current slide while paused.
-    @State private var pausedRemaining: TimeInterval = slideDuration
+    @State private var pausedRemaining: TimeInterval = RevealPacing.slideDuration
     @State private var paused = false
     /// Pending hold detection for the finger currently down. Non-nil means a hold is armed.
     @State private var holdTask: Task<Void, Never>?
@@ -210,7 +216,11 @@ struct RollRevealView: View {
 
     private func segments(currentFill: CGFloat) -> some View {
         HStack(spacing: 3) {
-            ForEach(deck.indices, id: \.self) { i in
+            // Keyed on the photo's own id, not on the index. `skipDeadFrame` removes from `deck`
+            // during playback, and ForEach over a mutating collection's indices with `id: \.self`
+            // is the classic SwiftUI index-out-of-range trap: the view holds an index that no
+            // longer exists. A deleted shot in a reveal is exactly the situation that triggers it.
+            ForEach(Array(deck.enumerated()), id: \.element.id) { i, _ in
                 GeometryReader { geo in
                     ZStack(alignment: .leading) {
                         Capsule().fill(Color.white.opacity(0.28))
@@ -236,12 +246,12 @@ struct RollRevealView: View {
 
     /// How full the current segment is at `date`, from the slide's own deadline.
     private func fill(at date: Date) -> CGFloat {
-        RevealPacing.fill(endsAt: slideEndsAt, now: date)
+        RevealPacing.fill(endsAt: slideEndsAt, now: date, duration: currentSlideDuration)
     }
 
     /// The frozen fill for a paused or engaged slide.
     private var frozenFill: CGFloat {
-        RevealPacing.frozenFill(remaining: pausedRemaining)
+        RevealPacing.frozenFill(remaining: pausedRemaining, duration: currentSlideDuration)
     }
 
     // MARK: - Playback gesture
@@ -295,7 +305,7 @@ struct RollRevealView: View {
         guard !paused, !showSummary else { return }
         paused = true
         advanceTask?.cancel()
-        pausedRemaining = RevealPacing.remaining(endsAt: slideEndsAt, now: .now)
+        pausedRemaining = RevealPacing.remaining(endsAt: slideEndsAt, now: .now, fallback: currentSlideDuration)
         Haptics.tap()
     }
 
@@ -361,7 +371,7 @@ struct RollRevealView: View {
         advanceTask?.cancel()
         // Freeze the bar where it stands, rather than leaving it mid-animation against a deadline
         // that will never arrive.
-        pausedRemaining = RevealPacing.remaining(endsAt: slideEndsAt, now: .now)
+        pausedRemaining = RevealPacing.remaining(endsAt: slideEndsAt, now: .now, fallback: currentSlideDuration)
     }
 
     // The vertical swipe-to-dismiss that used to live here as its own root-level gesture is now
@@ -510,9 +520,9 @@ struct RollRevealView: View {
         developed = false
         engaged = false
         paused = false
-        pausedRemaining = Self.slideDuration
-        withAnimation(.easeOut(duration: reduceMotion ? 0 : 1.4)) { developed = true }
-        armAdvance(after: Self.slideDuration)
+        pausedRemaining = currentSlideDuration
+        withAnimation(.easeOut(duration: reduceMotion ? 0 : RevealPacing.developDuration)) { developed = true }
+        armAdvance(after: currentSlideDuration)
     }
 
     private func step(_ delta: Int) {

@@ -99,7 +99,9 @@ struct RevealPacingTests {
     @Test("a fresh slide's bar starts empty and ends full")
     func fillSpansTheSlide() {
         let now = Date()
-        #expect(RevealPacing.fill(endsAt: now.addingTimeInterval(duration), now: now) == 0)
+        // Tolerance, not equality: the slide is develop + viewing, and that sum doesn't divide
+        // back out to exactly 1.0 in binary floating point.
+        #expect(abs(RevealPacing.fill(endsAt: now.addingTimeInterval(duration), now: now)) < 0.0001)
         #expect(RevealPacing.fill(endsAt: now, now: now) == 1)
     }
 
@@ -137,9 +139,12 @@ struct RevealPacingTests {
 
     @Test("pausing keeps the bar where it was, not where it would have got to")
     func frozenFillMatchesElapsed() {
-        // Two seconds into a five second slide: three remain, so the bar is 40% full and must stay
-        // there for as long as the finger is down.
-        #expect(abs(RevealPacing.frozenFill(remaining: 3) - 0.4) < 0.0001)
+        // Expressed as a fraction of the slide rather than a hard-coded 0.4, which was tied to the
+        // old flat 5s and broke the moment the slide became develop + viewing.
+        let quarterLeft = duration / 4
+        #expect(abs(RevealPacing.frozenFill(remaining: quarterLeft) - 0.75) < 0.0001)
+        #expect(abs(RevealPacing.frozenFill(remaining: duration) - 0) < 0.0001)
+        #expect(abs(RevealPacing.frozenFill(remaining: 0) - 1) < 0.0001)
     }
 
     @Test("frozen fill agrees with live fill at the moment of pausing")
@@ -195,17 +200,22 @@ struct RevealPacingTests {
 
     // MARK: - Durations
 
-    @Test("a slide is long enough to actually look at")
-    func slideIsNotRushed() {
-        // The reported complaint was that 3.4s "zooms by".
-        #expect(RevealPacing.slideDuration >= 5)
+    @Test("a slide gives a full five seconds of LOOKABLE photograph")
+    func viewingTimeIsNotEatenByTheDevelop() {
+        // The bug behind "it still feels like four seconds": a flat 5s slide spent its first 1.4s
+        // running the blur-to-sharp animation, during which the photo is deliberately unreadable,
+        // leaving 3.6s of actual picture. That is within rounding of the 3.4s it replaced.
+        #expect(RevealPacing.slideDuration - RevealPacing.developDuration >= 5)
     }
 
-    @Test("the develop animation finishes well inside a slide")
-    func developFitsInsideTheSlide() {
-        // The blur-to-sharp animation runs 1.4s. If a slide were ever shortened below that, the
-        // photo would advance before it had finished developing.
-        #expect(RevealPacing.slideDuration > 1.4 * 2)
+    @Test("viewing time is measured from when the photo becomes visible")
+    func slideIsDevelopPlusViewing() {
+        #expect(RevealPacing.slideDuration == RevealPacing.developDuration + RevealPacing.viewingDuration)
+    }
+
+    @Test("the develop phase is a minority of the slide")
+    func developIsNotMostOfTheSlide() {
+        #expect(RevealPacing.developDuration < RevealPacing.viewingDuration / 2)
     }
 
     @Test("the hold delay is short enough to feel instant but longer than a tap")
