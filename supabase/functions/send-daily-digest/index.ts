@@ -17,8 +17,22 @@
 //
 // Deploy:
 //   supabase functions deploy send-daily-digest --no-verify-jwt
-// Schedule (Dashboard → Edge Functions → Schedules, or pg_cron): every 1 hour
 // Requires: supabase/migrations/2026-08-03_daily_digest_state.sql
+//
+// SCHEDULED (pg_cron job `flim-daily-digest`):  0 14-23,0-1 * * *
+//   Hourly, but only between 14:00 and 01:00 UTC — roughly 10am to 9pm US Eastern. The other two
+//   push functions run every minute because they're reacting to something the user just did; this
+//   one initiates contact, so the hour it fires is the hour someone's phone buzzes. Since each
+//   person gets at most one digest per DIGEST_INTERVAL_HOURS, restricting WHEN the job runs is
+//   what keeps a digest from landing at 4am: the first eligible run after their window expires is
+//   always inside daytime.
+//
+//   The window assumes a US-Eastern-weighted user base, which is true today and won't stay true.
+//   The proper fix is a per-user timezone (or just the hour they usually open the app) and a
+//   send-window check per recipient; until then this is a blunt instrument that errs toward not
+//   waking anyone up. To change it:
+//     SELECT cron.unschedule('flim-daily-digest');
+//     SELECT cron.schedule('flim-daily-digest', '<cron>', $$ SELECT net.http_post(url := '<fn url>'); $$);
 //
 // Uses the SAME APNs secrets as the other push functions (APNS_KEY_ID, APNS_TEAM_ID,
 // APNS_PRIVATE_KEY, APNS_BUNDLE_ID, APNS_ENVIRONMENT).
