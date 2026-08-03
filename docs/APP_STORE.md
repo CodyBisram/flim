@@ -190,33 +190,37 @@ These are 6.9" device captures (1320x2868 pixels) ready for App Store Connect.
 
 ## Reviewer notes (App Store Connect → App Review Information)
 
-> ## ⚠️ SUBMISSION BLOCKER: there is no way for a reviewer to sign in
+> ## App Review sign-in (implemented, needs one manual step)
 >
-> Verified against the current source: `AuthService` contains no reviewer path, no fixed code, no
-> allowlisted email. FLIM is invite-only and sign-in is email OTP, so a reviewer who installs the
-> build reaches the email screen and stops there. **Apple reviews every update, not just the
-> first**, and an app a reviewer cannot get into is rejected on sight. 1.0 passed because it
-> shipped a fixed-code branch that was deliberately stripped after approval.
+> FLIM is invite-only and signs in with an emailed code, so a reviewer has no inbox and no invite
+> and would otherwise dead-end on the email screen. **Apple reviews every update, not just the
+> first.** 1.0 solved this with a hardcoded code that was stripped after approval.
 >
-> This is not a copy problem; it has to be built and shipped in the submitted binary, so it
-> gates the whole submission. Pick one:
+> 1.2 replaces it: entering **`review@flim-app.com`** on the email screen opens a password sheet
+> instead of mailing a code. Every other address keeps the invite check and the emailed code,
+> unchanged.
 >
-> 1. **Allowlist a reviewer email backed by a real inbox** (recommended). Create a dedicated
->    mailbox, allowlist it so it skips the invite requirement, and put the mailbox credentials in
->    App Review Information. The normal OTP flow then just works, nothing fake ships, and access
->    is revoked by deleting the account. Costs one small change in `AuthService` plus a mailbox.
-> 2. **Re-add a scoped, time-boxed fixed-code branch** for this submission and strip it after.
->    Fastest, and it means shipping a hardcoded credential in a public binary. Only if 1 is not
->    possible before submitting.
-> 3. **A read-only demo mode** needing no account. Cleanest for reviewers, most work, and it is a
->    new user-facing surface in a release whose whole point is stability. Not for 1.2.
+> The **address** is in the binary, because it is what the gate compares against, and an address is
+> not a credential. The **password** is not: it lives in Supabase Auth and in the App Review
+> Information box below. Revoking access means changing that password, no app update required.
 >
-> **Recommendation: option 1.** Whichever you pick, fill in the Sign-in block below and sign in
-> once yourself with that exact flow before submitting.
+> ### ⚠️ Do this before submitting (once)
+>
+> 1. Supabase Dashboard → **Authentication → Users → Add user**
+> 2. Email `review@flim-app.com`, set a strong password, tick **Auto Confirm User**
+> 3. Install the build, enter that address, sign in with the password, and **set a username**
+>    so the reviewer lands in the app rather than on the username screen
+> 4. Follow a test account and create a roll with a few photos, so the app is not empty
+> 5. Paste the password into App Review Information, in the Sign-in block below
+>
+> Steps 3 and 4 matter: without them a reviewer signs in successfully and sees an empty app,
+> which reads as broken. Do not skip step 3, the reviewer should never have to invent a username.
 
 > **FLIM is invite-only.** To demo the app:
 >
-> **Sign-in:** *(fill in per the decision above)*
+> **Sign-in:** Enter `review@flim-app.com` on the first screen. A password prompt appears
+> (this account signs in by password rather than the emailed code the app normally uses).
+> Password: **_______________** ← paste before submitting.
 >
 > **What to check:**
 > - **Camera:** Tap the shutter to take a photo. Personal shots develop immediately and appear in the Darkroom; shots taken into a shared roll develop together 12 hours after the roll was created.
@@ -228,9 +232,13 @@ These are 6.9" device captures (1320x2868 pixels) ready for App Store Connect.
 >
 > **Account access:** The reviewer account has full functionality. Photos uploaded by the reviewer are visible in the Darkroom and deletable via the ••• menu. The account can be created/deleted between review cycles; accounts older than 30 days with no posts are auto-deleted.
 
-**Setup before submission:**
-1. Establish a reviewer sign-in path (see the warning above) and write the exact steps into the Sign-in block.
-2. Sign in once yourself with that flow to set the username and confirm it works end-to-end.
-3. Pre-seed test data (optional but recommended): follow a test account from the review account, create a roll, take a few photos so the reviewer sees a non-empty app.
+**Setup before submission:** see the numbered list in the App Review sign-in block above. The
+code is shipped; what remains is creating the Supabase user, setting a username on it, seeding a
+little content, and pasting the password into App Review Information.
 
-**History:** 1.0 shipped with a fixed-code branch in `AuthService` gated on the exact email `review@flim-app.com` (that email skipped the OTP send; the code `482915` signed in via a password credential derived in-app). It was removed after approval so no hardcoded credential ships in the public binary. The matching Supabase Auth user should be deleted too if it still exists.
+**History:** 1.0 shipped a fixed-code branch in `AuthService` gated on `review@flim-app.com`,
+where the code `482915` was itself in the binary and extractable with `strings`. It was removed
+after approval. 1.2's replacement keeps the same address and the same "email plus password" shape
+a reviewer expects, but the password is server-side, so the shipped binary contains no usable
+credential. If the 1.0-era Supabase user still exists, reset its password rather than deleting it,
+so the address stays stable across submissions.

@@ -53,6 +53,51 @@ final class AuthService {
         await listenForAuthChanges()
     }
 
+    // MARK: - App Review sign-in
+    //
+    // FLIM is invite-only and signs in with an emailed code, so App Review cannot get in on its
+    // own: a reviewer reaches the email screen and stops. Apple reviews EVERY update, not just the
+    // first, and an app a reviewer can't enter is rejected. 1.0 shipped a hardcoded code branch to
+    // solve this, which was stripped after approval, leaving nothing for 1.2.
+    //
+    // This replaces that with one address that signs in by PASSWORD instead of a mailed code.
+    //
+    // What is in the binary: the address. An email address is not a credential, and it has to be
+    // here anyway because it is what the gate compares against.
+    //
+    // What is NOT in the binary: the password. It lives in Supabase Auth and in App Review
+    // Information. `strings` on the shipped app yields an address and nothing usable, unlike 1.0
+    // where the code itself was extractable. Revoking access is changing that password.
+    //
+    // The gate is the security-relevant part. Password sign-in is offered for this ONE address and
+    // no other, so it never becomes a way to guess passwords against real accounts; every other
+    // email keeps the invite check plus emailed code, untouched.
+
+    /// The single address permitted to sign in with a password.
+    static let reviewerEmail = "review@flim-app.com"
+
+    /// Whether `email` is the App Review address. `nonisolated` so it is callable from anywhere,
+    /// including tests, without hopping to the main actor for a string comparison.
+    nonisolated static func isReviewerEmail(_ email: String) -> Bool {
+        email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == reviewerEmail
+    }
+
+    /// Signs the App Review account in with a password.
+    ///
+    /// Re-checks the address rather than trusting the caller. The UI only offers this path for the
+    /// reviewer address, but a guard that exists in one place is a guard that moves when the UI is
+    /// refactored, and the whole safety argument rests on this being unreachable for real accounts.
+    func signInWithPassword(email: String, password: String) async throws {
+        let normalized = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard Self.isReviewerEmail(normalized) else { throw AuthError.notInvited }
+        try await supabase.auth.signIn(email: normalized, password: password)
+        let session = try await supabase.auth.session
+        isResolvingProfile = true
+        isAuthenticated = true
+        currentUser = try? await fetchUserProfile(id: session.user.id)
+        isResolvingProfile = false
+    }
+
     // MARK: - Email OTP
 
     func sendOTP(email: String) async throws {

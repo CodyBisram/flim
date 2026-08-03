@@ -6,6 +6,8 @@ struct EmailAuthView: View {
     @State private var isSending = false
     @State private var error: String?
     @State private var showOTP = false
+    /// App Review signs in with a password instead of a mailed code. See AuthService.
+    @State private var showReviewerSignIn = false
     @ScaledMetric private var subtitleSize = 15
 
     // Invite-code redemption, revealed inline when `email` fails the invite gate.
@@ -73,6 +75,9 @@ struct EmailAuthView: View {
             .padding(.bottom, 40)
         }
         .navigationBarHidden(true)
+        .sheet(isPresented: $showReviewerSignIn) {
+            ReviewerSignInSheet(email: email)
+        }
         .navigationDestination(isPresented: $showOTP) {
             OTPView()
         }
@@ -133,6 +138,14 @@ struct EmailAuthView: View {
         isSending = true
         error = nil
         do {
+            // The App Review account signs in with a password rather than an emailed code: a
+            // reviewer has no inbox for this address and no invite, so the normal flow dead-ends
+            // for them. Checked before sendOTP so the invite gate is never even consulted.
+            if AuthService.isReviewerEmail(email) {
+                showReviewerSignIn = true
+                isSending = false
+                return
+            }
             try await auth.sendOTP(email: email)
             showOTP = true
         } catch AuthError.notInvited {
