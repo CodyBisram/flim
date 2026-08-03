@@ -209,18 +209,25 @@ struct RollRevealView: View {
     }
 
     private func segments(currentFill: CGFloat) -> some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 3) {
             ForEach(deck.indices, id: \.self) { i in
                 GeometryReader { geo in
                     ZStack(alignment: .leading) {
-                        Capsule().fill(Color.white.opacity(0.22))
-                        Capsule().fill(FlimTheme.accent)
+                        Capsule().fill(Color.white.opacity(0.28))
+                        // White, not the FLIM accent. The bar sits on top of arbitrary
+                        // photographs, and amber on a warm, bright print, which is most of what
+                        // this app produces, is exactly where the accent loses contrast. White is
+                        // also what everyone already reads as a story timer without being told.
+                        Capsule().fill(Color.white)
                             .frame(width: geo.size.width * segmentFill(i, current: currentFill))
                     }
                 }
-                .frame(height: 3)
+                .frame(height: 2.5)
             }
         }
+        // A drop shadow rather than a scrim: the bar has to stay legible over a blown-out sky
+        // without putting a dark band across the top of every photograph.
+        .shadow(color: .black.opacity(0.35), radius: 2, y: 1)
     }
 
     private func segmentFill(_ i: Int, current: CGFloat) -> CGFloat {
