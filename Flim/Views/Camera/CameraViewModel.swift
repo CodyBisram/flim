@@ -241,10 +241,33 @@ final class CameraViewModel: NSObject {
             session.sessionPreset = .photo
             return
         }
-        // Only cap the ceiling at 60fps; leave the floor at the format's own default so
-        // auto exposure can still legitimately drop the frame rate in low light (expected
-        // behavior, not fought here).
         device.activeVideoMinFrameDuration = CMTime(value: 1, timescale: Int32(targetFPS))
+        // Floor the frame rate as well as capping it.
+        //
+        // This used to leave the floor at the format's default, on the reasoning that auto
+        // exposure dropping the frame rate in low light is expected behaviour. It is expected, and
+        // it is also exactly what was reported as the viewfinder "degrading" in a dark room: AE
+        // lengthens the exposure per frame to gather light, which drops the preview to a slideshow
+        // AND makes it visibly noisier, with no indicator to explain why. Reported as looking like
+        // a night mode nobody asked for.
+        //
+        // A floor of 24fps means AE reaches for gain instead of unbounded exposure time, so the
+        // preview stays smooth. It costs some preview brightness in near-darkness, which is the
+        // right trade for a camera whose viewfinder is the product: a dim but fluid preview reads
+        // as a camera, a bright juddering one reads as a broken app.
+        //
+        // PREVIEW ONLY. `activeVideoMaxFrameDuration` bounds the video stream; the still capture
+        // sets its own exposure and is untouched by this, so photo quality in the dark is exactly
+        // as before.
+        let floorFPS = 24.0
+        if target.videoSupportedFrameRateRanges.contains(where: { $0.minFrameRate <= floorFPS }) {
+            device.activeVideoMaxFrameDuration = CMTime(value: 1, timescale: Int32(floorFPS))
+        }
+        // Low-light boost is a gain-based brightening of the video stream that visibly adds noise.
+        // Never configured before, so this pins the default rather than trusting it to stay off.
+        if device.isLowLightBoostSupported {
+            device.automaticallyEnablesLowLightBoostWhenAvailable = false
+        }
         device.unlockForConfiguration()
 
         if let maxDims = target.supportedMaxPhotoDimensions.max(by: { $0.width * $0.height < $1.width * $1.height }) {

@@ -286,7 +286,14 @@ struct PostDetailView: View {
                                 }
                             }
                         }
-                        Text(info.comment.body).font(.system(size: 14)).foregroundStyle(FlimTheme.textSecondary)
+                        MentionText(text: info.comment.body, color: FlimTheme.textSecondary) { username in
+                            Haptics.tap()
+                            Task {
+                                if let profile = await feed.fetchProfile(username: username) {
+                                    route = ProfileRoute(id: profile.id)
+                                }
+                            }
+                        }
                     }
                     Spacer()
                     // Heart the comment
@@ -308,6 +315,7 @@ struct PostDetailView: View {
 
     private var commentInput: some View {
         VStack(spacing: 8) {
+            MentionSuggestions(draft: $draft)
             HStack(spacing: 10) {
                 TextField("Add a comment…", text: $draft, axis: .vertical)
                     .lineLimit(1...3)

@@ -76,7 +76,10 @@ struct PhotoCommentsSheet: View {
                         }
                     }
                 }
-                Text(comment.body).font(.system(size: 14)).foregroundStyle(FlimTheme.textSecondary)
+                // Rendered as mentions, but note a roll photo's comments live in photo_comments,
+                // which the push function does not scan for mentions, so an @ here highlights and
+                // links without notifying. Flagged rather than silently half-working.
+                MentionText(text: comment.body, color: FlimTheme.textSecondary) { _ in }
             }
             Spacer()
         }
@@ -84,6 +87,7 @@ struct PhotoCommentsSheet: View {
 
     private var composer: some View {
         VStack(spacing: 8) {
+            MentionSuggestions(draft: $draft)
             HStack(spacing: 10) {
                 TextField("Add a comment…", text: $draft, axis: .vertical)
                     .lineLimit(1...4)

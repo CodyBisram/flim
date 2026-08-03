@@ -480,6 +480,7 @@ struct FeedPostCard: View {
             }
 
             // Inline comment composer
+            MentionSuggestions(draft: $draft)
             HStack(spacing: 8) {
                 TextField("Add a comment…", text: $draft, axis: .vertical)
                     .lineLimit(1...3)

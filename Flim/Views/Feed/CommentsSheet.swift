@@ -15,7 +15,6 @@ struct CommentsSheet: View {
     @State private var sending = false
     @State private var loaded = false
     @State private var route: ProfileRoute?
-    @State private var mentionMatches: [UserProfile] = []
     @FocusState private var focused: Bool
 
     // Chronological (oldest first) so new comments land at the bottom, right above the composer.
@@ -42,7 +41,7 @@ struct CommentsSheet: View {
                             .padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 8)
                         }
                     }
-                    mentionSuggestions
+                    MentionSuggestions(draft: $draft)
                     composer
                 }
             }
@@ -55,27 +54,6 @@ struct CommentsSheet: View {
         .presentationDetents([.fraction(0.75), .large])
         .presentationDragIndicator(.visible)
         .task { await reload() }
-        .onChange(of: draft) { _, new in
-            // Suggestions are driven by what's being typed RIGHT NOW, so they vanish as soon as
-            // the mention is finished rather than lingering over the next word.
-            guard let query = mentionQuery(in: new), let uid = auth.currentUser?.id else {
-                withAnimation(.snappy(duration: 0.2)) { mentionMatches = [] }
-                return
-            }
-            Task {
-                // A just-typed "@" has nothing to search on (searchProfiles returns nothing for an
-                // empty query), so it offers the people you follow instead: the likeliest mention
-                // targets, and it means the picker is useful from the first keystroke rather than
-                // the second.
-                let matches = query.isEmpty
-                    ? await feed.fetchFollowingProfiles(of: uid)
-                    : await feed.searchProfiles(query: query, excluding: uid)
-                // The draft can move on while that query is in flight; only apply the result if
-                // it still describes what's on screen.
-                guard mentionQuery(in: draft) == query else { return }
-                withAnimation(.snappy(duration: 0.2)) { mentionMatches = Array(matches.prefix(8)) }
-            }
-        }
     }
 
     private func commentRow(_ info: CommentInfo) -> some View {
@@ -135,36 +113,6 @@ struct CommentsSheet: View {
             if let profile = await feed.fetchProfile(username: username) {
                 route = ProfileRoute(id: profile.id)
             }
-        }
-    }
-
-    /// People matching the mention being typed. Sits above the composer while a mention is in
-    /// progress and disappears the moment it isn't, so it never competes with the comment list.
-    @ViewBuilder
-    private var mentionSuggestions: some View {
-        if !mentionMatches.isEmpty {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(mentionMatches) { profile in
-                        Button {
-                            Haptics.tap()
-                            draft = completingMention(in: draft, with: profile.username ?? "")
-                        } label: {
-                            HStack(spacing: 6) {
-                                AvatarView(path: profile.avatarPath, name: profile.username, size: 22)
-                                Text(profile.handle)
-                                    .font(.system(size: 13, weight: .medium))
-                                    .foregroundStyle(.white)
-                            }
-                            .padding(.horizontal, 8).padding(.vertical, 5)
-                            .background(Color.white.opacity(0.1), in: Capsule())
-                        }
-                    }
-                }
-                .padding(.horizontal, 16)
-            }
-            .frame(height: 44)
-            .transition(.opacity)
         }
     }
 
