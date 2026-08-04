@@ -165,7 +165,11 @@ struct SquareCropSheet: View {
     /// orientation, and `CGImage.cropping(to:)` works in raw pixel space that ignores it. Without
     /// this the crop would come out rotated relative to what the user framed. Downscaling first
     /// keeps a 12MP HEIC from being held in memory at full size for a 512px avatar.
-    private static func workingImage(from data: Data) -> UIImage? {
+    /// `nonisolated` because it is called from a detached task, deliberately: it decodes and
+    /// redraws a full-resolution image and has no business doing that on the main actor. Views are
+    /// `@MainActor` by default, so without this the call crosses isolation, which is a warning in
+    /// Swift 5 and an ERROR in Swift 6. It touches no view state, only its argument.
+    nonisolated private static func workingImage(from data: Data) -> UIImage? {
         let source = InstantFilmProcessor.rendition(from: data, longEdge: 2048, quality: 0.95) ?? data
         guard let decoded = UIImage(data: source) else { return nil }
         guard decoded.imageOrientation != .up || decoded.scale != 1 else { return decoded }

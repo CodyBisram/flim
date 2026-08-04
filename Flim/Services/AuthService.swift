@@ -79,7 +79,12 @@ final class AuthService {
     // email keeps the invite check plus emailed code, untouched.
 
     /// The single address permitted to sign in with a password.
-    static let reviewerEmail = "review@flim-app.com"
+    ///
+    /// `nonisolated` because `isReviewerEmail` below is, and reads this. The class is `@MainActor`,
+    /// so without this the read crosses isolation: a warning in Swift 5 and an ERROR in Swift 6.
+    /// An immutable string constant is safe to read from anywhere, which is what makes the
+    /// annotation honest rather than a silencer.
+    nonisolated static let reviewerEmail = "review@flim-app.com"
 
     /// Whether `email` is the App Review address. `nonisolated` so it is callable from anywhere,
     /// including tests, without hopping to the main actor for a string comparison.
