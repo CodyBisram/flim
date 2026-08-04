@@ -115,4 +115,19 @@ struct AccountEpochTests {
         #expect(sharedList == ["B's roll"])
         #expect(fetched == "A's roll")
     }
+
+    @Test("a generation must be captured AFTER the bump that belongs to it")
+    func captureFollowsItsOwnBump() {
+        // A sign-in bumps the epoch itself, so capturing before that bump means the sign-in
+        // invalidates its own generation and its guard can never pass. That shipped in
+        // signInWithPassword and verifyOTP: isResolvingProfile was never lowered by those paths,
+        // and the app only avoided hanging on the splash screen because the auth-state listener
+        // happened to clear it on a redundant pass.
+        let tooEarly = AccountEpoch.current
+        AccountEpoch.bump()                       // the sign-in's own account change
+        let correct = AccountEpoch.current
+
+        #expect(!AccountEpoch.isCurrent(tooEarly), "capturing before the bump self-invalidates")
+        #expect(AccountEpoch.isCurrent(correct), "capturing after the bump is usable")
+    }
 }

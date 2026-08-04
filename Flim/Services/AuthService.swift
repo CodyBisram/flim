@@ -129,9 +129,12 @@ final class AuthService {
         let normalized = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard Self.isReviewerEmail(normalized) else { throw AuthError.notInvited }
         try await supabase.auth.signIn(email: normalized, password: password)
-        let epoch = AccountEpoch.current
         let session = try await supabase.auth.session
         noteSession(session.user.id)
+        // Captured AFTER noteSession, which is the call that bumps. Capturing before it means
+        // this sign-in's own bump immediately invalidates its own generation, so the guard below
+        // can never pass and the flag is never lowered.
+        let epoch = AccountEpoch.current
         isResolvingProfile = true
         isAuthenticated = true
         await refreshCurrentUser(id: session.user.id)
@@ -184,8 +187,8 @@ final class AuthService {
         guard let email = pendingEmail else { return }
         try await supabase.auth.verifyOTP(email: email, token: token, type: .email)
         let session = try await supabase.auth.session
-        let epoch = AccountEpoch.current
         noteSession(session.user.id)
+        let epoch = AccountEpoch.current   // after the bump, see signInWithPassword
         isResolvingProfile = true
         isAuthenticated = true
         await refreshCurrentUser(id: session.user.id)
