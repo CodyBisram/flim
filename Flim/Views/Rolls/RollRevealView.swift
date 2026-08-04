@@ -68,11 +68,41 @@ struct RollRevealView: View {
     @State private var holdCancelled = false
     @State private var profileRoute: ProfileRoute?
 
+    // MARK: - Opening card
+    //
+    // The reveal opened cold on photo 1, behind a spinner. Two problems in one: nothing said what
+    // you were about to see, and the wait was represented by the one thing that cannot develop
+    // into anything. The cover card solves both, because it needs no network (the caller already
+    // passed the photos) and can therefore be on screen instantly, with the deck loading behind
+    // it. The anticipation IS the loading state.
+
+    @State private var showCover = true
+    /// The deck is loaded (or known to be empty) and the show can actually start.
+    @State private var deckReady = false
+    /// The minimum beat has been served.
+    @State private var beatElapsed = false
+    /// Someone tapped to get on with it.
+    @State private var viewerTappedCover = false
+    /// When the card came on screen, so the fill line measures the real elapsed beat rather than
+    /// restarting whenever SwiftUI rebuilds the view.
+    @State private var coverAppearedAt: Date?
+
+    // MARK: - Closing actions
+    @State private var savingAll = false
+    @State private var shareImages: [UIImage] = []
+    @State private var showShareAll = false
+    @State private var saveAllError: String?
+    /// The alert is a warning, not a failure: open the sheet once it is dismissed. Presenting
+    /// both at once means SwiftUI shows one and silently drops the other.
+    @State private var shareAfterAlert = false
+
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
 
-            if isEmpty {
+            if showCover {
+                coverCard
+            } else if isEmpty {
                 emptyState
             } else if showSummary {
                 summary
@@ -433,8 +463,81 @@ struct RollRevealView: View {
                     .background(FlimTheme.accent, in: Capsule())
             }
             .padding(.top, 12)
+
+            // The one thing people actually want at this moment, offered at this moment.
+            //
+            // It already existed, buried in the roll's ⋯ menu two screens away, which is a fine
+            // place for a utility and the wrong place for an impulse. You have just watched the
+            // whole roll; "keep these" is the feeling, and making someone go find it is how the
+            // feeling gets lost. Nearly free here: every frame was fetched to be shown, so this
+            // is reading the cache the slideshow just filled.
+            if !deck.isEmpty {
+                Button {
+                    saveAll()
+                } label: {
+                    HStack(spacing: 7) {
+                        if savingAll {
+                            ProgressView().tint(Color(white: 0.7)).controlSize(.small)
+                        } else {
+                            Image(systemName: "square.and.arrow.down").font(.system(size: 13))
+                        }
+                        Text(savingAll ? "Getting them ready" : "Save all to Camera Roll")
+                            .font(.system(size: 14, weight: .medium))
+                    }
+                    .foregroundStyle(Color(white: 0.7))
+                }
+                .disabled(savingAll)
+                .padding(.top, 4)
+            }
         }
         .transition(.opacity)
+        .sheet(isPresented: $showShareAll) { ActivityView(items: shareImages) }
+        .alert("Save all", isPresented: Binding(get: { saveAllError != nil },
+                                                set: { if !$0 { saveAllError = nil } })) {
+            Button("OK", role: .cancel) {
+                if shareAfterAlert {
+                    shareAfterAlert = false
+                    showShareAll = true
+                }
+            }
+        } message: {
+            Text(saveAllError ?? "")
+        }
+    }
+
+    /// Collects every frame in the roll and hands them to the share sheet.
+    ///
+    /// Reads through `ImageLoader`, which means the frames already shown come straight from cache
+    /// and only a skipped tail costs anything.
+    private func saveAll() {
+        guard !savingAll else { return }
+        savingAll = true
+        saveAllError = nil
+        shareAfterAlert = false
+        Haptics.tap()
+        Task {
+            var images: [UIImage] = []
+            for photo in deck {
+                guard let url = urls[photo.viewPath] else { continue }
+                if let image = await ImageLoader.fetch(url: url, maxPixel: 1600, scale: displayScale) {
+                    images.append(image)
+                }
+            }
+            shareImages = images
+            savingAll = false
+            if images.isEmpty {
+                // Silence here is indistinguishable from a broken button.
+                Haptics.error()
+                saveAllError = "Couldn't load the photos. Check your connection and try again."
+            } else {
+                if images.count < deck.count {
+                    saveAllError = "Only \(images.count) of \(deck.count) photos could be loaded. Saving those now."
+                    shareAfterAlert = true
+                } else {
+                    showShareAll = true
+                }
+            }
+        }
     }
 
     /// Shown when every shot in the deck was deleted (either before this member opened the
@@ -483,6 +586,8 @@ struct RollRevealView: View {
         }
         guard !deck.isEmpty else {
             isEmpty = true
+            deckReady = true
+            beginIfReady()
             return
         }
         // Sign the display paths AND the thumbnails in one batched call, so the progressive first
@@ -516,14 +621,119 @@ struct RollRevealView: View {
         // animation to arrive in, and only has to beat the blur clearing, not the frame appearing.
         // Bounded to a sliding window, see prefetchAhead.
         prefetchAhead(from: 0)
-        // The reveal is the app's marquee moment, mark it with the chime (SoundFX gates on the
-        // sound-effects setting itself). Previously only the lesser Darkroom sparkle overlay
-        // played it; the actual story reveal was silent.
-        SoundFX.reveal()
         // Record that we opened it and learn the group's progress, shown on the summary card.
         if let uid = auth.currentUser?.id {
             presence = await rollService.recordRevealView(rollId: rollId, userId: uid)
         }
+        deckReady = true
+        beginIfReady()
+    }
+
+    // MARK: - Opening card
+
+    /// The beat before the first frame. Also the loading state, deliberately.
+    private var coverCard: some View {
+        VStack(spacing: 0) {
+            Spacer()
+
+            // An eyebrow, because the card has to answer "why am I looking at this" before it
+            // answers "what is it". Without it the title reads as a splash screen.
+            Text("DEVELOPED")
+                .font(.system(size: 11, weight: .semibold))
+                .tracking(3.5)
+                .foregroundStyle(FlimTheme.accent)
+
+            Text(rollName)
+                .font(.system(size: 34, weight: .ultraLight))
+                .tracking(2)
+                .foregroundStyle(.white)
+                .multilineTextAlignment(.center)
+                .lineLimit(3)
+                .minimumScaleFactor(0.6)
+                .padding(.horizontal, 32)
+                .padding(.top, 14)
+
+            // A rule under the title, the width of the text above it. Gives the block an edge to
+            // sit on, so the type is composed rather than floating in the middle of black.
+            Rectangle()
+                .fill(Color.white.opacity(0.18))
+                .frame(width: 44, height: 1)
+                .padding(.top, 20)
+
+            Text(cover.metaLine)
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(Color(white: 0.82))
+                .padding(.top, 20)
+
+            if let dateLine = cover.dateLine() {
+                Text(dateLine)
+                    .font(.system(size: 13))
+                    .foregroundStyle(Color(white: 0.45))
+                    .padding(.top, 5)
+            }
+
+            Spacer()
+
+            // Honest about the wait: it fills over the beat, and if the deck is slow it sits at
+            // the end rather than completing, so the card never promises a show it cannot start.
+            coverProgress
+                .padding(.bottom, 92)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            viewerTappedCover = true
+            beginIfReady()
+        }
+        .transition(.opacity)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(rollName). \(cover.metaLine). \(cover.dateLine() ?? "") Tap to begin.")
+        .task {
+            coverAppearedAt = .now
+            // The chime belongs here, at the moment the reveal becomes an event, not three
+            // network round trips later when the first frame happens to be ready.
+            SoundFX.reveal()
+            try? await Task.sleep(for: .seconds(RevealCover.holdDuration))
+            beatElapsed = true
+            beginIfReady()
+        }
+    }
+
+    @ViewBuilder
+    private var coverProgress: some View {
+        let width: CGFloat = 120
+        ZStack(alignment: .leading) {
+            Capsule().fill(Color.white.opacity(0.16)).frame(width: width, height: 2)
+            TimelineView(.periodic(from: .now, by: 1.0 / 30.0)) { tl in
+                Capsule()
+                    .fill(FlimTheme.accent)
+                    .frame(width: width * coverFill(at: tl.date), height: 2)
+            }
+        }
+        .accessibilityHidden(true)
+    }
+
+    /// Cached so the card is not rebuilding a Set on every timeline tick.
+    private var cover: RevealCover { RevealCover(photos: deck.isEmpty ? photos : deck) }
+
+    private func coverFill(at date: Date) -> CGFloat {
+        guard let started = coverAppearedAt else { return 0 }
+        let elapsed = date.timeIntervalSince(started)
+        return min(1, max(0, elapsed / RevealCover.holdDuration))
+    }
+
+    /// Starts the show once the deck is there and the beat has been served or skipped.
+    ///
+    /// Called from three places (the beat timer, a tap, and the deck finishing) because any of
+    /// them can be last, and the guard makes the other two harmless.
+    private func beginIfReady() {
+        guard showCover,
+              RevealCover.canBegin(deckReady: deckReady,
+                                   beatElapsed: beatElapsed,
+                                   viewerTapped: viewerTappedCover)
+        else { return }
+        withAnimation(.easeOut(duration: reduceMotion ? 0 : 0.45)) { showCover = false }
+        guard !isEmpty else { return }
         develop()
     }
 
@@ -571,6 +781,8 @@ struct RollRevealView: View {
         deck.remove(at: deadIndex)
         guard !deck.isEmpty else {
             isEmpty = true
+            deckReady = true
+            beginIfReady()
             return
         }
         if index >= deck.count { index = deck.count - 1 }
