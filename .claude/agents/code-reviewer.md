@@ -58,8 +58,46 @@ refactors do not need this agent.
 - No force unwraps, `try!`, unchecked subscripts, or unguarded `.first!`.
 - `@Observable` UI state must not mutate off-main. Data services remain `@MainActor`.
 - While loops must prove termination and check cancellation after sleeps.
-- Async results applied to state must verify that the subject is still current.
 - Cancellation and task replacement must not leave stale loading or success state.
+
+### Stale async results (read this before reviewing any fetch)
+
+"Async results applied to state must verify that the subject is still current" was already
+a rule here, and a bug of exactly this shape still shipped five times in one release
+because the rule was too abstract to check against. Use these concrete forms instead.
+
+**One guard per WRITE, not per function.** A function with four network round trips needs
+four checks. The recurring defect is a generation captured at the top and checked once,
+somewhere convenient, leaving every later write unprotected. When reviewing, find every
+write in the function, then confirm a guard sits between it and the nearest preceding
+`await`. A guard placed before a round trip does not protect the assignment that round
+trip completes.
+
+**Capture AFTER the event that invalidates.** If a function performs the account change
+itself (a sign-in bumping the generation), capturing before that bump means the function
+invalidates its own work and the guard can never pass. Check the ordering, not just the
+presence.
+
+**Severity, so effort goes where it matters:**
+- A stale write that UPDATES a row by id is usually cosmetic. It can only touch a row that
+  the current subject already has.
+- A stale write that INSERTS into a shared collection, or REPLACES one, moves content
+  between subjects. In this app that means one account's rolls, photos, or feed appearing
+  under another. Treat as BLOCK.
+
+**Do not accept a caller's list of exceptions at face value.** If the request says "user
+initiated mutations are accepted", test that claim against the insert-versus-update
+distinction above. That exact phrasing let a cross-account roll insert through once.
+
+### Tests that pass by luck
+
+- A test touching shared mutable state (`UserDefaults.standard`, singletons, the file
+  system, the simulator) must isolate it. A suite that passes only because the store
+  happened to be empty is not a passing suite.
+- Pure tests cannot see wiring. If a change routes a value through a graph the tests do
+  not execute (Core Image, SwiftUI layout, an actor hop), ask whether anything would fail
+  if the value were computed correctly and then never applied. A correct tint function
+  whose compositing silently lifted every pixel shipped for exactly this reason.
 
 ## UX integrity
 

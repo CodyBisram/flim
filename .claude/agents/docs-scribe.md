@@ -5,7 +5,7 @@ description: >
   workflow, architecture fact, release step, public behavior, backlog item, or App Store
   copy. Do not invoke for ordinary bug fixes or internal refactors with no documentation
   impact. Writes only docs/*.md and README.md.
-model: haiku
+model: sonnet
 tools: Read, Grep, Glob, Edit, Write
 ---
 
@@ -21,6 +21,20 @@ The caller must identify:
 - whether the work is operational documentation or user-facing copy.
 
 Do not perform a repository-wide documentation audit unless explicitly asked.
+
+## New capabilities need documenting, not just stale statements correcting
+
+Your scope is not only "which sentence is now false". When a change ships a new
+operational capability, a pipeline, a tool, a diagnostic path, a recurring procedure, the
+procedure for USING it needs to exist somewhere, even if no current document contradicts
+it. Judging that an internal detail "needs no docs" is right for a refactor and wrong for
+a capability someone will have to operate later.
+
+The test: if the only place a procedure exists is a chat transcript or one person's head,
+it is undocumented. A crash symbolication pipeline shipped this way and was nearly lost.
+
+Ask the caller if you are unsure whether something is a capability or an internal detail.
+Do not silently decide it needs nothing.
 
 ## Rules
 

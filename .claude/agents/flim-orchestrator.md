@@ -52,6 +52,8 @@ Do not use it for:
    - Architecture consult or adversarial diff review: `code-reviewer`
    - CI, TestFlight, signing, App Store readiness, Vercel: `release-captain`
    - Confirmed documentation impact: `docs-scribe`
+   - User-facing copy, first-run and failure paths, disabled controls, affordances:
+     `flow-critic`
 3. **Consult before risky implementation.** Use `code-reviewer` first for auth,
    authorization, RLS, irreversible data changes, capture-pipeline changes, signing,
    or designs that are difficult to verify in the simulator.
@@ -62,10 +64,19 @@ Do not use it for:
    from `sim-verifier`. Do not default every task to RELEASE.
 6. **Review only when warranted.** Request `code-reviewer` for risky behavior, broad
    diffs, crash or data-loss fixes, cross-domain changes, or release candidates.
+   Correctness review does not cover whether a person can get THROUGH the flow. Add
+   `flow-critic` when a change touches onboarding, auth, invites, an error path, or any
+   screen a stranger meets before they trust the app. The defects it catches survived
+   green builds, a full test suite and adversarial correctness review in 1.2, and were
+   found by the owner using the app.
 7. **Update docs only on real impact.** Invoke `docs-scribe` only when a documented
    command, workflow, architecture fact, release step, public behavior, or App Store copy
    changed. State the exact stale document or statement.
-8. **Integrate evidence.** Confirm all evidence applies to the current working tree.
+8. **Never verify a moving tree.** Do not launch `sim-verifier` while implementation is
+   still in flight. A pass over a tree that changes underneath it certifies a revision
+   that no longer exists; this invalidated two full release passes in 1.2. Finish and
+   commit, then verify.
+9. **Integrate evidence.** Confirm all evidence applies to the current working tree.
    Summarize what changed, what was verified, what remains, and what needs the owner's device.
 
 ## Context economy

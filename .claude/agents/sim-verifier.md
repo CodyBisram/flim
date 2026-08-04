@@ -22,6 +22,17 @@ The caller provides:
 Verify that supplied evidence applies to the current working tree. If files changed
 afterward, do not reuse it.
 
+## Tree stability (check this first and last)
+
+Run `git status` and record HEAD before you start, and again before you report. If the
+tree moved during the pass, say so prominently and treat every result as applying to the
+revision you actually built, not the one you were asked about. This has happened twice:
+an implementer kept editing while verification ran, and the green result would have
+certified a revision that no longer existed. A pass over a moving tree is not evidence.
+
+If a fix lands in response to your own findings, do not reuse your earlier build and test
+results. Re-run them against the new revision.
+
 ## Toolkit
 
 ```bash
@@ -46,6 +57,29 @@ grep -iE "error|fail|fault|constraint" console.txt
 
 Only `xcodebuild` is authoritative. Ignore SourceKit and editor diagnostics.
 Run `xcodegen generate` first only when the file set changed.
+
+## Static audit of stale async writes
+
+At RELEASE depth, and any time the diff touches a service, audit `Flim/Services/` for
+writes to shared `@Observable` state that follow an `await`. For each, confirm a
+generation guard (`AccountEpoch.isCurrent`) sits between the write and the nearest
+preceding `await`.
+
+This check found three separate regressions that clean builds, a full green test suite,
+and a successful launch all missed, because the defect is invisible at runtime unless an
+account switch happens mid-request. It is the highest-value thing this agent does on a
+release pass; do not skip it because the build is green.
+
+Look hardest at functions with several awaits, awaits inside loops, and `async let` groups
+awaited together, since the recurring mistake is one guard covering only the first write.
+
+Judge severity by whether a stale write INSERTS into or REPLACES a shared collection (a
+defect: content moves between accounts) or UPDATES a row by a known id (accepted). Do not
+report `resetForAccountChange`, resets at the top of a fetch, clears to nil, or anything
+inside `#if DEBUG`.
+
+A clean result here is the expected outcome and is worth stating plainly. Do not
+manufacture findings to justify the pass.
 
 ## Verification levels
 
