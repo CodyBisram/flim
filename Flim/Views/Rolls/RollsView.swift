@@ -108,12 +108,19 @@ struct RollsView: View {
     /// for the last third of the wait. Nothing server-side can restart it, so the app does, every
     /// time this list loads, which is the most-visited screen in the app.
     ///
-    /// Deliberately cheap in the common case: `isRunning` short-circuits before any shot count is
-    /// fetched, so a roll whose card is still alive costs nothing. Only a roll the system has
-    /// already ended pays for a round trip, which is exactly the case worth paying for.
+    /// This runs for every candidate, including rolls whose card is already live.
+    ///
+    /// It used to skip those, to avoid paying for a shot count that a running card supposedly did
+    /// not need. That was wrong, and visibly so: a running card then never received anything new,
+    /// so a changed accent or a shot taken since never reached the lock screen, and the only way
+    /// to update one was to open that specific roll, which syncs unconditionally.
+    ///
+    /// The cost is bounded by `maxConcurrent`, so it is at most two count queries on a screen
+    /// that already makes several round trips, and `sync` itself is a no-op when the state is
+    /// unchanged.
     private func refreshLiveActivities(userId: UUID) async {
         let candidates = RollLiveActivity.rollsNeedingActivity(rolls.rolls, revealAt: \.revealAt)
-        for roll in candidates where !RollLiveActivity.isRunning(roll.id) {
+        for roll in candidates {
             let shots = await photos.rollPhotoCount(rollId: roll.id, userId: userId)
             RollLiveActivity.sync(rollId: roll.id, rollName: roll.name, revealAt: roll.revealAt,
                                   shotCount: shots, developFrom: roll.createdAt)

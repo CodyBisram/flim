@@ -47,6 +47,22 @@ struct LiveActivityReachTests {
         #expect(RollLiveActivity.maxConcurrent <= 3, "past a couple this stops being a countdown")
     }
 
+    @Test("a roll already holding a card is still selected, not skipped")
+    func runningRollsStillSelected() {
+        // The regression this exists for: refreshLiveActivities skipped any roll whose card was
+        // already running, to save a shot-count query. A live card then never received anything
+        // new, so a changed accent or a shot taken since never reached the lock screen, and the
+        // only way to update one was to open that specific roll.
+        //
+        // rollsNeedingActivity picks what to sync; it must NOT also decide what is already fine.
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let rolls = [Fake(name: "developing", revealAt: now.addingTimeInterval(4 * 3600))]
+
+        let picked = RollLiveActivity.rollsNeedingActivity(rolls, now: now, revealAt: \.revealAt)
+        #expect(picked.map(\.name) == ["developing"],
+                "selection is about which rolls deserve a card, not which lack one")
+    }
+
     @Test("no rolls is not an error")
     func emptyIsFine() {
         #expect(RollLiveActivity.rollsNeedingActivity([Fake](), revealAt: \.revealAt).isEmpty)
