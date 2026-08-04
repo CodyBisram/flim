@@ -61,4 +61,58 @@ struct AccountEpochTests {
         #expect(!AccountEpoch.isCurrent(second))
         #expect(AccountEpoch.isCurrent(AccountEpoch.current))
     }
+
+    // MARK: - The shape every regression took
+    //
+    // Three separate reviews found the same defect three times, and it was never the counter: it
+    // was a guard placed somewhere in a function rather than immediately before each write it
+    // protects. These model the sequence a service performs so the RULE is asserted, not just the
+    // primitive.
+
+    @Test("a write guarded after a single round trip is skipped once the account changes")
+    func singleRoundTripIsProtected() {
+        var sharedState = "account A data"
+        let epoch = AccountEpoch.current
+
+        AccountEpoch.bump()   // stands in for the sign-out/sign-in that happens mid-request
+
+        if AccountEpoch.isCurrent(epoch) { sharedState = "stale write" }
+        #expect(sharedState == "account A data")
+    }
+
+    @Test("a function with TWO round trips needs TWO guards, not one")
+    func multipleRoundTripsNeedMultipleGuards() {
+        // This is the exact defect found in RollService.fetchRolls, FeedService.loadMoreFeed and
+        // RollService.createRoll: the generation was captured, one write was guarded, and a second
+        // write after a later await was not.
+        var firstWrite = "untouched"
+        var secondWrite = "untouched"
+        let epoch = AccountEpoch.current
+
+        // Round trip one completes while the account is still valid.
+        if AccountEpoch.isCurrent(epoch) { firstWrite = "written" }
+
+        AccountEpoch.bump()   // the switch happens between the two round trips
+
+        // Round trip two must be independently guarded; a guard checked before it does not help.
+        if AccountEpoch.isCurrent(epoch) { secondWrite = "written" }
+
+        #expect(firstWrite == "written")
+        #expect(secondWrite == "untouched", "the second write needs its own guard")
+    }
+
+    @Test("a value fetched under the old account can still be returned, just not published")
+    func staleResultMayBeReturnedButNotShared() {
+        // createRoll returns the roll it made (it really exists server-side and the caller may
+        // navigate to it) while declining to splice it into the shared list.
+        var sharedList: [String] = ["B's roll"]
+        let epoch = AccountEpoch.current
+        AccountEpoch.bump()
+
+        let fetched = "A's roll"
+        if AccountEpoch.isCurrent(epoch) { sharedList.insert(fetched, at: 0) }
+
+        #expect(sharedList == ["B's roll"])
+        #expect(fetched == "A's roll")
+    }
 }

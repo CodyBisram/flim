@@ -25,6 +25,11 @@ final class RollService {
     // MARK: - Create
 
     func createRoll(name: String, createdBy: UUID) async throws -> Roll {
+        // Two round trips before anything is written, and the write INSERTS into the shared list
+        // rather than updating a row by id, so a stale completion splices one account's roll into
+        // another account's Rolls tab. That is content leakage, not a cosmetic staleness, which is
+        // why this is guarded while a rename-by-id is not.
+        let epoch = AccountEpoch.current
         struct InsertRoll: Encodable {
             let name: String
             let inviteCode: String
@@ -51,6 +56,9 @@ final class RollService {
             .value
 
         try await joinRollDirect(rollId: roll.id, userId: createdBy)
+        // The roll itself is still returned: it genuinely exists server-side and the caller may
+        // want to navigate to it. Only the shared list is left alone.
+        guard AccountEpoch.isCurrent(epoch) else { return roll }
         rolls.insert(roll, at: 0)
         return roll
     }
@@ -58,6 +66,7 @@ final class RollService {
     // MARK: - Join by invite code
 
     func joinRoll(inviteCode: String, userId: UUID) async throws -> Roll {
+        let epoch = AccountEpoch.current
         struct JoinParams: Encodable { let p_code: String }
 
         do {
@@ -68,6 +77,7 @@ final class RollService {
                 .execute()
                 .value
 
+            guard AccountEpoch.isCurrent(epoch) else { return roll }
             if !rolls.contains(where: { $0.id == roll.id }) {
                 rolls.append(roll)
             }

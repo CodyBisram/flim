@@ -921,6 +921,7 @@ final class FeedService {
     private struct ActivityRaw { let kind: ActivityItem.Kind; let actorId: UUID; let date: Date; let postId: UUID? }
 
     func fetchActivity(userId: UUID) async -> [ActivityItem] {
+        let epoch = AccountEpoch.current
         // The three source branches (activity on your posts, new followers, tags of you) are
         // independent round-trip sets, run them concurrently instead of one after another. The
         // block refresh is independent too; it just has to finish before the filter below. The
@@ -940,8 +941,10 @@ final class FeedService {
             raws = try await ownPostRaws
             raws += try await followRaws
             raws += try await taggedRaws
+            guard AccountEpoch.isCurrent(epoch) else { return [] }
             activityError = nil
         } catch {
+            guard AccountEpoch.isCurrent(epoch) else { return [] }
             activityError = error.localizedDescription
             return []
         }
