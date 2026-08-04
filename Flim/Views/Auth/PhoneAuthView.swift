@@ -89,6 +89,13 @@ struct EmailAuthView: View {
         .navigationDestination(isPresented: $showOTP) {
             OTPView()
         }
+        // A code that arrived by link fills itself in and opens the section, so the person only
+        // has to type their email. Checked on appear as well as by notification because the link
+        // can be handled while this view is still being built, before it could receive anything.
+        .task { adoptPendingInvite() }
+        .onReceive(NotificationCenter.default.publisher(for: .openPersonalInvite)) { _ in
+            adoptPendingInvite()
+        }
         // A corrected typo deserves a clean slate: the previous email's verdict shouldn't keep
         // insisting this one needs an invite.
         .onChange(of: email) { _, _ in
@@ -152,6 +159,17 @@ struct EmailAuthView: View {
         .padding(.top, 16)
         .animation(.snappy(duration: 0.2), value: inviteExpanded)
         .animation(.snappy(duration: 0.2), value: needsInvite)
+    }
+
+    /// Fills in an invite code that arrived by link.
+    ///
+    /// Never overwrites something already typed: someone mid-way through entering a code by hand
+    /// should not have it swapped underneath them by a stale link.
+    private func adoptPendingInvite() {
+        guard inviteCode.isEmpty, let code = PendingInvite.take() else { return }
+        inviteCode = code
+        withAnimation(.snappy(duration: 0.2)) { inviteExpanded = true }
+        Haptics.tap()
     }
 
     private var isValidEmail: Bool {

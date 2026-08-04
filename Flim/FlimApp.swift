@@ -40,13 +40,35 @@ struct FlimApp: App {
                 // chips holding a roll name) and break rather than reflow past it. See FlimFont.
                 .flimDynamicTypeCeiling()
                 .onOpenURL { url in
-                    if let code = FlimApp.routeInviteCode(from: url) {
+                    // Personal invites are checked FIRST. They and roll invites are different
+                    // things — one gets you into the app, the other into a roll — and they live
+                    // on different paths so a link can never mean both.
+                    if let code = FlimApp.routePersonalInviteCode(from: url) {
+                        PendingInvite.store(code)
+                        NotificationCenter.default.post(name: .openPersonalInvite, object: code)
+                    } else if let code = FlimApp.routeInviteCode(from: url) {
                         NotificationCenter.default.post(name: .openRollInvite, object: code)
                     } else {
                         Task { await auth.handle(url: url) }
                     }
                 }
         }
+    }
+
+    /// A PERSONAL invite code from a link, i.e. the code that gets someone into the app at all.
+    ///
+    /// Deliberately on `/i/`, not `/join/`. `/join/` already means "join this roll", and a roll
+    /// invite is only meaningful to someone who is already a user; conflating them would send a
+    /// brand new person to a roll they cannot see yet.
+    ///
+    /// Accepts the universal link (https://flim-app.com/i/CODE) and the custom scheme
+    /// (com.lapse.app://i/CODE). Returns nil for anything else, including auth callbacks.
+    static func routePersonalInviteCode(from url: URL) -> String? {
+        let isUniversal = url.host == "flim-app.com" && url.pathComponents.dropFirst().first == "i"
+        guard url.host == "i" || isUniversal else { return nil }
+        let code = url.lastPathComponent
+        guard !code.isEmpty, code != "/", code != "i" else { return nil }
+        return code
     }
 
     /// Two invite URL shapes: the custom scheme (…//join/CODE) and the universal link
