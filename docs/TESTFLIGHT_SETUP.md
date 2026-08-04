@@ -169,7 +169,7 @@ touch them. The marketing version (`1.0`, `1.1`, …) lives in `project.yml`.
 
 ## Cost note
 
-The repo is private and macOS Actions minutes bill at **10×**. A build is ~10–15 wall
+The repo is public, and macOS Actions minutes bill at **10×**. A build is ~10–15 wall
 minutes ≈ 100–150 billed minutes. The free tier is 2,000 min/month, so ~13–20 builds.
 If you outgrow it: deploy only on version tags, or move to Xcode Cloud (25 free hrs/mo).
 

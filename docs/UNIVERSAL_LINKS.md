@@ -9,19 +9,19 @@
 
 ## The upgrade: link opens the app DIRECTLY (universal links)
 
-⚠️ **Step 3 is DONE and committed, but the entitlement cannot ship until steps 1–2 are.**
+⚠️ **Step 3 (code) is DONE and committed, but the entitlement cannot ship until steps 1–2 are.**
 An entitlement the provisioning profile doesn't carry fails the signed archive/export, the
-same way the widget's missing profile did. Do not push the entitlement commit before the
-profile is regenerated.
+same way the widget's missing profile did.
 
 Steps, in order (10 min, needs whoever runs match):
 1. **Developer portal** → Identifiers → `com.flim.app` → enable **Associated Domains** → Save.
-   *(Not done — needs the account holder's Apple ID + 2FA.)*
+   *(Not done: needs the account holder's Apple ID + 2FA.)*
 2. **Regenerate the match profiles** so they pick up the capability:
    `bundle exec fastlane match appstore --force` (and `development --force` if used locally).
-   *(Not done — needs the ASC API key + MATCH_PASSWORD.)*
-3. ~~Flip the associated-domains entitlement~~ **DONE.** Declared in `project.yml` under the
-   Flim target's `entitlements.properties`, which is where it belongs — xcodegen generates
+   *(Not done: needs the ASC API key + MATCH_PASSWORD.)*
+   Once done, `/join/*` links will open FLIM directly on install.
+3. ~~Flip the associated-domains entitlement~~ **DONE** (commit a14b9ac). Declared in
+   `project.yml` under the Flim target's `entitlements.properties`. Xcodegen generates
    `Flim/Flim.entitlements` from it, so editing that file directly gets overwritten.
 4. Push → build → install. iOS fetches the AASA on install; `/join/*` links then open FLIM
    directly, no landing page stop.

@@ -21,6 +21,7 @@ A native iOS instant/disposable-camera app. Shoot now, see it later; photos hide
 - **Social layer**: photo feed with posts/captions, follows, reactions/comments, user pages,
   activity view, discovery/search, reporting + blocking (RLS-enforced, bidirectional)
 - Remote push notifications (APNs via Edge Functions; local fallback on-device)
+- Daily digest summarizing friends' posts instead of individual notifications
 
 ## Project layout
 
@@ -33,12 +34,25 @@ Flim/
 supabase/
   schema.sql     Tables, RLS policies, and RPCs
   migrations/    Idempotent SQL migrations (applied to production, mirrored in schema.sql)
-  functions/     Edge Functions (send-develop-push, send-social-push)
+  functions/     Edge Functions (send-develop-push, send-social-push, send-daily-digest)
   push/          Remote push backend (legacy, superseded by Edge Functions)
 web/             Invite landing page + legal site (Vercel)
 scripts/         LUT fitting (fit_lut.py)
 project.yml      xcodegen project definition
+docs/            Release, setup and operations guides (see below)
 ```
+
+### Docs
+
+| File | What it covers |
+|------|----------------|
+| `docs/APP_STORE.md` | Store listing copy, release notes per version, App Privacy worksheet, App Review sign-in |
+| `docs/CRASH_TRIAGE.md` | Turning a `crash_diagnostics` row into a file and line number, with no Apple Developer account |
+| `docs/LAUNCH_RUNBOOK.md` | Launch checklist and backlog |
+| `docs/TESTFLIGHT_SETUP.md` | CI, signing and TestFlight distribution |
+| `docs/UNIVERSAL_LINKS.md` | Associated domains, roll invites (`/join/CODE`) and personal invites (`/i/CODE`) |
+| `docs/LUTS.md` | Fitting the film look from calibration pairs |
+| `docs/PRIVACY.md` | Privacy policy source |
 
 ## Getting started
 

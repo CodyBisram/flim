@@ -540,8 +540,25 @@ CREATE POLICY "reactions: remove own"
 -- by any signed-in user so you can browse pages, follow people, and see comment authors.
 -- New columns must be appended at the END for CREATE OR REPLACE VIEW (Postgres can't
 -- reorder/rename existing view columns), decode is by name in the app, so order is irrelevant.
+-- hidden_from_discovery keeps an account out of Discover's suggestions. Added as
+-- supabase/migrations/2026-08-04_hidden_from_discovery.sql for the App Store Review account,
+-- which must be a fully functional real account without being offered to users as someone to
+-- follow. A general flag rather than a hardcoded id, so a support or demo account later needs no
+-- code change.
+--
+-- It is a SUGGESTION FILTER, NOT A PRIVACY BOUNDARY, and the client filters on it. The account
+-- stays visible in followers and roll member lists (hiding it there would mean lying about who is
+-- in a roll), and its profile is still reachable by anyone who knows the username, because
+-- "users: profiles readable" is USING (true) on purpose: that is what makes mentions resolve,
+-- tags render names, and profiles open from a post.
+ALTER TABLE public.users
+    ADD COLUMN IF NOT EXISTS hidden_from_discovery boolean NOT NULL DEFAULT false;
+CREATE INDEX IF NOT EXISTS users_hidden_from_discovery_idx
+    ON public.users (id) WHERE hidden_from_discovery;
+
 CREATE OR REPLACE VIEW public.profiles AS
-    SELECT id, username, avatar_path, bio, created_at, display_name, cover_path
+    SELECT id, username, avatar_path, bio, created_at, display_name, cover_path,
+           hidden_from_discovery
     FROM public.users;
 
 GRANT SELECT ON public.profiles TO authenticated, anon;
@@ -1264,11 +1281,33 @@ CREATE TABLE IF NOT EXISTS public.crash_diagnostics (
     detail text NOT NULL,
     app_version text,
     call_stack_tree text,
-    created_at timestamptz NOT NULL DEFAULT now()
+    created_at timestamptz NOT NULL DEFAULT now(),
+    -- Context needed to act on a row, added as
+    -- supabase/migrations/2026-08-03_crash_diagnostics_context.sql.
+    --
+    -- app_build: every CI build of 1.2 has its own dSYM, and a MetricKit stack is raw binary
+    --   offsets that only the exact matching dSYM resolves. Without this you cannot tell which
+    --   artifact to symbolicate against.
+    -- occurred_at: created_at is when the row was UPLOADED. MetricKit only hands diagnostics over
+    --   on a later launch, so several rows arriving at once are a flush at app start, not several
+    --   crashes at that instant.
+    -- os_version / device_model: separate "everyone" from "one person on one old phone".
+    --
+    -- All nullable: existing rows predate them, and a diagnostic retried from a pre-update
+    -- on-device queue legitimately has none of them. Missing means unknown, never a dropped row.
+    app_build text,
+    os_version text,
+    device_model text,
+    occurred_at timestamptz
 );
 
 CREATE INDEX IF NOT EXISTS crash_diagnostics_created_at_idx ON public.crash_diagnostics (created_at DESC);
 CREATE INDEX IF NOT EXISTS crash_diagnostics_kind_idx ON public.crash_diagnostics (kind);
+-- Triage reads newest-first by when the crash HAPPENED, and almost always filters to one build.
+CREATE INDEX IF NOT EXISTS crash_diagnostics_occurred_at_idx
+    ON public.crash_diagnostics (occurred_at DESC NULLS LAST);
+CREATE INDEX IF NOT EXISTS crash_diagnostics_build_idx
+    ON public.crash_diagnostics (app_version, app_build);
 
 ALTER TABLE public.crash_diagnostics ENABLE ROW LEVEL SECURITY;
 

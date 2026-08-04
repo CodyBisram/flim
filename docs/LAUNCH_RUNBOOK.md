@@ -98,8 +98,6 @@ On the latest TestFlight build, with a FRESH account:
   `.select()` chain.
 
 ## Parked (post-launch backlog)
-- Widget + Live Activity (develop countdown)
 - LUT refits from new calibration pairs (`LUTS.md`): the v1 fitted look (flim.cube + adaptive exposure) shipped
-- Universal links entitlement (needs match profile regen)
+- Universal links entitlement (needs match profile regen; step 3 in code is DONE as of commit a14b9ac)
 - Personal-photo develop reveal (reuse RollRevealView effect)
-- Rename decision window: first couple of months

@@ -233,8 +233,9 @@ These are 6.9" device captures (1320x2868 pixels) ready for App Store Connect.
 > **Account access:** The reviewer account has full functionality. Photos uploaded by the reviewer are visible in the Darkroom and deletable via the ••• menu. The account can be created/deleted between review cycles; accounts older than 30 days with no posts are auto-deleted.
 
 **Setup before submission:** see the numbered list in the App Review sign-in block above. The
-code is shipped; what remains is creating the Supabase user, setting a username on it, seeding a
-little content, and pasting the password into App Review Information.
+auth check for review@flim-app.com is already shipped; what remains is creating the Supabase user,
+setting a username on it, seeding a little content, and pasting the password into App Review
+Information.
 
 **History:** 1.0 shipped a fixed-code branch in `AuthService` gated on `review@flim-app.com`,
 where the code `482915` was itself in the binary and extractable with `strings`. It was removed
