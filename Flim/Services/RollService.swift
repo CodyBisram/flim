@@ -13,6 +13,15 @@ final class RollService {
     var isLoading = false
     var error: String?
 
+    /// Drops everything cached for the previous account. Called on `flimAccountDidChange`.
+    func resetForAccountChange() {
+        rolls = []
+        memberCounts = [:]
+        coverPaths = [:]
+        error = nil
+        isLoading = false
+    }
+
     // MARK: - Create
 
     func createRoll(name: String, createdBy: UUID) async throws -> Roll {

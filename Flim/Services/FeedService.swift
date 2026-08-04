@@ -297,6 +297,25 @@ final class FeedService {
             .insert(R(reporter_id: userId, reported_id: targetId, reason: reason)).execute()
     }
 
+    /// Drops everything cached for the previous account.
+    ///
+    /// Every one of these is keyed by post or user id, not by account, so none of it is
+    /// self-invalidating when someone else signs in. Called on `flimAccountDidChange`.
+    func resetForAccountChange() {
+        feed = []
+        followingIds = []
+        blockedIds = []
+        reactionsByPost = [:]
+        commentsByPost = [:]
+        tagsByPost = [:]
+        tagProfiles = [:]
+        feedError = nil
+        activityError = nil
+        hasMoreFeed = true
+        isLoadingMoreFeed = false
+        isLoadingFeed = false
+    }
+
     // MARK: - Feed
 
     func loadFeed(currentUserId: UUID) async {

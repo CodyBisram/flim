@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import Supabase
+import os
 
 private let redirectURL = URL(string: "com.lapse.app://login-callback")!
 
@@ -350,9 +351,20 @@ final class AuthService {
     }
 
     func signOut() async throws {
+        // Local state is cleared in a `defer`, so it happens even if the network call throws.
+        //
+        // It used to come after, and the only caller uses `try?`: a sign-out that failed on a
+        // flaky connection therefore left the app fully signed in with the error swallowed, and
+        // left a session behind that a later sign-in had to displace. Signing out is a local
+        // intention first and a server round trip second; the round trip failing must not mean
+        // the user stays signed in.
+        defer {
+            currentUser = nil
+            isAuthenticated = false
+            pendingEmail = nil
+            NotificationCenter.default.post(name: .flimAccountDidChange, object: nil)
+        }
         try await supabase.auth.signOut()
-        currentUser = nil
-        isAuthenticated = false
     }
 
     /// Permanently deletes the account + all associated data (App Store Guideline 5.1.1(v)).
@@ -385,8 +397,34 @@ final class AuthService {
 
     /// The signed-in user's FULL row, email + invite_code are hidden from plain table selects
     /// by column-level grants, so the own row comes through the locked-down get_own_profile RPC.
+    /// The signed-in user's profile, verified to actually BE the signed-in user's.
+    ///
+    /// `get_own_profile()` is `SELECT * FROM users WHERE id = auth.uid()`, so it is correct by
+    /// construction on the server. What it cannot defend against is being asked with the wrong
+    /// token: if a request goes out carrying a previous session's JWT, the server answers
+    /// truthfully for THAT user and the app displays the wrong account with no error anywhere.
+    ///
+    /// This is not theoretical. Signing in as the App Review account produced a session for that
+    /// account, confirmed by its `last_sign_in_at`, while the app showed the previous user's
+    /// profile. Whatever the exact cause on the client, the guard below turns a wrong-account
+    /// display into no account at all, which routes to the username screen instead of silently
+    /// presenting someone else's identity.
+    ///
+    /// The `id` parameter used to be ignored entirely, which is what made the mismatch invisible:
+    /// the function took the thing it needed to check and then didn't check it.
     private func fetchUserProfile(id: UUID) async throws -> AppUser? {
-        try? await supabase.rpc("get_own_profile").single().execute().value
+        guard let profile: AppUser = try? await supabase
+            .rpc("get_own_profile").single().execute().value
+        else { return nil }
+
+        guard profile.id == id else {
+            // Loud, because it means the client and the server disagree about who is signed in.
+            Logger(subsystem: "com.flim.app", category: "auth")
+                .fault("profile identity mismatch: session \(id, privacy: .public) got profile \(profile.id, privacy: .public)")
+            assertionFailure("get_own_profile returned a different user than the session")
+            return nil
+        }
+        return profile
     }
 
     private func listenForAuthChanges() async {

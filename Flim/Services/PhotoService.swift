@@ -59,6 +59,15 @@ final class PhotoService {
     // that was making rapid multi-shot capture fail and prompt a retry.
     private var pipeline: Task<Void, Never>?
 
+    /// Drops everything cached for the previous account. Called on `flimAccountDidChange`.
+    func resetForAccountChange() {
+        loadedPhotos = []
+        failedUploads = []
+        uploadError = nil
+        isUploading = false
+        isLoading = false
+    }
+
     // MARK: - Capture & Upload
 
     /// Enqueues a captured frame to be processed with the chosen film look and uploaded.

@@ -125,6 +125,7 @@
 		F7DB8CBEBE8B5B6A7FA4EEA9 /* CubeLUT.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EF884AA4C8711AA4738DA8C /* CubeLUT.swift */; };
 		F8B7B0BD9EA2812E69282C03 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8118D8FA0343F18F835415D3 /* Theme.swift */; };
 		F9AF437E9C7DF86D420B135F /* RollImminenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 288EFB3EE814BE8D46A1669B /* RollImminenceTests.swift */; };
+		FA0835F7D7364268088D32F2 /* AccountChange.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF9D945EEDA73B65E2E4119C /* AccountChange.swift */; };
 		FABF503D5FA8CAFBC757E315 /* RollLiveActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4E4408D99715C85F7767AC1 /* RollLiveActivity.swift */; };
 		FD353271770C9545F7CD5972 /* CommentsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4B503FFA5A021E632A20DB4 /* CommentsSheet.swift */; };
 		FD944ED3A07EC2925623D43B /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BFE9FBCA04098DC6F972D9A /* ContentView.swift */; };
@@ -286,6 +287,7 @@
 		FD48D0114C23B26736D8280D /* CapturedPhotoCropperTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CapturedPhotoCropperTests.swift; sourceTree = "<group>"; };
 		FD8B0DEC0C9EF1C45B057D1F /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		FE6E3DB97398A385FA3C9489 /* RemotePush.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemotePush.swift; sourceTree = "<group>"; };
+		FF9D945EEDA73B65E2E4119C /* AccountChange.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountChange.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -464,6 +466,7 @@
 		AC05434A8F7DF581D43AF6AD /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				FF9D945EEDA73B65E2E4119C /* AccountChange.swift */,
 				5A194AB5EE948FBA8903D086 /* AppInfo.swift */,
 				EFC0C65109A81467AB59472B /* AuthService.swift */,
 				512ECCC06516CDBBAC8749B7 /* BrandedExport.swift */,
@@ -739,6 +742,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				FA0835F7D7364268088D32F2 /* AccountChange.swift in Sources */,
 				DF79D7CBD7A4684626EF2080 /* ActivityFeedView.swift in Sources */,
 				74EA99E5BA040D1C53184975 /* ActivitySections.swift in Sources */,
 				F3A160AE08996C251746F069 /* AnimatedHourglass.swift in Sources */,
