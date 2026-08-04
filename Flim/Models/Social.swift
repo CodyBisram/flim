@@ -9,6 +9,12 @@ struct UserProfile: Codable, Identifiable, Hashable {
     var displayName: String?
     var coverPath: String?
     let createdAt: Date
+    /// Kept out of Discover's suggestions. Optional with a `false` default so a client that
+    /// predates the column, or any query selecting a narrower set of fields, still decodes.
+    var hiddenFromDiscovery: Bool? = false
+
+    /// Whether this profile should be offered as someone to follow.
+    var isSuggestable: Bool { hiddenFromDiscovery != true }
 
     var handle: String { "@\(username ?? "someone")" }
     /// Display name if set, else the handle.
@@ -20,6 +26,7 @@ struct UserProfile: Codable, Identifiable, Hashable {
         case displayName = "display_name"
         case coverPath = "cover_path"
         case createdAt = "created_at"
+        case hiddenFromDiscovery = "hidden_from_discovery"
     }
 }
 

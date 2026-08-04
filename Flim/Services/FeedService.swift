@@ -171,7 +171,11 @@ final class FeedService {
         }
 
         let profiles = await fetchProfiles(ids: ranked)
-        return ranked.compactMap { profiles[$0] }   // preserves tier + rank order
+        // Filtered here rather than in each of the three tier queries above: one place to get
+        // right, and it catches an account that qualifies through roll co-membership or a mutual
+        // follow, not just the recency fallback. See the hidden_from_discovery migration for what
+        // this is and, importantly, what it is not (a suggestion filter, not a privacy boundary).
+        return ranked.compactMap { profiles[$0] }.filter(\.isSuggestable)   // preserves tier + rank order
     }
 
     /// People who share at least one roll with `userId`, ranked by shared-roll count.
