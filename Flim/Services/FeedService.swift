@@ -344,6 +344,7 @@ final class FeedService {
         guard hasMoreFeed, !isLoadingMoreFeed else { return }
         isLoadingMoreFeed = true
         defer { isLoadingMoreFeed = false }
+        let epoch = AccountEpoch.current
 
         var authorIds = Array(followingIds)
         authorIds.append(currentUserId)
@@ -392,6 +393,10 @@ final class FeedService {
         tagsByPost.merge(tagMap) { _, new in new }
         tagProfiles.merge(tagProf) { _, new in new }
 
+        // Discard a response that outlived its account. The request went out under whichever
+        // session was live when it started and returns THAT account's data, correctly; writing it
+        // here after a switch is what silently undoes the cache reset. See AccountEpoch.
+        guard AccountEpoch.isCurrent(epoch) else { return }
         feed.append(contentsOf: items)
     }
 

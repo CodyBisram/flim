@@ -92,6 +92,7 @@ final class RollService {
     // MARK: - Fetch user rolls
 
     func fetchRolls(for userId: UUID) async throws {
+        let epoch = AccountEpoch.current
         isLoading = true
         defer { isLoading = false }
 
@@ -105,6 +106,10 @@ final class RollService {
         let rollIds = memberRows.map(\.rollId.uuidString)
         guard !rollIds.isEmpty else { rolls = []; memberCounts = [:]; return }
 
+        // Discard a response that outlived its account. The request went out under whichever
+        // session was live when it started and returns THAT account's data, correctly; writing it
+        // here after a switch is what silently undoes the cache reset. See AccountEpoch.
+        guard AccountEpoch.isCurrent(epoch) else { return }
         rolls = try await supabase
             .from("rolls")
             .select()

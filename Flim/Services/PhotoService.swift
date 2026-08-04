@@ -597,6 +597,7 @@ final class PhotoService {
         pageSize: Int? = nil,
         filter: (PostgrestFilterBuilder) -> PostgrestFilterBuilder
     ) async throws {
+        let epoch = AccountEpoch.current
         let limit = pageSize ?? self.pageSize
         if reset {
             await MainActor.run {
@@ -622,6 +623,10 @@ final class PhotoService {
             throw error
         }
 
+        // Discard a response that outlived its account. The request went out under whichever
+        // session was live when it started and returns THAT account's data, correctly; writing it
+        // here after a switch is what silently undoes the cache reset. See AccountEpoch.
+        guard AccountEpoch.isCurrent(epoch) else { return }
         let visible = blockedIds.isEmpty ? page : page.filter { !blockedIds.contains($0.userId) }
         await MainActor.run {
             loadedPhotos.append(contentsOf: visible)

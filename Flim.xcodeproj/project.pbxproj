@@ -37,6 +37,7 @@
 		3F49B2B6996C065BA82A0395 /* ReactionBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 235D6F50F5FDD8BE4BB9DE4E /* ReactionBar.swift */; };
 		40156F83DC4D83217CB2DED5 /* AuthHelpersTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9927EBDE8E7056C4DA31EF2 /* AuthHelpersTests.swift */; };
 		410927C61580C55C921D591F /* AppUser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44986F8867E5B522EBEABEE8 /* AppUser.swift */; };
+		4115FC907B0F49EF7C95C712 /* AccountEpochTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B04FC26356A4531AF0A539D /* AccountEpochTests.swift */; };
 		4480B3972FE7723102195B87 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = FD8B0DEC0C9EF1C45B057D1F /* PrivacyInfo.xcprivacy */; };
 		46BB284536C9EFB9CB87A36C /* OTPView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2CA2F6DA98A04777C3D3C23 /* OTPView.swift */; };
 		4BE42F2FEEBD084E5CF3A4D9 /* RollRevealView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A7B0511BE80DC5094BD7F98 /* RollRevealView.swift */; };
@@ -197,6 +198,7 @@
 		371FC9FC01058627ECD62D32 /* ActivitySections.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivitySections.swift; sourceTree = "<group>"; };
 		373B00DF38CFC40848E59929 /* MetaChip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetaChip.swift; sourceTree = "<group>"; };
 		3A7B0511BE80DC5094BD7F98 /* RollRevealView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollRevealView.swift; sourceTree = "<group>"; };
+		3B04FC26356A4531AF0A539D /* AccountEpochTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountEpochTests.swift; sourceTree = "<group>"; };
 		3CEA4E3C37801DCE0D47B428 /* PhotoPagerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoPagerView.swift; sourceTree = "<group>"; };
 		3F90A7FA0AD7F2B443E7E332 /* OTPInputTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OTPInputTests.swift; sourceTree = "<group>"; };
 		4016CE892900287C20E82E97 /* FeedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedView.swift; sourceTree = "<group>"; };
@@ -529,6 +531,7 @@
 		EAAFC9FCEE6F9F480847295A /* FlimTests */ = {
 			isa = PBXGroup;
 			children = (
+				3B04FC26356A4531AF0A539D /* AccountEpochTests.swift */,
 				D86D048DA64F5454E17D0F34 /* ActivityFeedViewTests.swift */,
 				B77B536156AA303ED4CF95D3 /* ActivitySectionsTests.swift */,
 				D9927EBDE8E7056C4DA31EF2 /* AuthHelpersTests.swift */,
@@ -696,6 +699,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				4115FC907B0F49EF7C95C712 /* AccountEpochTests.swift in Sources */,
 				2AE813EB776EADC01EEF7A24 /* ActivityFeedViewTests.swift in Sources */,
 				F23A4D91C6CD5C10DAAD5948 /* ActivitySectionsTests.swift in Sources */,
 				40156F83DC4D83217CB2DED5 /* AuthHelpersTests.swift in Sources */,

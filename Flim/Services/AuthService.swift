@@ -40,6 +40,33 @@ final class AuthService {
 
     private(set) var pendingEmail: String?
 
+    /// The session the caches and `currentUser` currently belong to.
+    ///
+    /// Compared rather than blindly bumped, so calling `noteSession` repeatedly for the same
+    /// account is free. Over-bumping would be its own bug: it would invalidate the very fetch a
+    /// sign-in just started and leave the user on the username screen.
+    private var lastSessionUserId: UUID?
+
+    /// Records which account is live, bumping the epoch when it actually changes.
+    private func noteSession(_ id: UUID?) {
+        guard id != lastSessionUserId else { return }
+        lastSessionUserId = id
+        AccountEpoch.bump()
+    }
+
+    /// Fetches the profile and assigns it, discarding the result if the account changed while the
+    /// request was in flight.
+    ///
+    /// The discard has to wrap the ASSIGNMENT, not just the fetch. Returning nil from a stale call
+    /// and assigning it would clobber a profile the new sign-in had already set correctly, turning
+    /// "shows the wrong account" into "shows no account", which is better but still wrong.
+    private func refreshCurrentUser(id: UUID) async {
+        let epoch = AccountEpoch.current
+        let profile = try? await fetchUserProfile(id: id)
+        guard AccountEpoch.isCurrent(epoch) else { return }
+        currentUser = profile
+    }
+
     init() {
         Task { await bootstrap() }
     }
@@ -49,8 +76,9 @@ final class AuthService {
     private func bootstrap() async {
         do {
             let session = try await supabase.auth.session
+            noteSession(session.user.id)
             isAuthenticated = true
-            currentUser = try? await fetchUserProfile(id: session.user.id)
+            await refreshCurrentUser(id: session.user.id)
         } catch {
             // No active session
         }
@@ -102,9 +130,10 @@ final class AuthService {
         guard Self.isReviewerEmail(normalized) else { throw AuthError.notInvited }
         try await supabase.auth.signIn(email: normalized, password: password)
         let session = try await supabase.auth.session
+        noteSession(session.user.id)
         isResolvingProfile = true
         isAuthenticated = true
-        currentUser = try? await fetchUserProfile(id: session.user.id)
+        await refreshCurrentUser(id: session.user.id)
         isResolvingProfile = false
     }
 
@@ -150,9 +179,10 @@ final class AuthService {
         guard let email = pendingEmail else { return }
         try await supabase.auth.verifyOTP(email: email, token: token, type: .email)
         let session = try await supabase.auth.session
+        noteSession(session.user.id)
         isResolvingProfile = true
         isAuthenticated = true
-        currentUser = try? await fetchUserProfile(id: session.user.id)
+        await refreshCurrentUser(id: session.user.id)
         isResolvingProfile = false
         pendingEmail = nil
     }
@@ -162,7 +192,8 @@ final class AuthService {
         do {
             try await supabase.auth.session(from: url)
             let session = try await supabase.auth.session
-            currentUser = try? await fetchUserProfile(id: session.user.id)
+            noteSession(session.user.id)
+            await refreshCurrentUser(id: session.user.id)
         } catch {
             self.error = "Sign-in link expired. Please request a new one."
         }
@@ -306,7 +337,7 @@ final class AuthService {
             .from("users").update(Update(avatar_path: dest), returning: .minimal)
             .eq("id", value: session.user.id.uuidString).execute()) != nil
         else { return }
-        currentUser = try? await fetchUserProfile(id: session.user.id)
+        await refreshCurrentUser(id: session.user.id)
         cleanupOldCopy(old, keeping: dest, prefix: "avatar")
     }
 
@@ -328,7 +359,7 @@ final class AuthService {
             .from("users").update(Update(cover_path: dest), returning: .minimal)
             .eq("id", value: session.user.id.uuidString).execute()) != nil
         else { return }
-        currentUser = try? await fetchUserProfile(id: session.user.id)
+        await refreshCurrentUser(id: session.user.id)
         cleanupOldCopy(old, keeping: dest, prefix: "cover")
     }
 
@@ -367,6 +398,7 @@ final class AuthService {
             currentUser = nil
             isAuthenticated = false
             pendingEmail = nil
+            noteSession(nil)
             NotificationCenter.default.post(name: .flimAccountDidChange, object: nil)
         }
         try await supabase.auth.signOut()
@@ -437,9 +469,10 @@ final class AuthService {
             switch event {
             case .signedIn:
                 if let session = try? await supabase.auth.session {
+                    noteSession(session.user.id)
                     isResolvingProfile = true
                     isAuthenticated = true
-                    currentUser = try? await fetchUserProfile(id: session.user.id)
+                    await refreshCurrentUser(id: session.user.id)
                     isResolvingProfile = false
                 }
             case .signedOut:
