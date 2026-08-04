@@ -13,9 +13,22 @@ import Foundation
 ///, safe to call repeatedly, including for a roll someone joined rather than created, since
 /// there's nothing to start a Live Activity for until they've actually opened the roll once.
 enum RollLiveActivity {
-    static func sync(rollId: UUID, rollName: String, revealAt: Date, shotCount: Int) {
+    /// The system ends a Live Activity after roughly 8 hours and clears it from the lock screen
+    /// by about 12. A roll develops in 12. So an activity started when the roll was created goes
+    /// dark somewhere around hour 8 and is gone for the final stretch, which is the only part
+    /// anyone is actually waiting through: it counted down to a moment it was never alive to see.
+    ///
+    /// There is no push lifecycle here to fix that from the server, so the app re-requests
+    /// instead, whenever it is opened (see `syncActive`). Cheap, because `sync` is a no-op when
+    /// an activity is already running and unchanged.
+    static func sync(rollId: UUID, rollName: String, revealAt: Date, shotCount: Int,
+                     developFrom: Date, accent: String = UserDefaults.standard.string(forKey: "accentColor") ?? FlimAccentPalette.fallback) {
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
-        let newState = RollRevealAttributes.ContentState(shotCount: shotCount, revealAt: revealAt)
+        // Nothing to count down to. Requesting one here would put a card on the lock screen that
+        // is already expired, and the system would end it moments later.
+        guard !RollRevealAttributes.hasRevealed(revealAt) else { return }
+        let newState = RollRevealAttributes.ContentState(shotCount: shotCount, revealAt: revealAt,
+                                                        developFrom: developFrom, accent: accent)
         if let activity = running(rollId) {
             guard activity.content.state != newState else { return }
             Task { await activity.update(.init(state: newState, staleDate: revealAt)) }
@@ -38,6 +51,29 @@ enum RollLiveActivity {
     static func end(rollId: UUID) {
         guard let activity = running(rollId) else { return }
         Task { await activity.end(nil, dismissalPolicy: .immediate) }
+    }
+
+    /// Whether a card is currently live for this roll. Callers use it to avoid paying for a shot
+    /// count they only need when they are about to (re)start one.
+    static func isRunning(_ rollId: UUID) -> Bool { running(rollId) != nil }
+
+    /// How many rolls may hold a lock-screen card at once.
+    ///
+    /// The system caps concurrent activities, and past a couple of cards this stops being a
+    /// countdown and becomes a lock screen full of FLIM. The rolls closest to revealing win,
+    /// because those are the ones worth watching.
+    static let maxConcurrent = 2
+
+    /// The rolls that should hold a card right now: still developing, soonest first, capped.
+    ///
+    /// Pure, so the selection rule is testable without ActivityKit, which cannot run under test.
+    static func rollsNeedingActivity<T>(_ rolls: [T], now: Date = .now,
+                                        revealAt: (T) -> Date) -> [T] {
+        rolls
+            .filter { !RollRevealAttributes.hasRevealed(revealAt($0), now: now) }
+            .sorted { revealAt($0) < revealAt($1) }
+            .prefix(maxConcurrent)
+            .map { $0 }
     }
 
     private static func running(_ rollId: UUID) -> Activity<RollRevealAttributes>? {

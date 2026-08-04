@@ -95,8 +95,28 @@ struct RollsView: View {
             loadError = nil
             await resolveCovers()
             mutedRolls = await photos.fetchMutedRolls(userId: userId)
+            await refreshLiveActivities(userId: userId)
         } catch {
             loadError = error.localizedDescription
+        }
+    }
+
+    /// Re-requests the lock-screen countdown for the rolls closest to revealing.
+    ///
+    /// This is the whole fix for the reach problem. The system ends a Live Activity after about
+    /// 8 hours, and a roll takes 12 to develop, so the card that was started at creation is gone
+    /// for the last third of the wait. Nothing server-side can restart it, so the app does, every
+    /// time this list loads, which is the most-visited screen in the app.
+    ///
+    /// Deliberately cheap in the common case: `isRunning` short-circuits before any shot count is
+    /// fetched, so a roll whose card is still alive costs nothing. Only a roll the system has
+    /// already ended pays for a round trip, which is exactly the case worth paying for.
+    private func refreshLiveActivities(userId: UUID) async {
+        let candidates = RollLiveActivity.rollsNeedingActivity(rolls.rolls, revealAt: \.revealAt)
+        for roll in candidates where !RollLiveActivity.isRunning(roll.id) {
+            let shots = await photos.rollPhotoCount(rollId: roll.id, userId: userId)
+            RollLiveActivity.sync(rollId: roll.id, rollName: roll.name, revealAt: roll.revealAt,
+                                  shotCount: shots, developFrom: roll.createdAt)
         }
     }
 

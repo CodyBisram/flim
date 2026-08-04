@@ -8,6 +8,48 @@ struct RollRevealAttributes: ActivityAttributes {
     struct ContentState: Codable, Hashable {
         var shotCount: Int
         var revealAt: Date
+        /// When the roll started developing, i.e. when it was created. Present so the card can
+        /// show HOW FAR ALONG the roll is, not only how long is left. "4h 12m" alone does not
+        /// say whether that is nearly there or barely started, and a bar answers it without
+        /// being read.
+        var developFrom: Date
+        /// The accent the person chose in the app, by name. Carried here because the widget runs
+        /// in its own process and cannot read the app's UserDefaults. See FlimAccentPalette.
+        var accent: String
+
+        /// The window assumed when a state has no recorded start.
+        ///
+        /// A literal rather than `Roll.developDelay`, for two reasons: `Roll` is not a source of
+        /// the widget target, and the states missing this field were all written by SHIPPED
+        /// builds, where the delay was twelve hours. Reading today's DEBUG value here would draw
+        /// a bar for a two-minute window against a twelve-hour roll.
+        static let assumedDevelopWindow: TimeInterval = 12 * 3600
+
+        init(shotCount: Int, revealAt: Date, developFrom: Date? = nil, accent: String = FlimAccentPalette.fallback) {
+            self.shotCount = shotCount
+            self.revealAt = revealAt
+            // A missing start is treated as the full develop window ending at revealAt, so the
+            // bar is plausible rather than pinned at 100%.
+            self.developFrom = developFrom ?? revealAt.addingTimeInterval(-Self.assumedDevelopWindow)
+            self.accent = accent
+        }
+
+        /// Decoded by hand so state written by a PREVIOUS build still loads.
+        ///
+        /// A default value in the memberwise init does NOT do this: the synthesized `Decodable`
+        /// requires every stored property to be present, so adding these two fields would have
+        /// made every already-running card fail to decode, and go blank, on the very build that
+        /// was meant to fix its reach. Caught by a test, not by the compiler, which is the whole
+        /// argument for having the test.
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            shotCount = try container.decode(Int.self, forKey: .shotCount)
+            revealAt = try container.decode(Date.self, forKey: .revealAt)
+            developFrom = try container.decodeIfPresent(Date.self, forKey: .developFrom)
+                ?? revealAt.addingTimeInterval(-Self.assumedDevelopWindow)
+            accent = try container.decodeIfPresent(String.self, forKey: .accent)
+                ?? FlimAccentPalette.fallback
+        }
     }
     var rollId: String
     var rollName: String
@@ -52,5 +94,43 @@ struct RollRevealAttributes: ActivityAttributes {
     /// `hasRevealed` and swap the view; this only guarantees they can't take the app down.
     static func countdownRange(to revealAt: Date, now: Date = .now) -> ClosedRange<Date> {
         now...max(revealAt, now)
+    }
+
+    /// The develop window, for the progress bar. Same trap, same clamp.
+    ///
+    /// `ProgressView(timerInterval:)` takes a `ClosedRange<Date>` exactly like `Text` does, so it
+    /// carries exactly the same precondition failure if the bounds are ever inverted. A roll
+    /// whose stored start is somehow after its reveal is a data problem; taking the widget down
+    /// over it is not an acceptable way to report one.
+    static func developRange(from start: Date, to revealAt: Date) -> ClosedRange<Date> {
+        start...max(revealAt, start)
+    }
+
+    /// How far through developing the roll is, 0 to 1.
+    ///
+    /// Used for the static fallback bar (the Dynamic Island's minimal presentations cannot host a
+    /// live ProgressView), and it is the value the tests assert on.
+    static func developProgress(from start: Date, to revealAt: Date, now: Date = .now) -> Double {
+        let total = revealAt.timeIntervalSince(start)
+        guard total > 0 else { return 1 }
+        return min(1, max(0, now.timeIntervalSince(start) / total))
+    }
+
+    /// The state line under the roll name: what is happening, in the person's terms.
+    ///
+    /// The old copy said "Develops soon" for an empty roll regardless of whether that meant ten
+    /// hours or ten minutes, and said nothing at all about the final stretch, which is the only
+    /// part anyone is actually waiting through.
+    static func statusLabel(shotCount: Int, revealAt: Date, now: Date = .now) -> String {
+        if hasRevealed(revealAt, now: now) {
+            return shotCount == 0 ? "Nothing was shot" : "Tap to reveal"
+        }
+        let remaining = revealAt.timeIntervalSince(now)
+        if shotCount == 0 {
+            return remaining <= 3600 ? "Last hour to shoot" : "No shots yet"
+        }
+        let shots = "\(shotCount) shot\(shotCount == 1 ? "" : "s")"
+        if remaining <= 3600 { return "\(shots) · developing now" }
+        return "\(shots) so far"
     }
 }

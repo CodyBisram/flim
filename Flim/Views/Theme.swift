@@ -27,16 +27,10 @@ enum FlimAccent: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var label: String { rawValue.capitalized }
 
-    var color: Color {
-        switch self {
-        case .amber:  return Color(red: 0.98, green: 0.74, blue: 0.36)
-        case .rose:   return Color(red: 0.96, green: 0.45, blue: 0.55)
-        case .violet: return Color(red: 0.66, green: 0.55, blue: 0.98)
-        case .teal:   return Color(red: 0.35, green: 0.82, blue: 0.75)
-        case .lime:   return Color(red: 0.70, green: 0.85, blue: 0.35)
-        case .sky:    return Color(red: 0.45, green: 0.72, blue: 0.98)
-        }
-    }
+    /// Resolved from `FlimAccentPalette`, which the widget extension shares. Defining the values
+    /// here too would mean the lock-screen card and the app could drift to different colors with
+    /// nothing catching it.
+    var color: Color { FlimAccentPalette.color(rawValue) }
 }
 
 // MARK: - Page title

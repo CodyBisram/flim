@@ -160,7 +160,8 @@ struct CreateRollView: View {
                 createdRoll = roll
                 detent = .large
             }
-            RollLiveActivity.sync(rollId: roll.id, rollName: roll.name, revealAt: roll.revealAt, shotCount: 0)
+            RollLiveActivity.sync(rollId: roll.id, rollName: roll.name, revealAt: roll.revealAt,
+                                  shotCount: 0, developFrom: roll.createdAt)
             // The camera should default to shooting into a roll you just made until you
             // deliberately switch away from it.
             CameraRollSelection.select(roll, for: userId)

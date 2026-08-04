@@ -86,6 +86,15 @@ struct JoinRollView: View {
 
             Spacer()
 
+            // The placeholder was the only hint, and it vanishes the moment they type. A
+            // disabled button with no stated reason is the pattern this release is removing.
+            if (1...5).contains(code.count) {
+                Text("Invite codes are 6 characters.")
+                    .flimFont(13, relativeTo: .subheadline)
+                    .foregroundStyle(FlimTheme.textTertiary)
+                    .padding(.bottom, 4)
+            }
+
             PrimaryButton(title: "Join Roll", isLoading: isJoining, disabled: code.count < 6) {
                 await join()
             }
@@ -120,6 +129,11 @@ struct JoinRollView: View {
         do {
             let roll = try await rolls.joinRoll(inviteCode: code, userId: userId)
             joinedRoll = roll
+            // Joining is the same commitment as creating, so it earns the same countdown. It
+            // used to start only for the CREATOR, so everyone who came in by link had no card at
+            // all: invited to a roll, then given nothing to wait with.
+            RollLiveActivity.sync(rollId: roll.id, rollName: roll.name, revealAt: roll.revealAt,
+                                  shotCount: 0, developFrom: roll.createdAt)
             // Point the camera at the roll you just joined, the same as creating one does. This
             // was missing entirely: only CreateRollView ever selected a roll, so joining one and
             // going to shoot put you into Personal with no indication anything was wrong.
