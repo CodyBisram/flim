@@ -514,6 +514,13 @@ struct CameraView: View {
                         .padding(.vertical, 9)
                         .background(Color(red: 0.8, green: 0.2, blue: 0.2).opacity(0.85), in: Capsule())
                     }
+                    // A bare count says something went wrong without saying what, which reads as
+                    // the app being flaky rather than the network being down. VoiceOver gets the
+                    // same sentence, since the pill's own label is just a number.
+                    .accessibilityLabel(photos.failedUploads.count == 1
+                        ? "Retry 1 photo that did not upload"
+                        : "Retry \(photos.failedUploads.count) photos that did not upload")
+                    .accessibilityHint(photos.uploadError ?? "")
                 } else if unsortedCount > 0 {
                     // Shortcut into the sort deck, sits where the "Developing…" pill does.
                     Button { showSortDeck = true } label: {
@@ -529,6 +536,22 @@ struct CameraView: View {
                     }
                     .accessibilityLabel("\(unsortedCount) to sort")
                 }
+            }
+
+            // The reason, once, under the pill. The count alone told someone that something had
+            // gone wrong without telling them it was the network, or that the photo was still
+            // safe, which is the difference between "the app lost my shot" and "I'll retry when
+            // I have signal". Kept to one line so the viewfinder stays a viewfinder.
+            if photos.hasFailedUploads, let uploadError = photos.uploadError {
+                Text(uploadError)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.white.opacity(0.85))
+                    .lineLimit(2)
+                    .multilineTextAlignment(.trailing)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    .padding(.top, 6)
+                    .shadow(color: .black.opacity(0.6), radius: 3)
+                    .accessibilityHidden(true)   // already the pill's hint
             }
         }
         .padding(.top, 12)
@@ -645,7 +668,11 @@ struct CameraView: View {
                         .multilineTextAlignment(.center)
                         .foregroundStyle(.white)
 
-                    Text("Tap the shutter to take a photo. It stays hidden while it develops, about a minute, then appears in your Darkroom.")
+                    // Was "about a minute", which is true of neither path: personal shots develop
+                    // in zero seconds and roll shots in twelve hours. It also contradicted the
+                    // onboarding card read a minute earlier, on the screen that teaches the one
+                    // mechanic the whole app is built on.
+                    Text("Tap the shutter. Your own shots land in the Darkroom straight away, ready to sort. Shots you send to a shared roll stay hidden until the whole roll develops together.")
                         .font(.system(size: 15))
                         .foregroundStyle(FlimTheme.textSecondary)
                         .multilineTextAlignment(.center)

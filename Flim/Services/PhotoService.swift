@@ -52,6 +52,10 @@ final class PhotoService {
     var uploadError: String?
     var failedUploads: [FailedUpload] = []
 
+    /// Disk backing for `failedUploads`. Without it, quitting the app destroys unsent captures,
+    /// and a capture is the one thing here that cannot be reproduced.
+    var failedUploadStore = FailedUploadStore()
+
     var hasFailedUploads: Bool { !failedUploads.isEmpty }
 
     // Serial capture pipeline. Chaining each shot onto the previous one keeps bursts from
@@ -60,6 +64,8 @@ final class PhotoService {
     private var pipeline: Task<Void, Never>?
 
     /// Drops everything cached for the previous account. Called on `flimAccountDidChange`.
+    /// Clears memory only. The pending files stay on disk under their own account's folder, so
+    /// signing back in returns your unsent captures instead of finding them deleted.
     func resetForAccountChange() {
         loadedPhotos = []
         failedUploads = []
@@ -179,9 +185,16 @@ final class PhotoService {
             // A failed upload belongs to the account that attempted it. Queueing its retry under
             // a different account would re-upload one person's photo as another's.
             guard AccountEpoch.isCurrent(epoch) else { return nil }
+            let pending = FailedUpload(data: imageData, userId: userId, rollId: rollId)
+            let saved = failedUploadStore.save(pending)
             await MainActor.run {
-                uploadError = error.localizedDescription
-                failedUploads.append(FailedUpload(data: imageData, userId: userId, rollId: rollId))
+                // The queue is what the retry pill counts, so it holds the capture either way.
+                // Only the promise changes: if the disk write failed, the photo lives until the
+                // app quits and the copy says so rather than implying it is safe.
+                uploadError = saved
+                    ? error.localizedDescription
+                    : "\(error.localizedDescription) This one is only held until you close \(AppInfo.appName)."
+                failedUploads.append(pending)
                 isUploading = false
             }
             return nil
@@ -253,7 +266,31 @@ final class PhotoService {
             return p
         }
         for upload in pending {
-            await captureAndUpload(imageData: upload.data, userId: upload.userId, rollId: upload.rollId)
+            await captureAndUpload(imageData: upload.data,
+                                   userId: upload.userId,
+                                   rollId: upload.rollId)
+            // Cleared either way, and that is not the same as discarding it. A retry that fails
+            // goes back through the catch path above, which writes a FRESH id for the same
+            // image, so leaving this one would leave two files for one photograph and the retry
+            // count would climb every time you pressed it.
+            failedUploadStore.remove(id: upload.id, userId: upload.userId)
+        }
+    }
+
+    /// Re-queues anything left unsent by a previous run. Called after the account resolves.
+    ///
+    /// This is the half that makes the disk queue worth having: saving captures nobody ever
+    /// offers to retry is just a leak.
+    func restoreFailedUploads(userId: UUID) {
+        failedUploadStore.prune(userId: userId)
+        let restored = failedUploadStore.load(userId: userId)
+        guard !restored.isEmpty else { return }
+        let known = Set(failedUploads.map(\.id))
+        failedUploads.append(contentsOf: restored.filter { !known.contains($0.id) })
+        if uploadError == nil {
+            uploadError = restored.count == 1
+                ? "One photo didn't finish uploading last time."
+                : "\(restored.count) photos didn't finish uploading last time."
         }
     }
 
@@ -723,12 +760,6 @@ final class PhotoService {
 }
 
 // MARK: - Failed upload record
-
-struct FailedUpload {
-    let data: Data
-    let userId: UUID
-    let rollId: UUID?
-}
 
 #if DEBUG
 import UIKit
