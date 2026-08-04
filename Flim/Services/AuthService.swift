@@ -428,6 +428,9 @@ final class AuthService {
         try? await supabase.auth.signOut()
         currentUser = nil
         isAuthenticated = false
+        // Same reason signOut bumps: clearing the account without advancing the generation leaves
+        // an in-flight profile fetch from the departing session able to repopulate currentUser.
+        noteSession(nil)
     }
 
     // MARK: - Helpers
@@ -476,6 +479,9 @@ final class AuthService {
                     isResolvingProfile = false
                 }
             case .signedOut:
+                // Fires for causes the app did not initiate too, an expired or revoked session,
+                // so it cannot rely on signOut()'s own bump.
+                noteSession(nil)
                 currentUser = nil
                 isAuthenticated = false
             default:

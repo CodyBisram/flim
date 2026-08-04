@@ -248,10 +248,15 @@ final class FeedService {
 
     var blockedIds: Set<UUID> = []
 
-    func loadBlocked(userId: UUID) async {
+    /// `epoch` defaults to the live generation, so a caller with nothing in flight before it gets
+    /// the same protection without having to think about it, while a caller mid-sequence passes
+    /// the generation it captured earlier.
+    func loadBlocked(userId: UUID, epoch: Int? = nil) async {
+        let epoch = epoch ?? AccountEpoch.current
         struct Row: Decodable { let blocked_id: UUID }
         let rows: [Row] = (try? await supabase.from("blocks").select("blocked_id")
             .eq("blocker_id", value: userId.uuidString).execute().value) ?? []
+        guard AccountEpoch.isCurrent(epoch) else { return }
         blockedIds = Set(rows.map(\.blocked_id))
     }
 
@@ -325,8 +330,16 @@ final class FeedService {
     func loadFeed(currentUserId: UUID) async {
         isLoadingFeed = true
         defer { isLoadingFeed = false }
-        followingIds = await fetchFollowingIds(userId: currentUserId)
-        await loadBlocked(userId: currentUserId)
+        // Guarded per write, not once. This is the primary feed entry point (tab appear and
+        // pull to refresh), and the follow graph plus the block list are both account-scoped:
+        // loadMoreFeed's own guard cannot save it, because that runs on a `followingIds` value
+        // this function may already have written from the wrong account.
+        let epoch = AccountEpoch.current
+        let following = await fetchFollowingIds(userId: currentUserId)
+        guard AccountEpoch.isCurrent(epoch) else { return }
+        followingIds = following
+        await loadBlocked(userId: currentUserId, epoch: epoch)
+        guard AccountEpoch.isCurrent(epoch) else { return }
         // Reset for a fresh first page.
         feed = []
         reactionsByPost = [:]
@@ -573,9 +586,15 @@ final class FeedService {
     /// would turn a quiet app into a steady stream of requests for the one row in ten that
     /// changed, and reactions are the only thing cheap and lively enough to be worth the traffic.
     func refreshReactions(postIds: [UUID]) async {
+        let epoch = AccountEpoch.current
         let wanted = postIds.filter { !reactionWritesInFlight.contains($0) }
         guard !wanted.isEmpty else { return }
         let fresh = await batchReactions(postIds: wanted)
+        // This is the poll LiveRefresh runs every 8 to 20 seconds, so it is the request most
+        // likely to be in flight across an account switch. Keyed by post id, so a stale entry is
+        // unlikely to surface under a card belonging to the new account, but writing another
+        // account's reactions into shared state is exactly the thing this release is closing.
+        guard AccountEpoch.isCurrent(epoch) else { return }
         for id in wanted where !reactionWritesInFlight.contains(id) {
             // Assigned per post rather than merged, so a reaction someone REMOVED disappears.
             // `merge` would only ever add, leaving withdrawn reactions on screen forever.

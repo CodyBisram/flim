@@ -103,23 +103,29 @@ final class RollService {
             .execute()
             .value
 
+        // Every one of these guards sits immediately before a WRITE, and there is one per write,
+        // because this function makes four separate network round trips. A single check near the
+        // top would only cover the first, which is precisely the mistake made here first time
+        // round: the guard was placed before the `rolls` query rather than before the assignment
+        // that its own second round trip completes. The rule is "guard the assignment", and with
+        // several awaits in a row that means several guards, not one.
+        guard AccountEpoch.isCurrent(epoch) else { return }
+
         let rollIds = memberRows.map(\.rollId.uuidString)
         guard !rollIds.isEmpty else { rolls = []; memberCounts = [:]; return }
 
-        // Discard a response that outlived its account. The request went out under whichever
-        // session was live when it started and returns THAT account's data, correctly; writing it
-        // here after a switch is what silently undoes the cache reset. See AccountEpoch.
-        guard AccountEpoch.isCurrent(epoch) else { return }
-        rolls = try await supabase
+        let fetched: [Roll] = try await supabase
             .from("rolls")
             .select()
             .in("id", values: rollIds)
             .order("created_at", ascending: false)
             .execute()
             .value
+        guard AccountEpoch.isCurrent(epoch) else { return }
+        rolls = fetched
 
-        await loadMemberCounts(rollIds: rollIds)
-        await loadCovers(rollIds: rollIds)
+        await loadMemberCounts(rollIds: rollIds, epoch: epoch)
+        await loadCovers(rollIds: rollIds, epoch: epoch)
     }
 
     /// Latest developed photo per roll → the path used for the roll cover thumbnail.
@@ -128,7 +134,9 @@ final class RollService {
     /// is pure waste on a tab users hit constantly. Falls back to storage_path only when a shot
     /// has no thumb rendition. "Developed" = develops_at has passed (independent of the
     /// is_developed flag sync).
-    private func loadCovers(rollIds: [String]) async {
+    /// `epoch` is the account generation captured by the caller before its first await. Each
+    /// helper re-checks it immediately before writing, because each makes its own round trip.
+    private func loadCovers(rollIds: [String], epoch: Int) async {
         struct CoverRow: Decodable { let roll_id: UUID; let storage_path: String; let thumb_path: String? }
         let nowISO = ISO8601DateFormatter().string(from: Date.now)
         let rows: [CoverRow] = (try? await supabase
@@ -156,12 +164,13 @@ final class RollService {
             guard let chosen = roll.coverPath else { continue }
             covers[roll.id] = thumbForStorage[chosen] ?? chosen
         }
+        guard AccountEpoch.isCurrent(epoch) else { return }
         coverPaths = covers
     }
 
     /// Populates `memberCounts` for the given rolls in a single query. RLS lets a member
     /// read every membership row of a roll they belong to, so the grouped count is exact.
-    private func loadMemberCounts(rollIds: [String]) async {
+    private func loadMemberCounts(rollIds: [String], epoch: Int) async {
         struct CountRow: Decodable { let roll_id: UUID }
         let rows: [CountRow] = (try? await supabase
             .from("roll_members")
@@ -172,6 +181,7 @@ final class RollService {
 
         var counts: [UUID: Int] = [:]
         for row in rows { counts[row.roll_id, default: 0] += 1 }
+        guard AccountEpoch.isCurrent(epoch) else { return }
         memberCounts = counts
     }
 
