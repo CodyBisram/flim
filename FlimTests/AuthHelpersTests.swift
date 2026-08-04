@@ -60,3 +60,54 @@ final class AuthHelpersTests: XCTestCase {
         XCTAssertFalse(AuthService.isPrimaryKeyConflict(error))
     }
 }
+
+/// Why a username is rejected.
+///
+/// The bug: typing "apple-review" on the sign-up screen disabled Continue and said nothing at all,
+/// so the only feedback was a dead button. The static hint was also wrong, claiming "letters and
+/// numbers only" while underscores have always been allowed.
+final class UsernameRejectionTests: XCTestCase {
+
+    func testValidNamesAreNotRejected() {
+        for name in ["cody", "apple_review", "a1b2c3", "abc", String(repeating: "a", count: 20)] {
+            XCTAssertNil(AuthService.usernameRejection(name), "\(name) should be accepted")
+            XCTAssertTrue(AuthService.isValidUsername(name))
+        }
+    }
+
+    func testEmptyIsSilentRatherThanNagging() {
+        XCTAssertNil(AuthService.usernameRejection(""))
+    }
+
+    func testTheReportedCaseExplainsItself() {
+        // The literal input that produced no feedback at all.
+        let reason = AuthService.usernameRejection("apple-review")
+        XCTAssertNotNil(reason)
+        XCTAssertTrue(reason!.contains("underscore"), "should name what IS allowed, got: \(reason!)")
+    }
+
+    func testIllegalCharactersAreNamedBeforeLength() {
+        // "a-" is both too short and illegal. The character problem is reported first because
+        // typing more never fixes it, whereas the length problem fixes itself.
+        let reason = AuthService.usernameRejection("a-")
+        XCTAssertEqual(reason, "Letters, numbers and underscores only.")
+    }
+
+    func testLengthBounds() {
+        XCTAssertEqual(AuthService.usernameRejection("ab"), "A little longer: at least 3 characters.")
+        XCTAssertEqual(AuthService.usernameRejection(String(repeating: "a", count: 21)),
+                       "A little shorter: 20 characters at most.")
+    }
+
+    func testRejectionAgreesWithValidity() {
+        // If these ever disagree, either a name is rejected with no reason shown, or a reason is
+        // shown for a name the button will happily accept.
+        for name in ["cody", "", "ab", "apple-review", "a b", "emoji😀", "_", "___",
+                     String(repeating: "z", count: 21)] {
+            let hasReason = AuthService.usernameRejection(name) != nil
+            let isValid = AuthService.isValidUsername(name)
+            if name.isEmpty { continue }   // empty is deliberately silent AND invalid
+            XCTAssertEqual(hasReason, !isValid, "disagreement on \(name)")
+        }
+    }
+}

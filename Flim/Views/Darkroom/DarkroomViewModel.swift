@@ -11,10 +11,17 @@ import Observation
 /// property on it is a data race, not merely untidy.
 ///
 /// That is the shape of the one crash on record (2026-07-31, 1.2): main thread inside
-/// libswiftObservation, another thread inside Flim/SwiftUI, camera session live. Unproven without
-/// symbolication, but this is the only unisolated observable state in the app and the Darkroom
-/// polls every 60s while it's on screen. Isolating it makes the compiler enforce what the
-/// scattered `MainActor.run` calls were trying to achieve by hand.
+/// libswiftObservation, another thread inside Flim/SwiftUI, camera session live.
+///
+/// CONFIRMED by the symbolicated report (1.2 build 105, 2026-07-30, EXC_BAD_ACCESS / SIGSEGV at
+/// 0x8000000000000010). Two threads on `signedURLCache`: thread 16 reading it through
+/// `signedURL(for:photoService:)` off the main actor, while `prefetchURLs` wrote it inside a
+/// `MainActor.run`. Concurrent read and write of the same Swift Dictionary, which is a segfault
+/// rather than a trap, and thread 0 sat in `destroy for ObservationGraphMutation` as expected.
+///
+/// Isolating the type makes the compiler enforce what the scattered `MainActor.run` calls were
+/// reaching for by hand. Those hand-written hops are why the write was safe and the read was not:
+/// they only protect what someone remembered to wrap.
 @MainActor
 @Observable
 final class DarkroomViewModel {

@@ -9,16 +9,17 @@
 
 ## The upgrade: link opens the app DIRECTLY (universal links)
 
-⚠️ **Step 3 (code) is DONE and committed, but the entitlement cannot ship until steps 1–2 are.**
-An entitlement the provisioning profile doesn't carry fails the signed archive/export, the
-same way the widget's missing profile did.
+✅ **All steps are done as of 2026-08-04.** The Associated Domains capability is enabled on the
+`com.flim.app` App ID (confirmed in the developer portal), and every signed release build since
+`a14b9ac` has exported successfully, which it could not do if the profile lacked the capability.
 
 Steps, in order (10 min, needs whoever runs match):
 1. **Developer portal** → Identifiers → `com.flim.app` → enable **Associated Domains** → Save.
-   *(Not done: needs the account holder's Apple ID + 2FA.)*
+   **DONE** (confirmed in the portal, 2026-08-04).
 2. **Regenerate the match profiles** so they pick up the capability:
    `bundle exec fastlane match appstore --force` (and `development --force` if used locally).
-   *(Not done: needs the ASC API key + MATCH_PASSWORD.)*
+   **DONE.** Evidenced by green signed builds since `a14b9ac`; a profile without the
+   capability fails export.
    Once done, `/join/*` links will open FLIM directly on install.
 3. ~~Flip the associated-domains entitlement~~ **DONE** (commit a14b9ac). Declared in
    `project.yml` under the Flim target's `entitlements.properties`. Xcodegen generates

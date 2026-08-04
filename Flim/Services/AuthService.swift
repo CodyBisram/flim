@@ -201,8 +201,32 @@ final class AuthService {
 
     // MARK: - Username Setup
 
+    /// Why a username is rejected, or nil if it is fine.
+    ///
+    /// Exists because the sign-up screen only disabled the Continue button, so typing something
+    /// like "apple-review" left a person staring at a dead button with no idea which of the rules
+    /// they had broken. The static hint above the field was also wrong: it said "letters and
+    /// numbers only" while underscores have always been allowed.
+    ///
+    /// Empty returns nil deliberately. Nagging someone before they have typed anything is noise,
+    /// not help.
+    ///
+    /// Character problems are reported BEFORE length problems: a too-short name fixes itself as
+    /// you keep typing, whereas an illegal character never will, so it is the more useful thing to
+    /// say first when a name is both.
+    nonisolated static func usernameRejection(_ username: String) -> String? {
+        guard !username.isEmpty else { return nil }
+        let allowed = CharacterSet.alphanumerics.union(.init(charactersIn: "_"))
+        guard username.unicodeScalars.allSatisfy(allowed.contains) else {
+            return "Letters, numbers and underscores only."
+        }
+        if username.count < 3 { return "A little longer: at least 3 characters." }
+        if username.count > 20 { return "A little shorter: 20 characters at most." }
+        return nil
+    }
+
     /// Valid usernames: 3–20 chars, letters/numbers/underscore only.
-    static func isValidUsername(_ username: String) -> Bool {
+    nonisolated static func isValidUsername(_ username: String) -> Bool {
         let chars = CharacterSet.alphanumerics.union(.init(charactersIn: "_"))
         return (3...20).contains(username.count)
             && username.unicodeScalars.allSatisfy(chars.contains)
@@ -268,7 +292,7 @@ final class AuthService {
             }
         }
         // Refetch via the RPC, plain selects can't read email/invite_code (column grants).
-        currentUser = try await fetchUserProfile(id: userId)
+        await refreshCurrentUser(id: userId)
     }
 
     /// Distinguishes a 23505 on the `users` PK (`id`, meaning the row already exists) from one
@@ -288,7 +312,7 @@ final class AuthService {
                     returning: .minimal)
             .eq("id", value: session.user.id.uuidString)
             .execute()
-        currentUser = try await fetchUserProfile(id: session.user.id)
+        await refreshCurrentUser(id: session.user.id)
     }
 
     /// Updates the profile bio and refreshes `currentUser`.
@@ -301,7 +325,7 @@ final class AuthService {
                     returning: .minimal)
             .eq("id", value: session.user.id.uuidString)
             .execute()
-        currentUser = try await fetchUserProfile(id: session.user.id)
+        await refreshCurrentUser(id: session.user.id)
     }
 
     /// Sets the profile avatar from one of the user's photos. Copies the image into its own

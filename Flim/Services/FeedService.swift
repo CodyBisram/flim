@@ -379,9 +379,15 @@ final class FeedService {
                 // A failed page must not look like the end of the feed: `?? []` here meant a
                 // dropped connection set hasMoreFeed = false and left the view showing the
                 // "It's quiet in here" empty state, as if nobody had posted.
+                guard AccountEpoch.isCurrent(epoch) else { return }
                 feedError = error.localizedDescription
                 return
             }
+            // Guarded here, not only before the final append. This loop writes pagination state
+            // the moment the page lands, so a stale response could advance the NEW account's
+            // offset and switch off its `hasMoreFeed` before anything visible was appended,
+            // truncating a feed that had only just been reset.
+            guard AccountEpoch.isCurrent(epoch) else { return }
             feedError = nil
 
             feedOffset += posts.count
@@ -400,16 +406,17 @@ final class FeedService {
         async let reactions = batchReactions(postIds: postIds)
         async let comments = batchComments(postIds: postIds, currentUserId: currentUserId)
         async let tags = batchTags(postIds: postIds)
-        reactionsByPost.merge(await reactions) { _, new in new }
-        commentsByPost.merge(await comments) { _, new in new }
+        let fetchedReactions = await reactions
+        let fetchedComments = await comments
         let (tagMap, tagProf) = await tags
+
+        // One guard covering every write below, placed after the LAST await rather than before
+        // the first merge, so nothing lands from a session that has since been replaced.
+        guard AccountEpoch.isCurrent(epoch) else { return }
+        reactionsByPost.merge(fetchedReactions) { _, new in new }
+        commentsByPost.merge(fetchedComments) { _, new in new }
         tagsByPost.merge(tagMap) { _, new in new }
         tagProfiles.merge(tagProf) { _, new in new }
-
-        // Discard a response that outlived its account. The request went out under whichever
-        // session was live when it started and returns THAT account's data, correctly; writing it
-        // here after a switch is what silently undoes the cache reset. See AccountEpoch.
-        guard AccountEpoch.isCurrent(epoch) else { return }
         feed.append(contentsOf: items)
     }
 
@@ -615,8 +622,15 @@ final class FeedService {
     /// Fetches the feed without assigning it, used to check for new posts without disturbing
     /// the current scroll position.
     func peekFeed(currentUserId: UUID) async -> [FeedItem] {
-        followingIds = await fetchFollowingIds(userId: currentUserId)
-        await loadBlocked(userId: currentUserId)
+        // The "new posts available" poll writes the follow graph too, so it needs the same guard
+        // as the primary path. It returns early rather than returning stale items, because its
+        // caller compares the result against the live feed to decide whether to show a banner.
+        let epoch = AccountEpoch.current
+        let following = await fetchFollowingIds(userId: currentUserId)
+        guard AccountEpoch.isCurrent(epoch) else { return [] }
+        followingIds = following
+        await loadBlocked(userId: currentUserId, epoch: epoch)
+        guard AccountEpoch.isCurrent(epoch) else { return [] }
         var authorIds = Array(followingIds)
         authorIds.append(currentUserId)   // your own posts show in your feed too
 

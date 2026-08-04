@@ -21,7 +21,7 @@ struct UsernameView: View {
                     Text("Pick a username.")
                         .flimFont(28, weight: .thin, relativeTo: .title3)
                         .foregroundStyle(.white)
-                    Text("3–20 characters, letters and numbers only.")
+                    Text("3 to 20 characters. Letters, numbers and underscores.")
                         .flimFont(15, relativeTo: .body)
                         .foregroundStyle(Color(white: 0.5))
                 }
@@ -85,6 +85,15 @@ struct UsernameView: View {
                     }
                 }
                 .padding(.top, 18)
+
+                // A live reason, so the disabled button is never a mystery. The server-side
+                // error (a taken username) still takes precedence when there is one.
+                if let reason = AuthService.usernameRejection(username), error == nil {
+                    Text(reason)
+                        .flimFont(13, relativeTo: .subheadline)
+                        .foregroundStyle(FlimTheme.textSecondary)
+                        .padding(.top, 8)
+                }
 
                 if let error {
                     Text(error)
