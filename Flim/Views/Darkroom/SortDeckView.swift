@@ -18,8 +18,15 @@ struct SortDeckView: View {
     // The last swipe, held un-committed so it can be undone (even a delete).
     @State private var lastPhoto: Photo?
     @State private var lastAction: SortAction?
+    @State private var publishError: String?
+    /// Retired after a few sorts. A permanent hint is furniture, and stops being read.
+    @AppStorage("flim.sortDeck.sortsCompleted") private var sortsCompleted = 0
 
     private enum SortAction { case archive, publish, trash }
+
+    /// How many sorts someone does before the hint stops appearing.
+    static let swipeHintSortLimit = 6
+    private var showSwipeHint: Bool { sortsCompleted < Self.swipeHintSortLimit }
     private let threshold: CGFloat = 110
 
     /// Captures are a fixed 3:4 (see `CapturedPhotoCropper`), so the card is too. Anything else
@@ -61,6 +68,15 @@ struct SortDeckView: View {
                     }
                     .padding(.horizontal, 18)
                     .padding(.vertical, 10)
+                    if let publishError {
+                        Text(publishError)
+                            .flimFont(13, relativeTo: .subheadline)
+                            .foregroundStyle(Color(red: 1, green: 0.42, blue: 0.42))
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 24)
+                            .padding(.bottom, 4)
+                            .transition(.opacity)
+                    }
                     controls
                 }
             }
@@ -167,25 +183,53 @@ struct SortDeckView: View {
     // MARK: - Controls
 
     private var controls: some View {
-        HStack(spacing: 26) {
-            circleButton("tray.and.arrow.down", tint: FlimTheme.accent, size: 54, label: "Archive to Darkroom") { performSwipe(.archive) }
-            circleButton("trash", tint: .red, size: 64, label: "Delete photo") { performSwipe(.trash) }
-            circleButton("paperplane.fill", tint: .green, size: 54, label: "Keep and share") { performSwipe(.publish) }
+        VStack(spacing: 14) {
+            HStack(spacing: 26) {
+                circleButton("tray.and.arrow.down", tint: FlimTheme.accent, size: 54,
+                             caption: "Keep", label: "Keep in your Darkroom") { performSwipe(.archive) }
+                circleButton("trash", tint: .red, size: 64,
+                             caption: "Delete", label: "Delete photo") { performSwipe(.trash) }
+                circleButton("paperplane.fill", tint: .green, size: 54,
+                             caption: "Post", label: "Post to your page") { performSwipe(.publish) }
+            }
+
+            // One line, once, and only while it can still change what you do. Three tinted
+            // icons do not say which one is public, and the drag labels only appear once the
+            // card is already moving, so the first time through the only way to find out that
+            // right means POST is to post something.
+            if showSwipeHint {
+                Text("Swipe right to post, left to keep it private.")
+                    .flimFont(12, relativeTo: .caption)
+                    .foregroundStyle(FlimTheme.textSecondary)
+                    .transition(.opacity)
+            }
         }
         .padding(.bottom, 30).padding(.top, 10)
     }
 
-    /// `label` is required: these are icon-only, so without it VoiceOver announces "button".
-    private func circleButton(_ icon: String, tint: Color, size: CGFloat, label: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: icon)
-                .font(.system(size: size * 0.36, weight: .medium))
-                .foregroundStyle(tint)
-                .frame(width: size, height: size)
-                .background(Color.white.opacity(0.08), in: Circle())
-                .overlay(Circle().stroke(tint.opacity(0.4), lineWidth: 1))
+    /// `caption` names the action under the icon; `label` is the fuller VoiceOver phrasing.
+    ///
+    /// These were icon-only. A paper plane is "send", but send WHERE, and to whom, is exactly
+    /// the thing you want to know before you tap it, since this is the one control in the app
+    /// that makes a photograph public.
+    private func circleButton(_ icon: String, tint: Color, size: CGFloat,
+                              caption: String, label: String, action: @escaping () -> Void) -> some View {
+        VStack(spacing: 7) {
+            Button(action: action) {
+                Image(systemName: icon)
+                    .font(.system(size: size * 0.36, weight: .medium))
+                    .foregroundStyle(tint)
+                    .frame(width: size, height: size)
+                    .background(Color.white.opacity(0.08), in: Circle())
+                    .overlay(Circle().stroke(tint.opacity(0.4), lineWidth: 1))
+            }
+            Text(caption)
+                .flimFont(11, relativeTo: .caption2)
+                .foregroundStyle(FlimTheme.textSecondary)
         }
+        .accessibilityElement(children: .combine)
         .accessibilityLabel(label)
+        .accessibilityAddTraits(.isButton)
     }
 
     // MARK: - Gestures & actions
@@ -217,6 +261,7 @@ struct SortDeckView: View {
         }
         lastPhoto = photo
         lastAction = action
+        sortsCompleted += 1
 
         // Advance the deck after the card flies off.
         Task {
@@ -259,7 +304,15 @@ struct SortDeckView: View {
             await photoService.markSorted(photoId: photo.id)
         case .publish:
             await photoService.markSorted(photoId: photo.id)
-            try? await feed.createPost(photo: photo, caption: nil, userId: uid)
+            do {
+                try await feed.createPost(photo: photo, caption: nil, userId: uid)
+            } catch {
+                // The photo is already marked sorted and the card is gone, so silence here means
+                // someone believes they published something that never left the device. This is
+                // the one action in the deck that makes a photo public; it has to speak up.
+                Haptics.error()
+                publishError = "Couldn't share that one. It's in your Darkroom, share it from there."
+            }
         case .trash:
             await photoService.deletePhoto(photo)
         }

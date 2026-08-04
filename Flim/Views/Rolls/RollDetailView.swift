@@ -20,6 +20,10 @@ struct RollDetailView: View {
     @State private var renameDraft = ""
     @State private var showDeleteRoll = false
     @State private var savingAll = false
+    @State private var saveAllError: String?
+    /// Set when the alert is a warning rather than a failure, so the share sheet opens after it
+    /// is dismissed. Presenting both at once means SwiftUI shows one and drops the other.
+    @State private var shareAfterAlert = false
     @State private var shareImages: [UIImage] = []
     @State private var showShareAll = false
     @State private var displayName = ""
@@ -170,10 +174,16 @@ struct RollDetailView: View {
                 .accessibilityLabel("Share invite")
 
                 Menu {
-                    Button {
-                        saveAll()
-                    } label: { Label(savingAll ? "Saving…" : "Save all to Camera Roll", systemImage: "square.and.arrow.down.on.square") }
-                        .disabled(savingAll || vm.developedPhotos.isEmpty)
+                    // Disabled with no reason reads as a broken menu item. A menu can hold a
+                    // plain Text, so it says which of the two reasons applies instead.
+                    if vm.developedPhotos.isEmpty {
+                        Text("Nothing to save until the roll develops")
+                    } else {
+                        Button {
+                            saveAll()
+                        } label: { Label(savingAll ? "Saving…" : "Save all to Camera Roll", systemImage: "square.and.arrow.down.on.square") }
+                            .disabled(savingAll)
+                    }
 
                     // Silence this roll's comment/reaction notifications without leaving it.
                     Button {
@@ -269,7 +279,8 @@ struct RollDetailView: View {
                     RollLiveActivity.end(rollId: roll.id)
                 } else {
                     RollLiveActivity.sync(rollId: roll.id, rollName: displayName.isEmpty ? roll.name : displayName,
-                                          revealAt: roll.revealAt, shotCount: vm.developingPhotos.count)
+                                          revealAt: roll.revealAt, shotCount: vm.developingPhotos.count,
+                                          developFrom: roll.createdAt)
                 }
             }
             Task {
@@ -313,6 +324,17 @@ struct RollDetailView: View {
         .sheet(item: $shareItem) { SharePreviewSheet(photo: $0.image) }
         .sheet(isPresented: $showShareAll) {
             ActivityView(items: shareImages)
+        }
+        .alert("Save all", isPresented: Binding(get: { saveAllError != nil },
+                                                set: { if !$0 { saveAllError = nil } })) {
+            Button("OK", role: .cancel) {
+                if shareAfterAlert {
+                    shareAfterAlert = false
+                    showShareAll = true
+                }
+            }
+        } message: {
+            Text(saveAllError ?? "")
         }
         .sheet(isPresented: $showInviteShare) {
             ActivityView(items: [AppInfo.rollInviteMessage(rollName: displayName.isEmpty ? roll.name : displayName,
@@ -358,6 +380,8 @@ struct RollDetailView: View {
     }
 
     private func saveAll() {
+        saveAllError = nil
+        shareAfterAlert = false
         guard !savingAll else { return }
         savingAll = true
         Task {
@@ -371,7 +395,22 @@ struct RollDetailView: View {
             }
             shareImages = images
             savingAll = false
-            if !images.isEmpty { showShareAll = true }
+            if images.isEmpty {
+                // Every fetch failed, so no share sheet is coming. Silence here looks exactly
+                // like the menu item doing nothing at all.
+                Haptics.error()
+                saveAllError = "Couldn't load the photos. Check your connection and try again."
+            } else {
+                if images.count < vm.developedPhotos.count {
+                    // A partial result still reaches the sheet, because some photos IS better
+                    // than none, but claiming "all" when it was 4 of 9 would be a lie the person
+                    // only discovers later, in their camera roll, with no way to tell which four.
+                    saveAllError = "Only \(images.count) of \(vm.developedPhotos.count) photos could be loaded. Saving those now."
+                    shareAfterAlert = true
+                } else {
+                    showShareAll = true
+                }
+            }
         }
     }
 

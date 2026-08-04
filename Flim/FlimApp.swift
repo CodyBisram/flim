@@ -12,9 +12,6 @@ struct FlimApp: App {
         // the first, to receive payloads queued since the previous session.
         CrashReporter.shared.start()
 
-        // In-app tips, shown once, contextually, then remembered as seen.
-        #if DEBUG
-        #endif
     }
 
     @State private var auth = AuthService()
@@ -47,6 +44,9 @@ struct FlimApp: App {
                         PendingInvite.store(code)
                         NotificationCenter.default.post(name: .openPersonalInvite, object: code)
                     } else if let code = FlimApp.routeInviteCode(from: url) {
+                        // Written down AND broadcast: on a cold launch this fires before
+                        // MainTabView exists, and a notification with no listener is just lost.
+                        PendingRollInvite.store(code)
                         NotificationCenter.default.post(name: .openRollInvite, object: code)
                     } else {
                         Task { await auth.handle(url: url) }

@@ -455,6 +455,7 @@ struct InviteSheet: View {
 // MARK: - Edit bio
 
 private struct EditBioSheet: View {
+    @State private var saveError: String?
     @Environment(AuthService.self) private var auth
     @Environment(\.dismiss) private var dismiss
     @State private var bio: String
@@ -477,6 +478,11 @@ private struct EditBioSheet: View {
                     Text("\(bio.count)/140")
                         .flimFont(12, relativeTo: .caption)
                         .foregroundStyle(FlimTheme.textTertiary)
+                    if let saveError {
+                        Text(saveError)
+                            .flimFont(13, relativeTo: .subheadline)
+                            .foregroundStyle(Color(red: 1, green: 0.42, blue: 0.42))
+                    }
                     Spacer()
                 }
                 .padding(20)
@@ -491,7 +497,16 @@ private struct EditBioSheet: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Save") {
                         isSaving = true
-                        Task { try? await auth.setBio(String(bio.prefix(140))); dismiss() }
+                        Task {
+                            do {
+                                try await auth.setBio(String(bio.prefix(140)))
+                                dismiss()
+                            } catch {
+                                // Dismissing on failure told people the edit saved when it had not.
+                                saveError = "Couldn't save that. Check your connection and try again."
+                                isSaving = false
+                            }
+                        }
                     }
                     .foregroundStyle(FlimTheme.accent)
                     .disabled(isSaving)
@@ -506,6 +521,7 @@ private struct EditBioSheet: View {
 // MARK: - Edit name
 
 private struct EditNameSheet: View {
+    @State private var saveError: String?
     @Environment(AuthService.self) private var auth
     @Environment(\.dismiss) private var dismiss
     @State private var name: String
@@ -528,6 +544,11 @@ private struct EditNameSheet: View {
                         .tint(.white)
                         .padding(16)
                         .background(Color(white: 0.1), in: RoundedRectangle(cornerRadius: 12))
+                    if let saveError {
+                        Text(saveError)
+                            .flimFont(13, relativeTo: .subheadline)
+                            .foregroundStyle(Color(red: 1, green: 0.42, blue: 0.42))
+                    }
                     Spacer()
                 }
                 .padding(20)
@@ -542,7 +563,16 @@ private struct EditNameSheet: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Save") {
                         isSaving = true
-                        Task { try? await auth.setDisplayName(String(name.prefix(40))); dismiss() }
+                        Task {
+                            do {
+                                try await auth.setDisplayName(String(name.prefix(40)))
+                                dismiss()
+                            } catch {
+                                // Dismissing on failure told people the edit saved when it had not.
+                                saveError = "Couldn't save that. Check your connection and try again."
+                                isSaving = false
+                            }
+                        }
                     }
                     .foregroundStyle(FlimTheme.accent)
                     .disabled(isSaving)

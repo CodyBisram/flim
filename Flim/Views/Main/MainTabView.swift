@@ -100,6 +100,9 @@ struct MainTabView: View {
         .onReceive(NotificationCenter.default.publisher(for: .openRollInvite)) { note in
             selected = 2   // Rolls tab
             inviteCode = note.object as? String
+            // This view was alive to catch it, so the written copy is redundant. Leaving it would
+            // re-open the join sheet on the next launch, for a roll already joined.
+            PendingRollInvite.clear()
         }
         .onReceive(NotificationCenter.default.publisher(for: .openDarkroom)) { _ in
             selected = 1
@@ -111,6 +114,12 @@ struct MainTabView: View {
         // system prompt on first launch (which gets denied far more often).
         .onChange(of: hasOnboarded) { _, done in if done { maybeShowNotifPrimer() } }
         .onAppear {
+            // A roll link that opened the app from cold arrives before this view exists, so the
+            // notification finds nobody. The code is on disk; collect it here.
+            if let held = PendingRollInvite.take() {
+                selected = 2
+                inviteCode = held
+            }
             maybeShowNotifPrimer()
             DiskImageCache.trim()   // keep the on-disk image cache bounded
 

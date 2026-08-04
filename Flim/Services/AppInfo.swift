@@ -27,8 +27,17 @@ enum AppInfo {
     }
 
     /// The share-sheet message for inviting someone to a roll.
+    ///
+    /// It names the app as invite-only on purpose. This message often reaches someone who has
+    /// never heard of \(appName), and the old wording sent them to the App Store to download a
+    /// thing that would then ask for an invite code they did not know they needed. The link
+    /// carries the code, so saying so turns a dead end into an instruction.
     static func rollInviteMessage(rollName: String, code: String) -> String {
-        "Join my roll “\(rollName)” on \(appName) 🎞\n\(rollInviteLink(code: code).absoluteString)\n(code: \(code))"
+        """
+        Join my roll “\(rollName)” on \(appName) 🎞
+        \(rollInviteLink(code: code).absoluteString)
+        \(appName) is invite-only, this link is your way in (code: \(code))
+        """
     }
 
     /// The share-sheet message for inviting someone to join the app itself with a personal

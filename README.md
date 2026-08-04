@@ -35,7 +35,7 @@ supabase/
   schema.sql     Tables, RLS policies, and RPCs
   migrations/    Idempotent SQL migrations (applied to production, mirrored in schema.sql)
   functions/     Edge Functions (send-develop-push, send-social-push, send-daily-digest)
-  push/          Remote push backend (legacy, superseded by Edge Functions)
+  push/          device_tokens migration + APNs setup docs (function code lives in functions/)
 web/             Invite landing page + legal site (Vercel)
 scripts/         LUT fitting (fit_lut.py)
 project.yml      xcodegen project definition

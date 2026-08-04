@@ -133,7 +133,7 @@ final class FeedService {
     /// Look up a profile by username (case-insensitive), used to resolve a tapped @mention.
     func fetchProfile(username: String) async -> UserProfile? {
         let list: [UserProfile] = (try? await supabase
-            .from("profiles").select().ilike("username", value: username).limit(1)
+            .from("profiles").select().ilike("username", pattern: username).limit(1)
             .execute().value) ?? []
         return list.first
     }

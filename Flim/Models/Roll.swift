@@ -28,6 +28,20 @@ struct Roll: Codable, Identifiable, Hashable {
     static let developDelay: TimeInterval = 12 * 3600
     #endif
 
+    /// How long rolls take to develop, phrased for user-facing copy.
+    ///
+    /// Onboarding used to say "the 12-hour mark" as a string literal, which was simply false in
+    /// every DEBUG build and would have gone stale the first time the delay changed. Copy that
+    /// states a number the code owns should ask the code for it.
+    static var developDelayPhrase: String { developDelayPhrase(for: developDelay) }
+
+    static func developDelayPhrase(for delay: TimeInterval) -> String {
+        let minutes = Int((delay / 60).rounded())
+        if minutes < 60 { return minutes == 1 ? "1 minute" : "\(minutes) minutes" }
+        let hours = Int((delay / 3600).rounded())
+        return hours == 1 ? "1 hour" : "\(hours) hours"
+    }
+
     /// When this roll unlocks for everyone.
     var revealAt: Date { createdAt.addingTimeInterval(Self.developDelay) }
     /// True once the reveal has passed, the roll is closed to new shots.

@@ -39,6 +39,7 @@ struct PhotoPagerView: View {
     /// Show the photographer's @handle above the date (roll grid); off shows the date alone.
     var showsAttribution: Bool = false
     @State private var profileRoute: ProfileRoute?
+    @State private var dragY: CGFloat = 0
     var memberNames: [UUID: String] = [:]
     /// The roll name for a given photo's rollId (nil for a personal, non-roll shot), used only in
     /// the delete-confirmation wording. A roll grid passes a closure returning its own name.
@@ -381,7 +382,7 @@ struct PhotoPagerView: View {
                 photoPage(photo)
                     .id(photo.id)
                     .transition(.opacity)
-                    .offset(x: dragX)
+                    .offset(x: dragX, y: dragY)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -395,12 +396,31 @@ struct PhotoPagerView: View {
     private var swipeToPage: some Gesture {
         DragGesture(minimumDistance: 20)
             .onChanged { value in
-                dragX = pagingDragOffset(width: value.translation.width,
-                                         index: selection, count: photos.count)
+                // Vertical drags move the whole view toward dismissal instead of paging, so the
+                // two gestures never fight: whichever axis dominates wins, and only that axis
+                // moves. This viewer had no swipe-to-dismiss at all, while the carousel had
+                // nothing else; each had exactly the half the other was missing.
+                if abs(value.translation.height) > abs(value.translation.width), scale <= 1 {
+                    dragY = max(0, value.translation.height) * 0.6
+                    dragX = 0
+                } else {
+                    dragX = pagingDragOffset(width: value.translation.width,
+                                             index: selection, count: photos.count)
+                    dragY = 0
+                }
             }
             .onEnded { value in
-                withAnimation(.easeOut(duration: 0.18)) { dragX = 0 }
-                if let delta = pagingStep(forDragWidth: value.translation.width) { step(delta) }
+                let dismissing = scale <= 1
+                    && abs(value.translation.height) > abs(value.translation.width)
+                    && value.translation.height > 120
+                withAnimation(.easeOut(duration: 0.18)) { dragX = 0; dragY = 0 }
+                if dismissing {
+                    Haptics.tap()
+                    dismiss()
+                } else if abs(value.translation.width) > abs(value.translation.height),
+                          let delta = pagingStep(forDragWidth: value.translation.width) {
+                    step(delta)
+                }
             }
     }
 

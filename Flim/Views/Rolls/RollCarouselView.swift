@@ -4,6 +4,7 @@ import SwiftUI
 /// with the current photo's date, who took it, and reactions.
 struct RollCarouselView: View {
     @State private var profileRoute: ProfileRoute?
+    @State private var dragX: CGFloat = 0
     let photos: [Photo]                    // developed, sorted oldest → newest
     let memberNames: [UUID: String]
     var startIndex: Int = 0
@@ -17,6 +18,7 @@ struct RollCarouselView: View {
     @State private var urls: [UUID: URL] = [:]
     @State private var reactions: [PhotoReaction] = []
     @State private var shareItem: ShareImage?
+    @State private var preparingShare = false
     @State private var showComments = false
     /// Which of this roll's photos have already been shared to someone's page, a quiet signal,
     /// not tied to who shared it or who took the shot. Loaded once for the whole roll rather than
@@ -54,6 +56,9 @@ struct RollCarouselView: View {
                     }
                     .id(current?.id)
                     .transition(.opacity)
+                    // Follows the finger. Without this the drag offset above is computed and
+                    // thrown away, which is the same as not having it.
+                    .offset(x: dragX)
 
                     // Tap zones: left half steps back, right half steps forward.
                     HStack(spacing: 0) {
@@ -106,14 +111,19 @@ struct RollCarouselView: View {
             }
             .accessibilityLabel("Comments")
             Button {
-                if let photo = current, let url = urls[photo.id],
-                   let image = ImageCache.shared.object(forKey: "\(url.absoluteString)|1600" as NSString) {
-                    shareItem = ShareImage(image: image)
-                }
+                shareCurrent()
             } label: {
-                Image(systemName: "square.and.arrow.up").font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(.white).padding(12).glassCapsule(interactive: true)
+                Group {
+                    if preparingShare {
+                        ProgressView().tint(.white).controlSize(.small)
+                    } else {
+                        Image(systemName: "square.and.arrow.up").font(.system(size: 15, weight: .medium))
+                    }
+                }
+                .frame(width: 19, height: 19)
+                .foregroundStyle(.white).padding(12).glassCapsule(interactive: true)
             }
+            .disabled(preparingShare)
             .accessibilityLabel("Share this photo")
         }
         .padding(.horizontal, 20).padding(.top, 20)
@@ -174,13 +184,24 @@ struct RollCarouselView: View {
     /// top of the tap zones above, not instead of them.
     private var pageOrDismissGesture: some Gesture {
         DragGesture(minimumDistance: 24)
+            // The photo follows the finger now. This gesture had no `onChanged` at all, so a
+            // swipe moved nothing until it was released and then snapped: a gesture recogniser
+            // rather than a gesture. No threshold tuning fixes that, because what was missing is
+            // feedback DURING the drag, not the decision at the end. Uses the same pure helpers
+            // as the full-screen viewer, so both surfaces resist at the ends identically.
+            .onChanged { value in
+                guard abs(value.translation.width) > abs(value.translation.height) else { return }
+                dragX = pagingDragOffset(width: value.translation.width,
+                                         index: selection, count: photos.count)
+            }
             .onEnded { value in
+                withAnimation(.easeOut(duration: 0.18)) { dragX = 0 }
                 let h = value.translation.width
                 let v = value.translation.height
                 if abs(v) > abs(h) {
                     if abs(v) > 120 { Haptics.tap(); dismiss() }
-                } else if abs(h) > 60 {
-                    step(h < 0 ? 1 : -1)
+                } else if let delta = pagingStep(forDragWidth: h) {
+                    step(delta)
                 }
             }
     }
@@ -225,4 +246,32 @@ struct RollCarouselView: View {
             reactions = await photoService.fetchReactions(photoId: photo.id)
         }
     }
+
+    /// Shares the photo on screen, fetching it if it is not already in cache.
+    ///
+    /// This used to be a single `if let` over `ImageCache`, so on a miss the button did nothing:
+    /// no sheet, no spinner, no error. Nothing is worse than a control that silently declines,
+    /// because the only available reading is that the app is broken. The cache hit is still
+    /// instant; the miss now costs a spinner instead of the feature.
+    private func shareCurrent() {
+        guard !preparingShare, let photo = current, let url = urls[photo.id] else { return }
+        let key = "\(url.absoluteString)|1600" as NSString
+        if let image = ImageCache.shared.object(forKey: key) {
+            shareItem = ShareImage(image: image)
+            return
+        }
+        preparingShare = true
+        Task {
+            defer { preparingShare = false }
+            guard let (data, _) = try? await URLSession.shared.data(from: url),
+                  let image = UIImage(data: data)
+            else {
+                Haptics.error()
+                return
+            }
+            ImageCache.shared.setObject(image, forKey: key)
+            shareItem = ShareImage(image: image)
+        }
+    }
+
 }

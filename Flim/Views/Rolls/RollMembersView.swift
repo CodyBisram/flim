@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct RollMembersView: View {
+    @State private var profileRoute: ProfileRoute?
     let roll: Roll
     @Environment(RollService.self) private var rollService
     @Environment(AuthService.self) private var auth
@@ -90,9 +91,20 @@ struct RollMembersView: View {
                                     }
 
                                     VStack(alignment: .leading, spacing: 2) {
-                                        Text(isBlocked ? "Blocked user" : "@\(member.username ?? "unknown")")
-                                            .flimFont(15, weight: .medium, relativeTo: .body)
-                                            .foregroundStyle(isBlocked ? Color(white: 0.45) : .white)
+                                        // Tappable, like the other eight surfaces that render a
+                                        // handle. This was the only one that refused, and it is
+                                        // the screen where someone joining a friend's roll looks
+                                        // up the strangers in it. A blocked row stays inert.
+                                        Button {
+                                            guard !isBlocked else { return }
+                                            profileRoute = ProfileRoute(id: member.id)
+                                        } label: {
+                                            Text(isBlocked ? "Blocked user" : "@\(member.username ?? "unknown")")
+                                                .flimFont(15, weight: .medium, relativeTo: .body)
+                                                .foregroundStyle(isBlocked ? Color(white: 0.45) : .white)
+                                        }
+                                        .buttonStyle(.plain)
+                                        .disabled(isBlocked)
                                         if member.id == roll.createdBy {
                                             Text("Creator")
                                                 .flimFont(11, relativeTo: .caption)
@@ -131,7 +143,10 @@ struct RollMembersView: View {
                     }
                 }
             }
-            .navigationBarTitleDisplayMode(.inline)
+            .sheet(item: $profileRoute) { route in
+            NavigationStack { UserPageView(userId: route.id) }
+        }
+        .navigationBarTitleDisplayMode(.inline)
             .flimInlineTitle("Members (\(members.count)/\(Roll.memberCap))")
             .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbar {
