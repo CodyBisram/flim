@@ -129,11 +129,16 @@ final class AuthService {
         let normalized = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard Self.isReviewerEmail(normalized) else { throw AuthError.notInvited }
         try await supabase.auth.signIn(email: normalized, password: password)
+        let epoch = AccountEpoch.current
         let session = try await supabase.auth.session
         noteSession(session.user.id)
         isResolvingProfile = true
         isAuthenticated = true
         await refreshCurrentUser(id: session.user.id)
+        // Only the sign-in that is still current may lower this flag. Otherwise a superseded
+        // sign-in clears it while a NEWER one is still resolving, and the router briefly shows the
+        // username screen, which is the exact flash the flag exists to prevent.
+        guard AccountEpoch.isCurrent(epoch) else { return }
         isResolvingProfile = false
     }
 
@@ -179,22 +184,29 @@ final class AuthService {
         guard let email = pendingEmail else { return }
         try await supabase.auth.verifyOTP(email: email, token: token, type: .email)
         let session = try await supabase.auth.session
+        let epoch = AccountEpoch.current
         noteSession(session.user.id)
         isResolvingProfile = true
         isAuthenticated = true
         await refreshCurrentUser(id: session.user.id)
+        // Only the sign-in that is still current may lower this flag. Otherwise a superseded
+        // sign-in clears it while a NEWER one is still resolving, and the router briefly shows the
+        // username screen, which is the exact flash the flag exists to prevent.
+        guard AccountEpoch.isCurrent(epoch) else { return }
         isResolvingProfile = false
         pendingEmail = nil
     }
 
     // Handles magic link tap on real device
     func handle(url: URL) async {
+        let epoch = AccountEpoch.current
         do {
             try await supabase.auth.session(from: url)
             let session = try await supabase.auth.session
             noteSession(session.user.id)
             await refreshCurrentUser(id: session.user.id)
         } catch {
+            guard AccountEpoch.isCurrent(epoch) else { return }
             self.error = "Sign-in link expired. Please request a new one."
         }
     }
@@ -497,9 +509,11 @@ final class AuthService {
             case .signedIn:
                 if let session = try? await supabase.auth.session {
                     noteSession(session.user.id)
+                    let epoch = AccountEpoch.current
                     isResolvingProfile = true
                     isAuthenticated = true
                     await refreshCurrentUser(id: session.user.id)
+                    guard AccountEpoch.isCurrent(epoch) else { continue }
                     isResolvingProfile = false
                 }
             case .signedOut:

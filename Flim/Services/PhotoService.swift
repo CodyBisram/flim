@@ -113,6 +113,11 @@ final class PhotoService {
 
     @discardableResult
     func captureAndUpload(imageData: Data, userId: UUID, rollId: UUID?) async -> Photo? {
+        // A capture makes two round trips (storage upload, then the row insert) before inserting
+        // into the shared list. Same class as createRoll: an INSERT of new content, so a
+        // completion that outlives its account would splice the departing account's photo into
+        // the new account's Darkroom grid.
+        let epoch = AccountEpoch.current
         await MainActor.run { isUploading = true; uploadError = nil }
 
         let photoId = UUID()
@@ -157,6 +162,13 @@ final class PhotoService {
                 .execute()
                 .value
 
+            // The photo is still returned and its renditions still upload: it exists server-side
+            // under the account that took it, and abandoning that work would lose a real photo.
+            // Only the shared list is left alone.
+            guard AccountEpoch.isCurrent(epoch) else {
+                uploadRenditions(photoId: photoId, userId: userId, imageData: imageData)
+                return inserted
+            }
             await MainActor.run {
                 loadedPhotos.insert(inserted, at: 0)
                 isUploading = false
@@ -164,6 +176,9 @@ final class PhotoService {
             uploadRenditions(photoId: photoId, userId: userId, imageData: imageData)
             return inserted
         } catch {
+            // A failed upload belongs to the account that attempted it. Queueing its retry under
+            // a different account would re-upload one person's photo as another's.
+            guard AccountEpoch.isCurrent(epoch) else { return nil }
             await MainActor.run {
                 uploadError = error.localizedDescription
                 failedUploads.append(FailedUpload(data: imageData, userId: userId, rollId: rollId))

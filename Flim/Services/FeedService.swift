@@ -36,7 +36,12 @@ final class FeedService {
     // MARK: - Follows
 
     func loadFollowing(userId: UUID) async {
-        followingIds = await fetchFollowingIds(userId: userId)
+        // Same write as loadFeed's, reached from Activity and profile screens on appear, so it
+        // needs the same guard.
+        let epoch = AccountEpoch.current
+        let following = await fetchFollowingIds(userId: userId)
+        guard AccountEpoch.isCurrent(epoch) else { return }
+        followingIds = following
     }
 
     private func fetchFollowingIds(userId: UUID) async -> Set<UUID> {
@@ -422,7 +427,11 @@ final class FeedService {
 
     /// Loads tags for a single post (e.g. a detail view opened outside the feed) into the caches.
     func loadTags(for postId: UUID) async {
+        // Reached by simply opening a post, not by a user action on it, so it is a passive read
+        // path rather than one of the accepted id-keyed mutations.
+        let epoch = AccountEpoch.current
         let (map, profs) = await batchTags(postIds: [postId])
+        guard AccountEpoch.isCurrent(epoch) else { return }
         tagsByPost.merge(map) { _, new in new }
         tagProfiles.merge(profs) { _, new in new }
     }
