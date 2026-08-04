@@ -104,6 +104,22 @@ struct UsernameView: View {
 
                 Spacer()
 
+                // An escape, always. This screen is otherwise a dead end: no back, no sign-out,
+                // and nothing else to tap. Anyone who reaches it by mistake, or with the wrong
+                // account, could previously only force-quit.
+                if let email = auth.currentUser?.email ?? auth.pendingEmail {
+                    HStack(spacing: 4) {
+                        Text("Signed in as \(email).")
+                            .foregroundStyle(FlimTheme.textTertiary)
+                        Button("Sign out") {
+                            Task { try? await auth.signOut() }
+                        }
+                        .foregroundStyle(FlimTheme.accent)
+                    }
+                    .flimFont(12, relativeTo: .caption)
+                    .padding(.bottom, 4)
+                }
+
                 PrimaryButton(title: "Continue", isLoading: isSaving, disabled: !isValid) {
                     await save()
                 }

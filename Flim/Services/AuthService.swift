@@ -36,6 +36,13 @@ final class AuthService {
     /// True while we're fetching the profile right after sign-in, so the router shows the
     /// splash instead of briefly flashing the "pick a username" screen for existing users.
     var isResolvingProfile = false
+    /// Set when the profile could not be FETCHED, as distinct from not existing.
+    ///
+    /// Collapsing those two into "currentUser is nil" is the whole bug: a signed-in user with no
+    /// connection was routed to the SIGN-UP screen, and typing the name they already owned
+    /// answered "That username's taken". There was no sign-out, no retry and no back, so
+    /// force-quitting was the only way out.
+    var profileUnavailable = false
     var error: String?
 
     private(set) var pendingEmail: String?
@@ -62,9 +69,25 @@ final class AuthService {
     /// "shows the wrong account" into "shows no account", which is better but still wrong.
     private func refreshCurrentUser(id: UUID) async {
         let epoch = AccountEpoch.current
-        let profile = try? await fetchUserProfile(id: id)
-        guard AccountEpoch.isCurrent(epoch) else { return }
-        currentUser = profile
+        do {
+            let profile = try await fetchUserProfile(id: id)
+            guard AccountEpoch.isCurrent(epoch) else { return }
+            currentUser = profile
+            profileUnavailable = false
+        } catch {
+            guard AccountEpoch.isCurrent(epoch) else { return }
+            // Only unavailable if we have nothing to show. A cached profile from earlier in the
+            // session is better than an error screen, and stays on screen.
+            profileUnavailable = currentUser == nil
+        }
+    }
+
+    /// Retries the profile fetch after a failure, for the error state the router shows.
+    func retryProfileLoad() async {
+        guard let session = try? await supabase.auth.session else { return }
+        isResolvingProfile = true
+        await refreshCurrentUser(id: session.user.id)
+        isResolvingProfile = false
     }
 
     init() {
@@ -78,7 +101,10 @@ final class AuthService {
             let session = try await supabase.auth.session
             noteSession(session.user.id)
             isAuthenticated = true
+            // Held on the splash while this resolves, so a slow launch never flashes sign-up.
+            isResolvingProfile = true
             await refreshCurrentUser(id: session.user.id)
+            isResolvingProfile = false
         } catch {
             // No active session
         }
@@ -178,7 +204,7 @@ final class AuthService {
                 .rpc("redeem_invite", params: ["p_code": normalizedCode, "p_email": normalizedEmail])
                 .execute()
                 .value
-        } catch let error as PostgrestError where error.code == "P0003" || error.message == "rate_limited" {
+        } catch let error as PostgrestError where Self.isRateLimited(code: error.code, message: error.message) {
             throw AuthError.rateLimited
         }
     }
@@ -366,18 +392,22 @@ final class AuthService {
     ///
     /// Downscaled to the same 256pt an avatar copied from a Darkroom shot gets, so an imported
     /// picture can't quietly become the largest object in the bucket.
-    func setAvatar(fromImageData raw: Data) async {
+    /// Returns false when the upload or the row update failed, so the caller can say so. It used
+    /// to return Void, which made a failed avatar indistinguishable from the user imagining it.
+    @discardableResult
+    func setAvatar(fromImageData raw: Data) async -> Bool {
         guard let session = try? await supabase.auth.session,
               let dest = await uploadOwnedImage(raw, prefix: "avatar", userId: session.user.id, maxPixel: 256)
-        else { return }
+        else { return false }
         let old = currentUser?.avatarPath
         struct Update: Encodable { let avatar_path: String }
         guard (try? await supabase
             .from("users").update(Update(avatar_path: dest), returning: .minimal)
             .eq("id", value: session.user.id.uuidString).execute()) != nil
-        else { return }
+        else { return false }
         await refreshCurrentUser(id: session.user.id)
         cleanupOldCopy(old, keeping: dest, prefix: "avatar")
+        return true
     }
 
     /// Sets the profile cover/header from one of the user's photos (its own Storage copy).
@@ -388,18 +418,22 @@ final class AuthService {
 
     /// Sets the cover from a picked library photo. Same reasoning as `setAvatar(fromImageData:)`:
     /// no FLIM grade on an imported picture, and downscaled to the cover's own 640pt cap.
-    func setCover(fromImageData raw: Data) async {
+    /// Returns false when the upload or the row update failed, so the caller can say so. It used
+    /// to return Void, which made a failed cover indistinguishable from the user imagining it.
+    @discardableResult
+    func setCover(fromImageData raw: Data) async -> Bool {
         guard let session = try? await supabase.auth.session,
               let dest = await uploadOwnedImage(raw, prefix: "cover", userId: session.user.id, maxPixel: 640)
-        else { return }
+        else { return false }
         let old = currentUser?.coverPath
         struct Update: Encodable { let cover_path: String }
         guard (try? await supabase
             .from("users").update(Update(cover_path: dest), returning: .minimal)
             .eq("id", value: session.user.id.uuidString).execute()) != nil
-        else { return }
+        else { return false }
         await refreshCurrentUser(id: session.user.id)
         cleanupOldCopy(old, keeping: dest, prefix: "cover")
+        return true
     }
 
     /// Writes image data into a fresh object in the user's own folder, returning its path.
@@ -419,9 +453,31 @@ final class AuthService {
         } catch { return nil }
     }
 
+    /// Whether a redeem failure was the server refusing for rate limiting, rather than a bad code.
+    ///
+    /// Two shapes because the RPC signals it two ways depending on how it raises: a SQLSTATE
+    /// (`P0003`) and a message. Extracted so the rule can be tested at all: inside a `catch where`
+    /// clause it was reachable only by provoking a real 429 from the live server, and getting it
+    /// wrong turns "slow down for a minute" into "your invite code is invalid", which sends
+    /// someone off to ask for a new code that will fail exactly the same way.
+    nonisolated static func isRateLimited(code: String?, message: String?) -> Bool {
+        code == "P0003" || message == "rate_limited"
+    }
+
+    /// Whether an old avatar/cover copy is safe to delete.
+    ///
+    /// This is the only delete in the app that runs without asking, so it is the one worth
+    /// pinning. It must be true ONLY for a resized copy this code made (those paths carry an
+    /// `avatar-` or `cover-` segment). A real capture never does, and deleting one would destroy
+    /// a photograph to save a few kilobytes.
+    nonisolated static func shouldCleanUpOldCopy(_ old: String?, keeping newPath: String, prefix: String) -> Bool {
+        guard let old, !old.isEmpty, old != newPath else { return false }
+        return old.contains("/\(prefix)-")
+    }
+
     /// Best-effort delete of a previous avatar/cover copy (only our own copies, never a real photo).
     private func cleanupOldCopy(_ old: String?, keeping newPath: String, prefix: String) {
-        guard let old, old != newPath, old.contains("/\(prefix)-") else { return }
+        guard let old, Self.shouldCleanUpOldCopy(old, keeping: newPath, prefix: prefix) else { return }
         Task { _ = try? await supabase.storage.from("photos").remove(paths: [old]) }
     }
 
@@ -492,9 +548,20 @@ final class AuthService {
     /// The `id` parameter used to be ignored entirely, which is what made the mismatch invisible:
     /// the function took the thing it needed to check and then didn't check it.
     private func fetchUserProfile(id: UUID) async throws -> AppUser? {
-        guard let profile: AppUser = try? await supabase
-            .rpc("get_own_profile").single().execute().value
-        else { return nil }
+        let profile: AppUser
+        do {
+            profile = try await supabase.rpc("get_own_profile").single().execute().value
+        } catch let error as URLError {
+            // Could not reach the server at all. Deliberately rethrown rather than folded into
+            // nil: nil means "this account has no profile yet", which routes a person to sign-up,
+            // and doing that to someone who simply has no signal is how they get locked out.
+            throw error
+        } catch {
+            // The server answered and had nothing for us. That is the genuine new-user path, and
+            // it must keep working, which is why only URLError is treated as unavailable rather
+            // than every error.
+            return nil
+        }
 
         guard profile.id == id else {
             // Loud, because it means the client and the server disagree about who is signed in.

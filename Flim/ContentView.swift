@@ -24,6 +24,18 @@ struct ContentView: View {
                 // Signed in, still fetching the profile, hold on the splash so existing
                 // users never see a flash of the username screen.
                 SplashView()
+            } else if auth.profileUnavailable {
+                // Signed in, but the profile could not be FETCHED. Falling through to the
+                // username screen here is what locked people out: an existing user was shown
+                // sign-up, and the name they already owned came back as taken.
+                ErrorState(
+                    title: "Couldn't reach your account",
+                    message: "Check your connection and try again. You're still signed in."
+                ) {
+                    await auth.retryProfileLoad()
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .transition(.opacity)
             } else if auth.currentUser?.username == nil {
                 NavigationStack {
                     UsernameView()
@@ -38,6 +50,7 @@ struct ContentView: View {
         .animation(.easeInOut(duration: 0.35), value: auth.currentUser?.username)
         .animation(.easeInOut(duration: 0.35), value: auth.isLoading)
         .animation(.easeInOut(duration: 0.35), value: auth.isResolvingProfile)
+        .animation(.easeInOut(duration: 0.35), value: auth.profileUnavailable)
         // Every service cache is keyed by post, photo or roll id, never by account, so none of it
         // invalidates itself when the account changes. Signing out cleared the session and the
         // profile and left all of it populated.
@@ -47,6 +60,10 @@ struct ContentView: View {
             photos.resetForAccountChange()
             feed.resetForAccountChange()
             rolls.resetForAccountChange()
+            // Captures that never reached the server are kept on disk per account, so this is
+            // where they come back: on launch, and on signing back in. Without it the files
+            // would accumulate forever and nobody would ever be offered the retry.
+            if let newId { photos.restoreFailedUploads(userId: newId) }
         }
         .onReceive(NotificationCenter.default.publisher(for: .flimAccountDidChange)) { _ in
             // Sign-out posts this. currentUser goes to nil, which the onChange above also catches,
