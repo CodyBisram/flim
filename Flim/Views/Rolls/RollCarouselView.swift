@@ -62,7 +62,6 @@ struct RollCarouselView: View {
                     .id(current?.id)
                     .transition(.opacity)
                     .scaleEffect(scale, anchor: zoomAnchor)
-                    .gesture(TransientPinch(scale: $scale, anchor: $zoomAnchor, restingScale: $pinchStart))
                     // Follows the finger. Without this the drag offset above is computed and
                     // thrown away, which is the same as not having it.
                     .offset(x: dragX)
@@ -79,6 +78,18 @@ struct RollCarouselView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding(.vertical, 8)
+                // The pinch belongs HERE, on the stack, not on the photo inside it.
+                //
+                // The tap zones above are full-bleed `Color.clear` with a `contentShape`, and in a
+                // ZStack they are declared after the photo, which means they sit ON TOP of it. A
+                // gesture attached to the photo is underneath them and never sees a finger, so the
+                // zoom was dead on arrival. Same trap `PhotoTags` documents for its label layer.
+                //
+                // `simultaneousGesture` rather than `gesture` so it coexists with those tap zones
+                // instead of replacing them: a pinch needs two fingers, a step needs one, and
+                // neither should have to wait for the other to fail.
+                .simultaneousGesture(TransientPinch(scale: $scale, anchor: $zoomAnchor,
+                                                    restingScale: $pinchStart))
                 // Paging stands down while the photo is zoomed, so a pinch that lands slightly
                 // off-centre isn't read as a swipe to the next shot or a swipe to dismiss.
                 .gesture(pageOrDismissGesture, including: scale > 1 ? .none : .all)

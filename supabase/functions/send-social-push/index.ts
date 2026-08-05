@@ -387,6 +387,34 @@ Deno.serve(async () => {
     await supabase.from("photo_reactions").update({ push_sent: true }).in("id", g.ids);
   }
 
+  // ---- New followers → notify the person who was followed.
+  //
+  //      The one social event that reached the in-app Activity feed but never the phone:
+  //      someone could follow you and nothing would tell you unless you opened Activity.
+  //
+  //      The flag is flipped whether or not a push actually went out (no device registered,
+  //      blocked either way, self-follow), so a row can never be retried forever. `notify`
+  //      is the single door that enforces blocks.
+  const { data: follows } = await supabase
+    .from("follows")
+    .select("follower_id, following_id")
+    .eq("push_sent", false);
+
+  for (const f of follows ?? []) {
+    const name = await handle(f.follower_id);
+    // Title/body split the way the report pushes do. No "tap to see their profile": these
+    // payloads carry no deep link, a tap just opens the app, and promising a destination the
+    // notification cannot reach is worse than saying only what happened.
+    sent += await notify(f.following_id, f.follower_id, "New follower", `${name} started following you`);
+    // Composite primary key (follower_id, following_id): both halves are needed to address
+    // the row, and there is no surrogate id to use instead.
+    await supabase
+      .from("follows")
+      .update({ push_sent: true })
+      .eq("follower_id", f.follower_id)
+      .eq("following_id", f.following_id);
+  }
+
   // ---- Content reports → notify the app OWNER (Guideline 1.2, act within 24h).
   //      Every report pushes (not just the >=2-reporter auto-hide threshold), so a
   //      first report is seen immediately. push_sent is flipped regardless of

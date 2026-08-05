@@ -35,7 +35,6 @@ struct PostDetailView: View {
     @State private var comments: [CommentInfo] = []
     @State private var draft = ""
     @State private var sending = false
-    @State private var showViewer = false
     @State private var shareItem: ShareImage?
     @State private var showReportConfirm = false
     @State private var showBlockConfirm = false
@@ -74,9 +73,12 @@ struct PostDetailView: View {
                             PhotoTags(tags: feed.tagsByPost[post.id] ?? [], profiles: feed.tagProfiles) { route = ProfileRoute(id: $0) }
                         }
                         .clipShape(RoundedRectangle(cornerRadius: 14))
+                        // Tapping used to open a bare full-screen viewer on top of this one. It
+                        // was a second screen showing the same photograph: this page already
+                        // renders it at 1400px against the same dark background, and pinching now
+                        // lifts it out over a dimmed backdrop, which is the whole of what that
+                        // viewer offered. All the extra tap bought was an X to get back.
                         .pinchToZoom()
-                        .contentShape(Rectangle())
-                        .onTapGesture { if url != nil { showViewer = true } }
 
                     if let caption = post.caption, !caption.isEmpty {
                         Text(caption).flimFont(15, relativeTo: .body).foregroundStyle(.white)
@@ -163,7 +165,6 @@ struct PostDetailView: View {
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
-        .fullScreenCover(isPresented: $showViewer) { ImageViewer(url: url) }
         .sheet(item: $shareItem) { SharePreviewSheet(photo: $0.image) }
         .sheet(isPresented: $showEditTags) {
             TagPhotoSheet(url: url, tags: $editingTags) {
@@ -210,9 +211,6 @@ struct PostDetailView: View {
         // post explicitly: a plain `.task` would not re-run on a reused instance, which is how
         // this screen once opened showing the PREVIOUS photo.
         .task(id: post.id) {
-            // A reused instance would otherwise arrive with the last visit's viewer still flagged
-            // open, presenting the bare full-screen image over a photo you just tapped into.
-            showViewer = false
             await load()
         }
         // Someone else's reaction lands while you're looking at the photo, instead of only after

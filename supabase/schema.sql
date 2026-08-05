@@ -1336,6 +1336,27 @@ CREATE POLICY "crash_diagnostics: insert"
 -- supabase/migrations/2026-07-31_photo_reactions_push_backfill.sql.
 -- ============================================================
 ALTER TABLE public.photo_reactions ADD COLUMN IF NOT EXISTS push_sent BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- ============================================================
+-- Follow notifications
+--
+-- A new follower was the one social event that showed up in the in-app Activity
+-- feed (ActivityFeedView renders `.follow` rows, with a follow-back control) but
+-- never reached the phone. Someone could follow you and nothing would tell you
+-- unless you happened to open Activity.
+--
+-- Same poll + push_sent-flag pattern as posts, reactions, comments and reports:
+-- send-social-push scans follows for push_sent = FALSE every minute, pushes to
+-- the followed user, then flips the flag. Blocks are enforced by that function's
+-- `notify` helper, which every user-to-user push goes through.
+--
+-- As with photo_reactions, the one-time backfill marking pre-existing follows as
+-- already handled is NOT here: this file is re-run in production as the standing
+-- workflow, and an unconditional UPDATE would permanently swallow the push for
+-- any follow mid-flight at that moment. It lives once, with a fixed cutoff, in
+-- supabase/migrations/2026-08-05_follow_push_backfill.sql.
+-- ============================================================
+ALTER TABLE public.follows ADD COLUMN IF NOT EXISTS push_sent BOOLEAN NOT NULL DEFAULT FALSE;
 CREATE INDEX IF NOT EXISTS photo_reactions_unpushed_idx ON public.photo_reactions (push_sent) WHERE push_sent = FALSE;
 
 -- ============================================================

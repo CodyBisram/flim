@@ -147,12 +147,6 @@ struct RollRevealView: View {
                 }
                 .id(photo.id)                      // fresh view per photo → animation restarts
                 .scaleEffect(revealZoom, anchor: zoomAnchor)
-                // Pinching a slide is a request to look at THIS shot, so it stops the clock the
-                // same way starting a reaction does, and you step forward yourself when you're
-                // done. Without that, the photo you leaned in to look at is the photo that slides
-                // away under your fingers.
-                .gesture(TransientPinch(scale: $revealZoom, anchor: $zoomAnchor,
-                                        restingScale: $pinchStart, onBegin: holdAutoAdvance))
                 .padding(.top, 84)
                 .padding(.bottom, 96)
 
@@ -167,7 +161,19 @@ struct RollRevealView: View {
                 GeometryReader { geo in
                     Color.clear
                         .contentShape(Rectangle())
-                        .gesture(playbackGesture(width: geo.size.width))
+                        // Stands down while the photo is zoomed. This layer resolves press, hold,
+                        // release, tap and swipe in one DragGesture, and a two-finger pinch looks
+                        // to it like a press that ends in a tap, which would advance the slide the
+                        // moment you let go of a photo you pinched to look at.
+                        .gesture(playbackGesture(width: geo.size.width),
+                                 including: revealZoom > 1 ? .none : .all)
+                        // The pinch lives on this layer, not on the photo. The photo sits below
+                        // this full-bleed `Color.clear` in the ZStack, so a gesture attached to it
+                        // never receives a finger, which is why the reveal's zoom did nothing at
+                        // all when it was written that way.
+                        .simultaneousGesture(TransientPinch(scale: $revealZoom, anchor: $zoomAnchor,
+                                                            restingScale: $pinchStart,
+                                                            onBegin: holdAutoAdvance))
                 }
 
                 // Photographer + shot number + the reaction bar, above the tap zones.
