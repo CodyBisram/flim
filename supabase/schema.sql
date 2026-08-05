@@ -561,7 +561,35 @@ CREATE OR REPLACE VIEW public.profiles AS
            hidden_from_discovery
     FROM public.users;
 
+-- READ ONLY, and the REVOKE is the part that matters.
+--
+-- This view is the door clients read identities through: `users` deliberately withholds SELECT
+-- from anon and authenticated (only service_role has it), because RLS is row-level and cannot
+-- hide the email and invite_code COLUMNS. Exposing a narrower view instead is the whole design,
+-- and it depends on the view running as its owner rather than as the caller. That is what
+-- Supabase's linter reports as "Security Definer View", and here it is load-bearing: adding
+-- `security_invoker = true` would make every profile read fail, because the caller has no SELECT
+-- on `users`.
+--
+-- The danger is the other half of that same property. A single-table view like this one is
+-- AUTO-UPDATABLE, so a write through it also runs as the owner and also bypasses RLS. Supabase's
+-- default privileges grant INSERT/UPDATE/DELETE to anon and authenticated on every new object in
+-- `public`, and a bare `GRANT SELECT` does not take those away. That combination meant anyone
+-- holding the publishable key (which ships inside the app binary) could PATCH or DELETE any
+-- user's row through this view, bypassing the "users: own row" policy entirely. Verified against
+-- production on 2026-08-05: an unauthenticated PATCH returned 200, not 403.
+--
+-- Nothing reads or writes profiles except SELECTs (the app writes profile fields to `users`,
+-- where RLS gates them), so the view is revoked down to SELECT. Keep the REVOKE ahead of the
+-- GRANT: this file is re-run in production as the standing workflow, and a re-created view picks
+-- the default privileges back up.
+REVOKE ALL ON public.profiles FROM anon, authenticated;
 GRANT SELECT ON public.profiles TO authenticated, anon;
+
+-- TRUNCATE is not subject to row level security, so the "users: own row" policy does not contain
+-- it. PostgREST cannot issue one, which is the only reason this was not reachable, and that is
+-- too thin a thing to rely on.
+REVOKE TRUNCATE ON public.users FROM anon, authenticated;
 
 -- FOLLOWS ----------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.follows (
