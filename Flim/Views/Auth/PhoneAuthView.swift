@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct EmailAuthView: View {
+    @Environment(\.flimAccent) private var accent
     @Environment(AuthService.self) private var auth
     @State private var email = ""
     @State private var isSending = false
@@ -151,7 +152,7 @@ struct EmailAuthView: View {
                 } label: {
                     Text("Have an invite code?")
                         .flimFont(14, weight: .medium, relativeTo: .subheadline)
-                        .foregroundStyle(FlimTheme.accent)
+                        .foregroundStyle(accent)
                 }
                 .buttonStyle(.plain)
             }

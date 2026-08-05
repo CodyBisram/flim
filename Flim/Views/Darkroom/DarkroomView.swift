@@ -14,6 +14,7 @@ func rollDeleteConfirmationMessage(forRollNames names: [String?]) -> String {
 }
 
 struct DarkroomView: View {
+    @Environment(\.flimAccent) private var accent
     var scrollToTop: Int = 0
     @Environment(AuthService.self) private var auth
     @Environment(PhotoService.self) private var photoService
@@ -65,9 +66,9 @@ struct DarkroomView: View {
                             Image(systemName: "chevron.right").font(.system(size: 12))
                         }
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(FlimTheme.accent)
+                        .foregroundStyle(accent)
                         .padding(.horizontal, 16).padding(.vertical, 12)
-                        .background(FlimTheme.accentSoft, in: RoundedRectangle(cornerRadius: 12))
+                        .background(accent.opacity(0.16), in: RoundedRectangle(cornerRadius: 12))
                         .padding(.horizontal, 16).padding(.bottom, 4)
                     }
                 }
@@ -137,7 +138,7 @@ struct DarkroomView: View {
                         }
                         .foregroundStyle(.black)
                         .padding(.horizontal, 10).padding(.vertical, 5)
-                        .background(FlimTheme.accent, in: Capsule())
+                        .background(accent, in: Capsule())
                     }
                     .accessibilityLabel("\(unsortedCount) to sort")
                 }
@@ -175,7 +176,7 @@ struct DarkroomView: View {
                         .font(.system(size: 14)).foregroundStyle(.white)
                     Button("Undo") { undoDelete() }
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(FlimTheme.accent)
+                        .foregroundStyle(accent)
                 }
                 .padding(.horizontal, 18).padding(.vertical, 12)
                 .background(.ultraThinMaterial, in: Capsule())
@@ -282,7 +283,16 @@ struct DarkroomView: View {
         Button { share(photo) } label: { Label("Share", systemImage: "square.and.arrow.up") }
         Button {
             Haptics.tap()
-            Task { await auth.setAvatar(fromPhotoPath: photo.storagePath) }
+            // Reports the outcome. This returns Bool so a failure can be surfaced, and
+            // three of the four call sites were dropping it: you tapped 'Set as profile
+            // photo', nothing happened, and nothing said why.
+            Task {
+                if await auth.setAvatar(fromPhotoPath: photo.storagePath) {
+                    Haptics.success()
+                } else {
+                    Haptics.error()
+                }
+            }
         } label: { Label("Set as profile photo", systemImage: "person.crop.circle") }
         Divider()
         Button(role: .destructive) { requestDelete([photo]) } label: { Label("Delete", systemImage: "trash") }
@@ -317,7 +327,7 @@ struct DarkroomView: View {
             RoundedRectangle(cornerRadius: 4).fill(Color.black.opacity(selected ? 0.4 : 0.001))
             Image(systemName: selected ? "checkmark.circle.fill" : "circle")
                 .font(.system(size: 18))
-                .foregroundStyle(selected ? FlimTheme.accent : .white.opacity(0.85))
+                .foregroundStyle(selected ? accent : .white.opacity(0.85))
                 .padding(6)
                 .shadow(radius: 2)
         }
@@ -453,7 +463,7 @@ struct DarkroomView: View {
         VStack(spacing: 12) {
             Image(systemName: "camera.aperture")
                 .font(.system(size: 40, weight: .ultraLight))
-                .foregroundStyle(FlimTheme.accent.opacity(0.8))
+                .foregroundStyle(accent.opacity(0.8))
             Text("Your darkroom's empty.")
                 .font(.system(size: 17, weight: .light))
                 .foregroundStyle(FlimTheme.textSecondary)
@@ -469,7 +479,7 @@ struct DarkroomView: View {
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(.black)
                     .padding(.horizontal, 20).padding(.vertical, 11)
-                    .background(FlimTheme.accent, in: Capsule())
+                    .background(accent, in: Capsule())
             }
             .padding(.top, 4)
         }
@@ -510,7 +520,7 @@ struct DarkroomView: View {
         ZStack {
             Color.black.opacity(0.94).ignoresSafeArea()
             // A soft glow that blooms behind the icon as it lands.
-            RadialGradient(colors: [FlimTheme.accent.opacity(0.28), .clear],
+            RadialGradient(colors: [accent.opacity(0.28), .clear],
                            center: .center, startRadius: 2, endRadius: 280)
                 .ignoresSafeArea()
                 .scaleEffect(revealAnim ? 1 : 0.5)
@@ -518,10 +528,10 @@ struct DarkroomView: View {
 
             VStack(spacing: 14) {
                 ZStack {
-                    Circle().fill(FlimTheme.accent.opacity(0.12)).frame(width: 112, height: 112)
+                    Circle().fill(accent.opacity(0.12)).frame(width: 112, height: 112)
                     Image(systemName: "sparkles")
                         .font(.system(size: 48, weight: .ultraLight))
-                        .foregroundStyle(FlimTheme.accent)
+                        .foregroundStyle(accent)
                         .symbolEffect(.pulse)
                 }
                 .scaleEffect(revealAnim ? 1 : 0.4)
@@ -542,8 +552,8 @@ struct DarkroomView: View {
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(.black)
                         .padding(.horizontal, 34).padding(.vertical, 14)
-                        .background(FlimTheme.accent, in: Capsule())
-                        .shadow(color: FlimTheme.accent.opacity(0.5), radius: 12)
+                        .background(accent, in: Capsule())
+                        .shadow(color: accent.opacity(0.5), radius: 12)
                 }
                 .opacity(revealAnim ? 1 : 0)
                 .padding(.top, 10)

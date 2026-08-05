@@ -550,6 +550,22 @@ final class PhotoService {
     /// nothing yet. The develop reminder's "N shots" was being derived that way and could report
     /// a count from an unrelated query. Same headless `count: .exact` shape as above, so it
     /// transfers no rows.
+    /// Every shot in a roll, from everyone in it.
+    ///
+    /// Distinct from `rollPhotoCount`, which is scoped to one person on purpose. The Live
+    /// Activity's "N shots so far" is a statement about the ROLL, and it was being fed the
+    /// per-user count from the rolls list and the roll-wide count from the roll detail, so the
+    /// same card read "3 shots so far" or "14 shots so far" depending on which screen you had
+    /// visited last.
+    func rollTotalShotCount(rollId: UUID) async -> Int {
+        (try? await supabase.from("photos")
+            .select("id", head: true, count: .exact)
+            .eq("roll_id", value: rollId.uuidString)
+            .execute().count) ?? 0
+    }
+
+    /// This person's shots in a roll. Used where the number is about YOU (the camera's
+    /// "you've taken N in this roll"), not about the roll.
     func rollPhotoCount(rollId: UUID, userId: UUID) async -> Int {
         (try? await supabase.from("photos")
             .select("id", head: true, count: .exact)

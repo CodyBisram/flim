@@ -4,6 +4,7 @@ import SwiftUI
 /// first (the reveal + reactions) lifts opt-in rates, and the real system prompt only fires if
 /// they tap "Turn on," so a "Not now" never burns the single OS request.
 struct NotificationPrimerSheet: View {
+    @Environment(\.flimAccent) private var accent
     @Environment(NotificationService.self) private var notifications
     @Environment(\.dismiss) private var dismiss
 
@@ -12,7 +13,7 @@ struct NotificationPrimerSheet: View {
             Spacer()
             Image(systemName: "bell.badge.fill")
                 .font(.system(size: 46, weight: .light))
-                .foregroundStyle(FlimTheme.accent)
+                .foregroundStyle(accent)
             Text("Don't miss the reveal")
                 .font(.system(size: 24, weight: .light))
                 .foregroundStyle(.white)
@@ -30,7 +31,7 @@ struct NotificationPrimerSheet: View {
                     .foregroundStyle(.black)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 15)
-                    .background(FlimTheme.accent, in: Capsule())
+                    .background(accent, in: Capsule())
             }
             Button { dismiss() } label: {
                 Text("Not now")

@@ -159,17 +159,7 @@ struct FailedUploadStoreTests {
     func emptyIsFine() {
         let (store, root) = makeStore(); defer { cleanUp(root) }
         #expect(store.load(userId: UUID()).isEmpty)
-        #expect(store.pendingByteCount(userId: UUID()) == 0)
         store.prune(userId: UUID())   // must not throw or create anything
     }
 
-    @Test("pending bytes are reported so the app can say how much is waiting")
-    func byteCount() {
-        let (store, root) = makeStore(); defer { cleanUp(root) }
-        let user = UUID()
-        store.save(FailedUpload(data: jpeg(count: 100), userId: user, rollId: nil))
-        store.save(FailedUpload(data: jpeg(count: 250), userId: user, rollId: nil))
-
-        #expect(store.pendingByteCount(userId: user) == 350)
-    }
 }

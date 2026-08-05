@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#0a0908">
+  <title>You're invited to FLIM</title>
+  <meta name="description" content="You have an invite to FLIM, the disposable camera for your closest friends.">
+  <meta property="og:site_name" content="FLIM">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://flim-app.com/i">
+  <meta property="og:title" content="You're invited to FLIM">
+  <meta property="og:description" content="The disposable camera for your closest friends. Invite-only, and this is your way in.">
+  <meta property="og:image" content="https://flim-app.com/og-image.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="You're invited to FLIM">
+  <meta name="twitter:description" content="The disposable camera for your closest friends. Invite-only, and this is your way in.">
+  <meta name="twitter:image" content="https://flim-app.com/og-image.png">
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="stylesheet" href="/style.css">
+  <style>
+    /* One flex column owns the vertical rhythm. The first version spaced things with <br> tags
+       and per-element margins, which is how the two buttons ended up 6px apart while the gap
+       above them was five times that: nothing was setting the relationship between them. */
+    .invite {
+      max-width: 400px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: clamp(26px, 7vw, 36px);
+      text-align: center;
+      padding-top: clamp(40px, 11vw, 76px);
+      padding-bottom: 56px;
+    }
+
+    /* Title and its line belong together, so they sit closer than the page rhythm. */
+    .invite-head { display: flex; flex-direction: column; gap: 10px; }
+    .invite-head h1 { margin: 0; line-height: 1.15; text-wrap: balance; }
+    .invite-lede { margin: 0; color: var(--text-dim); line-height: 1.5; text-wrap: balance; }
+
+    .invite-code {
+      width: 100%;
+      box-sizing: border-box;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: clamp(26px, 8vw, 38px);
+      font-weight: 300;
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 20px 16px;
+      /* Letter-spacing adds a trailing gap after the last character, which drags centered text
+         visually left. The compensating indent puts it back on the optical centre. */
+      letter-spacing: 0.25em;
+      text-indent: 0.25em;
+      overflow-wrap: anywhere;
+    }
+
+    /* Both buttons share a width so the pair reads as one decision with two answers, rather
+       than as two unrelated controls that happen to be stacked. */
+    .invite-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      width: 100%;
+      max-width: 300px;
+    }
+    .btn {
+      display: block;
+      width: 100%;
+      box-sizing: border-box;
+      padding: 15px 22px;
+      border-radius: 999px;
+      font-size: 16px;
+      font-weight: 600;
+      text-decoration: none;
+      text-align: center;
+      transition: opacity 0.15s ease, background-color 0.15s ease;
+    }
+    .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+    .btn-primary { background: var(--accent); color: #17130d; }
+    .btn-secondary {
+      color: var(--text);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      font-weight: 500;
+    }
+    .btn-secondary:hover { background: rgba(255, 255, 255, 0.05); }
+    .btn:active { opacity: 0.85; }
+
+    /* Two separate thoughts, so two paragraphs. They were one blob joined by a <br>. */
+    .invite-notes {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      color: var(--text-faint);
+      font-size: 14px;
+      line-height: 1.6;
+    }
+    .invite-notes p { margin: 0; }
+
+    @media (prefers-reduced-motion: reduce) {
+      .btn { transition: none; }
+    }
+  </style>
+</head>
+<body>
+  <main class="wrap invite">
+    <!-- A div, not a <header>: style.css gives every <header> the site nav's border-bottom,
+         which drew a stray rule across this card. -->
+    <div class="invite-head">
+      <h1>You’re invited to FLIM</h1>
+      <p class="invite-lede">Here’s your invite code. You’ll enter it when you sign up.</p>
+    </div>
+
+    <div class="invite-code" id="code">·····</div>
+
+    <!-- A personal invite almost always reaches someone who does not have the app yet, which is
+         why the App Store is the primary button here and "Open FLIM" is the secondary one. The
+         roll invite page at /join is the other way round, because a roll invite only means
+         anything to someone who is already a user. -->
+    <div class="invite-actions">
+      <a class="btn btn-primary" href="https://apps.apple.com/us/app/flim-disposable-camera/id6786079629">Get FLIM</a>
+      <a class="btn btn-secondary" id="open" href="#">Already have it? Open FLIM</a>
+    </div>
+
+    <div class="invite-notes">
+      <p>FLIM is the disposable camera for your closest friends. It’s invite-only, and this code is your way in.</p>
+      <p>Keep this link handy. You’ll need the code on the sign-up screen after you install.</p>
+    </div>
+  </main>
+  <script>
+    // /i/CODE → show the code and deep-link the Open button into the app.
+    // Matches FlimApp.routePersonalInviteCode, which accepts com.lapse.app://i/CODE.
+    const code = decodeURIComponent(location.pathname.split("/").filter(Boolean).pop() || "");
+    const valid = /^[A-Z0-9]{4,10}$/i.test(code) && code.toLowerCase() !== "i";
+    if (valid) {
+      document.getElementById("code").textContent = code.toUpperCase();
+      document.getElementById("open").href = "com.lapse.app://i/" + code.toUpperCase();
+    } else {
+      document.getElementById("code").textContent = "·····";
+      // No code means nothing to open. Hiding the whole action keeps the primary button from
+      // sitting next to a control that would do nothing.
+      document.getElementById("open").style.display = "none";
+    }
+  </script>
+</body>
+</html>

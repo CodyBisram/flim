@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct UsernameView: View {
+    @Environment(\.flimAccent) private var accent
     @Environment(AuthService.self) private var auth
     @State private var username = ""
     @State private var name = ""
@@ -114,7 +115,7 @@ struct UsernameView: View {
                         Button("Sign out") {
                             Task { try? await auth.signOut() }
                         }
-                        .foregroundStyle(FlimTheme.accent)
+                        .foregroundStyle(accent)
                     }
                     .flimFont(12, relativeTo: .caption)
                     .padding(.bottom, 4)

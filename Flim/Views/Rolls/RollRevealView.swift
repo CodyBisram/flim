@@ -4,6 +4,7 @@ import SwiftUI
 /// shots play as a full-screen, story-style slideshow, each print "develops" in front of you
 /// (blurred + washed → sharp), with the photographer's handle. Tap to step, skip anytime.
 struct RollRevealView: View {
+    @Environment(\.flimAccent) private var accent
     let rollId: UUID
     let rollName: String
     /// Chronological, developed, as of the moment the caller last fetched. Re-verified against
@@ -67,6 +68,11 @@ struct RollRevealView: View {
     /// Latched once a press has moved far enough to be a swipe, so it can't turn back into a hold.
     @State private var holdCancelled = false
     @State private var profileRoute: ProfileRoute?
+    /// Pinch-to-look on the current slide. Transient, so a zoom can never be left behind on a
+    /// slideshow that keeps moving.
+    @State private var revealZoom: CGFloat = 1
+    @State private var zoomAnchor: UnitPoint = .center
+    @State private var pinchStart: CGFloat?
 
     // MARK: - Opening card
     //
@@ -89,7 +95,8 @@ struct RollRevealView: View {
 
     // MARK: - Closing actions
     @State private var savingAll = false
-    @State private var shareImages: [UIImage] = []
+    /// File URLs, not UIImages. See PhotoExport.
+    @State private var shareImages: [URL] = []
     @State private var showShareAll = false
     @State private var saveAllError: String?
     /// The alert is a warning, not a failure: open the sheet once it is dismissed. Presenting
@@ -139,6 +146,13 @@ struct RollRevealView: View {
                     }
                 }
                 .id(photo.id)                      // fresh view per photo → animation restarts
+                .scaleEffect(revealZoom, anchor: zoomAnchor)
+                // Pinching a slide is a request to look at THIS shot, so it stops the clock the
+                // same way starting a reaction does, and you step forward yourself when you're
+                // done. Without that, the photo you leaned in to look at is the photo that slides
+                // away under your fingers.
+                .gesture(TransientPinch(scale: $revealZoom, anchor: $zoomAnchor,
+                                        restingScale: $pinchStart, onBegin: holdAutoAdvance))
                 .padding(.top, 84)
                 .padding(.bottom, 96)
 
@@ -436,7 +450,7 @@ struct RollRevealView: View {
         VStack(spacing: 14) {
             Image(systemName: "film.stack")
                 .font(.system(size: 44, weight: .ultraLight))
-                .foregroundStyle(FlimTheme.accent)
+                .foregroundStyle(accent)
             Text(rollName)
                 .font(.system(size: 24, weight: .light)).foregroundStyle(.white)
             Text("\(deck.count) shot\(deck.count == 1 ? "" : "s") · developed together")
@@ -447,9 +461,9 @@ struct RollRevealView: View {
             if let presence {
                 Label(presenceText(presence), systemImage: presence.position == 1 ? "sparkles" : "person.2.fill")
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(FlimTheme.accent)
+                    .foregroundStyle(accent)
                     .padding(.horizontal, 14).padding(.vertical, 8)
-                    .background(FlimTheme.accentSoft, in: Capsule())
+                    .background(accent.opacity(0.16), in: Capsule())
                     .padding(.top, 2)
             }
 
@@ -460,7 +474,7 @@ struct RollRevealView: View {
                 Text("View the roll")
                     .font(.system(size: 15, weight: .semibold)).foregroundStyle(.black)
                     .padding(.horizontal, 36).padding(.vertical, 13)
-                    .background(FlimTheme.accent, in: Capsule())
+                    .background(accent, in: Capsule())
             }
             .padding(.top, 12)
 
@@ -516,11 +530,14 @@ struct RollRevealView: View {
         shareAfterAlert = false
         Haptics.tap()
         Task {
-            var images: [UIImage] = []
-            for photo in deck {
+            // Same streaming export as the roll's own Save all, for the same reason: a reveal can
+            // be a 75-shot roll, and collecting that as UIImages is a jetsam kill. See PhotoExport.
+            let exportDir = PhotoExport.begin()
+            var images: [URL] = []
+            for (i, photo) in deck.enumerated() {
                 guard let url = urls[photo.viewPath] else { continue }
-                if let image = await ImageLoader.fetch(url: url, maxPixel: 1600, scale: displayScale) {
-                    images.append(image)
+                if let file = await PhotoExport.download(url, into: exportDir, index: i, total: deck.count) {
+                    images.append(file)
                 }
             }
             shareImages = images
@@ -546,7 +563,7 @@ struct RollRevealView: View {
         VStack(spacing: 14) {
             Image(systemName: "photo.on.rectangle.angled")
                 .font(.system(size: 40, weight: .ultraLight))
-                .foregroundStyle(FlimTheme.accent.opacity(0.8))
+                .foregroundStyle(accent.opacity(0.8))
             Text("The shots in this roll were deleted.")
                 .font(.system(size: 16, weight: .light))
                 .foregroundStyle(.white)
@@ -559,7 +576,7 @@ struct RollRevealView: View {
                 Text("Close")
                     .font(.system(size: 15, weight: .semibold)).foregroundStyle(.black)
                     .padding(.horizontal, 36).padding(.vertical, 13)
-                    .background(FlimTheme.accent, in: Capsule())
+                    .background(accent, in: Capsule())
             }
             .padding(.top, 12)
         }
@@ -641,7 +658,7 @@ struct RollRevealView: View {
             Text("DEVELOPED")
                 .font(.system(size: 11, weight: .semibold))
                 .tracking(3.5)
-                .foregroundStyle(FlimTheme.accent)
+                .foregroundStyle(accent)
 
             Text(rollName)
                 .font(.system(size: 34, weight: .ultraLight))
@@ -706,14 +723,17 @@ struct RollRevealView: View {
             Capsule().fill(Color.white.opacity(0.16)).frame(width: width, height: 2)
             TimelineView(.periodic(from: .now, by: 1.0 / 30.0)) { tl in
                 Capsule()
-                    .fill(FlimTheme.accent)
+                    .fill(accent)
                     .frame(width: width * coverFill(at: tl.date), height: 2)
             }
         }
         .accessibilityHidden(true)
     }
 
-    /// Cached so the card is not rebuilding a Set on every timeline tick.
+    /// Recomputed per body evaluation, which is cheap here because the card's body runs on state
+    /// changes, not on the progress line's 30Hz timeline (that reads `coverAppearedAt`, not this).
+    /// Falls back to the caller's photos until the fresh deck lands, which is what lets the card
+    /// render before any network work.
     private var cover: RevealCover { RevealCover(photos: deck.isEmpty ? photos : deck) }
 
     private func coverFill(at date: Date) -> CGFloat {
@@ -744,6 +764,11 @@ struct RollRevealView: View {
         engaged = false
         paused = false
         pausedRemaining = currentSlideDuration
+        // Per-photo, like everything above it: a zoom left over from the previous slide would be
+        // applied to a shot nobody pinched.
+        revealZoom = 1
+        zoomAnchor = .center
+        pinchStart = nil
         withAnimation(.easeOut(duration: reduceMotion ? 0 : RevealPacing.developDuration)) { developed = true }
         armAdvance(after: currentSlideDuration)
     }

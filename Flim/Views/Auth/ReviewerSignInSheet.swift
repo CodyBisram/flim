@@ -10,6 +10,7 @@ import SwiftUI
 /// because that is the binary a reviewer installs, and a hidden path a reviewer cannot find is the
 /// same as no path at all.
 struct ReviewerSignInSheet: View {
+    @Environment(\.flimAccent) private var accent
     let email: String
     /// Called after a successful sign-in so the caller can dismiss its own flow.
     var onSignedIn: () -> Void = {}
@@ -40,7 +41,7 @@ struct ReviewerSignInSheet: View {
                         .focused($focused)
                         .flimFont(16, relativeTo: .body)
                         .foregroundStyle(.white)
-                        .tint(FlimTheme.accent)
+                        .tint(accent)
                         .padding(.horizontal, 16).padding(.vertical, 14)
                         .background(FlimTheme.bgElevated, in: RoundedRectangle(cornerRadius: 12))
                         .onSubmit { Task { await signIn() } }

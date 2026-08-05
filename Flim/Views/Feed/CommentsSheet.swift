@@ -5,6 +5,7 @@ import UIKit
 /// "15m / 3h / 5w" timestamps), a composer, and per-comment likes. Presented from the feed's
 /// "View all comments". Reads + writes the shared FeedService cache so the feed card stays in sync.
 struct CommentsSheet: View {
+    @Environment(\.flimAccent) private var accent
     let post: Post
 
     @Environment(AuthService.self) private var auth
@@ -82,7 +83,7 @@ struct CommentsSheet: View {
                 VStack(spacing: 2) {
                     Image(systemName: info.likedByMe ? "heart.fill" : "heart")
                         .font(.system(size: 13))
-                        .foregroundStyle(info.likedByMe ? FlimTheme.accent : FlimTheme.textTertiary)
+                        .foregroundStyle(info.likedByMe ? accent : FlimTheme.textTertiary)
                         .symbolEffect(.bounce, value: info.likedByMe)
                     if info.likeCount > 0 {
                         Text("\(info.likeCount)").flimFont(11, relativeTo: .caption).foregroundStyle(FlimTheme.textTertiary)

@@ -3,6 +3,7 @@ import SwiftUI
 /// Lapse-style triage deck for un-sorted instants: swipe left to archive (Darkroom),
 /// right to publish (Feed), or tap the red button to trash.
 struct SortDeckView: View {
+    @Environment(\.flimAccent) private var accent
     @Environment(AuthService.self) private var auth
     @Environment(PhotoService.self) private var photoService
     @Environment(FeedService.self) private var feed
@@ -108,7 +109,7 @@ struct SortDeckView: View {
                 Button { undo() } label: {
                     Label("Undo", systemImage: "arrow.uturn.backward")
                         .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(FlimTheme.accent)
+                        .foregroundStyle(accent)
                 }
             } else {
                 Color.clear.frame(width: 44, height: 1)
@@ -164,7 +165,7 @@ struct SortDeckView: View {
             label("PUBLISH", color: .green, angle: -14)
                 .opacity(Double(max(0, drag.width) / 90))
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            label("ARCHIVE", color: FlimTheme.accent, angle: 14)
+            label("ARCHIVE", color: accent, angle: 14)
                 .opacity(Double(max(0, -drag.width) / 90))
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
         }
@@ -185,7 +186,7 @@ struct SortDeckView: View {
     private var controls: some View {
         VStack(spacing: 14) {
             HStack(spacing: 26) {
-                circleButton("tray.and.arrow.down", tint: FlimTheme.accent, size: 54,
+                circleButton("tray.and.arrow.down", tint: accent, size: 54,
                              caption: "Keep", label: "Keep in your Darkroom") { performSwipe(.archive) }
                 circleButton("trash", tint: .red, size: 64,
                              caption: "Delete", label: "Delete photo") { performSwipe(.trash) }
@@ -321,13 +322,21 @@ struct SortDeckView: View {
     private func load() async {
         guard let uid = auth.currentUser?.id else { loaded = true; return }
         cards = await photoService.fetchUnsorted(userId: uid)
-        for photo in cards.prefix(5) {
-            urls[photo.id] = try? await photoService.signedURL(for: photo.storagePath)
-        }
+
+        // Batched, not one at a time. `signedURLs` reuses persisted URLs and mints the misses in
+        // parallel; signing them in a loop cost one sequential round trip PER PHOTO before the
+        // deck could be shown. Sorting is what you do right after shooting a batch, so this was
+        // slowest exactly when there was most to sort. Same fix RollsView already carries for
+        // roll covers.
+        let head = Array(cards.prefix(5))
+        let headURLs = await photoService.signedURLs(for: head.map(\.storagePath))
+        for photo in head { urls[photo.id] = headURLs[photo.storagePath] }
         loaded = true
-        // Resolve the rest lazily.
-        for photo in cards.dropFirst(5) {
-            urls[photo.id] = try? await photoService.signedURL(for: photo.storagePath)
-        }
+
+        // The rest can arrive after the deck is interactive.
+        let tail = Array(cards.dropFirst(5))
+        guard !tail.isEmpty else { return }
+        let tailURLs = await photoService.signedURLs(for: tail.map(\.storagePath))
+        for photo in tail { urls[photo.id] = tailURLs[photo.storagePath] }
     }
 }

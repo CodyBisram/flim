@@ -2,6 +2,7 @@ import SwiftUI
 import UIKit
 
 struct RollDetailView: View {
+    @Environment(\.flimAccent) private var accent
     let roll: Roll
     @Environment(PhotoService.self) private var photoService
     @Environment(RollService.self) private var rollService
@@ -24,7 +25,8 @@ struct RollDetailView: View {
     /// Set when the alert is a warning rather than a failure, so the share sheet opens after it
     /// is dismissed. Presenting both at once means SwiftUI shows one and drops the other.
     @State private var shareAfterAlert = false
-    @State private var shareImages: [UIImage] = []
+    /// File URLs, not UIImages: see PhotoExport for why the roll is not held in memory.
+    @State private var shareImages: [URL] = []
     @State private var showShareAll = false
     @State private var displayName = ""
     @State private var showInviteShare = false
@@ -93,7 +95,7 @@ struct RollDetailView: View {
                             .foregroundStyle(.black)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 13)
-                            .background(FlimTheme.accent, in: Capsule())
+                            .background(accent, in: Capsule())
                     }
                     .padding(.horizontal, 16).padding(.bottom, 6)
                 }
@@ -111,7 +113,7 @@ struct RollDetailView: View {
                         VStack(spacing: 10) {
                             Image(systemName: "photo.on.rectangle.angled")
                                 .font(.system(size: 36, weight: .ultraLight))
-                                .foregroundStyle(FlimTheme.accent.opacity(0.8))
+                                .foregroundStyle(accent.opacity(0.8))
                             Text("No photos in this roll yet.")
                                 .flimFont(15, weight: .light, relativeTo: .body)
                                 .foregroundStyle(FlimTheme.textSecondary)
@@ -161,7 +163,7 @@ struct RollDetailView: View {
             ToolbarItemGroup(placement: .topBarTrailing) {
                 Button { showMembers = true } label: {
                     Image(systemName: "person.2")
-                        .foregroundStyle(FlimTheme.accent)
+                        .foregroundStyle(accent)
                 }
                 .accessibilityLabel("Members")
                 Button {
@@ -169,11 +171,23 @@ struct RollDetailView: View {
                     showInviteShare = true
                 } label: {
                     Image(systemName: "square.and.arrow.up")
-                        .foregroundStyle(FlimTheme.accent)
+                        .foregroundStyle(accent)
                 }
                 .accessibilityLabel("Share invite")
 
                 Menu {
+                    // The reveal is the best thing this app does and it was strictly one-shot:
+                    // seen once, gone forever, because the flag that stops it replaying on every
+                    // visit never clears. So the moment a roll exists to be remembered by could
+                    // never be watched again, which is backwards for something built to be
+                    // rewatched with the people who were there.
+                    if roll.isDeveloped, !vm.developedPhotos.isEmpty {
+                        Button {
+                            Haptics.tap()
+                            replayReveal()
+                        } label: { Label("Play reveal again", systemImage: "play.circle") }
+                    }
+
                     // Disabled with no reason reads as a broken menu item. A menu can hold a
                     // plain Text, so it says which of the two reasons applies instead.
                     if vm.developedPhotos.isEmpty {
@@ -216,7 +230,7 @@ struct RollDetailView: View {
                     }
                 } label: {
                     Image(systemName: "ellipsis")
-                        .foregroundStyle(FlimTheme.accent)
+                        .foregroundStyle(accent)
                 }
                 .accessibilityLabel("More")
             }
@@ -379,18 +393,36 @@ struct RollDetailView: View {
         }
     }
 
+    /// Replays the reveal for this roll.
+    ///
+    /// Clears the seen flag as well as presenting, so the roll is left in the same state a
+    /// first-time viewer would leave it in: watched. Without the clear, a replay would present
+    /// once and then the flag would still read "seen", which is the same thing, but leaving a
+    /// stale flag around invites the next reader to wonder which one is authoritative.
+    private func replayReveal() {
+        UserDefaults.standard.set(true, forKey: revealSeenKey)
+        showReveal = true
+    }
+
     private func saveAll() {
         saveAllError = nil
         shareAfterAlert = false
         guard !savingAll else { return }
         savingAll = true
         Task {
-            var images: [UIImage] = []
-            for photo in vm.developedPhotos {
-                if let url = try? await photoService.signedURL(for: photo.storagePath),
-                   let (data, _) = try? await URLSession.shared.data(from: url),
-                   let image = UIImage(data: data) {
-                    images.append(image)
+            // Streamed to disk one at a time. Holding a 75-shot roll in memory as UIImages was a
+            // jetsam kill waiting for someone with a big roll to tap this. See PhotoExport.
+            // Its own directory: this Task outlives the view, so a second export started from
+            // another roll must not be able to touch these files. See PhotoExport.
+            let exportDir = PhotoExport.begin()
+            let deck = vm.developedPhotos
+            // Signed in one batched, parallel call rather than one sequential round trip each.
+            let signed = await photoService.signedURLs(for: deck.map(\.storagePath))
+            var images: [URL] = []
+            for (i, photo) in deck.enumerated() {
+                guard let url = signed[photo.storagePath] else { continue }
+                if let file = await PhotoExport.download(url, into: exportDir, index: i, total: deck.count) {
+                    images.append(file)
                 }
             }
             shareImages = images
@@ -528,7 +560,7 @@ struct RollDetailView: View {
                 let remaining = max(0, Int(revealAt.timeIntervalSince(timeline.date)))
                 Label("Develops in \(Self.countdown(remaining))", systemImage: "hourglass")
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(FlimTheme.accent)
+                    .foregroundStyle(accent)
             }
             Group {
                 if let shots {
@@ -544,7 +576,7 @@ struct RollDetailView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 16).padding(.vertical, 12)
-        .background(FlimTheme.accentSoft, in: RoundedRectangle(cornerRadius: 12))
+        .background(accent.opacity(0.16), in: RoundedRectangle(cornerRadius: 12))
         .padding(.horizontal, 16).padding(.bottom, 4)
     }
 

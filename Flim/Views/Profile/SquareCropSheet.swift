@@ -10,6 +10,7 @@ import SwiftUI
 ///
 /// All coordinate maths lives in `ProfileCropGeometry`; this view owns the gestures and the pixels.
 struct SquareCropSheet: View {
+    @Environment(\.flimAccent) private var accent
     let imageData: Data
     var title: String = "Move and scale"
     let onUse: (Data) -> Void
@@ -65,7 +66,7 @@ struct SquareCropSheet: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button(working ? "Saving…" : "Use") { use() }
                         .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(image == nil || working ? FlimTheme.textTertiary : FlimTheme.accent)
+                        .foregroundStyle(image == nil || working ? FlimTheme.textTertiary : accent)
                         .disabled(image == nil || working)
                 }
             }

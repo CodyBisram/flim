@@ -2,6 +2,7 @@ import SwiftUI
 import AVFoundation
 
 struct OnboardingView: View {
+    @Environment(\.flimAccent) private var accent
     @AppStorage("hasOnboarded") private var hasOnboarded = false
     @State private var page = 0
 
@@ -48,7 +49,7 @@ struct OnboardingView: View {
                             Spacer()
                             Image(systemName: card.icon)
                                 .font(.system(size: 52, weight: .ultraLight))
-                                .foregroundStyle(FlimTheme.accent)
+                                .foregroundStyle(accent)
                             Text(card.title)
                                 .flimFont(30, weight: .thin, relativeTo: .title3)
                                 .foregroundStyle(.white)
@@ -80,7 +81,7 @@ struct OnboardingView: View {
                         .foregroundStyle(.black)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 16)
-                        .background(FlimTheme.accent, in: Capsule())
+                        .background(accent, in: Capsule())
                 }
                 .padding(.horizontal, 28)
                 .padding(.bottom, 20)

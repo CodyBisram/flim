@@ -6,6 +6,7 @@ import SwiftUI
 /// than being laid out as separate views: a comment has to wrap as one paragraph, and splitting it
 /// into a row of buttons would break wrapping mid-sentence.
 struct MentionText: View {
+    @Environment(\.flimAccent) private var accent
     let text: String
     /// Scaled with Dynamic Type.
     ///
@@ -46,7 +47,7 @@ struct MentionText: View {
             var piece = AttributedString(run.text)
             piece.font = .system(size: size)
             if let username = run.username {
-                piece.foregroundColor = FlimTheme.accent
+                piece.foregroundColor = accent
                 // A URL is the only way to make a slice of a Text tappable while keeping the
                 // paragraph a single laid-out string. Percent-encoded so an odd username can't
                 // produce a malformed URL and silently drop the link.

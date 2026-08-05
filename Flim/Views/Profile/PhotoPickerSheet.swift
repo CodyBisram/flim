@@ -8,6 +8,7 @@ import PhotosUI
 /// so it needs no photo-library permission and the app only ever receives the one image the user
 /// chose. That's why there's no Info.plist usage string to go with this.
 struct PhotoPickerSheet: View {
+    @Environment(\.flimAccent) private var accent
     let title: String
     let onPick: (String) -> Void   // the chosen photo's storage path
     /// Raw data for a photo picked from the device library. Omit to offer Darkroom photos only.
@@ -92,7 +93,7 @@ struct PhotoPickerSheet: View {
                             .foregroundStyle(.black)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 13)
-                            .background(FlimTheme.accent, in: Capsule())
+                            .background(accent, in: Capsule())
                     }
                     .disabled(importing)
                     .padding(.horizontal, 20).padding(.vertical, 10)
@@ -134,9 +135,10 @@ struct PhotoPickerSheet: View {
                 guard let uid = auth.currentUser?.id else { loaded = true; return }
                 photos = await photoService.fetchDarkroom(userId: uid)
                 loaded = true
-                for photo in photos {
-                    urls[photo.id] = try? await photoService.signedURL(for: photo.storagePath)
-                }
+                // One batched call rather than one round trip per photo: this grid can hold a
+                // whole Darkroom, so the thumbnails used to fill in one by one, top to bottom.
+                let map = await photoService.signedURLs(for: photos.map(\.storagePath))
+                for photo in photos { urls[photo.id] = map[photo.storagePath] }
             }
         }
         .presentationBackground(FlimTheme.bg)
@@ -170,6 +172,11 @@ struct ImageViewer: View {
     @State private var scale: CGFloat = 1
     @State private var offset: CGSize = .zero
     @State private var lastOffset: CGSize = .zero
+    /// The scale the photo was resting at when the current pinch started, so releasing returns it
+    /// there. Nil when no pinch is in flight.
+    @State private var pinchStart: CGFloat?
+    /// Where the current pinch went down, so the photo grows from there instead of its middle.
+    @State private var zoomAnchor: UnitPoint = .center
 
     var body: some View {
         ZStack {
@@ -177,9 +184,10 @@ struct ImageViewer: View {
             if let url {
                 CachedImage(url: url, maxPixel: 1600) { image in
                     image.resizable().scaledToFit()
-                        .scaleEffect(scale).offset(offset)
+                        .scaleEffect(scale, anchor: zoomAnchor).offset(offset)
                         .gesture(dragGesture).gesture(pinch)
                         .onTapGesture(count: 2) {
+                            zoomAnchor = .center
                             withAnimation(.spring(duration: 0.3)) {
                                 if scale > 1 { scale = 1; offset = .zero; lastOffset = .zero } else { scale = 2.5 }
                             }
@@ -217,9 +225,11 @@ struct ImageViewer: View {
             }
     }
 
+    /// Transient, matching every other photo in the app: pinch to look closer, let go and it
+    /// settles back to where it was resting. Double tap is the hold.
     private var pinch: some Gesture {
-        MagnificationGesture()
-            .onChanged { scale = max(1, $0) }
-            .onEnded { _ in withAnimation(.spring(duration: 0.3)) { if scale < 1.2 { scale = 1; offset = .zero; lastOffset = .zero } } }
+        TransientPinch(scale: $scale, anchor: $zoomAnchor, restingScale: $pinchStart) { resting in
+            if resting <= 1 { offset = .zero; lastOffset = .zero }
+        }
     }
 }

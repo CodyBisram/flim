@@ -24,6 +24,11 @@ struct RollCarouselView: View {
     /// not tied to who shared it or who took the shot. Loaded once for the whole roll rather than
     /// per-swipe, since `photos` is already the full array.
     @State private var sharedPhotoIds: Set<UUID> = []
+    /// Pinch to look closer at the shot you're on. Transient: it springs back when you let go, so
+    /// there is no zoomed state to get stuck in halfway through a roll.
+    @State private var scale: CGFloat = 1
+    @State private var zoomAnchor: UnitPoint = .center
+    @State private var pinchStart: CGFloat?
 
     private var current: Photo? { photos.indices.contains(selection) ? photos[selection] : nil }
 
@@ -56,6 +61,8 @@ struct RollCarouselView: View {
                     }
                     .id(current?.id)
                     .transition(.opacity)
+                    .scaleEffect(scale, anchor: zoomAnchor)
+                    .gesture(TransientPinch(scale: $scale, anchor: $zoomAnchor, restingScale: $pinchStart))
                     // Follows the finger. Without this the drag offset above is computed and
                     // thrown away, which is the same as not having it.
                     .offset(x: dragX)
@@ -72,7 +79,9 @@ struct RollCarouselView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding(.vertical, 8)
-                .gesture(pageOrDismissGesture)
+                // Paging stands down while the photo is zoomed, so a pinch that lands slightly
+                // off-centre isn't read as a swipe to the next shot or a swipe to dismiss.
+                .gesture(pageOrDismissGesture, including: scale > 1 ? .none : .all)
 
                 footer
             }

@@ -3,6 +3,7 @@ import SwiftUI
 /// Everyone you've blocked, with an Unblock button per row, the undo path for a
 /// mis-tapped "Block". Reached from Settings.
 struct BlockedUsersSheet: View {
+    @Environment(\.flimAccent) private var accent
     @Environment(AuthService.self) private var auth
     @Environment(FeedService.self) private var feed
     @Environment(\.dismiss) private var dismiss
@@ -25,10 +26,10 @@ struct BlockedUsersSheet: View {
                         VStack(spacing: 0) {
                             ForEach(profiles) { p in
                                 HStack(spacing: 12) {
-                                    Circle().fill(FlimTheme.accent.opacity(0.18)).frame(width: 36, height: 36)
+                                    Circle().fill(accent.opacity(0.18)).frame(width: 36, height: 36)
                                         .overlay {
                                             Text((p.username ?? "?").prefix(1).uppercased())
-                                                .font(.system(size: 15, weight: .semibold)).foregroundStyle(FlimTheme.accent)
+                                                .font(.system(size: 15, weight: .semibold)).foregroundStyle(accent)
                                         }
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(p.handle).font(.system(size: 15, weight: .semibold)).foregroundStyle(.white)
@@ -43,7 +44,7 @@ struct BlockedUsersSheet: View {
                                         Text("Unblock")
                                             .font(.system(size: 13, weight: .semibold)).foregroundStyle(.black)
                                             .padding(.horizontal, 14).padding(.vertical, 7)
-                                            .background(FlimTheme.accent, in: Capsule())
+                                            .background(accent, in: Capsule())
                                     }
                                 }
                                 .padding(.horizontal, 20).padding(.vertical, 10)
@@ -57,7 +58,7 @@ struct BlockedUsersSheet: View {
             .flimInlineTitle("Blocked Users")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { dismiss() }.tint(FlimTheme.accent)
+                    Button("Done") { dismiss() }.tint(accent)
                 }
             }
         }

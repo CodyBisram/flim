@@ -79,7 +79,17 @@ struct PhotoCommentsSheet: View {
                 // Rendered as mentions, but note a roll photo's comments live in photo_comments,
                 // which the push function does not scan for mentions, so an @ here highlights and
                 // links without notifying. Flagged rather than silently half-working.
-                MentionText(text: comment.body, color: FlimTheme.textSecondary) { _ in }
+                // Wired, not a no-op. MentionText renders @handles in the accent color with a
+                // real tap target, so an empty closure here made a link that looks identical to
+                // the working ones in the feed do nothing at all.
+                MentionText(text: comment.body, color: FlimTheme.textSecondary) { username in
+                    Haptics.tap()
+                    Task {
+                        if let profile = await feed.fetchProfile(username: username) {
+                            route = ProfileRoute(id: profile.id)
+                        }
+                    }
+                }
             }
             Spacer()
         }

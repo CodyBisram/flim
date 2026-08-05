@@ -25,6 +25,7 @@ func shouldDismissPostDetailSideways(translation: CGSize, threshold: CGFloat = 9
 }
 
 struct PostDetailView: View {
+    @Environment(\.flimAccent) private var accent
     let item: FeedItem
     @Environment(AuthService.self) private var auth
     @Environment(FeedService.self) private var feed
@@ -73,6 +74,7 @@ struct PostDetailView: View {
                             PhotoTags(tags: feed.tagsByPost[post.id] ?? [], profiles: feed.tagProfiles) { route = ProfileRoute(id: $0) }
                         }
                         .clipShape(RoundedRectangle(cornerRadius: 14))
+                        .pinchToZoom()
                         .contentShape(Rectangle())
                         .onTapGesture { if url != nil { showViewer = true } }
 
@@ -147,7 +149,7 @@ struct PostDetailView: View {
                         Button(role: .destructive) { showBlockConfirm = true } label: { Label("Block \(item.author.handle)", systemImage: "hand.raised") }
                     }
                 } label: {
-                    Image(systemName: "ellipsis").foregroundStyle(FlimTheme.accent)
+                    Image(systemName: "ellipsis").foregroundStyle(accent)
                 }
             }
         }
@@ -264,10 +266,10 @@ struct PostDetailView: View {
             Button { route = ProfileRoute(id: post.userId) } label: {
                 HStack(spacing: 10) {
                     Circle()
-                        .fill(FlimTheme.accent.opacity(0.18))
+                        .fill(accent.opacity(0.18))
                         .frame(width: 34, height: 34)
                         .overlay(Text(String(item.author.handle.dropFirst().prefix(1)).uppercased())
-                            .flimFont(14, weight: .thin, relativeTo: .subheadline).foregroundStyle(FlimTheme.accent))
+                            .flimFont(14, weight: .thin, relativeTo: .subheadline).foregroundStyle(accent))
                     Text(item.author.handle).flimFont(15, weight: .semibold, relativeTo: .body).foregroundStyle(.white)
                 }
             }
@@ -322,7 +324,7 @@ struct PostDetailView: View {
                         VStack(spacing: 2) {
                             Image(systemName: info.likedByMe ? "heart.fill" : "heart")
                                 .font(.system(size: 13))
-                                .foregroundStyle(info.likedByMe ? FlimTheme.accent : FlimTheme.textTertiary)
+                                .foregroundStyle(info.likedByMe ? accent : FlimTheme.textTertiary)
                                 .symbolEffect(.bounce, value: info.likedByMe)
                             if info.likeCount > 0 {
                                 Text("\(info.likeCount)").flimFont(10, relativeTo: .caption).foregroundStyle(FlimTheme.textTertiary)

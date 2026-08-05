@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct RollMembersView: View {
+    @Environment(\.flimAccent) private var accent
     @State private var profileRoute: ProfileRoute?
     let roll: Roll
     @Environment(RollService.self) private var rollService
@@ -12,6 +13,12 @@ struct RollMembersView: View {
     @State private var isLoading = false
     @State private var codeCopied = false
     @State private var loadError: String?
+    /// Staged rather than immediate. Every other leave-a-roll path in the app confirms first
+    /// (RollsView and RollDetailView both use a confirmationDialog that states what is lost);
+    /// this screen removed people on a single swipe and tap, with no warning and no statement of
+    /// the consequence. Worse for Remove, where the person being removed is not the one tapping.
+    @State private var memberToRemove: AppUser?
+    @State private var confirmLeave = false
 
     private var isCreator: Bool { auth.currentUser?.id == roll.createdBy }
 
@@ -53,7 +60,7 @@ struct RollMembersView: View {
                                     .foregroundStyle(.white)
                                 Image(systemName: codeCopied ? "checkmark" : "doc.on.doc")
                                     .font(.system(size: 14))
-                                    .foregroundStyle(codeCopied ? FlimTheme.accent : Color(white: 0.5))
+                                    .foregroundStyle(codeCopied ? accent : Color(white: 0.5))
                             }
                         }
                     }
@@ -128,11 +135,11 @@ struct RollMembersView: View {
                                     // can leave their own roll.
                                     if isCreator, member.id != roll.createdBy {
                                         Button(role: .destructive) {
-                                            remove(member)
+                                            memberToRemove = member
                                         } label: { Label("Remove", systemImage: "person.fill.xmark") }
                                     } else if member.id == auth.currentUser?.id, member.id != roll.createdBy {
                                         Button(role: .destructive) {
-                                            remove(member, leaving: true)
+                                            confirmLeave = true
                                         } label: { Label("Leave", systemImage: "rectangle.portrait.and.arrow.right") }
                                     }
                                 }
@@ -140,6 +147,31 @@ struct RollMembersView: View {
                         }
                         .listStyle(.plain)
                         .scrollContentBackground(.hidden)
+                        .confirmationDialog("Remove @\(memberToRemove?.username ?? "this person")?",
+                                            isPresented: Binding(get: { memberToRemove != nil },
+                                                                 set: { if !$0 { memberToRemove = nil } }),
+                                            titleVisibility: .visible) {
+                            Button("Remove", role: .destructive) {
+                                if let member = memberToRemove { remove(member) }
+                                memberToRemove = nil
+                            }
+                            Button("Cancel", role: .cancel) { memberToRemove = nil }
+                        } message: {
+                            Text("They'll lose access to this roll. Their own photos stay in their Darkroom.")
+                        }
+                        .confirmationDialog("Leave this roll?", isPresented: $confirmLeave,
+                                            titleVisibility: .visible) {
+                            Button("Leave Roll", role: .destructive) {
+                                // Resolved from the loaded list rather than captured at swipe
+                                // time, so this cannot act on a stale row.
+                                if let me = members.first(where: { $0.id == auth.currentUser?.id }) {
+                                    remove(me, leaving: true)
+                                }
+                            }
+                            Button("Cancel", role: .cancel) {}
+                        } message: {
+                            Text("You'll stop seeing this roll. Your own photos stay in your Darkroom.")
+                        }
                     }
                 }
             }

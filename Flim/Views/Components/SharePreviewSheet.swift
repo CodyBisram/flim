@@ -16,6 +16,7 @@ struct SharedPhoto: Transferable {
 /// (warm border + wordmark). The choice is remembered for next time. Sharing hands the
 /// exact previewed image to the system share sheet.
 struct SharePreviewSheet: View {
+    @Environment(\.flimAccent) private var accent
     let photo: UIImage
 
     @AppStorage("shareWithFrame") private var withFrame = true
@@ -48,7 +49,7 @@ struct SharePreviewSheet: View {
                         HStack(spacing: 12) {
                             Image(systemName: "photo.artframe")
                                 .font(.system(size: 18, weight: .light))
-                                .foregroundStyle(withFrame ? FlimTheme.accent : FlimTheme.textTertiary)
+                                .foregroundStyle(withFrame ? accent : FlimTheme.textTertiary)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("\(AppInfo.appName) print frame")
                                     .flimFont(15, weight: .medium, relativeTo: .body).foregroundStyle(.white)
@@ -59,7 +60,7 @@ struct SharePreviewSheet: View {
                             Spacer()
                             Toggle("", isOn: $withFrame.animation(.snappy(duration: 0.25)))
                                 .labelsHidden()
-                                .tint(FlimTheme.accent)
+                                .tint(accent)
                         }
                         .padding(.horizontal, 16).padding(.vertical, 12)
                         .background(FlimTheme.bgElevated, in: RoundedRectangle(cornerRadius: 14))
@@ -77,7 +78,7 @@ struct SharePreviewSheet: View {
                             .foregroundStyle(.black)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 15)
-                            .background(FlimTheme.accent, in: Capsule())
+                            .background(accent, in: Capsule())
                             .padding(.horizontal, 24)
                     }
                     .simultaneousGesture(TapGesture().onEnded { Haptics.tap() })
@@ -89,7 +90,7 @@ struct SharePreviewSheet: View {
             .flimInlineTitle("Share")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { dismiss() }.tint(FlimTheme.accent)
+                    Button("Done") { dismiss() }.tint(accent)
                 }
             }
         }

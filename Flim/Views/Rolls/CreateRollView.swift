@@ -2,6 +2,7 @@ import SwiftUI
 import UIKit
 
 struct CreateRollView: View {
+    @Environment(\.flimAccent) private var accent
     @Environment(AuthService.self) private var auth
     @Environment(RollService.self) private var rolls
     @Environment(\.dismiss) private var dismiss
@@ -86,7 +87,7 @@ struct CreateRollView: View {
                 VStack(spacing: 24) {
                     Image(systemName: "checkmark.circle")
                         .font(.system(size: 48, weight: .ultraLight))
-                        .foregroundStyle(FlimTheme.accent)
+                        .foregroundStyle(accent)
 
                     VStack(spacing: 8) {
                         Text(roll.name)
@@ -118,7 +119,7 @@ struct CreateRollView: View {
                             Label(copied ? "Copied" : "Copy code",
                                   systemImage: copied ? "checkmark" : "doc.on.doc")
                                 .font(.system(size: 14, weight: .semibold))
-                                .foregroundStyle(copied ? FlimTheme.accent : .white)
+                                .foregroundStyle(copied ? accent : .white)
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 13)
                                 .glassCapsule(interactive: true)
@@ -131,7 +132,7 @@ struct CreateRollView: View {
                                 .foregroundStyle(.black)
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 13)
-                                .background(FlimTheme.accent, in: Capsule())
+                                .background(accent, in: Capsule())
                         }
                         .simultaneousGesture(TapGesture().onEnded { Haptics.tap() })
                     }
@@ -178,11 +179,12 @@ struct CreateRollView: View {
 /// is already inside a roll. The delay text is derived from `Roll.developDelay`, so it reads "12
 /// hours" on release and the shortened debug value automatically.
 struct RevealPromiseNote: View {
+    @Environment(\.flimAccent) private var accent
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: "hourglass")
                 .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(FlimTheme.accent)
+                .foregroundStyle(accent)
             Text("Everyone shoots into it. All the shots reveal together, \(Self.delayText) after the roll starts.")
                 .flimFont(13, relativeTo: .subheadline)
                 .foregroundStyle(FlimTheme.textSecondary)
@@ -190,7 +192,7 @@ struct RevealPromiseNote: View {
         }
         .padding(.horizontal, 14).padding(.vertical, 11)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(FlimTheme.accentSoft, in: RoundedRectangle(cornerRadius: 12))
+        .background(accent.opacity(0.16), in: RoundedRectangle(cornerRadius: 12))
     }
 
     /// A human phrase for the develop delay, so the copy tracks the constant rather than

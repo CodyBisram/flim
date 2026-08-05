@@ -13,6 +13,7 @@ func buildActivityThumbURLs(items: [ActivityItem], urlsByPath: [String: URL]) ->
 }
 
 struct ActivityFeedView: View {
+    @Environment(\.flimAccent) private var accent
     @Environment(AuthService.self) private var auth
     @Environment(FeedService.self) private var feed
     @Environment(\.dismiss) private var dismiss
@@ -119,7 +120,7 @@ struct ActivityFeedView: View {
         HStack {
             Text(section.title)
                 .flimFont(13, weight: .semibold, relativeTo: .subheadline)
-                .foregroundStyle(section == .new ? FlimTheme.accent : FlimTheme.textSecondary)
+                .foregroundStyle(section == .new ? accent : FlimTheme.textSecondary)
             Spacer()
         }
         .padding(.horizontal, 18)
@@ -228,7 +229,7 @@ struct ActivityFeedView: View {
         } else {
             Image(systemName: icon(item.kind))
                 .font(.system(size: 14))
-                .foregroundStyle(FlimTheme.accent)
+                .foregroundStyle(accent)
                 .frame(width: 44, height: 44)
         }
     }
@@ -250,7 +251,7 @@ struct ActivityFeedView: View {
                 .font(.system(size: 9, weight: .bold))
                 .foregroundStyle(.white)
                 .frame(width: 20, height: 20)
-                .background(FlimTheme.accent, in: Circle())
+                .background(accent, in: Circle())
                 .overlay(Circle().stroke(FlimTheme.bg, lineWidth: 2))
         case .follow:
             EmptyView()   // .follow never reaches the post-thumbnail branch above

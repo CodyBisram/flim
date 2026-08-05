@@ -2,6 +2,11 @@ import SwiftUI
 
 @main
 struct FlimApp: App {
+    /// Observed here, at the root, so the accent reaches EVERYTHING: the auth and onboarding
+    /// screens live above MainTabView, so injecting it there alone would have left every
+    /// pre-sign-in surface stuck on the default amber.
+    @AppStorage(FlimTheme.accentKey) private var accentColor = FlimAccent.amber.rawValue
+
     // Registered so APNs token callbacks are handled once Push Notifications is enabled.
     // Inert until RemotePush.register() is called, see RemotePush.swift.
     @UIApplicationDelegateAdaptor(FlimAppDelegate.self) private var appDelegate
@@ -24,6 +29,7 @@ struct FlimApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .environment(\.flimAccent, (FlimAccent(rawValue: accentColor) ?? .amber).color)
                 .environment(auth)
                 .environment(photos)
                 .environment(rolls)

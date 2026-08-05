@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct MainTabView: View {
+    @Environment(\.flimAccent) private var accent
     @State private var selected = 0
     /// Per-tab counter, bumped when you re-tap the tab you're already on, so that tab scrolls to top.
     @State private var scrollSignal: [Int: Int] = [:]
@@ -66,27 +67,12 @@ struct MainTabView: View {
                 }
             }
         }
-        // Tint via the OBSERVED accentColor (not the static FlimTheme.accent) so the tab bar
+        // Tint via the OBSERVED accentColor (not the static accent) so the tab bar
         // re-tints the moment the user picks a new accent, the static read never invalidates
         // this view, which left the old color until a relaunch.
         .tint((FlimAccent(rawValue: accentColor) ?? .amber).color)
-        // And rebuild everything below on a change, because the tab bar was only the visible
-        // half of that problem.
-        //
-        // `FlimTheme.accent` reads UserDefaults directly, which SwiftUI cannot see, so nothing
-        // that uses it is invalidated when the choice changes. The result was a half-recolored
-        // app: whatever happened to re-render for its own reasons picked up the new accent and
-        // everything else kept the old one until a relaunch. On the rolls list that meant a teal
-        // countdown, which re-renders on a TimelineView tick, sitting beside a violet invite
-        // code that had no reason to redraw.
-        //
-        // Keying the tree on the accent is a blunt instrument, and deliberately so: it fixes
-        // every one of those reads at once rather than the handful someone happens to notice.
-        // The cost is that changing accent resets transient view state, which is acceptable for
-        // a deliberate settings action whose entire purpose is to repaint the app. The real fix
-        // is to carry the accent through the environment so it becomes a tracked dependency,
-        // which is a migration of every FlimTheme.accent call site, not a release-day change.
-        .id(accentColor)
+        // The environment accent is injected at the app root (see FlimApp), so it covers the
+        // auth screens too. Nothing extra is needed here.
         .overlay(alignment: .top) {
             if !network.isConnected {
                 Label("No connection", systemImage: "wifi.slash")

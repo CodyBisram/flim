@@ -1,16 +1,25 @@
 import SwiftUI
 
-/// A sheet to pick a person from the people you follow, with mutuals ("friends") ranked first.
-/// Used for photo tagging (and reusable for @mentions later).
-struct PersonPickerSheet: View {
-    var title: String = "Tag someone"
-    /// Ids already picked, to hide from the list.
+/// The searchable list of people you follow, mutuals ("friends") ranked first.
+///
+/// Extracted so the two screens that need it (picking one person to tag, and the tag editor
+/// picking several) share one list rather than two drifting copies of the same ranking, search,
+/// blocked-user filter and empty states.
+///
+/// The trailing `accessory` is the only difference between callers: nothing for a picker that
+/// dismisses on the first tap, a checkmark for an editor where rows toggle.
+struct FollowingList<Accessory: View>: View {
+    @Environment(\.flimAccent) private var accent
+    /// Ids to leave out entirely. An editor that shows chosen people with a checkmark wants this
+    /// empty; a picker that has already taken someone wants them hidden.
     var exclude: Set<UUID> = []
-    let onPick: (UserProfile) -> Void
+    /// Shown when you follow nobody at all, as opposed to when a search matches nobody.
+    var emptyMessage: String = "Follow people to tag them."
+    @ViewBuilder var accessory: (UserProfile) -> Accessory
+    let onSelect: (UserProfile) -> Void
 
     @Environment(AuthService.self) private var auth
     @Environment(FeedService.self) private var feed
-    @Environment(\.dismiss) private var dismiss
 
     @State private var following: [UserProfile] = []
     @State private var mutualIds: Set<UUID> = []
@@ -32,31 +41,18 @@ struct PersonPickerSheet: View {
     }
 
     var body: some View {
-        NavigationStack {
-            ZStack {
-                FlimTheme.bg.ignoresSafeArea()
-                VStack(spacing: 0) {
-                    searchField
-                    if loaded && results.isEmpty {
-                        emptyState
-                    } else {
-                        List(results) { profile in
-                            Button { onPick(profile); dismiss() } label: { row(profile) }
-                                .listRowBackground(Color(white: 0.08))
-                                .listRowSeparatorTint(Color(white: 0.15))
-                        }
-                        .listStyle(.plain)
-                        .scrollContentBackground(.hidden)
-                    }
+        VStack(spacing: 0) {
+            searchField
+            if loaded && results.isEmpty {
+                emptyState
+            } else {
+                List(results) { profile in
+                    Button { onSelect(profile) } label: { row(profile) }
+                        .listRowBackground(Color(white: 0.08))
+                        .listRowSeparatorTint(Color(white: 0.15))
                 }
-            }
-            .navigationBarTitleDisplayMode(.inline)
-            .flimInlineTitle(title)
-            .toolbarColorScheme(.dark, for: .navigationBar)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Cancel") { dismiss() }.foregroundStyle(.white)
-                }
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
             }
         }
         .task { await load() }
@@ -66,7 +62,7 @@ struct PersonPickerSheet: View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass").foregroundStyle(FlimTheme.textTertiary)
             TextField("", text: $query, prompt: Text("Search people you follow").foregroundStyle(FlimTheme.textTertiary))
-                .foregroundStyle(.white).tint(FlimTheme.accent)
+                .foregroundStyle(.white).tint(accent)
                 .autocorrectionDisabled()
                 .textInputAutocapitalization(.never)
         }
@@ -77,13 +73,9 @@ struct PersonPickerSheet: View {
 
     private func row(_ profile: UserProfile) -> some View {
         HStack(spacing: 12) {
-            Circle()
-                .fill(FlimTheme.accent.opacity(0.18))
-                .frame(width: 38, height: 38)
-                .overlay {
-                    Text((profile.username ?? "?").prefix(1).uppercased())
-                        .flimFont(16, weight: .semibold, relativeTo: .body).foregroundStyle(FlimTheme.accent)
-                }
+            // A real face, not a monogram. Picking the right person out of a list of handles is
+            // the whole job here, and half of FLIM's handles are unrecognisable without a photo.
+            AvatarView(path: profile.avatarPath, name: profile.username, size: 38)
             VStack(alignment: .leading, spacing: 1) {
                 Text(profile.name).flimFont(15, weight: .medium, relativeTo: .body).foregroundStyle(.white)
                 Text(profile.handle).flimFont(12, relativeTo: .caption).foregroundStyle(FlimTheme.textTertiary)
@@ -91,10 +83,11 @@ struct PersonPickerSheet: View {
             Spacer()
             if mutualIds.contains(profile.id) {
                 Text("friend")
-                    .flimFont(11, weight: .medium, relativeTo: .caption).foregroundStyle(FlimTheme.accent)
+                    .flimFont(11, weight: .medium, relativeTo: .caption).foregroundStyle(accent)
                     .padding(.horizontal, 8).padding(.vertical, 3)
-                    .background(FlimTheme.accent.opacity(0.15), in: Capsule())
+                    .background(accent.opacity(0.15), in: Capsule())
             }
+            accessory(profile)
         }
         .padding(.vertical, 4)
     }
@@ -104,7 +97,7 @@ struct PersonPickerSheet: View {
             Spacer()
             Image(systemName: "person.2").font(.system(size: 32, weight: .ultraLight))
                 .foregroundStyle(FlimTheme.textTertiary)
-            Text(query.isEmpty ? "Follow people to tag them." : "No matches.")
+            Text(query.isEmpty ? emptyMessage : "No matches.")
                 .flimFont(14, relativeTo: .subheadline).foregroundStyle(FlimTheme.textSecondary)
             Spacer()
         }

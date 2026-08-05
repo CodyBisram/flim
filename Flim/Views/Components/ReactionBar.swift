@@ -14,6 +14,7 @@ func reactionDisplayOrder(counts: [String: Int], defaults: [String]) -> [String]
 /// picker of recents + a big palette + an "any emoji" keyboard entry. The order stays stable while
 /// you're looking (tapping never reshuffles it) and re-sorts reacted-to-front on the next appear.
 struct ReactionBar: View {
+    @Environment(\.flimAccent) private var accent
     /// A few default emojis offered up front when a photo has no reactions yet.
     var defaults: [String] = PostEmoji.all
     /// emoji → number of reactions.
@@ -118,7 +119,7 @@ struct ReactionBar: View {
                 ForEach(pickerEmojis, id: \.self) { emoji in
                     Button { pick(emoji) } label: {
                         Text(emoji).font(.system(size: 26)).padding(6)
-                            .background(mine.contains(emoji) ? FlimTheme.accent.opacity(0.28) : .clear, in: Circle())
+                            .background(mine.contains(emoji) ? accent.opacity(0.28) : .clear, in: Circle())
                     }
                 }
             }
@@ -172,8 +173,8 @@ struct ReactionBar: View {
             }
             .padding(.horizontal, 11)
             .padding(.vertical, 7)
-            .background(isMine ? FlimTheme.accent.opacity(0.28) : Color.white.opacity(0.12), in: Capsule())
-            .overlay(Capsule().strokeBorder(isMine ? FlimTheme.accent : .clear, lineWidth: 1))
+            .background(isMine ? accent.opacity(0.28) : Color.white.opacity(0.12), in: Capsule())
+            .overlay(Capsule().strokeBorder(isMine ? accent : .clear, lineWidth: 1))
             .scaleEffect(pressed == emoji ? 1.18 : 1)               // little bounce on tap
         }
         .buttonStyle(.plain)

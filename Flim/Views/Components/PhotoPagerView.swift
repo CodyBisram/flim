@@ -30,6 +30,7 @@ func pagingStep(forDragWidth width: CGFloat, threshold: CGFloat = 60) -> Int? {
 /// ownership, so a Darkroom (all-own) never shows report and a roll shows it per photo, with no
 /// extra flag.
 struct PhotoPagerView: View {
+    @Environment(\.flimAccent) private var accent
     let photos: [Photo]                 // same order as the grid
     var startIndex: Int = 0
     /// Grid's already-resolved thumbnail URLs, keyed by photo id, seeds each page instantly.
@@ -68,6 +69,11 @@ struct PhotoPagerView: View {
     @State private var scale: CGFloat = 1
     @State private var offset: CGSize = .zero
     @State private var lastOffset: CGSize = .zero
+    /// The scale the photo was resting at when the current pinch started, so releasing returns it
+    /// there. Nil when no pinch is in flight.
+    @State private var pinchStart: CGFloat?
+    /// Where the current pinch went down, so the photo grows from there instead of its middle.
+    @State private var zoomAnchor: UnitPoint = .center
     /// Live horizontal offset while a paging swipe is in progress; always settles back to 0.
     @State private var dragX: CGFloat = 0
     @State private var showDeleteConfirm = false
@@ -148,7 +154,9 @@ struct PhotoPagerView: View {
         }
         .onChange(of: selection) { _, _ in
             // Fresh photo, fresh zoom state (otherwise the last photo's zoom carries over).
-            scale = 1; offset = .zero; lastOffset = .zero; dragX = 0
+            // `pinchStart` belongs to that set: leaving it behind means a pinch still in flight
+            // when the page turns springs the NEW photo back to the old one's resting scale.
+            scale = 1; offset = .zero; lastOffset = .zero; dragX = 0; pinchStart = nil
             Task { await resolveAround(selection) }
         }
         .task {
@@ -248,7 +256,16 @@ struct PhotoPagerView: View {
                     Menu {
                         Button {
                             Haptics.tap()
-                            Task { await auth.setAvatar(fromPhotoPath: photo.storagePath) }
+                            // Reports the outcome. This returns Bool so a failure can be surfaced, and
+                            // three of the four call sites were dropping it: you tapped 'Set as profile
+                            // photo', nothing happened, and nothing said why.
+                            Task {
+                                if await auth.setAvatar(fromPhotoPath: photo.storagePath) {
+                                    Haptics.success()
+                                } else {
+                                    Haptics.error()
+                                }
+                            }
                         } label: { Label("Set as profile photo", systemImage: "person.crop.circle") }
                         Button(role: .destructive) {
                             pendingDeletePhoto = photo
@@ -310,7 +327,7 @@ struct PhotoPagerView: View {
                             .foregroundStyle(shared ? .white : .black)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 14)
-                            .background(shared ? Color.white.opacity(0.15) : FlimTheme.accent, in: Capsule())
+                            .background(shared ? Color.white.opacity(0.15) : accent, in: Capsule())
                     }
                     .disabled(shared)
                 }
@@ -340,7 +357,7 @@ struct PhotoPagerView: View {
                     .focused($captionFocused)
                     .font(.system(size: 15))
                     .foregroundStyle(.white)
-                    .tint(FlimTheme.accent)
+                    .tint(accent)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
                     .background(Color.white.opacity(0.14), in: Capsule())
@@ -356,7 +373,7 @@ struct PhotoPagerView: View {
                         .foregroundStyle(.black)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 9)
-                        .background(FlimTheme.accent, in: Capsule())
+                        .background(accent, in: Capsule())
                 }
             }
         }
@@ -439,7 +456,7 @@ struct PhotoPagerView: View {
                     image
                         .resizable()
                         .scaledToFit()
-                        .scaleEffect(scale)
+                        .scaleEffect(scale, anchor: zoomAnchor)
                         .offset(offset)
                         .gesture(pinchToZoom)
                         // Pan is only active once zoomed in (GestureMask.none otherwise), so at 1x
@@ -537,6 +554,10 @@ struct PhotoPagerView: View {
     }
 
     private func toggleZoom() {
+        // A double tap has no two fingers to grow from, so it goes back to the middle. Leaving
+        // the last pinch's anchor in place would send a centred zoom lurching off to wherever the
+        // previous pinch happened to land.
+        zoomAnchor = .center
         withAnimation(.spring(duration: 0.3)) {
             if scale > 1 {
                 scale = 1; offset = .zero; lastOffset = .zero
@@ -585,14 +606,18 @@ struct PhotoPagerView: View {
 
     // MARK: - Gestures
 
+    /// Pinch is a look, not a mode: it magnifies while your fingers are down and springs back to
+    /// wherever the photo was resting when you let go. Holding a zoom is what the double tap is
+    /// for, and a pinch that started from a double-tapped zoom returns to that, not to 1x.
+    ///
+    /// It used to keep whatever scale the pinch ended on unless that was under 1.2x, which left
+    /// the photo stuck at an arbitrary size with no visible way back except a double tap people
+    /// had to guess at. It also read the gesture's magnification as an absolute scale, so a pinch
+    /// begun on an already-zoomed photo jumped to near 1x before it moved at all.
     private var pinchToZoom: some Gesture {
-        MagnificationGesture()
-            .onChanged { value in scale = min(3, max(1, value)) }
-            .onEnded { _ in
-                withAnimation(.spring(duration: 0.3)) {
-                    if scale < 1.2 { scale = 1; offset = .zero; lastOffset = .zero }
-                }
-            }
+        TransientPinch(scale: $scale, anchor: $zoomAnchor, restingScale: $pinchStart) { resting in
+            if resting <= 1 { offset = .zero; lastOffset = .zero }
+        }
     }
 
     private var panWhileZoomed: some Gesture {

@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct RollsView: View {
+    @Environment(\.flimAccent) private var accent
     var scrollToTop: Int = 0
     @Environment(AuthService.self) private var auth
     @Environment(RollService.self) private var rolls
@@ -53,7 +54,7 @@ struct RollsView: View {
                     } label: {
                         Image(systemName: "person.badge.plus")
                             .font(.system(size: 16, weight: .regular))
-                            .foregroundStyle(FlimTheme.accent)
+                            .foregroundStyle(accent)
                             .frame(width: 26, height: 24)
                     }
                     .accessibilityLabel("Join a roll")
@@ -62,7 +63,7 @@ struct RollsView: View {
                     } label: {
                         Image(systemName: "plus")
                             .font(.system(size: 18, weight: .medium))
-                            .foregroundStyle(FlimTheme.accent)
+                            .foregroundStyle(accent)
                             .frame(width: 26, height: 24)
                     }
                     .accessibilityLabel("New roll")
@@ -121,7 +122,7 @@ struct RollsView: View {
     private func refreshLiveActivities(userId: UUID) async {
         let candidates = RollLiveActivity.rollsNeedingActivity(rolls.rolls, revealAt: \.revealAt)
         for roll in candidates {
-            let shots = await photos.rollPhotoCount(rollId: roll.id, userId: userId)
+            let shots = await photos.rollTotalShotCount(rollId: roll.id)
             RollLiveActivity.sync(rollId: roll.id, rollName: roll.name, revealAt: roll.revealAt,
                                   shotCount: shots, developFrom: roll.createdAt)
         }
@@ -234,7 +235,7 @@ struct RollsView: View {
         VStack(spacing: 12) {
             Image(systemName: "film.stack")
                 .font(.system(size: 40, weight: .ultraLight))
-                .foregroundStyle(FlimTheme.accent.opacity(0.8))
+                .foregroundStyle(accent.opacity(0.8))
             Text("Better with friends.")
                 .font(.system(size: 17, weight: .light))
                 .foregroundStyle(FlimTheme.textSecondary)
@@ -256,6 +257,7 @@ struct RollsView: View {
 }
 
 private struct RollRow: View {
+    @Environment(\.flimAccent) private var accent
     let roll: Roll
     var memberCount: Int?
     var coverURL: URL?
@@ -292,10 +294,10 @@ private struct RollRow: View {
                             .font(.system(size: 12, weight: .semibold, design: .monospaced))
                             .tracking(1)
                     }
-                    .foregroundStyle(FlimTheme.accent)
+                    .foregroundStyle(accent)
                     .padding(.horizontal, 9)
                     .padding(.vertical, 4)
-                    .background(FlimTheme.accentSoft, in: Capsule())
+                    .background(accent.opacity(0.16), in: Capsule())
                 }
 
                 // Reveal status, the clock runs from when the roll was created.
@@ -309,7 +311,7 @@ private struct RollRow: View {
                     }
                     .foregroundStyle(.black)
                     .padding(.horizontal, 10).padding(.vertical, 4)
-                    .background(FlimTheme.accent, in: Capsule())
+                    .background(accent, in: Capsule())
                     .accessibilityLabel("Ready to reveal, tap to open")
                 } else if roll.isDeveloped {
                     MetaChip(icon: "checkmark.seal.fill", text: "Developed",
@@ -318,7 +320,7 @@ private struct RollRow: View {
                     TimelineView(.periodic(from: .now, by: 60)) { tl in
                         let remaining = max(0, Int(roll.revealAt.timeIntervalSince(tl.date)))
                         MetaChip(icon: "hourglass", text: "Reveals in \(Self.short(remaining))",
-                                 color: FlimTheme.accent, textSize: 11)
+                                 color: accent, textSize: 11)
                     }
                 }
             }
@@ -339,6 +341,7 @@ private struct RollRow: View {
 /// A film-frame cover: the roll's latest photo when there is one, otherwise a stable
 /// identity gradient + initial.
 private struct RollCover: View {
+    @Environment(\.flimAccent) private var accent
     let roll: Roll
     var coverURL: URL?
     var coverPath: String?
@@ -395,7 +398,7 @@ private struct RollCover: View {
                     RoundedRectangle(cornerRadius: 15, style: .continuous)
                         .inset(by: -2)
                         .trim(from: 0, to: progress)
-                        .stroke(FlimTheme.accent, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                        .stroke(accent, style: StrokeStyle(lineWidth: 2, lineCap: .round))
                         // Starts the fill at the top edge rather than mid-right, so a nearly-full
                         // ring reads as nearly-round rather than lopsided.
                         .rotationEffect(.degrees(-90))
@@ -418,10 +421,11 @@ private struct RollCover: View {
 }
 
 struct OutlineButtonStyle: ButtonStyle {
+    @Environment(\.flimAccent) private var accent
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: 14, weight: .semibold))
-            .foregroundStyle(FlimTheme.accent)
+            .foregroundStyle(accent)
             .padding(.horizontal, 22)
             .padding(.vertical, 11)
             .glassCapsule(interactive: true)

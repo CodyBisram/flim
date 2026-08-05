@@ -13,6 +13,7 @@ import SwiftUI
 /// over a list while the feed card is inside an elevated rounded rectangle, and pulling them in
 /// here would mean a style parameter per host, which is how four copies start again.
 struct CommentComposer: View {
+    @Environment(\.flimAccent) private var accent
 
     /// The two shapes this takes. Not cosmetic: the inline card sits inside a feed post and has to
     /// stay visually quieter and physically smaller than a dedicated comments surface.
@@ -67,7 +68,7 @@ struct CommentComposer: View {
                     .lineLimit(style.lineLimit)
                     .flimFont(style.textSize, relativeTo: .body)
                     .foregroundStyle(.white)
-                    .tint(FlimTheme.accent)
+                    .tint(accent)
                     .focused(focus)
                     .padding(.horizontal, style.horizontalPadding)
                     .padding(.vertical, style.verticalPadding)
@@ -80,7 +81,7 @@ struct CommentComposer: View {
                             // growing field in a fixed-height row, and scaling it would push the
                             // field narrower exactly when someone needs more room to read.
                             .font(.system(size: style.buttonSize))
-                            .foregroundStyle(canSend ? FlimTheme.accent : FlimTheme.textTertiary)
+                            .foregroundStyle(canSend ? accent : FlimTheme.textTertiary)
                     }
                     .disabled(!canSend)
                     .accessibilityLabel("Send comment")

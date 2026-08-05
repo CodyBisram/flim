@@ -21,6 +21,37 @@ enum FlimTheme {
     static let textTertiary = Color(white: 0.44)    // faint, but now actually readable
 }
 
+/// The accent, as something SwiftUI can actually see change.
+///
+/// `FlimTheme.accent` reads `UserDefaults` directly. That returns the right color, but SwiftUI has
+/// no idea the read happened, so nothing is invalidated when the choice changes and only views
+/// that happened to re-render for some other reason picked up the new one. The result was a
+/// half-recolored app: a teal countdown, which redraws on a timeline tick, beside a violet invite
+/// code that had no reason to redraw.
+///
+/// Keying the whole tree on the accent fixed the color and broke navigation: changing view
+/// identity discards the subtree, and three of the four tabs use a NavigationStack with implicit
+/// state, so picking a swatch popped you back to the profile root.
+///
+/// An environment value is the honest version. A view that renders accent-colored chrome declares
+/// that it depends on the accent, SwiftUI tracks it like any other dependency, and the re-render
+/// is scoped to the views that actually care.
+private struct FlimAccentEnvironmentKey: EnvironmentKey {
+    static let defaultValue = FlimAccentPalette.color(FlimAccentPalette.fallback)
+}
+
+extension EnvironmentValues {
+    var flimAccent: Color {
+        get { self[FlimAccentEnvironmentKey.self] }
+        set { self[FlimAccentEnvironmentKey.self] = newValue }
+    }
+}
+
+extension View {
+    /// The soft wash, derived so a view only has to hold the one value.
+    func flimAccentSoft(_ accent: Color) -> Color { accent.opacity(0.16) }
+}
+
 /// The pickable accent colors (film-friendly palette).
 enum FlimAccent: String, CaseIterable, Identifiable {
     case amber, rose, violet, teal, lime, sky
@@ -81,6 +112,7 @@ struct ErrorState: View {
 
     @State private var retrying = false
     // @ScaledMetric ties these to the user's Dynamic Type setting so the text scales.
+    @Environment(\.flimAccent) private var accent
     @ScaledMetric private var iconSize = 38
     @ScaledMetric private var titleSize = 17
     @ScaledMetric private var messageSize = 13
@@ -90,7 +122,7 @@ struct ErrorState: View {
         VStack(spacing: 12) {
             Image(systemName: "wifi.exclamationmark")
                 .font(.system(size: iconSize, weight: .ultraLight))
-                .foregroundStyle(FlimTheme.accent.opacity(0.8))
+                .foregroundStyle(accent.opacity(0.8))
             Text(title)
                 .font(.system(size: titleSize, weight: .light))
                 .foregroundStyle(FlimTheme.textSecondary)
@@ -105,7 +137,7 @@ struct ErrorState: View {
             } label: {
                 Text(retrying ? "Retrying…" : "Try Again")
                     .font(.system(size: buttonSize, weight: .semibold))
-                    .foregroundStyle(FlimTheme.accent)
+                    .foregroundStyle(accent)
                     .padding(.horizontal, 22)
                     .padding(.vertical, 11)
                     .glassCapsule(interactive: true)

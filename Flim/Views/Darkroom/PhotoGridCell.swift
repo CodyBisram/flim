@@ -3,6 +3,7 @@ import UIKit
 import ImageIO
 
 struct PhotoGridCell: View {
+    @Environment(\.flimAccent) private var accent
     let photo: Photo
     let signedURL: URL?
     /// The roll this shot belongs to (shown so roll photos are distinguishable in the Darkroom).
@@ -61,7 +62,7 @@ struct PhotoGridCell: View {
                 if showsCountdown {
                     Image(systemName: "hourglass")
                         .font(.system(size: 14, weight: .ultraLight))
-                        .foregroundStyle(FlimTheme.accent.opacity(0.8))
+                        .foregroundStyle(accent.opacity(0.8))
 
                     // TimelineView fires once per second, no external timer needed
                     TimelineView(.periodic(from: .now, by: 1)) { timeline in
@@ -78,7 +79,7 @@ struct PhotoGridCell: View {
                     Label(rollName, systemImage: "film.stack")
                         .font(.system(size: 8, weight: .semibold))
                         .lineLimit(1)
-                        .foregroundStyle(FlimTheme.accent.opacity(0.9))
+                        .foregroundStyle(accent.opacity(0.9))
                         .padding(.horizontal, 6)
                 } else {
                     Text("DEVELOPING")

@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct SplashView: View {
+    @Environment(\.flimAccent) private var accent
     @State private var opacity = 0.0
 
     var body: some View {
@@ -9,7 +10,7 @@ struct SplashView: View {
             VStack(spacing: 14) {
                 Image(systemName: "camera.aperture")
                     .font(.system(size: 48, weight: .ultraLight))
-                    .foregroundStyle(FlimTheme.accent)
+                    .foregroundStyle(accent)
                 Text(AppInfo.appName)
                     .font(.system(size: 30, weight: .thin, design: .default))
                     .tracking(12)

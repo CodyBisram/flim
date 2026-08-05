@@ -5,6 +5,7 @@ import UIKit
 private let otpLength = 6
 
 struct OTPView: View {
+    @Environment(\.flimAccent) private var accent
     @Environment(AuthService.self) private var auth
     @State private var code = ""
     @State private var isVerifying = false
@@ -65,7 +66,7 @@ struct OTPView: View {
                 if let sentNotice, error == nil {
                     Text(sentNotice)
                         .flimFont(13, relativeTo: .subheadline)
-                        .foregroundStyle(FlimTheme.accent)
+                        .foregroundStyle(accent)
                         .padding(.top, 8)
                 }
 
@@ -93,7 +94,7 @@ struct OTPView: View {
                                  ? "Send a new code in \(resendCountdown)s"
                                  : (isResending ? "Sending…" : "Send a new code"))
                                 .flimFont(13, weight: .medium, relativeTo: .subheadline)
-                                .foregroundStyle(resendCountdown > 0 ? Color(white: 0.4) : FlimTheme.accent)
+                                .foregroundStyle(resendCountdown > 0 ? Color(white: 0.4) : accent)
                         }
                         .disabled(resendCountdown > 0 || isResending)
 

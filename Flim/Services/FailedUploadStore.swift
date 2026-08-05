@@ -120,15 +120,4 @@ struct FailedUploadStore {
             }
         }
     }
-
-    /// Total bytes held for an account, so the UI can tell someone how much is waiting.
-    func pendingByteCount(userId: UUID) -> Int {
-        let dir = directory(for: userId)
-        guard let names = try? FileManager.default.contentsOfDirectory(atPath: dir.path) else { return 0 }
-        return names.filter { $0.hasSuffix(".jpg") }.reduce(0) { total, name in
-            let path = dir.appendingPathComponent(name).path
-            let size = (try? FileManager.default.attributesOfItem(atPath: path))?[.size] as? Int
-            return total + (size ?? 0)
-        }
-    }
 }

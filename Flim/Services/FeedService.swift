@@ -462,7 +462,10 @@ final class FeedService {
                 .insert(NewTag(post_id: postId, tagged_user_id: tag.user.id, x: tag.x, y: tag.y))
                 .execute()
         }
-        // A moved tag is a position change on a row that already exists.
+        // A moved tag is a position change on a row that already exists. Inert as of the tag
+        // editor becoming a plain picker: every tag is now written unplaced, at the centre, so
+        // nothing ever differs. Kept because this function's contract is "make the server match
+        // this list", and positions are still real columns.
         for tag in tags {
             guard let row = existing.first(where: { $0.taggedUserId == tag.user.id }),
                   abs(row.x - tag.x) > 0.001 || abs(row.y - tag.y) > 0.001 else { continue }

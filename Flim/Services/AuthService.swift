@@ -371,9 +371,12 @@ final class AuthService {
 
     /// Sets the profile avatar from one of the user's photos. Copies the image into its own
     /// Storage object so the avatar survives the source photo being deleted.
-    func setAvatar(fromPhotoPath sourcePath: String) async {
-        guard let raw = await imageData(atPath: sourcePath) else { return }
-        await setAvatar(fromImageData: raw)
+    /// Returns whether it landed, like its `fromImageData` sibling. Returning Void here meant a
+    /// failure was swallowed at the source, so even the caller that wanted to report it could not.
+    @discardableResult
+    func setAvatar(fromPhotoPath sourcePath: String) async -> Bool {
+        guard let raw = await imageData(atPath: sourcePath) else { return false }
+        return await setAvatar(fromImageData: raw)
     }
 
     /// Downloads a stored image so a caller can work with the bytes before setting them, which is
@@ -411,9 +414,10 @@ final class AuthService {
     }
 
     /// Sets the profile cover/header from one of the user's photos (its own Storage copy).
-    func setCover(fromPhotoPath sourcePath: String) async {
-        guard let raw = try? await supabase.storage.from("photos").download(path: sourcePath) else { return }
-        await setCover(fromImageData: raw)
+    @discardableResult
+    func setCover(fromPhotoPath sourcePath: String) async -> Bool {
+        guard let raw = try? await supabase.storage.from("photos").download(path: sourcePath) else { return false }
+        return await setCover(fromImageData: raw)
     }
 
     /// Sets the cover from a picked library photo. Same reasoning as `setAvatar(fromImageData:)`:

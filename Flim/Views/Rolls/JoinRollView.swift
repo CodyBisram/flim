@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct JoinRollView: View {
+    @Environment(\.flimAccent) private var accent
     /// Pre-filled from a `…//join/CODE` deep link; auto-joins when present.
     var initialCode: String = ""
 
@@ -106,7 +107,7 @@ struct JoinRollView: View {
             Spacer()
             Image(systemName: "film.stack")
                 .font(.system(size: 48, weight: .ultraLight))
-                .foregroundStyle(FlimTheme.accent)
+                .foregroundStyle(accent)
             VStack(spacing: 8) {
                 Text("You joined")
                     .flimFont(14, relativeTo: .subheadline)

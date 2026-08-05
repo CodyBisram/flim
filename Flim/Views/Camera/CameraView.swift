@@ -31,6 +31,7 @@ private extension View {
 }
 
 struct CameraView: View {
+    @Environment(\.flimAccent) private var accent
     @Environment(AuthService.self) private var auth
     @Environment(PhotoService.self) private var photos
     @Environment(RollService.self) private var rolls
@@ -121,7 +122,7 @@ struct CameraView: View {
                     .overlay {
                         if let reticle = camera.focusReticle {
                             RoundedRectangle(cornerRadius: 4)
-                                .stroke(FlimTheme.accent, lineWidth: 1.5)
+                                .stroke(accent, lineWidth: 1.5)
                                 .frame(width: 72, height: 72)
                                 .position(reticle.point)
                                 .transition(.opacity)
@@ -299,7 +300,7 @@ struct CameraView: View {
                 // instead of gliding.
                 ForEach(Array(camera.faceRects.enumerated()), id: \.offset) { _, rect in
                     RoundedRectangle(cornerRadius: 3, style: .continuous)
-                        .strokeBorder(FlimTheme.accent.opacity(0.75), lineWidth: 0.75)
+                        .strokeBorder(accent.opacity(0.75), lineWidth: 0.75)
                         .frame(width: rect.width, height: rect.height)
                         .position(x: rect.midX, y: rect.midY)
                 }
@@ -380,7 +381,7 @@ struct CameraView: View {
                         .foregroundStyle(active ? .black : .white)
                         .frame(minWidth: 34, minHeight: 30)
                         .padding(.horizontal, active ? 5 : 0)
-                        .background(active ? FlimTheme.accent : Color.black.opacity(0.35), in: Capsule())
+                        .background(active ? accent : Color.black.opacity(0.35), in: Capsule())
                         .overlay(Capsule().stroke(Color.white.opacity(active ? 0 : 0.15), lineWidth: 1))
                 }
                 .contentShape(Capsule())
@@ -412,6 +413,9 @@ struct CameraView: View {
     /// would be the first thing dropped.
     private struct RollClosingLabel: View {
         let roll: Roll
+        // Nested types get their own read: the environment is per-view, not inherited from the
+        // enclosing struct the way a stored property would be.
+        @Environment(\.flimAccent) private var accent
 
         var body: some View {
             // Ticks every second so the final under-a-minute window counts down properly. Scoped
@@ -419,7 +423,7 @@ struct CameraView: View {
             TimelineView(.periodic(from: .now, by: 1)) { tl in
                 if let label = RollImminence.closingLabel(roll: roll, now: tl.date) {
                     HStack(spacing: 5) {
-                        Text("·").foregroundStyle(FlimTheme.accent.opacity(0.5))
+                        Text("·").foregroundStyle(accent.opacity(0.5))
                         Text(label)
                             .font(.system(size: 12, weight: .semibold))
                             .monospacedDigit()
@@ -455,14 +459,14 @@ struct CameraView: View {
                     }
                     // A roll target should be unmistakable at a glance, accent-tinted with a
                     // matching ring when a roll is selected; neutral white for Personal.
-                    .foregroundStyle(selectedRoll == nil ? .white : FlimTheme.accent)
+                    .foregroundStyle(selectedRoll == nil ? .white : accent)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 9)
                 }
                 .contentShape(Capsule())
                 .glassCapsule(interactive: true)
                 .overlay(
-                    Capsule().stroke(FlimTheme.accent.opacity(selectedRoll == nil ? 0 : 0.55), lineWidth: 1)
+                    Capsule().stroke(accent.opacity(selectedRoll == nil ? 0 : 0.55), lineWidth: 1)
                 )
                 .layoutPriority(-1)
                 .accessibilityLabel("Send photos to")
@@ -480,7 +484,7 @@ struct CameraView: View {
                             Text("\(selfTimerSeconds)").font(.system(size: 12, weight: .bold))
                         }
                     }
-                    .foregroundStyle(selfTimerSeconds == 0 ? .white : FlimTheme.accent)
+                    .foregroundStyle(selfTimerSeconds == 0 ? .white : accent)
                     .frame(minWidth: 38, minHeight: 38)
                     .padding(.horizontal, selfTimerSeconds > 0 ? 5 : 0)
                 }
@@ -532,7 +536,7 @@ struct CameraView: View {
                         .foregroundStyle(.black)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 9)
-                        .background(FlimTheme.accent, in: Capsule())
+                        .background(accent, in: Capsule())
                     }
                     .accessibilityLabel("\(unsortedCount) to sort")
                 }
@@ -591,7 +595,7 @@ struct CameraView: View {
                     } label: {
                         Image(systemName: flashIcon)
                             .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(flashMode == .off ? .white : FlimTheme.accent)
+                            .foregroundStyle(flashMode == .off ? .white : accent)
                             .frame(width: 52, height: 52)
                     }
                     .contentShape(Capsule())
@@ -624,7 +628,7 @@ struct CameraView: View {
         VStack(spacing: 16) {
             Image(systemName: "camera.fill")
                 .font(.system(size: 40, weight: .ultraLight))
-                .foregroundStyle(FlimTheme.accent)
+                .foregroundStyle(accent)
             Text("Camera access needed")
                 .font(.system(size: 20, weight: .light))
                 .foregroundStyle(.white)
@@ -643,7 +647,7 @@ struct CameraView: View {
                     .foregroundStyle(.black)
                     .padding(.horizontal, 32)
                     .padding(.vertical, 13)
-                    .background(FlimTheme.accent, in: Capsule())
+                    .background(accent, in: Capsule())
             }
             .padding(.top, 8)
         }
@@ -661,7 +665,7 @@ struct CameraView: View {
                 VStack(spacing: 16) {
                     Image(systemName: "camera.aperture")
                         .font(.system(size: 38, weight: .ultraLight))
-                        .foregroundStyle(FlimTheme.accent)
+                        .foregroundStyle(accent)
 
                     Text("Shoot now.\nSee it later.")
                         .font(.system(size: 24, weight: .light))
@@ -688,7 +692,7 @@ struct CameraView: View {
                             .foregroundStyle(.black)
                             .padding(.horizontal, 40)
                             .padding(.vertical, 13)
-                            .background(FlimTheme.accent, in: Capsule())
+                            .background(accent, in: Capsule())
                     }
                     .padding(.top, 10)
                 }
@@ -774,6 +778,7 @@ private struct ShutterButton: View {
 // MARK: - Roll picker sheet
 
 private struct RollPickerSheet: View {
+    @Environment(\.flimAccent) private var accent
     let rolls: [Roll]
     var closed: Set<UUID> = []
     @Binding var selected: Roll?
@@ -795,7 +800,7 @@ private struct RollPickerSheet: View {
                             Spacer()
                             if selected == nil {
                                 Image(systemName: "checkmark")
-                                    .foregroundStyle(FlimTheme.accent)
+                                    .foregroundStyle(accent)
                             }
                         }
                     }
@@ -818,7 +823,7 @@ private struct RollPickerSheet: View {
                                 Spacer()
                                 if selected?.id == roll.id {
                                     Image(systemName: "checkmark")
-                                        .foregroundStyle(FlimTheme.accent)
+                                        .foregroundStyle(accent)
                                 }
                             }
                         }

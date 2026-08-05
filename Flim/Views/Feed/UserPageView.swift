@@ -2,6 +2,7 @@ import SwiftUI
 
 /// A user's public page, profile header + their shared photos grouped into monthly chapters.
 struct UserPageView: View {
+    @Environment(\.flimAccent) private var accent
     let userId: UUID
     @Environment(AuthService.self) private var auth
     @Environment(FeedService.self) private var feed
@@ -64,7 +65,7 @@ struct UserPageView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 if isSelf {
                     Button { showSettings = true } label: {
-                        Image(systemName: "gearshape").foregroundStyle(FlimTheme.accent)
+                        Image(systemName: "gearshape").foregroundStyle(accent)
                     }
                     .accessibilityLabel("Settings")
                 } else {
@@ -79,7 +80,7 @@ struct UserPageView: View {
                             Button(role: .destructive) { showBlockConfirm = true } label: { Label("Block", systemImage: "hand.raised") }
                         }
                     } label: {
-                        Image(systemName: "ellipsis").foregroundStyle(FlimTheme.accent)
+                        Image(systemName: "ellipsis").foregroundStyle(accent)
                     }
                     .accessibilityLabel("More")
                 }
@@ -186,7 +187,7 @@ struct UserPageView: View {
                         .foregroundStyle(isFollowing ? .white : .black)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 11)
-                        .background(isFollowing ? Color.white.opacity(0.12) : FlimTheme.accent, in: Capsule())
+                        .background(isFollowing ? Color.white.opacity(0.12) : accent, in: Capsule())
                         .overlay(Capsule().strokeBorder(isFollowing ? Color.white.opacity(0.2) : .clear, lineWidth: 1))
                 }
                 .padding(.horizontal, 40)
@@ -207,7 +208,7 @@ struct UserPageView: View {
                         Label("Invite", systemImage: "person.badge.plus")
                             .font(.system(size: 14, weight: .semibold)).foregroundStyle(.black)
                             .frame(maxWidth: .infinity).padding(.vertical, 11)
-                            .background(FlimTheme.accent, in: Capsule())
+                            .background(accent, in: Capsule())
                     }
                 }
                 .padding(.horizontal, 40)
@@ -218,19 +219,19 @@ struct UserPageView: View {
 
     private var avatarCircle: some View {
         Circle()
-            .fill(FlimTheme.accent.opacity(0.18))
+            .fill(accent.opacity(0.18))
             .frame(width: 88, height: 88)
             .overlay {
                 if let avatarURL {
                     CachedImage(url: avatarURL, maxPixel: 220) { $0.resizable().scaledToFill() } placeholder: { Color.clear }
                 } else {
                     Text(String((profile?.username ?? "?").prefix(1)).uppercased())
-                        .flimFont(32, weight: .thin, relativeTo: .title3).foregroundStyle(FlimTheme.accent)
+                        .flimFont(32, weight: .thin, relativeTo: .title3).foregroundStyle(accent)
                 }
             }
             .clipShape(Circle())
             .overlay(Circle().stroke(FlimTheme.bg, lineWidth: 4))
-            .overlay(Circle().stroke(FlimTheme.accent.opacity(0.5), lineWidth: 1))
+            .overlay(Circle().stroke(accent.opacity(0.5), lineWidth: 1))
     }
 
     private func stat(_ value: String, _ label: String) -> some View {
@@ -310,7 +311,7 @@ struct UserPageView: View {
                 Text("Unblock")
                     .flimFont(13, weight: .semibold, relativeTo: .subheadline).foregroundStyle(.black)
                     .padding(.horizontal, 18).padding(.vertical, 9)
-                    .background(FlimTheme.accent, in: Capsule())
+                    .background(accent, in: Capsule())
             }
             .padding(.top, 6)
         }
@@ -389,6 +390,7 @@ struct PostThumb: View {
 // MARK: - Discover people
 
 struct DiscoverPeopleView: View {
+    @Environment(\.flimAccent) private var accent
     @Environment(AuthService.self) private var auth
     @Environment(FeedService.self) private var feed
     @Environment(\.dismiss) private var dismiss
@@ -469,7 +471,7 @@ struct DiscoverPeopleView: View {
                 .autocorrectionDisabled()
                 .textInputAutocapitalization(.never)
                 .foregroundStyle(.white)
-                .tint(FlimTheme.accent)
+                .tint(accent)
             if !searchText.isEmpty {
                 Button { searchText = "" } label: {
                     Image(systemName: "xmark.circle.fill").foregroundStyle(FlimTheme.textTertiary)
@@ -574,6 +576,7 @@ struct FollowListView: View {
 
 /// A compact follow/unfollow pill used in lists.
 struct FollowButton: View {
+    @Environment(\.flimAccent) private var accent
     let userId: UUID
     @Environment(AuthService.self) private var auth
     @Environment(FeedService.self) private var feed
@@ -592,7 +595,7 @@ struct FollowButton: View {
                 .flimFont(13, weight: .semibold, relativeTo: .subheadline)
                 .foregroundStyle(following ? .white : .black)
                 .padding(.horizontal, 16).padding(.vertical, 7)
-                .background(following ? Color.white.opacity(0.12) : FlimTheme.accent, in: Capsule())
+                .background(following ? Color.white.opacity(0.12) : accent, in: Capsule())
         }
     }
 }

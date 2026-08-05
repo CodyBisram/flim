@@ -1,8 +1,30 @@
 import SwiftUI
 
-/// Instagram-style "Tag People" screen: the photo at a fixed 3:4 frame; tap anywhere to drop a tag
-/// (pick a person), tap a tag to remove it. Returns the tags via a binding.
+/// The line under the thumbnail in the tag editor, naming who is on the photo so far.
+///
+/// Named handles up to two, then a count, because past two the names stop being scannable and the
+/// number is the useful fact. Not em dashes anywhere, per the copy rule.
+func tagSummary(handles: [String]) -> String {
+    switch handles.count {
+    case 0: "Nobody tagged yet"
+    case 1: handles[0]
+    case 2: "\(handles[0]) and \(handles[1])"
+    default: "\(handles[0]), \(handles[1]) and \(handles.count - 2) more"
+    }
+}
+
+/// "Tag People": pick anyone you follow, in one searchable list. Returns the tags via a binding.
+///
+/// This used to be the photo at a fixed 3:4 frame, where you tapped a spot to drop a tag and a
+/// second sheet opened on top to choose the person. That was built when names were drawn as
+/// capsules pinned at each tag's (x, y) on the photograph. Names are shown in a list now (see
+/// `PhotoTags`), so placing them cost two taps and a nested sheet to record a position nothing
+/// reads back. What is left is the actual question, which is who is in the photo.
+///
+/// The photo stays as a thumbnail: knowing which shot you are tagging is the one thing the old
+/// screen gave you that a bare list would not.
 struct TagPhotoSheet: View {
+    @Environment(\.flimAccent) private var accent
     let url: URL?
     @Binding var tags: [PendingTag]
     /// Called when Done is tapped. The share composer leaves this empty (it persists the tags as
@@ -10,46 +32,22 @@ struct TagPhotoSheet: View {
     var onDone: () -> Void = {}
 
     @Environment(\.dismiss) private var dismiss
-    @State private var showPicker = false
-    @State private var pendingPoint: CGPoint?   // normalized (0…1), awaiting a person
+
+    /// Tags still carry a position because the column and the model still do, and a tag has to go
+    /// somewhere. The centre is the honest value for "unplaced": nothing renders it, and if
+    /// positional labels ever come back, a stack of tags in the middle is visibly unplaced rather
+    /// than quietly wrong.
+    private static let unplaced = (x: 0.5, y: 0.5)
 
     var body: some View {
         NavigationStack {
             ZStack {
                 FlimTheme.bg.ignoresSafeArea()
-                VStack(spacing: 14) {
-                    Text(tags.isEmpty ? "Tap the photo to tag someone" : "Tap a tag to remove it")
-                        .flimFont(13, relativeTo: .subheadline).foregroundStyle(FlimTheme.textTertiary)
-                        .padding(.top, 8)
-
-                    GeometryReader { geo in
-                        ZStack(alignment: .topLeading) {
-                            if let url {
-                                CachedImage(url: url, maxPixel: 1200) { $0.resizable().scaledToFit() } placeholder: {
-                                    ShimmerPlaceholder(cornerRadius: 14)
-                                }
-                            } else {
-                                ShimmerPlaceholder(cornerRadius: 14)
-                            }
-
-                            ForEach(tags) { tag in
-                                tagMarker(tag)
-                                    .position(x: tag.x * geo.size.width, y: tag.y * geo.size.height)
-                            }
-                        }
-                        .frame(width: geo.size.width, height: geo.size.height)
-                        .clipShape(RoundedRectangle(cornerRadius: 14))
-                        .contentShape(Rectangle())
-                        .onTapGesture(coordinateSpace: .local) { location in
-                            pendingPoint = CGPoint(x: location.x / geo.size.width,
-                                                   y: location.y / geo.size.height)
-                            showPicker = true
-                        }
-                    }
-                    .aspectRatio(3.0 / 4.0, contentMode: .fit)
-                    .padding(.horizontal, 16)
-
-                    Spacer()
+                VStack(spacing: 0) {
+                    photoHeader
+                    FollowingList(emptyMessage: "Follow people to tag them.") { profile in
+                        checkmark(for: profile)
+                    } onSelect: { toggle($0) }
                 }
             }
             .navigationBarTitleDisplayMode(.inline)
@@ -58,30 +56,53 @@ struct TagPhotoSheet: View {
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") { onDone(); dismiss() }
-                        .foregroundStyle(FlimTheme.accent).fontWeight(.semibold)
+                        .foregroundStyle(accent).fontWeight(.semibold)
                 }
-            }
-        }
-        .sheet(isPresented: $showPicker) {
-            PersonPickerSheet(exclude: Set(tags.map(\.user.id))) { profile in
-                if let p = pendingPoint {
-                    tags.append(PendingTag(user: profile, x: p.x, y: p.y))
-                }
-                pendingPoint = nil
             }
         }
     }
 
-    private func tagMarker(_ tag: PendingTag) -> some View {
-        HStack(spacing: 4) {
-            Text(tag.user.handle)
-                .flimFont(12, weight: .semibold, relativeTo: .caption).foregroundStyle(.white)
-            Image(systemName: "xmark").font(.system(size: 9, weight: .bold)).foregroundStyle(.white.opacity(0.7))
+    /// The shot being tagged, plus who is on it so far. Small enough to leave the list the whole
+    /// screen, big enough to tell two shots from the same roll apart.
+    private var photoHeader: some View {
+        HStack(spacing: 12) {
+            Group {
+                if let url {
+                    CachedImage(url: url, maxPixel: 200) { $0.resizable().scaledToFill() }
+                        placeholder: { ShimmerPlaceholder(cornerRadius: 8) }
+                } else {
+                    ShimmerPlaceholder(cornerRadius: 8)
+                }
+            }
+            .frame(width: 44, height: 56)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+
+            Text(summary)
+                .flimFont(14, relativeTo: .subheadline)
+                .foregroundStyle(tags.isEmpty ? FlimTheme.textTertiary : .white)
+                .lineLimit(2)
+            Spacer(minLength: 0)
         }
-        .padding(.horizontal, 9).padding(.vertical, 5)
-        .background(.black.opacity(0.72), in: Capsule())
-        .overlay(Capsule().strokeBorder(.white.opacity(0.25), lineWidth: 0.5))
-        .contentShape(Capsule())
-        .onTapGesture { tags.removeAll { $0.id == tag.id } }
+        .padding(.horizontal, 16).padding(.top, 12)
+    }
+
+    private var summary: String { tagSummary(handles: tags.map(\.user.handle)) }
+
+    @ViewBuilder
+    private func checkmark(for profile: UserProfile) -> some View {
+        Image(systemName: tags.contains { $0.user.id == profile.id }
+              ? "checkmark.circle.fill" : "circle")
+            .font(.system(size: 20))
+            .foregroundStyle(tags.contains { $0.user.id == profile.id }
+                             ? accent : FlimTheme.textTertiary)
+    }
+
+    private func toggle(_ profile: UserProfile) {
+        Haptics.tap()
+        if let existing = tags.firstIndex(where: { $0.user.id == profile.id }) {
+            tags.remove(at: existing)
+        } else {
+            tags.append(PendingTag(user: profile, x: Self.unplaced.x, y: Self.unplaced.y))
+        }
     }
 }

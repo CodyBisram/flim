@@ -2,6 +2,7 @@ import SwiftUI
 import UIKit
 
 struct FeedView: View {
+    @Environment(\.flimAccent) private var accent
     var scrollToTop: Int = 0
     @Environment(AuthService.self) private var auth
     @Environment(FeedService.self) private var feed
@@ -104,7 +105,7 @@ struct FeedView: View {
                                         .font(.system(size: 13, weight: .semibold))
                                         .foregroundStyle(.black)
                                         .padding(.horizontal, 16).padding(.vertical, 8)
-                                        .background(FlimTheme.accent, in: Capsule())
+                                        .background(accent, in: Capsule())
                                         .shadow(color: .black.opacity(0.3), radius: 6, y: 3)
                                 }
                                 .padding(.top, 8)
@@ -173,7 +174,7 @@ struct FeedView: View {
                 } label: {
                     Image(systemName: unreadActivity > 0 ? "bell.badge" : "bell")
                         .font(.system(size: 16, weight: .medium))
-                        .foregroundStyle(FlimTheme.accent)
+                        .foregroundStyle(accent)
                         .symbolEffect(.bounce, value: unreadActivity)   // bounces when new activity lands
                         .frame(width: 38, height: 38)
                         .glassCapsule(interactive: true)
@@ -193,7 +194,7 @@ struct FeedView: View {
                 Button { showDiscover = true } label: {
                     Image(systemName: "person.badge.plus")
                         .font(.system(size: 16, weight: .medium))
-                        .foregroundStyle(FlimTheme.accent)
+                        .foregroundStyle(accent)
                         .frame(width: 38, height: 38)
                         .glassCapsule(interactive: true)
                 }
@@ -205,18 +206,18 @@ struct FeedView: View {
                         UserPageView(userId: uid)
                     } label: {
                         Circle()
-                            .fill(FlimTheme.accent.opacity(0.18))
+                            .fill(accent.opacity(0.18))
                             .frame(width: 34, height: 34)
                             .overlay {
                                 if let myAvatarURL {
                                     CachedImage(url: myAvatarURL, maxPixel: 100) { $0.resizable().scaledToFill() } placeholder: { Color.clear }
                                 } else {
                                     Text(String((auth.currentUser?.username ?? "?").prefix(1)).uppercased())
-                                        .flimFont(14, weight: .thin, relativeTo: .subheadline).foregroundStyle(FlimTheme.accent)
+                                        .flimFont(14, weight: .thin, relativeTo: .subheadline).foregroundStyle(accent)
                                 }
                             }
                             .clipShape(Circle())
-                            .overlay(Circle().stroke(FlimTheme.accent.opacity(0.4), lineWidth: 1))
+                            .overlay(Circle().stroke(accent.opacity(0.4), lineWidth: 1))
                     }
                     .accessibilityLabel("Your page")
                 }
@@ -246,7 +247,7 @@ struct FeedView: View {
             Spacer()
             Image(systemName: "sparkles")
                 .font(.system(size: 30, weight: .ultraLight))
-                .foregroundStyle(FlimTheme.accent)
+                .foregroundStyle(accent)
             Text("It's quiet in here")
                 .flimFont(19, weight: .thin, relativeTo: .body)
                 .foregroundStyle(.white)
@@ -261,7 +262,7 @@ struct FeedView: View {
                         .flimFont(14, weight: .semibold, relativeTo: .subheadline)
                         .foregroundStyle(.black)
                         .padding(.horizontal, 20).padding(.vertical, 11)
-                        .background(FlimTheme.accent, in: Capsule())
+                        .background(accent, in: Capsule())
                 }
                 Button { NotificationCenter.default.post(name: .openCamera, object: nil) } label: {
                     Text("Take a shot")
@@ -327,6 +328,7 @@ struct FeedView: View {
 // MARK: - Post card
 
 struct FeedPostCard: View {
+    @Environment(\.flimAccent) private var accent
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let item: FeedItem
     @Environment(AuthService.self) private var auth
@@ -433,6 +435,9 @@ struct FeedPostCard: View {
                     PhotoTags(tags: feed.tagsByPost[post.id] ?? [], profiles: feed.tagProfiles) { route = ProfileRoute(id: $0) }
                 }
                 .clipShape(RoundedRectangle(cornerRadius: 12))
+                // Two fingers lift the print off the feed; one finger still likes it and opens
+                // it. Applied after the clip so the lifted snapshot has the card's own corners.
+                .pinchToZoom()
                 .contentShape(Rectangle())
                 .onTapGesture(count: 2) { doubleTapLike() }
                 // The same actions as the ••• button above, on the photo itself. Long-press is
@@ -489,7 +494,7 @@ struct FeedPostCard: View {
                                     }
                                     Image(systemName: info.likedByMe ? "heart.fill" : "heart")
                                         .font(.system(size: 12))
-                                        .foregroundStyle(info.likedByMe ? FlimTheme.accent : FlimTheme.textTertiary)
+                                        .foregroundStyle(info.likedByMe ? accent : FlimTheme.textTertiary)
                                         .symbolEffect(.bounce, value: info.likedByMe)
                                         .frame(width: 16, alignment: .trailing)
                                 }
@@ -621,7 +626,7 @@ struct FeedPostCard: View {
 
     private var avatar: some View {
         Circle()
-            .fill(FlimTheme.accent.opacity(0.18))
+            .fill(accent.opacity(0.18))
             .frame(width: 34, height: 34)
             .overlay {
                 if let avatarURL {
@@ -629,7 +634,7 @@ struct FeedPostCard: View {
                 } else {
                     Text(String(item.author.handle.dropFirst().prefix(1)).uppercased())
                         .flimFont(14, weight: .thin, relativeTo: .subheadline)
-                        .foregroundStyle(FlimTheme.accent)
+                        .foregroundStyle(accent)
                 }
             }
             .clipShape(Circle())
@@ -679,6 +684,7 @@ struct FeedPostCard: View {
 // MARK: - Edit caption
 
 private struct EditCaptionSheet: View {
+    @Environment(\.flimAccent) private var accent
     @Binding var caption: String
     let onSave: () -> Void
     @Environment(\.dismiss) private var dismiss
@@ -691,7 +697,7 @@ private struct EditCaptionSheet: View {
                 VStack {
                     TextField("Add a caption…", text: $caption, axis: .vertical)
                         .lineLimit(1...5)
-                        .flimFont(16, relativeTo: .body).foregroundStyle(.white).tint(FlimTheme.accent)
+                        .flimFont(16, relativeTo: .body).foregroundStyle(.white).tint(accent)
                         .focused($focused)
                         .padding(14)
                         .background(FlimTheme.bgElevated, in: RoundedRectangle(cornerRadius: 12))
@@ -708,7 +714,7 @@ private struct EditCaptionSheet: View {
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Save") { onSave(); dismiss() }
-                        .foregroundStyle(FlimTheme.accent).fontWeight(.semibold)
+                        .foregroundStyle(accent).fontWeight(.semibold)
                 }
             }
             .onAppear { focused = true }

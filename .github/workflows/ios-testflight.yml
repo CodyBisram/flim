@@ -62,6 +62,72 @@ jobs:
             -skipPackagePluginValidation CODE_SIGNING_ALLOWED=NO build
 
   # --------------------------------------------------------------------------
+  # Swift 6 readiness — reports only, never blocks.
+  #
+  # The app builds in Swift 5 language mode. Under `-strict-concurrency=complete`
+  # there are 23 real warnings, mostly `static let` on non-Sendable types
+  # (CubeLUT.cache, ImageCache.shared, QuickCaptureIntent) plus four
+  # sending-closure sites in CameraViewModel. Each one is an ERROR in Swift 6.
+  #
+  # The point is to keep that number from growing quietly while the migration is
+  # still on the backlog, so the eventual switch is a known, bounded piece of
+  # work instead of a surprise. It must never fail a build: nothing here is a
+  # defect today, and a red X on a warning count trains people to ignore CI.
+  # --------------------------------------------------------------------------
+  concurrency-audit:
+    name: Swift 6 readiness (advisory)
+    if: github.event_name == 'pull_request'
+    runs-on: macos-15
+    timeout-minutes: 30
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate project
+        run: xcodegen generate
+
+      - name: Count strict-concurrency warnings
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project Flim.xcodeproj \
+            -scheme Flim \
+            -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            -skipPackagePluginValidation \
+            CODE_SIGNING_ALLOWED=NO \
+            SWIFT_STRICT_CONCURRENCY=complete \
+            build 2>&1 | tee /tmp/strict.log || true
+
+          # Unique warnings only: xcodebuild repeats each one per compilation unit.
+          grep -E "warning:.*(isolat|Sendable|concurren)" /tmp/strict.log \
+            | sed 's|.*/Flim/|Flim/|' | sort -u > /tmp/strict-unique.txt || true
+          COUNT=$(wc -l < /tmp/strict-unique.txt | tr -d ' ')
+
+          {
+            echo "### Swift 6 readiness"
+            echo ""
+            echo "**$COUNT** unique strict-concurrency warnings."
+            echo ""
+            echo "Advisory only. These become errors when the package moves to the"
+            echo "Swift 6 language mode; the goal is that this number goes down, never up."
+            echo ""
+            echo '```'
+            cat /tmp/strict-unique.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "strict-concurrency warnings: $COUNT"
+
+  # --------------------------------------------------------------------------
   # Ship — signed Release archive uploaded to TestFlight.
   # --------------------------------------------------------------------------
   deploy:

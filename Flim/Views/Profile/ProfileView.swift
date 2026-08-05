@@ -14,6 +14,7 @@ func isOwnerAccount(email: String?, username: String?) -> Bool {
 /// The invite code likewise moved out to `InviteSheet` (surfaced on the profile). It's the
 /// growth affordance, not a preference, and it doesn't belong buried between two toggles.
 struct ProfileView: View {
+    @Environment(\.flimAccent) private var accent
     @Environment(AuthService.self) private var auth
     @Environment(PhotoService.self) private var photos
     @Environment(\.dismiss) private var dismiss
@@ -43,9 +44,9 @@ struct ProfileView: View {
             List {
                 Section {
                     Toggle("Develop reminders", isOn: $notificationsEnabled)
-                        .tint(FlimTheme.accent)
+                        .tint(accent)
                     Toggle("Sound effects", isOn: $soundEffects)
-                        .tint(FlimTheme.accent)
+                        .tint(accent)
                 } header: { sectionHeader("Notifications & Sound") }
                 .listRowBackground(FlimTheme.bgElevated)
 
@@ -76,7 +77,7 @@ struct ProfileView: View {
                                     .flimFont(11, relativeTo: .caption).foregroundStyle(FlimTheme.textTertiary)
                             }
                         }
-                        .tint(FlimTheme.accent)
+                        .tint(accent)
                     } header: { sectionHeader("Film Lab") }
                     .listRowBackground(FlimTheme.bgElevated)
                 }
@@ -191,7 +192,7 @@ struct ProfileView: View {
             HStack(spacing: 14) {
                 Image(systemName: icon)
                     .font(.system(size: 15))
-                    .foregroundStyle(FlimTheme.accent)
+                    .foregroundStyle(accent)
                     .frame(width: 22)
                 Text(title).flimFont(15, relativeTo: .body).foregroundStyle(.white)
                 Spacer()
@@ -231,11 +232,15 @@ struct ProfileView: View {
 /// page (UserPageView) rather than from a settings sheet layered on top of it. Each field opens
 /// its existing, validated editor sheet; avatar and cover use the shared photo picker.
 struct EditProfileView: View {
+    @Environment(\.flimAccent) private var accent
     @Environment(AuthService.self) private var auth
     @Environment(PhotoService.self) private var photos
     @Environment(\.dismiss) private var dismiss
 
     @State private var avatarURL: URL?
+    /// Surfaced when an avatar or cover change fails. Those calls return Bool precisely so this
+    /// can be reported, and for a while nothing read the result.
+    @State private var photoError: String?
     @State private var showEditName = false
     @State private var showEditUsername = false
     @State private var showEditBio = false
@@ -301,16 +306,35 @@ struct EditProfileView: View {
                 // photo becomes their avatar. Without it the downscaler centre-cropped, and a
                 // face that wasn't dead centre came out as a shoulder.
                 PhotoPickerSheet(title: "Profile Photo") { _ in } onPickCropped: { data in
-                    Task { await auth.setAvatar(fromImageData: data) }
+                    Task {
+                        // The picker dismisses either way, so silence here looks exactly like
+                        // success: you pick a new photo, the sheet closes, and your old one is
+                        // still there with no explanation.
+                        if await !auth.setAvatar(fromImageData: data) {
+                            photoError = "Couldn't update your profile photo. Check your connection and try again."
+                        }
+                    }
                 }
             }
             .sheet(isPresented: $showCoverPicker) {
                 PhotoPickerSheet(title: "Cover Photo") { path in
-                    Task { await auth.setCover(fromPhotoPath: path) }
+                    Task {
+                        if await !auth.setCover(fromPhotoPath: path) {
+                            photoError = "Couldn't update your cover photo. Check your connection and try again."
+                        }
+                    }
                 } onPickLibraryImage: { data in
-                    Task { await auth.setCover(fromImageData: data) }
+                    Task {
+                        if await !auth.setCover(fromImageData: data) {
+                            photoError = "Couldn't update your cover photo. Check your connection and try again."
+                        }
+                    }
                 }
             }
+            .alert("Couldn't save", isPresented: Binding(get: { photoError != nil },
+                                                         set: { if !$0 { photoError = nil } })) {
+                Button("OK", role: .cancel) {}
+            } message: { Text(photoError ?? "") }
             .task { await refreshAvatar() }
             .onChange(of: auth.currentUser?.avatarPath) { Task { await refreshAvatar() } }
         }
@@ -321,7 +345,7 @@ struct EditProfileView: View {
     private var avatarButton: some View {
         Button { showAvatarPicker = true } label: {
             Circle()
-                .fill(FlimTheme.accent.opacity(0.18))
+                .fill(accent.opacity(0.18))
                 .frame(width: 96, height: 96)
                 .overlay {
                     if let avatarURL {
@@ -333,15 +357,15 @@ struct EditProfileView: View {
                     } else {
                         Text(String((auth.currentUser?.username ?? "?").prefix(1)).uppercased())
                             .flimFont(34, weight: .thin, relativeTo: .title3)
-                            .foregroundStyle(FlimTheme.accent)
+                            .foregroundStyle(accent)
                     }
                 }
                 .clipShape(Circle())
-                .overlay(Circle().stroke(FlimTheme.accent.opacity(0.5), lineWidth: 1))
+                .overlay(Circle().stroke(accent.opacity(0.5), lineWidth: 1))
                 .overlay(alignment: .bottomTrailing) {
                     Image(systemName: "camera.fill")
                         .font(.system(size: 12)).foregroundStyle(.black)
-                        .padding(7).background(FlimTheme.accent, in: Circle())
+                        .padding(7).background(accent, in: Circle())
                         .overlay(Circle().stroke(FlimTheme.bg, lineWidth: 2))
                 }
         }
@@ -384,6 +408,7 @@ struct EditProfileView: View {
 /// The personal invite code: the growth affordance, surfaced from the profile rather than
 /// buried in settings. Big code, copy, and a share sheet.
 struct InviteSheet: View {
+    @Environment(\.flimAccent) private var accent
     @Environment(AuthService.self) private var auth
     @Environment(\.dismiss) private var dismiss
     @State private var codeCopied = false
@@ -416,7 +441,7 @@ struct InviteSheet: View {
                                     .foregroundStyle(.white)
                                 Image(systemName: codeCopied ? "checkmark.circle.fill" : "doc.on.doc")
                                     .font(.system(size: 18))
-                                    .foregroundStyle(codeCopied ? FlimTheme.accent : FlimTheme.textSecondary)
+                                    .foregroundStyle(codeCopied ? accent : FlimTheme.textSecondary)
                             }
                             .padding(.vertical, 20)
                             .padding(.horizontal, 24)
@@ -455,6 +480,7 @@ struct InviteSheet: View {
 // MARK: - Edit bio
 
 private struct EditBioSheet: View {
+    @Environment(\.flimAccent) private var accent
     @State private var saveError: String?
     @Environment(AuthService.self) private var auth
     @Environment(\.dismiss) private var dismiss
@@ -508,7 +534,7 @@ private struct EditBioSheet: View {
                             }
                         }
                     }
-                    .foregroundStyle(FlimTheme.accent)
+                    .foregroundStyle(accent)
                     .disabled(isSaving)
                 }
             }
@@ -521,6 +547,7 @@ private struct EditBioSheet: View {
 // MARK: - Edit name
 
 private struct EditNameSheet: View {
+    @Environment(\.flimAccent) private var accent
     @State private var saveError: String?
     @Environment(AuthService.self) private var auth
     @Environment(\.dismiss) private var dismiss
@@ -574,7 +601,7 @@ private struct EditNameSheet: View {
                             }
                         }
                     }
-                    .foregroundStyle(FlimTheme.accent)
+                    .foregroundStyle(accent)
                     .disabled(isSaving)
                 }
             }
@@ -620,6 +647,16 @@ private struct EditUsernameSheet: View {
                     .padding(.horizontal, 16)
                     .padding(.vertical, 16)
                     .background(Color(white: 0.1), in: RoundedRectangle(cornerRadius: 12))
+
+                    // Same live reason the SIGN-UP screen gives. That fix never made it here, so
+                    // changing your username later left Save greyed out saying nothing, which is
+                    // the exact defect ("apple-review" disabled Continue in silence) that
+                    // usernameRejection was written for.
+                    if let reason = AuthService.usernameRejection(username), error == nil {
+                        Text(reason)
+                            .flimFont(13, relativeTo: .subheadline)
+                            .foregroundStyle(FlimTheme.textSecondary)
+                    }
 
                     if let error {
                         Text(error)

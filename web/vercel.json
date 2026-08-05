@@ -3,13 +3,23 @@
   "cleanUrls": true,
   "trailingSlash": false,
   "rewrites": [
-    { "source": "/join/:code", "destination": "/join" }
+    {
+      "source": "/join/:code",
+      "destination": "/join"
+    },
+    {
+      "source": "/i/:code",
+      "destination": "/i"
+    }
   ],
   "headers": [
     {
       "source": "/.well-known/apple-app-site-association",
       "headers": [
-        { "key": "Content-Type", "value": "application/json" }
+        {
+          "key": "Content-Type",
+          "value": "application/json"
+        }
       ]
     }
   ]
