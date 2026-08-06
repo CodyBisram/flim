@@ -63,7 +63,7 @@ struct ContentView: View {
             // Captures that never reached the server are kept on disk per account, so this is
             // where they come back: on launch, and on signing back in. Without it the files
             // would accumulate forever and nobody would ever be offered the retry.
-            if let newId { photos.restoreFailedUploads(userId: newId) }
+            if let newId { Task { await photos.restoreFailedUploads(userId: newId) } }
         }
         .onReceive(NotificationCenter.default.publisher(for: .flimAccountDidChange)) { _ in
             // Sign-out posts this. currentUser goes to nil, which the onChange above also catches,

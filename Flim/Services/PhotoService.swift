@@ -186,7 +186,11 @@ final class PhotoService {
             // a different account would re-upload one person's photo as another's.
             guard AccountEpoch.isCurrent(epoch) else { return nil }
             let pending = FailedUpload(data: imageData, userId: userId, rollId: rollId)
-            let saved = failedUploadStore.save(pending)
+            // Also off the main actor: this writes a full-resolution JPEG atomically, and it runs
+            // on the failure path, which is exactly when someone is shooting with no signal and
+            // taking the next photograph immediately. Every shot would hitch on the write.
+            let store = failedUploadStore
+            let saved = await Task.detached(priority: .utility) { store.save(pending) }.value
             await MainActor.run {
                 // The queue is what the retry pill counts, so it holds the capture either way.
                 // Only the promise changes: if the disk write failed, the photo lives until the
@@ -354,9 +358,19 @@ final class PhotoService {
     ///
     /// This is the half that makes the disk queue worth having: saving captures nobody ever
     /// offers to retry is just a leak.
-    func restoreFailedUploads(userId: UUID) {
-        failedUploadStore.prune(userId: userId)
-        let restored = failedUploadStore.load(userId: userId)
+    /// Off the main actor, because `load` reads every pending capture's JPEG off disk.
+    ///
+    /// This class is `@MainActor`, so the enumeration, the JSON decode and one full-resolution
+    /// image read PER QUEUED CAPTURE all ran on the main thread at account resolution — which is
+    /// launch. Empty queue, no cost; a week of shooting with a bad connection, and launch blocks
+    /// on tens of megabytes of synchronous reads. The store is a value type holding only a URL,
+    /// so it crosses to the detached task safely.
+    func restoreFailedUploads(userId: UUID) async {
+        let store = failedUploadStore
+        let restored = await Task.detached(priority: .utility) { () -> [FailedUpload] in
+            store.prune(userId: userId)
+            return store.load(userId: userId)
+        }.value
         guard !restored.isEmpty else { return }
         let known = Set(failedUploads.map(\.id))
         failedUploads.append(contentsOf: restored.filter { !known.contains($0.id) })
