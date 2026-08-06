@@ -17,8 +17,19 @@ enum FlimTheme {
     static var accentSoft: Color { accent.opacity(0.16) }
 
     static let textPrimary = Color.white
-    static let textSecondary = Color(white: 0.62)   // nudged up for legibility
-    static let textTertiary = Color(white: 0.44)    // faint, but now actually readable
+    static let textSecondary = Color(white: 0.62)   // 7.4:1 on bg, passes AA and AAA
+
+    /// The faintest text in the app, and the only one that was failing.
+    ///
+    /// 0.44 measured 4.00:1 against `bg`, under the 4.5:1 WCAG AA needs for normal-size text,
+    /// and this token is used almost entirely on 12 and 13pt captions, which is exactly
+    /// normal-size text. 0.48 measures 4.63:1 and clears it with a little room.
+    ///
+    /// It is deliberately the smallest change that passes rather than a jump to something
+    /// obviously brighter: this colour's whole job is to recede, and the point is that it can do
+    /// that while still being readable by someone who isn't looking at it in a dark room with
+    /// young eyes.
+    static let textTertiary = Color(white: 0.48)
 }
 
 /// The accent, as something SwiftUI can actually see change.

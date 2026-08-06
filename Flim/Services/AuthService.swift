@@ -512,17 +512,26 @@ final class AuthService {
     func deleteAccount() async throws {
         // Remove the user's stored image files first, the RPC cascades the DB rows but
         // not the physical objects in Storage, which would otherwise be orphaned.
+        //
+        // Everything in their folder, not a list derived from the photos table.
+        //
+        // This used to select `storage_path` alone and delete only that, which left every
+        // thumbnail, every 1400px card, and the avatar and cover behind. On a promise to delete
+        // an account that is worse than a leak: someone asks to be forgotten and their
+        // photographs stay in the bucket at two of the three sizes. It is also the exact shape of
+        // the bug that stranded 160 MB of feed cards, written a second time in a second place.
+        //
+        // Enumerating the folder cannot drift the way a hand-written column list does: a fourth
+        // rendition, or anything else ever written under the user's prefix, is covered without
+        // anyone remembering to come back here.
         if let session = try? await supabase.auth.session {
-            struct PathRow: Decodable { let storage_path: String }
-            let rows: [PathRow] = (try? await supabase
-                .from("photos")
-                .select("storage_path")
-                .eq("user_id", value: session.user.id.uuidString)
-                .execute()
-                .value) ?? []
-            let paths = rows.map(\.storage_path)
-            if !paths.isEmpty {
-                _ = try? await supabase.storage.from("photos").remove(paths: paths)
+            let uid = session.user.id.uuidString.lowercased()
+            while true {
+                guard let objects = try? await supabase.storage.from("photos")
+                    .list(path: uid, options: SearchOptions(limit: 1000)), !objects.isEmpty else { break }
+                _ = try? await supabase.storage.from("photos")
+                    .remove(paths: objects.map { "\(uid)/\($0.name)" })
+                if objects.count < 1000 { break }
             }
         }
 
