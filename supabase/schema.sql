@@ -1385,6 +1385,16 @@ ALTER TABLE public.photo_reactions ADD COLUMN IF NOT EXISTS push_sent BOOLEAN NO
 -- supabase/migrations/2026-08-05_follow_push_backfill.sql.
 -- ============================================================
 ALTER TABLE public.follows ADD COLUMN IF NOT EXISTS push_sent BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- The partial index every other push_sent table already has, and this one was missing.
+--
+-- send-social-push asks `where push_sent = false` every sixty seconds, forever. Without this it
+-- is a sequential scan, and `follows` is the table that grows fastest with the user base: n users
+-- can produce up to n² edges, while the rows the scan actually wants stay near zero because they
+-- are flipped within a minute of being written. A partial index is the right shape precisely
+-- because the interesting set is tiny and the table is not.
+CREATE INDEX IF NOT EXISTS follows_unpushed_idx
+    ON public.follows (push_sent) WHERE (push_sent = false);
 CREATE INDEX IF NOT EXISTS photo_reactions_unpushed_idx ON public.photo_reactions (push_sent) WHERE push_sent = FALSE;
 
 -- ============================================================
