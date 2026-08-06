@@ -451,7 +451,19 @@ final class AuthService {
     /// numbers below are the same stored sizes, written out.
     private func uploadOwnedImage(_ raw: Data, prefix: String, userId: UUID, longEdge: CGFloat) async -> String? {
         // Downscale, an avatar/cover never needs the full image (saves storage + egress).
-        let data = InstantFilmProcessor.thumbnail(from: raw, longEdge: longEdge) ?? raw
+        //
+        // Refuses rather than falling back to the raw bytes, which is what it used to do. A
+        // profile picture comes from the photo library, so unlike everything else in the bucket
+        // its bytes are the user's file in the user's format: a PNG screenshot, an HEIC from the
+        // camera, whatever they picked. ImageIO reads all of those and re-encodes to JPEG, which
+        // is why the format has never mattered.
+        //
+        // When that conversion fails, `?? raw` uploaded the ORIGINAL instead — undownscaled, and
+        // labelled `image/jpeg` under a `.jpg` name whatever it actually was. That is the only
+        // path in the app that can put a multi-megabyte file in the bucket, and it stores a lie
+        // about its own type. Failing is better: the caller already returns false and the UI
+        // already says so.
+        guard let data = InstantFilmProcessor.thumbnail(from: raw, longEdge: longEdge) else { return nil }
         let dest = "\(userId.uuidString.lowercased())/\(prefix)-\(UUID().uuidString.lowercased()).jpg"
         do {
             try await supabase.storage.from("photos")
