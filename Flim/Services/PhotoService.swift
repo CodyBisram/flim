@@ -259,6 +259,79 @@ final class PhotoService {
         }
     }
 
+    /// Photos this session has already tried to repair, so a swipe back and forth doesn't retry a
+    /// photo whose bytes simply aren't on the device.
+    private var repairAttempted: Set<UUID> = []
+
+    /// Rebuilds renditions that never uploaded, using ONLY bytes already on this device.
+    ///
+    /// 47 of 510 photos in production have no 1400px card and 26 have no thumbnail, because
+    /// `uploadRenditions` retries twice, three seconds apart, in-process. Anything longer than
+    /// that — a kill, a background, a tunnel — loses them permanently, and the photo then falls
+    /// back to the 2048px original everywhere: 1250 kB instead of 123 kB in a grid cell, on every
+    /// view, for the life of the photo.
+    ///
+    /// **This never downloads.** The obvious repair, sweeping the library and fetching each
+    /// original, would cost ~59 MB of egress to save egress later, which is self-defeating on a
+    /// plan whose whole problem is egress. Instead it reads the raw bytes out of the disk cache
+    /// and does nothing when they aren't there. A photo gets repaired as a side effect of someone
+    /// looking at it full-screen, which is exactly the set of photos worth repairing: the ones
+    /// being viewed repeatedly are the ones paying the penalty repeatedly.
+    ///
+    /// Only the missing column is written. The capture path patches both at once, which is right
+    /// for a new photo where both are nil, and would be wrong here: it would null out a rendition
+    /// that already exists.
+    func repairRenditions(for photo: Photo) async {
+        guard photo.needsRenditionRepair, !repairAttempted.contains(photo.id) else { return }
+        repairAttempted.insert(photo.id)
+
+        guard let data = await DiskImageCache.loadRaw(path: photo.storagePath) else { return }
+
+        let needThumb = photo.thumbPath == nil
+        let needFeed = photo.feedPath == nil
+        let prefix = "\(photo.userId.uuidString.lowercased())/\(photo.id.uuidString.lowercased())"
+
+        // Off the main actor: two ImageIO downsamples plus JPEG encodes, and this class is
+        // MainActor-isolated.
+        let (thumbData, feedData) = await Task.detached(priority: .utility) {
+            (needThumb ? InstantFilmProcessor.thumbnail(from: data) : nil,
+             needFeed ? InstantFilmProcessor.feedRendition(from: data) : nil)
+        }.value
+
+        func upload(_ data: Data, to path: String) async -> String? {
+            (try? await supabase.storage.from("photos")
+                .upload(path, data: data, options: FileOptions(contentType: "image/jpeg"))) != nil ? path : nil
+        }
+
+        var newThumb: String?
+        if let thumbData { newThumb = await upload(thumbData, to: "\(prefix)_thumb.jpg") }
+        var newFeed: String?
+        if let feedData { newFeed = await upload(feedData, to: "\(prefix)_feed.jpg") }
+
+        guard newThumb != nil || newFeed != nil else { return }
+
+        struct ThumbPatch: Encodable { let thumb_path: String }
+        struct FeedPatch: Encodable { let feed_path: String }
+        struct BothPatch: Encodable { let thumb_path: String; let feed_path: String }
+
+        let table = supabase.from("photos")
+        let id = photo.id.uuidString
+        if let newThumb, let newFeed {
+            _ = try? await table.update(BothPatch(thumb_path: newThumb, feed_path: newFeed)).eq("id", value: id).execute()
+        } else if let newThumb {
+            _ = try? await table.update(ThumbPatch(thumb_path: newThumb)).eq("id", value: id).execute()
+        } else if let newFeed {
+            _ = try? await table.update(FeedPatch(feed_path: newFeed)).eq("id", value: id).execute()
+        }
+
+        // Keep the in-memory copy in step, or every grid keeps pulling the full image for this
+        // photo until something refetches it from the server.
+        if let i = loadedPhotos.firstIndex(where: { $0.id == photo.id }) {
+            if let newThumb { loadedPhotos[i].thumbPath = newThumb }
+            if let newFeed { loadedPhotos[i].feedPath = newFeed }
+        }
+    }
+
     func retryFailedUploads() async {
         let pending = await MainActor.run { () -> [FailedUpload] in
             let p = failedUploads

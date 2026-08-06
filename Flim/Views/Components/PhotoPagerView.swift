@@ -452,7 +452,11 @@ struct PhotoPagerView: View {
     private func photoPage(_ photo: Photo) -> some View {
         Group {
             if let url = resolvedURLs[photo.id] {
-                CachedImage(url: url, maxPixel: 1600) { image in
+                // `cacheKey` is the storage path so the DOWNLOADED BYTES are kept, not just the
+                // decoded image. That is what makes rendition repair free: a photo whose thumbnail
+                // and card never uploaded can be rebuilt from these bytes instead of fetching the
+                // original again. It also stops a re-view going back to the network.
+                CachedImage(url: url, maxPixel: 1600, cacheKey: photo.storagePath) { image in
                     image
                         .resizable()
                         .scaledToFit()
@@ -590,12 +594,22 @@ struct PhotoPagerView: View {
         // Warm the neighbours' decoded images, not just their URLs. TabView(.page) used to keep
         // the adjacent pages mounted, so they were already decoded by the time you swiped; the
         // pager mounts only the current photo now, so without this a swipe could land on a
-        // spinner. `cacheKey: nil` deliberately matches what `photoPage` requests, a different
-        // key here would warm an entry the view never looks for.
+        // spinner. The cacheKey must match what `photoPage` requests exactly, or this warms an
+        // entry the view never looks for.
         let neighbours: [(url: URL, cacheKey: String?)] = [index - 1, index + 1]
             .filter { photos.indices.contains($0) }
-            .compactMap { resolvedURLs[photos[$0].id].map { (url: $0, cacheKey: nil) } }
+            .compactMap { i in
+                resolvedURLs[photos[i].id].map { (url: $0, cacheKey: photos[i].storagePath) }
+            }
         ImageLoader.prefetch(neighbours, maxPixel: 1600, scale: displayScale)
+
+        // Rebuild any missing renditions from bytes now on the device. Free: it reads the disk
+        // cache and gives up when the bytes aren't there, so nothing is ever downloaded for this.
+        // Run for the window, not just the current photo, because prefetching the neighbours is
+        // what put their bytes within reach.
+        for i in [index - 1, index, index + 1] where photos.indices.contains(i) {
+            await photoService.repairRenditions(for: photos[i])
+        }
 
         guard showsReactions, let photo = current else { return }
         let id = photo.id

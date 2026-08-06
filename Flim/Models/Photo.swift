@@ -30,6 +30,14 @@ struct Photo: Codable, Identifiable {
 
     var timeUntilDeveloped: TimeInterval { developsAt.timeIntervalSinceNow }
 
+    /// Whether either downsized rendition never made it to Storage.
+    ///
+    /// 9% of the library is in this state: renditions are uploaded after the row exists, with two
+    /// attempts three seconds apart, so a kill, a background, or a dropout longer than that loses
+    /// them for good. A photo in this state falls back to `storagePath` everywhere, which means a
+    /// grid cell downloads 1250 kB instead of 123 kB, on every view, forever.
+    var needsRenditionRepair: Bool { thumbPath == nil || feedPath == nil }
+
     /// Every object this photo owns in Storage.
     ///
     /// Deleting a photo has to remove ALL of these, and forgetting one is invisible: the row
