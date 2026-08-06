@@ -49,6 +49,27 @@ extension View {
     }
 }
 
+extension View {
+    /// Extends the tappable area outward on every side without moving anything on screen.
+    ///
+    /// Apple's minimum is 44×44. FLIM's chrome is deliberately smaller than that in places — a
+    /// 26pt tag badge in the corner of a photograph, 26pt toolbar glyphs — because the visual
+    /// weight is right and a 44pt badge would sit on the picture. The visual size is not the
+    /// problem; the touch area is, and they do not have to match.
+    ///
+    /// The padding grows the view so `contentShape` covers the larger area, and the negative
+    /// padding then pulls the layout footprint back to what it was, so nothing reflows. Pass the
+    /// inset that gets the control to 44: 9 for a 26pt glyph, 3 for a 38pt one.
+    ///
+    /// Watch adjacent controls. Two buttons 18pt apart can each take 9, and meet exactly; taking
+    /// more means their touch areas overlap and the one declared later silently wins the overlap.
+    func expandTapTarget(by inset: CGFloat) -> some View {
+        padding(inset)
+            .contentShape(Rectangle())
+            .padding(-inset)
+    }
+}
+
 /// How far the app lets text grow.
 ///
 /// Not a cop-out, a statement of what the layout can currently take. FLIM is full of fixed-geometry

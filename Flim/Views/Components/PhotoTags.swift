@@ -81,6 +81,9 @@ struct PhotoTags: View {
                         .foregroundStyle(.white)
                         .frame(width: 26, height: 26)
                         .background(.black.opacity(0.5), in: RoundedRectangle(cornerRadius: 7))
+                        // 26 + 9 either side = 44. The badge stays small on the photograph; only
+                        // the touch area grows, into padding that was already empty.
+                        .expandTapTarget(by: 9)
                 }
                 .opacity(indicatorVisible ? 1 : 0)
                 .padding(10)

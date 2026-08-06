@@ -56,6 +56,9 @@ struct RollsView: View {
                             .font(.system(size: 16, weight: .regular))
                             .foregroundStyle(accent)
                             .frame(width: 26, height: 24)
+                            // 9 is the most these two can take: the HStack spacing is 18, so at 9
+                            // each their touch areas meet exactly and neither steals the other's.
+                            .expandTapTarget(by: 9)
                     }
                     .accessibilityLabel("Join a roll")
                     Button {
@@ -65,6 +68,7 @@ struct RollsView: View {
                             .font(.system(size: 18, weight: .medium))
                             .foregroundStyle(accent)
                             .frame(width: 26, height: 24)
+                            .expandTapTarget(by: 9)
                     }
                     .accessibilityLabel("New roll")
                 }

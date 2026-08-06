@@ -62,8 +62,11 @@ struct FeedView: View {
                                             // Near the bottom → load the next page + warm its images.
                                             if item.id == feed.feed.last?.id, let uid = auth.currentUser?.id {
                                                 Task {
+                                                    // Where the new page will start, captured
+                                                    // before loading so only its cards are warmed.
+                                                    let alreadyLoaded = feed.feed.count
                                                     await feed.loadMoreFeed(currentUserId: uid)
-                                                    await prefetchFeedImages()
+                                                    await prefetchFeedImages(from: alreadyLoaded)
                                                 }
                                             }
                                         }
@@ -197,6 +200,7 @@ struct FeedView: View {
                         .foregroundStyle(accent)
                         .frame(width: 38, height: 38)
                         .glassCapsule(interactive: true)
+                        .expandTapTarget(by: 3)   // 38 + 3 either side = 44
                 }
                 .accessibilityLabel("Find friends")
 
@@ -306,8 +310,15 @@ struct FeedView: View {
     /// a time, and each miss is a round-trip, so on a cold cache (first launch, or after the
     /// 7-day URL TTL lapses) a 15-post page spent fifteen sequential round-trips before the
     /// first image byte was requested. `signedURLs(for:)` mints the misses in parallel.
-    private func prefetchFeedImages() async {
-        let paths = feed.feed.map(\.post.cardPath)
+    /// Warms the cards that just arrived, not the whole feed again.
+    ///
+    /// This used to prefetch `feed.feed` entire on every page load, so five pages queued 15 then
+    /// 30 then 45 then 60 then 75 items: 225 lookups to warm 75 cards. It was never re-downloading
+    /// (both the image fetch and the signed URLs are cache-backed), so this is redundant work
+    /// rather than redundant bytes — but it grows quadratically with how far someone scrolls, and
+    /// it is the one place in the feed that does.
+    private func prefetchFeedImages(from startIndex: Int = 0) async {
+        let paths = feed.feed.dropFirst(startIndex).map(\.post.cardPath)
         guard !paths.isEmpty else { return }
         let urls = await feed.signedURLs(for: Array(Set(paths)))
         let items = paths.compactMap { path -> (url: URL, cacheKey: String?)? in
