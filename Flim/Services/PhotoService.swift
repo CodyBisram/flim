@@ -346,7 +346,7 @@ final class PhotoService {
     /// then drops it from the in-memory list. Best-effort on storage (the row is the
     /// source of truth the grid reads from).
     func deletePhoto(_ photo: Photo) async {
-        _ = try? await supabase.storage.from("photos").remove(paths: [photo.storagePath, photo.thumbPath].compactMap { $0 })
+        _ = try? await supabase.storage.from("photos").remove(paths: photo.allStoragePaths)
         do {
             try await supabase
                 .from("photos")
@@ -364,7 +364,7 @@ final class PhotoService {
     func deletePhotos(_ toDelete: [Photo]) async {
         guard !toDelete.isEmpty else { return }
         let ids = toDelete.map(\.id.uuidString)
-        _ = try? await supabase.storage.from("photos").remove(paths: toDelete.flatMap { [$0.storagePath, $0.thumbPath].compactMap { $0 } })
+        _ = try? await supabase.storage.from("photos").remove(paths: toDelete.flatMap(\.allStoragePaths))
         do {
             try await supabase.from("photos").delete().in("id", values: ids).execute()
             await MainActor.run { loadedPhotos.removeAll { ids.contains($0.id.uuidString) } }

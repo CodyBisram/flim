@@ -30,6 +30,17 @@ struct Photo: Codable, Identifiable {
 
     var timeUntilDeveloped: TimeInterval { developsAt.timeIntervalSinceNow }
 
+    /// Every object this photo owns in Storage.
+    ///
+    /// Deleting a photo has to remove ALL of these, and forgetting one is invisible: the row
+    /// disappears, the grid updates, the photo is gone as far as anyone can see, and the file is
+    /// billed every month forever. `feedPath` was missing from both delete paths from the day it
+    /// was added, which is how 286 objects and 160 MB accumulated before anyone counted.
+    ///
+    /// The list lives here, on the model, so adding a fourth rendition means adding it in ONE
+    /// place rather than remembering two call sites.
+    var allStoragePaths: [String] { [storagePath, thumbPath, feedPath].compactMap { $0 } }
+
     enum CodingKeys: String, CodingKey {
         case id
         case userId = "user_id"

@@ -76,8 +76,22 @@ enum InstantFilmProcessor {
 
     /// A small JPEG thumbnail (longest edge ~`maxPixel` × 2, for retina grids) of an already
     /// processed photo, uploaded alongside the full image so grids/feeds download ~30KB, not MBs.
-    static func thumbnail(from data: Data, maxPixel: CGFloat = 400) -> Data? {
-        rendition(from: data, longEdge: maxPixel * 2, quality: 0.8)
+    /// The grid thumbnail: 500px on the long edge.
+    ///
+    /// It was `maxPixel * 2` with a default of 400, so a "400px thumbnail" was encoded at 800px:
+    /// four times the pixel area, and the reason these average 123 kB in production against the
+    /// ~30 kB the upload path's own comment expects. Thumbnails are the most-fetched asset in the
+    /// app, so that multiplier was being paid on every grid scroll, by everyone.
+    ///
+    /// 500 comes from the largest real consumer rather than from a round number. The biggest place
+    /// a thumbnail is shown is a cell in the 3-column Darkroom grid, about 128pt wide, so about
+    /// 384px on a 3x screen. 500 clears that with room for a 2-column layout without paying for
+    /// 800. Everywhere else it appears is smaller (Activity rows at 88pt) or blurred past
+    /// recognition (the reveal's developing frame, at blur radius 26).
+    ///
+    /// The parameter now means what it says: pass a long edge, get that long edge.
+    static func thumbnail(from data: Data, longEdge: CGFloat = 500) -> Data? {
+        rendition(from: data, longEdge: longEdge, quality: 0.8)
     }
 
     /// The feed-card rendition: ~1400px long edge, pixel-identical at feed width on a 3x screen,

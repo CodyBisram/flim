@@ -400,7 +400,7 @@ final class AuthService {
     @discardableResult
     func setAvatar(fromImageData raw: Data) async -> Bool {
         guard let session = try? await supabase.auth.session,
-              let dest = await uploadOwnedImage(raw, prefix: "avatar", userId: session.user.id, maxPixel: 256)
+              let dest = await uploadOwnedImage(raw, prefix: "avatar", userId: session.user.id, longEdge: 512)
         else { return false }
         let old = currentUser?.avatarPath
         struct Update: Encodable { let avatar_path: String }
@@ -427,7 +427,7 @@ final class AuthService {
     @discardableResult
     func setCover(fromImageData raw: Data) async -> Bool {
         guard let session = try? await supabase.auth.session,
-              let dest = await uploadOwnedImage(raw, prefix: "cover", userId: session.user.id, maxPixel: 640)
+              let dest = await uploadOwnedImage(raw, prefix: "cover", userId: session.user.id, longEdge: 1280)
         else { return false }
         let old = currentUser?.coverPath
         struct Update: Encodable { let cover_path: String }
@@ -446,9 +446,12 @@ final class AuthService {
     /// source photo being deleted) and a photo picked from the library. Neither is graded, and
     /// both land at the same size cap, so where a profile picture came from makes no difference
     /// to what gets stored.
-    private func uploadOwnedImage(_ raw: Data, prefix: String, userId: UUID, maxPixel: CGFloat) async -> String? {
+    /// `longEdge` is in PIXELS. It used to be a point size that `thumbnail` silently doubled, so
+    /// the call sites passed 256 and 640 and stored 512 and 1280. The doubling is gone; the
+    /// numbers below are the same stored sizes, written out.
+    private func uploadOwnedImage(_ raw: Data, prefix: String, userId: UUID, longEdge: CGFloat) async -> String? {
         // Downscale, an avatar/cover never needs the full image (saves storage + egress).
-        let data = InstantFilmProcessor.thumbnail(from: raw, maxPixel: maxPixel) ?? raw
+        let data = InstantFilmProcessor.thumbnail(from: raw, longEdge: longEdge) ?? raw
         let dest = "\(userId.uuidString.lowercased())/\(prefix)-\(UUID().uuidString.lowercased()).jpg"
         do {
             try await supabase.storage.from("photos")
