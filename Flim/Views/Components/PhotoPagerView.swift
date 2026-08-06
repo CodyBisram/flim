@@ -607,8 +607,16 @@ struct PhotoPagerView: View {
         // cache and gives up when the bytes aren't there, so nothing is ever downloaded for this.
         // Run for the window, not just the current photo, because prefetching the neighbours is
         // what put their bytes within reach.
-        for i in [index - 1, index, index + 1] where photos.indices.contains(i) {
-            await photoService.repairRenditions(for: photos[i])
+        //
+        // Deliberately NOT awaited. This is maintenance with no UI riding on it, and awaiting it
+        // put two uploads in front of the reaction fetch below and, through the caller, in front
+        // of the tag sheet opening. On the 9% of photos that need repair that meant the bar sat
+        // empty and the sheet sat shut for as long as an upload takes on a bad connection.
+        let window = [index - 1, index, index + 1]
+            .filter { photos.indices.contains($0) }
+            .map { photos[$0] }
+        Task {
+            for photo in window { await photoService.repairRenditions(for: photo) }
         }
 
         guard showsReactions, let photo = current else { return }
