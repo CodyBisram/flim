@@ -120,7 +120,7 @@ struct EmailAuthView: View {
                     .foregroundStyle(Color(white: 0.5))
 
                 TextField("", text: $inviteCode, prompt: Text("ABC123").foregroundStyle(Color(white: 0.3)))
-                    .font(.system(size: 24, weight: .thin, design: .monospaced))
+                    .flimFont(24, weight: .thin, design: .monospaced, relativeTo: .title2)
                     .tracking(6)
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.white)

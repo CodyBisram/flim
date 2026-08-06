@@ -416,11 +416,21 @@ struct RollDetailView: View {
             // another roll must not be able to touch these files. See PhotoExport.
             let exportDir = PhotoExport.begin()
             let deck = vm.developedPhotos
-            // Signed in one batched, parallel call rather than one sequential round trip each.
-            let signed = await photoService.signedURLs(for: deck.map(\.storagePath))
+            // The 1400px rendition, not the 2048px original.
+            //
+            // These two Save all buttons disagreed: the reveal's saved `viewPath` and this one
+            // saved `storagePath`, so the same roll came out at three times the size and quality
+            // depending on which screen you tapped, and nothing said so. Matching them on the
+            // smaller rendition is the deliberate choice: a 75-shot roll costs about 28 MB of
+            // egress instead of 94 MB, on the single most expensive action in the app, while the
+            // free tier is the only tier. Saving the original becomes the Pro version of this.
+            //
+            // Single-photo share still sends the full image (see `share(_:)`), because one
+            // photograph at 1.25 MB is not what makes this expensive.
+            let signed = await photoService.signedURLs(for: deck.map(\.viewPath))
             var images: [URL] = []
             for (i, photo) in deck.enumerated() {
-                guard let url = signed[photo.storagePath] else { continue }
+                guard let url = signed[photo.viewPath] else { continue }
                 if let file = await PhotoExport.download(url, into: exportDir, index: i, total: deck.count) {
                     images.append(file)
                 }

@@ -166,7 +166,7 @@ struct ReactionBar: View {
                 Text(emoji).font(.system(size: 16))
                 if count > 0 {
                     Text("\(count)")
-                        .font(.system(size: 13, weight: .semibold))
+                        .flimFont(13, weight: .semibold, relativeTo: .footnote)
                         .foregroundStyle(.white)
                         .contentTransition(.numericText())          // digits roll when the count changes
                 }

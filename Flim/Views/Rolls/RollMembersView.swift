@@ -55,7 +55,7 @@ struct RollMembersView: View {
                         } label: {
                             HStack(spacing: 10) {
                                 Text(roll.inviteCode)
-                                    .font(.system(size: 28, weight: .thin, design: .monospaced))
+                                    .flimFont(28, weight: .thin, design: .monospaced, relativeTo: .title2)
                                     .tracking(6)
                                     .foregroundStyle(.white)
                                 Image(systemName: codeCopied ? "checkmark" : "doc.on.doc")

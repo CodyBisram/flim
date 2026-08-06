@@ -49,7 +49,7 @@ struct SquareCropSheet: View {
                         Image(systemName: "photo.badge.exclamationmark")
                             .font(.system(size: 30, weight: .ultraLight))
                         Text("That photo couldn't be opened")
-                            .font(.system(size: 14))
+                            .flimFont(14, relativeTo: .subheadline)
                     }
                     .foregroundStyle(FlimTheme.textTertiary)
                 } else {
@@ -111,7 +111,7 @@ struct SquareCropSheet: View {
                 .accessibilityLabel("Drag to reposition, pinch to zoom")
 
             Text("Drag to reposition · pinch to zoom")
-                .font(.system(size: 13))
+                .flimFont(13, relativeTo: .footnote)
                 .foregroundStyle(FlimTheme.textTertiary)
 
             Spacer(minLength: 0)

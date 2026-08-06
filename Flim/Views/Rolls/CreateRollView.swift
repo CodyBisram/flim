@@ -99,7 +99,7 @@ struct CreateRollView: View {
                     }
 
                     Text(roll.inviteCode)
-                        .font(.system(size: 36, weight: .thin, design: .monospaced))
+                        .flimFont(36, weight: .thin, design: .monospaced, relativeTo: .title)
                         .tracking(8)
                         .foregroundStyle(.white)
                         .padding(.vertical, 20)

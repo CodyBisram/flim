@@ -12,7 +12,7 @@ struct SplashView: View {
                     .font(.system(size: 48, weight: .ultraLight))
                     .foregroundStyle(accent)
                 Text(AppInfo.appName)
-                    .font(.system(size: 30, weight: .thin, design: .default))
+                    .flimFont(30, weight: .thin, design: .default, relativeTo: .title)
                     .tracking(12)
                     .foregroundStyle(.white)
             }

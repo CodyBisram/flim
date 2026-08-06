@@ -436,7 +436,7 @@ struct InviteSheet: View {
                         } label: {
                             HStack(spacing: 12) {
                                 Text(auth.currentUser?.inviteCode ?? "------")
-                                    .font(.system(size: 32, weight: .thin, design: .monospaced))
+                                    .flimFont(32, weight: .thin, design: .monospaced, relativeTo: .title)
                                     .tracking(8)
                                     .foregroundStyle(.white)
                                 Image(systemName: codeCopied ? "checkmark.circle.fill" : "doc.on.doc")

@@ -103,7 +103,15 @@ struct TransientPinch: Gesture {
             .onEnded { _ in
                 let resting = restingScale ?? 1
                 restingScale = nil
-                withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
+                // Reduce Motion drops the spring and returns the photo directly. A spring is a
+                // large, bouncing movement of the whole frame, which is exactly what the setting
+                // exists to suppress; the zoom itself still works, it just stops overshooting.
+                //
+                // Read from UIAccessibility rather than @Environment because this is a Gesture,
+                // not a View, and the environment is not available here.
+                let settle: Animation? = UIAccessibility.isReduceMotionEnabled
+                    ? nil : .spring(response: 0.32, dampingFraction: 0.86)
+                withAnimation(settle) {
                     scale = resting
                     onSettle(resting)
                 }
@@ -374,7 +382,11 @@ final class PinchZoomController: NSObject {
 
         // Back to exactly where it started. Damped rather than bouncy: this is a photo returning
         // to its place in a page, not a control being flicked.
-        UIView.animate(withDuration: 0.32, delay: 0,
+        //
+        // Under Reduce Motion the whole lifted photo is a large moving object, so it drops
+        // straight back with no spring at all rather than travelling and overshooting.
+        let duration = UIAccessibility.isReduceMotionEnabled ? 0.0 : 0.32
+        UIView.animate(withDuration: duration, delay: 0,
                        usingSpringWithDamping: 0.86, initialSpringVelocity: 0,
                        options: [.allowUserInteraction, .beginFromCurrentState]) {
             session.image.transform = .identity

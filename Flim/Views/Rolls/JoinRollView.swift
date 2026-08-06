@@ -61,7 +61,7 @@ struct JoinRollView: View {
                     .foregroundStyle(Color(white: 0.4))
 
                 TextField("", text: $code, prompt: Text("ABC123").foregroundStyle(Color(white: 0.3)))
-                    .font(.system(size: 28, weight: .thin, design: .monospaced))
+                    .flimFont(28, weight: .thin, design: .monospaced, relativeTo: .title2)
                     .tracking(6)
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.white)

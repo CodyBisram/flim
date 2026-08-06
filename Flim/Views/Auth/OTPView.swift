@@ -221,7 +221,7 @@ private struct OTPField: View {
             )
             .overlay(
                 Text(char)
-                    .font(.system(size: 20, weight: .light, design: .monospaced))
+                    .flimFont(20, weight: .light, design: .monospaced, relativeTo: .title3)
                     .foregroundStyle(.white)
             )
             .frame(height: 52)

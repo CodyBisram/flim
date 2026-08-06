@@ -50,11 +50,11 @@ struct PhotoPickerSheet: View {
                         Image(systemName: "photo.on.rectangle.angled")
                             .font(.system(size: 30, weight: .ultraLight)).foregroundStyle(FlimTheme.textTertiary)
                         Text("No photos in your Darkroom yet")
-                            .font(.system(size: 14)).foregroundStyle(FlimTheme.textTertiary)
+                            .flimFont(14, relativeTo: .subheadline).foregroundStyle(FlimTheme.textTertiary)
                         if onPickLibraryImage != nil || onPickCropped != nil {
                             // Used to be a dead end for anyone who hadn't shot yet.
                             Text("Choose one from your library below.")
-                                .font(.system(size: 13)).foregroundStyle(FlimTheme.textTertiary)
+                                .flimFont(13, relativeTo: .footnote).foregroundStyle(FlimTheme.textTertiary)
                         }
                     }
                 } else {

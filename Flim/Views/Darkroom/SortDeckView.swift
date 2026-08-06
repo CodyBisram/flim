@@ -102,7 +102,7 @@ struct SortDeckView: View {
             Spacer()
             if !cards.isEmpty {
                 Text("\(cards.count) to sort")
-                    .font(.system(size: 13, weight: .medium)).foregroundStyle(FlimTheme.textSecondary)
+                    .flimFont(13, weight: .medium, relativeTo: .footnote).foregroundStyle(FlimTheme.textSecondary)
             }
             Spacer()
             if lastPhoto != nil {
@@ -174,7 +174,7 @@ struct SortDeckView: View {
 
     private func label(_ text: String, color: Color, angle: Double) -> some View {
         Text(text)
-            .font(.system(size: 22, weight: .heavy))
+            .flimFont(22, weight: .heavy, relativeTo: .title3)
             .foregroundStyle(color)
             .padding(.horizontal, 10).padding(.vertical, 6)
             .overlay(RoundedRectangle(cornerRadius: 8).stroke(color, lineWidth: 3))

@@ -17,9 +17,9 @@ struct BlockedUsersSheet: View {
                 FlimTheme.bg.ignoresSafeArea()
                 if loaded && profiles.isEmpty {
                     VStack(spacing: 6) {
-                        Text("No blocked users").font(.system(size: 16, weight: .medium)).foregroundStyle(.white)
+                        Text("No blocked users").flimFont(16, weight: .medium, relativeTo: .body).foregroundStyle(.white)
                         Text("People you block will show up here.")
-                            .font(.system(size: 13)).foregroundStyle(FlimTheme.textTertiary)
+                            .flimFont(13, relativeTo: .footnote).foregroundStyle(FlimTheme.textTertiary)
                     }
                 } else {
                     ScrollView {
@@ -29,12 +29,12 @@ struct BlockedUsersSheet: View {
                                     Circle().fill(accent.opacity(0.18)).frame(width: 36, height: 36)
                                         .overlay {
                                             Text((p.username ?? "?").prefix(1).uppercased())
-                                                .font(.system(size: 15, weight: .semibold)).foregroundStyle(accent)
+                                                .flimFont(15, weight: .semibold, relativeTo: .subheadline).foregroundStyle(accent)
                                         }
                                     VStack(alignment: .leading, spacing: 2) {
-                                        Text(p.handle).font(.system(size: 15, weight: .semibold)).foregroundStyle(.white)
+                                        Text(p.handle).flimFont(15, weight: .semibold, relativeTo: .subheadline).foregroundStyle(.white)
                                         if let name = p.displayName, !name.isEmpty {
-                                            Text(name).font(.system(size: 13)).foregroundStyle(FlimTheme.textTertiary)
+                                            Text(name).flimFont(13, relativeTo: .footnote).foregroundStyle(FlimTheme.textTertiary)
                                         }
                                     }
                                     Spacer()
@@ -42,7 +42,7 @@ struct BlockedUsersSheet: View {
                                         unblock(p)
                                     } label: {
                                         Text("Unblock")
-                                            .font(.system(size: 13, weight: .semibold)).foregroundStyle(.black)
+                                            .flimFont(13, weight: .semibold, relativeTo: .footnote).foregroundStyle(.black)
                                             .padding(.horizontal, 14).padding(.vertical, 7)
                                             .background(accent, in: Capsule())
                                     }

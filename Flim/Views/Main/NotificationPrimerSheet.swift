@@ -15,10 +15,10 @@ struct NotificationPrimerSheet: View {
                 .font(.system(size: 46, weight: .light))
                 .foregroundStyle(accent)
             Text("Don't miss the reveal")
-                .font(.system(size: 24, weight: .light))
+                .flimFont(24, weight: .light, relativeTo: .title2)
                 .foregroundStyle(.white)
             Text("We'll ping you the moment your roll develops, and when friends react or comment on your shots.")
-                .font(.system(size: 15))
+                .flimFont(15, relativeTo: .subheadline)
                 .foregroundStyle(FlimTheme.textSecondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 34)
@@ -27,7 +27,7 @@ struct NotificationPrimerSheet: View {
                 Task { await notifications.requestAuthorizationIfNeeded(); dismiss() }
             } label: {
                 Text("Turn on notifications")
-                    .font(.system(size: 16, weight: .semibold))
+                    .flimFont(16, weight: .semibold, relativeTo: .body)
                     .foregroundStyle(.black)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 15)
@@ -35,7 +35,7 @@ struct NotificationPrimerSheet: View {
             }
             Button { dismiss() } label: {
                 Text("Not now")
-                    .font(.system(size: 15))
+                    .flimFont(15, relativeTo: .subheadline)
                     .foregroundStyle(FlimTheme.textTertiary)
             }
             .padding(.top, 2)

@@ -237,10 +237,10 @@ struct RollsView: View {
                 .font(.system(size: 40, weight: .ultraLight))
                 .foregroundStyle(accent.opacity(0.8))
             Text("Better with friends.")
-                .font(.system(size: 17, weight: .light))
+                .flimFont(17, weight: .light, relativeTo: .body)
                 .foregroundStyle(FlimTheme.textSecondary)
             Text("Start a roll and share the code, or join one with a friend's code.")
-                .font(.system(size: 13))
+                .flimFont(13, relativeTo: .footnote)
                 .foregroundStyle(FlimTheme.textTertiary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 40)
@@ -272,7 +272,7 @@ private struct RollRow: View {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 6) {
                     Text(roll.name)
-                        .font(.system(size: 17, weight: .semibold))
+                        .flimFont(17, weight: .semibold, relativeTo: .body)
                         .foregroundStyle(.white)
                     if isMuted {
                         Image(systemName: "bell.slash.fill")
@@ -291,7 +291,7 @@ private struct RollRow: View {
                         Image(systemName: "number")
                             .font(.system(size: 9, weight: .bold))
                         Text(roll.inviteCode)
-                            .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                            .flimFont(12, weight: .semibold, design: .monospaced, relativeTo: .caption)
                             .tracking(1)
                     }
                     .foregroundStyle(accent)
@@ -364,7 +364,7 @@ private struct RollCover: View {
                     }
                 } else {
                     Text(roll.name.prefix(1).uppercased())
-                        .font(.system(size: 22, weight: .light))
+                        .flimFont(22, weight: .light, relativeTo: .title3)
                         .foregroundStyle(.white.opacity(0.95))
                 }
             }
