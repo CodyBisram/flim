@@ -1,40 +1,174 @@
-:root {
-  --bg: #0a0908;
-  --bg-elevated: #141210;
-  --text: #f2efe9;
-  --text-dim: #a49e94;
-  --text-faint: #6b655c;
+/* ==========================================================================
+   FLIM
+
+   Two themes, two real darkroom lighting conditions rather than one palette
+   inverted:
+
+     dark  = the darkroom under the safelight. Warm, dim, where film waits.
+     light = the contact sheet on the light table. Bright, neutral, where you
+             finally see what you got.
+
+   That is the product loop, so the theme control is part of the metaphor.
+   ========================================================================== */
+
+/* --- Tokens --------------------------------------------------------------- */
+
+:root,
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg: #0c0908;
+  --bg-2: #14100c;
+  --bg-3: #1b1611;
+
+  --text: #f4efe7;
+  --text-dim: #a79c8e;
+  --text-faint: #6e6558;
+
   --accent: #e8a44c;
-  --line: rgba(255, 255, 255, 0.08);
-  --max: 720px;
-  --pad: clamp(20px, 5vw, 24px);
+  --accent-ink: #1a1206;
+  --accent-soft: rgba(232, 164, 76, 0.14);
+
+  --line: rgba(244, 239, 231, 0.1);
+  --line-strong: rgba(244, 239, 231, 0.2);
+  --perf: rgba(244, 239, 231, 0.16);
+
+  --glow: rgba(232, 164, 76, 0.13);
+  --mount: #f2ece2;
+  --mount-ink: #2a2118;
+  --shadow: 0 24px 60px -20px rgba(0, 0, 0, 0.8);
+
+  /* An exposed frame is dark whatever the room is lit like, so the emulsion
+     keeps its own colour in both themes. */
+  --emulsion-a: #1b1611;
+  --emulsion-b: #0f0b08;
+  --emulsion-edge: rgba(244, 239, 231, 0.09);
 }
+
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --bg: #e7e3da;
+  --bg-2: #f5f2ec;
+  --bg-3: #fffdf9;
+
+  --text: #14100c;
+  --text-dim: #5a5248;
+  --text-faint: #857c70;
+
+  --accent: #a6660f;
+  --accent-ink: #fffdf9;
+  --accent-soft: rgba(166, 102, 15, 0.1);
+
+  --line: rgba(20, 16, 12, 0.13);
+  --line-strong: rgba(20, 16, 12, 0.24);
+  --perf: rgba(20, 16, 12, 0.16);
+
+  --glow: rgba(166, 102, 15, 0.07);
+  --mount: #fffdf9;
+  --mount-ink: #2a2118;
+  --shadow: 0 24px 50px -24px rgba(43, 33, 22, 0.35);
+
+  --emulsion-a: #2b241c;
+  --emulsion-b: #191310;
+  --emulsion-edge: rgba(20, 16, 12, 0.28);
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) {
+    color-scheme: light;
+
+    --bg: #e7e3da;
+    --bg-2: #f5f2ec;
+    --bg-3: #fffdf9;
+
+    --text: #14100c;
+    --text-dim: #5a5248;
+    --text-faint: #857c70;
+
+    --accent: #a6660f;
+    --accent-ink: #fffdf9;
+    --accent-soft: rgba(166, 102, 15, 0.1);
+
+    --line: rgba(20, 16, 12, 0.13);
+    --line-strong: rgba(20, 16, 12, 0.24);
+    --perf: rgba(20, 16, 12, 0.16);
+
+    --glow: rgba(166, 102, 15, 0.07);
+    --mount: #fffdf9;
+    --mount-ink: #2a2118;
+    --shadow: 0 24px 50px -24px rgba(43, 33, 22, 0.35);
+
+    --emulsion-a: #2b241c;
+    --emulsion-b: #191310;
+    --emulsion-edge: rgba(20, 16, 12, 0.28);
+  }
+}
+
+:root {
+  --max: 1120px;
+  --pad: clamp(20px, 5vw, 40px);
+  --spine: 60px;
+
+  --display: "Archivo", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --body: "Archivo", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --mono: "DM Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* Film grain, generated rather than shipped as an asset. */
+  --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E");
+}
+
+/* --- Base ----------------------------------------------------------------- */
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 html {
   -webkit-text-size-adjust: 100%;
-  color-scheme: dark;
+  scroll-behavior: smooth;
 }
 
 body {
   background: var(--bg);
   color: var(--text);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  line-height: 1.6;
+  font-family: var(--body);
   font-size: 17px;
+  line-height: 1.6;
+  font-variation-settings: "wdth" 100;
   -webkit-font-smoothing: antialiased;
   min-height: 100dvh;
   display: flex;
   flex-direction: column;
+  overflow-x: hidden;
 }
+
+/* The safelight itself: a warm bloom bled in from the top of the page. Held
+   inside the viewport rather than bled past it, because a fixed element is not
+   reliably clipped by overflow on the body and would scroll the page sideways. */
+body::before {
+  content: "";
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 70vh;
+  background: radial-gradient(90% 100% at 50% -10%, var(--glow), transparent 72%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+body > * { position: relative; z-index: 1; }
 
 main { flex: 1 0 auto; width: 100%; }
 
 a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
 
-/* Content column: centered, capped, padded, and safe-area aware (notch/Dynamic Island). */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 3px;
+}
+
 .wrap {
   width: 100%;
   max-width: var(--max);
@@ -43,98 +177,604 @@ a:hover { text-decoration: underline; }
   padding-right: max(var(--pad), env(safe-area-inset-right));
 }
 
-/* Header */
+/* --- Header --------------------------------------------------------------- */
+
 header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
   border-bottom: 1px solid var(--line);
-  position: sticky; top: 0;
-  background: rgba(10, 9, 8, 0.85);
-  backdrop-filter: saturate(180%) blur(12px);
-  -webkit-backdrop-filter: saturate(180%) blur(12px);
-  z-index: 10;
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
+  backdrop-filter: saturate(160%) blur(14px);
+  -webkit-backdrop-filter: saturate(160%) blur(14px);
   padding-top: env(safe-area-inset-top);
 }
+
 header .wrap {
-  display: flex; align-items: center; justify-content: space-between;
-  gap: 12px; min-height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 64px;
 }
+
 .logo {
-  font-weight: 700; letter-spacing: 0.14em; font-size: 18px;
-  color: var(--text); white-space: nowrap; padding: 8px 0;
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: 19px;
+  font-variation-settings: "wdth" 118;
+  letter-spacing: 0.2em;
+  color: var(--text);
+  white-space: nowrap;
+  padding: 8px 0;
 }
+.logo:hover { text-decoration: none; }
 .logo span { color: var(--accent); }
-nav { display: flex; align-items: center; }
+
+nav {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
 nav a {
-  color: var(--text-dim); font-size: 14px; font-weight: 500;
-  padding: 10px; /* comfortable tap target */
+  color: var(--text-dim);
+  font-size: 14px;
+  font-weight: 500;
+  padding: 10px;
   white-space: nowrap;
 }
-nav a:last-child { margin-right: -10px; }
 nav a:hover { color: var(--text); text-decoration: none; }
 
-/* Hero */
-.hero { padding: clamp(56px, 12vw, 96px) 0 clamp(44px, 9vw, 72px); text-align: center; }
-.hero .badge {
-  display: inline-block; font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase;
-  color: var(--accent); border: 1px solid rgba(232, 164, 76, 0.35);
-  padding: 6px 14px; border-radius: 999px; margin-bottom: 28px;
+/* Theme control. Names the condition you are switching to, in the language of
+   the darkroom, because that is what the two themes actually are. */
+.themer {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-left: 8px;
+  padding: 8px 13px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.18s ease, border-color 0.18s ease, background-color 0.18s ease;
 }
-.hero h1 {
-  font-size: clamp(42px, 14vw, 64px);
-  letter-spacing: 0.06em; font-weight: 800; line-height: 1.05;
+.themer:hover {
+  color: var(--text);
+  border-color: var(--text-faint);
+  background: var(--accent-soft);
 }
-.hero h1 span { color: var(--accent); }
-.hero .tagline { font-size: clamp(18px, 5vw, 22px); color: var(--text); margin-top: 20px; font-weight: 300; }
-.hero p.sub { color: var(--text-dim); margin-top: 18px; max-width: 520px; margin-left: auto; margin-right: auto; }
-.hero .cta {
-  display: inline-block; margin-top: 32px;
-  background: var(--accent); color: #111; font-weight: 600; font-size: 16px;
-  padding: 14px 34px; border-radius: 999px;
+.themer::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 9px var(--accent);
+  flex: none;
 }
-.hero .cta:hover { text-decoration: none; filter: brightness(1.06); }
 
-.features {
+/* --- The strip -----------------------------------------------------------
+   Each section is a frame on a roll. The spine carries sprocket perforations
+   and the frame number, which is how real 35mm film is marked.
+   ------------------------------------------------------------------------- */
+
+.strip { padding-left: var(--spine); position: relative; }
+
+.frame {
+  position: relative;
+  padding: clamp(56px, 9vw, 104px) 0;
+}
+.frame + .frame { border-top: 1px solid var(--line); }
+
+/* Perforations, masked so they take the theme's ink. Kept small and quiet: on
+   real film they are a machine detail at the edge, not the subject. */
+.frame::before {
+  content: "";
+  position: absolute;
+  left: calc(var(--spine) * -1);
+  top: 0;
+  bottom: 0;
+  width: 9px;
+  background-color: var(--perf);
+  opacity: 0.62;
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='9' height='23'%3E%3Crect y='5' width='9' height='13' rx='3'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='9' height='23'%3E%3Crect y='5' width='9' height='13' rx='3'/%3E%3C/svg%3E");
+  -webkit-mask-repeat: repeat-y;
+  mask-repeat: repeat-y;
+}
+
+/* Frame number, set like the edge print alongside the perforations. */
+.frame::after {
+  content: attr(data-frame);
+  position: absolute;
+  left: calc(var(--spine) * -1 - 2px);
+  top: calc(clamp(56px, 9vw, 104px) + 3px);
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  color: var(--accent);
+}
+
+.eyebrow {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  margin-bottom: 20px;
+}
+
+/* --- Hero ----------------------------------------------------------------- */
+
+.hero {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr));
-  gap: 18px; margin: clamp(40px, 8vw, 64px) 0;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+  gap: clamp(36px, 6vw, 72px);
+  align-items: center;
 }
-.feature { background: var(--bg-elevated); border: 1px solid var(--line); border-radius: 16px; padding: 24px; text-align: left; }
-.feature h3 { font-size: 16px; margin-bottom: 6px; }
-.feature p { font-size: 14px; color: var(--text-dim); }
 
-/* Content pages */
-.doc {
-  max-width: min(var(--max), 68ch); /* comfortable reading measure */
-  padding-top: clamp(36px, 8vw, 56px);
-  padding-bottom: clamp(64px, 12vw, 96px);
+/* Sized for the headline it actually carries: a full sentence rather than a
+   short slogan, so it is set smaller than a three-word hero would be and given
+   room to break onto three lines. */
+h1 {
+  font-family: var(--display);
+  font-weight: 800;
+  font-variation-settings: "wdth" 110;
+  font-size: clamp(36px, 5.6vw, 60px);
+  line-height: 0.98;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
 }
-.doc h1 { font-size: clamp(28px, 7vw, 34px); letter-spacing: 0.02em; line-height: 1.2; margin-bottom: 6px; }
-.doc .updated { color: var(--text-faint); font-size: 14px; margin-bottom: clamp(28px, 6vw, 40px); }
-.doc h2 { font-size: 19px; line-height: 1.35; margin: 40px 0 12px; color: var(--text); }
-.doc h3 { font-size: 16px; line-height: 1.4; margin: 28px 0 8px; color: var(--accent); font-weight: 600; }
-.doc p, .doc li { color: var(--text-dim); margin-bottom: 12px; overflow-wrap: break-word; }
-.doc strong { color: var(--text); font-weight: 600; }
-.doc ul { padding-left: 22px; margin-bottom: 12px; }
-.doc li { margin-bottom: 8px; }
-.doc .lead { color: var(--text); font-size: 18px; }
-.doc a { overflow-wrap: anywhere; }
 
-/* Footer */
+.hero .lede {
+  margin-top: 26px;
+  font-size: clamp(17px, 2.1vw, 20px);
+  color: var(--text-dim);
+  max-width: 46ch;
+}
+.hero .lede strong { color: var(--text); font-weight: 600; }
+
+.actions {
+  margin-top: 34px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px 18px;
+}
+
+.cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 700;
+  font-size: 16px;
+  padding: 15px 30px;
+  border-radius: 999px;
+  transition: transform 0.18s ease, filter 0.18s ease;
+}
+.cta:hover {
+  text-decoration: none;
+  filter: brightness(1.07);
+  transform: translateY(-1px);
+}
+.cta:active { transform: translateY(0); }
+
+.note {
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  color: var(--text-faint);
+  text-transform: uppercase;
+}
+
+/* --- The developing print ------------------------------------------------
+   The signature. An instant print, in the proportions of the app icon, that
+   actually develops when the page loads. FLIM's whole promise is the wait, so
+   the page performs it instead of describing it.
+   ------------------------------------------------------------------------- */
+
+.print {
+  justify-self: center;
+  width: min(100%, 380px);
+  background: var(--mount);
+  padding: 15px 15px 62px;
+  border-radius: 6px;
+  box-shadow: var(--shadow);
+  transform: rotate(-1.4deg);
+}
+
+.print__window {
+  position: relative;
+  aspect-ratio: 3 / 4;
+  overflow: hidden;
+  border-radius: 2px;
+  background: #0a0806;
+}
+
+/* The latent image: warm light thrown around a dark room, held out of focus.
+   Suggestive rather than literal, so the page never pretends to show you a
+   photograph that someone actually took. */
+.print__image {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(9% 6.5% at 70% 20%, rgba(255, 232, 180, 0.95), transparent 70%),
+    radial-gradient(6% 4.5% at 31% 60%, rgba(255, 210, 146, 0.8), transparent 72%),
+    radial-gradient(5% 3.5% at 79% 55%, rgba(255, 200, 132, 0.7), transparent 72%),
+    radial-gradient(40% 30% at 25% 25%, rgba(255, 194, 112, 0.9), transparent 68%),
+    radial-gradient(34% 27% at 63% 43%, rgba(238, 146, 74, 0.82), transparent 70%),
+    radial-gradient(56% 40% at 47% 91%, rgba(178, 78, 42, 0.62), transparent 72%),
+    linear-gradient(168deg, #33200f 0%, #1a0e08 48%, #090504 100%);
+  filter: saturate(1.12) contrast(1.06);
+}
+
+/* Grain sits above the image and thins out as the print develops. */
+.print__grain {
+  position: absolute;
+  inset: -50%;
+  background-image: var(--grain);
+  opacity: 0.42;
+  mix-blend-mode: overlay;
+  pointer-events: none;
+}
+
+.print__vignette {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(78% 68% at 50% 44%, transparent 42%, rgba(0, 0, 0, 0.6) 100%);
+  pointer-events: none;
+}
+
+.print__caption {
+  position: absolute;
+  left: 17px;
+  right: 17px;
+  bottom: 20px;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--mount-ink);
+}
+.print__caption .status { opacity: 0.55; }
+.print__timer { font-variant-numeric: tabular-nums; }
+
+/* Develop sequence. The print starts flat and dense, the way an emulsion does
+   before the image comes up, then resolves. */
+.print__window[data-state="developing"] .print__image {
+  animation: develop 3.6s cubic-bezier(0.32, 0.06, 0.2, 1) forwards;
+}
+.print__window[data-state="developing"] .print__grain {
+  animation: settle 3.6s cubic-bezier(0.32, 0.06, 0.2, 1) forwards;
+}
+
+@keyframes develop {
+  0% { filter: brightness(0.16) contrast(0.42) saturate(0.12); transform: scale(1.05); }
+  35% { filter: brightness(0.44) contrast(0.66) saturate(0.5); }
+  100% { filter: brightness(1) contrast(1.04) saturate(1.05); transform: scale(1); }
+}
+
+@keyframes settle {
+  0% { opacity: 0.85; }
+  100% { opacity: 0.42; }
+}
+
+/* --- Content frames ------------------------------------------------------- */
+
+.frame h2 {
+  font-family: var(--display);
+  font-weight: 700;
+  font-variation-settings: "wdth" 108;
+  font-size: clamp(27px, 4vw, 42px);
+  line-height: 1.06;
+  letter-spacing: -0.015em;
+  max-width: 20ch;
+  text-wrap: balance;
+}
+
+.frame .body {
+  margin-top: 20px;
+  color: var(--text-dim);
+  max-width: 56ch;
+  font-size: clamp(16px, 1.9vw, 18px);
+}
+
+.split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: clamp(28px, 5vw, 64px);
+  align-items: start;
+}
+
+/* Specs read like the data printed on a film canister. */
+.specs {
+  display: grid;
+  gap: 1px;
+  background: var(--line);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.spec {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 15px 18px;
+  background: var(--bg-2);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  letter-spacing: 0.06em;
+}
+.spec dt { color: var(--text-faint); text-transform: uppercase; }
+.spec dd { color: var(--text); text-align: right; }
+
+/* A shared roll before it develops: every frame exposed, none of them seen.
+   The illustration says the same thing the paragraph does. */
+.sheet {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.sheet__cell {
+  position: relative;
+  aspect-ratio: 3 / 4;
+  border-radius: 3px;
+  border: 1px solid var(--emulsion-edge);
+  background: linear-gradient(165deg, var(--emulsion-a), var(--emulsion-b));
+  overflow: hidden;
+}
+
+/* Just enough of a latent image to read as an exposed frame, not an empty box. */
+.sheet__cell::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(60% 45% at 42% 34%, var(--accent), transparent 72%);
+  opacity: 0.07;
+}
+
+/* The frame is dark in both themes, so its number is always set in light ink. */
+.sheet__cell::after {
+  content: attr(data-n);
+  position: absolute;
+  left: 6px;
+  bottom: 5px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  color: rgba(244, 239, 231, 0.4);
+}
+
+.sheet__note {
+  margin-top: 14px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+/* --- Footer --------------------------------------------------------------- */
+
 footer {
   border-top: 1px solid var(--line);
-  padding: 32px 0 max(32px, env(safe-area-inset-bottom));
-  color: var(--text-faint); font-size: 14px;
+  padding: 34px 0 max(34px, env(safe-area-inset-bottom));
+  color: var(--text-faint);
+  font-size: 14px;
 }
 footer .wrap {
-  display: flex; align-items: center; justify-content: space-between;
-  flex-wrap: wrap; gap: 8px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px 16px;
 }
 footer .links { display: flex; flex-wrap: wrap; gap: 4px 8px; }
 footer a { color: var(--text-dim); padding: 8px 6px; }
 footer a:hover { color: var(--text); }
 
-@media (max-width: 400px) {
-  nav a { font-size: 13px; padding: 10px 7px; }
-  nav a:last-child { margin-right: -7px; }
+/* --- Document pages ------------------------------------------------------- */
+
+.doc {
+  max-width: min(var(--max), 70ch);
+  padding-top: clamp(40px, 8vw, 64px);
+  padding-bottom: clamp(64px, 12vw, 96px);
+}
+.doc h1 {
+  font-size: clamp(30px, 6vw, 44px);
+  line-height: 1.05;
+  margin-bottom: 8px;
+}
+/* A revision date is data, so it is set like the edge print on a negative. */
+.doc .updated {
+  font-family: var(--mono);
+  color: var(--text-faint);
+  font-size: 12.5px;
+  letter-spacing: 0.06em;
+  margin-bottom: clamp(28px, 6vw, 40px);
+}
+
+/* A sentence under the title is prose, not data, so it stays in the body face. */
+.doc .subtitle {
+  color: var(--text-dim);
+  font-size: 17.5px;
+  margin-bottom: clamp(28px, 6vw, 40px);
+}
+.doc h2 {
+  font-family: var(--display);
+  font-weight: 700;
+  font-variation-settings: "wdth" 106;
+  font-size: 22px;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  margin: 44px 0 12px;
+  color: var(--text);
+}
+.doc h3 {
+  font-size: 16.5px;
+  line-height: 1.4;
+  margin: 30px 0 8px;
+  color: var(--accent);
+  font-weight: 600;
+}
+.doc p, .doc li { color: var(--text-dim); margin-bottom: 12px; overflow-wrap: break-word; }
+.doc strong { color: var(--text); font-weight: 600; }
+.doc ul { padding-left: 22px; margin-bottom: 12px; }
+.doc li { margin-bottom: 8px; }
+.doc .lead { color: var(--text); font-size: 18.5px; }
+.doc a { overflow-wrap: anywhere; }
+
+/* --- Buttons shared by the invite pages ----------------------------------- */
+
+.btn {
+  display: block;
+  width: 100%;
+  padding: 15px 22px;
+  border-radius: 999px;
+  font-size: 16px;
+  font-weight: 600;
+  text-align: center;
+  transition: filter 0.18s ease, background-color 0.18s ease;
+}
+.btn-primary { background: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.btn-primary:hover { text-decoration: none; filter: brightness(1.07); }
+.btn-secondary { color: var(--text); border: 1px solid var(--line-strong); font-weight: 500; }
+.btn-secondary:hover { text-decoration: none; background: var(--accent-soft); }
+.btn:active { filter: brightness(0.96); }
+
+/* --- Invite pages --------------------------------------------------------
+   /join/CODE and /i/CODE. One flex column owns the vertical rhythm, so the
+   spacing between any two things is set in one place rather than by whichever
+   element happens to carry a margin.
+   ------------------------------------------------------------------------- */
+
+.invite {
+  max-width: 420px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(26px, 7vw, 34px);
+  text-align: center;
+  padding-top: clamp(44px, 12vw, 84px);
+  padding-bottom: 64px;
+}
+
+/* A title and its line belong together, so they sit closer than the page rhythm. */
+.invite-head { display: flex; flex-direction: column; gap: 12px; }
+.invite-head h1 {
+  font-size: clamp(30px, 8vw, 44px);
+  line-height: 1.02;
+  text-wrap: balance;
+}
+.invite-lede { color: var(--text-dim); line-height: 1.55; text-wrap: balance; }
+
+/* Both buttons share a width so the pair reads as one decision with two
+   answers, rather than two unrelated controls that happen to be stacked. */
+.invite-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  max-width: 310px;
+}
+
+.invite-notes {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  color: var(--text-faint);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+/* A code is something you copy by eye, so it is set large, spaced, and mono. */
+.code {
+  width: 100%;
+  font-family: var(--mono);
+  font-size: clamp(25px, 7.5vw, 36px);
+  font-weight: 400;
+  color: var(--text);
+  background: var(--bg-2);
+  border: 1px solid var(--line-strong);
+  border-radius: 14px;
+  padding: 20px 16px;
+  letter-spacing: 0.25em;
+  /* Letter-spacing leaves a trailing gap after the last character, which drags
+     centred text visually left. The indent puts it back on the optical centre. */
+  text-indent: 0.25em;
+  overflow-wrap: anywhere;
+}
+
+/* --- Scroll reveal -------------------------------------------------------- */
+
+.reveal {
+  opacity: 0;
+  transform: translateY(18px);
+  transition: opacity 0.7s ease, transform 0.7s cubic-bezier(0.2, 0.6, 0.2, 1);
+}
+.reveal.is-in { opacity: 1; transform: none; }
+
+/* --- Responsive ----------------------------------------------------------- */
+
+@media (max-width: 900px) {
+  .hero { grid-template-columns: 1fr; gap: 40px; }
+  .print { transform: rotate(-1deg); }
+  .split { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 720px) {
+  :root { --spine: 30px; }
+
+  .frame::before { width: 8px; }
+  .frame::after {
+    left: calc(var(--spine) * -1);
+    writing-mode: horizontal-tb;
+    top: calc(clamp(56px, 9vw, 104px) - 26px);
+    font-size: 10px;
+  }
+  h1 { font-size: clamp(36px, 10vw, 52px); }
+}
+
+@media (max-width: 480px) {
+  nav a { font-size: 13px; padding: 10px 6px; }
+  .themer { margin-left: 4px; padding: 8px 10px; font-size: 10px; }
+  .themer span { display: none; }
+  .themer::before { width: 8px; height: 8px; }
   footer .wrap { flex-direction: column; align-items: flex-start; }
   footer a { padding-left: 0; }
+  .actions { gap: 12px; }
+  .cta { width: 100%; justify-content: center; }
+}
+
+/* --- Reduced motion ------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+
+  .reveal { opacity: 1; transform: none; }
+  .cta:hover { transform: none; }
 }

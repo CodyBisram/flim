@@ -3,7 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <meta name="theme-color" content="#0a0908" />
+  <meta name="theme-color" content="#0c0908" media="(prefers-color-scheme: dark)" />
+  <meta name="theme-color" content="#e7e3da" media="(prefers-color-scheme: light)" />
   <title>FLIM, the disposable camera for your closest friends</title>
   <meta name="description" content="FLIM is a disposable camera app. Shoot on film, wait for it to develop, and share the moment with the people who matter." />
   <meta property="og:site_name" content="FLIM" />
@@ -20,47 +21,128 @@
   <meta name="twitter:image" content="https://flim-app.com/og-image.png" />
   <link rel="icon" type="image/png" href="/favicon.png" />
   <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&family=DM+Mono:wght@300;400;500&display=swap" />
   <link rel="stylesheet" href="/style.css" />
+  <script>
+    // Applied before first paint so the chosen condition does not flash.
+    (function () {
+      try {
+        var saved = localStorage.getItem("flim-theme");
+        if (saved === "light" || saved === "dark") {
+          document.documentElement.setAttribute("data-theme", saved);
+        }
+      } catch (e) {}
+    })();
+  </script>
 </head>
 <body>
   <header>
     <div class="wrap">
-      <div class="logo">FL<span>I</span>M</div>
+      <a class="logo" href="/">FL<span>I</span>M</a>
       <nav>
         <a href="/privacy">Privacy</a>
         <a href="/terms">Terms</a>
         <a href="/support">Support</a>
+        <button class="themer" id="themer" type="button"><span>Lighttable</span></button>
       </nav>
     </div>
   </header>
 
-  <main class="wrap">
-    <section class="hero">
-      <h1>FL<span>I</span>M</h1>
-      <p class="tagline">The disposable camera for your closest friends.</p>
-      <p class="sub">Every shot gets one signature film look and develops over time, just like the real thing. Then it's yours to share with the people who actually matter. Invite-only, and only ever your friends.</p>
-      <a class="cta" href="https://apps.apple.com/us/app/flim-disposable-camera/id6786079629">Download on the App Store</a>
+  <main class="wrap strip">
+    <section class="frame" data-frame="01">
+      <div class="hero">
+        <div>
+          <p class="eyebrow">Invite only, iPhone</p>
+          <h1>A disposable camera for your closest friends.</h1>
+          <p class="lede">
+            Shoot now, and the photograph comes back later, developed, wearing one
+            film look you never had to choose. Then it is yours to share with the
+            people who were <strong>actually there</strong>.
+          </p>
+          <div class="actions">
+            <a class="cta" href="https://apps.apple.com/us/app/flim-disposable-camera/id6786079629">Download on the App Store</a>
+            <span class="note">Free, invite only</span>
+          </div>
+        </div>
+
+        <figure class="print">
+          <div class="print__window" id="window" data-state="latent">
+            <div class="print__image"></div>
+            <div class="print__grain"></div>
+            <div class="print__vignette"></div>
+          </div>
+          <figcaption class="print__caption">
+            <span class="status" id="status">Developing</span>
+            <span class="print__timer" id="timer">12:00:00</span>
+          </figcaption>
+        </figure>
+      </div>
     </section>
 
-    <section class="features">
-      <div class="feature">
-        <h3>Real film feel</h3>
-        <p>One signature film look, with hand-tuned color, grain, and glow. Your shots develop over time, just like the real thing.</p>
+    <section class="frame reveal" data-frame="02">
+      <div class="split">
+        <div>
+          <p class="eyebrow">The look</p>
+          <h2>One stock. Nothing to pick.</h2>
+          <p class="body">
+            Every frame gets the same hand tuned color, grain, and glow. There is no
+            filter carousel and no sliders to second guess at 2am. You point the camera,
+            and FLIM develops the shot the way the film would have.
+          </p>
+        </div>
+        <dl class="specs">
+          <div class="spec"><dt>Film</dt><dd>One stock</dd></div>
+          <div class="spec"><dt>Frame</dt><dd>3:4</dd></div>
+          <div class="spec"><dt>Develop</dt><dd>12 hours</dd></div>
+          <div class="spec"><dt>Filters</dt><dd>None</dd></div>
+        </dl>
       </div>
-      <div class="feature">
-        <h3>Shared rolls</h3>
-        <p>Start a roll with up to 50 friends. Everyone shoots into it, and 12 hours later the whole roll develops at once.</p>
+    </section>
+
+    <section class="frame reveal" data-frame="03">
+      <div class="split">
+        <div>
+          <p class="eyebrow">Shared rolls</p>
+          <h2>Everyone shoots into the same roll.</h2>
+          <p class="body">
+            Start a roll and bring in up to 50 friends. Everyone shoots into it and
+            nobody sees a thing, not even their own frames. Twelve hours later the
+            whole roll develops at once, for all of you, and you find out together
+            what the night actually looked like.
+          </p>
+        </div>
+        <div>
+          <div class="sheet" aria-hidden="true">
+            <div class="sheet__cell" data-n="01"></div>
+            <div class="sheet__cell" data-n="02"></div>
+            <div class="sheet__cell" data-n="03"></div>
+            <div class="sheet__cell" data-n="04"></div>
+            <div class="sheet__cell" data-n="05"></div>
+            <div class="sheet__cell" data-n="06"></div>
+            <div class="sheet__cell" data-n="07"></div>
+            <div class="sheet__cell" data-n="08"></div>
+          </div>
+          <p class="sheet__note">Eight frames in. Nobody has seen one.</p>
+        </div>
       </div>
-      <div class="feature">
-        <h3>For your people</h3>
-        <p>Invite-only and private by design. What you share stays between you and your friends.</p>
-      </div>
+    </section>
+
+    <section class="frame reveal" data-frame="04">
+      <p class="eyebrow">Who is here</p>
+      <h2>Invite only, and only ever your friends.</h2>
+      <p class="body">
+        There is no discover tab, no algorithm, and no strangers. You get in with a code
+        from someone who already has the app, and what you share stays between you and
+        the people you shared it with.
+      </p>
     </section>
   </main>
 
   <footer>
     <div class="wrap">
-      <div>© <span id="year"></span> FLIM</div>
+      <div>&copy; <span id="year"></span> FLIM</div>
       <div class="links">
         <a href="/privacy">Privacy</a>
         <a href="/terms">Terms</a>
@@ -70,6 +152,77 @@
     </div>
   </footer>
 
-  <script>document.getElementById("year").textContent = new Date().getFullYear();</script>
+  <script src="/theme.js"></script>
+  <script>
+    /* --- The print develops -------------------------------------------------
+       The countdown and the emulsion resolve together, so the page performs the
+       wait rather than describing it. Anyone who asked for less motion gets the
+       finished print straight away.
+       --------------------------------------------------------------------- */
+    (function () {
+      var windowEl = document.getElementById("window");
+      var timer = document.getElementById("timer");
+      var status = document.getElementById("status");
+      var still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+      function clock(seconds) {
+        var h = Math.floor(seconds / 3600);
+        var m = Math.floor((seconds % 3600) / 60);
+        var s = Math.floor(seconds % 60);
+        return [h, m, s]
+          .map(function (n) { return String(n).padStart(2, "0"); })
+          .join(":");
+      }
+
+      function finish() {
+        timer.textContent = clock(0);
+        status.textContent = "Developed";
+      }
+
+      if (still) {
+        windowEl.setAttribute("data-state", "developed");
+        finish();
+        return;
+      }
+
+      var total = 12 * 3600;
+      var duration = 3600;
+      var started = null;
+
+      function step(now) {
+        if (started === null) started = now;
+        var t = Math.min((now - started) / duration, 1);
+        // Slows as it lands, so the last seconds read rather than blur past.
+        var eased = 1 - Math.pow(1 - t, 3);
+        timer.textContent = clock(total * (1 - eased));
+        if (t < 1) {
+          requestAnimationFrame(step);
+        } else {
+          finish();
+        }
+      }
+
+      windowEl.setAttribute("data-state", "developing");
+      requestAnimationFrame(step);
+    })();
+
+    /* --- Frames arrive as you scroll --------------------------------------- */
+    (function () {
+      var frames = document.querySelectorAll(".reveal");
+      if (!("IntersectionObserver" in window)) {
+        frames.forEach(function (f) { f.classList.add("is-in"); });
+        return;
+      }
+      var seen = new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+          if (entry.isIntersecting) {
+            entry.target.classList.add("is-in");
+            seen.unobserve(entry.target);
+          }
+        });
+      }, { rootMargin: "0px 0px -12% 0px" });
+      frames.forEach(function (f) { seen.observe(f); });
+    })();
+  </script>
 </body>
 </html>

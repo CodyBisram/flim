@@ -3,7 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <meta name="theme-color" content="#0a0908">
+  <meta name="theme-color" content="#0c0908" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#e7e3da" media="(prefers-color-scheme: light)">
   <title>Join a roll on FLIM</title>
   <meta name="description" content="Join your friends' film roll on FLIM. Shoot together, develop together.">
   <meta property="og:site_name" content="FLIM">
@@ -20,47 +21,71 @@
   <meta name="twitter:image" content="https://flim-app.com/og-join.png">
   <link rel="icon" type="image/png" href="/favicon.png">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&family=DM+Mono:wght@300;400;500&display=swap">
   <link rel="stylesheet" href="/style.css">
-  <style>
-    .join-card { text-align: center; padding-top: clamp(48px, 14vw, 96px); padding-bottom: 48px; }
-    .join-code {
-      display: inline-block; max-width: 100%; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-      font-size: clamp(26px, 8vw, 40px); font-weight: 300; letter-spacing: 0.25em; color: #fff;
-      background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1);
-      border-radius: 16px; padding: 18px 16px 18px 26px; margin: 22px 0;
-      overflow-wrap: anywhere;
-    }
-    .join-open {
-      display: inline-block; background: var(--accent, #e8a33d); color: #111;
-      font-weight: 600; border-radius: 999px; padding: 14px 36px; text-decoration: none;
-      margin-top: 8px;
-    }
-    .join-hint { color: rgba(255,255,255,0.45); font-size: 14px; margin-top: 20px; line-height: 1.6; }
-  </style>
+  <script>
+    // Applied before first paint so the chosen condition does not flash.
+    (function () {
+      try {
+        var saved = localStorage.getItem("flim-theme");
+        if (saved === "light" || saved === "dark") {
+          document.documentElement.setAttribute("data-theme", saved);
+        }
+      } catch (e) {}
+    })();
+  </script>
 </head>
 <body>
-  <main class="wrap join-card">
-    <h1>You’re invited to a roll</h1>
-    <p>Join the roll on FLIM with this code:</p>
-    <div class="join-code" id="code">·····</div>
-    <br>
-    <a class="join-open" id="open" href="#">Open FLIM</a>
-    <p class="join-hint">
-      Already have FLIM? Tap <strong>Open FLIM</strong>, or enter the code in <strong>Rolls → Join</strong>.<br>
-      New here? <a href="https://apps.apple.com/us/app/flim-disposable-camera/id6786079629">Get FLIM on the App Store</a>. It’s invite-only, so ask your friend for an invite too.
-    </p>
+  <header>
+    <div class="wrap">
+      <a class="logo" href="/">FL<span>I</span>M</a>
+      <nav>
+        <button class="themer" id="themer" type="button"><span>Lighttable</span></button>
+      </nav>
+    </div>
+  </header>
+
+  <main class="wrap invite">
+    <div class="invite-head">
+      <h1>You&rsquo;re invited to a roll</h1>
+      <p class="invite-lede">Everyone shoots into this roll, and it develops for all of you at once.</p>
+    </div>
+
+    <div class="code" id="code">&middot;&middot;&middot;&middot;&middot;</div>
+
+    <!-- A roll invite only means anything to someone who already has the app, so
+         Open FLIM leads here. The personal invite page at /i is the other way
+         round, because that link almost always reaches someone without it. -->
+    <div class="invite-actions">
+      <a class="btn btn-primary" id="open" href="#">Open FLIM</a>
+      <a class="btn btn-secondary" href="https://apps.apple.com/us/app/flim-disposable-camera/id6786079629">Get FLIM</a>
+    </div>
+
+    <div class="invite-notes">
+      <p>Already have FLIM? Tap <strong>Open FLIM</strong>, or enter the code under <strong>Rolls</strong>, then <strong>Join</strong>.</p>
+      <p>New here? FLIM is invite-only, so ask your friend for an invite as well as this code.</p>
+    </div>
   </main>
+
+  <script src="/theme.js"></script>
   <script>
-    // /join/CODE → show the code and deep-link the Open button into the app.
-    const code = decodeURIComponent(location.pathname.split("/").filter(Boolean).pop() || "");
-    const valid = /^[A-Z0-9]{4,10}$/i.test(code) && code.toLowerCase() !== "join";
-    if (valid) {
-      document.getElementById("code").textContent = code.toUpperCase();
-      document.getElementById("open").href = "com.lapse.app://join/" + code.toUpperCase();
-    } else {
-      document.getElementById("code").textContent = "·····";
-      document.getElementById("open").style.display = "none";
-    }
+    // /join/CODE shows the code and deep links the Open button into the app.
+    (function () {
+      var code = decodeURIComponent(location.pathname.split("/").filter(Boolean).pop() || "");
+      var valid = /^[A-Z0-9]{4,10}$/i.test(code) && code.toLowerCase() !== "join";
+      var open = document.getElementById("open");
+
+      if (valid) {
+        document.getElementById("code").textContent = code.toUpperCase();
+        open.href = "com.lapse.app://join/" + code.toUpperCase();
+      } else {
+        // No code means nothing to open, so the control goes rather than sitting
+        // there doing nothing when pressed.
+        open.style.display = "none";
+      }
+    })();
   </script>
 </body>
 </html>
