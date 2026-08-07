@@ -51,6 +51,16 @@ struct RollRevealView: View {
     private var currentPhoto: Photo? { viewModel.deck[safe: viewModel.index] }
 
     var body: some View {
+        // Its own stack, so a handle tapped during a reveal pushes the profile with a back
+        // button instead of presenting it as a sheet that has no way out.
+        NavigationStack {
+            revealBody
+                .toolbar(.hidden, for: .navigationBar)
+                .navigationDestination(item: $profileRoute) { UserPageView(userId: $0.id) }
+        }
+    }
+
+    private var revealBody: some View {
         ZStack {
             Color.black.ignoresSafeArea()
 
@@ -203,9 +213,6 @@ struct RollRevealView: View {
             revealZoom = 1
             zoomAnchor = .center
             pinchStart = nil
-        }
-        .sheet(item: $profileRoute) { route in
-            NavigationStack { UserPageView(userId: route.id) }
         }
         .task {
             viewModel.reduceMotion = reduceMotion

@@ -175,9 +175,10 @@ struct RollMembersView: View {
                     }
                 }
             }
-            .sheet(item: $profileRoute) { route in
-            NavigationStack { UserPageView(userId: route.id) }
-        }
+            // Pushed into this sheet's own stack, so it arrives with a back button. Presenting it
+            // as a further sheet made UserPageView the root of a new stack, and a root generates
+            // no back button, which left the ••• menu as the only control on the screen.
+            .navigationDestination(item: $profileRoute) { UserPageView(userId: $0.id) }
         .navigationBarTitleDisplayMode(.inline)
             .flimInlineTitle("Members (\(members.count)/\(Roll.memberCap))")
             .toolbarColorScheme(.dark, for: .navigationBar)

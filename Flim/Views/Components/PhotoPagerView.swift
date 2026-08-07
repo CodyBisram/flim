@@ -120,6 +120,21 @@ struct PhotoPagerView: View {
     }
 
     var body: some View {
+        // The viewer carries its own stack so a profile PUSHES, with the system back button,
+        // exactly as it does from the feed. It used to be presented as a sheet instead, which put
+        // UserPageView at the root of its own stack: no back button is generated for a root, so
+        // the only way out was a swipe down nobody advertises, and the ••• menu was the sole
+        // control on screen. UserPageView is built to be pushed, see its own comment about
+        // letting the cover show under the back button.
+        NavigationStack {
+            pagerBody
+                // The photo viewer is full bleed; only the pushed profile wants a bar.
+                .toolbar(.hidden, for: .navigationBar)
+                .navigationDestination(item: $profileRoute) { UserPageView(userId: $0.id) }
+        }
+    }
+
+    private var pagerBody: some View {
         ZStack {
             Color.black.ignoresSafeArea()
 
@@ -212,11 +227,6 @@ struct PhotoPagerView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Flag this for review. Thanks for keeping \(AppInfo.appName) safe.")
-        }
-        // Presented rather than pushed: this view is a full-screen cover with no navigation
-        // stack of its own, so it carries the stack the profile needs.
-        .sheet(item: $profileRoute) { route in
-            NavigationStack { UserPageView(userId: route.id) }
         }
         .sheet(item: $shareItem) { item in
             SharePreviewSheet(photo: item.image)

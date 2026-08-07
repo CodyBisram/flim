@@ -35,6 +35,16 @@ struct RollCarouselView: View {
     private var current: Photo? { photos.indices.contains(selection) ? photos[selection] : nil }
 
     var body: some View {
+        // Its own stack, for the same reason as PhotoPagerView: a profile opened from here has
+        // to push with a back button rather than arrive as a sheet with no way out.
+        NavigationStack {
+            carouselBody
+                .toolbar(.hidden, for: .navigationBar)
+                .navigationDestination(item: $profileRoute) { UserPageView(userId: $0.id) }
+        }
+    }
+
+    private var carouselBody: some View {
         ZStack {
             Color.black.ignoresSafeArea()
 
@@ -100,11 +110,6 @@ struct RollCarouselView: View {
             }
         }
         .statusBarHidden()
-        // Presented rather than pushed: this view is a full-screen cover with no navigation
-        // stack of its own, so it carries the stack the profile needs.
-        .sheet(item: $profileRoute) { route in
-            NavigationStack { UserPageView(userId: route.id) }
-        }
         .sheet(item: $shareItem) { SharePreviewSheet(photo: $0.image) }
         // Same deferral as the pager: one sheet has to finish closing before the next opens.
         .sheet(isPresented: $showComments, onDismiss: {
