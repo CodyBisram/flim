@@ -91,13 +91,13 @@ struct UserPageView: View {
         .overlay(alignment: .top) {
             if reportedToast {
                 Label("Reported, thanks for keeping \(AppInfo.appName) safe", systemImage: "checkmark.circle.fill")
-                    .font(.system(size: 13, weight: .medium)).foregroundStyle(.white)
+                    .flimFont(13, weight: .medium).foregroundStyle(.white)
                     .padding(.horizontal, 16).padding(.vertical, 10)
                     .background(.ultraThinMaterial, in: Capsule())
                     .transition(.move(edge: .top).combined(with: .opacity))
             } else if reportFailedToast {
                 Label("Couldn't report. Try again.", systemImage: "exclamationmark.triangle.fill")
-                    .font(.system(size: 13, weight: .medium)).foregroundStyle(.white)
+                    .flimFont(13, weight: .medium).foregroundStyle(.white)
                     .padding(.horizontal, 16).padding(.vertical, 10)
                     .background(.ultraThinMaterial, in: Capsule())
                     .transition(.move(edge: .top).combined(with: .opacity))
@@ -227,7 +227,7 @@ struct UserPageView: View {
                     }
                     Button { showInvite = true } label: {
                         Label("Invite", systemImage: "person.badge.plus")
-                            .font(.system(size: 14, weight: .semibold)).foregroundStyle(.black)
+                            .flimFont(14, weight: .semibold).foregroundStyle(.black)
                             .frame(maxWidth: .infinity).padding(.vertical, 11)
                             .background(accent, in: Capsule())
                     }
@@ -500,7 +500,7 @@ struct DiscoverPeopleView: View {
                 .accessibilityLabel("Clear search")
             }
         }
-        .font(.system(size: 15))
+        .flimFont(15)
         .padding(.horizontal, 14).padding(.vertical, 11)
         .background(FlimTheme.bgElevated, in: Capsule())
         .padding(.horizontal, 18).padding(.top, 10).padding(.bottom, 4)

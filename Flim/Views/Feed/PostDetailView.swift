@@ -162,13 +162,13 @@ struct PostDetailView: View {
         .overlay(alignment: .top) {
             if reportedToast {
                 Label("Reported, thanks", systemImage: "checkmark.circle.fill")
-                    .font(.system(size: 13, weight: .medium)).foregroundStyle(.white)
+                    .flimFont(13, weight: .medium).foregroundStyle(.white)
                     .padding(.horizontal, 16).padding(.vertical, 10)
                     .background(.ultraThinMaterial, in: Capsule())
                     .transition(.move(edge: .top).combined(with: .opacity))
             } else if reportFailedToast {
                 Label("Couldn't report. Try again.", systemImage: "exclamationmark.triangle.fill")
-                    .font(.system(size: 13, weight: .medium)).foregroundStyle(.white)
+                    .flimFont(13, weight: .medium).foregroundStyle(.white)
                     .padding(.horizontal, 16).padding(.vertical, 10)
                     .background(.ultraThinMaterial, in: Capsule())
                     .transition(.move(edge: .top).combined(with: .opacity))

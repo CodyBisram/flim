@@ -118,7 +118,7 @@ struct CreateRollView: View {
                         } label: {
                             Label(copied ? "Copied" : "Copy code",
                                   systemImage: copied ? "checkmark" : "doc.on.doc")
-                                .font(.system(size: 14, weight: .semibold))
+                                .flimFont(14, weight: .semibold)
                                 .foregroundStyle(copied ? accent : .white)
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 13)
@@ -128,7 +128,7 @@ struct CreateRollView: View {
 
                         ShareLink(item: AppInfo.rollInviteMessage(rollName: roll.name, code: roll.inviteCode)) {
                             Label("Share", systemImage: "square.and.arrow.up")
-                                .font(.system(size: 14, weight: .semibold))
+                                .flimFont(14, weight: .semibold)
                                 .foregroundStyle(.black)
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 13)

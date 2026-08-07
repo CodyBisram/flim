@@ -448,7 +448,7 @@ struct CameraView: View {
                         Image(systemName: selectedRoll == nil ? "person.fill" : "film.stack")
                             .font(.system(size: 12))
                         Text(selectedRoll?.name ?? "Personal")
-                            .font(.system(size: 13, weight: .medium))
+                            .flimFont(13, weight: .medium)
                             .lineLimit(1)
                             .truncationMode(.tail)
                         if let selectedRoll {
@@ -510,7 +510,7 @@ struct CameraView: View {
                             Image(systemName: "exclamationmark.arrow.circlepath")
                                 .font(.system(size: 12))
                             Text("Retry \(photos.failedUploads.count)")
-                                .font(.system(size: 13, weight: .medium))
+                                .flimFont(13, weight: .medium)
                                 .lineLimit(1).fixedSize()
                         }
                         .foregroundStyle(.white)
@@ -530,7 +530,7 @@ struct CameraView: View {
                     Button { showSortDeck = true } label: {
                         HStack(spacing: 5) {
                             Image(systemName: "square.stack.3d.up.fill").font(.system(size: 12))
-                            Text("\(unsortedCount) to sort").font(.system(size: 13, weight: .semibold))
+                            Text("\(unsortedCount) to sort").flimFont(13, weight: .semibold)
                                 .lineLimit(1).fixedSize()
                         }
                         .foregroundStyle(.black)
@@ -548,7 +548,7 @@ struct CameraView: View {
             // I have signal". Kept to one line so the viewfinder stays a viewfinder.
             if photos.hasFailedUploads, let uploadError = photos.uploadError {
                 Text(uploadError)
-                    .font(.system(size: 11))
+                    .flimFont(11)
                     .foregroundStyle(.white.opacity(0.85))
                     .lineLimit(2)
                     .multilineTextAlignment(.trailing)
@@ -630,10 +630,10 @@ struct CameraView: View {
                 .font(.system(size: 40, weight: .ultraLight))
                 .foregroundStyle(accent)
             Text("Camera access needed")
-                .font(.system(size: 20, weight: .light))
+                .flimFont(20, weight: .light)
                 .foregroundStyle(.white)
             Text("\(AppInfo.appName) needs your camera to take photos. Turn it on in Settings.")
-                .font(.system(size: 14))
+                .flimFont(14)
                 .foregroundStyle(FlimTheme.textSecondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 44)
@@ -643,7 +643,7 @@ struct CameraView: View {
                 }
             } label: {
                 Text("Open Settings")
-                    .font(.system(size: 15, weight: .semibold))
+                    .flimFont(15, weight: .semibold)
                     .foregroundStyle(.black)
                     .padding(.horizontal, 32)
                     .padding(.vertical, 13)
@@ -668,7 +668,7 @@ struct CameraView: View {
                         .foregroundStyle(accent)
 
                     Text("Shoot now.\nSee it later.")
-                        .font(.system(size: 24, weight: .light))
+                        .flimFont(24, weight: .light)
                         .multilineTextAlignment(.center)
                         .foregroundStyle(.white)
 
@@ -677,7 +677,7 @@ struct CameraView: View {
                     // onboarding card read a minute earlier, on the screen that teaches the one
                     // mechanic the whole app is built on.
                     Text("Tap the shutter. Your own shots land in the Darkroom straight away, ready to sort. Shots you send to a shared roll stay hidden until the whole roll develops together.")
-                        .font(.system(size: 15))
+                        .flimFont(15)
                         .foregroundStyle(FlimTheme.textSecondary)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 40)
@@ -688,7 +688,7 @@ struct CameraView: View {
                         withAnimation(.easeInOut(duration: 0.3)) { hasSeenCoach = true }
                     } label: {
                         Text("Got it")
-                            .font(.system(size: 15, weight: .semibold))
+                            .flimFont(15, weight: .semibold)
                             .foregroundStyle(.black)
                             .padding(.horizontal, 40)
                             .padding(.vertical, 13)
@@ -817,7 +817,7 @@ private struct RollPickerSheet: View {
                                     .foregroundStyle(isClosed ? FlimTheme.textTertiary : .white)
                                 if isClosed {
                                     Text("· developed")
-                                        .font(.system(size: 12))
+                                        .flimFont(12)
                                         .foregroundStyle(FlimTheme.textTertiary)
                                 }
                                 Spacer()
@@ -833,7 +833,7 @@ private struct RollPickerSheet: View {
 
                     if rolls.isEmpty {
                         Text("Start a roll in the Rolls tab to share photos with friends. They'll all develop together.")
-                            .font(.system(size: 13))
+                            .flimFont(13)
                             .foregroundStyle(FlimTheme.textTertiary)
                             .padding(.vertical, 8)
                             .listRowBackground(Color.clear)

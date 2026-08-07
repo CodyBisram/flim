@@ -13,7 +13,7 @@ struct MetaChip: View {
     var body: some View {
         HStack(spacing: 4) {
             Image(systemName: icon).font(.system(size: iconSize))
-            Text(text).font(.system(size: textSize, weight: .medium))
+            Text(text).flimFont(textSize, weight: .medium)
         }
         .foregroundStyle(color)
     }

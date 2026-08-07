@@ -76,7 +76,7 @@ struct MainTabView: View {
         .overlay(alignment: .top) {
             if !network.isConnected {
                 Label("No connection", systemImage: "wifi.slash")
-                    .font(.system(size: 13, weight: .medium))
+                    .flimFont(13, weight: .medium)
                     .foregroundStyle(.white)
                     .padding(.horizontal, 16).padding(.vertical, 9)
                     .background(.ultraThinMaterial, in: Capsule())

@@ -123,7 +123,7 @@ struct RollCarouselView: View {
             .accessibilityLabel("Close")
             Spacer()
             Text("\(selection + 1) / \(photos.count)")
-                .font(.system(size: 13, weight: .semibold)).foregroundStyle(.white)
+                .flimFont(13, weight: .semibold).foregroundStyle(.white)
             Spacer()
             Button { showComments = true } label: {
                 Image(systemName: "bubble.right").font(.system(size: 15, weight: .medium))
@@ -179,7 +179,7 @@ struct RollCarouselView: View {
                     // paging TabView sits above it.
                     HStack(spacing: 4) {
                         Text(photo.takenAt.formatted(date: .abbreviated, time: .shortened))
-                            .font(.system(size: 12, weight: .medium)).foregroundStyle(Color(white: 0.68))
+                            .flimFont(12, weight: .medium).foregroundStyle(Color(white: 0.68))
                         Image(systemName: "square.and.arrow.up.fill")
                             .font(.system(size: 9))
                             .foregroundStyle(Color(white: 0.68))

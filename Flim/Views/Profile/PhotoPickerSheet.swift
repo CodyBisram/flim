@@ -89,7 +89,7 @@ struct PhotoPickerSheet: View {
                 if onPickLibraryImage != nil || onPickCropped != nil {
                     PhotosPicker(selection: $libraryItem, matching: .images, photoLibrary: .shared()) {
                         Label(importing ? "Adding…" : "Choose from Library", systemImage: "photo.on.rectangle")
-                            .font(.system(size: 15, weight: .semibold))
+                            .flimFont(15, weight: .semibold)
                             .foregroundStyle(.black)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 13)

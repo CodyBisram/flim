@@ -311,7 +311,7 @@ private struct RollRow: View {
                     // and this row is sorted to the top of the list.
                     HStack(spacing: 5) {
                         Image(systemName: "sparkles").font(.system(size: 10, weight: .bold))
-                        Text("Ready to reveal").font(.system(size: 11, weight: .semibold))
+                        Text("Ready to reveal").flimFont(11, weight: .semibold)
                     }
                     .foregroundStyle(.black)
                     .padding(.horizontal, 10).padding(.vertical, 4)
@@ -428,7 +428,7 @@ struct OutlineButtonStyle: ButtonStyle {
     @Environment(\.flimAccent) private var accent
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 14, weight: .semibold))
+            .flimFont(14, weight: .semibold)
             .foregroundStyle(accent)
             .padding(.horizontal, 22)
             .padding(.vertical, 11)

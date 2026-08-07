@@ -45,6 +45,7 @@
 		4115FC907B0F49EF7C95C712 /* AccountEpochTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B04FC26356A4531AF0A539D /* AccountEpochTests.swift */; };
 		4480B3972FE7723102195B87 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = FD8B0DEC0C9EF1C45B057D1F /* PrivacyInfo.xcprivacy */; };
 		46BB284536C9EFB9CB87A36C /* OTPView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2CA2F6DA98A04777C3D3C23 /* OTPView.swift */; };
+		4713DA3E90251C2890E86E86 /* RollRevealViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D30B42EBEE797C8D0DEC4848 /* RollRevealViewModel.swift */; };
 		480A7F9CE307F6711822BF6B /* LiveActivityReachTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 207687A2D2C8D45CDE4E9D76 /* LiveActivityReachTests.swift */; };
 		4BE42F2FEEBD084E5CF3A4D9 /* RollRevealView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A7B0511BE80DC5094BD7F98 /* RollRevealView.swift */; };
 		4D1C56A98C6D0528C19AF61D /* SharePreviewSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76A0A3EA09696EA2921DCA7C /* SharePreviewSheet.swift */; };
@@ -316,6 +317,7 @@
 		C9817482FE2AB125EC4FC2FB /* FeedService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedService.swift; sourceTree = "<group>"; };
 		CCA22AED443B38D757C24F21 /* LiveRefresh.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveRefresh.swift; sourceTree = "<group>"; };
 		CF062148240A383A260E8EE3 /* Photo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Photo.swift; sourceTree = "<group>"; };
+		D30B42EBEE797C8D0DEC4848 /* RollRevealViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollRevealViewModel.swift; sourceTree = "<group>"; };
 		D86D048DA64F5454E17D0F34 /* ActivityFeedViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityFeedViewTests.swift; sourceTree = "<group>"; };
 		D9927EBDE8E7056C4DA31EF2 /* AuthHelpersTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthHelpersTests.swift; sourceTree = "<group>"; };
 		DB2A4DF8A1879B929C3C4CB4 /* FilmStockTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilmStockTests.swift; sourceTree = "<group>"; };
@@ -649,6 +651,7 @@
 				54CD52378D31EEDB7D7BE6EF /* RollDetailView.swift */,
 				F1AA5EF66C46272F42891AF4 /* RollMembersView.swift */,
 				3A7B0511BE80DC5094BD7F98 /* RollRevealView.swift */,
+				D30B42EBEE797C8D0DEC4848 /* RollRevealViewModel.swift */,
 				33D109A1C315CD466659A10F /* RollsView.swift */,
 			);
 			path = Rolls;
@@ -915,6 +918,7 @@
 				A84BA1FDB8F9ED7F9F9579C8 /* RollRevealAttributes.swift in Sources */,
 				1529DA83A8F81093027FE732 /* RollRevealCard.swift in Sources */,
 				4BE42F2FEEBD084E5CF3A4D9 /* RollRevealView.swift in Sources */,
+				4713DA3E90251C2890E86E86 /* RollRevealViewModel.swift in Sources */,
 				B09880D2185738A73550E7C6 /* RollService.swift in Sources */,
 				322A5492683DD8B6D58B77C6 /* RollsView.swift in Sources */,
 				BB6BDEA19FBF1F3F069D1B18 /* ShareImage.swift in Sources */,

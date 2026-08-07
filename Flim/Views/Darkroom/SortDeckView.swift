@@ -108,7 +108,7 @@ struct SortDeckView: View {
             if lastPhoto != nil {
                 Button { undo() } label: {
                     Label("Undo", systemImage: "arrow.uturn.backward")
-                        .font(.system(size: 13, weight: .semibold))
+                        .flimFont(13, weight: .semibold)
                         .foregroundStyle(accent)
                 }
             } else {

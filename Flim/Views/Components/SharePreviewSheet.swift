@@ -74,7 +74,7 @@ struct SharePreviewSheet: View {
                         preview: SharePreview("Photo", image: Image(uiImage: outgoing))
                     ) {
                         Label("Share", systemImage: "square.and.arrow.up")
-                            .font(.system(size: 16, weight: .semibold))
+                            .flimFont(16, weight: .semibold)
                             .foregroundStyle(.black)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 15)

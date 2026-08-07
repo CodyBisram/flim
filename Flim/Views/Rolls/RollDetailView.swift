@@ -67,7 +67,7 @@ struct RollDetailView: View {
 
                 if let count = rollService.memberCounts[roll.id] {
                     Label("\(count) member\(count == 1 ? "" : "s")", systemImage: "person.2.fill")
-                        .font(.system(size: 13, weight: .medium))
+                        .flimFont(13, weight: .medium)
                         .imageScale(.small)
                         .foregroundStyle(FlimTheme.textSecondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -91,7 +91,7 @@ struct RollDetailView: View {
                         showCarousel = true
                     } label: {
                         Label("Play through the roll · \(vm.developedPhotos.count)", systemImage: "play.circle.fill")
-                            .font(.system(size: 15, weight: .semibold))
+                            .flimFont(15, weight: .semibold)
                             .foregroundStyle(.black)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 13)
@@ -150,7 +150,7 @@ struct RollDetailView: View {
         .overlay(alignment: .top) {
             if coverToast {
                 Label("Roll cover updated", systemImage: "checkmark.circle.fill")
-                    .font(.system(size: 13, weight: .medium))
+                    .flimFont(13, weight: .medium)
                     .foregroundStyle(.white)
                     .padding(.horizontal, 16).padding(.vertical, 10)
                     .background(.ultraThinMaterial, in: Capsule())
@@ -569,7 +569,7 @@ struct RollDetailView: View {
             TimelineView(.periodic(from: .now, by: 1)) { timeline in
                 let remaining = max(0, Int(revealAt.timeIntervalSince(timeline.date)))
                 Label("Develops in \(Self.countdown(remaining))", systemImage: "hourglass")
-                    .font(.system(size: 14, weight: .semibold))
+                    .flimFont(14, weight: .semibold)
                     .foregroundStyle(accent)
             }
             Group {

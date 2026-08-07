@@ -3,15 +3,29 @@ import SwiftUI
 /// The roll reveal, as an event: the first time you open a roll after it develops, everyone's
 /// shots play as a full-screen, story-style slideshow, each print "develops" in front of you
 /// (blurred + washed → sharp), with the photographer's handle. Tap to step, skip anytime.
+///
+/// Deck loading, the playback state machine and the save-all export live in
+/// `RollRevealViewModel`. What stays here is genuinely view-local: gesture recognition (the
+/// pending hold timer and its cancellation latch), the pinch-zoom, and profile-sheet routing.
 struct RollRevealView: View {
     @Environment(\.flimAccent) private var accent
     let rollId: UUID
     let rollName: String
     /// Chronological, developed, as of the moment the caller last fetched. Re-verified against
-    /// the server on appear (see `.task` below) so a shot deleted after that fetch (but before
-    /// this member opened the reveal) never enters the deck.
+    /// the server on appear (see `RollRevealViewModel.loadDeck`) so a shot deleted after that
+    /// fetch (but before this member opened the reveal) never enters the deck.
     let photos: [Photo]
     let memberNames: [UUID: String]
+
+    @State private var viewModel: RollRevealViewModel
+
+    init(rollId: UUID, rollName: String, photos: [Photo], memberNames: [UUID: String]) {
+        self.rollId = rollId
+        self.rollName = rollName
+        self.photos = photos
+        self.memberNames = memberNames
+        _viewModel = State(initialValue: RollRevealViewModel(rollId: rollId, photos: photos))
+    }
 
     @Environment(PhotoService.self) private var photoService
     @Environment(AuthService.self) private var auth
@@ -20,103 +34,36 @@ struct RollRevealView: View {
     @Environment(\.displayScale) private var displayScale
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    // The deck actually being played, starts empty and is populated by the fresh fetch, so a
-    // photo deleted between the caller's fetch and this view opening never gets a frame.
-    @State private var deck: [Photo] = []
-    @State private var index = 0
-    @State private var urls: [String: URL] = [:]
-    @State private var developed = false          // current photo's develop animation
-    @State private var showSummary = false
-    @State private var isEmpty = false
-    @State private var advanceTask: Task<Void, Never>?
-    /// Reactions across the whole deck, keyed by photo id, batch-loaded once in loadDeck. Includes
-    /// the reactions others left BEFORE you opened the reveal, so the moment feels communal, you
-    /// see the group's response accreting even though everyone arrives at their own time.
-    @State private var reactionsByPhoto: [UUID: [PhotoReaction]] = [:]
-    /// Set once you interact with the current shot (react, or open the picker). While true, the
-    /// auto-advance timer is held off so a slide never yanks away mid-reaction. Reset per photo.
-    @State private var engaged = false
-    /// The group's progress through this reveal ("you're the Nth of M to open it"), recorded and
-    /// fetched on open. Shown on the summary card so the roll feels shared, not solitary.
-    @State private var presence: RollService.RevealPresence?
-
-    // MARK: - Playback pacing
-    //
-    // A slide used to be a fixed 3.4s with no way to stop it, and the progress bar filled a whole
-    // segment at a time, so it showed WHERE you were and never how long you had. Between them, a
-    // photo you were still looking at just left, with no warning and no recourse. The fix is all
-    // three together: longer, visible, and holdable.
-
-    /// Durations, thresholds and gesture resolution live in `RevealPacing`, which is pure and
-    /// tested. This view owns the state machine and the pixels.
-    private static let slideDuration = RevealPacing.slideDuration
-
-    /// This slide's length. Reduce Motion skips the develop animation entirely, so there is no
-    /// unreadable phase to allow for and the slide is just the viewing time.
-    private var currentSlideDuration: TimeInterval {
-        reduceMotion ? RevealPacing.viewingDuration : RevealPacing.slideDuration
-    }
-
-    /// When the current slide is due to advance. Drives the filling progress segment, and is
-    /// rewritten on resume so a paused slide gets its remaining time back rather than restarting.
-    @State private var slideEndsAt: Date?
-    /// Time left on the current slide while paused.
-    @State private var pausedRemaining: TimeInterval = RevealPacing.slideDuration
-    @State private var paused = false
     /// Pending hold detection for the finger currently down. Non-nil means a hold is armed.
     @State private var holdTask: Task<Void, Never>?
     /// Latched once a press has moved far enough to be a swipe, so it can't turn back into a hold.
     @State private var holdCancelled = false
     @State private var profileRoute: ProfileRoute?
     /// Pinch-to-look on the current slide. Transient, so a zoom can never be left behind on a
-    /// slideshow that keeps moving.
+    /// slideshow that keeps moving. Reset whenever the photo on screen changes, see the
+    /// `onChange` below.
     @State private var revealZoom: CGFloat = 1
     @State private var zoomAnchor: UnitPoint = .center
     @State private var pinchStart: CGFloat?
 
-    // MARK: - Opening card
-    //
-    // The reveal opened cold on photo 1, behind a spinner. Two problems in one: nothing said what
-    // you were about to see, and the wait was represented by the one thing that cannot develop
-    // into anything. The cover card solves both, because it needs no network (the caller already
-    // passed the photos) and can therefore be on screen instantly, with the deck loading behind
-    // it. The anticipation IS the loading state.
-
-    @State private var showCover = true
-    /// The deck is loaded (or known to be empty) and the show can actually start.
-    @State private var deckReady = false
-    /// The minimum beat has been served.
-    @State private var beatElapsed = false
-    /// Someone tapped to get on with it.
-    @State private var viewerTappedCover = false
-    /// When the card came on screen, so the fill line measures the real elapsed beat rather than
-    /// restarting whenever SwiftUI rebuilds the view.
-    @State private var coverAppearedAt: Date?
-
-    // MARK: - Closing actions
-    @State private var savingAll = false
-    /// File URLs, not UIImages. See PhotoExport.
-    @State private var shareImages: [URL] = []
-    @State private var showShareAll = false
-    @State private var saveAllError: String?
-    /// The alert is a warning, not a failure: open the sheet once it is dismissed. Presenting
-    /// both at once means SwiftUI shows one and silently drops the other.
-    @State private var shareAfterAlert = false
+    /// The photo currently on screen, read through a bounds-safe subscript: `skipDeadFrame`
+    /// mutates the deck during playback, and an unguarded index would trap.
+    private var currentPhoto: Photo? { viewModel.deck[safe: viewModel.index] }
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
 
-            if showCover {
+            if viewModel.showCover {
                 coverCard
-            } else if isEmpty {
+            } else if viewModel.isEmpty {
                 emptyState
-            } else if showSummary {
+            } else if viewModel.showSummary {
                 summary
-            } else if let photo = deck[safe: index] {
+            } else if let photo = currentPhoto {
                 // The photo, developing in front of you.
                 Group {
-                    if let url = urls[photo.viewPath] {
+                    if let url = viewModel.urls[photo.viewPath] {
                         // Two layers, sharing one set of develop modifiers.
                         //
                         // The thumbnail underneath is what lets the show start immediately. It is
@@ -126,11 +73,12 @@ struct RollRevealView: View {
                         // spinner through three network round trips before its first frame; a
                         // spinner is the one thing that cannot develop into anything.
                         ZStack {
-                            if let thumbPath = photo.thumbPath, let thumbURL = urls[thumbPath] {
+                            if let thumbPath = photo.thumbPath, let thumbURL = viewModel.urls[thumbPath] {
                                 CachedImage(url: thumbURL, maxPixel: 400) { $0.resizable().scaledToFit() }
                                     placeholder: { Color.clear }
                             }
-                            CachedImage(url: url, maxPixel: 1600, onFailure: { skipDeadFrame(photo.id) }) { image in
+                            CachedImage(url: url, maxPixel: 1600,
+                                       onFailure: { viewModel.skipDeadFrame(photo.id) }) { image in
                                 image.resizable().scaledToFit()
                             } placeholder: {
                                 // Clear, not a spinner: the thumbnail below is already showing the
@@ -138,9 +86,9 @@ struct RollRevealView: View {
                                 Color.clear
                             }
                         }
-                        .blur(radius: developed || reduceMotion ? 0 : 26)
-                        .saturation(developed || reduceMotion ? 1 : 1.7)
-                        .opacity(developed || reduceMotion ? 1 : 0.65)
+                        .blur(radius: viewModel.developed || reduceMotion ? 0 : 26)
+                        .saturation(viewModel.developed || reduceMotion ? 1 : 1.7)
+                        .opacity(viewModel.developed || reduceMotion ? 1 : 0.65)
                     } else {
                         ProgressView().tint(.white)
                     }
@@ -173,7 +121,7 @@ struct RollRevealView: View {
                         // all when it was written that way.
                         .simultaneousGesture(TransientPinch(scale: $revealZoom, anchor: $zoomAnchor,
                                                             restingScale: $pinchStart,
-                                                            onBegin: holdAutoAdvance))
+                                                            onBegin: { viewModel.holdAutoAdvance() }))
                 }
 
                 // Photographer + shot number + the reaction bar, above the tap zones.
@@ -187,7 +135,7 @@ struct RollRevealView: View {
                                 // the deck keep stepping behind the sheet, so you'd come back to
                                 // a different photo than the one whose credit you tapped.
                                 Button {
-                                    holdAutoAdvance()
+                                    viewModel.holdAutoAdvance()
                                     profileRoute = ProfileRoute(id: photo.userId)
                                 } label: {
                                     Text("@\(name)")
@@ -197,7 +145,7 @@ struct RollRevealView: View {
                                 .buttonStyle(.plain)
                                 .accessibilityHint("Opens @\(name)'s profile and pauses the reveal")
                             }
-                            Text("\(index + 1) of \(deck.count)")
+                            Text("\(viewModel.index + 1) of \(viewModel.deck.count)")
                                 .font(.system(size: 12)).foregroundStyle(Color(white: 0.6))
                         }
                         reactionBar(for: photo)
@@ -208,8 +156,8 @@ struct RollRevealView: View {
                 // Holding clears everything off the photograph. That IS the feature: the reason to
                 // hold is to look at the picture, so leaving the credit and the reaction chips on
                 // top of it would answer the wrong half of the request.
-                .opacity(paused ? 0 : 1)
-                .allowsHitTesting(!paused)
+                .opacity(viewModel.paused ? 0 : 1)
+                .allowsHitTesting(!viewModel.paused)
 
                 // Story-style progress + skip.
                 VStack {
@@ -231,15 +179,15 @@ struct RollRevealView: View {
                         Text(rollName)
                             .font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
                         Spacer()
-                        Button("Skip") { finish() }
+                        Button("Skip") { viewModel.finish() }
                             .font(.system(size: 13, weight: .medium))
                             .foregroundStyle(Color(white: 0.7))
                     }
                     .padding(.horizontal, 20).padding(.top, 12)
                     Spacer()
                 }
-                .opacity(paused ? 0 : 1)
-                .allowsHitTesting(!paused)
+                .opacity(viewModel.paused ? 0 : 1)
+                .allowsHitTesting(!viewModel.paused)
             } else {
                 // Still loading the deck. Much shorter now that playback starts on the cached
                 // thumbnail rather than waiting for the full rendition, but a bare black screen
@@ -248,15 +196,27 @@ struct RollRevealView: View {
             }
         }
         .statusBarHidden()
-        .animation(.easeOut(duration: 0.22), value: paused)
+        .animation(.easeOut(duration: 0.22), value: viewModel.paused)
+        .onChange(of: currentPhoto?.id) { _, _ in
+            // Per-photo, like the develop animation itself: a zoom left over from the previous
+            // slide would be applied to a shot nobody pinched.
+            revealZoom = 1
+            zoomAnchor = .center
+            pinchStart = nil
+        }
         .sheet(item: $profileRoute) { route in
             NavigationStack { UserPageView(userId: route.id) }
         }
         .task {
-            await loadDeck()
+            viewModel.reduceMotion = reduceMotion
+            viewModel.displayScale = displayScale
+            await viewModel.loadDeck(photoService: photoService, auth: auth, rollService: rollService)
+        }
+        .onChange(of: reduceMotion) { _, newValue in
+            viewModel.reduceMotion = newValue
         }
         .onDisappear {
-            advanceTask?.cancel()
+            viewModel.stopPlayback()
             holdTask?.cancel()
         }
     }
@@ -270,7 +230,7 @@ struct RollRevealView: View {
     /// was about to. A filling segment is the warning, and it costs no interaction to read.
     @ViewBuilder
     private var progressBar: some View {
-        if paused || engaged || slideEndsAt == nil {
+        if viewModel.paused || viewModel.engaged || viewModel.slideEndsAt == nil {
             // Frozen: no timeline running, so a held slide isn't repainting 30 times a second.
             segments(currentFill: frozenFill)
         } else {
@@ -282,11 +242,12 @@ struct RollRevealView: View {
 
     private func segments(currentFill: CGFloat) -> some View {
         HStack(spacing: 3) {
-            // Keyed on the photo's own id, not on the index. `skipDeadFrame` removes from `deck`
-            // during playback, and ForEach over a mutating collection's indices with `id: \.self`
-            // is the classic SwiftUI index-out-of-range trap: the view holds an index that no
-            // longer exists. A deleted shot in a reveal is exactly the situation that triggers it.
-            ForEach(Array(deck.enumerated()), id: \.element.id) { i, _ in
+            // Keyed on the photo's own id, not on the index. `skipDeadFrame` removes from the
+            // deck during playback, and ForEach over a mutating collection's indices with
+            // `id: \.self` is the classic SwiftUI index-out-of-range trap: the view holds an
+            // index that no longer exists. A deleted shot in a reveal is exactly the situation
+            // that triggers it.
+            ForEach(Array(viewModel.deck.enumerated()), id: \.element.id) { i, _ in
                 GeometryReader { geo in
                     ZStack(alignment: .leading) {
                         Capsule().fill(Color.white.opacity(0.28))
@@ -307,17 +268,17 @@ struct RollRevealView: View {
     }
 
     private func segmentFill(_ i: Int, current: CGFloat) -> CGFloat {
-        RevealPacing.segmentFill(i, index: index, current: current)
+        RevealPacing.segmentFill(i, index: viewModel.index, current: current)
     }
 
     /// How full the current segment is at `date`, from the slide's own deadline.
     private func fill(at date: Date) -> CGFloat {
-        RevealPacing.fill(endsAt: slideEndsAt, now: date, duration: currentSlideDuration)
+        RevealPacing.fill(endsAt: viewModel.slideEndsAt, now: date, duration: viewModel.currentSlideDuration)
     }
 
     /// The frozen fill for a paused or engaged slide.
     private var frozenFill: CGFloat {
-        RevealPacing.frozenFill(remaining: pausedRemaining, duration: currentSlideDuration)
+        RevealPacing.frozenFill(remaining: viewModel.pausedRemaining, duration: viewModel.currentSlideDuration)
     }
 
     // MARK: - Playback gesture
@@ -337,11 +298,11 @@ struct RollRevealView: View {
                     // back to rest mid-drag.
                     holdTask?.cancel()
                     holdCancelled = true
-                } else if holdTask == nil, !holdCancelled, !paused {
+                } else if holdTask == nil, !holdCancelled, !viewModel.paused {
                     holdTask = Task {
                         try? await Task.sleep(for: .seconds(RevealPacing.holdDelay))
                         guard !Task.isCancelled else { return }
-                        pausePlayback()
+                        viewModel.pausePlayback()
                     }
                 }
             }
@@ -356,88 +317,30 @@ struct RollRevealView: View {
                 // arrangement would have done.
                 switch RevealPacing.outcome(translation: value.translation,
                                             startX: value.startLocation.x,
-                                            width: width, paused: paused) {
+                                            width: width, paused: viewModel.paused) {
                 case .dismiss:  Haptics.tap(); dismiss()
-                case .resume:   resumePlayback()
-                case .back:     step(-1)
-                case .forward:  step(1)
+                case .resume:   viewModel.resumePlayback()
+                case .back:     viewModel.step(-1)
+                case .forward:  viewModel.step(1)
                 case .ignore:   break
                 }
             }
-    }
-
-    /// Holds the current shot up until the finger lifts.
-    private func pausePlayback() {
-        guard !paused, !showSummary else { return }
-        paused = true
-        advanceTask?.cancel()
-        pausedRemaining = RevealPacing.remaining(endsAt: slideEndsAt, now: .now, fallback: currentSlideDuration)
-        Haptics.tap()
-    }
-
-    /// Gives the slide its REMAINING time back rather than restarting it, so holding to look at a
-    /// photo four seconds in doesn't hand you another five.
-    private func resumePlayback() {
-        guard paused else { return }
-        paused = false
-        guard !engaged else { return }
-        armAdvance(after: pausedRemaining)
-    }
-
-    /// Arms the auto-advance for `seconds` and records the deadline the progress bar reads from.
-    private func armAdvance(after seconds: TimeInterval) {
-        advanceTask?.cancel()
-        guard seconds > 0 else { step(1); return }
-        slideEndsAt = Date.now.addingTimeInterval(seconds)
-        advanceTask = Task {
-            try? await Task.sleep(for: .seconds(seconds))
-            guard !Task.isCancelled, !engaged, !paused else { return }
-            step(1)
-        }
     }
 
     /// The reaction bar for a shot, wired to the deck-wide reaction cache. React to each print as
     /// it develops, and see what others already left. Interacting holds the auto-advance so a
     /// slide doesn't pull away mid-reaction.
     private func reactionBar(for photo: Photo) -> some View {
-        let reactions = reactionsByPhoto[photo.id] ?? []
+        let reactions = viewModel.reactionsByPhoto[photo.id] ?? []
         return ReactionBar(
             defaults: PostEmoji.all,
             counts: Dictionary(grouping: reactions, by: \.emoji).mapValues(\.count),
             mine: Set(reactions.filter { $0.userId == auth.currentUser?.id }.map(\.emoji))
         ) { emoji in
-            holdAutoAdvance()
-            toggleReaction(emoji, on: photo)
+            viewModel.holdAutoAdvance()
+            viewModel.toggleReaction(emoji, on: photo, auth: auth, photoService: photoService)
         }
         .id(photo.id)   // fresh bar per photo as the reveal steps
-    }
-
-    /// Optimistically toggle the current user's reaction, then persist. Mirrors the carousel /
-    /// full-screen viewer, and the same reaction feeds Piece 2's pull-back notification server-side.
-    private func toggleReaction(_ emoji: String, on photo: Photo) {
-        guard let uid = auth.currentUser?.id else { return }
-        var list = reactionsByPhoto[photo.id] ?? []
-        let mine = list.contains { $0.emoji == emoji && $0.userId == uid }
-        if mine {
-            list.removeAll { $0.emoji == emoji && $0.userId == uid }
-            reactionsByPhoto[photo.id] = list
-            Task { await photoService.removeReaction(photoId: photo.id, emoji: emoji, userId: uid) }
-        } else {
-            list.append(PhotoReaction(id: UUID(), photoId: photo.id, userId: uid, emoji: emoji))
-            reactionsByPhoto[photo.id] = list
-            Task { await photoService.addReaction(photoId: photo.id, emoji: emoji, userId: uid) }
-        }
-    }
-
-    /// Cancels the current shot's auto-advance so it stays put while you're reacting. You step
-    /// forward yourself (tap the right zone) when ready. Engaged viewers set their own pace;
-    /// passive viewers keep the auto-play.
-    private func holdAutoAdvance() {
-        engaged = true
-        advanceTask?.cancel()
-        // Freeze the bar where it stands, rather than leaving it mid-animation against a deadline
-        // that will never arrive.
-        pausedRemaining = RevealPacing.remaining(endsAt: slideEndsAt, now: .now, fallback: currentSlideDuration)
     }
 
     // The vertical swipe-to-dismiss that used to live here as its own root-level gesture is now
@@ -459,12 +362,12 @@ struct RollRevealView: View {
                 .foregroundStyle(accent)
             Text(rollName)
                 .font(.system(size: 24, weight: .light)).foregroundStyle(.white)
-            Text("\(deck.count) shot\(deck.count == 1 ? "" : "s") · developed together")
+            Text("\(viewModel.deck.count) shot\(viewModel.deck.count == 1 ? "" : "s") · developed together")
                 .font(.system(size: 14)).foregroundStyle(Color(white: 0.6))
 
             // The communal signal: where you land in the group's reveal, so it feels shared even
             // though everyone opens at their own time.
-            if let presence {
+            if let presence = viewModel.presence {
                 Label(presenceText(presence), systemImage: presence.position == 1 ? "sparkles" : "person.2.fill")
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(accent)
@@ -491,75 +394,40 @@ struct RollRevealView: View {
             // whole roll; "keep these" is the feeling, and making someone go find it is how the
             // feeling gets lost. Nearly free here: every frame was fetched to be shown, so this
             // is reading the cache the slideshow just filled.
-            if !deck.isEmpty {
+            if !viewModel.deck.isEmpty {
                 Button {
-                    saveAll()
+                    viewModel.saveAll()
                 } label: {
                     HStack(spacing: 7) {
-                        if savingAll {
+                        if viewModel.savingAll {
                             ProgressView().tint(Color(white: 0.7)).controlSize(.small)
                         } else {
                             Image(systemName: "square.and.arrow.down").font(.system(size: 13))
                         }
-                        Text(savingAll ? "Getting them ready" : "Save all to Camera Roll")
+                        Text(viewModel.savingAll ? "Getting them ready" : "Save all to Camera Roll")
                             .font(.system(size: 14, weight: .medium))
                     }
                     .foregroundStyle(Color(white: 0.7))
                 }
-                .disabled(savingAll)
+                .disabled(viewModel.savingAll)
                 .padding(.top, 4)
             }
         }
         .transition(.opacity)
-        .sheet(isPresented: $showShareAll) { ActivityView(items: shareImages) }
-        .alert("Save all", isPresented: Binding(get: { saveAllError != nil },
-                                                set: { if !$0 { saveAllError = nil } })) {
+        .sheet(isPresented: Binding(get: { viewModel.showShareAll },
+                                    set: { viewModel.showShareAll = $0 })) {
+            ActivityView(items: viewModel.shareImages)
+        }
+        .alert("Save all", isPresented: Binding(get: { viewModel.saveAllError != nil },
+                                                set: { if !$0 { viewModel.saveAllError = nil } })) {
             Button("OK", role: .cancel) {
-                if shareAfterAlert {
-                    shareAfterAlert = false
-                    showShareAll = true
+                if viewModel.shareAfterAlert {
+                    viewModel.shareAfterAlert = false
+                    viewModel.showShareAll = true
                 }
             }
         } message: {
-            Text(saveAllError ?? "")
-        }
-    }
-
-    /// Collects every frame in the roll and hands them to the share sheet.
-    ///
-    /// Reads through `ImageLoader`, which means the frames already shown come straight from cache
-    /// and only a skipped tail costs anything.
-    private func saveAll() {
-        guard !savingAll else { return }
-        savingAll = true
-        saveAllError = nil
-        shareAfterAlert = false
-        Haptics.tap()
-        Task {
-            // Same streaming export as the roll's own Save all, for the same reason: a reveal can
-            // be a 75-shot roll, and collecting that as UIImages is a jetsam kill. See PhotoExport.
-            let exportDir = PhotoExport.begin()
-            var images: [URL] = []
-            for (i, photo) in deck.enumerated() {
-                guard let url = urls[photo.viewPath] else { continue }
-                if let file = await PhotoExport.download(url, into: exportDir, index: i, total: deck.count) {
-                    images.append(file)
-                }
-            }
-            shareImages = images
-            savingAll = false
-            if images.isEmpty {
-                // Silence here is indistinguishable from a broken button.
-                Haptics.error()
-                saveAllError = "Couldn't load the photos. Check your connection and try again."
-            } else {
-                if images.count < deck.count {
-                    saveAllError = "Only \(images.count) of \(deck.count) photos could be loaded. Saving those now."
-                    shareAfterAlert = true
-                } else {
-                    showShareAll = true
-                }
-            }
+            Text(viewModel.saveAllError ?? "")
         }
     }
 
@@ -587,69 +455,6 @@ struct RollRevealView: View {
             .padding(.top, 12)
         }
         .transition(.opacity)
-    }
-
-    /// Re-fetches the roll's CURRENT photos so a shot deleted after the caller's own fetch (but
-    /// before this reveal opened) never enters the deck, then resolves signed URLs and starts
-    /// playback. Falls back to the photos we were handed if the re-fetch itself fails (e.g.
-    /// offline), an empty deck should mean "everything was deleted", not "the network hiccuped".
-    ///
-    /// The deck is built from `fresh`, not `photos`: `photos` is `RollDetailView`'s paginated
-    /// `vm.developedPhotos`, capped at PhotoService's 30-photo page size until the grid has been
-    /// scrolled far enough to load more. `fetchRollPhotosSnapshot` has no such cap, it's the
-    /// roll's complete current row set, so a roll of 60+ shots showed only the ~30 loaded so
-    /// far ("roll is done" summary reading 30 when the roll actually held 60+) back when this
-    /// intersected `fresh` against the truncated `photos` instead of using `fresh` directly.
-    private func loadDeck() async {
-        do {
-            let fresh = try await photoService.fetchRollPhotosSnapshot(rollId: rollId)
-            deck = fresh.sorted { $0.takenAt < $1.takenAt }
-        } catch {
-            deck = photos
-        }
-        guard !deck.isEmpty else {
-            isEmpty = true
-            deckReady = true
-            beginIfReady()
-            return
-        }
-        // Sign the display paths AND the thumbnails in one batched call, so the progressive first
-        // frame below costs no extra round trip.
-        async let signed = photoService.signedURLs(for: deck.map(\.viewPath) + deck.compactMap(\.thumbPath))
-        // Reactions don't gate the first frame, so they no longer sit in front of it. This used to
-        // be a third sequential round trip before anything could be drawn.
-        async let reactions = photoService.fetchReactions(photoIds: deck.map(\.id))
-        urls = await signed
-        reactionsByPhoto = await reactions
-
-        // Warm the FIRST print before starting the show, but warm the cheap one.
-        //
-        // `develop()` opens at blur radius 26 and takes 1.4s to resolve. At that blur a ~30KB
-        // thumbnail and the full rendition are indistinguishable, and the thumbnail is usually
-        // already in cache from the roll grid the viewer just came from, so this typically
-        // returns instantly and the reveal starts on a real photograph instead of a spinner.
-        //
-        // No cacheKey on any of these, matching what the CachedImage above asks for; a different
-        // key would warm an entry the view never looks for.
-        if let first = deck.first {
-            if let thumbPath = first.thumbPath, let thumbURL = urls[thumbPath] {
-                _ = await ImageLoader.fetch(url: thumbURL, maxPixel: 400, scale: displayScale)
-            } else if let url = urls[first.viewPath] {
-                // No thumbnail (an older photo, or a rendition upload that failed): fall back to
-                // waiting on the full image, which is the old behaviour rather than a blank frame.
-                _ = await ImageLoader.fetch(url: url, maxPixel: 1600, scale: displayScale)
-            }
-        }
-        // Full renditions warm in the background, the first one included: it has the develop
-        // animation to arrive in, and only has to beat the blur clearing, not the frame appearing.
-        // Bounded to a sliding window, see prefetchAhead.
-        prefetchAhead(from: 0)
-        // Record that we opened it and learn the group's progress, shown on the summary card.
-        if let uid = auth.currentUser?.id {
-            presence = await rollService.recordRevealView(rollId: rollId, userId: uid)
-        }
-        deckReady = true
-        beginIfReady()
     }
 
     // MARK: - Opening card
@@ -683,12 +488,12 @@ struct RollRevealView: View {
                 .frame(width: 44, height: 1)
                 .padding(.top, 20)
 
-            Text(cover.metaLine)
+            Text(viewModel.cover.metaLine)
                 .font(.system(size: 15, weight: .medium))
                 .foregroundStyle(Color(white: 0.82))
                 .padding(.top, 20)
 
-            if let dateLine = cover.dateLine() {
+            if let dateLine = viewModel.cover.dateLine() {
                 Text(dateLine)
                     .font(.system(size: 13))
                     .foregroundStyle(Color(white: 0.45))
@@ -705,20 +510,13 @@ struct RollRevealView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .contentShape(Rectangle())
         .onTapGesture {
-            viewerTappedCover = true
-            beginIfReady()
+            viewModel.tapCover()
         }
         .transition(.opacity)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(rollName). \(cover.metaLine). \(cover.dateLine() ?? "") Tap to begin.")
+        .accessibilityLabel("\(rollName). \(viewModel.cover.metaLine). \(viewModel.cover.dateLine() ?? "") Tap to begin.")
         .task {
-            coverAppearedAt = .now
-            // The chime belongs here, at the moment the reveal becomes an event, not three
-            // network round trips later when the first frame happens to be ready.
-            SoundFX.reveal()
-            try? await Task.sleep(for: .seconds(RevealCover.holdDuration))
-            beatElapsed = true
-            beginIfReady()
+            await viewModel.startCoverBeat()
         }
     }
 
@@ -736,93 +534,10 @@ struct RollRevealView: View {
         .accessibilityHidden(true)
     }
 
-    /// Recomputed per body evaluation, which is cheap here because the card's body runs on state
-    /// changes, not on the progress line's 30Hz timeline (that reads `coverAppearedAt`, not this).
-    /// Falls back to the caller's photos until the fresh deck lands, which is what lets the card
-    /// render before any network work.
-    private var cover: RevealCover { RevealCover(photos: deck.isEmpty ? photos : deck) }
-
     private func coverFill(at date: Date) -> CGFloat {
-        guard let started = coverAppearedAt else { return 0 }
+        guard let started = viewModel.coverAppearedAt else { return 0 }
         let elapsed = date.timeIntervalSince(started)
         return min(1, max(0, elapsed / RevealCover.holdDuration))
-    }
-
-    /// Starts the show once the deck is there and the beat has been served or skipped.
-    ///
-    /// Called from three places (the beat timer, a tap, and the deck finishing) because any of
-    /// them can be last, and the guard makes the other two harmless.
-    private func beginIfReady() {
-        guard showCover,
-              RevealCover.canBegin(deckReady: deckReady,
-                                   beatElapsed: beatElapsed,
-                                   viewerTapped: viewerTappedCover)
-        else { return }
-        withAnimation(.easeOut(duration: reduceMotion ? 0 : 0.45)) { showCover = false }
-        guard !isEmpty else { return }
-        develop()
-    }
-
-    /// Runs the develop animation for the current photo, then auto-advances, unless you've
-    /// engaged with this shot (started reacting), in which case it waits for you to step forward.
-    private func develop() {
-        developed = false
-        engaged = false
-        paused = false
-        pausedRemaining = currentSlideDuration
-        // Per-photo, like everything above it: a zoom left over from the previous slide would be
-        // applied to a shot nobody pinched.
-        revealZoom = 1
-        zoomAnchor = .center
-        pinchStart = nil
-        withAnimation(.easeOut(duration: reduceMotion ? 0 : RevealPacing.developDuration)) { developed = true }
-        armAdvance(after: currentSlideDuration)
-    }
-
-    private func step(_ delta: Int) {
-        Haptics.tap()
-        let next = index + delta
-        if next >= deck.count {
-            finish()
-        } else if next >= 0 {
-            index = next
-            prefetchAhead(from: next)
-            develop()
-        }
-    }
-
-    /// Warms a bounded window of upcoming slides instead of the whole deck.
-    ///
-    /// Already-cached entries are cheap no-ops in ImageLoader, so re-calling this on every step
-    /// costs nothing and keeps the runway ahead of the viewer however they move through the roll.
-    private func prefetchAhead(from index: Int) {
-        let range = RevealPacing.prefetchRange(from: index, count: deck.count)
-        let items: [(url: URL, cacheKey: String?)] = deck[range].compactMap { photo in
-            urls[photo.viewPath].map { (url: $0, cacheKey: nil) }
-        }
-        ImageLoader.prefetch(items, maxPixel: 1600, scale: displayScale)
-    }
-
-    /// The current frame's image failed to load (deleted between fetch and play, or any other
-    /// load failure), drop it and move straight to the next one. No dead frame, no stall on
-    /// the auto-advance timer.
-    private func skipDeadFrame(_ photoId: UUID) {
-        guard let deadIndex = deck.firstIndex(where: { $0.id == photoId }) else { return }
-        advanceTask?.cancel()
-        deck.remove(at: deadIndex)
-        guard !deck.isEmpty else {
-            isEmpty = true
-            deckReady = true
-            beginIfReady()
-            return
-        }
-        if index >= deck.count { index = deck.count - 1 }
-        develop()
-    }
-
-    private func finish() {
-        advanceTask?.cancel()
-        withAnimation(.easeInOut(duration: 0.3)) { showSummary = true }
     }
 }
 

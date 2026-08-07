@@ -58,7 +58,7 @@ struct OTPView: View {
                     if !digits.isEmpty { code = digits }
                 } label: {
                     Label("Paste code", systemImage: "doc.on.clipboard")
-                        .font(.system(size: 13, weight: .medium))
+                        .flimFont(13, weight: .medium)
                         .foregroundStyle(Color(white: 0.6))
                 }
                 .padding(.top, 16)

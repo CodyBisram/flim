@@ -118,7 +118,7 @@ struct ReactionBar: View {
 
                 ForEach(pickerEmojis, id: \.self) { emoji in
                     Button { pick(emoji) } label: {
-                        Text(emoji).font(.system(size: 26)).padding(6)
+                        Text(emoji).flimFont(26).padding(6)
                             .background(mine.contains(emoji) ? accent.opacity(0.28) : .clear, in: Circle())
                     }
                 }
@@ -163,7 +163,7 @@ struct ReactionBar: View {
         let isMine = mine.contains(emoji)
         return Button { react(emoji) } label: {
             HStack(spacing: 4) {
-                Text(emoji).font(.system(size: 16))
+                Text(emoji).flimFont(16)
                 if count > 0 {
                     Text("\(count)")
                         .flimFont(13, weight: .semibold, relativeTo: .footnote)

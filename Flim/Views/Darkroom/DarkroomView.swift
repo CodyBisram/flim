@@ -65,7 +65,7 @@ struct DarkroomView: View {
                             Spacer()
                             Image(systemName: "chevron.right").font(.system(size: 12))
                         }
-                        .font(.system(size: 14, weight: .semibold))
+                        .flimFont(14, weight: .semibold)
                         .foregroundStyle(accent)
                         .padding(.horizontal, 16).padding(.vertical, 12)
                         .background(accent.opacity(0.16), in: RoundedRectangle(cornerRadius: 12))
@@ -134,7 +134,7 @@ struct DarkroomView: View {
                     Button { showSortDeck = true } label: {
                         HStack(spacing: 4) {
                             Image(systemName: "square.stack.3d.up.fill").font(.system(size: 11))
-                            Text("\(unsortedCount)").font(.system(size: 13, weight: .semibold))
+                            Text("\(unsortedCount)").flimFont(13, weight: .semibold)
                         }
                         .foregroundStyle(.black)
                         .padding(.horizontal, 10).padding(.vertical, 5)
@@ -145,7 +145,7 @@ struct DarkroomView: View {
             } else if let total = vm.totalCount, total > 0 {
                 ToolbarItem(placement: .topBarTrailing) {
                     Text("\(total) shot\(total == 1 ? "" : "s")")
-                        .font(.system(size: 13, weight: .medium))
+                        .flimFont(13, weight: .medium)
                         .foregroundStyle(FlimTheme.textTertiary)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 5)
@@ -156,7 +156,7 @@ struct DarkroomView: View {
             if isSelecting {
                 Button(role: .destructive) { deleteSelected() } label: {
                     Text(selectedIDs.isEmpty ? "Select photos to delete" : "Delete \(selectedIDs.count)")
-                        .font(.system(size: 15, weight: .semibold))
+                        .flimFont(15, weight: .semibold)
                         .foregroundStyle(selectedIDs.isEmpty ? FlimTheme.textTertiary : .white)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 14)
@@ -173,9 +173,9 @@ struct DarkroomView: View {
             if showUndoToast {
                 HStack(spacing: 14) {
                     Text("Deleted \(pendingDelete.count) photo\(pendingDelete.count == 1 ? "" : "s")")
-                        .font(.system(size: 14)).foregroundStyle(.white)
+                        .flimFont(14).foregroundStyle(.white)
                     Button("Undo") { undoDelete() }
-                        .font(.system(size: 14, weight: .semibold))
+                        .flimFont(14, weight: .semibold)
                         .foregroundStyle(accent)
                 }
                 .padding(.horizontal, 18).padding(.vertical, 12)
@@ -243,7 +243,7 @@ struct DarkroomView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text("\(vm.developingPhotos.count) DEVELOPING")
-                    .font(.system(size: 11, weight: .medium))
+                    .flimFont(11, weight: .medium)
                     .tracking(2)
                     .foregroundStyle(Color(white: 0.4))
                 Spacer()
@@ -423,7 +423,7 @@ struct DarkroomView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text("DEVELOPED")
-                    .font(.system(size: 11, weight: .medium))
+                    .flimFont(11, weight: .medium)
                     .tracking(2)
                     .foregroundStyle(Color(white: 0.4))
                 Spacer()
@@ -465,10 +465,10 @@ struct DarkroomView: View {
                 .font(.system(size: 40, weight: .ultraLight))
                 .foregroundStyle(accent.opacity(0.8))
             Text("Your darkroom's empty.")
-                .font(.system(size: 17, weight: .light))
+                .flimFont(17, weight: .light)
                 .foregroundStyle(FlimTheme.textSecondary)
             Text("Head to the camera and take your first shot. Sort it here, then keep it or share it.")
-                .font(.system(size: 13))
+                .flimFont(13)
                 .foregroundStyle(FlimTheme.textTertiary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 40)
@@ -476,7 +476,7 @@ struct DarkroomView: View {
                 NotificationCenter.default.post(name: .openCamera, object: nil)
             } label: {
                 Label("Take a shot", systemImage: "camera.aperture")
-                    .font(.system(size: 14, weight: .semibold))
+                    .flimFont(14, weight: .semibold)
                     .foregroundStyle(.black)
                     .padding(.horizontal, 20).padding(.vertical, 11)
                     .background(accent, in: Capsule())
@@ -538,10 +538,10 @@ struct DarkroomView: View {
 
                 VStack(spacing: 6) {
                     Text("Your photos are ready")
-                        .font(.system(size: 27, weight: .thin))
+                        .flimFont(27, weight: .thin)
                         .foregroundStyle(.white)
                     Text("\(revealCount) new \(revealCount == 1 ? "shot" : "shots") developed")
-                        .font(.system(size: 14))
+                        .flimFont(14)
                         .foregroundStyle(FlimTheme.textSecondary)
                 }
                 .opacity(revealAnim ? 1 : 0)
@@ -549,7 +549,7 @@ struct DarkroomView: View {
 
                 Button { dismissReveal() } label: {
                     Text("See them")
-                        .font(.system(size: 16, weight: .semibold))
+                        .flimFont(16, weight: .semibold)
                         .foregroundStyle(.black)
                         .padding(.horizontal, 34).padding(.vertical, 14)
                         .background(accent, in: Capsule())

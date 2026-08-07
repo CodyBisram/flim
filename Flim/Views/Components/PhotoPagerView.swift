@@ -143,7 +143,7 @@ struct PhotoPagerView: View {
         .overlay(alignment: .top) {
             if showSharedToast {
                 Label("Shared to your page", systemImage: "checkmark.circle.fill")
-                    .font(.system(size: 14, weight: .semibold))
+                    .flimFont(14, weight: .semibold)
                     .foregroundStyle(.white)
                     .padding(.horizontal, 18)
                     .padding(.vertical, 11)
@@ -329,7 +329,7 @@ struct PhotoPagerView: View {
                     Button { shareToPage(photo) } label: {
                         Label(shared ? "Shared to your page" : "Share to your page",
                               systemImage: shared ? "checkmark.circle.fill" : "square.and.arrow.up")
-                            .font(.system(size: 15, weight: .semibold))
+                            .flimFont(15, weight: .semibold)
                             .foregroundStyle(shared ? .white : .black)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 14)
@@ -348,7 +348,7 @@ struct PhotoPagerView: View {
                 HStack(spacing: 6) {
                     Image(systemName: "person.crop.circle.badge.plus").font(.system(size: 14))
                     Text(pendingTags.isEmpty ? "Tag people" : "\(pendingTags.count) tagged")
-                        .font(.system(size: 14))
+                        .flimFont(14)
                     Spacer()
                     Image(systemName: "chevron.right").font(.system(size: 11)).foregroundStyle(.white.opacity(0.4))
                 }
@@ -361,7 +361,7 @@ struct PhotoPagerView: View {
                 TextField("Add a caption…", text: $shareCaptionDraft, axis: .vertical)
                     .lineLimit(1...3)
                     .focused($captionFocused)
-                    .font(.system(size: 15))
+                    .flimFont(15)
                     .foregroundStyle(.white)
                     .tint(accent)
                     .padding(.horizontal, 14)
@@ -371,11 +371,11 @@ struct PhotoPagerView: View {
                     showShareComposer = false
                     captionFocused = false
                 } label: {
-                    Text("Cancel").font(.system(size: 13)).foregroundStyle(.white.opacity(0.6))
+                    Text("Cancel").flimFont(13).foregroundStyle(.white.opacity(0.6))
                 }
                 Button { confirmShare() } label: {
                     Text("Share")
-                        .font(.system(size: 14, weight: .semibold))
+                        .flimFont(14, weight: .semibold)
                         .foregroundStyle(.black)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 9)
@@ -500,7 +500,7 @@ struct PhotoPagerView: View {
                     .accessibilityHint("Opens @\(name)'s profile")
                 }
                 Text(photo.takenAt.formatted(date: .abbreviated, time: .shortened))
-                    .font(.system(size: 12, weight: .medium)).foregroundStyle(Color(white: 0.68))
+                    .flimFont(12, weight: .medium).foregroundStyle(Color(white: 0.68))
             }
         }
         .opacity(scale > 1 ? 0 : 1)
