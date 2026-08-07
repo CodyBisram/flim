@@ -22,6 +22,16 @@ enum RemotePush {
     /// without waiting for another registration callback that may never come.
     private static let tokenKey = "apnsDeviceToken"
 
+    /// A token `unregisterCurrentDevice()` couldn't confirm was detached, persisted so a later
+    /// chance to finish the job isn't lost when the app quits before it can retry in-process.
+    private static let pendingDetachTokenKey = "apnsPendingDetachToken"
+    /// The account `pendingDetachTokenKey` belongs to. `device_tokens` is keyed on the token
+    /// alone, so without this a retry would have no way to tell "the account this was meant to
+    /// detach happens to be signed in again" from "some other account is signed in now", and
+    /// firing a delete in the second case would take down a DIFFERENT account's live push
+    /// registration.
+    private static let pendingDetachOwnerKey = "apnsPendingDetachOwner"
+
     /// Ask iOS for an APNs device token. Safe to call repeatedly; iOS dedupes.
     @MainActor
     static func register() {
@@ -48,6 +58,7 @@ enum RemotePush {
     /// Signing in does not make iOS hand us a new token, so without this the device
     /// would stay registered to the previous account until iOS next rotated it.
     static func reclaimForCurrentAccount() async {
+        await retryPendingDetach()
         guard let hex = UserDefaults.standard.string(forKey: tokenKey) else { return }
         await claim(hex)
     }
@@ -66,12 +77,62 @@ enum RemotePush {
     /// still has it, and the next sign-in needs it to re-claim.
     static func unregisterCurrentDevice() async {
         guard let hex = UserDefaults.standard.string(forKey: tokenKey) else { return }
-        guard (try? await supabase.auth.session) != nil else { return }
-        _ = try? await supabase
-            .from("device_tokens")
-            .delete()
-            .eq("token", value: hex)
-            .execute()
+        guard let session = try? await supabase.auth.session else { return }
+        do {
+            try await supabase
+                .from("device_tokens")
+                .delete()
+                .eq("token", value: hex)
+                .execute()
+            clearPendingDetach()
+        } catch {
+            // A device that's still attached to a departed account keeps receiving its pushes,
+            // roll content included, on a phone nobody is signed into: a privacy leak, not just
+            // staleness, so a swallowed failure here can't just be left for the next unrelated
+            // fetch to maybe fix. This function is called immediately before the caller signs
+            // the session out, so that session (the only thing that can delete this row) is
+            // about to be gone. Persisted the same way CrashReporter persists a diagnostic that
+            // failed to upload: nothing else is ever going to come back and ask about this one,
+            // so the next chance has to be able to find it on disk.
+            UserDefaults.standard.set(hex, forKey: pendingDetachTokenKey)
+            UserDefaults.standard.set(session.user.id.uuidString, forKey: pendingDetachOwnerKey)
+        }
+    }
+
+    private static func clearPendingDetach() {
+        UserDefaults.standard.removeObject(forKey: pendingDetachTokenKey)
+        UserDefaults.standard.removeObject(forKey: pendingDetachOwnerKey)
+    }
+
+    /// Finishes a detach `unregisterCurrentDevice()` couldn't confirm landed, the next time this
+    /// device has a session at all: reached from `reclaimForCurrentAccount()`, which runs on
+    /// every account resolution, the same "next launch" reach `claim` itself already relies on.
+    ///
+    /// Only acts when the CURRENT session belongs to the account the marker names. If some other
+    /// account is signed in now, this session has no row of the departed account's to touch
+    /// (`device_tokens`' "own tokens" policy would refuse it) and, more to the point, doesn't
+    /// need to: `claim(_:)`, called right after this in `reclaimForCurrentAccount`, already
+    /// reassigns this token away from whoever held it via `register_device_token`'s own
+    /// cross-account delete, which is what actually closes the leak in that case. Comparing the
+    /// account here is what stops this from ever attempting the OTHER thing that phrase could
+    /// mean: firing a delete under whatever session happens to be active, which would be a
+    /// second privacy bug wearing the fix for the first one.
+    private static func retryPendingDetach() async {
+        guard let hex = UserDefaults.standard.string(forKey: pendingDetachTokenKey),
+              let ownerId = UserDefaults.standard.string(forKey: pendingDetachOwnerKey),
+              let session = try? await supabase.auth.session,
+              session.user.id.uuidString == ownerId
+        else { return }
+        do {
+            try await supabase
+                .from("device_tokens")
+                .delete()
+                .eq("token", value: hex)
+                .execute()
+            clearPendingDetach()
+        } catch {
+            // Left in place; tried again the next time this account's session shows up here.
+        }
     }
 }
 

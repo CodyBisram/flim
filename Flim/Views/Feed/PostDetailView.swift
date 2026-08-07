@@ -40,6 +40,8 @@ struct PostDetailView: View {
     @State private var showBlockConfirm = false
     @State private var showDeleteConfirm = false
     @State private var reportedToast = false
+    /// Separate from `reportedToast` rather than an enum: mirrors FeedView's toast shape.
+    @State private var reportFailedToast = false
     @State private var route: ProfileRoute?
     @State private var showEditTags = false
     @State private var editingTags: [PendingTag] = []
@@ -163,6 +165,12 @@ struct PostDetailView: View {
                     .padding(.horizontal, 16).padding(.vertical, 10)
                     .background(.ultraThinMaterial, in: Capsule())
                     .transition(.move(edge: .top).combined(with: .opacity))
+            } else if reportFailedToast {
+                Label("Couldn't report. Try again.", systemImage: "exclamationmark.triangle.fill")
+                    .font(.system(size: 13, weight: .medium)).foregroundStyle(.white)
+                    .padding(.horizontal, 16).padding(.vertical, 10)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
         .sheet(item: $shareItem) { SharePreviewSheet(photo: $0.image) }
@@ -183,10 +191,17 @@ struct PostDetailView: View {
         .confirmationDialog("Report this photo?", isPresented: $showReportConfirm, titleVisibility: .visible) {
             Button("Report", role: .destructive) {
                 guard let uid = auth.currentUser?.id else { return }
-                Haptics.success()   // the report went through, matching the toast
-                Task { await feed.reportPost(post, from: uid) }
-                withAnimation { reportedToast = true }
-                Task { try? await Task.sleep(for: .seconds(2)); withAnimation { reportedToast = false } }
+                Task {
+                    if await feed.reportPost(post, from: uid) {
+                        Haptics.success()   // the report went through, matching the toast
+                        withAnimation { reportedToast = true }
+                        try? await Task.sleep(for: .seconds(2)); withAnimation { reportedToast = false }
+                    } else {
+                        Haptics.error()
+                        withAnimation { reportFailedToast = true }
+                        try? await Task.sleep(for: .seconds(2)); withAnimation { reportFailedToast = false }
+                    }
+                }
             }
             Button("Cancel", role: .cancel) {}
         } message: {
@@ -198,6 +213,10 @@ struct PostDetailView: View {
                 Haptics.warning()
                 Task {
                     await feed.block(post.userId, from: uid)
+                    // `feed.block` rolls its optimistic state back on a failed write, so only
+                    // leave the post (and this screen) once the block actually landed, rather
+                    // than dismissing on a block that didn't take.
+                    guard feed.isBlocked(post.userId) else { return }
                     feed.feed.removeAll { $0.author.id == post.userId }
                     dismiss()
                 }

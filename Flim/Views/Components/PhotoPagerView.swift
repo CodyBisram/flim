@@ -188,9 +188,15 @@ struct PhotoPagerView: View {
             Button("Report", role: .destructive) {
                 guard let photo = current else { return }
                 Task {
-                    await photoService.reportPhoto(photo)
-                    reportedIds.insert(photo.id)
-                    Haptics.success()   // the report went through, matching the toast
+                    // Only mark it reported (which disables the flag button below) once the
+                    // write actually lands, a failed report used to look identical to a
+                    // successful one and there was no way left to retry it.
+                    if await photoService.reportPhoto(photo) {
+                        reportedIds.insert(photo.id)
+                        Haptics.success()
+                    } else {
+                        Haptics.error()
+                    }
                 }
             }
             Button("Cancel", role: .cancel) {}

@@ -4,9 +4,39 @@ import Observation
 import SwiftUI
 import os
 
+/// Main-actor isolated, like `PhotoService` and `DarkroomViewModel`.
+///
+/// This was the one `@Observable` view model left with no class-level isolation: only
+/// `start()`, `capturePhoto()` and `startCaptureWatchdog` were individually marked `@MainActor`,
+/// which left `focus(atDevicePoint:viewPoint:)` and the `AVCapturePhotoCaptureDelegate` callbacks
+/// free to write tracked `@Observable` properties (`focusReticle`, `flashOpacity`, `isCapturing`,
+/// `capturedData`) from whatever thread AVFoundation happened to call back on. `focus(...)`'s own
+/// `Task { ... }` resumed on an arbitrary executor after its sleep and wrote `focusReticle` there;
+/// `photoOutput(_:willCapturePhotoFor:)` read `isFront`/`flashMode` synchronously on AVFoundation's
+/// delegate queue, one line above its own documented `@MainActor` hop. That is the same bug class
+/// as the crash written up at the top of `DarkroomViewModel.swift`: a background thread mutating
+/// state SwiftUI is reading on the main thread inside `libswiftObservation`.
+///
+/// Isolating the whole type makes the compiler enforce the hop instead of trusting every call site
+/// to remember it. The genuinely off-main entry point is the `AVCapturePhotoCaptureDelegate`
+/// conformance below, which AVFoundation invokes on its own queue, not main, those methods are
+/// `nonisolated`, with an explicit hop where they need tracked state. `startRunning()`/
+/// `stopRunning()` stay main-actor isolated like everything else here; they already hand the
+/// actual blocking `session.startRunning()`/`stopRunning()` call to a detached task rather than
+/// running it themselves, so being called from the main actor costs nothing more than kicking that
+/// task off. `previewAspectRatio` stays `nonisolated` too: it is deliberately lock-protected,
+/// written from the preview view's own main-thread layout pass and read from the capture
+/// delegate's queue, and that cross-thread contract predates this change and is unrelated to
+/// `@Observable` tracking.
+@MainActor
 @Observable
 final class CameraViewModel: NSObject {
-    let session = AVCaptureSession()
+    /// `nonisolated` because `startRunning()`/`stopRunning()` call into it from a detached task
+    /// (session start/stop are blocking calls that must never run on the main actor), and the
+    /// capture delegate callbacks below reference it off-main too. `AVCaptureSession` manages its
+    /// own internal synchronization for this kind of use; nothing here reassigns the reference
+    /// after `init`, so the only thing crossing actors is the sharing of that one fixed instance.
+    nonisolated let session = AVCaptureSession()
     private let output = AVCapturePhotoOutput()
     /// Face detection, purely to draw the viewfinder's focus rectangles. Nothing about capture or
     /// the film look reads this.
@@ -52,16 +82,19 @@ final class CameraViewModel: NSObject {
     ///, this file already documents elsewhere that delegate callbacks arrive off-main (see
     /// the flash-overlay handling above), so this cross-thread value needs the same kind of
     /// synchronization, unlike the plain properties above that are only ever mutated from
-    /// inside a `Task { @MainActor in ... }` hop.
-    private let previewAspectRatioLock = OSAllocatedUnfairLock<CGFloat?>(initialState: nil)
+    /// inside a `Task { @MainActor in ... }` hop. `nonisolated` for the same reason: the lock,
+    /// not the main actor, is what makes this one safe to touch from either side.
+    nonisolated private let previewAspectRatioLock = OSAllocatedUnfairLock<CGFloat?>(initialState: nil)
 
     /// Live aspect ratio (width / height) the boxed (3:4) `.resizeAspectFill` viewfinder is
     /// actually showing on screen right now, pushed up from `CameraPreview`'s real view
     /// bounds every layout pass (mirrors how `excludedRegions` is threaded from the view
     /// layer, rather than sourced from a `UIScreen` constant). `nil` until the preview has
-    /// laid out at least once. Used to crop the captured photo down to what was framed, 
-    /// see `photoOutput(_:didFinishProcessingPhoto:error:)`.
-    var previewAspectRatio: CGFloat? {
+    /// laid out at least once. Used to crop the captured photo down to what was framed,
+    /// see `photoOutput(_:didFinishProcessingPhoto:error:)`. Deliberately NOT `@Observable`-
+    /// tracked in the way that matters here, since it is written and read from off-main threads
+    /// (this class's own main-actor isolation does not apply to it, see the lock above).
+    nonisolated var previewAspectRatio: CGFloat? {
         get { previewAspectRatioLock.withLock { $0 } }
         set { previewAspectRatioLock.withLock { $0 = newValue } }
     }
@@ -365,7 +398,15 @@ final class CameraViewModel: NSObject {
         }
         let reticle = FocusReticle(point: viewPoint)
         focusReticle = reticle
-        Task { try? await Task.sleep(for: .seconds(1)); if focusReticle?.id == reticle.id { focusReticle = nil } }
+        // `focus(...)` is main-actor isolated (the whole type is now), and a plain `Task { }`
+        // inherits the actor of the context that creates it, so this already resumes on the
+        // main actor after the sleep. Spelled out explicitly anyway: this exact spot used to be
+        // the one place a stray Task wrote `focusReticle`, an @Observable tracked property SwiftUI
+        // reads in `body`, from whatever arbitrary executor it happened to resume on.
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(1))
+            if focusReticle?.id == reticle.id { focusReticle = nil }
+        }
         observeSubjectAreaChange()
     }
 
@@ -520,9 +561,14 @@ final class CameraViewModel: NSObject {
 // MARK: - AVCapturePhotoCaptureDelegate
 
 extension CameraViewModel: AVCapturePhotoCaptureDelegate {
+    /// `nonisolated`: AVFoundation calls the capture delegate back on its own queue, not main
+    /// (no delegate queue was given to `output.capturePhoto(with:delegate:)`), so this cannot be
+    /// main-actor isolated the way the rest of the type now is. Every write of tracked
+    /// `@Observable` state below hops through `Task { @MainActor in ... }` instead.
+    ///
     /// Fires right as the real exposure begins (after AE/AF + any preflash metering), this is
     /// the correct moment for a flash-adjacent overlay, not the shutter tap.
-    func photoOutput(
+    nonisolated func photoOutput(
         _ output: AVCapturePhotoOutput,
         willCapturePhotoFor resolvedSettings: AVCaptureResolvedPhotoSettings
     ) {
@@ -534,9 +580,13 @@ extension CameraViewModel: AVCapturePhotoCaptureDelegate {
         // Front camera has no LED, so an explicit "flash on" there means screen-as-flash: brighten
         // the display itself in place of hardware flash, timed to the real exposure. Every other
         // no-flash shot (front or rear) keeps a subtle blink so the shutter still feels responsive.
-        // Delegate callbacks arrive on AVFoundation's queue, not main, hop before touching UI state.
-        let opacity: Double = (isFront && flashMode == .on) ? 1 : 0.35
+        // `isFront` and `flashMode` are main-actor isolated, like the rest of this type, so they
+        // are read INSIDE the hop below, not out here on AVFoundation's delegate queue. Reading
+        // them here used to race whatever main-actor code was mutating them at the same instant
+        // (a flip-camera or flash-toggle tap), one line above the hop that this file's own
+        // comment already said every other write on this delegate goes through.
         Task { @MainActor in
+            let opacity: Double = (self.isFront && self.flashMode == .on) ? 1 : 0.35
             self.isExposing = true
             self.flashOpacity = opacity
         }
@@ -544,7 +594,7 @@ extension CameraViewModel: AVCapturePhotoCaptureDelegate {
 
     /// Fires once the exposure itself is finished, fade the overlay out here so its length always
     /// tracks the real capture instead of a timer guessed at tap time.
-    func photoOutput(
+    nonisolated func photoOutput(
         _ output: AVCapturePhotoOutput,
         didCapturePhotoFor resolvedSettings: AVCaptureResolvedPhotoSettings
     ) {
@@ -555,7 +605,7 @@ extension CameraViewModel: AVCapturePhotoCaptureDelegate {
         }
     }
 
-    func photoOutput(
+    nonisolated func photoOutput(
         _ output: AVCapturePhotoOutput,
         didFinishProcessingPhoto photo: AVCapturePhoto,
         error: Error?

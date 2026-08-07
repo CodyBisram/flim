@@ -267,20 +267,47 @@ final class FeedService {
 
     func isBlocked(_ id: UUID) -> Bool { blockedIds.contains(id) }
 
+    /// Blocking is harassment prevention, so a block that only APPEARS to take is the worst
+    /// direction for this to fail: the optimistic insert used to be left in place no matter what
+    /// the server said, and `loadBlocked()`'s next refetch would silently drop it, un-blocking
+    /// someone with nothing on screen ever having said so. Mirrors `follow`'s do/catch/rollback
+    /// shape below, plus `reactToPost`'s `Haptics.error()` on a failed write, since there's no
+    /// button here whose own state reverting would tell the story on its own.
     func block(_ targetId: UUID, from userId: UUID) async {
         struct B: Encodable { let blocker_id: UUID; let blocked_id: UUID }
-        blockedIds.insert(targetId)
-        _ = try? await supabase.from("blocks").insert(B(blocker_id: userId, blocked_id: targetId)).execute()
+        blockedIds.insert(targetId)   // optimistic
+        do {
+            try await supabase.from("blocks").insert(B(blocker_id: userId, blocked_id: targetId)).execute()
+        } catch let error as PostgrestError where error.code == "23505" {
+            // blocks' PK is (blocker_id, blocked_id): a duplicate insert means the block already
+            // exists server-side, so the desired end state already holds. Same reasoning as
+            // `follow`'s 23505 case.
+        } catch {
+            // The insert never landed, put it back exactly where it started rather than let the
+            // person believe someone is blocked who isn't.
+            blockedIds.remove(targetId)
+            Haptics.error()
+            return
+        }
         await unfollow(targetId, from: userId)          // blocking implies unfollow
         feed.removeAll { $0.author.id == targetId }      // drop their posts from the current feed
         purgeCachedContent(from: targetId)               // and their reactions/comments/tags on everyone else's
     }
 
+    /// Mirrors `block`'s shape: optimistic, rolled back on a failed write so an "unblocked"
+    /// person doesn't reappear only once the next `loadBlocked()` happens to notice they didn't.
     func unblock(_ targetId: UUID, from userId: UUID) async {
-        blockedIds.remove(targetId)
-        _ = try? await supabase.from("blocks").delete()
-            .eq("blocker_id", value: userId.uuidString)
-            .eq("blocked_id", value: targetId.uuidString).execute()
+        blockedIds.remove(targetId)   // optimistic
+        do {
+            try await supabase.from("blocks").delete()
+                .eq("blocker_id", value: userId.uuidString)
+                .eq("blocked_id", value: targetId.uuidString).execute()
+        } catch {
+            // The delete never landed, put the block back rather than claim an unblock that
+            // didn't happen server-side.
+            blockedIds.insert(targetId)
+            Haptics.error()
+        }
     }
 
     /// Strips a just-blocked user's reactions/comments/tags out of the already-loaded feed cache,
@@ -298,17 +325,32 @@ final class FeedService {
         tagProfiles.removeValue(forKey: targetId)
     }
 
-    /// Reports a post's photo for review (reuses the photo_reports table).
-    func reportPost(_ post: Post, from userId: UUID) async {
+    /// Reports a post's photo for review (reuses the photo_reports table). Returns whether the
+    /// write actually landed, mirrors `setRollMuted`/`addReaction`: without this a caller could
+    /// only ever show "Reported, thanks", even to someone whose report never reached the server.
+    @discardableResult
+    func reportPost(_ post: Post, from userId: UUID) async -> Bool {
         struct R: Encodable { let photo_id: UUID; let reporter_id: UUID; let reason: String? }
-        _ = try? await supabase.from("photo_reports")
-            .insert(R(photo_id: post.photoId, reporter_id: userId, reason: "feed post")).execute()
+        do {
+            try await supabase.from("photo_reports")
+                .insert(R(photo_id: post.photoId, reporter_id: userId, reason: "feed post")).execute()
+            return true
+        } catch {
+            return false
+        }
     }
 
-    func reportUser(_ targetId: UUID, from userId: UUID, reason: String? = nil) async {
+    /// Returns whether the write actually landed, see `reportPost`.
+    @discardableResult
+    func reportUser(_ targetId: UUID, from userId: UUID, reason: String? = nil) async -> Bool {
         struct R: Encodable { let reporter_id: UUID; let reported_id: UUID; let reason: String? }
-        _ = try? await supabase.from("user_reports")
-            .insert(R(reporter_id: userId, reported_id: targetId, reason: reason)).execute()
+        do {
+            try await supabase.from("user_reports")
+                .insert(R(reporter_id: userId, reported_id: targetId, reason: reason)).execute()
+            return true
+        } catch {
+            return false
+        }
     }
 
     /// Drops everything cached for the previous account.

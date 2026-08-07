@@ -359,6 +359,9 @@ struct FeedPostCard: View {
     @State private var showEditTags = false
     @State private var editingTags: [PendingTag] = []
     @State private var reportedToast = false
+    /// Separate from `reportedToast` rather than an enum: this file already tracks toasts as
+    /// plain flags, so a failure gets the same shape instead of a new vocabulary.
+    @State private var reportFailedToast = false
     @State private var shareItem: ShareImage?
     @FocusState private var commentFocused: Bool
 
@@ -551,6 +554,12 @@ struct FeedPostCard: View {
                     .padding(.horizontal, 16).padding(.vertical, 10)
                     .background(.ultraThinMaterial, in: Capsule())
                     .transition(.move(edge: .top).combined(with: .opacity))
+            } else if reportFailedToast {
+                Label("Couldn't report. Try again.", systemImage: "exclamationmark.triangle.fill")
+                    .font(.system(size: 13, weight: .medium)).foregroundStyle(.white)
+                    .padding(.horizontal, 16).padding(.vertical, 10)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
         .confirmationDialog("Delete this post?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
@@ -565,10 +574,17 @@ struct FeedPostCard: View {
         .confirmationDialog("Report this photo?", isPresented: $showReportConfirm, titleVisibility: .visible) {
             Button("Report", role: .destructive) {
                 guard let uid = auth.currentUser?.id else { return }
-                Haptics.success()   // the report went through, matching the toast
-                Task { await feed.reportPost(post, from: uid) }
-                withAnimation { reportedToast = true }
-                Task { try? await Task.sleep(for: .seconds(2)); withAnimation { reportedToast = false } }
+                Task {
+                    if await feed.reportPost(post, from: uid) {
+                        Haptics.success()   // the report went through, matching the toast
+                        withAnimation { reportedToast = true }
+                        try? await Task.sleep(for: .seconds(2)); withAnimation { reportedToast = false }
+                    } else {
+                        Haptics.error()
+                        withAnimation { reportFailedToast = true }
+                        try? await Task.sleep(for: .seconds(2)); withAnimation { reportFailedToast = false }
+                    }
+                }
             }
             Button("Cancel", role: .cancel) {}
         } message: {
@@ -578,8 +594,16 @@ struct FeedPostCard: View {
             Button("Block", role: .destructive) {
                 guard let uid = auth.currentUser?.id else { return }
                 Haptics.warning()
-                Task { await feed.block(post.userId, from: uid) }
-                withAnimation { feed.feed.removeAll { $0.author.id == post.userId } }
+                Task {
+                    await feed.block(post.userId, from: uid)
+                    // `feed.block` rolls its optimistic state back on a failed write, so this
+                    // reflects whether it actually landed rather than assuming it always does.
+                    // Stripping the card here regardless would leave it looking blocked on a
+                    // feed the person you tried to block can still see.
+                    if feed.isBlocked(post.userId) {
+                        withAnimation { feed.feed.removeAll { $0.author.id == post.userId } }
+                    }
+                }
             }
             Button("Cancel", role: .cancel) {}
         } message: {

@@ -27,10 +27,14 @@ jobs:
   # PR validation — compile for the simulator. No signing, no secrets needed.
   # --------------------------------------------------------------------------
   build:
-    name: Build (simulator)
-    if: github.event_name == 'pull_request'
+    name: Build & test (simulator)
+    # Runs on every event, including pushes, because `deploy` needs it. This used
+    # to be pull_request only and build only, which meant the suite never ran in
+    # CI at all and a push to main went straight to TestFlight: a regression in
+    # any covered pure function (reveal timing, auth rules, invite parsing, the
+    # account-epoch guard) would ship with nothing to catch it.
     runs-on: macos-15
-    timeout-minutes: 30
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
 
@@ -45,21 +49,53 @@ jobs:
       - name: Generate project
         run: xcodegen generate
 
-      - name: Build
+      # Resolved at run time rather than hardcoded. `generic/platform=iOS Simulator`
+      # cannot host a test run, and a pinned device name ("iPhone 17") silently
+      # disappears whenever the runner image or Xcode moves, which turns the gate
+      # below into a red build for a reason that has nothing to do with the code.
+      # Picks the newest available iOS runtime, since the app's deployment target
+      # is high and an older runtime cannot run it.
+      - name: Choose a simulator
+        id: sim
+        run: |
+          set -euo pipefail
+          # jq rather than an inline python script: a multi-line python program
+          # cannot live in a YAML block scalar, because indenting it to satisfy
+          # YAML is an IndentationError and not indenting it ends the scalar.
+          # Runtimes are sorted numerically, so iOS-9 never outranks iOS-26.
+          UDID=$(xcrun simctl list devices available --json | jq -r '
+            .devices
+            | to_entries
+            | map(select(.key | contains("iOS")))
+            | sort_by(.key | capture("iOS-(?<major>[0-9]+)-(?<minor>[0-9]+)")
+                           | [(.major | tonumber), (.minor | tonumber)])
+            | reverse
+            | map(.value[] | select(.isAvailable and (.name | contains("iPhone"))))
+            | .[0].udid // empty
+          ')
+          if [ -z "$UDID" ]; then
+            echo "No available iPhone simulator on this runner." >&2
+            xcrun simctl list devices available >&2
+            exit 1
+          fi
+          echo "Using simulator $UDID"
+          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
+
+      - name: Build & test
         run: |
           set -o pipefail
           xcodebuild \
             -project Flim.xcodeproj \
             -scheme Flim \
             -configuration Debug \
-            -destination 'generic/platform=iOS Simulator' \
+            -destination "id=${{ steps.sim.outputs.udid }}" \
             -skipPackagePluginValidation \
             CODE_SIGNING_ALLOWED=NO \
-            build | xcbeautify --renderer github-actions || \
+            test | xcbeautify --renderer github-actions || \
           xcodebuild \
             -project Flim.xcodeproj -scheme Flim -configuration Debug \
-            -destination 'generic/platform=iOS Simulator' \
-            -skipPackagePluginValidation CODE_SIGNING_ALLOWED=NO build
+            -destination "id=${{ steps.sim.outputs.udid }}" \
+            -skipPackagePluginValidation CODE_SIGNING_ALLOWED=NO test
 
   # --------------------------------------------------------------------------
   # Swift 6 readiness — reports only, never blocks.
@@ -133,6 +169,11 @@ jobs:
   deploy:
     name: Deploy to TestFlight
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    # The gate. Without this, deploy ran independently of everything else, so a
+    # push shipped to TestFlight whether or not the app even compiled elsewhere
+    # in this file, let alone passed its tests. It costs one build's wait before
+    # each release, which is the point.
+    needs: build
     runs-on: macos-15
     timeout-minutes: 45
     steps:

@@ -21,6 +21,8 @@ struct UserPageView: View {
     @State private var showBlockConfirm = false
     @State private var showReportConfirm = false
     @State private var reportedToast = false
+    /// Separate from `reportedToast` rather than an enum: mirrors FeedView's toast shape.
+    @State private var reportFailedToast = false
     @State private var showAvatarViewer = false
     @Environment(\.dismiss) private var dismiss
 
@@ -93,13 +95,25 @@ struct UserPageView: View {
                     .padding(.horizontal, 16).padding(.vertical, 10)
                     .background(.ultraThinMaterial, in: Capsule())
                     .transition(.move(edge: .top).combined(with: .opacity))
+            } else if reportFailedToast {
+                Label("Couldn't report. Try again.", systemImage: "exclamationmark.triangle.fill")
+                    .font(.system(size: 13, weight: .medium)).foregroundStyle(.white)
+                    .padding(.horizontal, 16).padding(.vertical, 10)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
         .confirmationDialog("Block \(profile?.handle ?? "this user")?", isPresented: $showBlockConfirm, titleVisibility: .visible) {
             Button("Block", role: .destructive) {
                 guard let uid = auth.currentUser?.id else { return }
                 Haptics.warning()
-                Task { await feed.block(userId, from: uid); dismiss() }
+                Task {
+                    await feed.block(userId, from: uid)
+                    // `feed.block` rolls its optimistic state back on a failed write, only leave
+                    // this page once the block actually took, this page IS the blocked-state
+                    // affordance, and it's still reachable to retry from if it stays put.
+                    if feed.isBlocked(userId) { dismiss() }
+                }
             }
             Button("Cancel", role: .cancel) {}
         } message: {
@@ -108,10 +122,17 @@ struct UserPageView: View {
         .confirmationDialog("Report \(profile?.handle ?? "this user")?", isPresented: $showReportConfirm, titleVisibility: .visible) {
             Button("Report", role: .destructive) {
                 guard let uid = auth.currentUser?.id else { return }
-                Haptics.success()   // the report went through, matching the toast
-                Task { await feed.reportUser(userId, from: uid) }
-                withAnimation { reportedToast = true }
-                Task { try? await Task.sleep(for: .seconds(2)); withAnimation { reportedToast = false } }
+                Task {
+                    if await feed.reportUser(userId, from: uid) {
+                        Haptics.success()   // the report went through, matching the toast
+                        withAnimation { reportedToast = true }
+                        try? await Task.sleep(for: .seconds(2)); withAnimation { reportedToast = false }
+                    } else {
+                        Haptics.error()
+                        withAnimation { reportFailedToast = true }
+                        try? await Task.sleep(for: .seconds(2)); withAnimation { reportFailedToast = false }
+                    }
+                }
             }
             Button("Cancel", role: .cancel) {}
         } message: {

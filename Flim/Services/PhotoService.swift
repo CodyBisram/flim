@@ -479,17 +479,26 @@ final class PhotoService {
     }
 
     /// Files a content report against a photo (UGC safety). Write-only from the client.
-    func reportPhoto(_ photo: Photo, reason: String? = nil) async {
-        guard let session = try? await supabase.auth.session else { return }
+    /// Returns whether the write actually landed, mirrors `setRollMuted`/`addReaction`: without
+    /// this the caller had no way to tell a report that reached the server from one that didn't,
+    /// and marked the photo "reported" (disabling retry) either way.
+    @discardableResult
+    func reportPhoto(_ photo: Photo, reason: String? = nil) async -> Bool {
+        guard let session = try? await supabase.auth.session else { return false }
         struct Report: Encodable {
             let photo_id: UUID
             let reporter_id: UUID
             let reason: String?
         }
-        _ = try? await supabase
-            .from("photo_reports")
-            .insert(Report(photo_id: photo.id, reporter_id: session.user.id, reason: reason))
-            .execute()
+        do {
+            try await supabase
+                .from("photo_reports")
+                .insert(Report(photo_id: photo.id, reporter_id: session.user.id, reason: reason))
+                .execute()
+            return true
+        } catch {
+            return false
+        }
     }
 
     // MARK: - Reactions & stats
