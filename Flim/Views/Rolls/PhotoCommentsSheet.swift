@@ -74,6 +74,9 @@ struct PhotoCommentsSheet: View {
                         Button { delete(comment) } label: {
                             Image(systemName: "xmark").font(.system(size: 9)).foregroundStyle(FlimTheme.textTertiary)
                         }
+                        .accessibilityLabel("Delete your comment")
+                        // 9 + 17.5 either side = 44, same reach as everywhere else this small.
+                        .expandTapTarget(by: 17.5)
                     }
                 }
                 // Rendered as mentions, but note a roll photo's comments live in photo_comments,

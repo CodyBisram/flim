@@ -155,6 +155,7 @@ struct PostDetailView: View {
                 } label: {
                     Image(systemName: "ellipsis").foregroundStyle(accent)
                 }
+                .accessibilityLabel("Post options")
             }
         }
         .safeAreaInset(edge: .bottom) { commentInput }
@@ -324,6 +325,9 @@ struct PostDetailView: View {
                                 Button { delete(info) } label: {
                                     Image(systemName: "xmark").font(.system(size: 9)).foregroundStyle(FlimTheme.textTertiary)
                                 }
+                                .accessibilityLabel("Delete your comment")
+                                // 9 + 17.5 either side = 44, same reach as everywhere else this small.
+                                .expandTapTarget(by: 17.5)
                             }
                         }
                         MentionText(text: info.comment.body, color: FlimTheme.textSecondary) { username in
@@ -348,6 +352,9 @@ struct PostDetailView: View {
                             }
                         }
                     }
+                    .accessibilityLabel(info.likedByMe ? "Unlike comment" : "Like comment")
+                    // 13 + 15.5 either side = 44.
+                    .expandTapTarget(by: 15.5)
                 }
             }
         }

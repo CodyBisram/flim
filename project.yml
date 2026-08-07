@@ -3,7 +3,7 @@ name: Flim
 options:
   bundleIdPrefix: com.flim
   deploymentTarget:
-    iOS: "26.0"
+    iOS: "18.0"
   xcodeVersion: "16"
   generateEmptyDirectories: true
 
@@ -16,7 +16,7 @@ targets:
   Flim:
     type: application
     platform: iOS
-    deploymentTarget: "26.0"
+    deploymentTarget: "18.0"
     sources:
       - path: Flim
     entitlements:
@@ -91,7 +91,7 @@ targets:
   RollActivityWidget:
     type: app-extension
     platform: iOS
-    deploymentTarget: "26.0"
+    deploymentTarget: "18.0"
     sources:
       - path: RollActivityWidget
       # Shared with the app target — see the file's own header comment for why this is a second
@@ -140,7 +140,7 @@ targets:
   FlimTests:
     type: bundle.unit-test
     platform: iOS
-    deploymentTarget: "26.0"
+    deploymentTarget: "18.0"
     sources:
       - path: FlimTests
     settings:
