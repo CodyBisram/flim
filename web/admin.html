@@ -379,7 +379,15 @@
       e.preventDefault();
       var email = $("email").value.trim();
       if (!email) return;
+
+      /* Sending the code goes out over the network and through an email
+         provider, so it can sit for a couple of seconds. A button that only
+         greys out reads as a hang, and the natural response is to press it
+         again, which sends a second code and invalidates the first. */
+      var idle = $("gate-go").textContent;
       $("gate-go").disabled = true;
+      $("gate-go").textContent = stage === "email" ? "Sending" : "Checking";
+      say($("gate-status"), "");
 
       try {
         if (stage === "email") {
@@ -391,7 +399,7 @@
           if (!otp.ok) throw new Error("Could not send a code to that address.");
           stage = "code";
           show($("code"));
-          $("gate-go").textContent = "Sign in";
+          idle = "Sign in";
           say($("gate-status"), "Code sent. Check your email.");
           $("code").focus();
         } else {
@@ -411,6 +419,7 @@
         say($("gate-status"), String(err.message || err).slice(0, 160), "bad");
       } finally {
         $("gate-go").disabled = false;
+        $("gate-go").textContent = idle;
       }
     });
 
