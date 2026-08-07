@@ -69,7 +69,10 @@ BEGIN
 END;
 $$;
 
+-- anon is revoked explicitly: Supabase's stock default privileges grant EXECUTE on
+-- every new function to anon, and revoking PUBLIC leaves that grant in place.
 REVOKE ALL ON FUNCTION public.register_device_token(TEXT, TEXT) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.register_device_token(TEXT, TEXT) FROM anon;
 GRANT EXECUTE ON FUNCTION public.register_device_token(TEXT, TEXT) TO authenticated;
 
 -- Track which developed photos have already triggered a remote push so the

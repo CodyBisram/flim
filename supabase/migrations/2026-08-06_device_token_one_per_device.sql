@@ -117,7 +117,13 @@ BEGIN
 END;
 $$;
 
+-- anon is revoked explicitly, not just via PUBLIC. This project has the stock
+-- Supabase default privileges (ALTER DEFAULT PRIVILEGES ... GRANT ALL ON FUNCTIONS
+-- TO anon, authenticated, service_role), so CREATE FUNCTION hands anon its own
+-- grant, which revoking PUBLIC does not touch. The body already refuses an
+-- unauthenticated caller, so this is depth rather than the only guard.
 REVOKE ALL ON FUNCTION public.register_device_token(TEXT, TEXT) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.register_device_token(TEXT, TEXT) FROM anon;
 GRANT EXECUTE ON FUNCTION public.register_device_token(TEXT, TEXT) TO authenticated;
 
 -- Sign-out needs no function: the row belongs to the caller at that moment, so the
