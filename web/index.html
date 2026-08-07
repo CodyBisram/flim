@@ -63,74 +63,25 @@
           </p>
           <div class="actions">
             <a class="cta" href="https://apps.apple.com/us/app/flim-disposable-camera/id6786079629">Download on the App Store</a>
-            <span class="note">Free, invite only</span>
+            <a class="cta cta--quiet" href="#request">Request an invite</a>
           </div>
+          <!-- Said here rather than only at the form, because someone who installs
+               first and discovers the gate at sign-in has already been let down. -->
+          <p class="gate">
+            FLIM is invite only. You need a code from someone already on it, or you
+            can <a href="#request">ask us for one</a>.
+          </p>
         </div>
 
-        <figure class="canister" id="window" data-state="latent">
-          <svg class="canister__art" viewBox="0 0 320 400" role="img"
-               aria-label="A roll of FLIM film beside its canister, one frame still developing">
-            <defs>
-              <linearGradient id="can-body" x1="0" y1="0" x2="1" y2="0">
-                <stop offset="0" stop-color="currentColor" stop-opacity="0.10" />
-                <stop offset="0.5" stop-color="currentColor" stop-opacity="0.22" />
-                <stop offset="1" stop-color="currentColor" stop-opacity="0.10" />
-              </linearGradient>
-              <pattern id="grain" x="0" y="0" width="3" height="3" patternUnits="userSpaceOnUse">
-                <circle cx="1.5" cy="1.5" r="0.55" fill="currentColor" fill-opacity="0.10" />
-              </pattern>
-            </defs>
-
-            <!-- The exposed strip, leaning out of the canister. -->
-            <g transform="translate(72 32) rotate(-4)">
-              <rect width="176" height="200" fill="currentColor" fill-opacity="0.06"
-                    stroke="currentColor" stroke-opacity="0.30" />
-              <g fill="currentColor" fill-opacity="0.55">
-                <rect x="4" y="12" width="10" height="12" rx="1.5" />
-                <rect x="4" y="36" width="10" height="12" rx="1.5" />
-                <rect x="4" y="60" width="10" height="12" rx="1.5" />
-                <rect x="4" y="84" width="10" height="12" rx="1.5" />
-                <rect x="4" y="108" width="10" height="12" rx="1.5" />
-                <rect x="4" y="132" width="10" height="12" rx="1.5" />
-                <rect x="4" y="156" width="10" height="12" rx="1.5" />
-                <rect x="4" y="180" width="10" height="12" rx="1.5" />
-                <rect x="162" y="12" width="10" height="12" rx="1.5" />
-                <rect x="162" y="36" width="10" height="12" rx="1.5" />
-                <rect x="162" y="60" width="10" height="12" rx="1.5" />
-                <rect x="162" y="84" width="10" height="12" rx="1.5" />
-                <rect x="162" y="108" width="10" height="12" rx="1.5" />
-                <rect x="162" y="132" width="10" height="12" rx="1.5" />
-                <rect x="162" y="156" width="10" height="12" rx="1.5" />
-                <rect x="162" y="180" width="10" height="12" rx="1.5" />
-              </g>
-              <!-- The two frames come up as the countdown runs out. -->
-              <g class="canister__frames">
-                <rect x="28" y="20" width="120" height="74" fill="url(#grain)"
-                      stroke="currentColor" stroke-opacity="0.20" />
-                <rect x="28" y="106" width="120" height="74" fill="url(#grain)"
-                      stroke="currentColor" stroke-opacity="0.20" />
-              </g>
-            </g>
-
-            <!-- The canister. -->
-            <g transform="translate(40 152)">
-              <rect width="240" height="24" rx="4" fill="currentColor" fill-opacity="0.30" />
-              <rect y="24" width="240" height="208" rx="14" fill="url(#can-body)"
-                    stroke="currentColor" stroke-opacity="0.35" />
-              <rect x="20" y="64" width="200" height="120" rx="6" fill="currentColor"
-                    fill-opacity="0.04" stroke="currentColor" stroke-opacity="0.25" />
-              <text class="canister__wordmark" x="32" y="100">FLIM</text>
-              <text class="canister__spec" x="32" y="122">35MM · 50 EXP</text>
-              <line x1="32" y1="138" x2="208" y2="138" stroke="currentColor"
-                    stroke-opacity="0.35" stroke-width="1" />
-              <text class="canister__promise" x="32" y="158">develops in twelve hours</text>
-              <text class="canister__spec" x="32" y="174">ROLL · NO FILTER · NO RUSH</text>
-            </g>
-          </svg>
-
-          <figcaption class="canister__caption">
+        <figure class="print">
+          <div class="print__window" id="window" data-state="latent">
+            <div class="print__image"></div>
+            <div class="print__grain"></div>
+            <div class="print__vignette"></div>
+          </div>
+          <figcaption class="print__caption">
             <span class="status" id="status">Developing</span>
-            <span class="canister__timer" id="timer">12:00:00</span>
+            <span class="print__timer" id="timer">12:00:00</span>
           </figcaption>
         </figure>
       </div>
@@ -194,7 +145,7 @@
       </p>
     </section>
 
-    <section class="frame reveal" data-frame="05">
+    <section class="frame reveal" id="request" data-frame="05">
       <div class="split">
         <div>
           <p class="eyebrow">Not invited yet</p>
@@ -395,6 +346,25 @@
         });
       }, { rootMargin: "0px 0px -12% 0px" });
       frames.forEach(function (f) { seen.observe(f); });
+
+      /* Jumping straight to a section must not land on one still fading in.
+         Someone who clicks "Request an invite", or opens a shared /#request
+         link, arrives instantly and should find the form already there. */
+      function revealNow(hash) {
+        if (!hash) return;
+        var target = document.getElementById(hash.slice(1));
+        if (target && target.classList.contains("reveal")) {
+          target.classList.add("is-in");
+          seen.unobserve(target);
+        }
+      }
+
+      revealNow(location.hash);
+      document.querySelectorAll('a[href^="#"]').forEach(function (link) {
+        link.addEventListener("click", function () {
+          revealNow(link.getAttribute("href"));
+        });
+      });
     })();
   </script>
 </body>

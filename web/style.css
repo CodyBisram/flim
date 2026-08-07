@@ -124,7 +124,13 @@
 
 html {
   -webkit-text-size-adjust: 100%;
-  scroll-behavior: smooth;
+  /* No scroll-behavior: smooth. On this page it does not merely fail to
+     animate, it cancels the scroll outright: with it set, clicking #request
+     changed the hash and left the page where it was, and even
+     scrollIntoView({behavior:"smooth"}) resolved to no movement at all, while
+     "instant" worked every time. Something in the flex-column body defeats
+     Chrome's smooth path here. An instant jump is worth more than an animation
+     that eats the navigation. */
 }
 
 body {
@@ -138,7 +144,12 @@ body {
   min-height: 100dvh;
   display: flex;
   flex-direction: column;
+  /* clip, not hidden. overflow-x: hidden forces overflow-y to compute as auto,
+     which turns the body into a scroll container and stops in-page anchors like
+     #request from scrolling at all: the hash changes and the page stays put.
+     clip contains overflow the same way without creating that container. */
   overflow-x: hidden;
+  overflow-x: clip;
 }
 
 /* The safelight itself: a warm bloom bled in from the top of the page. Held
@@ -271,6 +282,9 @@ nav a:hover { color: var(--text); text-decoration: none; }
 .frame {
   position: relative;
   padding: clamp(56px, 9vw, 104px) 0;
+  /* Jumping to #request must clear the sticky header, or the heading lands
+     underneath it and the section looks like it starts at the form. */
+  scroll-margin-top: 84px;
 }
 .frame + .frame { border-top: 1px solid var(--line); }
 
@@ -370,6 +384,20 @@ h1 {
 }
 .cta:active { transform: translateY(0); }
 
+/* The second action. Same size and shape as the primary so it reads as a real
+   choice, outlined rather than filled so it does not compete with it. */
+.cta--quiet {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--line-strong);
+  font-weight: 600;
+}
+.cta--quiet:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  filter: none;
+}
+
 .note {
   font-family: var(--mono);
   font-size: 12px;
@@ -378,97 +406,110 @@ h1 {
   text-transform: uppercase;
 }
 
+/* The gate, stated next to the download button. */
+.gate {
+  margin-top: 18px;
+  font-size: 15px;
+  color: var(--text-dim);
+  max-width: 44ch;
+}
+.gate a { border-bottom: 1px solid var(--accent-soft); }
+
 /* --- The developing print ------------------------------------------------
    The signature. An instant print, in the proportions of the app icon, that
    actually develops when the page loads. FLIM's whole promise is the wait, so
    the page performs it instead of describing it.
    ------------------------------------------------------------------------- */
 
-/* The canister is drawn entirely in currentColor, so setting one colour here
-   tints the whole illustration and it follows the theme for free. */
-.canister {
+.print {
   justify-self: center;
-  width: min(100%, 400px);
-  color: var(--accent);
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
+  width: min(100%, 380px);
+  background: var(--mount);
+  padding: 15px 15px 62px;
+  border-radius: 6px;
+  box-shadow: var(--shadow);
+  transform: rotate(-1.4deg);
 }
 
-.canister__art { width: 100%; height: auto; display: block; }
-
-.canister__wordmark {
-  font-family: var(--display);
-  font-size: 22px;
-  font-weight: 800;
-  font-variation-settings: "wdth" 112;
-  letter-spacing: -0.5px;
-  fill: currentColor;
-  fill-opacity: 0.92;
+.print__window {
+  position: relative;
+  aspect-ratio: 3 / 4;
+  overflow: hidden;
+  border-radius: 2px;
+  background: #0a0806;
 }
-.canister__spec {
-  font-family: var(--mono);
-  /* Mono sets wider than the sans this was drawn with, so the longest spec line
-     needs the tighter tracking to stay inside the label. */
-  font-size: 9px;
-  letter-spacing: 1.2px;
-  fill: currentColor;
-  fill-opacity: 0.62;
-}
-.canister__promise {
-  font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: 0.04em;
-  fill: currentColor;
-  fill-opacity: 0.72;
-}
-
-/* The frames on the strip come up while the countdown runs, so the illustration
-   is doing the same thing the number beneath it says. */
-.canister__frames { opacity: 1; }
-.canister[data-state="developing"] .canister__frames {
-  animation: frames-develop 3.6s cubic-bezier(0.32, 0.06, 0.2, 1) forwards;
-}
-
-@keyframes frames-develop {
-  0%   { opacity: 0.12; }
-  40%  { opacity: 0.34; }
-  100% { opacity: 1; }
-}
-
-
 
 /* The latent image: warm light thrown around a dark room, held out of focus.
    Suggestive rather than literal, so the page never pretends to show you a
    photograph that someone actually took. */
-
+.print__image {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(9% 6.5% at 70% 20%, rgba(255, 232, 180, 0.95), transparent 70%),
+    radial-gradient(6% 4.5% at 31% 60%, rgba(255, 210, 146, 0.8), transparent 72%),
+    radial-gradient(5% 3.5% at 79% 55%, rgba(255, 200, 132, 0.7), transparent 72%),
+    radial-gradient(40% 30% at 25% 25%, rgba(255, 194, 112, 0.9), transparent 68%),
+    radial-gradient(34% 27% at 63% 43%, rgba(238, 146, 74, 0.82), transparent 70%),
+    radial-gradient(56% 40% at 47% 91%, rgba(178, 78, 42, 0.62), transparent 72%),
+    linear-gradient(168deg, #33200f 0%, #1a0e08 48%, #090504 100%);
+  filter: saturate(1.12) contrast(1.06);
+}
 
 /* Grain sits above the image and thins out as the print develops. */
+.print__grain {
+  position: absolute;
+  inset: -50%;
+  background-image: var(--grain);
+  opacity: 0.42;
+  mix-blend-mode: overlay;
+  pointer-events: none;
+}
 
+.print__vignette {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(78% 68% at 50% 44%, transparent 42%, rgba(0, 0, 0, 0.6) 100%);
+  pointer-events: none;
+}
 
-
-
-/* Sits in the canister's flex column rather than floating over the artwork: the
-   illustration has no flat area to caption, and the countdown is the one part
-   that has to stay readable while it ticks. */
-.canister__caption {
+.print__caption {
+  position: absolute;
+  left: 17px;
+  right: 17px;
+  bottom: 20px;
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: 12px;
-  padding: 0 4px;
   font-family: var(--mono);
   font-size: 11.5px;
   letter-spacing: 0.09em;
   text-transform: uppercase;
-  color: var(--text-dim);
+  color: var(--mount-ink);
 }
-.canister__caption .status { color: var(--text-faint); }
-.canister__timer {
-  font-variant-numeric: tabular-nums;
-  color: var(--accent);
+.print__caption .status { opacity: 0.55; }
+.print__timer { font-variant-numeric: tabular-nums; }
+
+/* Develop sequence. The print starts flat and dense, the way an emulsion does
+   before the image comes up, then resolves. */
+.print__window[data-state="developing"] .print__image {
+  animation: develop 3.6s cubic-bezier(0.32, 0.06, 0.2, 1) forwards;
+}
+.print__window[data-state="developing"] .print__grain {
+  animation: settle 3.6s cubic-bezier(0.32, 0.06, 0.2, 1) forwards;
 }
 
+@keyframes develop {
+  0% { filter: brightness(0.16) contrast(0.42) saturate(0.12); transform: scale(1.05); }
+  35% { filter: brightness(0.44) contrast(0.66) saturate(0.5); }
+  100% { filter: brightness(1) contrast(1.04) saturate(1.05); transform: scale(1); }
+}
+
+@keyframes settle {
+  0% { opacity: 0.85; }
+  100% { opacity: 0.42; }
+}
 
 /* --- Content frames ------------------------------------------------------- */
 
@@ -785,7 +826,7 @@ footer a:hover { color: var(--text); }
 
 @media (max-width: 900px) {
   .hero { grid-template-columns: 1fr; gap: 40px; }
-  .canister { width: min(100%, 340px); }
+  .print { transform: rotate(-1deg); }
   .split { grid-template-columns: 1fr; }
 }
 
@@ -816,8 +857,6 @@ footer a:hover { color: var(--text); }
 /* --- Reduced motion ------------------------------------------------------- */
 
 @media (prefers-reduced-motion: reduce) {
-  html { scroll-behavior: auto; }
-
   *, *::before, *::after {
     animation-duration: 0.001ms !important;
     animation-iteration-count: 1 !important;
