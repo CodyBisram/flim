@@ -18,25 +18,59 @@ import UserNotifications
 /// Until those server steps are done, registration + token upload still succeed; there's
 /// simply nothing sending pushes yet. Local develop notifications work regardless.
 enum RemotePush {
+    /// The last APNs token iOS handed us, kept so sign-out can detach this device
+    /// without waiting for another registration callback that may never come.
+    private static let tokenKey = "apnsDeviceToken"
+
     /// Ask iOS for an APNs device token. Safe to call repeatedly; iOS dedupes.
     @MainActor
     static func register() {
         UIApplication.shared.registerForRemoteNotifications()
     }
 
-    /// Upserts an APNs token for the signed-in user into `device_tokens`.
+    /// Claims an APNs token for the signed-in user.
+    ///
+    /// Goes through `register_device_token` rather than upserting the table directly.
+    /// `device_tokens` is keyed on the token alone, so claiming a device that another
+    /// account still holds is an UPDATE of someone else's row, and the "own tokens"
+    /// RLS policy checks its USING clause against that existing row and filters the
+    /// write out. The client would see no error and the device would stay attached to
+    /// the previous account, which is exactly the bug this replaced: every account
+    /// that had ever signed in on a phone kept receiving its pushes there.
     static func uploadToken(_ token: Data) async {
         let hex = token.map { String(format: "%02x", $0) }.joined()
-        guard let session = try? await supabase.auth.session else { return }
+        UserDefaults.standard.set(hex, forKey: tokenKey)
+        await claim(hex)
+    }
 
-        struct Row: Encodable {
-            let user_id: UUID
-            let token: String
-            let platform: String
-        }
+    /// Re-claims the cached token for whoever is signed in now.
+    ///
+    /// Signing in does not make iOS hand us a new token, so without this the device
+    /// would stay registered to the previous account until iOS next rotated it.
+    static func reclaimForCurrentAccount() async {
+        guard let hex = UserDefaults.standard.string(forKey: tokenKey) else { return }
+        await claim(hex)
+    }
+
+    private static func claim(_ hex: String) async {
+        guard (try? await supabase.auth.session) != nil else { return }
+        _ = try? await supabase
+            .rpc("register_device_token", params: ["p_token": hex, "p_platform": "ios"])
+            .execute()
+    }
+
+    /// Detaches this device from the signed-in account.
+    ///
+    /// Must run while the session is still alive, since the row is only deletable by
+    /// the account that owns it. The cached token is deliberately kept: the device
+    /// still has it, and the next sign-in needs it to re-claim.
+    static func unregisterCurrentDevice() async {
+        guard let hex = UserDefaults.standard.string(forKey: tokenKey) else { return }
+        guard (try? await supabase.auth.session) != nil else { return }
         _ = try? await supabase
             .from("device_tokens")
-            .upsert(Row(user_id: session.user.id, token: hex, platform: "ios"))
+            .delete()
+            .eq("token", value: hex)
             .execute()
     }
 }

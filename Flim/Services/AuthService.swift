@@ -515,6 +515,12 @@ final class AuthService {
             noteSession(nil)
             NotificationCenter.default.post(name: .flimAccountDidChange, object: nil)
         }
+        // Before the session goes, not after: the device_tokens row is only deletable
+        // by the account that owns it, so once signOut() lands there is no longer any
+        // way to detach this device. Leaving it attached meant the next digest for
+        // this account was delivered to whoever signed in here afterwards, carrying
+        // this account's follow list with it.
+        await RemotePush.unregisterCurrentDevice()
         try await supabase.auth.signOut()
     }
 

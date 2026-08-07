@@ -64,6 +64,10 @@ struct ContentView: View {
             // where they come back: on launch, and on signing back in. Without it the files
             // would accumulate forever and nobody would ever be offered the retry.
             if let newId { Task { await photos.restoreFailedUploads(userId: newId) } }
+            // Signing in does not prompt iOS for a new APNs token, so this device would stay
+            // registered to whoever was signed in last. Claiming it here is what stops one
+            // phone from collecting several accounts' notifications.
+            if newId != nil { Task { await RemotePush.reclaimForCurrentAccount() } }
         }
         .onReceive(NotificationCenter.default.publisher(for: .flimAccountDidChange)) { _ in
             // Sign-out posts this. currentUser goes to nil, which the onChange above also catches,
