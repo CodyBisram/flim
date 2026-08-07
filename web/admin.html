@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#1c1917">
+  <!-- Not a public page. Nothing here is secret, since every call is gated server
+       side by is_owner(), but there is no reason for it to sit in a search index. -->
+  <meta name="robots" content="noindex, nofollow">
+  <title>FLIM admin</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap">
+  <style>
+    /* Deliberately NOT the marketing stylesheet. The public site is a warm, dark,
+       editorial thing built around a film metaphor; this is a tool for reading
+       queues and clearing them. Density and legibility win here, so it follows
+       the slate-and-cards idiom of the reports dashboard instead, with FLIM's
+       amber in place of that project's indigo. */
+
+    :root {
+      --bg: #f8fafc;
+      --surface: #ffffff;
+      --border: #e2e8f0;
+      --border-soft: #f1f5f9;
+
+      --text: #0f172a;
+      --muted: #64748b;
+      --faint: #94a3b8;
+
+      --accent: #b45309;
+      --accent-soft: #fffbeb;
+      --accent-border: #fde68a;
+
+      --side: #1c1917;
+      --side-text: #d6d3d1;
+      --side-active: #292524;
+
+      --ok-bg: #ecfdf5; --ok-fg: #047857; --ok-br: #a7f3d0;
+      --bad-bg: #fef2f2; --bad-fg: #b91c1c; --bad-br: #fecaca;
+
+      --sans: "Geist", system-ui, -apple-system, sans-serif;
+      --mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      font-size: 14px;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+      min-height: 100dvh;
+      display: flex;
+    }
+
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: var(--border-soft); }
+    ::-webkit-scrollbar-thumb { background: var(--faint); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+
+    :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+
+    /* ---- Sidebar ---------------------------------------------------------- */
+
+    .side {
+      width: 224px;
+      flex-shrink: 0;
+      background: var(--side);
+      color: #fff;
+      padding: 12px 8px;
+      display: flex;
+      flex-direction: column;
+      position: sticky;
+      top: 0;
+      height: 100dvh;
+    }
+
+    .side__brand {
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.14em;
+      color: var(--side-text);
+      padding: 4px 10px 14px;
+      white-space: nowrap;
+    }
+    .side__brand span { color: #f59e0b; }
+
+    .side__nav { list-style: none; display: flex; flex-direction: column; gap: 2px; flex: 1; }
+
+    .navitem {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      width: 100%;
+      padding: 8px 10px;
+      border: 0;
+      border-left: 3px solid transparent;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--side-text);
+      font-family: var(--sans);
+      font-size: 14px;
+      text-align: left;
+      cursor: pointer;
+      transition: background-color 0.15s ease, color 0.15s ease;
+    }
+    .navitem:hover { background: var(--side-active); color: #fff; }
+    .navitem[aria-current="true"] {
+      background: var(--side-active);
+      color: #fff;
+      border-left-color: #f59e0b;
+      font-weight: 500;
+    }
+
+    /* The count is the reason to click, so it is not decoration: zero goes quiet,
+       anything above zero stays legible at a glance. */
+    .navitem__count {
+      font-family: var(--mono);
+      font-size: 11px;
+      padding: 1px 7px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--side-text);
+    }
+    .navitem__count[data-any="true"] { background: #f59e0b; color: #1c1917; font-weight: 500; }
+
+    .side__foot { padding: 8px 2px 0; border-top: 1px solid rgba(255,255,255,0.08); }
+    .side__who { font-family: var(--mono); font-size: 11px; color: #78716c; padding: 6px 8px; overflow-wrap: anywhere; }
+
+    /* ---- Content ---------------------------------------------------------- */
+
+    .content { flex: 1; padding: 20px 24px 60px; min-width: 0; }
+
+    .page__head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .page__head h1 { font-size: 20px; font-weight: 600; letter-spacing: -0.01em; }
+    .page__sub { font-size: 13px; color: var(--muted); }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px 16px;
+      margin-bottom: 8px;
+      display: flex;
+      flex-wrap: wrap;
+      /* Top aligned, not centred: a card with a note is three times the height of
+         one without, and centring leaves its buttons stranded beside the note
+         instead of beside the address they act on. */
+      align-items: flex-start;
+      gap: 10px 16px;
+    }
+    .card__main { flex: 1 1 280px; min-width: 0; }
+    .card__title {
+      font-family: var(--mono);
+      font-size: 13.5px;
+      font-weight: 500;
+      overflow-wrap: anywhere;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .card__meta { font-size: 12px; color: var(--muted); margin-top: 3px; }
+    /* Free text a stranger typed. Inset so it never reads as our own copy. */
+    .card__note {
+      margin-top: 8px;
+      padding: 8px 10px;
+      background: var(--border-soft);
+      border-left: 2px solid var(--border);
+      border-radius: 4px;
+      font-size: 13px;
+      color: #334155;
+      overflow-wrap: anywhere;
+    }
+    .card__actions { display: flex; gap: 6px; flex: 0 0 auto; }
+
+    .pill {
+      font-size: 10px;
+      font-weight: 500;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      padding: 2px 7px;
+      border-radius: 4px;
+      border: 1px solid var(--accent-border);
+      background: var(--accent-soft);
+      color: var(--accent);
+    }
+    .pill--bad { background: var(--bad-bg); color: var(--bad-fg); border-color: var(--bad-br); }
+
+    .btn {
+      font-family: var(--sans);
+      font-size: 13px;
+      font-weight: 500;
+      padding: 7px 13px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background-color 0.15s ease, border-color 0.15s ease;
+    }
+    .btn:hover { background: var(--border-soft); border-color: var(--faint); }
+    .btn--go { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .btn--go:hover { background: #92400e; border-color: #92400e; }
+    .btn[disabled] { opacity: 0.5; pointer-events: none; }
+
+    .empty {
+      background: var(--surface);
+      border: 1px dashed var(--border);
+      border-radius: 8px;
+      padding: 28px 16px;
+      text-align: center;
+      color: var(--faint);
+      font-size: 13.5px;
+    }
+
+    .status { min-height: 1.3em; margin-top: 12px; font-family: var(--mono); font-size: 12px; color: var(--muted); }
+    .status[data-tone="bad"] { color: var(--bad-fg); }
+
+    /* ---- Sign in ---------------------------------------------------------- */
+
+    .gate { margin: auto; width: 100%; max-width: 360px; padding: 24px; }
+    .gate__card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 22px; }
+    .gate__brand { font-size: 15px; font-weight: 600; letter-spacing: 0.14em; margin-bottom: 4px; }
+    .gate__brand span { color: var(--accent); }
+    .gate__sub { font-size: 13px; color: var(--muted); margin-bottom: 18px; }
+    .field {
+      width: 100%;
+      font-family: var(--sans);
+      font-size: 16px; /* 16px or iOS zooms on focus */
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--surface);
+      color: var(--text);
+      margin-bottom: 8px;
+    }
+    .field::placeholder { color: var(--faint); }
+    .gate .btn { width: 100%; justify-content: center; padding: 10px; }
+
+    .hide { display: none !important; }
+
+    @media (max-width: 720px) {
+      body { flex-direction: column; }
+      .side {
+        width: 100%; height: auto; position: static;
+        flex-direction: row; align-items: center; gap: 4px;
+        padding: 8px; overflow-x: auto;
+      }
+      .side__brand { padding: 0 8px 0 4px; }
+      .side__nav { flex-direction: row; flex: 1; }
+      .navitem { border-left: 0; border-bottom: 3px solid transparent; white-space: nowrap; }
+      .navitem[aria-current="true"] { border-left-color: transparent; border-bottom-color: #f59e0b; }
+      .side__foot { display: none; }
+      .content { padding: 16px 14px 48px; }
+      .card__actions { width: 100%; }
+      .btn { flex: 1; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Signed out -->
+  <div class="gate" id="gate">
+    <div class="gate__card">
+      <div class="gate__brand">FL<span>I</span>M</div>
+      <p class="gate__sub">Admin. Owner account only.</p>
+      <form id="signin">
+        <input class="field" id="email" type="email" autocomplete="email"
+               inputmode="email" placeholder="you@example.com" required>
+        <input class="field hide" id="code" type="text" inputmode="numeric"
+               autocomplete="one-time-code" placeholder="6 digit code">
+        <button class="btn btn--go" id="gate-go" type="submit">Send a code</button>
+        <p class="status" id="gate-status"></p>
+      </form>
+    </div>
+  </div>
+
+  <!-- Signed in -->
+  <aside class="side hide" id="side">
+    <div class="side__brand">FL<span>I</span>M</div>
+    <ul class="side__nav" id="nav">
+      <li><button class="navitem" data-panel="invites" aria-current="true">Invites <span class="navitem__count" id="c-invites">0</span></button></li>
+      <li><button class="navitem" data-panel="photos">Reported photos <span class="navitem__count" id="c-photos">0</span></button></li>
+      <li><button class="navitem" data-panel="users">Reported people <span class="navitem__count" id="c-users">0</span></button></li>
+    </ul>
+    <div class="side__foot">
+      <div class="side__who" id="who"></div>
+      <button class="navitem" id="signout" type="button">Sign out</button>
+    </div>
+  </aside>
+
+  <main class="content hide" id="content">
+    <div class="page__head">
+      <h1 id="page-title">Invites</h1>
+      <span class="page__sub" id="page-sub"></span>
+    </div>
+    <div id="list"></div>
+    <p class="status" id="panel-status"></p>
+  </main>
+
+  <script>
+  (function () {
+    "use strict";
+
+    var URL_BASE = "https://wxvwamwrjlrvqmuaafjv.supabase.co";
+    var ANON_KEY = "sb_publishable_ze8KEytcVzvKOijlUQ8Kfw_nb3kJ-V4";
+
+    /* sessionStorage, not localStorage: an admin session should not outlive the
+       tab. There is no service role key on this page, and every call below is
+       gated server side by is_owner(), so this token only ever buys what this
+       account could already do. */
+    var TOKEN_KEY = "flim-admin-token";
+    var token = null;
+    try { token = sessionStorage.getItem(TOKEN_KEY); } catch (e) {}
+
+    var data = { invites: [], photos: [], users: [] };
+    var panel = "invites";
+    var TITLES = { invites: "Invites", photos: "Reported photos", users: "Reported people" };
+
+    function $(id) { return document.getElementById(id); }
+    function show(el) { el.classList.remove("hide"); }
+    function hide(el) { el.classList.add("hide"); }
+    function say(el, msg, tone) {
+      el.textContent = msg;
+      if (tone) el.setAttribute("data-tone", tone); else el.removeAttribute("data-tone");
+    }
+
+    /* Everything rendered below came from a stranger: invite notes, report
+       reasons, usernames. It is all set through textContent, never innerHTML. */
+    function el(tag, cls, value) {
+      var n = document.createElement(tag);
+      if (cls) n.className = cls;
+      if (value !== undefined && value !== null) n.textContent = String(value);
+      return n;
+    }
+
+    function ago(iso) {
+      var m = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 60000));
+      if (m < 60) return m + "m ago";
+      var h = Math.floor(m / 60);
+      if (h < 24) return h + "h ago";
+      return Math.floor(h / 24) + "d ago";
+    }
+    function plural(n, word) { return n + " " + word + (n === 1 ? "" : "s"); }
+
+    async function rpc(name, body) {
+      var res = await fetch(URL_BASE + "/rest/v1/rpc/" + name, {
+        method: "POST",
+        headers: {
+          "apikey": ANON_KEY,
+          "Authorization": "Bearer " + token,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body || {}),
+      });
+      if (res.status === 401) { signOut(); throw new Error("Session expired. Sign in again."); }
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    }
+
+    // ---- Sign in -----------------------------------------------------------
+
+    var stage = "email";
+
+    $("signin").addEventListener("submit", async function (e) {
+      e.preventDefault();
+      var email = $("email").value.trim();
+      if (!email) return;
+      $("gate-go").disabled = true;
+
+      try {
+        if (stage === "email") {
+          var otp = await fetch(URL_BASE + "/auth/v1/otp", {
+            method: "POST",
+            headers: { "apikey": ANON_KEY, "Content-Type": "application/json" },
+            body: JSON.stringify({ email: email, create_user: false }),
+          });
+          if (!otp.ok) throw new Error("Could not send a code to that address.");
+          stage = "code";
+          show($("code"));
+          $("gate-go").textContent = "Sign in";
+          say($("gate-status"), "Code sent. Check your email.");
+          $("code").focus();
+        } else {
+          var v = await fetch(URL_BASE + "/auth/v1/verify", {
+            method: "POST",
+            headers: { "apikey": ANON_KEY, "Content-Type": "application/json" },
+            body: JSON.stringify({ email: email, token: $("code").value.trim(), type: "email" }),
+          });
+          if (!v.ok) throw new Error("That code did not work.");
+          var session = await v.json();
+          token = session.access_token;
+          try { sessionStorage.setItem(TOKEN_KEY, token); } catch (e2) {}
+          $("who").textContent = email;
+          await enter();
+        }
+      } catch (err) {
+        say($("gate-status"), String(err.message || err).slice(0, 160), "bad");
+      } finally {
+        $("gate-go").disabled = false;
+      }
+    });
+
+    function signOut() {
+      token = null;
+      try { sessionStorage.removeItem(TOKEN_KEY); } catch (e) {}
+      hide($("side")); hide($("content")); show($("gate"));
+      stage = "email";
+      hide($("code"));
+      $("gate-go").textContent = "Send a code";
+    }
+    $("signout").addEventListener("click", signOut);
+
+    // ---- Panels ------------------------------------------------------------
+
+    Array.prototype.forEach.call(document.querySelectorAll(".navitem[data-panel]"), function (b) {
+      b.addEventListener("click", function () {
+        panel = b.getAttribute("data-panel");
+        Array.prototype.forEach.call(document.querySelectorAll(".navitem[data-panel]"), function (o) {
+          o.setAttribute("aria-current", String(o === b));
+        });
+        render();
+      });
+    });
+
+    function card(titleNode, metaText, noteText, buttons) {
+      var c = el("div", "card");
+      var main = el("div", "card__main");
+      main.appendChild(titleNode);
+      main.appendChild(el("div", "card__meta", metaText));
+      if (noteText) main.appendChild(el("div", "card__note", noteText));
+      c.appendChild(main);
+
+      var acts = el("div", "card__actions");
+      buttons.forEach(function (b) { acts.appendChild(b); });
+      c.appendChild(acts);
+      return c;
+    }
+
+    function render() {
+      $("page-title").textContent = TITLES[panel];
+      var host = $("list");
+      host.textContent = "";
+      var rows = data[panel];
+      $("page-sub").textContent = rows.length
+        ? plural(rows.length, panel === "invites" ? "person waiting" : "open")
+        : "";
+
+      if (!rows.length) {
+        host.appendChild(el("div", "empty",
+          panel === "invites" ? "Nobody is waiting." : "Nothing to review."));
+        return;
+      }
+
+      rows.forEach(function (r) {
+        var c;
+        if (panel === "invites") {
+          var t = el("div", "card__title", r.email);
+          var approve = el("button", "btn btn--go", "Approve");
+          var decline = el("button", "btn", "Decline");
+          approve.addEventListener("click", function () { act(c, "approve_invite_request", { p_email: r.email }); });
+          decline.addEventListener("click", function () { act(c, "decline_invite_request", { p_email: r.email }); });
+          c = card(t, ago(r.created_at), r.note, [approve, decline]);
+
+        } else if (panel === "photos") {
+          var pt = el("div", "card__title", "@" + (r.reported_username || "unknown"));
+          if (r.hidden) pt.appendChild(el("span", "pill", "hidden"));
+          if (r.report_count > 1) pt.appendChild(el("span", "pill pill--bad", r.report_count + " reports"));
+          var toggle = el("button", r.hidden ? "btn" : "btn btn--go", r.hidden ? "Unhide" : "Hide");
+          var dismissP = el("button", "btn", "Dismiss");
+          toggle.addEventListener("click", function () {
+            act(c, "set_photo_hidden", { p_photo_id: r.photo_id, p_hidden: !r.hidden });
+          });
+          dismissP.addEventListener("click", function () {
+            act(c, "dismiss_photo_report", { p_photo_id: r.photo_id });
+          });
+          c = card(pt, ago(r.created_at), r.reason, [toggle, dismissP]);
+
+        } else {
+          var ut = el("div", "card__title", "@" + (r.reported_username || "unknown"));
+          if (r.report_count > 1) ut.appendChild(el("span", "pill pill--bad", r.report_count + " reports"));
+          var dismissU = el("button", "btn", "Dismiss");
+          dismissU.addEventListener("click", function () {
+            act(c, "dismiss_user_report", { p_reported_id: r.reported_id });
+          });
+          c = card(ut, ago(r.created_at), r.reason, [dismissU]);
+        }
+        host.appendChild(c);
+      });
+    }
+
+    function counts() {
+      [["invites", "c-invites"], ["photos", "c-photos"], ["users", "c-users"]].forEach(function (p) {
+        var n = data[p[0]].length;
+        var node = $(p[1]);
+        node.textContent = n;
+        node.setAttribute("data-any", String(n > 0));
+      });
+    }
+
+    /* Refetches after every action rather than editing the row in place. The
+       queues are short, and the server is the only thing that knows the real
+       state, so a refetch cannot drift the way a local edit can. */
+    async function act(cardEl, name, body) {
+      Array.prototype.forEach.call(cardEl.querySelectorAll("button"), function (b) { b.disabled = true; });
+      try {
+        await rpc(name, body);
+        say($("panel-status"), "");
+        await load();
+      } catch (err) {
+        say($("panel-status"), "That did not go through: " + String(err.message || err).slice(0, 140), "bad");
+        Array.prototype.forEach.call(cardEl.querySelectorAll("button"), function (b) { b.disabled = false; });
+      }
+    }
+
+    async function load() {
+      var r = await Promise.all([
+        rpc("list_invite_requests"),
+        rpc("list_photo_reports"),
+        rpc("list_user_reports"),
+      ]);
+      data.invites = r[0] || [];
+      data.photos = r[1] || [];
+      data.users = r[2] || [];
+      counts();
+      render();
+    }
+
+    async function enter() {
+      /* Asked first, and for the same reason the RPCs check it: without this a
+         non-owner would land on three empty queues, which looks like a working
+         dashboard on a quiet day rather than a refusal. */
+      var owner = await rpc("is_owner");
+      if (owner !== true) {
+        signOut();
+        say($("gate-status"), "That account is not the owner.", "bad");
+        return;
+      }
+      hide($("gate")); show($("side")); show($("content"));
+      await load();
+    }
+
+    if (token) { enter().catch(function () { signOut(); }); }
+  })();
+  </script>
+</body>
+</html>
