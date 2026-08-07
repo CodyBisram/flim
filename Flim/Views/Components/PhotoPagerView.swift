@@ -40,6 +40,8 @@ struct PhotoPagerView: View {
     /// Show the photographer's @handle above the date (roll grid); off shows the date alone.
     var showsAttribution: Bool = false
     @State private var profileRoute: ProfileRoute?
+    /// A profile chosen inside the comment sheet, opened once that sheet has closed.
+    @State private var pendingProfile: ProfileRoute?
     @State private var dragY: CGFloat = 0
     var memberNames: [UUID: String] = [:]
     /// The roll name for a given photo's rollId (nil for a personal, non-roll shot), used only in
@@ -57,6 +59,7 @@ struct PhotoPagerView: View {
     @Environment(FeedService.self) private var feed
     @Environment(\.displayScale) private var displayScale
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var selection: Int
     /// Upgraded from the seeded thumbnail to full-res lazily, windowed to ±1 around `selection`
@@ -66,6 +69,8 @@ struct PhotoPagerView: View {
     @State private var sharedIds: Set<UUID> = []
     @State private var reportedIds: Set<UUID> = []
     @State private var reactions: [PhotoReaction] = []
+    /// Drives the heart that blooms over a double tap, matching the feed's.
+    @State private var heartBurst = false
     @State private var scale: CGFloat = 1
     @State private var offset: CGSize = .zero
     @State private var lastOffset: CGSize = .zero
@@ -134,8 +139,13 @@ struct PhotoPagerView: View {
         }
         .ignoresSafeArea(.container)
         .statusBarHidden()
-        .sheet(isPresented: $showComments) {
-            PhotoCommentsSheet(photoId: (commentsPhoto ?? current)?.id ?? UUID(), memberNames: memberNames)
+        // Sheet to sheet: the profile cannot be presented until the comment sheet has finished
+        // dismissing, so the id waits in `pendingProfile` and onDismiss opens it.
+        .sheet(isPresented: $showComments, onDismiss: {
+            if let pending = pendingProfile { pendingProfile = nil; profileRoute = pending }
+        }) {
+            PhotoCommentsSheet(photoId: (commentsPhoto ?? current)?.id ?? UUID(),
+                               memberNames: memberNames) { pendingProfile = ProfileRoute(id: $0) }
         }
         .sheet(isPresented: $showTagSheet) {
             TagPhotoSheet(url: composerPhoto.flatMap { resolvedURLs[$0.id] }, tags: $pendingTags)
@@ -407,6 +417,16 @@ struct PhotoPagerView: View {
                     .transition(.opacity)
                     .offset(x: dragX, y: dragY)
             }
+            // Over the photo rather than inside `photoPage`, so it is not scaled by a pinch in
+            // flight and does not move with the paging offset.
+            Image(systemName: "heart.fill")
+                .font(.system(size: 90))
+                .foregroundStyle(.white)
+                .shadow(radius: 8)
+                .scaleEffect(heartBurst ? 1 : 0.4)
+                .opacity(heartBurst ? 0.9 : 0)
+                .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.55), value: heartBurst)
+                .allowsHitTesting(false)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .contentShape(Rectangle())
@@ -472,7 +492,14 @@ struct PhotoPagerView: View {
                         // Pan is only active once zoomed in (GestureMask.none otherwise), so at 1x
                         // it never competes with the swipe above for a touch.
                         .gesture(panWhileZoomed, including: scale > 1 ? .all : .none)
-                        .onTapGesture(count: 2) { toggleZoom() }
+                        // Double tap likes the photo, the same as it does in the feed, rather
+                        // than holding a zoom. It used to do the latter, which meant the one
+                        // gesture people already know from every other photo app did three
+                        // different things depending on which screen they were on, and left the
+                        // photo parked at 2.5x on a pan that never tracked the finger properly.
+                        // Only where reactions exist: the Darkroom is your own photos and has
+                        // no reaction bar for this to drive.
+                        .onTapGesture(count: 2) { if showsReactions { doubleTapLike() } }
                 } placeholder: {
                     ProgressView().tint(.white)
                 }
@@ -563,17 +590,21 @@ struct PhotoPagerView: View {
         }
     }
 
-    private func toggleZoom() {
-        // A double tap has no two fingers to grow from, so it goes back to the middle. Leaving
-        // the last pinch's anchor in place would send a centred zoom lurching off to wherever the
-        // previous pinch happened to land.
-        zoomAnchor = .center
-        withAnimation(.spring(duration: 0.3)) {
-            if scale > 1 {
-                scale = 1; offset = .zero; lastOffset = .zero
-            } else {
-                scale = 2.5
-            }
+    /// Adds a heart on a double tap, the way the feed does. It never removes one: a double tap is
+    /// an enthusiastic gesture, and having it silently undo the like you just gave reads as the
+    /// tap not registering.
+    private func doubleTapLike() {
+        guard let uid = auth.currentUser?.id, let photo = current else { return }
+        Haptics.tap()
+        if !reduceMotion {
+            heartBurst = true
+            Task { try? await Task.sleep(for: .milliseconds(650)); heartBurst = false }
+        }
+        guard !reactions.contains(where: { $0.emoji == "❤️" && $0.userId == uid }) else { return }
+        Task {
+            reactions.append(PhotoReaction(id: UUID(), photoId: photo.id, userId: uid, emoji: "❤️"))
+            await photoService.addReaction(photoId: photo.id, emoji: "❤️", userId: uid)
+            reactions = await photoService.fetchReactions(photoId: photo.id)
         }
     }
 

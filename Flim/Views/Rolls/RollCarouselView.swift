@@ -4,6 +4,8 @@ import SwiftUI
 /// with the current photo's date, who took it, and reactions.
 struct RollCarouselView: View {
     @State private var profileRoute: ProfileRoute?
+    /// A profile chosen inside the comment sheet, opened once that sheet has closed.
+    @State private var pendingProfile: ProfileRoute?
     @State private var dragX: CGFloat = 0
     let photos: [Photo]                    // developed, sorted oldest → newest
     let memberNames: [UUID: String]
@@ -104,9 +106,14 @@ struct RollCarouselView: View {
             NavigationStack { UserPageView(userId: route.id) }
         }
         .sheet(item: $shareItem) { SharePreviewSheet(photo: $0.image) }
-        .sheet(isPresented: $showComments) {
+        // Same deferral as the pager: one sheet has to finish closing before the next opens.
+        .sheet(isPresented: $showComments, onDismiss: {
+            if let pending = pendingProfile { pendingProfile = nil; profileRoute = pending }
+        }) {
             if let photo = current {
-                PhotoCommentsSheet(photoId: photo.id, memberNames: memberNames)
+                PhotoCommentsSheet(photoId: photo.id, memberNames: memberNames) {
+                    pendingProfile = ProfileRoute(id: $0)
+                }
             }
         }
         .onAppear { selection = min(max(startIndex, 0), max(0, photos.count - 1)) }

@@ -11,12 +11,20 @@ struct PhotoCommentsSheet: View {
     @Environment(FeedService.self) private var feed
     @Environment(\.dismiss) private var dismiss
 
+    /// Handed up to the presenter rather than pushed inside this sheet.
+    var onOpenProfile: (UUID) -> Void
+
     @State private var comments: [PhotoComment] = []
     @State private var draft = ""
     @State private var sending = false
     @State private var loaded = false
-    @State private var route: ProfileRoute?
     @FocusState private var focused: Bool
+
+    /// See CommentsSheet: the profile belongs to the screen underneath, not to this sheet.
+    private func openProfile(_ id: UUID) {
+        onOpenProfile(id)
+        dismiss()
+    }
 
     private var canSend: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
@@ -50,8 +58,7 @@ struct PhotoCommentsSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .flimInlineTitle("Comments")
             .toolbarColorScheme(.dark, for: .navigationBar)
-            .navigationDestination(item: $route) { UserPageView(userId: $0.id) }
-            .toolbar {
+                        .toolbar {
                 ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() }.foregroundStyle(.white) }
             }
             .task { await load() }
@@ -64,7 +71,7 @@ struct PhotoCommentsSheet: View {
         HStack(alignment: .top, spacing: 10) {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
-                    Button { route = ProfileRoute(id: comment.userId) } label: {
+                    Button { openProfile(comment.userId) } label: {
                         Text(handle(comment.userId))
                             .flimFont(13, weight: .semibold, relativeTo: .subheadline).foregroundStyle(.white)
                     }
@@ -89,7 +96,7 @@ struct PhotoCommentsSheet: View {
                     Haptics.tap()
                     Task {
                         if let profile = await feed.fetchProfile(username: username) {
-                            route = ProfileRoute(id: profile.id)
+                            openProfile(profile.id)
                         }
                     }
                 }

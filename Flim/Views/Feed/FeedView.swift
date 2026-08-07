@@ -350,6 +350,8 @@ struct FeedPostCard: View {
     @State private var draft = ""
     @State private var showComments = false
     @State private var route: ProfileRoute?
+    /// A profile chosen inside the comment sheet, opened once that sheet has closed.
+    @State private var pendingProfile: ProfileRoute?
     @State private var heartBurst = false
     @State private var showDeleteConfirm = false
     @State private var showReportConfirm = false
@@ -530,8 +532,13 @@ struct FeedPostCard: View {
             if let path = item.author.avatarPath { avatarURL = await feed.signedURL(for: path) }
             // reactions + comments already loaded in the feed batch, no per-card query.
         }
-        .sheet(isPresented: $showComments) {
-            CommentsSheet(post: post)
+        // onDismiss, not inline: pushing the profile while the comment sheet is still on screen
+        // is what put it inside the sheet. The id is parked here and acted on once the sheet is
+        // actually gone.
+        .sheet(isPresented: $showComments, onDismiss: {
+            if let pending = pendingProfile { pendingProfile = nil; route = pending }
+        }) {
+            CommentsSheet(post: post) { pendingProfile = ProfileRoute(id: $0) }
         }
         .navigationDestination(item: $route) { UserPageView(userId: $0.id) }
         .sheet(item: $shareItem) { SharePreviewSheet(photo: $0.image) }

@@ -32,6 +32,8 @@ struct PostDetailView: View {
 
     @State private var url: URL?
     @State private var reactions: [PostReaction] = []
+    /// Drives the heart that blooms over a double tap, matching the feed's.
+    @State private var heartBurst = false
     @State private var comments: [CommentInfo] = []
     @State private var draft = ""
     @State private var sending = false
@@ -50,6 +52,7 @@ struct PostDetailView: View {
     @State private var dragY: CGFloat = 0
     @State private var dragX: CGFloat = 0
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
     @FocusState private var commentFocused: Bool
 
@@ -81,6 +84,22 @@ struct PostDetailView: View {
                         // lifts it out over a dimmed backdrop, which is the whole of what that
                         // viewer offered. All the extra tap bought was an X to get back.
                         .pinchToZoom()
+                        .overlay {
+                            Image(systemName: "heart.fill")
+                                .font(.system(size: 90))
+                                .foregroundStyle(.white)
+                                .shadow(radius: 8)
+                                .scaleEffect(heartBurst ? 1 : 0.4)
+                                .opacity(heartBurst ? 0.9 : 0)
+                                .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.55),
+                                           value: heartBurst)
+                                .allowsHitTesting(false)
+                        }
+                        .contentShape(Rectangle())
+                        // The same double tap as the feed. Reaching a photo through someone's
+                        // profile used to be the one route where the gesture everyone tries
+                        // first did nothing at all.
+                        .onTapGesture(count: 2) { doubleTapLike() }
 
                     if let caption = post.caption, !caption.isEmpty {
                         Text(caption).flimFont(15, relativeTo: .body).foregroundStyle(.white)
@@ -294,6 +313,23 @@ struct PostDetailView: View {
             Spacer()
             Text(post.takenAt.formatted(date: .abbreviated, time: .omitted))
                 .flimFont(12, relativeTo: .caption).foregroundStyle(FlimTheme.textTertiary)
+        }
+    }
+
+    /// Adds a heart on a double tap, the way the feed does. It never removes one: a double tap
+    /// is an enthusiastic gesture, and having it undo the like you just gave reads as the tap
+    /// not registering.
+    private func doubleTapLike() {
+        guard let uid = auth.currentUser?.id else { return }
+        Haptics.tap()
+        if !reduceMotion {
+            heartBurst = true
+            Task { try? await Task.sleep(for: .milliseconds(650)); heartBurst = false }
+        }
+        guard !reactions.contains(where: { $0.emoji == "\u{2764}\u{FE0F}" && $0.userId == uid }) else { return }
+        Task {
+            await feed.reactToPost(post.id, emoji: "\u{2764}\u{FE0F}", userId: uid)
+            reactions = await feed.fetchReactions(postId: post.id)
         }
     }
 

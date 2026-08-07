@@ -12,11 +12,26 @@ struct CommentsSheet: View {
     @Environment(FeedService.self) private var feed
     @Environment(\.dismiss) private var dismiss
 
+    /// Handed up to whoever presented this sheet instead of pushed inside it.
+    ///
+    /// A profile opened on this sheet's own NavigationStack appeared INSIDE the half-height
+    /// comment sheet, drag indicator and all, with the feed still visible behind it. The profile
+    /// is a destination in its own right, so it belongs to the screen underneath, and this sheet
+    /// closes to make room for it.
+    var onOpenProfile: (UUID) -> Void
+
     @State private var draft = ""
     @State private var sending = false
     @State private var loaded = false
-    @State private var route: ProfileRoute?
     @FocusState private var focused: Bool
+
+    /// Closes first, then hands the id up. Presenting a profile while this sheet is still on
+    /// screen is what produced the nested profile; the caller waits for `onDismiss` so the two
+    /// presentations never overlap.
+    private func openProfile(_ id: UUID) {
+        onOpenProfile(id)
+        dismiss()
+    }
 
     // Chronological (oldest first) so new comments land at the bottom, right above the composer.
     // Filtered again here (on top of FeedService's own filtering) as defense-in-depth.
@@ -49,8 +64,7 @@ struct CommentsSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .flimInlineTitle("Comments")
             .toolbarColorScheme(.dark, for: .navigationBar)
-            .navigationDestination(item: $route) { UserPageView(userId: $0.id) }
-        }
+                    }
         // Not full-screen, opens at ~3/4 (like IG) with the feed peeking above; draggable to full.
         .presentationDetents([.fraction(0.75), .large])
         .presentationDragIndicator(.visible)
@@ -61,7 +75,7 @@ struct CommentsSheet: View {
         HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
-                    Button { route = ProfileRoute(id: info.comment.userId) } label: {
+                    Button { openProfile(info.comment.userId) } label: {
                         Text(info.handle).flimFont(14, weight: .semibold, relativeTo: .subheadline).foregroundStyle(.white)
                     }
                     Text(Self.compactTime(info.comment.createdAt))
@@ -112,7 +126,7 @@ struct CommentsSheet: View {
         Haptics.tap()
         Task {
             if let profile = await feed.fetchProfile(username: username) {
-                route = ProfileRoute(id: profile.id)
+                openProfile(profile.id)
             }
         }
     }
