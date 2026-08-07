@@ -67,15 +67,70 @@
           </div>
         </div>
 
-        <figure class="print">
-          <div class="print__window" id="window" data-state="latent">
-            <div class="print__image"></div>
-            <div class="print__grain"></div>
-            <div class="print__vignette"></div>
-          </div>
-          <figcaption class="print__caption">
+        <figure class="canister" id="window" data-state="latent">
+          <svg class="canister__art" viewBox="0 0 320 400" role="img"
+               aria-label="A roll of FLIM film beside its canister, one frame still developing">
+            <defs>
+              <linearGradient id="can-body" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0" stop-color="currentColor" stop-opacity="0.10" />
+                <stop offset="0.5" stop-color="currentColor" stop-opacity="0.22" />
+                <stop offset="1" stop-color="currentColor" stop-opacity="0.10" />
+              </linearGradient>
+              <pattern id="grain" x="0" y="0" width="3" height="3" patternUnits="userSpaceOnUse">
+                <circle cx="1.5" cy="1.5" r="0.55" fill="currentColor" fill-opacity="0.10" />
+              </pattern>
+            </defs>
+
+            <!-- The exposed strip, leaning out of the canister. -->
+            <g transform="translate(72 32) rotate(-4)">
+              <rect width="176" height="200" fill="currentColor" fill-opacity="0.06"
+                    stroke="currentColor" stroke-opacity="0.30" />
+              <g fill="currentColor" fill-opacity="0.55">
+                <rect x="4" y="12" width="10" height="12" rx="1.5" />
+                <rect x="4" y="36" width="10" height="12" rx="1.5" />
+                <rect x="4" y="60" width="10" height="12" rx="1.5" />
+                <rect x="4" y="84" width="10" height="12" rx="1.5" />
+                <rect x="4" y="108" width="10" height="12" rx="1.5" />
+                <rect x="4" y="132" width="10" height="12" rx="1.5" />
+                <rect x="4" y="156" width="10" height="12" rx="1.5" />
+                <rect x="4" y="180" width="10" height="12" rx="1.5" />
+                <rect x="162" y="12" width="10" height="12" rx="1.5" />
+                <rect x="162" y="36" width="10" height="12" rx="1.5" />
+                <rect x="162" y="60" width="10" height="12" rx="1.5" />
+                <rect x="162" y="84" width="10" height="12" rx="1.5" />
+                <rect x="162" y="108" width="10" height="12" rx="1.5" />
+                <rect x="162" y="132" width="10" height="12" rx="1.5" />
+                <rect x="162" y="156" width="10" height="12" rx="1.5" />
+                <rect x="162" y="180" width="10" height="12" rx="1.5" />
+              </g>
+              <!-- The two frames come up as the countdown runs out. -->
+              <g class="canister__frames">
+                <rect x="28" y="20" width="120" height="74" fill="url(#grain)"
+                      stroke="currentColor" stroke-opacity="0.20" />
+                <rect x="28" y="106" width="120" height="74" fill="url(#grain)"
+                      stroke="currentColor" stroke-opacity="0.20" />
+              </g>
+            </g>
+
+            <!-- The canister. -->
+            <g transform="translate(40 152)">
+              <rect width="240" height="24" rx="4" fill="currentColor" fill-opacity="0.30" />
+              <rect y="24" width="240" height="208" rx="14" fill="url(#can-body)"
+                    stroke="currentColor" stroke-opacity="0.35" />
+              <rect x="20" y="64" width="200" height="120" rx="6" fill="currentColor"
+                    fill-opacity="0.04" stroke="currentColor" stroke-opacity="0.25" />
+              <text class="canister__wordmark" x="32" y="100">FLIM</text>
+              <text class="canister__spec" x="32" y="122">35MM · 50 EXP</text>
+              <line x1="32" y1="138" x2="208" y2="138" stroke="currentColor"
+                    stroke-opacity="0.35" stroke-width="1" />
+              <text class="canister__promise" x="32" y="158">develops in twelve hours</text>
+              <text class="canister__spec" x="32" y="174">ROLL · NO FILTER · NO RUSH</text>
+            </g>
+          </svg>
+
+          <figcaption class="canister__caption">
             <span class="status" id="status">Developing</span>
-            <span class="print__timer" id="timer">12:00:00</span>
+            <span class="canister__timer" id="timer">12:00:00</span>
           </figcaption>
         </figure>
       </div>
@@ -137,6 +192,50 @@
         from someone who already has the app, and what you share stays between you and
         the people you shared it with.
       </p>
+    </section>
+
+    <section class="frame reveal" data-frame="05">
+      <div class="split">
+        <div>
+          <p class="eyebrow">Not invited yet</p>
+          <h2>Ask for an invite.</h2>
+          <p class="body">
+            FLIM opens up one group at a time. Tell us who you would put on a roll with
+            you, and we will send a code when a slot opens.
+          </p>
+        </div>
+
+        <form class="ask" id="ask" novalidate>
+          <label class="ask__label" for="ask-email">Email</label>
+          <input class="ask__field" id="ask-email" name="email" type="email"
+                 autocomplete="email" inputmode="email" placeholder="you@example.com" required />
+
+          <label class="ask__label" for="ask-note">Who would be on your roll?</label>
+          <textarea class="ask__field ask__note" id="ask-note" name="note" rows="3"
+                    maxlength="500" placeholder="Optional, but it helps."></textarea>
+
+          <button class="btn btn-primary" id="ask-submit" type="submit">Request an invite</button>
+          <!-- Reserved rather than inserted, so the form does not jump when it answers. -->
+          <p class="ask__status" id="ask-status" role="status" aria-live="polite"></p>
+        </form>
+      </div>
+    </section>
+
+    <section class="frame reveal" data-frame="06">
+      <div class="split">
+        <div>
+          <p class="eyebrow">Contact</p>
+          <h2>Just say hi.</h2>
+          <p class="body">
+            Questions, bugs, or something you want FLIM to do. We read every message,
+            and a person writes back.
+          </p>
+        </div>
+        <div class="hi">
+          <a class="btn btn-primary" href="mailto:support@flim-app.com">Just say hi</a>
+          <p class="hi__address">support@flim-app.com</p>
+        </div>
+      </div>
     </section>
   </main>
 
@@ -204,6 +303,80 @@
 
       windowEl.setAttribute("data-state", "developing");
       requestAnimationFrame(step);
+    })();
+
+    /* --- Ask for an invite --------------------------------------------------
+       Posts to the request_invite RPC, which records the ask and nothing else:
+       being on that list is not access, and the owner still allowlists people by
+       hand. The key below is the publishable one, meant to be public and already
+       shipped inside the iOS app; every table behind it is closed by RLS.
+       --------------------------------------------------------------------- */
+    (function () {
+      var SUPABASE_URL = "https://wxvwamwrjlrvqmuaafjv.supabase.co";
+      var SUPABASE_KEY = "sb_publishable_ze8KEytcVzvKOijlUQ8Kfw_nb3kJ-V4";
+
+      var form = document.getElementById("ask");
+      if (!form) return;
+      var email = document.getElementById("ask-email");
+      var note = document.getElementById("ask-note");
+      var button = document.getElementById("ask-submit");
+      var status = document.getElementById("ask-status");
+
+      function say(message, tone) {
+        status.textContent = message;
+        if (tone) { status.setAttribute("data-tone", tone); }
+        else { status.removeAttribute("data-tone"); }
+      }
+
+      form.addEventListener("submit", async function (event) {
+        event.preventDefault();
+
+        var address = email.value.trim();
+        if (!address || address.indexOf("@") < 1 || address.indexOf(".") < 0) {
+          say("That address does not look right. Check it and try again.", "bad");
+          email.focus();
+          return;
+        }
+
+        form.classList.add("ask__submitting");
+        button.textContent = "Sending";
+        say("");
+
+        try {
+          var res = await fetch(SUPABASE_URL + "/rest/v1/rpc/request_invite", {
+            method: "POST",
+            headers: {
+              "apikey": SUPABASE_KEY,
+              "Authorization": "Bearer " + SUPABASE_KEY,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ p_email: address, p_note: note.value.trim() || null }),
+          });
+
+          if (!res.ok) throw new Error("http " + res.status);
+          // The function returns false only for an address it could not parse.
+          var accepted = await res.json();
+          if (accepted === false) {
+            say("That address does not look right. Check it and try again.", "bad");
+            form.classList.remove("ask__submitting");
+            button.textContent = "Request an invite";
+            email.focus();
+            return;
+          }
+
+          // Replacing the form entirely: leaving a filled-in form on screen reads
+          // as though nothing happened, and invites a second submission.
+          form.innerHTML =
+            '<p class="ask__label" style="margin-top:0">Asked</p>' +
+            '<p class="body" style="margin-top:6px">You are on the list. We will send a code to ' +
+            address.replace(/[<>&]/g, "") +
+            " when a slot opens. Nothing else arrives in the meantime.</p>";
+        } catch (e) {
+          say("That did not send. Try again, or email support@flim-app.com.", "bad");
+          form.classList.remove("ask__submitting");
+          button.textContent = "Request an invite";
+        }
+      });
     })();
 
     /* --- Frames arrive as you scroll --------------------------------------- */
