@@ -295,6 +295,7 @@
       <li><button class="navitem" data-panel="invites" aria-current="true">Invites <span class="navitem__count" id="c-invites">0</span></button></li>
       <li><button class="navitem" data-panel="photos">Reported photos <span class="navitem__count" id="c-photos">0</span></button></li>
       <li><button class="navitem" data-panel="users">Reported people <span class="navitem__count" id="c-users">0</span></button></li>
+      <li><button class="navitem" data-panel="feedback">Feedback <span class="navitem__count" id="c-feedback">0</span></button></li>
     </ul>
     <div class="side__foot">
       <div class="side__who" id="who"></div>
@@ -326,9 +327,14 @@
     var token = null;
     try { token = sessionStorage.getItem(TOKEN_KEY); } catch (e) {}
 
-    var data = { invites: [], photos: [], users: [] };
+    var data = { invites: [], photos: [], users: [], feedback: [] };
     var panel = "invites";
-    var TITLES = { invites: "Invites", photos: "Reported photos", users: "Reported people" };
+    var TITLES = {
+      invites: "Invites",
+      photos: "Reported photos",
+      users: "Reported people",
+      feedback: "Feedback",
+    };
 
     function $(id) { return document.getElementById(id); }
     function show(el) { el.classList.remove("hide"); }
@@ -465,12 +471,14 @@
       host.textContent = "";
       var rows = data[panel];
       $("page-sub").textContent = rows.length
-        ? plural(rows.length, panel === "invites" ? "person waiting" : "open")
+        ? plural(rows.length, panel === "invites" ? "person waiting"
+                            : panel === "feedback" ? "unread" : "open")
         : "";
 
       if (!rows.length) {
         host.appendChild(el("div", "empty",
-          panel === "invites" ? "Nobody is waiting." : "Nothing to review."));
+          panel === "invites" ? "Nobody is waiting."
+          : panel === "feedback" ? "No feedback yet." : "Nothing to review."));
         return;
       }
 
@@ -498,7 +506,7 @@
           });
           c = card(pt, ago(r.created_at), r.reason, [toggle, dismissP]);
 
-        } else {
+        } else if (panel === "users") {
           var ut = el("div", "card__title", "@" + (r.reported_username || "unknown"));
           if (r.report_count > 1) ut.appendChild(el("span", "pill pill--bad", r.report_count + " reports"));
           var dismissU = el("button", "btn", "Dismiss");
@@ -506,13 +514,28 @@
             act(c, "dismiss_user_report", { p_reported_id: r.reported_id });
           });
           c = card(ut, ago(r.created_at), r.reason, [dismissU]);
+
+        } else {
+          /* The build and device are the point of this queue: they are what a
+             mailto: report never carried, and what a bug report otherwise costs
+             a round trip to ask for. */
+          var ft = el("div", "card__title", "@" + (r.username || "unknown"));
+          var stamp = [r.app_version && r.app_build ? r.app_version + " (" + r.app_build + ")" : r.app_version,
+                       r.device_model, r.os_version].filter(Boolean).join(" · ");
+          if (stamp) ft.appendChild(el("span", "pill", stamp));
+          var dismissF = el("button", "btn", "Dismiss");
+          dismissF.addEventListener("click", function () {
+            act(c, "dismiss_feedback", { p_id: r.id });
+          });
+          c = card(ft, ago(r.created_at), r.message, [dismissF]);
         }
         host.appendChild(c);
       });
     }
 
     function counts() {
-      [["invites", "c-invites"], ["photos", "c-photos"], ["users", "c-users"]].forEach(function (p) {
+      [["invites", "c-invites"], ["photos", "c-photos"],
+       ["users", "c-users"], ["feedback", "c-feedback"]].forEach(function (p) {
         var n = data[p[0]].length;
         var node = $(p[1]);
         node.textContent = n;
@@ -535,15 +558,30 @@
       }
     }
 
+    /* allSettled, not all. These are four independent queues, and with Promise.all
+       a single failing one takes the whole dashboard down with it: a function not
+       yet deployed, or one renamed on the server, would leave the owner staring at
+       a blank page with three perfectly healthy queues behind it. Each queue now
+       fails on its own and says so. */
     async function load() {
-      var r = await Promise.all([
-        rpc("list_invite_requests"),
-        rpc("list_photo_reports"),
-        rpc("list_user_reports"),
-      ]);
-      data.invites = r[0] || [];
-      data.photos = r[1] || [];
-      data.users = r[2] || [];
+      var names = ["list_invite_requests", "list_photo_reports", "list_user_reports", "list_feedback"];
+      var keys = ["invites", "photos", "users", "feedback"];
+      var settled = await Promise.allSettled(names.map(function (n) { return rpc(n); }));
+
+      var broken = [];
+      settled.forEach(function (result, i) {
+        if (result.status === "fulfilled") {
+          data[keys[i]] = result.value || [];
+        } else {
+          data[keys[i]] = [];
+          broken.push(TITLES[keys[i]]);
+        }
+      });
+
+      say($("panel-status"),
+          broken.length ? "Could not load: " + broken.join(", ") : "",
+          broken.length ? "bad" : undefined);
+
       counts();
       render();
     }
