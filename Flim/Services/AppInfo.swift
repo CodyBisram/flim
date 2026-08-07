@@ -69,12 +69,20 @@ enum AppInfo {
         """
     }
 
-    /// e.g. "1.0 (42)"
-    static var versionString: String {
-        let v = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
-        let b = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"
-        return "\(v) (\(b))"
+    /// e.g. "1.0"
+    static var shortVersion: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
     }
+
+    /// e.g. "42". Split out from `versionString` because feedback reports send this as its own
+    /// field, matching the `app_build` column on a crash row (see CrashReporter) rather than a
+    /// combined string that would need re-parsing to correlate the two.
+    static var buildNumber: String {
+        Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"
+    }
+
+    /// e.g. "1.0 (42)"
+    static var versionString: String { "\(shortVersion) (\(buildNumber))" }
 
     /// True ONLY for a public App Store build (production receipt). DEBUG and TestFlight are false,
     /// so TestFlight-only surfaces stay available while testing but auto-disappear on public release.

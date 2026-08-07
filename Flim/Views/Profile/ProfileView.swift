@@ -25,6 +25,7 @@ struct ProfileView: View {
     @State private var deleteError: String?
     @State private var showWipeConfirm = false
     @State private var showBlockedUsers = false
+    @State private var showFeedbackSheet = false
 
     @AppStorage(InstantFilmProcessor.neutralCaptureKey) private var neutralCapture = false
     @AppStorage("developNotificationsEnabled") private var notificationsEnabled = true
@@ -60,7 +61,11 @@ struct ProfileView: View {
                 } header: { sectionHeader("Account") }
 
                 Section {
-                    linkRow("Send feedback", icon: "envelope") {
+                    // Primary path: posts straight to the database, so a report is captured the
+                    // moment Send is tapped. The mailto link below stays too, for people who'd
+                    // rather write to a person, and because Apple expects a support contact.
+                    linkRow("Send feedback", icon: "envelope") { showFeedbackSheet = true }
+                    linkRow("Email us directly", icon: "paperplane") {
                         if let url = AppInfo.feedbackMailURL { openURL(url) }
                     }
                     linkRow("Privacy Policy", icon: "hand.raised") { openURL(AppInfo.privacyPolicyURL) }
@@ -140,6 +145,9 @@ struct ProfileView: View {
             }
             .sheet(isPresented: $showBlockedUsers) {
                 BlockedUsersSheet()
+            }
+            .sheet(isPresented: $showFeedbackSheet) {
+                FeedbackSheet()
             }
             .confirmationDialog("Delete your account?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
                 Button("Delete Everything", role: .destructive) {
