@@ -389,6 +389,19 @@ INSERT INTO storage.buckets (id, name, public)
 VALUES ('photos', 'photos', false)
 ON CONFLICT (id) DO NOTHING;
 
+-- JPEG only. HEIC was measured against the look-regression pin on 2026-08-07 and
+-- rejected: at every quality that saves bytes it smooths our grain away, moving
+-- localContrast on all 11 fixtures by up to 3.9x the pin's tolerance, and the only
+-- qualities that mostly clear the pin produce files larger than the JPEG they
+-- replace. Do not widen this without re-running that sweep.
+--
+-- The size limit matches production. Without it a fresh project accepts uploads of
+-- any size, which is both a storage-cost and an abuse problem on a private beta.
+UPDATE storage.buckets
+SET allowed_mime_types = ARRAY['image/jpeg'],
+    file_size_limit = 26214400   -- 25 MB
+WHERE id = 'photos';
+
 -- Authenticated users may upload only into their own "<auth.uid()>/…" folder.
 DROP POLICY IF EXISTS "photos: insert own folder" ON storage.objects;
 CREATE POLICY "photos: insert own folder"
@@ -936,6 +949,14 @@ CREATE TRIGGER auto_hide_reported_trigger
 -- `NOT hidden` check for those two lives on the block-enforcement versions instead, alongside
 -- the block check, so it actually survives a full run of this file.
 -- ============================================================
+-- ⚠️ These two are redefined AGAIN, further down, by the block-enforcement
+-- section (search "READ policies: drop the blocked party's content from every
+-- shared surface"), which is where the block predicate actually gets added.
+-- It cannot be added here: public.is_blocked_either_way is not created until
+-- that later section, and CREATE POLICY resolves function calls in its USING
+-- clause at creation time, so referencing it here would fail on a from-scratch
+-- run of this file (function does not exist yet). Same reasoning the comment
+-- above already documents for NOT hidden on the two table-level policies.
 DROP POLICY IF EXISTS "photos: roll members can read shared" ON storage.objects;
 CREATE POLICY "photos: roll members can read shared"
     ON storage.objects FOR SELECT TO authenticated
@@ -1128,6 +1149,44 @@ CREATE POLICY "photos: roll members can see"
         AND NOT public.is_blocked_either_way(auth.uid(), user_id)
     );
 
+-- Shared-roll photo BYTES (storage.objects): the row policy above already hides a blocked
+-- party's photo row, but blocking never touches roll_members, so a blocked user still passes
+-- is_roll_member(roll_id) at the storage layer. Without this, a storage path cached on-device
+-- (SignedURLStore.ttl, up to 7 days) could still mint a fresh signed URL for a roll-mate's bytes
+-- after the block, even though every row-level surface had already hidden it. This is the
+-- definition of this policy name that actually survives a full run of this file (the storage
+-- bootstrap section above only has bucket/rendition-path/roll-membership/hidden; it predates
+-- is_blocked_either_way, which isn't created until further up in this file, so the block
+-- predicate has to live in this later redefinition, same reasoning as "NOT hidden" above).
+DROP POLICY IF EXISTS "photos: roll members can read shared" ON storage.objects;
+CREATE POLICY "photos: roll members can read shared"
+    ON storage.objects FOR SELECT TO authenticated
+    USING (
+        bucket_id = 'photos'
+        AND EXISTS (
+            SELECT 1 FROM public.photos p
+            WHERE storage.objects.name IN (p.storage_path, p.thumb_path, p.feed_path)
+              AND p.roll_id IS NOT NULL
+              AND NOT p.hidden
+              AND public.is_roll_member(p.roll_id)
+              AND NOT public.is_blocked_either_way(auth.uid(), p.user_id)
+        )
+    );
+
+-- Posted photo BYTES (storage.objects): mirrors "posts: readable by authenticated" above,
+-- which already keys NOT hidden and the block check off po.user_id. Same cached-path risk as
+-- the roll-photo policy just above; this closes it for photos shared to a post.
+DROP POLICY IF EXISTS "photos: readable when shared to a post" ON storage.objects;
+CREATE POLICY "photos: readable when shared to a post"
+    ON storage.objects FOR SELECT TO authenticated
+    USING (
+        bucket_id = 'photos'
+        AND EXISTS (SELECT 1 FROM public.posts po
+                    WHERE storage.objects.name IN (po.storage_path, po.thumb_path, po.feed_path)
+                      AND NOT po.hidden
+                      AND NOT public.is_blocked_either_way(auth.uid(), po.user_id))
+    );
+
 -- Roll photo comments: keep the membership/ownership check, drop the blocked author's.
 DROP POLICY IF EXISTS "photo_comments: readable by roll members" ON public.photo_comments;
 CREATE POLICY "photo_comments: readable by roll members"
@@ -1221,9 +1280,17 @@ CREATE POLICY "follows: create own"
 --    filters blocked users out of follower/following LISTS.
 --  * Activity aggregation: assembled client-side from now-block-filtered reaction/comment/
 --    tag rows, but any purely client-derived activity items must also be filtered there.
---  * Storage objects: signed URLs are minted per-path; a stale URL already handed out
---    isn't revoked by a later block. New reads are gated because the photos/posts rows
---    that authorize them are now block-filtered.
+--  * Storage objects: a signed URL ALREADY handed out to a client before a block still
+--    works for the rest of its short TTL; Storage has no revocation-on-block mechanism,
+--    and this schema doesn't attempt one. What IS covered: "photos: roll members can read
+--    shared" and "photos: readable when shared to a post" (storage.objects, both further
+--    above) now carry the same is_blocked_either_way predicate as their public.photos /
+--    public.posts row counterparts, so minting a NEW signed URL for a blocked party's
+--    bytes fails at RLS even if the client still holds the raw path (e.g. from
+--    SignedURLStore's on-device cache, which persists a path for up to 7 days). Before
+--    2026-08-07 this bullet incorrectly assumed the row-level block filter alone protected
+--    Storage; it does not, storage.objects has its own independent RLS policies that must
+--    carry the predicate themselves. That gap is what closed on 2026-08-07.
 
 -- ============================================================
 -- Block severs the follow graph (fixes a follower-count asymmetry).
