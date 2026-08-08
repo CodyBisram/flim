@@ -319,11 +319,25 @@
 
           // Replacing the form entirely: leaving a filled-in form on screen reads
           // as though nothing happened, and invites a second submission.
-          form.innerHTML =
-            '<p class="ask__label" style="margin-top:0">Asked</p>' +
-            '<p class="body" style="margin-top:6px">You are on the list. We will send a code to ' +
-            address.replace(/[<>&]/g, "") +
-            " when a slot opens. Nothing else arrives in the meantime.</p>";
+          //
+          // Built as nodes rather than an HTML string. The address is only ever the
+          // person's own typing in their own browser, so nothing here was exploitable,
+          // but concatenating input into innerHTML is a habit worth not having, and
+          // textContent carries an address containing & or a quote through intact
+          // instead of stripping characters out of it to make it safe.
+          var heading = document.createElement("p");
+          heading.className = "ask__label";
+          heading.style.marginTop = "0";
+          heading.textContent = "Asked";
+
+          var body = document.createElement("p");
+          body.className = "body";
+          body.style.marginTop = "6px";
+          body.textContent =
+            "You are on the list. We will send a code to " + address +
+            " when a slot opens. Nothing else arrives in the meantime.";
+
+          form.replaceChildren(heading, body);
         } catch (e) {
           say("That did not send. Try again, or email support@flim-app.com.", "bad");
           form.classList.remove("ask__submitting");
