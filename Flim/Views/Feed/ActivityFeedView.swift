@@ -139,28 +139,18 @@ struct ActivityFeedView: View {
             .buttonStyle(.plain)
 
             VStack(alignment: .leading, spacing: 2) {
-                // The handle and the action text are separate Text views (not concatenated)
-                // specifically so they can be separate tap targets, the handle alone opens
-                // the actor's profile, matching the avatar; the action text opens the post.
-                HStack(spacing: 4) {
-                    Button { profileRoute = ProfileRoute(id: item.actor.id) } label: {
-                        Text(item.actor.handle)
-                            .flimFont(14, weight: .semibold, relativeTo: .subheadline)
-                            .foregroundStyle(.white)
-                            .lineLimit(1)
-                            .fixedSize()
-                    }
-                    .buttonStyle(.plain)
-
-                    Button { openDestination(item) } label: {
-                        Text(actionText(item.kind))
-                            .flimFont(14, relativeTo: .subheadline)
-                            .foregroundStyle(.white)
-                            .lineLimit(2)
-                            .multilineTextAlignment(.leading)
-                    }
-                    .buttonStyle(.plain)
+                // One sentence, so one Text.
+                //
+                // The handle used to be its own Button sitting beside the action text, which made
+                // the pair two COLUMNS rather than one paragraph: a comment long enough to wrap
+                // began its second line under the opening quote instead of at the row's edge, so
+                // the single wrapped row in a list people scan was the only one that did not line
+                // up. That tap target was also a duplicate, since the avatar beside it already
+                // opens the profile (see the note on `row`), and it was what cost the typography.
+                Button { openDestination(item) } label: {
+                    ActivityLine(handle: item.actor.handle, action: actionText(item.kind))
                 }
+                .buttonStyle(.plain)
                 Button { openDestination(item) } label: {
                     Text(item.date.formatted(.relative(presentation: .named)))
                         .flimFont(11, relativeTo: .caption).foregroundStyle(FlimTheme.textTertiary)
@@ -257,6 +247,35 @@ struct ActivityFeedView: View {
             EmptyView()   // .follow never reaches the post-thumbnail branch above
         }
     }
+
+/// One activity sentence: bold handle, regular action, wrapping as a single paragraph.
+///
+/// Its own view because concatenating `Text` requires both halves to BE `Text`, and `flimFont` is
+/// a ViewModifier returning `some View`. The scaling it provides is reproduced here with the same
+/// `ScaledMetric` mechanism against the same text style, so this line grows with Dynamic Type
+/// exactly as the rest of the row does rather than quietly opting out of it.
+private struct ActivityLine: View {
+    let handle: String
+    let action: String
+
+    @ScaledMetric(relativeTo: .subheadline) private var size: CGFloat = 14
+
+    var body: some View {
+        (
+            Text(handle).font(.system(size: size, weight: .semibold))
+            + Text(" " + action).font(.system(size: size))
+        )
+        .foregroundStyle(.white)
+        // Two lines, then truncate. Deliberately NOT a manual character cap on the comment body:
+        // the layout knows the width and the reader's text size and this does not, so a cap that
+        // looked right at the default size would clip early on a large one and leave a short line
+        // on a small one. A notification points at the thing; the comment is read in full by
+        // tapping through.
+        .lineLimit(2)
+        .multilineTextAlignment(.leading)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
 
     private func actionText(_ kind: ActivityItem.Kind) -> String {
         switch kind {
