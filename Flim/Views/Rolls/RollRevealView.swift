@@ -16,14 +16,23 @@ struct RollRevealView: View {
     /// fetch (but before this member opened the reveal) never enters the deck.
     let photos: [Photo]
     let memberNames: [UUID: String]
+    /// For the contact-sheet share's join link, built the same way `RollDetailView` and
+    /// `RollsView` build their own roll-invite share text (see `AppInfo.rollInviteLink`).
+    let inviteCode: String
+    /// When the roll developed, `Roll.revealAt`. The reveal only ever opens on an already-
+    /// developed roll, so this is always in the past by the time this view exists.
+    let developedAt: Date
 
     @State private var viewModel: RollRevealViewModel
 
-    init(rollId: UUID, rollName: String, photos: [Photo], memberNames: [UUID: String]) {
+    init(rollId: UUID, rollName: String, photos: [Photo], memberNames: [UUID: String],
+        inviteCode: String, developedAt: Date) {
         self.rollId = rollId
         self.rollName = rollName
         self.photos = photos
         self.memberNames = memberNames
+        self.inviteCode = inviteCode
+        self.developedAt = developedAt
         _viewModel = State(initialValue: RollRevealViewModel(rollId: rollId, photos: photos))
     }
 
@@ -39,6 +48,7 @@ struct RollRevealView: View {
     /// Latched once a press has moved far enough to be a swipe, so it can't turn back into a hold.
     @State private var holdCancelled = false
     @State private var profileRoute: ProfileRoute?
+    @State private var showContactSheet = false
     /// Pinch-to-look on the current slide. Transient, so a zoom can never be left behind on a
     /// slideshow that keeps moving. Reset whenever the photo on screen changes, see the
     /// `onChange` below.
@@ -394,6 +404,23 @@ struct RollRevealView: View {
             }
             .padding(.top, 12)
 
+            // The headline reason this screen exists: turn what was just watched into something
+            // that survives past this moment. Right here, at the peak of the feeling it produces,
+            // is the whole reason a contact sheet is worth building at all.
+            if !viewModel.deck.isEmpty {
+                Button {
+                    Haptics.tap()
+                    showContactSheet = true
+                } label: {
+                    Label("Share as contact sheet", systemImage: "square.grid.3x3")
+                        .flimFont(14, weight: .semibold, relativeTo: .subheadline)
+                        .foregroundStyle(accent)
+                        .padding(.horizontal, 20).padding(.vertical, 11)
+                        .glassCapsule(interactive: true)
+                }
+                .padding(.top, 10)
+            }
+
             // The one thing people actually want at this moment, offered at this moment.
             //
             // It already existed, buried in the roll's ⋯ menu two screens away, which is a fine
@@ -421,6 +448,10 @@ struct RollRevealView: View {
             }
         }
         .transition(.opacity)
+        .sheet(isPresented: $showContactSheet) {
+            ContactSheetView(rollName: rollName, inviteCode: inviteCode, developedAt: developedAt,
+                             photos: viewModel.deck)
+        }
         .sheet(isPresented: Binding(get: { viewModel.showShareAll },
                                     set: { viewModel.showShareAll = $0 })) {
             ActivityView(items: viewModel.shareImages)

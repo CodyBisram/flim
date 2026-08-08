@@ -314,6 +314,27 @@ enum ImageLoader {
     /// new signed-URL tokens AND can be found before a URL is even resolved. Falls back to the
     /// URL when nil.
     static func fetch(url: URL, maxPixel: CGFloat, scale: CGFloat, cacheKey: String? = nil) async -> UIImage? {
+        if let cached = await peek(url: url, maxPixel: maxPixel, scale: scale, cacheKey: cacheKey) {
+            return cached
+        }
+
+        guard let (data, _) = try? await URLSession.shared.data(from: url) else { return nil }
+        guard let image = await downsample(data: data, maxPixel: maxPixel, scale: scale) else { return nil }
+        let memKey = (cacheKey.map { "\($0)|\(Int(maxPixel))" } ?? "\(url.absoluteString)|\(Int(maxPixel))") as NSString
+        let diskKey = cacheKey.map { "\($0)|\(Int(maxPixel))" } ?? "\(url.path)|\(Int(maxPixel))"
+        ImageCache.set(image, forKey: memKey)
+        DiskImageCache.save(image, key: diskKey)
+        if let cacheKey { DiskImageCache.saveRaw(data, path: cacheKey) }
+        return image
+    }
+
+    /// The cache-only portion of `fetch`: memory, then disk, then the same photo's raw bytes
+    /// downsampled locally for a DIFFERENT size, never the network. Split out so a caller that
+    /// must not spend new egress under any circumstance (compositing the roll's contact sheet
+    /// from whatever the reveal or grid already downloaded this session) can ask for exactly
+    /// that, while `fetch` still falls all the way through to a real download for every other
+    /// caller in the app.
+    static func peek(url: URL, maxPixel: CGFloat, scale: CGFloat, cacheKey: String? = nil) async -> UIImage? {
         let memKeyStr = cacheKey.map { "\($0)|\(Int(maxPixel))" } ?? "\(url.absoluteString)|\(Int(maxPixel))"
         let memKey = memKeyStr as NSString
         if let cached = ImageCache.shared.object(forKey: memKey) { return cached }
@@ -324,22 +345,16 @@ enum ImageLoader {
             return disk
         }
 
-        // Before going to the network, check whether these exact bytes were already downloaded
-        // for a DIFFERENT size. Only possible with a stable path; a URL-keyed entry carries a
-        // token that changes, so there'd be nothing to match on.
+        // Before giving up, check whether these exact bytes were already downloaded for a
+        // DIFFERENT size. Only possible with a stable path; a URL-keyed entry carries a token
+        // that changes, so there'd be nothing to match on.
         if let cacheKey, let raw = await DiskImageCache.loadRaw(path: cacheKey),
            let image = await downsample(data: raw, maxPixel: maxPixel, scale: scale) {
             ImageCache.set(image, forKey: memKey)
             DiskImageCache.save(image, key: diskKey)
             return image
         }
-
-        guard let (data, _) = try? await URLSession.shared.data(from: url) else { return nil }
-        guard let image = await downsample(data: data, maxPixel: maxPixel, scale: scale) else { return nil }
-        ImageCache.set(image, forKey: memKey)
-        DiskImageCache.save(image, key: diskKey)
-        if let cacheKey { DiskImageCache.saveRaw(data, path: cacheKey) }
-        return image
+        return nil
     }
 
     /// Warm the cache for upcoming cells (fire-and-forget, low priority). Pass the same cacheKey

@@ -36,6 +36,7 @@ struct RollDetailView: View {
     @State private var shareItem: ShareImage?
     @State private var isMuted = false
     @State private var showReveal = false
+    @State private var showContactSheet = false
     /// Flips true once a developed roll's pagination has been fully drained (see `onAppear`).
     /// Gates the "Play through the roll" button so it appears once, already showing the true
     /// count, without this, the button popped in after page 1 (30) and its own count label
@@ -186,6 +187,13 @@ struct RollDetailView: View {
                             Haptics.tap()
                             replayReveal()
                         } label: { Label("Play reveal again", systemImage: "play.circle") }
+
+                        // The reveal is the moment; this is what survives it. So it can be found
+                        // again later, not just at the end of the reveal itself.
+                        Button {
+                            Haptics.tap()
+                            showContactSheet = true
+                        } label: { Label("Share as contact sheet", systemImage: "square.grid.3x3") }
                     }
 
                     // Disabled with no reason reads as a broken menu item. A menu can hold a
@@ -330,10 +338,16 @@ struct RollDetailView: View {
         }
         .fullScreenCover(isPresented: $showReveal) {
             RollRevealView(rollId: roll.id, rollName: displayName.isEmpty ? roll.name : displayName,
-                           photos: chronologicalDeveloped, memberNames: memberNames)
+                           photos: chronologicalDeveloped, memberNames: memberNames,
+                           inviteCode: roll.inviteCode, developedAt: roll.revealAt)
         }
         .sheet(isPresented: $showMembers) {
             RollMembersView(roll: roll)
+        }
+        .sheet(isPresented: $showContactSheet) {
+            ContactSheetView(rollName: displayName.isEmpty ? roll.name : displayName,
+                             inviteCode: roll.inviteCode, developedAt: roll.revealAt,
+                             photos: chronologicalDeveloped)
         }
         .sheet(item: $shareItem) { SharePreviewSheet(photo: $0.image) }
         .sheet(isPresented: $showShareAll) {
