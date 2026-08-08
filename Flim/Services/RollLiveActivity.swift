@@ -53,6 +53,18 @@ enum RollLiveActivity {
         Task { await activity.end(nil, dismissalPolicy: .immediate) }
     }
 
+    /// Ends every Live Activity this app currently has running, for any roll.
+    ///
+    /// A Live Activity is scoped to a roll, not an account, so a lock-screen card started while
+    /// one account was signed in stays live after that account signs out, showing the departed
+    /// account's roll name to whoever signs in next on the same device. Call this on sign-out and
+    /// on switching accounts, mirroring `NotificationService.cancelAllRollDevelopNotifications()`.
+    static func endAll() {
+        for activity in Activity<RollRevealAttributes>.activities {
+            Task { await activity.end(nil, dismissalPolicy: .immediate) }
+        }
+    }
+
     /// Whether a card is currently live for this roll. Callers use it to avoid paying for a shot
     /// count they only need when they are about to (re)start one.
     static func isRunning(_ rollId: UUID) -> Bool { running(rollId) != nil }

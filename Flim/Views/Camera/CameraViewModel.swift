@@ -99,6 +99,28 @@ final class CameraViewModel: NSObject {
         set { previewAspectRatioLock.withLock { $0 = newValue } }
     }
 
+    /// Maps an in-flight capture's own `AVCapturePhotoSettings.uniqueID` to the `captureGeneration`
+    /// it was taken under, so `photoOutput(_:didFinishProcessingPhoto:error:)` can tell a callback
+    /// for the capture actually in flight now from a late callback for one the watchdog already
+    /// gave up on (see `captureGeneration`). Keyed by uniqueID rather than just reading
+    /// `captureGeneration` directly, because more than one capture can be in flight at once here:
+    /// the watchdog resets `isCapturing` and lets the user shoot again while an abandoned capture's
+    /// delegate call is still outstanding, so a single "current generation" value could not tell
+    /// the two apart once a THIRD shot starts, it would already have moved past the second one too.
+    /// Lock-protected for the same reason `previewAspectRatio` is: this delegate method is called
+    /// off the main actor.
+    nonisolated private let captureGenerationLock = OSAllocatedUnfairLock<[Int64: Int]>(initialState: [:])
+
+    private nonisolated func rememberCaptureGeneration(_ generation: Int, forSettingsID id: Int64) {
+        captureGenerationLock.withLock { $0[id] = generation }
+    }
+
+    /// Looks up and forgets the generation a given capture's settings ID was taken under. Removed
+    /// on read so this map can't grow across a long session of shooting.
+    private nonisolated func takeCaptureGeneration(forSettingsID id: Int64) -> Int? {
+        captureGenerationLock.withLock { $0.removeValue(forKey: id) }
+    }
+
     // MARK: - Setup
 
     /// Requests camera access (if needed), then configures + starts the session. Sets
@@ -498,10 +520,12 @@ final class CameraViewModel: NSObject {
                 guard let self else { return }
                 await self.waitForExposureToSettle()
                 guard generation == self.captureGeneration else { return }
+                self.rememberCaptureGeneration(generation, forSettingsID: settings.uniqueID)
                 self.output.capturePhoto(with: settings, delegate: self)
                 self.startCaptureWatchdog(generation: generation)
             }
         } else {
+            rememberCaptureGeneration(generation, forSettingsID: settings.uniqueID)
             output.capturePhoto(with: settings, delegate: self)
             startCaptureWatchdog(generation: generation)
         }
@@ -610,6 +634,17 @@ extension CameraViewModel: AVCapturePhotoCaptureDelegate {
         didFinishProcessingPhoto photo: AVCapturePhoto,
         error: Error?
     ) {
+        // Looked up (and forgotten) up front, off the main actor: this callback can arrive for a
+        // capture the watchdog already gave up on and let the user re-shoot (thermal throttling,
+        // an older device, a slow capture). Without checking this, a late callback for that
+        // abandoned capture would still write `capturedData` and fire `onPhotoCapture` below,
+        // silently enqueuing and uploading a photo the user believes never happened, and would
+        // reset `isCapturing`/`flashOpacity` out from under whatever capture is genuinely in
+        // flight now. `nil` (the ID was never recorded, which `capturePhoto()` should always do
+        // before triggering a capture) fails open rather than closed: a capture is not
+        // reproducible, so an unexpected miss here must not risk dropping a real photo.
+        let expectedGeneration = takeCaptureGeneration(forSettingsID: photo.resolvedSettings.uniqueID)
+
         let rawData = photo.fileDataRepresentation()
         // Crop to match what the full-bleed viewfinder actually framed: `.resizeAspectFill`
         // center-crops the LIVE PREVIEW to fill the screen, but AVCapturePhotoOutput always
@@ -639,6 +674,10 @@ extension CameraViewModel: AVCapturePhotoCaptureDelegate {
             return cropped
         }
         Task { @MainActor in
+            // Stale: the watchdog already reset `isCapturing`/`flashOpacity` and let the user
+            // shoot again, possibly already mid a NEWER capture that owns those same properties
+            // now. Touching them here, or delivering this photo, would step on that one.
+            guard expectedGeneration == nil || expectedGeneration == self.captureGeneration else { return }
             self.isCapturing = false
             self.flashOpacity = 0   // safety net in case the capture errored before the callbacks above fired
             guard let data else {

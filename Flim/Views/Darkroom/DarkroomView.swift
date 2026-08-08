@@ -405,9 +405,10 @@ struct DarkroomView: View {
             try? await Task.sleep(for: .seconds(4))
             guard !Task.isCancelled else { return }
             let batch = pendingDelete
-            await photoService.deletePhotos(batch)
+            let ok = await photoService.deletePhotos(batch)
             showUndoToast = false
             pendingDelete = []
+            if !ok { restoreAfterFailedDelete(batch) }
         }
     }
 
@@ -425,7 +426,29 @@ struct DarkroomView: View {
         let batch = pendingDelete
         pendingDelete = []
         showUndoToast = false
-        Task { await photoService.deletePhotos(batch) }
+        Task {
+            let ok = await photoService.deletePhotos(batch)
+            if !ok { restoreAfterFailedDelete(batch) }
+        }
+    }
+
+    /// Puts photos back into the grid after the server refused a delete (network dropped, the
+    /// Storage removal itself failed). `commitDeleteBatch` already hid these optimistically the
+    /// moment Undo's window opened; `deletePhotos` returning `false` means the row was
+    /// deliberately left in place rather than deleted out from under a failed Storage removal
+    /// (see its own doc), so without this the photo stays correctly present server-side but
+    /// invisible here until the next full reload.
+    private func restoreAfterFailedDelete(_ batch: [Photo]) {
+        guard !batch.isEmpty else { return }
+        let existingIds = Set(vm.photos.map(\.id))
+        let restored = batch.filter { !existingIds.contains($0.id) }
+        guard !restored.isEmpty else { return }
+        vm.photos.append(contentsOf: restored)
+        vm.photos.sort { $0.developsAt > $1.developsAt }
+        Haptics.error()
+        flashError(restored.count == 1
+            ? "Couldn't delete that photo. Check your connection and try again."
+            : "Couldn't delete those photos. Check your connection and try again.")
     }
 
     /// Long-press a photo to jump into selection mode with it selected.

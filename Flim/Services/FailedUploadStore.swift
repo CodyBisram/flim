@@ -4,7 +4,7 @@ import Foundation
 ///
 /// `data` is the developed JPEG, the only copy that exists. FLIM does not write captures to the
 /// camera roll, so until the upload lands this queue IS the photograph.
-struct FailedUpload: Identifiable, Equatable {
+struct FailedUpload: Identifiable, Equatable, Sendable {
     let id: UUID
     let data: Data
     let userId: UUID
@@ -44,10 +44,28 @@ struct FailedUpload: Identifiable, Equatable {
 /// reasons. An account switch must not expose one person's pending captures to another, and
 /// signing back in should return your own queue rather than silently discard it, so a sign-out
 /// clears memory and leaves disk alone.
-struct FailedUploadStore {
+///
+/// An `actor`, not a plain struct, because `save`/`prune`/`load`/`remove` for one account are
+/// reachable concurrently in practice: `PhotoService.captureAndUpload` calls `save` from its own
+/// detached task on every capture, while `restoreFailedUploads` calls `prune` then `load` from a
+/// SEPARATE detached task, fired unstructured on every account resolution (so: on every launch,
+/// and again whenever `flimAccountDidChange` fires). `save` writes the jpg and its json sidecar as
+/// two separate file operations; `prune` lists the directory and deletes any jpg with no matching
+/// json, treating it as litter from a crash between those two writes. Without serialization, a
+/// `prune` that lists the directory in the gap between `save`'s two writes sees a real, mid-flight
+/// capture as an orphan, deletes the jpg, and `save` goes on to write a sidecar naming a file that
+/// is no longer there. `load` then silently drops that entry (`!imageData.isEmpty` guard), and the
+/// photograph is gone with no error anywhere. Making every method here `async` on an `actor` means
+/// the compiler enforces that a `save` in flight runs to completion before a `prune` (or another
+/// `save`, `load`, `remove`) for the same store instance can start, closing that window rather than
+/// papering over it with a grace period.
+actor FailedUploadStore {
     /// Injectable so tests get a temp directory instead of the real Application Support, and so a
-    /// test can never delete a real person's pending photographs.
-    let root: URL
+    /// test can never delete a real person's pending photographs. `nonisolated` (and `Sendable`,
+    /// via `URL`'s own conformance): it's `let`-immutable, so reading it from outside the actor
+    /// carries no data-race risk, and tests build expected paths from it directly without needing
+    /// to hop onto the actor first.
+    nonisolated let root: URL
 
     /// Application Support rather than Caches: the system evicts Caches under disk pressure, and
     /// this is the only copy of an unsent photograph.
@@ -72,12 +90,16 @@ struct FailedUploadStore {
         let storagePath: String?
     }
 
-    private func directory(for userId: UUID) -> URL {
+    private nonisolated func directory(for userId: UUID) -> URL {
         root.appendingPathComponent(userId.uuidString.lowercased(), isDirectory: true)
     }
 
     /// Writes a pending capture. Best effort: a failure here is reported but must not stop the
     /// in-memory queue from working, which is still better than nothing.
+    ///
+    /// Runs start-to-finish as a single turn on this actor, with no `await` in between the two
+    /// writes, so `prune` (or any other call on this same store) can never observe the jpg without
+    /// its sidecar mid-write.
     @discardableResult
     func save(_ upload: FailedUpload) -> Bool {
         let dir = directory(for: upload.userId)

@@ -26,17 +26,17 @@ struct FailedUploadStoreTests {
     }
 
     @Test("a saved capture survives being read back by a different store instance")
-    func survivesProcessRestart() {
+    func survivesProcessRestart() async {
         let (store, root) = makeStore(); defer { cleanUp(root) }
         let user = UUID()
         let upload = FailedUpload(data: jpeg(), userId: user, rollId: nil)
 
-        #expect(store.save(upload))
+        #expect(await store.save(upload))
 
         // A SECOND store over the same root is what the next launch actually does: the in-memory
         // array is gone, and the only thing left is what reached disk.
         let afterRelaunch = FailedUploadStore(root: root)
-        let restored = afterRelaunch.load(userId: user)
+        let restored = await afterRelaunch.load(userId: user)
 
         #expect(restored.count == 1)
         #expect(restored.first?.data == upload.data, "the image itself must come back, not just a record of it")
@@ -44,36 +44,36 @@ struct FailedUploadStoreTests {
     }
 
     @Test("the roll a capture was headed for survives too")
-    func rollTargetSurvives() {
+    func rollTargetSurvives() async {
         // A roll shot that retried as a personal instant would quietly leave the roll it was
         // taken for, and the person who took it would never see it appear where they expected.
         let (store, root) = makeStore(); defer { cleanUp(root) }
         let user = UUID(), roll = UUID()
-        store.save(FailedUpload(data: jpeg(), userId: user, rollId: roll))
+        await store.save(FailedUpload(data: jpeg(), userId: user, rollId: roll))
 
-        #expect(store.load(userId: user).first?.rollId == roll)
+        #expect(await store.load(userId: user).first?.rollId == roll)
     }
 
     @Test("one account never sees another's pending captures")
-    func accountsAreIsolated() {
+    func accountsAreIsolated() async {
         let (store, root) = makeStore(); defer { cleanUp(root) }
         let a = UUID(), b = UUID()
-        store.save(FailedUpload(data: jpeg(0x11), userId: a, rollId: nil))
-        store.save(FailedUpload(data: jpeg(0x22), userId: b, rollId: nil))
+        await store.save(FailedUpload(data: jpeg(0x11), userId: a, rollId: nil))
+        await store.save(FailedUpload(data: jpeg(0x22), userId: b, rollId: nil))
 
-        #expect(store.load(userId: a).count == 1)
-        #expect(store.load(userId: a).first?.data == jpeg(0x11))
-        #expect(store.load(userId: b).first?.data == jpeg(0x22))
+        #expect(await store.load(userId: a).count == 1)
+        #expect(await store.load(userId: a).first?.data == jpeg(0x11))
+        #expect(await store.load(userId: b).first?.data == jpeg(0x22))
     }
 
     @Test("a file in the wrong account's folder is refused, not re-uploaded")
-    func sidecarOwnershipWins() throws {
+    func sidecarOwnershipWins() async throws {
         // Restores, migrations and manual copies can put a file somewhere it does not belong.
         // The sidecar records who took the photo; the folder is just where it was found. If they
         // disagree, uploading it would publish one person's photograph as another's.
         let (store, root) = makeStore(); defer { cleanUp(root) }
         let owner = UUID(), other = UUID()
-        store.save(FailedUpload(data: jpeg(), userId: owner, rollId: nil))
+        await store.save(FailedUpload(data: jpeg(), userId: owner, rollId: nil))
 
         let ownerDir = root.appendingPathComponent(owner.uuidString.lowercased(), isDirectory: true)
         let otherDir = root.appendingPathComponent(other.uuidString.lowercased(), isDirectory: true)
@@ -83,26 +83,26 @@ struct FailedUploadStoreTests {
                                              to: otherDir.appendingPathComponent(name))
         }
 
-        #expect(store.load(userId: other).isEmpty, "a capture must not change hands by being moved")
-        #expect(store.load(userId: owner).count == 1, "and the real owner still has theirs")
+        #expect(await store.load(userId: other).isEmpty, "a capture must not change hands by being moved")
+        #expect(await store.load(userId: owner).count == 1, "and the real owner still has theirs")
     }
 
     @Test("removal takes both files, so nothing half-remains")
-    func removeIsComplete() throws {
+    func removeIsComplete() async throws {
         let (store, root) = makeStore(); defer { cleanUp(root) }
         let user = UUID()
         let upload = FailedUpload(data: jpeg(), userId: user, rollId: nil)
-        store.save(upload)
-        store.remove(id: upload.id, userId: user)
+        await store.save(upload)
+        await store.remove(id: upload.id, userId: user)
 
-        #expect(store.load(userId: user).isEmpty)
+        #expect(await store.load(userId: user).isEmpty)
         let dir = root.appendingPathComponent(user.uuidString.lowercased(), isDirectory: true)
         let left = (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []
         #expect(left.isEmpty, "a leftover jpg would be an invisible copy of a photo")
     }
 
     @Test("an orphaned image with no sidecar is ignored, then collected")
-    func orphanIsIgnoredThenPruned() throws {
+    func orphanIsIgnoredThenPruned() async throws {
         // save() writes the image first on purpose: a crash between the two writes should leave
         // an unusable extra file, never a sidecar pointing at a photograph that is not there.
         let (store, root) = makeStore(); defer { cleanUp(root) }
@@ -111,61 +111,61 @@ struct FailedUploadStoreTests {
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         try jpeg().write(to: dir.appendingPathComponent("\(UUID()).jpg"))
 
-        #expect(store.load(userId: user).isEmpty, "an image with no record of who or where is not retryable")
-        store.prune(userId: user)
+        #expect(await store.load(userId: user).isEmpty, "an image with no record of who or where is not retryable")
+        await store.prune(userId: user)
         let left = (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []
         #expect(left.isEmpty)
     }
 
     @Test("a sidecar whose image is missing is skipped rather than crashing")
-    func missingImageIsSkipped() throws {
+    func missingImageIsSkipped() async throws {
         let (store, root) = makeStore(); defer { cleanUp(root) }
         let user = UUID()
         let upload = FailedUpload(data: jpeg(), userId: user, rollId: nil)
-        store.save(upload)
+        await store.save(upload)
         let dir = root.appendingPathComponent(user.uuidString.lowercased(), isDirectory: true)
         try FileManager.default.removeItem(at: dir.appendingPathComponent("\(upload.id).jpg"))
 
-        #expect(store.load(userId: user).isEmpty)
+        #expect(await store.load(userId: user).isEmpty)
     }
 
     @Test("corrupt metadata does not take the rest of the queue with it")
-    func oneBadFileDoesNotLoseTheOthers() throws {
+    func oneBadFileDoesNotLoseTheOthers() async throws {
         // The failure that matters is not the broken file, it is the four good photographs that
         // would be dropped alongside it if load() gave up on the first decode error.
         let (store, root) = makeStore(); defer { cleanUp(root) }
         let user = UUID()
-        for i in 0..<4 { store.save(FailedUpload(data: jpeg(UInt8(i)), userId: user, rollId: nil)) }
+        for i in 0..<4 { await store.save(FailedUpload(data: jpeg(UInt8(i)), userId: user, rollId: nil)) }
         let dir = root.appendingPathComponent(user.uuidString.lowercased(), isDirectory: true)
         try Data("not json".utf8).write(to: dir.appendingPathComponent("\(UUID()).json"))
 
-        #expect(store.load(userId: user).count == 4)
+        #expect(await store.load(userId: user).count == 4)
     }
 
     @Test("retries run in the order the photos were taken")
-    func oldestFirst() {
+    func oldestFirst() async {
         let (store, root) = makeStore(); defer { cleanUp(root) }
         let user = UUID()
         let base = Date(timeIntervalSince1970: 1_700_000_000)
         let second = FailedUpload(data: jpeg(0x02), userId: user, rollId: nil, capturedAt: base.addingTimeInterval(60))
         let first = FailedUpload(data: jpeg(0x01), userId: user, rollId: nil, capturedAt: base)
-        store.save(second)
-        store.save(first)
+        await store.save(second)
+        await store.save(first)
 
-        #expect(store.load(userId: user).map(\.id) == [first.id, second.id])
+        #expect(await store.load(userId: user).map(\.id) == [first.id, second.id])
     }
 
     @Test("an empty queue reads as empty, not as an error")
-    func emptyIsFine() {
+    func emptyIsFine() async {
         let (store, root) = makeStore(); defer { cleanUp(root) }
-        #expect(store.load(userId: UUID()).isEmpty)
-        store.prune(userId: UUID())   // must not throw or create anything
+        #expect(await store.load(userId: UUID()).isEmpty)
+        await store.prune(userId: UUID())   // must not throw or create anything
     }
 
     // MARK: - Idempotent retry (photoId / storagePath)
 
     @Test("a saved capture carries the id and path a retry should reuse")
-    func carriesRetryIdentity() {
+    func carriesRetryIdentity() async {
         // Without these, a retry after a failed row insert has no way to know a previous attempt
         // already wrote these exact bytes to Storage, so it uploads again under a brand new id
         // and the first upload is orphaned forever.
@@ -176,14 +176,14 @@ struct FailedUploadStoreTests {
         let upload = FailedUpload(data: jpeg(), userId: user, rollId: nil,
                                   photoId: photoId, storagePath: path)
 
-        #expect(store.save(upload))
-        let restored = store.load(userId: user).first
+        #expect(await store.save(upload))
+        let restored = await store.load(userId: user).first
         #expect(restored?.photoId == photoId)
         #expect(restored?.storagePath == path)
     }
 
     @Test("a sidecar written before photoId existed still loads, just without one to reuse")
-    func legacySidecarStillLoads() throws {
+    func legacySidecarStillLoads() async throws {
         // Simulates a capture queued by a build that predates `photoId`/`storagePath`: the
         // sidecar JSON on disk simply has none of the new keys. Decoding this must fall back to
         // nil for both rather than failing outright, or every capture already waiting on
@@ -206,11 +206,66 @@ struct FailedUploadStoreTests {
         let legacy = LegacySidecar(id: id, userId: user, rollId: nil, capturedAt: .now)
         try JSONEncoder().encode(legacy).write(to: dir.appendingPathComponent("\(id).json"))
 
-        let restored = store.load(userId: user)
+        let restored = await store.load(userId: user)
         #expect(restored.count == 1, "a pre-migration capture must not be dropped on decode")
         #expect(restored.first?.id == id)
         #expect(restored.first?.photoId == nil)
         #expect(restored.first?.storagePath == nil)
     }
 
+    // MARK: - Concurrency: save must never interleave with prune
+
+    /// The actual bug this store exists to close: `PhotoService.captureAndUpload` calls `save`
+    /// from its own detached task on every capture, while `restoreFailedUploads` calls `prune`
+    /// then `load` from a SEPARATE detached task, unstructured, fired on every account
+    /// resolution. Before this was an actor, a `prune` that listed the directory in the gap
+    /// between `save`'s two writes (jpg, then json) could see the jpg as an orphan with no
+    /// sidecar and delete it, and `save` would go on to write a sidecar naming a file that no
+    /// longer existed. `load` would then silently drop that entry. This fires many concurrent
+    /// `save`s against a single, repeated, concurrent `prune`+`load` loop, hundreds of times, and
+    /// asserts every capture that reported a successful save is still readable afterwards. Under
+    /// the old struct this was flaky-to-reliably-failing depending on scheduling; under the actor
+    /// it must hold every time, since the actor serializes every call against this one store.
+    @Test("concurrent save and prune never lose a capture that reported success")
+    func concurrentSaveNeverLosesToConcurrentPrune() async {
+        let (store, root) = makeStore(); defer { cleanUp(root) }
+        let user = UUID()
+
+        let uploads = (0..<200).map { i in
+            FailedUpload(data: jpeg(UInt8(i % 256), count: 256), userId: user, rollId: nil)
+        }
+
+        await withTaskGroup(of: UUID?.self) { group in
+            // One task per capture, saving concurrently, mirroring `captureAndUpload`'s own
+            // detached save.
+            for upload in uploads {
+                group.addTask {
+                    await store.save(upload) ? upload.id : nil
+                }
+            }
+            // A separate, repeating prune+load loop running the whole time, mirroring
+            // `restoreFailedUploads` firing on every account resolution while captures are still
+            // landing.
+            group.addTask {
+                for _ in 0..<50 {
+                    await store.prune(userId: user)
+                    _ = await store.load(userId: user)
+                }
+                return nil
+            }
+
+            var savedIds: Set<UUID> = []
+            for await result in group {
+                if let id = result { savedIds.insert(id) }
+            }
+
+            // One final prune, matching what `restoreFailedUploads` does right before reading the
+            // queue back, then confirm every capture that reported a successful save is still
+            // there, none silently dropped by a prune that raced it.
+            await store.prune(userId: user)
+            let restoredIds = Set(await store.load(userId: user).map(\.id))
+            #expect(savedIds.isSubset(of: restoredIds),
+                   "a save that reported success must never be later found missing by load")
+        }
+    }
 }

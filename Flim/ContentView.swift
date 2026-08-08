@@ -5,6 +5,7 @@ struct ContentView: View {
     @Environment(PhotoService.self) private var photos
     @Environment(FeedService.self) private var feed
     @Environment(RollService.self) private var rolls
+    @Environment(NotificationService.self) private var notifications
 
     /// The account the caches currently belong to. Compared against the live one so a SWITCH is
     /// detected, not just a sign-out: signing out and straight back in as someone else is exactly
@@ -56,10 +57,20 @@ struct ContentView: View {
         // profile and left all of it populated.
         .onChange(of: auth.currentUser?.id) { _, newId in
             guard newId != cachedAccountId else { return }
+            let previousId = cachedAccountId
             cachedAccountId = newId
             photos.resetForAccountChange()
             feed.resetForAccountChange()
             rolls.resetForAccountChange()
+            // Develop reminders and Live Activities are scoped to a ROLL, not an account, so they
+            // outlive a sign-out. Only clear them when there WAS a previously-cached account in
+            // this session, i.e. a real switch (including straight to signed-out): the very first
+            // resolve after launch also lands here (cachedAccountId starts nil), and that one must
+            // NOT cancel the account that is simply continuing to be signed in.
+            if previousId != nil {
+                Task { await notifications.cancelAllRollDevelopNotifications() }
+                RollLiveActivity.endAll()
+            }
             // Captures that never reached the server are kept on disk per account, so this is
             // where they come back: on launch, and on signing back in. Without it the files
             // would accumulate forever and nobody would ever be offered the retry.
@@ -72,11 +83,14 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .flimAccountDidChange)) { _ in
             // Sign-out posts this. currentUser goes to nil, which the onChange above also catches,
             // but the notification covers the case where sign-out fails partway and leaves the
-            // profile untouched.
+            // profile untouched. Always an actual departure, so always clear the departing
+            // account's reminders and Live Activities, not just the caches.
             cachedAccountId = nil
             photos.resetForAccountChange()
             feed.resetForAccountChange()
             rolls.resetForAccountChange()
+            Task { await notifications.cancelAllRollDevelopNotifications() }
+            RollLiveActivity.endAll()
         }
     }
 }

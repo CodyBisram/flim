@@ -71,4 +71,20 @@ final class NotificationService {
         UNUserNotificationCenter.current()
             .removePendingNotificationRequests(withIdentifiers: ["develop-roll-\(rollId.uuidString)"])
     }
+
+    /// Cancels every pending develop reminder, regardless of which roll it names.
+    ///
+    /// A develop reminder is scheduled per roll, not per account, so signing out leaves whatever
+    /// was pending sitting in the OS's notification queue. Sign in as someone else on the same
+    /// device and the departed account's roll name (and shot count) can surface as a time-sensitive
+    /// banner or lock-screen card for the new account. Call this on sign-out and on switching
+    /// accounts, never on the very first resolve after launch for an account that is simply
+    /// continuing to be signed in, or this would cancel its own still-legitimate reminders.
+    func cancelAllRollDevelopNotifications() async {
+        let center = UNUserNotificationCenter.current()
+        let pending = await center.pendingNotificationRequests()
+        let ids = pending.map(\.identifier).filter { $0.hasPrefix("develop-roll-") }
+        guard !ids.isEmpty else { return }
+        center.removePendingNotificationRequests(withIdentifiers: ids)
+    }
 }

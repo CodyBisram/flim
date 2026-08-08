@@ -169,7 +169,7 @@ final class PhotoService {
                                   capturedAt: pending?.capturedAt ?? .now,
                                   photoId: photoId, storagePath: path)
         let store = failedUploadStore
-        let persisted = await Task.detached(priority: .utility) { store.save(record) }.value
+        let persisted = await Task.detached(priority: .utility) { await store.save(record) }.value
 
         do {
             // `upsert: true` makes this idempotent: a retry that reused `pending`'s id/path
@@ -250,7 +250,7 @@ final class PhotoService {
 
             // The row exists now, under whichever account captured it, independent of whether
             // that account is still the current one below.
-            failedUploadStore.remove(id: photoId, userId: userId)
+            await failedUploadStore.remove(id: photoId, userId: userId)
 
             // The photo is still returned and its renditions still upload: it exists server-side
             // under the account that took it, and abandoning that work would lose a real photo.
@@ -348,7 +348,7 @@ final class PhotoService {
 
             // The row exists now, independent of whether this account is still the current one
             // below, same reasoning as the ordinary success path above.
-            failedUploadStore.remove(id: photoId, userId: userId)
+            await failedUploadStore.remove(id: photoId, userId: userId)
 
             // Fast path only: skips the extra rendition-upload/return work below when already
             // obviously stale. Does NOT by itself prove the epoch is still current by the time the
@@ -649,7 +649,7 @@ final class PhotoService {
             // unconditionally here would discard a still-pending failure's only copy the moment
             // it fails again, the exact loss this field exists to prevent.
             if upload.photoId == nil {
-                failedUploadStore.remove(id: upload.id, userId: upload.userId)
+                await failedUploadStore.remove(id: upload.id, userId: upload.userId)
             }
         }
     }
@@ -663,8 +663,9 @@ final class PhotoService {
     /// This class is `@MainActor`, so the enumeration, the JSON decode and one full-resolution
     /// image read PER QUEUED CAPTURE all ran on the main thread at account resolution — which is
     /// launch. Empty queue, no cost; a week of shooting with a bad connection, and launch blocks
-    /// on tens of megabytes of synchronous reads. The store is a value type holding only a URL,
-    /// so it crosses to the detached task safely.
+    /// on tens of megabytes of synchronous reads. The store is an actor, so it crosses to the
+    /// detached task safely, and its own isolation is what keeps this `prune` then `load` from
+    /// interleaving with a concurrent `save` off a capture in flight elsewhere.
     func restoreFailedUploads(userId: UUID) async {
         // Captured before the only `await` below, and re-checked immediately after it, right
         // before this touches `failedUploads`. `ContentView` launches this unstructured
@@ -678,8 +679,8 @@ final class PhotoService {
         let epoch = AccountEpoch.current
         let store = failedUploadStore
         let restored = await Task.detached(priority: .utility) { () -> [FailedUpload] in
-            store.prune(userId: userId)
-            return store.load(userId: userId)
+            await store.prune(userId: userId)
+            return await store.load(userId: userId)
         }.value
         guard AccountEpoch.isCurrent(epoch), !restored.isEmpty else { return }
         let known = Set(failedUploads.map(\.id))

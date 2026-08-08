@@ -315,7 +315,19 @@ struct SortDeckView: View {
                 publishError = "Couldn't share that one. It's in your Darkroom, share it from there."
             }
         case .trash:
-            await photoService.deletePhoto(photo)
+            let ok = await photoService.deletePhoto(photo)
+            if !ok {
+                // `deletePhoto` deliberately leaves the row in place when the server refuses
+                // (network dropped, the Storage removal itself failed), so the photo is still
+                // really there. The swipe animation already carried it off the deck and
+                // `performSwipe` already dropped it from `cards`; without putting it back it
+                // would just look gone for the rest of this session even though it survived.
+                Haptics.error()
+                publishError = "Couldn't delete that one. Check your connection and try again."
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                    cards.insert(photo, at: 0)
+                }
+            }
         }
     }
 
