@@ -162,4 +162,55 @@ struct FailedUploadStoreTests {
         store.prune(userId: UUID())   // must not throw or create anything
     }
 
+    // MARK: - Idempotent retry (photoId / storagePath)
+
+    @Test("a saved capture carries the id and path a retry should reuse")
+    func carriesRetryIdentity() {
+        // Without these, a retry after a failed row insert has no way to know a previous attempt
+        // already wrote these exact bytes to Storage, so it uploads again under a brand new id
+        // and the first upload is orphaned forever.
+        let (store, root) = makeStore(); defer { cleanUp(root) }
+        let user = UUID()
+        let photoId = UUID()
+        let path = "\(user.uuidString.lowercased())/\(photoId.uuidString.lowercased()).jpg"
+        let upload = FailedUpload(data: jpeg(), userId: user, rollId: nil,
+                                  photoId: photoId, storagePath: path)
+
+        #expect(store.save(upload))
+        let restored = store.load(userId: user).first
+        #expect(restored?.photoId == photoId)
+        #expect(restored?.storagePath == path)
+    }
+
+    @Test("a sidecar written before photoId existed still loads, just without one to reuse")
+    func legacySidecarStillLoads() throws {
+        // Simulates a capture queued by a build that predates `photoId`/`storagePath`: the
+        // sidecar JSON on disk simply has none of the new keys. Decoding this must fall back to
+        // nil for both rather than failing outright, or every capture already waiting on
+        // someone's device would vanish the moment they updated the app, the exact loss this
+        // field exists to prevent everywhere else.
+        let (store, root) = makeStore(); defer { cleanUp(root) }
+        let user = UUID()
+        let id = UUID()
+        let dir = root.appendingPathComponent(user.uuidString.lowercased(), isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try jpeg().write(to: dir.appendingPathComponent("\(id).jpg"))
+
+        // The exact shape `Sidecar` had before `photoId`/`storagePath` were added.
+        struct LegacySidecar: Codable {
+            let id: UUID
+            let userId: UUID
+            let rollId: UUID?
+            let capturedAt: Date
+        }
+        let legacy = LegacySidecar(id: id, userId: user, rollId: nil, capturedAt: .now)
+        try JSONEncoder().encode(legacy).write(to: dir.appendingPathComponent("\(id).json"))
+
+        let restored = store.load(userId: user)
+        #expect(restored.count == 1, "a pre-migration capture must not be dropped on decode")
+        #expect(restored.first?.id == id)
+        #expect(restored.first?.photoId == nil)
+        #expect(restored.first?.storagePath == nil)
+    }
+
 }

@@ -120,8 +120,14 @@ final class PhotoService {
         Double(d.components.seconds) + Double(d.components.attoseconds) / 1e18
     }
 
+    /// - Parameter retryOf: the queued record being retried, if this call came from
+    ///   `retryFailedUploads` rather than a fresh shutter press. When it carries a `photoId` (see
+    ///   `FailedUpload`), this attempt reuses that SAME id and Storage path instead of minting a
+    ///   new one, so a row-insert failure after a successful upload can be retried without
+    ///   stranding the bytes that already made it to Storage.
     @discardableResult
-    func captureAndUpload(imageData: Data, userId: UUID, rollId: UUID?) async -> Photo? {
+    func captureAndUpload(imageData: Data, userId: UUID, rollId: UUID?,
+                          retryOf pending: FailedUpload? = nil) async -> Photo? {
         // A capture makes two round trips (storage upload, then the row insert) before inserting
         // into the shared list. Same class as createRoll: an INSERT of new content, so a
         // completion that outlives its account would splice the departing account's photo into
@@ -129,7 +135,7 @@ final class PhotoService {
         let epoch = AccountEpoch.current
         await MainActor.run { isUploading = true; uploadError = nil }
 
-        let photoId = UUID()
+        let photoId = pending?.photoId ?? UUID()
         // Sniffed from the actual bytes, not assumed. Every rendition we produce is JPEG today
         // (`InstantFilmProcessor.EncodeSpec` records why), so this reads .jpeg in practice, but
         // this is the one place the pipeline's output and the untouched-capture fallback
@@ -138,13 +144,35 @@ final class PhotoService {
         let format = InstantFilmProcessor.detectedEncoding(of: imageData)
         // Lowercased to match Postgres `auth.uid()::text` (lowercase) in the storage RLS
         // policy, Swift's uuidString is uppercase, which would 403 the upload otherwise.
-        let path = "\(userId.uuidString.lowercased())/\(photoId.uuidString.lowercased()).\(format.pathExtension)"
+        let path = pending?.storagePath
+            ?? "\(userId.uuidString.lowercased())/\(photoId.uuidString.lowercased()).\(format.pathExtension)"
         let developsAt = await developDate(forRoll: rollId)
 
+        // Written to disk BEFORE the upload even starts, not only once it has failed. Without
+        // this, killing the app between the storage upload succeeding and the row insert landing
+        // loses the photo outright: the bytes sit in Storage, nothing local remembers them, and
+        // the account never gets a row for them. `restoreFailedUploads` picks this back up on the
+        // next launch exactly like any other queued capture.
+        //
+        // Off the main actor for the same reason the old failure-only write was: this is a
+        // full-resolution JPEG, and captures are chained one-at-a-time (see `pipeline`), so a slow
+        // write here delays every shot behind it in a burst. Removed again below once the row
+        // actually exists, so the common case leaves nothing behind but a brief on-disk copy no
+        // UI ever surfaces.
+        let record = FailedUpload(id: photoId, data: imageData, userId: userId, rollId: rollId,
+                                  capturedAt: pending?.capturedAt ?? .now,
+                                  photoId: photoId, storagePath: path)
+        let store = failedUploadStore
+        let persisted = await Task.detached(priority: .utility) { store.save(record) }.value
+
         do {
+            // `upsert: true` makes this idempotent: a retry that reused `pending`'s id/path
+            // overwrites the SAME object instead of a fresh upload landing next to an orphan no
+            // row will ever name.
             try await supabase.storage
                 .from("photos")
-                .upload(path, data: imageData, options: FileOptions(contentType: format.contentType))
+                .upload(path, data: imageData,
+                       options: FileOptions(contentType: format.contentType, upsert: true))
 
             // The photo EXISTS once the full image and its row are in. The thumbnail and feed
             // renditions follow in the background and patch the row when they land.
@@ -169,13 +197,36 @@ final class PhotoService {
                 isSorted: rollId != nil
             )
 
-            let inserted: Photo = try await supabase
-                .from("photos")
-                .insert(payload)
-                .select()
-                .single()
-                .execute()
-                .value
+            let inserted: Photo
+            do {
+                inserted = try await supabase
+                    .from("photos")
+                    .insert(payload)
+                    .select()
+                    .single()
+                    .execute()
+                    .value
+            } catch let error as PostgrestError where error.code == "23505" {
+                // A row with this id already exists. Since `photoId` is only ever reused from a
+                // PRIOR attempt at this exact capture (never freshly minted for a different one),
+                // this means that earlier insert actually landed and we simply never saw the
+                // response, e.g. the app was killed right after. Not a real failure, so fetch the
+                // row that is already there instead of queueing a retry that would just collide
+                // again forever.
+                guard let existing: Photo = try? await supabase
+                    .from("photos")
+                    .select()
+                    .eq("id", value: photoId.uuidString)
+                    .single()
+                    .execute()
+                    .value
+                else { throw error }
+                inserted = existing
+            }
+
+            // The row exists now, under whichever account captured it, independent of whether
+            // that account is still the current one below.
+            failedUploadStore.remove(id: photoId, userId: userId)
 
             // The photo is still returned and its renditions still upload: it exists server-side
             // under the account that took it, and abandoning that work would lose a real photo.
@@ -192,22 +243,34 @@ final class PhotoService {
             return inserted
         } catch {
             // A failed upload belongs to the account that attempted it. Queueing its retry under
-            // a different account would re-upload one person's photo as another's.
+            // a different account would re-upload one person's photo as another's. The disk copy
+            // written above stays right where it is, under this account's own folder, and
+            // `restoreFailedUploads` will find it if this account signs back in.
             guard AccountEpoch.isCurrent(epoch) else { return nil }
-            let pending = FailedUpload(data: imageData, userId: userId, rollId: rollId)
-            // Also off the main actor: this writes a full-resolution JPEG atomically, and it runs
-            // on the failure path, which is exactly when someone is shooting with no signal and
-            // taking the next photograph immediately. Every shot would hitch on the write.
-            let store = failedUploadStore
-            let saved = await Task.detached(priority: .utility) { store.save(pending) }.value
+
+            // Belt and braces: the row never landed, so best-effort delete the object just
+            // written rather than leave it sitting in Storage, unreferenced by any row, until (if
+            // ever) this id gets retried. If the delete itself fails, the next retry's `upsert`
+            // above still overwrites the same path, so nothing is duplicated either way.
+            _ = try? await supabase.storage.from("photos").remove(paths: [path])
+
             await MainActor.run {
+                // A roll can develop during the round trip: the INSERT policy refuses any further
+                // photo once `is_roll_developed(roll_id)` is true, and that never reverses. Say so
+                // plainly rather than surface Postgres's row-level-security wording, which reads
+                // like a bug rather than a roll that simply finished without this shot.
+                let isRollDeveloped = rollId != nil
+                    && (error as? PostgrestError)?.code == "42501"
+                let message = isRollDeveloped
+                    ? "This roll finished developing before this photo could be saved to it."
+                    : error.localizedDescription
                 // The queue is what the retry pill counts, so it holds the capture either way.
                 // Only the promise changes: if the disk write failed, the photo lives until the
                 // app quits and the copy says so rather than implying it is safe.
-                uploadError = saved
-                    ? error.localizedDescription
-                    : "\(error.localizedDescription) This one is only held until you close \(AppInfo.appName)."
-                failedUploads.append(pending)
+                uploadError = persisted
+                    ? message
+                    : "\(message) This one is only held until you close \(AppInfo.appName)."
+                failedUploads.append(record)
                 isUploading = false
             }
             return nil
@@ -257,11 +320,39 @@ final class PhotoService {
             }
             guard thumbPath != nil || feedPath != nil else { return }
 
+            // `.select()` on the patch is what makes the next line answerable at all: an UPDATE
+            // matching zero rows otherwise returns success exactly like one matching one row, so
+            // a photo deleted mid-upload (the delete can land ANY time during the two uploads
+            // above, not just before they start) would be indistinguishable from a normal patch,
+            // and the thumb/feed objects just uploaded would strand forever, named by a row that
+            // no longer exists to name them.
             struct Patch: Encodable { let thumb_path: String?; let feed_path: String? }
-            _ = try? await supabase.from("photos")
-                .update(Patch(thumb_path: thumbPath, feed_path: feedPath))
-                .eq("id", value: photoId.uuidString)
-                .execute()
+            let patched: [Photo]
+            do {
+                patched = try await supabase.from("photos")
+                    .update(Patch(thumb_path: thumbPath, feed_path: feedPath))
+                    .eq("id", value: photoId.uuidString)
+                    .select()
+                    .execute()
+                    .value
+            } catch {
+                // Couldn't even confirm whether the patch landed, e.g. the network dropped after
+                // the request went out. That is NOT the same as zero rows matching, so this must
+                // not delete anything: the row may well exist with the patch already applied.
+                // `repairRenditions` already exists to backfill a row's thumb/feed later if not.
+                return
+            }
+
+            guard !patched.isEmpty else {
+                // Confirmed zero rows matched: the photo is gone. Clean up the objects this
+                // upload just created rather than leave them behind, best-effort, same as every
+                // other Storage cleanup here.
+                let orphaned = [thumbPath, feedPath].compactMap { $0 }
+                if !orphaned.isEmpty {
+                    _ = try? await supabase.storage.from("photos").remove(paths: orphaned)
+                }
+                return
+            }
 
             // Keep the in-memory copy in step, or the grid keeps pulling the full image for this
             // photo until something refetches it from the server.
@@ -380,12 +471,22 @@ final class PhotoService {
         for upload in pending {
             await captureAndUpload(imageData: upload.data,
                                    userId: upload.userId,
-                                   rollId: upload.rollId)
-            // Cleared either way, and that is not the same as discarding it. A retry that fails
-            // goes back through the catch path above, which writes a FRESH id for the same
-            // image, so leaving this one would leave two files for one photograph and the retry
-            // count would climb every time you pressed it.
-            failedUploadStore.remove(id: upload.id, userId: upload.userId)
+                                   rollId: upload.rollId,
+                                   retryOf: upload)
+            // Only a record queued before `photoId` existed needs cleanup here. It carries no id
+            // to reuse, so `captureAndUpload` mints a FRESH one for it and manages that new file
+            // itself (removed on success, rewritten on a further failure); `upload.id` names a
+            // now-stale file that nothing will ever point at again, so it goes regardless of how
+            // the retry went, same as it always did.
+            //
+            // A record that already carries a `photoId` is retried under `upload.id` itself
+            // (they're the same id, see the capture-failure path above), and `captureAndUpload`
+            // already either removed that file (success) or rewrote it (failure). Removing it
+            // unconditionally here would discard a still-pending failure's only copy the moment
+            // it fails again, the exact loss this field exists to prevent.
+            if upload.photoId == nil {
+                failedUploadStore.remove(id: upload.id, userId: upload.userId)
+            }
         }
     }
 
@@ -464,11 +565,24 @@ final class PhotoService {
 
     // MARK: - Delete
 
-    /// Deletes a photo the current user owns, removes the storage object and the row,
-    /// then drops it from the in-memory list. Best-effort on storage (the row is the
-    /// source of truth the grid reads from).
-    func deletePhoto(_ photo: Photo) async {
-        _ = try? await supabase.storage.from("photos").remove(paths: photo.allStoragePaths)
+    /// Deletes a photo the current user owns, removes the storage objects and the row,
+    /// then drops it from the in-memory list.
+    ///
+    /// The storage removal is NOT best-effort: if it fails, the row stays put and the photo stays
+    /// visible rather than being deleted anyway. The row is the only thing that names these
+    /// objects, so deleting it after a failed removal would turn a retryable failure into orphans
+    /// nothing can ever find again.
+    ///
+    /// Returns whether the photo is actually gone, so a caller that already hid it optimistically
+    /// (a swipe, an undo toast) knows not to treat a failure as a completed delete.
+    @discardableResult
+    func deletePhoto(_ photo: Photo) async -> Bool {
+        do {
+            try await supabase.storage.from("photos").remove(paths: photo.allStoragePaths)
+        } catch {
+            await MainActor.run { uploadError = error.localizedDescription; Haptics.error() }
+            return false
+        }
         do {
             try await supabase
                 .from("photos")
@@ -476,22 +590,34 @@ final class PhotoService {
                 .eq("id", value: photo.id.uuidString)
                 .execute()
             await MainActor.run { loadedPhotos.removeAll { $0.id == photo.id } }
+            return true
         } catch {
-            await MainActor.run { uploadError = error.localizedDescription }
+            await MainActor.run { uploadError = error.localizedDescription; Haptics.error() }
+            return false
         }
     }
 
     /// Deletes several photos in one round trip (one storage call + one DB call), far faster
-    /// than looping `deletePhoto` for multi-select.
-    func deletePhotos(_ toDelete: [Photo]) async {
-        guard !toDelete.isEmpty else { return }
+    /// than looping `deletePhoto` for multi-select. Same ordering as `deletePhoto`: the rows are
+    /// only ever deleted after the storage removal has actually succeeded. Same reasoning for the
+    /// return value too.
+    @discardableResult
+    func deletePhotos(_ toDelete: [Photo]) async -> Bool {
+        guard !toDelete.isEmpty else { return true }
         let ids = toDelete.map(\.id.uuidString)
-        _ = try? await supabase.storage.from("photos").remove(paths: toDelete.flatMap(\.allStoragePaths))
+        do {
+            try await supabase.storage.from("photos").remove(paths: toDelete.flatMap(\.allStoragePaths))
+        } catch {
+            await MainActor.run { uploadError = error.localizedDescription; Haptics.error() }
+            return false
+        }
         do {
             try await supabase.from("photos").delete().in("id", values: ids).execute()
             await MainActor.run { loadedPhotos.removeAll { ids.contains($0.id.uuidString) } }
+            return true
         } catch {
-            await MainActor.run { uploadError = error.localizedDescription }
+            await MainActor.run { uploadError = error.localizedDescription; Haptics.error() }
+            return false
         }
     }
 

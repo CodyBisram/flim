@@ -201,7 +201,13 @@ struct PhotoPagerView: View {
                 Haptics.warning()
                 isDeleting = true
                 Task {
-                    await photoService.deletePhoto(photo)
+                    // `deletePhoto` only reports success once the photo is actually gone (it
+                    // deliberately leaves the row in place if the Storage removal failed). Only
+                    // then is it safe to close the pager, otherwise this would tell the person
+                    // their photo was deleted while it is still sitting in their account.
+                    let deleted = await photoService.deletePhoto(photo)
+                    isDeleting = false
+                    guard deleted else { return }
                     onDelete()
                     dismiss()
                 }

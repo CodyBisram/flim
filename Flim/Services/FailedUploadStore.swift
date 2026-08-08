@@ -10,13 +10,25 @@ struct FailedUpload: Identifiable, Equatable {
     let userId: UUID
     let rollId: UUID?
     let capturedAt: Date
+    /// The id and Storage path a previous attempt already wrote these bytes under, if any.
+    ///
+    /// Nil for a capture that failed before it ever reached Storage, and for anything queued by a
+    /// build that predates this field (an old sidecar simply decodes these as nil rather than
+    /// failing to decode at all, see `FailedUploadStore.Sidecar`). When present, a retry uploads to
+    /// the SAME path with upsert semantics instead of minting a fresh id, which is what keeps a
+    /// row-insert failure from stranding the master that already made it to Storage.
+    let photoId: UUID?
+    let storagePath: String?
 
-    init(id: UUID = UUID(), data: Data, userId: UUID, rollId: UUID?, capturedAt: Date = .now) {
+    init(id: UUID = UUID(), data: Data, userId: UUID, rollId: UUID?, capturedAt: Date = .now,
+         photoId: UUID? = nil, storagePath: String? = nil) {
         self.id = id
         self.data = data
         self.userId = userId
         self.rollId = rollId
         self.capturedAt = capturedAt
+        self.photoId = photoId
+        self.storagePath = storagePath
     }
 }
 
@@ -48,11 +60,16 @@ struct FailedUploadStore {
         self.root = root
     }
 
+    /// `photoId`/`storagePath` are Optional so the synthesized `Decodable` conformance falls back
+    /// to nil for a sidecar written before this field existed, rather than failing to decode (and
+    /// so dropping) a photo that was already queued on someone's device.
     private struct Sidecar: Codable {
         let id: UUID
         let userId: UUID
         let rollId: UUID?
         let capturedAt: Date
+        let photoId: UUID?
+        let storagePath: String?
     }
 
     private func directory(for userId: UUID) -> URL {
@@ -67,7 +84,8 @@ struct FailedUploadStore {
         do {
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
             let sidecar = Sidecar(id: upload.id, userId: upload.userId,
-                                  rollId: upload.rollId, capturedAt: upload.capturedAt)
+                                  rollId: upload.rollId, capturedAt: upload.capturedAt,
+                                  photoId: upload.photoId, storagePath: upload.storagePath)
             let meta = try JSONEncoder().encode(sidecar)
             // Image first. A crash between the two writes leaves an orphan jpg, which `load`
             // ignores and `prune` collects. The reverse order would leave a sidecar promising a
@@ -96,7 +114,8 @@ struct FailedUploadStore {
             // or restored into the wrong folder cannot re-upload one account's photo as another.
             guard sidecar.userId == userId else { continue }
             result.append(FailedUpload(id: sidecar.id, data: imageData, userId: sidecar.userId,
-                                       rollId: sidecar.rollId, capturedAt: sidecar.capturedAt))
+                                       rollId: sidecar.rollId, capturedAt: sidecar.capturedAt,
+                                       photoId: sidecar.photoId, storagePath: sidecar.storagePath))
         }
         return result.sorted { $0.capturedAt < $1.capturedAt }
     }
