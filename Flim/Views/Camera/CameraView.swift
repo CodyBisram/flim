@@ -77,6 +77,10 @@ struct CameraView: View {
     @AppStorage("developNotificationsEnabled") private var notificationsEnabled = true
     @State private var unsortedCount = 0
     @State private var showSortDeck = false
+    /// A queued shot's roll finished developing before its retry could land, so it was re-saved
+    /// as a personal instant into the sort deck instead of staying stuck (see
+    /// `PhotoService.captureAsPersonalFallback`). Not framed as an error: nothing was lost.
+    @State private var rollDevelopedFallbackToast = false
     private var flashMode: AVCaptureDevice.FlashMode { AVCaptureDevice.FlashMode(rawValue: flashModeRaw) ?? .off }
     private var flashIcon: String {
         switch flashMode {
@@ -201,8 +205,27 @@ struct CameraView: View {
                 VStack(spacing: 0) {
                     topBar
                         .reportsControlRegion()
+                    // Same top-slot toast idiom as the rest of the app (FeedView's "Reported,
+                    // thanks", PhotoPagerView's "Shared to your page"): a checkmark, not a
+                    // warning triangle, because nothing was lost, and it's told once here rather
+                    // than folded into the Retry pill's own message, which only shows while
+                    // something is still stuck.
+                    if rollDevelopedFallbackToast {
+                        Label("That roll had already developed, so this shot went to your deck instead.",
+                              systemImage: "checkmark.circle.fill")
+                            .flimFont(12, weight: .medium)
+                            .foregroundStyle(.white)
+                            .multilineTextAlignment(.leading)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                            .background(.ultraThinMaterial, in: Capsule())
+                            .padding(.top, 10)
+                            .padding(.horizontal, 24)
+                            .transition(.move(edge: .top).combined(with: .opacity))
+                    }
                     Spacer()
                 }
+                .animation(.snappy(duration: 0.25), value: rollDevelopedFallbackToast)
 
                 coachOverlay
 
@@ -232,6 +255,18 @@ struct CameraView: View {
         }
         .onDisappear { camera.stopRunning() }
         .onChange(of: selectedRoll) { persistSelectedRoll() }
+        // `personalFallbackCount` only ever goes up, so every genuine fallback is its own change
+        // even if two land back to back with identical copy. Fires for both a fresh capture that
+        // raced the roll's own develop and a manual "Retry" of an item queued before it developed.
+        .onChange(of: photos.personalFallbackCount) { _, count in
+            guard count > 0 else { return }
+            Haptics.success()
+            withAnimation { rollDevelopedFallbackToast = true }
+            Task {
+                try? await Task.sleep(for: .seconds(3))
+                withAnimation { rollDevelopedFallbackToast = false }
+            }
+        }
         // Defaults the camera to a roll you just created, until you deliberately switch away, 
         // selectedRoll is view-local state (persisted, but only restored once on appear), so a
         // roll created elsewhere has no other way to reach an already-mounted CameraView.
@@ -715,16 +750,22 @@ struct CameraView: View {
             photos.enqueueCapture(rawData: data, stock: stock, userId: userId, rollId: rollId) { photo in
                 await refreshUnsorted()   // keep the "to sort" count live as shots come in
                 guard notificationsEnabled else { return }
+                // Gated on the PHOTO's own rollId, not the roll selected at capture time: a roll
+                // that finishes developing mid-upload falls back to a personal instant
+                // (`PhotoService.captureAsPersonalFallback`), landing with `rollId == nil` even
+                // though `rollId` above was captured non-nil. Scheduling "your roll developed" for
+                // a roll this shot never actually reached would tell the user something false.
+                //
                 // Personal instants are ready immediately (no reminder). Roll shots share a
                 // reveal, schedule ONE collapsed notification per roll, with your shot count.
-                if let rollId, let rollName {
+                if let landedRollId = photo.rollId, let rollName {
                     await notifications.requestAuthorizationIfNeeded()
                     // Counted on the server. This used to filter the loaded page, which holds
                     // one page of whatever query ran last and may not be this roll at all, so the
                     // reminder could quote a number from somewhere else entirely.
-                    let count = await photos.rollPhotoCount(rollId: rollId, userId: userId)
+                    let count = await photos.rollPhotoCount(rollId: landedRollId, userId: userId)
                     await notifications.scheduleRollDevelopNotification(
-                        rollId: rollId, rollName: rollName,
+                        rollId: landedRollId, rollName: rollName,
                         developsAt: photo.developsAt, photoCount: count
                     )
                 }

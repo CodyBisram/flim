@@ -153,6 +153,37 @@ struct AccountEpochTests {
         #expect(failedUploads.isEmpty, "the append needs its own guard after the delete")
     }
 
+    @Test("captureAsPersonalFallback: the fallback insert's own write needs its guard AFTER the insert")
+    func personalFallbackInsertNeedsItsOwnGuard() {
+        // Models PhotoService.captureAsPersonalFallback: a roll-developed capture is re-saved as
+        // a personal instant. The insert (an await) can outlive the account exactly like the
+        // original insert in `captureAndUpload` does, so the write into `loadedPhotos` (and the
+        // retry pill's `failedUploads`, which this success path must NOT append to) needs its own
+        // guard, evaluated with no `await` between the check and the write, not the fast-path
+        // guard taken before the insert started.
+        var loadedPhotos = ["B's darkroom photo"]
+        var failedUploads = ["B's capture"]
+        let epoch = AccountEpoch.current
+
+        // The fast-path guard before the insert passes.
+        #expect(AccountEpoch.isCurrent(epoch))
+
+        // The insert (an await) is still in flight when the account switches.
+        AccountEpoch.bump()
+        loadedPhotos = []       // resetForAccountChange() for the new account
+        failedUploads = []
+
+        // The insert "returns" here; the write must be guarded again, right before it.
+        if AccountEpoch.isCurrent(epoch) {
+            loadedPhotos.insert("A's re-homed personal instant", at: 0)
+        }
+
+        #expect(loadedPhotos.isEmpty, "the fallback's write needs its own guard after the insert")
+        // Nothing ever appends to `failedUploads` on this success path in the first place, a
+        // fallback that lands is never queued, so the retry pill has nothing left to guard here.
+        #expect(failedUploads.isEmpty)
+    }
+
     @Test("restoreFailedUploads: a stale disk read must not splice into a freshly reset queue")
     func restoreFailedUploadsShapeIsProtected() {
         // Models PhotoService.restoreFailedUploads, which ContentView launches unstructured

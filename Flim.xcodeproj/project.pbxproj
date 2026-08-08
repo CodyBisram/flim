@@ -121,6 +121,7 @@
 		C74A7254222213AB7C52FB3A /* RollRevealAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DDF52A98F82403864BA86D2 /* RollRevealAttributes.swift */; };
 		C8709C9620D5940B8626F149 /* FeedService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9817482FE2AB125EC4FC2FB /* FeedService.swift */; };
 		CBD8476D316567B4404ECBA9 /* Social.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0FA5444D3CDCB4379BF00F72 /* Social.swift */; };
+		CCFE868F9D30BFD76291A4E1 /* PhotoServiceFallbackTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82A4711288E91AABA159EB10 /* PhotoServiceFallbackTests.swift */; };
 		CFC5BA76CCE7F254E9E23522 /* AuthRulesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AD1B8502DB294D5BE1986E3 /* AuthRulesTests.swift */; };
 		D1044E118206CD6EDF9692B3 /* Roll.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A0B87FE1069C71306456DFF /* Roll.swift */; };
 		D38ED66624883730EBF8F9FB /* ProfileCropGeometryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E36FE0B8735BA0AADE0C8C7C /* ProfileCropGeometryTests.swift */; };
@@ -275,6 +276,7 @@
 		7A0B87FE1069C71306456DFF /* Roll.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Roll.swift; sourceTree = "<group>"; };
 		8118D8FA0343F18F835415D3 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		8160A75F102252932FFC426A /* RollServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollServiceTests.swift; sourceTree = "<group>"; };
+		82A4711288E91AABA159EB10 /* PhotoServiceFallbackTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoServiceFallbackTests.swift; sourceTree = "<group>"; };
 		85C6F9C983DFB1E2ECF57092 /* SignedURLStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignedURLStore.swift; sourceTree = "<group>"; };
 		86B99F48D57C1AE3CE9295E3 /* RollRevealAttributesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollRevealAttributesTests.swift; sourceTree = "<group>"; };
 		870990313A19750FDF37E235 /* FilmStock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilmStock.swift; sourceTree = "<group>"; };
@@ -620,6 +622,7 @@
 				BC186737296AABC10E4A1C48 /* PhotoExportTests.swift */,
 				70A90D72A092EB706FDA25E4 /* PhotoPagerTests.swift */,
 				BAF7FE72763EB709B93E5BA4 /* PhotoReadinessTests.swift */,
+				82A4711288E91AABA159EB10 /* PhotoServiceFallbackTests.swift */,
 				F0C42110E6AE811C6B12C87A /* PhotoStoragePathsTests.swift */,
 				C90BE0C5BA46C41F86085BD3 /* PhotoTagsTests.swift */,
 				B17CBFAACCC8AFCBB5A8B72F /* PinchZoomTests.swift */,
@@ -805,6 +808,7 @@
 				F49C20EEF5B515D8924048EE /* PhotoExportTests.swift in Sources */,
 				739BB01BA9567EC6C9789387 /* PhotoPagerTests.swift in Sources */,
 				E924D1944FA4475B4E383A61 /* PhotoReadinessTests.swift in Sources */,
+				CCFE868F9D30BFD76291A4E1 /* PhotoServiceFallbackTests.swift in Sources */,
 				1248B9A183489756AF5CA9EB /* PhotoStoragePathsTests.swift in Sources */,
 				D49EF9C9EB2112546D756C9C /* PhotoTagsTests.swift in Sources */,
 				990031401F422B02A345BBAF /* PinchZoomTests.swift in Sources */,

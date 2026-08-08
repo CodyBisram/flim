@@ -52,6 +52,12 @@ final class PhotoService {
     var uploadError: String?
     var failedUploads: [FailedUpload] = []
 
+    /// Bumped once each time a queued capture for a roll that finished developing before the
+    /// upload landed is re-saved as a personal instant instead of staying stuck (see
+    /// `captureAsPersonalFallback`). A view watches this to show a one-time toast; see its own
+    /// doc for why this is a counter rather than a message.
+    var personalFallbackCount = 0
+
     /// Disk backing for `failedUploads`. Without it, quitting the app destroys unsent captures,
     /// and a capture is the one thing here that cannot be reproduced.
     var failedUploadStore = FailedUploadStore()
@@ -270,6 +276,27 @@ final class PhotoService {
             // actually appends, since the delete is itself an `await` this guard cannot see past.
             guard AccountEpoch.isCurrent(epoch) else { return nil }
 
+            // A roll can develop during the round trip: the INSERT policy refuses any further
+            // photo once `is_roll_developed(roll_id)` is true, and that never reverses. Queueing
+            // this for the ordinary retry below would fail it identically forever, permanently
+            // pinning the Retry pill at N with nothing the user can do about it. Fall back to
+            // saving the shot as a personal instant instead of leaving it stuck; see
+            // `captureAsPersonalFallback`.
+            //
+            // Detected by `isRollDevelopedRefusal`, the same test `queueForRetry`'s own message
+            // uses, so a network error (or any other insert failure) falls straight through to
+            // the unchanged retry queue below. Reaching this branch also already proves the
+            // Storage upload above succeeded: 42501 is a `PostgrestError`, thrown only by the
+            // insert, never by the Storage client, so the bytes at `path` are guaranteed to still
+            // be there right now, before the best-effort delete a few lines down would otherwise
+            // remove them.
+            if Self.isRollDevelopedRefusal(rollId: rollId, error: error) {
+                return await captureAsPersonalFallback(
+                    photoId: photoId, userId: userId, path: path, imageData: imageData,
+                    record: record, rollId: rollId, persisted: persisted, epoch: epoch
+                )
+            }
+
             // The row never landed here: this is either the Storage upload itself failing (no
             // insert was ever attempted) or the insert failing with something OTHER than 23505
             // (23505's own ambiguous case returns above, before reaching this catch, precisely so
@@ -279,6 +306,80 @@ final class PhotoService {
             // overwrites the same path, so nothing is duplicated either way.
             _ = try? await supabase.storage.from("photos").remove(paths: [path])
 
+            await queueForRetry(error, record: record, rollId: rollId, persisted: persisted, epoch: epoch)
+            return nil
+        }
+    }
+
+    /// Re-homes a capture as a personal instant when its roll finished developing before the
+    /// upload landed, instead of leaving it queued behind a retry that can never succeed (see the
+    /// 42501 branch in `captureAndUpload`'s catch, the only caller). A personal insert
+    /// (`rollId: nil`) skips the roll-developed check entirely, and `InsertPhoto`'s
+    /// `isSorted: rollId != nil` then lands it UNSORTED, which is what puts it in front of the
+    /// user in the sort deck (archive/publish/trash, with undo) rather than it just vanishing.
+    ///
+    /// Reuses `photoId`/`path` rather than minting new ones, and does NOT re-upload. The only
+    /// caller reaches here after its own Storage upload to `path` already succeeded (that's the
+    /// precondition checked at the call site), so the bytes this row is about to name are already
+    /// sitting there; minting a fresh id would mean a second, redundant upload of the same bytes
+    /// to a new path, and would leave the original object behind for nothing to ever clean up,
+    /// since this path deliberately skips the generic catch's delete. This is what guarantees the
+    /// row that lands never names missing bytes: it is the same row-after-upload ordering the rest
+    /// of this function already uses, just with `rollId` swapped to nil before the insert.
+    private func captureAsPersonalFallback(
+        photoId: UUID, userId: UUID, path: String, imageData: Data,
+        record: FailedUpload, rollId: UUID?, persisted: Bool, epoch: Int
+    ) async -> Photo? {
+        let payload = InsertPhoto(
+            id: photoId, userId: userId, rollId: nil, storagePath: path,
+            thumbPath: nil, feedPath: nil,
+            developsAt: Self.developDate(rollId: nil, rollReveal: nil, now: .now,
+                                         personalDelay: personalDevelopDelay, rollDelay: rollDevelopDelay),
+            isSorted: false
+        )
+        do {
+            let inserted: Photo = try await supabase
+                .from("photos")
+                .insert(payload)
+                .select()
+                .single()
+                .execute()
+                .value
+
+            // The row exists now, independent of whether this account is still the current one
+            // below, same reasoning as the ordinary success path above.
+            failedUploadStore.remove(id: photoId, userId: userId)
+
+            // Fast path only: skips the extra rendition-upload/return work below when already
+            // obviously stale. Does NOT by itself prove the epoch is still current by the time the
+            // write below runs, `await MainActor.run` is itself a suspension this guard cannot see
+            // past, so the closure re-checks with no `await` between that check and the writes it
+            // guards, same discipline as `queueForRetry`.
+            guard AccountEpoch.isCurrent(epoch) else {
+                uploadRenditions(photoId: photoId, userId: userId, imageData: imageData)
+                return inserted
+            }
+            await MainActor.run {
+                guard AccountEpoch.isCurrent(epoch) else { return }
+                loadedPhotos.insert(inserted, at: 0)
+                isUploading = false
+                // Told once, right here, exactly when the fallback actually lands, an incrementing
+                // counter rather than a message so a view watching for it fires again even if a
+                // second fallback in a row would otherwise carry the identical copy (an `onChange`
+                // on a String coalesces two equal values into one appearance).
+                personalFallbackCount += 1
+            }
+            uploadRenditions(photoId: photoId, userId: userId, imageData: imageData)
+            return inserted
+        } catch {
+            // The fallback insert itself failed, e.g. the network dropped again right here. Do not
+            // lose the photo: fall back to the exact same queued-retry path any other insert
+            // failure takes. `record` (unchanged, still naming the ORIGINAL roll) is what a future
+            // retry reads, so it simply re-attempts this same fallback rather than the roll insert
+            // itself, `is_roll_developed` never reverses, so retrying the roll again could only
+            // 42501 again, and this function's own caller catches that on the very next retry,
+            // same as it did this one.
+            _ = try? await supabase.storage.from("photos").remove(paths: [path])
             await queueForRetry(error, record: record, rollId: rollId, persisted: persisted, epoch: epoch)
             return nil
         }
@@ -306,8 +407,13 @@ final class PhotoService {
             // photo once `is_roll_developed(roll_id)` is true, and that never reverses. Say so
             // plainly rather than surface Postgres's row-level-security wording, which reads like
             // a bug rather than a roll that simply finished without this shot.
-            let isRollDeveloped = rollId != nil && (error as? PostgrestError)?.code == "42501"
-            let message = isRollDeveloped
+            //
+            // In practice `captureAndUpload`'s own catch now intercepts this exact case before
+            // ever calling here (see `captureAsPersonalFallback`), so this branch fires only if
+            // the FALLBACK insert itself somehow also comes back 42501, which the fallback's own
+            // `rollId: nil` payload should make impossible. Left in rather than removed: it is
+            // still a correct, harmless description of the code if that assumption is ever wrong.
+            let message = Self.isRollDevelopedRefusal(rollId: rollId, error: error)
                 ? "This roll finished developing before this photo could be saved to it."
                 : error.localizedDescription
             // The queue is what the retry pill counts, so it holds the capture either way. Only
@@ -319,6 +425,20 @@ final class PhotoService {
             failedUploads.append(record)
             isUploading = false
         }
+    }
+
+    /// Whether `error` is specifically the roll-developed INSERT policy refusal: the row was
+    /// destined for a roll (`rollId` non-nil) and Postgres's RLS code is `42501`. Not any other
+    /// insert failure, and not a Storage failure, `PostgrestError` is thrown only by the insert.
+    ///
+    /// Pulled out as its own pure, testable function (same reasoning as `AuthService
+    /// .isPrimaryKeyConflict`, and as `developDate` below) rather than left as the inline
+    /// `rollId != nil && (error as? PostgrestError)?.code == "42501"` check duplicated at both call
+    /// sites, so a network error mid-upload provably keeps its ordinary retry behaviour instead of
+    /// that guarantee living only in prose. `nonisolated` for the same reason `developDate` is:
+    /// inputs in, a Bool out, no access to any state on this class.
+    nonisolated static func isRollDevelopedRefusal(rollId: UUID?, error: Error) -> Bool {
+        rollId != nil && (error as? PostgrestError)?.code == "42501"
     }
 
     /// Generates and uploads the thumbnail + feed renditions after the photo already exists, then
