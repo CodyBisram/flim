@@ -464,9 +464,10 @@ final class AuthService {
         // about its own type. Failing is better: the caller already returns false and the UI
         // already says so.
         //
-        // `thumbnail` tries HEIC first and only falls back to JPEG if this device can't encode
-        // it, so the content type and path suffix below are derived from whichever it actually
-        // produced, never assumed.
+        // `thumbnail` always encodes JPEG (`thumbEncoding`, HEIC was measured and rejected), but
+        // the content type and path suffix below are still derived from whatever it actually
+        // produced rather than assumed, so a future change to that encoding can't silently
+        // mislabel the object it just uploaded.
         guard let encoded = InstantFilmProcessor.thumbnail(from: raw, longEdge: longEdge) else { return nil }
         let dest = "\(userId.uuidString.lowercased())/\(prefix)-\(UUID().uuidString.lowercased()).\(encoded.format.pathExtension)"
         do {

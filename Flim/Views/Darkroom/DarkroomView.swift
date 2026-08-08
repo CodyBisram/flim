@@ -31,6 +31,8 @@ struct DarkroomView: View {
     @State private var pendingDelete: [Photo] = []
     @State private var showUndoToast = false
     @State private var undoTask: Task<Void, Never>?
+    /// A failure that must not fail silently, e.g. "Set as profile photo" not sticking.
+    @State private var errorToast: String?
     @AppStorage("lastRevealCheck") private var lastRevealCheck: Double = 0
     @State private var showReveal = false
     @State private var revealAnim = false
@@ -185,6 +187,16 @@ struct DarkroomView: View {
             }
         }
         .animation(.snappy(duration: 0.25), value: showUndoToast)
+        .overlay(alignment: .top) {
+            if let errorToast {
+                Label(errorToast, systemImage: "exclamationmark.triangle.fill")
+                    .flimFont(13, weight: .medium).foregroundStyle(.white)
+                    .padding(.horizontal, 16).padding(.vertical, 10)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .padding(.top, 8)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
         .onAppear {
             Task {
                 await reload()
@@ -291,6 +303,7 @@ struct DarkroomView: View {
                     Haptics.success()
                 } else {
                     Haptics.error()
+                    flashError("Couldn't update your profile photo. Check your connection and try again.")
                 }
             }
         } label: { Label("Set as profile photo", systemImage: "person.crop.circle") }
@@ -318,6 +331,15 @@ struct DarkroomView: View {
                 return
             }
             shareItem = ShareImage(image: image)
+        }
+    }
+
+    /// Top-slot toast for a failure that must not decline silently. Auto-hides.
+    private func flashError(_ message: String) {
+        withAnimation { errorToast = message }
+        Task {
+            try? await Task.sleep(for: .seconds(2))
+            withAnimation { errorToast = nil }
         }
     }
 

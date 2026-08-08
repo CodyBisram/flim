@@ -1010,8 +1010,21 @@ ALTER TABLE public.posts  ADD COLUMN IF NOT EXISTS feed_path TEXT;
 -- ============================================================
 -- Security-advisor hardening (2026-07). All applied live; kept here as source of truth.
 -- ============================================================
--- profiles enforces the QUERYING user's rights (safe columns come from users column grants).
-ALTER VIEW public.profiles SET (security_invoker = on);
+-- profiles deliberately runs with the VIEW OWNER's rights, not the querying user's.
+--
+-- Do not turn security_invoker on. The line below is what Supabase's security advisor asks for
+-- when it flags "Security Definer View", and it is wrong for this view: `profiles` reads
+-- `public.users`, which the querying role cannot read directly, so invoker rights make every
+-- profile read fail with "permission denied for table users". No handles, no avatars, no
+-- mentions, no profile pages, app-wide. The safe columns are already constrained by the
+-- column-level grants on `users` immediately below, which is what makes owner rights safe here.
+--
+-- Verified against production 2026-08-08: pg_class.reloptions for this view is NULL, i.e.
+-- security_invoker is OFF and always has been. The statement was listed under a header claiming
+-- "all applied live" but never was, so running this file as written would have been the first
+-- time it took effect, and it would have broken profile reads for everyone.
+--
+-- ALTER VIEW public.profiles SET (security_invoker = on);   -- DO NOT ENABLE, see above
 
 -- users: any signed-in user may read rows, but ONLY the safe profile columns.
 -- email + invite_code are excluded from the grant → unreadable via the API for OTHER users

@@ -95,6 +95,10 @@ struct PhotoPagerView: View {
     @State private var didAutoOpenTagging = false
     @State private var showComments = false
     @State private var showSharedToast = false
+    /// A failure that must not fail silently: a delete that didn't happen, a share that couldn't
+    /// be prepared, a profile photo that didn't update. Shares the same top overlay slot as
+    /// `showSharedToast`, they're never both true at once.
+    @State private var errorToast: String?
     /// Captured when an action starts, rather than re-derived from `current` when it finishes,
     /// defensive against `selection` changing while a sheet/dialog is open.
     @State private var composerPhoto: Photo?
@@ -176,6 +180,15 @@ struct PhotoPagerView: View {
                     .background(.ultraThinMaterial, in: Capsule())
                     .padding(.top, 64)
                     .transition(.move(edge: .top).combined(with: .opacity))
+            } else if let errorToast {
+                Label(errorToast, systemImage: "exclamationmark.triangle.fill")
+                    .flimFont(14, weight: .semibold)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 11)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .padding(.top, 64)
+                    .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
         .onChange(of: selection) { _, _ in
@@ -207,7 +220,10 @@ struct PhotoPagerView: View {
                     // their photo was deleted while it is still sitting in their account.
                     let deleted = await photoService.deletePhoto(photo)
                     isDeleting = false
-                    guard deleted else { return }
+                    guard deleted else {
+                        flashError("Couldn't delete that. Check your connection and try again.")
+                        return
+                    }
                     onDelete()
                     dismiss()
                 }
@@ -286,7 +302,7 @@ struct PhotoPagerView: View {
                     .glassCapsule(interactive: true)
                 }
                 .disabled(preparingShare)
-                .accessibilityLabel("Share photo")
+                .accessibilityLabel(preparingShare ? "Preparing to share" : "Share photo")
                 // Own photo, a manage menu (set avatar / delete). Someone else's (only possible on
                 // a roll grid), report. Derived from ownership, so a Darkroom of all-own photos
                 // never shows report without needing a flag.
@@ -302,6 +318,7 @@ struct PhotoPagerView: View {
                                     Haptics.success()
                                 } else {
                                     Haptics.error()
+                                    flashError("Couldn't update your profile photo. Check your connection and try again.")
                                 }
                             }
                         } label: { Label("Set as profile photo", systemImage: "person.crop.circle") }
@@ -591,10 +608,21 @@ struct PhotoPagerView: View {
                   let image = UIImage(data: data)
             else {
                 Haptics.error()
+                flashError("Couldn't prepare that for sharing.")
                 return
             }
             ImageCache.set(image, forKey: key)
             shareItem = ShareImage(image: image)
+        }
+    }
+
+    /// The shared top-slot toast for a failure that must not decline silently. Auto-hides, same
+    /// timing as `showSharedToast`'s own success case right below.
+    private func flashError(_ message: String) {
+        withAnimation { errorToast = message }
+        Task {
+            try? await Task.sleep(for: .seconds(2))
+            withAnimation { errorToast = nil }
         }
     }
 

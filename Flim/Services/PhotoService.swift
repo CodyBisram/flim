@@ -220,7 +220,25 @@ final class PhotoService {
                     .single()
                     .execute()
                     .value
-                else { throw error }
+                else {
+                    // The re-fetch itself failed, e.g. the network dropped again right here. That
+                    // is NOT the same as "the row never landed": the 23505 above already proved a
+                    // row exists (or did a moment ago), so we know FOR CERTAIN the object at
+                    // `path` may still be exactly what that row names. The outer `catch` below
+                    // deletes that object on the assumption the insert never landed, which would
+                    // be true for every other error but is proven false here, so this returns
+                    // directly rather than falling into it. Nothing is lost: the disk sidecar
+                    // stays, and the next retry's `upsert` either overwrites live bytes with the
+                    // same live bytes (harmless) or restores ones that truly went missing.
+                    //
+                    // This guard is only a fast path (skip the call entirely when already
+                    // obviously stale); `queueForRetry` re-checks the epoch itself, right before
+                    // the append, since entering that `async` function is itself an `await` this
+                    // guard cannot see past.
+                    guard AccountEpoch.isCurrent(epoch) else { return nil }
+                    await queueForRetry(error, record: record, rollId: rollId, persisted: persisted, epoch: epoch)
+                    return nil
+                }
                 inserted = existing
             }
 
@@ -246,34 +264,60 @@ final class PhotoService {
             // a different account would re-upload one person's photo as another's. The disk copy
             // written above stays right where it is, under this account's own folder, and
             // `restoreFailedUploads` will find it if this account signs back in.
+            //
+            // Only a fast path: skips the delete attempt below when already obviously stale, but
+            // does NOT by itself prove the epoch is still current by the time `queueForRetry`
+            // actually appends, since the delete is itself an `await` this guard cannot see past.
             guard AccountEpoch.isCurrent(epoch) else { return nil }
 
-            // Belt and braces: the row never landed, so best-effort delete the object just
-            // written rather than leave it sitting in Storage, unreferenced by any row, until (if
-            // ever) this id gets retried. If the delete itself fails, the next retry's `upsert`
-            // above still overwrites the same path, so nothing is duplicated either way.
+            // The row never landed here: this is either the Storage upload itself failing (no
+            // insert was ever attempted) or the insert failing with something OTHER than 23505
+            // (23505's own ambiguous case returns above, before reaching this catch, precisely so
+            // it never runs this delete). Best-effort delete the object just written rather than
+            // leave it sitting in Storage, unreferenced by any row, until (if ever) this id gets
+            // retried. If the delete itself fails, the next retry's `upsert` above still
+            // overwrites the same path, so nothing is duplicated either way.
             _ = try? await supabase.storage.from("photos").remove(paths: [path])
 
-            await MainActor.run {
-                // A roll can develop during the round trip: the INSERT policy refuses any further
-                // photo once `is_roll_developed(roll_id)` is true, and that never reverses. Say so
-                // plainly rather than surface Postgres's row-level-security wording, which reads
-                // like a bug rather than a roll that simply finished without this shot.
-                let isRollDeveloped = rollId != nil
-                    && (error as? PostgrestError)?.code == "42501"
-                let message = isRollDeveloped
-                    ? "This roll finished developing before this photo could be saved to it."
-                    : error.localizedDescription
-                // The queue is what the retry pill counts, so it holds the capture either way.
-                // Only the promise changes: if the disk write failed, the photo lives until the
-                // app quits and the copy says so rather than implying it is safe.
-                uploadError = persisted
-                    ? message
-                    : "\(message) This one is only held until you close \(AppInfo.appName)."
-                failedUploads.append(record)
-                isUploading = false
-            }
+            await queueForRetry(error, record: record, rollId: rollId, persisted: persisted, epoch: epoch)
             return nil
+        }
+    }
+
+    /// Shared tail of a failed capture: sets the message and queues the retry. Split out because
+    /// a capture can now fail from two places that must behave identically except for whether
+    /// Storage gets a best-effort delete first (the caller does that, or doesn't, before calling
+    /// this): the ordinary catch below, and the 23505 branch above it when ITS OWN recovery fetch
+    /// can't confirm anything and must not risk deleting live bytes.
+    ///
+    /// - Parameter epoch: re-checked HERE, inside the same `MainActor.run` closure that performs
+    ///   the append, not by the caller before calling this function. A caller's own guard can only
+    ///   promise the epoch was current at that line; every `await` since (calling into this
+    ///   `async` function is itself one, and so is the best-effort Storage delete a caller may run
+    ///   first) is a window an account switch can land in. Checking again right here, with no
+    ///   `await` between the check and the mutation it guards, is what actually closes it: this
+    ///   array is shared, observable state the retry pill reads, an account switch splicing a
+    ///   departing account's failed capture (raw image bytes included) into it is exactly the
+    ///   cross-account leak `AccountEpoch` exists to prevent.
+    private func queueForRetry(_ error: Error, record: FailedUpload, rollId: UUID?, persisted: Bool, epoch: Int) async {
+        await MainActor.run {
+            guard AccountEpoch.isCurrent(epoch) else { return }
+            // A roll can develop during the round trip: the INSERT policy refuses any further
+            // photo once `is_roll_developed(roll_id)` is true, and that never reverses. Say so
+            // plainly rather than surface Postgres's row-level-security wording, which reads like
+            // a bug rather than a roll that simply finished without this shot.
+            let isRollDeveloped = rollId != nil && (error as? PostgrestError)?.code == "42501"
+            let message = isRollDeveloped
+                ? "This roll finished developing before this photo could be saved to it."
+                : error.localizedDescription
+            // The queue is what the retry pill counts, so it holds the capture either way. Only
+            // the promise changes: if the disk write failed, the photo lives until the app quits
+            // and the copy says so rather than implying it is safe.
+            uploadError = persisted
+                ? message
+                : "\(message) This one is only held until you close \(AppInfo.appName)."
+            failedUploads.append(record)
+            isUploading = false
         }
     }
 
@@ -502,12 +546,22 @@ final class PhotoService {
     /// on tens of megabytes of synchronous reads. The store is a value type holding only a URL,
     /// so it crosses to the detached task safely.
     func restoreFailedUploads(userId: UUID) async {
+        // Captured before the only `await` below, and re-checked immediately after it, right
+        // before this touches `failedUploads`. `ContentView` launches this unstructured
+        // (`Task { await photos.restoreFailedUploads(userId:) }`) right after
+        // `resetForAccountChange()` has just cleared that array for a NEW account, so a rapid
+        // sign-out-then-sign-in-as-someone-else can let an earlier call for the DEPARTING account
+        // finish its disk read after the newer one already reset state. Without this, that stale
+        // call splices the departing account's queued captures, raw image bytes included, into
+        // the new account's retry pill. `AccountEpoch`'s own doc names exactly this sequence as
+        // "what App Review does."
+        let epoch = AccountEpoch.current
         let store = failedUploadStore
         let restored = await Task.detached(priority: .utility) { () -> [FailedUpload] in
             store.prune(userId: userId)
             return store.load(userId: userId)
         }.value
-        guard !restored.isEmpty else { return }
+        guard AccountEpoch.isCurrent(epoch), !restored.isEmpty else { return }
         let known = Set(failedUploads.map(\.id))
         failedUploads.append(contentsOf: restored.filter { !known.contains($0.id) })
         if uploadError == nil {

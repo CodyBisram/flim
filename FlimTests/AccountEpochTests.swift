@@ -130,4 +130,48 @@ struct AccountEpochTests {
         #expect(!AccountEpoch.isCurrent(tooEarly), "capturing before the bump self-invalidates")
         #expect(AccountEpoch.isCurrent(correct), "capturing after the bump is usable")
     }
+
+    @Test("a delete-then-write failure path needs its guard AFTER the delete, not just before it")
+    func deleteThenWriteNeedsItsOwnGuard() {
+        // Models PhotoService.captureAndUpload's failure catch: guard, a best-effort Storage
+        // delete (an await), THEN append to `failedUploads`. A guard checked only before the
+        // delete cannot see an account switch that happens DURING it, so the append needs its own
+        // guard, evaluated with no `await` between the check and the write.
+        var failedUploads = ["B's capture"]
+        let epoch = AccountEpoch.current
+
+        // The fast-path guard before the delete passes.
+        #expect(AccountEpoch.isCurrent(epoch))
+
+        // The best-effort Storage delete is an await; the account switches during it.
+        AccountEpoch.bump()
+        failedUploads = []   // resetForAccountChange() for the new account
+
+        // The append must be guarded again, right before it, not rely on the earlier guard alone.
+        if AccountEpoch.isCurrent(epoch) { failedUploads.append("A's failed capture") }
+
+        #expect(failedUploads.isEmpty, "the append needs its own guard after the delete")
+    }
+
+    @Test("restoreFailedUploads: a stale disk read must not splice into a freshly reset queue")
+    func restoreFailedUploadsShapeIsProtected() {
+        // Models PhotoService.restoreFailedUploads, which ContentView launches unstructured
+        // (`Task { await photos.restoreFailedUploads(userId:) }`) right after
+        // `resetForAccountChange()` clears the queue for a NEW account. A rapid sign-out then
+        // sign-in as someone else lets an earlier call's disk read (the one `await`) finish after
+        // a LATER switch has already reset the queue for the new account. Without a guard placed
+        // after that read, the stale call splices the departed account's pending captures, raw
+        // image bytes included, into the new account's retry pill.
+        var queue = ["A's pending capture"]
+        let epoch = AccountEpoch.current
+
+        // The account switches while A's restore is still doing its (here: simulated) disk read.
+        AccountEpoch.bump()
+        queue = []   // resetForAccountChange() for the new account, B
+
+        let restoredFromDisk = ["A's pending capture, read from disk"]
+        if AccountEpoch.isCurrent(epoch) { queue.append(contentsOf: restoredFromDisk) }
+
+        #expect(queue.isEmpty, "a restore for the departed account must not reach the new account's queue")
+    }
 }
