@@ -147,10 +147,12 @@ struct ActivityFeedView: View {
                 // the single wrapped row in a list people scan was the only one that did not line
                 // up. That tap target was also a duplicate, since the avatar beside it already
                 // opens the profile (see the note on `row`), and it was what cost the typography.
-                Button { openDestination(item) } label: {
-                    ActivityLine(handle: item.actor.handle, action: actionText(item.kind))
-                }
-                .buttonStyle(.plain)
+                ActivityLine(
+                    handle: item.actor.handle,
+                    action: actionText(item.kind),
+                    onHandle: { profileRoute = ProfileRoute(id: item.actor.id) },
+                    onBody: { openDestination(item) }
+                )
                 Button { openDestination(item) } label: {
                     Text(item.date.formatted(.relative(presentation: .named)))
                         .flimFont(11, relativeTo: .caption).foregroundStyle(FlimTheme.textTertiary)
@@ -248,32 +250,61 @@ struct ActivityFeedView: View {
         }
     }
 
-/// One activity sentence: bold handle, regular action, wrapping as a single paragraph.
+/// One activity sentence: bold handle, regular action, wrapping as a single paragraph, with the
+/// handle still opening the profile.
 ///
 /// Its own view because concatenating `Text` requires both halves to BE `Text`, and `flimFont` is
 /// a ViewModifier returning `some View`. The scaling it provides is reproduced here with the same
 /// `ScaledMetric` mechanism against the same text style, so this line grows with Dynamic Type
 /// exactly as the rest of the row does rather than quietly opting out of it.
+///
+/// Both halves are links rather than a `Button` wrapping a linked `Text`. A Button consumes the
+/// touch before a link inside its label ever sees it, so the handle would render as something you
+/// can tap and then not be one. Routing both ranges through `openURL` means the tap is resolved by
+/// WHICH range was hit, with no gesture priority to get wrong. The scheme is internal and every
+/// case is handled here, so nothing can escape to the system.
 private struct ActivityLine: View {
     let handle: String
     let action: String
+    let onHandle: () -> Void
+    let onBody: () -> Void
 
     @ScaledMetric(relativeTo: .subheadline) private var size: CGFloat = 14
 
+    private static let handleURL = URL(string: "flim-activity://handle")!
+    private static let bodyURL = URL(string: "flim-activity://body")!
+
+    private var line: AttributedString {
+        var name = AttributedString(handle)
+        name.font = .system(size: size, weight: .semibold)
+        // Set explicitly: a link run would otherwise take the accent colour, and a handle tinted
+        // differently from the sentence it starts reads as a mistake rather than as emphasis.
+        name.foregroundColor = .white
+        name.link = Self.handleURL
+
+        var rest = AttributedString(" " + action)
+        rest.font = .system(size: size)
+        rest.foregroundColor = .white
+        rest.link = Self.bodyURL
+
+        return name + rest
+    }
+
     var body: some View {
-        (
-            Text(handle).font(.system(size: size, weight: .semibold))
-            + Text(" " + action).font(.system(size: size))
-        )
-        .foregroundStyle(.white)
-        // Two lines, then truncate. Deliberately NOT a manual character cap on the comment body:
-        // the layout knows the width and the reader's text size and this does not, so a cap that
-        // looked right at the default size would clip early on a large one and leave a short line
-        // on a small one. A notification points at the thing; the comment is read in full by
-        // tapping through.
-        .lineLimit(2)
-        .multilineTextAlignment(.leading)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        Text(line)
+            // Two lines, then truncate. Deliberately NOT a manual character cap on the comment
+            // body: the layout knows the width and the reader's text size and this does not, so a
+            // cap that looked right at the default size would clip early on a large one and leave
+            // a short line on a small one. A notification points at the thing; the comment is read
+            // in full by tapping through.
+            .lineLimit(2)
+            .multilineTextAlignment(.leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .environment(\.openURL, OpenURLAction { url in
+                if url == Self.handleURL { onHandle(); return .handled }
+                if url == Self.bodyURL { onBody(); return .handled }
+                return .systemAction
+            })
     }
 }
 
