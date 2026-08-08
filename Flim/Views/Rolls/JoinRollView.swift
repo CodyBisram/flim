@@ -129,6 +129,7 @@ struct JoinRollView: View {
         error = nil
         do {
             let roll = try await rolls.joinRoll(inviteCode: code, userId: userId)
+            Activation.log(.rollJoined)
             joinedRoll = roll
             // Joining is the same commitment as creating, so it earns the same countdown. It
             // used to start only for the CREATOR, so everyone who came in by link had no card at

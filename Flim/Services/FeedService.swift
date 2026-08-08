@@ -727,6 +727,7 @@ final class FeedService {
             taken_at: photo.takenAt,
             caption: (trimmed?.isEmpty ?? true) ? nil : trimmed
         )).select("id").single().execute().value
+        Activation.log(.postShared)
 
         guard !tags.isEmpty else { return }
         struct TagInsert: Encodable { let post_id: UUID; let tagged_user_id: UUID; let x: Double; let y: Double }

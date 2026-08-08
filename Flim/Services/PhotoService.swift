@@ -251,6 +251,9 @@ final class PhotoService {
             // The row exists now, under whichever account captured it, independent of whether
             // that account is still the current one below.
             await failedUploadStore.remove(id: photoId, userId: userId)
+            // Every successful capture, not just the first ever: the server dedupes by
+            // (user, event), so this is what makes "first shot" correct without a local flag.
+            Activation.log(.firstShot)
 
             // The photo is still returned and its renditions still upload: it exists server-side
             // under the account that took it, and abandoning that work would lose a real photo.
@@ -349,6 +352,7 @@ final class PhotoService {
             // The row exists now, independent of whether this account is still the current one
             // below, same reasoning as the ordinary success path above.
             await failedUploadStore.remove(id: photoId, userId: userId)
+            Activation.log(.firstShot)
 
             // Fast path only: skips the extra rendition-upload/return work below when already
             // obviously stale. Does NOT by itself prove the epoch is still current by the time the

@@ -352,7 +352,8 @@ struct RollDetailView: View {
         }
         .sheet(isPresented: $showInviteShare) {
             ActivityView(items: [AppInfo.rollInviteMessage(rollName: displayName.isEmpty ? roll.name : displayName,
-                                                           code: roll.inviteCode)])
+                                                           code: roll.inviteCode)],
+                        onComplete: { Activation.log(.inviteSent) })
         }
         .confirmationDialog("Delete this roll?", isPresented: $showDeleteRoll, titleVisibility: .visible) {
             Button("Delete Roll", role: .destructive) {

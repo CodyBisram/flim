@@ -199,6 +199,11 @@ final class RollRevealViewModel {
         // Record that we opened it and learn the group's progress, shown on the summary card.
         if let uid = auth.currentUser?.id {
             let recorded = await rollService.recordRevealView(rollId: rollId, userId: uid)
+            // Alongside the DB record above, not inside RollService, so the two can never drift:
+            // this fires exactly when the reveal open is recorded, whether or not `recorded`
+            // itself came back non-nil (a nil presence just means the viewer count read failed,
+            // the view was still recorded).
+            Activation.log(.revealWatched)
             guard AccountEpoch.isCurrent(epoch) else { return }
             presence = recorded
         }

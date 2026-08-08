@@ -117,6 +117,10 @@ struct MainTabView: View {
         // system prompt on first launch (which gets denied far more often).
         .onChange(of: hasOnboarded) { _, done in if done { maybeShowNotifPrimer() } }
         .onAppear {
+            // This view only exists once there's an authenticated, fully-resolved session (see
+            // ContentView), so this is "reached the main UI", not process start. Firing here
+            // (rather than in FlimApp's init) is the whole point: init runs before sign-in.
+            Activation.log(.firstLaunch)
             // A roll link that opened the app from cold arrives before this view exists, so the
             // notification finds nobody. The code is on disk; collect it here.
             if let held = PendingRollInvite.take() {

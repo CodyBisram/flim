@@ -36,6 +36,7 @@
 		34335710BA3509481452C7AA /* FeedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4016CE892900287C20E82E97 /* FeedView.swift */; };
 		34533239665E36002D2C3006 /* FilmStock.swift in Sources */ = {isa = PBXBuildFile; fileRef = 870990313A19750FDF37E235 /* FilmStock.swift */; };
 		3764DD443F769BADCDB5371D /* OptimisticRollbackTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E0F438C8D66777D1E2AFB3D /* OptimisticRollbackTests.swift */; };
+		3867802F2389D9765988E950 /* Activation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 861FB2928E71AE4B67024C57 /* Activation.swift */; };
 		38A6FEF2AD81D86634308EE0 /* FeedbackService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73A9AEBBBFB814304ABC8715 /* FeedbackService.swift */; };
 		3B9C5D883F61F8F4D2587186 /* PhoneAuthView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C14C96ED4A714B7DD3274C7E /* PhoneAuthView.swift */; };
 		3F3DF3063A089C8F1EEC906E /* FeedServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17748DA0845B5512541A214D /* FeedServiceTests.swift */; };
@@ -68,6 +69,7 @@
 		60FDFAABB24CAAA6528E95EB /* RollImminence.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4245DD3CF7CE2C57E658EAA /* RollImminence.swift */; };
 		658E404079ECBDF7043F42D0 /* MentionSuggestions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AC2BCF4765864C0FBC18FD1 /* MentionSuggestions.swift */; };
 		6B257D4605E1FA791E7A4846 /* SquareCropSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 059C902C744871D28E4F21AF /* SquareCropSheet.swift */; };
+		6E4F8F019D7C5799B1A69B24 /* ActivationEventTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 870AFDC29D5590DDFAB6BB9A /* ActivationEventTests.swift */; };
 		6F2E8BA21C2D2F015CB60062 /* CameraPreviewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B24757CAC8624EEF24EEC253 /* CameraPreviewTests.swift */; };
 		6FDE9DF7E6D1E48B36B0FFCC /* UsernameView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF49F2D3C9EF346AAD3F41BF /* UsernameView.swift */; };
 		7283B8423917F90243028272 /* FlimFont.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AEEA21FF5F282C444465D1D /* FlimFont.swift */; };
@@ -278,8 +280,10 @@
 		8160A75F102252932FFC426A /* RollServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollServiceTests.swift; sourceTree = "<group>"; };
 		82A4711288E91AABA159EB10 /* PhotoServiceFallbackTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoServiceFallbackTests.swift; sourceTree = "<group>"; };
 		85C6F9C983DFB1E2ECF57092 /* SignedURLStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignedURLStore.swift; sourceTree = "<group>"; };
+		861FB2928E71AE4B67024C57 /* Activation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Activation.swift; sourceTree = "<group>"; };
 		86B99F48D57C1AE3CE9295E3 /* RollRevealAttributesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollRevealAttributesTests.swift; sourceTree = "<group>"; };
 		870990313A19750FDF37E235 /* FilmStock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilmStock.swift; sourceTree = "<group>"; };
+		870AFDC29D5590DDFAB6BB9A /* ActivationEventTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivationEventTests.swift; sourceTree = "<group>"; };
 		8BFE9FBCA04098DC6F972D9A /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		8CECD20B5ABAAC6B609C6E31 /* PhotoCommentsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoCommentsSheet.swift; sourceTree = "<group>"; };
 		8EDAF1C30F86C4126A7783EC /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -528,6 +532,7 @@
 			isa = PBXGroup;
 			children = (
 				FF9D945EEDA73B65E2E4119C /* AccountChange.swift */,
+				861FB2928E71AE4B67024C57 /* Activation.swift */,
 				5A194AB5EE948FBA8903D086 /* AppInfo.swift */,
 				EFC0C65109A81467AB59472B /* AuthService.swift */,
 				512ECCC06516CDBBAC8749B7 /* BrandedExport.swift */,
@@ -594,6 +599,7 @@
 			isa = PBXGroup;
 			children = (
 				3B04FC26356A4531AF0A539D /* AccountEpochTests.swift */,
+				870AFDC29D5590DDFAB6BB9A /* ActivationEventTests.swift */,
 				D86D048DA64F5454E17D0F34 /* ActivityFeedViewTests.swift */,
 				B77B536156AA303ED4CF95D3 /* ActivitySectionsTests.swift */,
 				D9927EBDE8E7056C4DA31EF2 /* AuthHelpersTests.swift */,
@@ -780,6 +786,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				4115FC907B0F49EF7C95C712 /* AccountEpochTests.swift in Sources */,
+				6E4F8F019D7C5799B1A69B24 /* ActivationEventTests.swift in Sources */,
 				2AE813EB776EADC01EEF7A24 /* ActivityFeedViewTests.swift in Sources */,
 				F23A4D91C6CD5C10DAAD5948 /* ActivitySectionsTests.swift in Sources */,
 				40156F83DC4D83217CB2DED5 /* AuthHelpersTests.swift in Sources */,
@@ -846,6 +853,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				FA0835F7D7364268088D32F2 /* AccountChange.swift in Sources */,
+				3867802F2389D9765988E950 /* Activation.swift in Sources */,
 				DF79D7CBD7A4684626EF2080 /* ActivityFeedView.swift in Sources */,
 				74EA99E5BA040D1C53184975 /* ActivitySections.swift in Sources */,
 				F3A160AE08996C251746F069 /* AnimatedHourglass.swift in Sources */,

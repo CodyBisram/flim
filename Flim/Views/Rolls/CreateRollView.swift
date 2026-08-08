@@ -157,6 +157,7 @@ struct CreateRollView: View {
         error = nil
         do {
             let roll = try await rolls.createRoll(name: name.trimmingCharacters(in: .whitespaces), createdBy: userId)
+            Activation.log(.rollCreated)
             withAnimation(.snappy(duration: 0.3)) {
                 createdRoll = roll
                 detent = .large

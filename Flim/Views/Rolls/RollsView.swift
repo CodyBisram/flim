@@ -81,7 +81,8 @@ struct RollsView: View {
             JoinRollView()
         }
         .sheet(item: $inviteShareRoll) { roll in
-            ActivityView(items: [AppInfo.rollInviteMessage(rollName: roll.name, code: roll.inviteCode)])
+            ActivityView(items: [AppInfo.rollInviteMessage(rollName: roll.name, code: roll.inviteCode)],
+                        onComplete: { Activation.log(.inviteSent) })
         }
         .onAppear { Task { await load() } }
         .onChange(of: rolls.coverPaths) {
