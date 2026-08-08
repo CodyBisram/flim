@@ -7,14 +7,22 @@ import Foundation
 actor SignedURLStore {
     static let shared = SignedURLStore()
 
-    /// How long each signed URL is minted for. Long, so the same URL survives many sessions.
-    static let ttl: TimeInterval = 7 * 24 * 3600   // 7 days
+    /// How long each signed URL is minted for.
+    ///
+    /// Was 7 days, so a blocked user's already-minted URLs kept working for up to a week after
+    /// the block landed, which undercut the storage policy that is supposed to cut them off
+    /// immediately. An hour bounds that window to something that actually matches "blocked".
+    static let ttl: TimeInterval = 3600   // 1 hour
 
     /// How close to expiry a URL stops being handed out.
     ///
     /// A URL returned here can sit in a view for a while before it is actually fetched, so it has
-    /// to outlive the moment it was read by more than an instant.
-    private static let usableBuffer: TimeInterval = 86_400   // 1 day
+    /// to outlive the moment it was read by more than an instant. Scaled to `ttl`, not a fixed
+    /// span: at the old 7-day TTL, a 1-day buffer was ~14% of the lifetime; kept as a fixed
+    /// 86,400s buffer against a 3,600s TTL, every cached entry would fail `isUsable` the instant
+    /// it was minted (`expiresAt` can never exceed `now + ttl`, so it could never exceed
+    /// `now + usableBuffer` either) and the cache would re-sign on every single access.
+    private static let usableBuffer: TimeInterval = 300   // 5 minutes
 
     private struct Entry: Codable { let url: URL; let expiresAt: Date }
     private var cache: [String: Entry] = [:]

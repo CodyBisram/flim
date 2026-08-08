@@ -65,6 +65,12 @@ struct LookRegressionTests {
     /// Recorded from the synthetic fixtures on the current pipeline. See `LookFixture` for what
     /// each scene is for and why generated scenes carry this pin rather than the calibration
     /// photographs (which are gitignored and cannot run anywhere but the owner's machine).
+    ///
+    /// These are the JPEG-era numbers. They were briefly re-recorded on 2026-08-07 against a
+    /// HEIC-first export, which silenced the very signal the pin exists for: HEIC's encoder
+    /// smooths the fine high-frequency texture that IS our grain, and `localContrast` fell on all
+    /// eleven scenes (worst: daylight 0.02026 → 0.01640, night -78%). Restored. The encoder is a
+    /// look decision, so it has to clear these tolerances like any other look change.
     static let fixtureBaselines: [String: LookStats] = [
         "night": LookStats(meanR: 0.07909, meanG: 0.09388, meanB: 0.10222, lumP5: 0.05490, lumP50: 0.09020, lumP95: 0.10980, meanSaturation: 0.24303, localContrast: 0.00208),
         "dusk": LookStats(meanR: 0.14011, meanG: 0.14412, meanB: 0.16046, lumP5: 0.05882, lumP50: 0.14118, lumP95: 0.23529, meanSaturation: 0.17906, localContrast: 0.00465),
@@ -79,6 +85,7 @@ struct LookRegressionTests {
     /// These are statistics, not photographs, so committing them keeps the calibration set private
     /// (`pairs/` is gitignored) while still pinning the real scenes. The test that reads them is
     /// skipped anywhere the photographs are absent, which is everywhere except the owner's machine.
+    /// JPEG-era numbers, restored 2026-08-07 for the same reason as `fixtureBaselines` above.
     static let pairBaselines: [String: LookStats] = [
         "parkview-noflash": LookStats(meanR: 0.13883, meanG: 0.13350, meanB: 0.11274, lumP5: 0.05098, lumP50: 0.09412, lumP95: 0.37255, meanSaturation: 0.30310, localContrast: 0.01832),
         "wide-dim": LookStats(meanR: 0.26269, meanG: 0.22216, meanB: 0.17774, lumP5: 0.04706, lumP50: 0.20000, lumP95: 0.58039, meanSaturation: 0.32334, localContrast: 0.01584),
@@ -121,6 +128,27 @@ struct LookRegressionTests {
         }
     }
 
+    /// Worst statistic in a comparison, as a multiple of its own tolerance. 1.0 is exactly at the
+    /// limit. Used by the encoder sweep to rank candidates on one number.
+    static func worstDrift(_ measured: LookStats, _ reference: LookStats)
+        -> (field: String, drift: Double, tolerance: Double, ratio: Double) {
+        let tolerances: [String: Double] = [
+            "meanR": meanTolerance, "meanG": meanTolerance, "meanB": meanTolerance,
+            "lumP5": percentileTolerance, "lumP50": percentileTolerance, "lumP95": percentileTolerance,
+            "saturation": saturationTolerance, "localContrast": localContrastTolerance
+        ]
+        var worst = (field: "", drift: 0.0, tolerance: 1.0, ratio: -1.0)
+        for (field, value) in zip(measured.fields, reference.fields) {
+            let tolerance = tolerances[field.name] ?? meanTolerance
+            let drift = abs(field.value - value.value)
+            let ratio = drift / tolerance
+            if ratio > worst.ratio {
+                worst = (field.name, drift, tolerance, ratio)
+            }
+        }
+        return worst
+    }
+
     /// Runs the real capture path end to end and measures the JPEG it produces.
     static func render(_ data: Data) async -> (stats: LookStats, width: Int, height: Int)? {
         // The calibration branch in `processSync` would return an UNGRADED image and silently
@@ -128,7 +156,7 @@ struct LookRegressionTests {
         #expect(UserDefaults.standard.bool(forKey: InstantFilmProcessor.neutralCaptureKey) == false,
                 "neutral capture is on; the pin would be measuring ungraded output")
         guard let out = await InstantFilmProcessor.process(data, stock: .original),
-              let cg = LookMeasure.decode(out),
+              let cg = LookMeasure.decode(out.data),
               let stats = LookMeasure.stats(of: cg) else { return nil }
         return (stats, cg.width, cg.height)
     }
@@ -265,5 +293,138 @@ struct LookBaselineRecorder {
             runs.append(try #require(await LookRegressionTests.render(data)).stats)
         }
         print(Self.line(scene, runs))
+    }
+}
+
+/// The encoder sweep: what a change of CODEC costs the look, and what it buys in bytes.
+///
+/// This exists because "swap JPEG for HEIC at the same quality number, it's strictly better" is
+/// an assumption, and on this product it is false. HEIC's HEVC intra coding is tuned to spend
+/// bits on structure and discard what looks like sensor noise. Our grain IS what looks like
+/// sensor noise. The pin's `localContrast` is the one statistic that sees it, and it fell on all
+/// eleven scenes when the export was switched.
+///
+/// Method: grade each scene ONCE via `InstantFilmProcessor.gradedPixels`, then feed those
+/// identical pixels to every candidate encoder. Nothing but the codec varies, so every number
+/// below is attributable to the codec alone. The JPEG row at each tier's shipping quality is
+/// printed first and doubles as a harness check: at the `full` tier it must reproduce the
+/// committed baseline, or the sweep is measuring something other than what ships.
+///
+///     FLIM_ENCODER_SWEEP=1 xcodebuild test -project Flim.xcodeproj -scheme Flim \
+///       -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
+///       -only-testing:FlimTests/LookEncoderSweep
+struct LookEncoderSweep {
+    static let isSweeping = ProcessInfo.processInfo.environment["FLIM_ENCODER_SWEEP"] == "1"
+
+    /// HEIC qualities to try. Spaced tightly at the top because that is where the grain comes
+    /// back, and the whole question is whether it comes back before the file stops being small.
+    static let qualities: [CGFloat] = [0.80, 0.85, 0.90, 0.93, 0.95, 0.97, 1.0]
+
+    /// The three renditions, with the JPEG quality each one ships at today. Different stakes:
+    /// `feed` is what users actually look at, `thumb` is 500px where grain is barely resolvable,
+    /// `full` is the archival master.
+    static let tiers: [(name: String, longEdge: CGFloat?, shippingQuality: CGFloat)] = [
+        ("full", nil, 0.85), ("feed", 1400, 0.82), ("thumb", 500, 0.80)
+    ]
+
+    /// Every scene the pin covers: the six synthetic fixtures, plus the owner's five real
+    /// captures when this machine has them.
+    static let scenes: [String] = LookFixture.allCases.map(\.rawValue)
+        + (LookPairs.isAvailable ? LookPairs.scenes : [])
+
+    static func sourceData(_ scene: String) -> Data? {
+        if let fixture = LookFixture(rawValue: scene) { return fixture.pngData() }
+        return LookPairs.neutralData(scene)
+    }
+
+    /// The restored JPEG-era baseline for a scene. Only the `full` tier has one; `feed` and
+    /// `thumb` are compared against their own shipping-JPEG output measured in the same run,
+    /// because no committed baseline exists at those sizes.
+    static func baseline(_ scene: String) -> LookStats? {
+        LookRegressionTests.fixtureBaselines[scene] ?? LookRegressionTests.pairBaselines[scene]
+    }
+
+    private static func report(_ scene: String, _ tier: String, _ codec: String, _ q: CGFloat,
+                               bytes: Int, stats: LookStats, reference: LookStats) {
+        let worst = LookRegressionTests.worstDrift(stats, reference)
+        let lc = LookRegressionTests.worstDrift(
+            LookStats(meanR: 0, meanG: 0, meanB: 0, lumP5: 0, lumP50: 0, lumP95: 0,
+                      meanSaturation: 0, localContrast: stats.localContrast),
+            LookStats(meanR: 0, meanG: 0, meanB: 0, lumP5: 0, lumP50: 0, lumP95: 0,
+                      meanSaturation: 0, localContrast: reference.localContrast))
+        // Signed, so the DIRECTION of each shift is on the record too: "grain went down" and
+        // "grain went up" are different problems and the absolute drift hides which one happened.
+        let signed = zip(stats.fields, reference.fields)
+            .map { "\($0.name)=\(String(format: "%+.5f", $0.value - $1.value))" }
+            .joined(separator: " ")
+        print("""
+        SWEEP scene=\(scene) tier=\(tier) codec=\(codec) q=\(String(format: "%.2f", q)) \
+        bytes=\(bytes) lc=\(String(format: "%.5f", stats.localContrast)) \
+        dLC=\(String(format: "%.5f", lc.drift)) rLC=\(String(format: "%.2f", lc.ratio)) \
+        worst=\(worst.field) dWorst=\(String(format: "%.5f", worst.drift)) \
+        rWorst=\(String(format: "%.2f", worst.ratio)) \
+        verdict=\(worst.ratio <= 1 ? "PASS" : "FAIL") | \(signed)
+        """)
+    }
+
+    @Test("encoder sweep: HEIC quality against the JPEG-era look baselines",
+          .enabled(if: isSweeping), arguments: scenes)
+    func sweep(_ scene: String) throws {
+        let data = try #require(Self.sourceData(scene))
+        // Graded once. Every encoder below sees these exact pixels.
+        let graded = try #require(InstantFilmProcessor.gradedPixels(data, stock: .original))
+
+        // The shipping master, which is also the source the smaller renditions are derived from
+        // in production. Kept JPEG here on purpose so each tier's own codec is what is under
+        // test, rather than the master's codec leaking into its children.
+        let masterSpec = InstantFilmProcessor.EncodeSpec(format: .jpeg, quality: 0.85)
+        let master = try #require(InstantFilmProcessor.encodeImage(graded, masterSpec))
+
+        for tier in Self.tiers {
+            // Reference for this tier: exactly what ships today.
+            let jpegSpec = InstantFilmProcessor.EncodeSpec(format: .jpeg,
+                                                           quality: tier.shippingQuality)
+            let reference: InstantFilmProcessor.EncodedImage
+            if let edge = tier.longEdge {
+                reference = try #require(InstantFilmProcessor.rendition(
+                    from: master.data, longEdge: edge, encoding: jpegSpec))
+            } else {
+                reference = try #require(InstantFilmProcessor.encodeImage(graded, jpegSpec))
+            }
+            let referenceStats = try #require(LookMeasure.stats(ofJPEG: reference.data))
+
+            // Harness check: at the master tier the shipping JPEG must land on the committed
+            // baseline, otherwise this sweep is not measuring the pinned look.
+            if tier.name == "full", let pinned = Self.baseline(scene) {
+                Self.report(scene, "full", "jpeg-vs-pin", tier.shippingQuality,
+                            bytes: reference.data.count, stats: referenceStats, reference: pinned)
+            }
+            Self.report(scene, tier.name, "jpeg", tier.shippingQuality,
+                        bytes: reference.data.count, stats: referenceStats,
+                        reference: tier.name == "full" ? (Self.baseline(scene) ?? referenceStats)
+                                                       : referenceStats)
+
+            for quality in Self.qualities {
+                let spec = InstantFilmProcessor.EncodeSpec(format: .heic, quality: quality)
+                let encoded: InstantFilmProcessor.EncodedImage
+                if let edge = tier.longEdge {
+                    encoded = try #require(InstantFilmProcessor.rendition(
+                        from: master.data, longEdge: edge, encoding: spec))
+                } else {
+                    encoded = try #require(InstantFilmProcessor.encodeImage(graded, spec))
+                }
+                // If HEIC silently fell back to JPEG, every row below would be a JPEG row
+                // wearing a HEIC label, which is the one way this sweep could lie.
+                #expect(encoded.format == .heic,
+                        "no HEIC encoder on this device; the sweep cannot answer the question")
+                let stats = try #require(LookMeasure.stats(ofJPEG: encoded.data))
+                // The `full` tier is judged against the committed baseline (the real pin). The
+                // smaller tiers have no committed baseline, so they are judged against the
+                // shipping JPEG measured in this same run.
+                let against = (tier.name == "full" ? Self.baseline(scene) : nil) ?? referenceStats
+                Self.report(scene, tier.name, "heic", quality,
+                            bytes: encoded.data.count, stats: stats, reference: against)
+            }
+        }
     }
 }

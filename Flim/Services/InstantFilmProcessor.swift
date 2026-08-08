@@ -10,20 +10,132 @@ enum InstantFilmProcessor {
 
     /// The one declared color space for the whole exported chain. sRGB is the safe universal
     /// choice, it's what shared-photo consumers (Messages/web/Android) assume for untagged
-    /// JPEGs, and it's the space the LUT was fitted in. Every JPEG we write is rendered into
+    /// JPEGs, and it's the space the LUT was fitted in. Every image we write is rendered into
     /// this space AND tagged with its ICC profile so it reads identically outside the app.
     private static let outputColorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
 
-    /// Renders a finished CIImage to sRGB JPEG bytes with the sRGB ICC profile embedded.
-    /// `createCGImage(colorSpace:)` pins the output to sRGB (previously it inherited the
-    /// context default, and `UIImage.jpegData` then wrote an UNTAGGED JPEG). We encode via
-    /// CGImageDestination with the color space set explicitly so the ICC tag is guaranteed, 
-    /// UIImage.jpegData does not reliably embed a profile from a bare CGImage.
-    private static func srgbJPEG(_ image: CIImage, quality: CGFloat) -> Data? {
-        guard let cg = context.createCGImage(
-            image, from: image.extent, format: .RGBA8, colorSpace: outputColorSpace
+    /// Which container format a set of already-encoded image bytes actually carry. Every upload
+    /// site must derive its `contentType`/path suffix from this rather than assume one, HEIC
+    /// encoding can fail (some simulators, or a device with no HEVC encoder), so the format that
+    /// was actually produced is the only thing safe to label bytes with.
+    enum ImageEncoding {
+        case heic
+        case jpeg
+
+        var contentType: String {
+            switch self {
+            case .heic: return "image/heic"
+            case .jpeg: return "image/jpeg"
+            }
+        }
+
+        /// Storage path suffix, without the leading dot.
+        var pathExtension: String {
+            switch self {
+            case .heic: return "heic"
+            case .jpeg: return "jpg"
+            }
+        }
+    }
+
+    /// Encoded bytes paired with the format they were actually produced as. Keeping the two
+    /// together is what makes it impossible for a caller to upload one format labelled as the
+    /// other, the failure mode this whole type exists to rule out.
+    struct EncodedImage {
+        let data: Data
+        let format: ImageEncoding
+    }
+
+    /// One rendition's encoding policy: which container, and at what lossy quality.
+    ///
+    /// This is a LOOK decision, not a plumbing detail, which is why it is a named policy per
+    /// rendition instead of a bare number at each call site.
+    ///
+    /// All three renditions are JPEG, and that is a measured result, not the status quo winning
+    /// by default. `LookEncoderSweep` renders the pin's eleven scenes once and feeds the identical
+    /// graded pixels to JPEG and to HEIC at 0.80/0.85/0.90/0.93/0.95/0.97/1.00. What it found:
+    ///
+    /// 1. HEIC removes our grain. `localContrast` fell on 11/11 scenes at every quality up to 0.93
+    ///    (worst: daylight -0.00386, 3.9× the pin's tolerance). Our grain is fine, low-amplitude,
+    ///    high-frequency texture, which is exactly what HEVC intra coding is designed to identify
+    ///    as sensor noise and spend no bits on.
+    /// 2. The quality at which HEIC stops removing it is the quality at which it stops being
+    ///    small. HEIC only undercuts JPEG below ~0.90; by 0.93 it is already +11.9% LARGER than
+    ///    JPEG 0.85, and even at 1.00 (+107% bytes) only 5/11 scenes clear the pin.
+    /// 3. There is no qualifying quality at all. The lowest HEIC quality where all eleven scenes
+    ///    land inside tolerance does not exist: the best any quality manages is 6/11.
+    /// 4. HEIC also carries a small quality-INDEPENDENT tone offset (full tier, averaged over the
+    ///    eleven scenes: meanR -0.0008, meanG +0.0005, meanB -0.0008; on the 500px thumbnail
+    ///    -0.0022/-0.0013/-0.0024). It does not shrink as quality rises, so it is a property of
+    ///    the codec's colour handling, not of its bit budget.
+    ///
+    /// So the trade on offer was ~35% smaller files for a measurably softer, slightly darker
+    /// photograph. The look is the product; we do not sell it for storage. Re-run the sweep
+    /// before revisiting this, the command is in `LookEncoderSweep`'s own documentation.
+    struct EncodeSpec {
+        let format: ImageEncoding
+        let quality: CGFloat
+    }
+
+    /// The full stored image (2048px long edge): the archival master, and what full-screen viewing
+    /// and save-to-camera-roll serve. The strictest tier, and the one the look pin measures.
+    static let fullEncoding = EncodeSpec(format: .jpeg, quality: 0.85)
+
+    /// The feed card (1400px), the rendition users actually look at, so its grain matters most
+    /// perceptually. HEIC's best showing here was 9/11 scenes, and only at qualities 23% to 139%
+    /// LARGER than this.
+    static let feedEncoding = EncodeSpec(format: .jpeg, quality: 0.82)
+
+    /// The grid thumbnail (500px). Grain is barely resolvable at a 128pt grid cell, so this was
+    /// the tier most likely to tolerate HEIC, and it is the one that tolerated it least: 0/11
+    /// scenes clear tolerance at ANY quality, because of the tone offset in note 4 above rather
+    /// than because of grain. A HEIC thumbnail is ~0.6 of an 8-bit level darker in R and B than
+    /// the master it stands for, at every quality, so grids would not match the photos they open.
+    /// It is also the smallest tier: only ~4% of the bytes stored per photo, so even the reckless
+    /// -39.7% version returns ~1.5% of storage.
+    static let thumbEncoding = EncodeSpec(format: .jpeg, quality: 0.8)
+
+    /// Detects which format a set of already-encoded image bytes actually carry, from the bytes
+    /// themselves rather than any label a caller might otherwise attach. Used at upload
+    /// boundaries that only have raw `Data` in hand (a capture that fell back to its
+    /// pre-processed bytes, or a retried upload whose format was never threaded through the
+    /// on-disk failed-upload queue), so a payload can never be mislabelled even after round
+    /// tripping through storage this class doesn't control.
+    static func detectedEncoding(of data: Data) -> ImageEncoding {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let type = CGImageSourceGetType(source) as String?,
+              type == "public.heic" || type == "public.heif"
+        else { return .jpeg }
+        return .heic
+    }
+
+    /// Encodes a CGImage in the rendition's preferred format, falling back to JPEG whenever HEIC
+    /// was asked for but this device has no HEIC encoder available (some simulators, or an
+    /// ImageIO build without one). Returns the format actually produced alongside the bytes so
+    /// nothing downstream has to guess.
+    static func encodeImage(_ cg: CGImage, _ spec: EncodeSpec) -> EncodedImage? {
+        // Guarantee the CGImage is sRGB before encoding; if it somehow isn't (e.g. a thumbnail
+        // of an untagged fallback original), redraw it into sRGB so the embedded ICC is honest.
+        let srgb = cg.colorSpace?.name == outputColorSpace.name ? cg : redrawSRGB(cg) ?? cg
+        if spec.format == .heic, let heic = encodeHEIC(srgb, quality: spec.quality) {
+            return EncodedImage(data: heic, format: .heic)
+        }
+        guard let jpeg = encodeJPEG(srgb, quality: spec.quality) else { return nil }
+        return EncodedImage(data: jpeg, format: .jpeg)
+    }
+
+    /// Encodes a CGImage as HEIC with its ICC profile embedded. Returns nil (rather than
+    /// throwing or crashing) whenever this device can't produce HEIC at all, that's the signal
+    /// `encodeImage` uses to fall back to JPEG.
+    private static func encodeHEIC(_ cg: CGImage, quality: CGFloat) -> Data? {
+        let out = NSMutableData()
+        guard let dest = CGImageDestinationCreateWithData(
+            out, "public.heic" as CFString, 1, nil
         ) else { return nil }
-        return encodeJPEG(cg, quality: quality)
+        let props: [CFString: Any] = [kCGImageDestinationLossyCompressionQuality: quality]
+        CGImageDestinationAddImage(dest, cg, props as CFDictionary)
+        guard CGImageDestinationFinalize(dest) else { return nil }
+        return out as Data
     }
 
     /// Encodes a CGImage as JPEG with its ICC profile embedded, so downstream viewers don't
@@ -48,8 +160,11 @@ enum InstantFilmProcessor {
     }
 
     /// sRGB-tagged JPEG bytes from a CGImage, for callers that produced pixels themselves rather
-    /// than through the film pipeline (the profile cropper). Goes through the same encoder as
-    /// every other export so a cropped avatar carries an ICC profile like everything else.
+    /// than through the film pipeline (the profile cropper) and that re-encode the result
+    /// themselves downstream (so this deliberately stays JPEG-only rather than HEIC-first: its
+    /// only caller passes the bytes straight back into `uploadOwnedImage`, which re-thumbnails
+    /// and re-labels them anyway). Goes through the same encoder shape as every other export so
+    /// a cropped avatar carries an ICC profile like everything else.
     static func jpegData(from cg: CGImage, quality: CGFloat = 0.9) -> Data? {
         encodeJPEG(cg, quality: quality)
     }
@@ -65,16 +180,19 @@ enum InstantFilmProcessor {
         return ctx.makeImage()
     }
 
-    /// Processes raw JPEG/HEIC data through the given film stock and returns JPEG bytes.
-    /// Runs off the main actor. Returns `nil` on failure so the caller can fall back to
-    /// the original bytes (a photo should never be lost to a filter error).
-    static func process(_ data: Data, stock: FilmStock) async -> Data? {
+    /// Processes raw JPEG/HEIC data through the given film stock and returns encoded image bytes
+    /// plus the format actually produced. Runs off the main actor. Returns `nil` on failure so the
+    /// caller can fall back to the original bytes (a photo should never be lost to a filter
+    /// error). `encoding` exists so the encoder sweep can hold the grade fixed and vary only the
+    /// codec; production always takes the default.
+    static func process(_ data: Data, stock: FilmStock,
+                        encoding: EncodeSpec = fullEncoding) async -> EncodedImage? {
         await Task.detached(priority: .userInitiated) {
-            processSync(data, stock: stock)
+            processSync(data, stock: stock, encoding: encoding)
         }.value
     }
 
-    /// A small JPEG thumbnail (longest edge ~`maxPixel` × 2, for retina grids) of an already
+    /// A small thumbnail (longest edge ~`maxPixel` × 2, for retina grids) of an already
     /// processed photo, uploaded alongside the full image so grids/feeds download ~30KB, not MBs.
     /// The grid thumbnail: 500px on the long edge.
     ///
@@ -90,18 +208,21 @@ enum InstantFilmProcessor {
     /// recognition (the reveal's developing frame, at blur radius 26).
     ///
     /// The parameter now means what it says: pass a long edge, get that long edge.
-    static func thumbnail(from data: Data, longEdge: CGFloat = 500) -> Data? {
-        rendition(from: data, longEdge: longEdge, quality: 0.8)
+    static func thumbnail(from data: Data, longEdge: CGFloat = 500,
+                          encoding: EncodeSpec = thumbEncoding) -> EncodedImage? {
+        rendition(from: data, longEdge: longEdge, encoding: encoding)
     }
 
     /// The feed-card rendition: ~1400px long edge, pixel-identical at feed width on a 3x screen,
     /// but ~1/3 the bytes of the stored full image. Cuts the feed's first-view egress ~65%.
-    static func feedRendition(from data: Data) -> Data? {
-        rendition(from: data, longEdge: 1400, quality: 0.82)
+    static func feedRendition(from data: Data,
+                              encoding: EncodeSpec = feedEncoding) -> EncodedImage? {
+        rendition(from: data, longEdge: 1400, encoding: encoding)
     }
 
-    /// Downsampled JPEG at an exact long edge, via ImageIO (no full decode of the source).
-    static func rendition(from data: Data, longEdge: CGFloat, quality: CGFloat) -> Data? {
+    /// Downsampled image bytes at an exact long edge, via ImageIO (no full decode of the
+    /// source), in the format `encoding` asks for, see `encodeImage`.
+    static func rendition(from data: Data, longEdge: CGFloat, encoding: EncodeSpec) -> EncodedImage? {
         let srcOptions = [kCGImageSourceShouldCache: false] as CFDictionary
         guard let source = CGImageSourceCreateWithData(data as CFData, srcOptions) else { return nil }
         let options: [CFString: Any] = [
@@ -111,9 +232,9 @@ enum InstantFilmProcessor {
         ]
         guard let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
         // Re-encode through CGImageDestination so the downscaled rendition keeps an ICC tag.
-        // The source here is our own sRGB-tagged full JPEG, so the thumbnail CGImage is already
-        // sRGB; encodeJPEG embeds the profile (UIImage.jpegData would drop it, the export bug).
-        return encodeJPEG(cg, quality: quality)
+        // The source here is our own sRGB-tagged image, so the thumbnail CGImage is already
+        // sRGB; encodeImage embeds the profile (UIImage.jpegData would drop it, the export bug).
+        return encodeImage(cg, encoding)
     }
 
     /// Longest edge we store the full image at. 2048 keeps shots crisp at full-screen *and* under
@@ -125,7 +246,8 @@ enum InstantFilmProcessor {
     /// grain, vignette, or bloom, the neutral half of a (neutral, Lapse) pair for LUT fitting.
     static let neutralCaptureKey = "neutralCapture"
 
-    private static func processSync(_ data: Data, stock: FilmStock) -> Data? {
+    private static func processSync(_ data: Data, stock: FilmStock,
+                                    encoding: EncodeSpec) -> EncodedImage? {
         // Apply embedded EXIF orientation so the output is upright.
         guard let source = CIImage(data: data, options: [.applyOrientationProperty: true]) else {
             return nil
@@ -133,7 +255,7 @@ enum InstantFilmProcessor {
         let extent = source.extent
         guard !extent.isEmpty else { return nil }
 
-        // Calibration path: neutral, higher-quality JPEG (no look at all).
+        // Calibration path: neutral, higher-quality export (no look at all).
         if UserDefaults.standard.bool(forKey: neutralCaptureKey), !AppInfo.isAppStore {
             var neutral = source
             let edge = max(extent.width, extent.height)
@@ -146,9 +268,39 @@ enum InstantFilmProcessor {
             // old untagged path (the context already resolved to sRGB); fit_lut.py reads these
             // via PIL, which assumes sRGB for untagged input, so the fit sees the same numbers,
             // now correctly tagged.
-            return srgbJPEG(neutral, quality: 0.92)
+            //
+            // Deliberately kept JPEG-only (not the HEIC-first `srgbImage`): these frames are
+            // consumed by `scripts/fit_lut.py` via PIL, which this project does not run with an
+            // HEIC-capable plugin, switching this one export to HEIC would silently break the
+            // calibration pipeline rather than the app.
+            guard let cg = context.createCGImage(
+                neutral, from: neutral.extent, format: .RGBA8, colorSpace: outputColorSpace
+            ), let jpeg = encodeJPEG(cg, quality: 0.92) else { return nil }
+            return EncodedImage(data: jpeg, format: .jpeg)
         }
 
+        guard let cg = gradedPixels(source, extent: extent, stock: stock) else { return nil }
+        return encodeImage(cg, encoding)
+    }
+
+    /// The finished, graded pixels of a capture: sRGB-tagged, downscaled to the storage cap, and
+    /// carrying grain, BEFORE any lossy encode touches them.
+    ///
+    /// Split out of `processSync` so the encoder can be measured as the look decision it is. The
+    /// encoder sweep feeds these identical pixels to every candidate codec and quality, which is
+    /// the only way the drift it reports is attributable to the encoder and nothing else. The
+    /// shipping path is unchanged: `processSync` is exactly this plus `encodeImage`.
+    static func gradedPixels(_ data: Data, stock: FilmStock) -> CGImage? {
+        guard let source = CIImage(data: data, options: [.applyOrientationProperty: true]) else {
+            return nil
+        }
+        let extent = source.extent
+        guard !extent.isEmpty else { return nil }
+        return gradedPixels(source, extent: extent, stock: stock)
+    }
+
+    private static func gradedPixels(_ source: CIImage, extent: CGRect,
+                                     stock: FilmStock) -> CGImage? {
         // Scene-adaptive exposure, deliberately GENTLE, night must stay night (a city
         // skyline can't get daylighted), so only truly underexposed scenes get a nudge.
         // Mirrors scripts/fit_lut.py normalize_exposure exactly (the LUT was fitted against
@@ -197,7 +349,12 @@ enum InstantFilmProcessor {
         // here, and CubeLUT.apply already declares the cube's own working space (sRGB) to
         // CIColorCubeWithColorSpace. Converting the source first would shift the on-screen result;
         // the goal here is correct EXPORT tagging, not a regrade. We only pin the OUTPUT to sRGB.
-        return srgbJPEG(image, quality: 0.85)
+        //
+        // `createCGImage(colorSpace:)` pins the output to sRGB (previously it inherited the
+        // context default, and `UIImage.jpegData` then wrote an UNTAGGED JPEG). The encode goes
+        // through CGImageDestination with this space set explicitly so the ICC tag is guaranteed.
+        return context.createCGImage(image, from: image.extent, format: .RGBA8,
+                                     colorSpace: outputColorSpace)
     }
 
     /// Mean scene luminance (0–1) via CIAreaAverage, drives the adaptive dark-scene exposure.

@@ -86,6 +86,7 @@ struct PhotoPagerView: View {
     @State private var pendingDeletePhoto: Photo?
     @State private var showReportConfirm = false
     @State private var shareItem: ShareImage?
+    @State private var preparingShare = false
     @State private var showShareComposer = false
     @State private var shareCaptionDraft = ""
     @State private var pendingTags: [PendingTag] = []
@@ -263,17 +264,22 @@ struct PhotoPagerView: View {
                     .accessibilityLabel("Comments")
                 }
                 Button {
-                    if let url = resolvedURLs[photo.id],
-                       let image = ImageCache.shared.object(forKey: "\(url.absoluteString)|1600" as NSString) {
-                        shareItem = ShareImage(image: image)
-                    }
+                    share(photo)
                 } label: {
-                    Image(systemName: "square.and.arrow.up")
-                        .font(.system(size: 15, weight: .medium))
-                        .foregroundStyle(.white)
-                        .padding(12)
-                        .glassCapsule(interactive: true)
+                    Group {
+                        if preparingShare {
+                            ProgressView().tint(.white).controlSize(.small)
+                        } else {
+                            Image(systemName: "square.and.arrow.up")
+                                .font(.system(size: 15, weight: .medium))
+                        }
+                    }
+                    .frame(width: 19, height: 19)
+                    .foregroundStyle(.white)
+                    .padding(12)
+                    .glassCapsule(interactive: true)
                 }
+                .disabled(preparingShare)
                 .accessibilityLabel("Share photo")
                 // Own photo, a manage menu (set avatar / delete). Someone else's (only possible on
                 // a roll grid), report. Derived from ownership, so a Darkroom of all-own photos
@@ -488,11 +494,16 @@ struct PhotoPagerView: View {
     private func photoPage(_ photo: Photo) -> some View {
         Group {
             if let url = resolvedURLs[photo.id] {
-                // `cacheKey` is the storage path so the DOWNLOADED BYTES are kept, not just the
-                // decoded image. That is what makes rendition repair free: a photo whose thumbnail
-                // and card never uploaded can be rebuilt from these bytes instead of fetching the
-                // original again. It also stops a re-view going back to the network.
-                CachedImage(url: url, maxPixel: 1600, cacheKey: photo.storagePath) { image in
+                // Downloads `viewPath` (the ~1400px feed card when one exists, the full original
+                // only as a fallback for photos with no card yet) rather than always fetching the
+                // 2048px original just to downsample it to `maxPixel` anyway. `cacheKey` MUST
+                // match: it's what gets saved as the raw bytes on disk, and `repairRenditions`
+                // reads them back by that same key. Keying by `storagePath` here while
+                // downloading `viewPath` bytes would cache a 1400px card under the original's
+                // key, and `repairRenditions` would then rebuild the feed rendition FROM the
+                // feed card while believing it had the full original. See `repairRenditions` for
+                // how it now sources the original vs. the card correctly.
+                CachedImage(url: url, maxPixel: 1600, cacheKey: photo.viewPath) { image in
                     image
                         .resizable()
                         .scaledToFit()
@@ -552,6 +563,34 @@ struct PhotoPagerView: View {
     }
 
     // MARK: - Actions
+
+    /// Hand the photo to the share sheet, fetching it if it isn't already decoded.
+    ///
+    /// The cache key has to be the one `CachedImage` actually stored under, which is
+    /// `cacheKey|maxPixel` whenever a `cacheKey` is supplied, not the signed URL. This looked up
+    /// the URL instead, and since `photoPage` always supplies a `cacheKey`, the lookup could never
+    /// hit: the button silently did nothing, every time. A control that declines without saying so
+    /// reads as a broken app, so a miss now costs a spinner rather than the feature.
+    private func share(_ photo: Photo) {
+        guard !preparingShare, let url = resolvedURLs[photo.id] else { return }
+        let key = "\(photo.viewPath)|1600" as NSString
+        if let image = ImageCache.shared.object(forKey: key) {
+            shareItem = ShareImage(image: image)
+            return
+        }
+        preparingShare = true
+        Task {
+            defer { preparingShare = false }
+            guard let (data, _) = try? await URLSession.shared.data(from: url),
+                  let image = UIImage(data: data)
+            else {
+                Haptics.error()
+                return
+            }
+            ImageCache.set(image, forKey: key)
+            shareItem = ShareImage(image: image)
+        }
+    }
 
     private func shareToPage(_ photo: Photo) {
         composerPhoto = photo
@@ -630,7 +669,9 @@ struct PhotoPagerView: View {
             let photo = photos[i]
             if resolvedURLs[photo.id] == nil {
                 if let thumb = signedURLs[photo.id] { resolvedURLs[photo.id] = thumb }
-                if let full = try? await photoService.signedURL(for: photo.storagePath) {
+                // `viewPath`, matching the `cacheKey` used below and in `photoPage`: the feed
+                // card when this photo has one, the original only as its own fallback.
+                if let full = try? await photoService.signedURL(for: photo.viewPath) {
                     resolvedURLs[photo.id] = full
                 }
             }
@@ -646,7 +687,7 @@ struct PhotoPagerView: View {
         let neighbours: [(url: URL, cacheKey: String?)] = [index - 1, index + 1]
             .filter { photos.indices.contains($0) }
             .compactMap { i in
-                resolvedURLs[photos[i].id].map { (url: $0, cacheKey: photos[i].storagePath) }
+                resolvedURLs[photos[i].id].map { (url: $0, cacheKey: photos[i].viewPath) }
             }
         ImageLoader.prefetch(neighbours, maxPixel: 1600, scale: displayScale)
 

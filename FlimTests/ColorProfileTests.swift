@@ -38,9 +38,9 @@ final class ColorProfileTests: XCTestCase {
 
     func testProcessedFullImageIsTaggedSRGB() async throws {
         let out = await InstantFilmProcessor.process(syntheticJPEG(), stock: .original)
-        let data = try XCTUnwrap(out, "processor returned nil")
-        let info = profileInfo(data)
-        XCTAssertTrue(info.hasProfile, "exported full JPEG must carry an ICC profile")
+        let encoded = try XCTUnwrap(out, "processor returned nil")
+        let info = profileInfo(encoded.data)
+        XCTAssertTrue(info.hasProfile, "exported image must carry an ICC profile")
         if let name = info.name {
             XCTAssertTrue(name.lowercased().contains("srgb"),
                           "expected an sRGB profile, got \(name)")
@@ -52,13 +52,13 @@ final class ColorProfileTests: XCTestCase {
         let full = syntheticJPEG()
         let thumb = try XCTUnwrap(InstantFilmProcessor.thumbnail(from: full),
                                   "thumbnail returned nil")
-        XCTAssertTrue(profileInfo(thumb).hasProfile,
+        XCTAssertTrue(profileInfo(thumb.data).hasProfile,
                       "thumbnail rendition must stay tagged for correct off-app rendering")
     }
 
     func testFeedRenditionIsTagged() throws {
         let feed = try XCTUnwrap(InstantFilmProcessor.feedRendition(from: syntheticJPEG()),
                                  "feedRendition returned nil")
-        XCTAssertTrue(profileInfo(feed).hasProfile, "feed rendition must stay tagged")
+        XCTAssertTrue(profileInfo(feed.data).hasProfile, "feed rendition must stay tagged")
     }
 }

@@ -71,11 +71,14 @@ enum PhotoExport {
     /// A stable, ordered, Photos-friendly filename.
     ///
     /// Zero-padded so the share sheet and Photos keep capture order rather than sorting
-    /// "flim-10" before "flim-2", and `.jpg` because an extensionless file is imported as an
-    /// unknown document instead of a photograph.
-    static func filename(index: Int, total: Int) -> String {
+    /// "flim-10" before "flim-2". Extensioned, because an extensionless file is imported as an
+    /// unknown document instead of a photograph; `pathExtension` defaults to "jpg" (every
+    /// existing photo's original is JPEG) but a caller downloading bytes that might be HEIC
+    /// must pass the extension that actually matches them, or Photos gets a file whose name lies
+    /// about its own container format.
+    static func filename(index: Int, total: Int, pathExtension: String = "jpg") -> String {
         let width = max(2, String(total).count)
-        return "flim-\(String(format: "%0\(width)d", index + 1)).jpg"
+        return "flim-\(String(format: "%0\(width)d", index + 1)).\(pathExtension)"
     }
 
     /// Downloads one photo into a specific export's directory. Returns nil if it could not be
@@ -84,7 +87,10 @@ enum PhotoExport {
     static func download(_ url: URL, into directory: URL, index: Int, total: Int) async -> URL? {
         guard let (data, _) = try? await URLSession.shared.data(from: url), !data.isEmpty
         else { return nil }
-        let destination = directory.appendingPathComponent(filename(index: index, total: total))
+        // Derived from the actual downloaded bytes, a new capture's original may now be HEIC;
+        // an existing photo's is still JPEG. Never assumed from a hardcoded extension.
+        let ext = InstantFilmProcessor.detectedEncoding(of: data).pathExtension
+        let destination = directory.appendingPathComponent(filename(index: index, total: total, pathExtension: ext))
         do {
             try data.write(to: destination, options: .atomic)
             return destination

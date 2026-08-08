@@ -92,7 +92,10 @@ final class PhotoService {
             // three storage writes plus the row insert. Read with:
             //   log stream --predicate 'subsystem == "com.flim.app"' --info
             let startedAt = ContinuousClock.now
-            let processed = await InstantFilmProcessor.process(rawData, stock: stock) ?? rawData
+            // A processing failure falls back to the untouched capture bytes, which are always
+            // JPEG (`CapturedPhotoCropper`'s own re-encode, or the camera's own output if no crop
+            // was needed), matching the pipeline's own JPEG output.
+            let processed = await InstantFilmProcessor.process(rawData, stock: stock)?.data ?? rawData
             let filteredAt = ContinuousClock.now
 
             let photo = await captureAndUpload(imageData: processed, userId: userId, rollId: rollId)
@@ -127,15 +130,21 @@ final class PhotoService {
         await MainActor.run { isUploading = true; uploadError = nil }
 
         let photoId = UUID()
+        // Sniffed from the actual bytes, not assumed. Every rendition we produce is JPEG today
+        // (`InstantFilmProcessor.EncodeSpec` records why), so this reads .jpeg in practice, but
+        // this is the one place the pipeline's output and the untouched-capture fallback
+        // converge, so labelling from the bytes is what keeps a future format change from
+        // silently uploading one format under another's content type.
+        let format = InstantFilmProcessor.detectedEncoding(of: imageData)
         // Lowercased to match Postgres `auth.uid()::text` (lowercase) in the storage RLS
         // policy, Swift's uuidString is uppercase, which would 403 the upload otherwise.
-        let path = "\(userId.uuidString.lowercased())/\(photoId.uuidString.lowercased()).jpg"
+        let path = "\(userId.uuidString.lowercased())/\(photoId.uuidString.lowercased()).\(format.pathExtension)"
         let developsAt = await developDate(forRoll: rollId)
 
         do {
             try await supabase.storage
                 .from("photos")
-                .upload(path, data: imageData, options: FileOptions(contentType: "image/jpeg"))
+                .upload(path, data: imageData, options: FileOptions(contentType: format.contentType))
 
             // The photo EXISTS once the full image and its row are in. The thumbnail and feed
             // renditions follow in the background and patch the row when they land.
@@ -217,10 +226,11 @@ final class PhotoService {
             guard let self else { return }
             let prefix = "\(userId.uuidString.lowercased())/\(photoId.uuidString.lowercased())"
 
-            func upload(_ data: Data, to path: String) async -> String? {
+            func upload(_ encoded: InstantFilmProcessor.EncodedImage, to path: String) async -> String? {
                 for attempt in 0..<2 {
                     if (try? await supabase.storage.from("photos")
-                        .upload(path, data: data, options: FileOptions(contentType: "image/jpeg"))) != nil {
+                        .upload(path, data: encoded.data,
+                               options: FileOptions(contentType: encoded.format.contentType))) != nil {
                         return path
                     }
                     if attempt == 0 { try? await Task.sleep(for: .seconds(3)) }
@@ -228,22 +238,22 @@ final class PhotoService {
                 return nil
             }
 
-            // Encoded OFF the main actor. Both of these do an ImageIO downsample plus a JPEG
-            // encode, tens of milliseconds each on a full-resolution capture, and this class is
-            // now @MainActor-isolated, so leaving them inline would stutter the UI on every shot.
-            // The detached task is what makes that annotation safe rather than a regression.
-            let (thumbData, feedData) = await Task.detached(priority: .utility) {
+            // Encoded OFF the main actor. Both of these do an ImageIO downsample plus an encode,
+            // tens of milliseconds each on a full-resolution capture, and this class is now
+            // @MainActor-isolated, so leaving them inline would stutter the UI on every shot. The
+            // detached task is what makes that annotation safe rather than a regression.
+            let (thumbEncoded, feedEncoded) = await Task.detached(priority: .utility) {
                 (InstantFilmProcessor.thumbnail(from: imageData),
                  InstantFilmProcessor.feedRendition(from: imageData))
             }.value
 
             var thumbPath: String?
-            if let thumbData {
-                thumbPath = await upload(thumbData, to: "\(prefix)_thumb.jpg")
+            if let thumbEncoded {
+                thumbPath = await upload(thumbEncoded, to: "\(prefix)_thumb.\(thumbEncoded.format.pathExtension)")
             }
             var feedPath: String?
-            if let feedData {
-                feedPath = await upload(feedData, to: "\(prefix)_feed.jpg")
+            if let feedEncoded {
+                feedPath = await upload(feedEncoded, to: "\(prefix)_feed.\(feedEncoded.format.pathExtension)")
             }
             guard thumbPath != nil || feedPath != nil else { return }
 
@@ -282,6 +292,14 @@ final class PhotoService {
     /// looking at it full-screen, which is exactly the set of photos worth repairing: the ones
     /// being viewed repeatedly are the ones paying the penalty repeatedly.
     ///
+    /// The bytes it reads are keyed by `storagePath` (the original) first. Viewers cache under
+    /// `photo.viewPath`, which IS `storagePath` for any photo still missing its feed rendition,
+    /// so that covers rebuilding a missing feed. For the much smaller set that's missing only a
+    /// thumbnail (and so already has a feed card), the original was never cached under
+    /// `storagePath` by anything, so the thumbnail alone falls back to the cached 1400px card
+    /// instead, a legitimate source to downsample further. The feed rendition never falls back
+    /// to the card, rebuilding it from itself would just re-save the same rendition.
+    ///
     /// Only the missing column is written. The capture path patches both at once, which is right
     /// for a new photo where both are nil, and would be wrong here: it would null out a rendition
     /// that already exists.
@@ -289,28 +307,45 @@ final class PhotoService {
         guard photo.needsRenditionRepair, !repairAttempted.contains(photo.id) else { return }
         repairAttempted.insert(photo.id)
 
-        guard let data = await DiskImageCache.loadRaw(path: photo.storagePath) else { return }
-
         let needThumb = photo.thumbPath == nil
         let needFeed = photo.feedPath == nil
+
+        // The full original, when it happens to be cached under its own key. A photo missing its
+        // feed rendition has `viewPath == storagePath` (see `Photo.viewPath`), so whichever
+        // viewer downloaded it cached the ORIGINAL under this exact key, that covers every photo
+        // that still needs a feed rebuilt.
+        let original = await DiskImageCache.loadRaw(path: photo.storagePath)
+
+        // Reached only when the original isn't cached, which now happens for a photo that
+        // already HAS a feed card: viewers cache under `viewPath` (the card), not `storagePath`.
+        // A thumbnail can legitimately be downsampled from that 1400px card; the FEED rendition
+        // cannot stand in for itself, so `feedSource` below never falls back to it.
+        let card = (original == nil && needThumb)
+            ? await DiskImageCache.loadRaw(path: photo.viewPath) : nil
+
+        let thumbSource = original ?? card
+        let feedSource = original
+        guard thumbSource != nil || feedSource != nil else { return }
+
         let prefix = "\(photo.userId.uuidString.lowercased())/\(photo.id.uuidString.lowercased())"
 
-        // Off the main actor: two ImageIO downsamples plus JPEG encodes, and this class is
+        // Off the main actor: two ImageIO downsamples plus encodes, and this class is
         // MainActor-isolated.
-        let (thumbData, feedData) = await Task.detached(priority: .utility) {
-            (needThumb ? InstantFilmProcessor.thumbnail(from: data) : nil,
-             needFeed ? InstantFilmProcessor.feedRendition(from: data) : nil)
+        let (thumbEncoded, feedEncoded) = await Task.detached(priority: .utility) {
+            (needThumb ? thumbSource.flatMap { InstantFilmProcessor.thumbnail(from: $0) } : nil,
+             needFeed ? feedSource.flatMap { InstantFilmProcessor.feedRendition(from: $0) } : nil)
         }.value
 
-        func upload(_ data: Data, to path: String) async -> String? {
+        func upload(_ encoded: InstantFilmProcessor.EncodedImage, to path: String) async -> String? {
             (try? await supabase.storage.from("photos")
-                .upload(path, data: data, options: FileOptions(contentType: "image/jpeg"))) != nil ? path : nil
+                .upload(path, data: encoded.data,
+                       options: FileOptions(contentType: encoded.format.contentType))) != nil ? path : nil
         }
 
         var newThumb: String?
-        if let thumbData { newThumb = await upload(thumbData, to: "\(prefix)_thumb.jpg") }
+        if let thumbEncoded { newThumb = await upload(thumbEncoded, to: "\(prefix)_thumb.\(thumbEncoded.format.pathExtension)") }
         var newFeed: String?
-        if let feedData { newFeed = await upload(feedData, to: "\(prefix)_feed.jpg") }
+        if let feedEncoded { newFeed = await upload(feedEncoded, to: "\(prefix)_feed.\(feedEncoded.format.pathExtension)") }
 
         guard newThumb != nil || newFeed != nil else { return }
 
@@ -814,7 +849,12 @@ final class PhotoService {
         return url
     }
 
-    /// Signs many paths, reusing persisted URLs and minting only the misses in PARALLEL.
+    /// Signs many paths, reusing persisted URLs and minting only the misses in ONE request.
+    ///
+    /// Used to be one `createSignedURL` call per miss, dispatched in parallel: a 30-photo feed
+    /// with a cold cache made 30 round trips here. With the TTL cut to an hour (see
+    /// `SignedURLStore`), that would mean 30 round trips roughly every hour instead of every
+    /// week. `createSignedURLs` signs the whole batch in a single request instead.
     func signedURLs(for paths: [String]) async -> [String: URL] {
         guard !paths.isEmpty else { return [:] }
         var map: [String: URL] = [:]
@@ -825,19 +865,17 @@ final class PhotoService {
         }
         guard !misses.isEmpty else { return map }
 
-        let minted = await withTaskGroup(of: (String, URL?).self) { group in
-            for path in misses {
-                group.addTask {
-                    let url = try? await supabase.storage
-                        .from("photos").createSignedURL(path: path, expiresIn: Int(SignedURLStore.ttl))
-                    return (path, url)
-                }
-            }
-            var result: [(String, URL)] = []
-            for await (path, url) in group { if let url { result.append((path, url)) } }
-            return result
-        }
-        for (path, url) in minted {
+        // One `SignedURLResult` per requested path, success or failure, never a thrown error for
+        // an individual path, so a deleted object or an RLS denial among the misses can't take
+        // the rest of the batch down. A failed path is just absent from `map`, exactly like the
+        // old per-path `try?` did: the caller already treats a missing entry as "not resolved
+        // yet, try again later", nothing here should cache a placeholder for it.
+        guard let results = try? await supabase.storage
+            .from("photos").createSignedURLs(paths: misses, expiresIn: Int(SignedURLStore.ttl))
+        else { return map }
+
+        for result in results {
+            guard case .success(let path, let url) = result else { continue }
             await SignedURLStore.shared.store(url, for: path)
             map[path] = url
         }

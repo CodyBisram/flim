@@ -912,9 +912,11 @@ final class FeedService {
         return url
     }
 
-    /// Signs many paths at once, reusing persisted URLs and minting only the misses in
-    /// parallel, mirrors `PhotoService.signedURLs(for:)`. Used for Activity row thumbnails,
-    /// where the caller has already deduped to one path per distinct post.
+    /// Signs many paths at once, reusing persisted URLs and minting only the misses in ONE
+    /// request, mirrors `PhotoService.signedURLs(for:)` (see its comment for why this is a
+    /// single `createSignedURLs` call rather than one `createSignedURL` per miss). Used for
+    /// Activity row thumbnails, where the caller has already deduped to one path per distinct
+    /// post.
     func signedURLs(for paths: [String]) async -> [String: URL] {
         guard !paths.isEmpty else { return [:] }
         var map: [String: URL] = [:]
@@ -925,19 +927,15 @@ final class FeedService {
         }
         guard !misses.isEmpty else { return map }
 
-        let minted = await withTaskGroup(of: (String, URL?).self) { group in
-            for path in misses {
-                group.addTask {
-                    let url = try? await supabase.storage
-                        .from("photos").createSignedURL(path: path, expiresIn: Int(SignedURLStore.ttl))
-                    return (path, url)
-                }
-            }
-            var result: [(String, URL)] = []
-            for await (path, url) in group { if let url { result.append((path, url)) } }
-            return result
-        }
-        for (path, url) in minted {
+        // One result per path, success or failure, so a bad path among the misses can't take
+        // the rest of the batch down; a failed path is simply absent from `map`, same as the
+        // old per-path `try?`.
+        guard let results = try? await supabase.storage
+            .from("photos").createSignedURLs(paths: misses, expiresIn: Int(SignedURLStore.ttl))
+        else { return map }
+
+        for result in results {
+            guard case .success(let path, let url) = result else { continue }
             await SignedURLStore.shared.store(url, for: path)
             map[path] = url
         }

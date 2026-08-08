@@ -455,19 +455,23 @@ final class AuthService {
         // Refuses rather than falling back to the raw bytes, which is what it used to do. A
         // profile picture comes from the photo library, so unlike everything else in the bucket
         // its bytes are the user's file in the user's format: a PNG screenshot, an HEIC from the
-        // camera, whatever they picked. ImageIO reads all of those and re-encodes to JPEG, which
-        // is why the format has never mattered.
+        // camera, whatever they picked. ImageIO reads all of those and re-encodes, which is why
+        // the INPUT format has never mattered.
         //
         // When that conversion fails, `?? raw` uploaded the ORIGINAL instead — undownscaled, and
         // labelled `image/jpeg` under a `.jpg` name whatever it actually was. That is the only
         // path in the app that can put a multi-megabyte file in the bucket, and it stores a lie
         // about its own type. Failing is better: the caller already returns false and the UI
         // already says so.
-        guard let data = InstantFilmProcessor.thumbnail(from: raw, longEdge: longEdge) else { return nil }
-        let dest = "\(userId.uuidString.lowercased())/\(prefix)-\(UUID().uuidString.lowercased()).jpg"
+        //
+        // `thumbnail` tries HEIC first and only falls back to JPEG if this device can't encode
+        // it, so the content type and path suffix below are derived from whichever it actually
+        // produced, never assumed.
+        guard let encoded = InstantFilmProcessor.thumbnail(from: raw, longEdge: longEdge) else { return nil }
+        let dest = "\(userId.uuidString.lowercased())/\(prefix)-\(UUID().uuidString.lowercased()).\(encoded.format.pathExtension)"
         do {
             try await supabase.storage.from("photos")
-                .upload(dest, data: data, options: FileOptions(contentType: "image/jpeg"))
+                .upload(dest, data: encoded.data, options: FileOptions(contentType: encoded.format.contentType))
             return dest
         } catch { return nil }
     }

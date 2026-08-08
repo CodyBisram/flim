@@ -171,7 +171,11 @@ struct SquareCropSheet: View {
     /// `@MainActor` by default, so without this the call crosses isolation, which is a warning in
     /// Swift 5 and an ERROR in Swift 6. It touches no view state, only its argument.
     nonisolated private static func workingImage(from data: Data) -> UIImage? {
-        let source = InstantFilmProcessor.rendition(from: data, longEdge: 2048, quality: 0.95) ?? data
+        // Only decoded locally for the crop UI, never uploaded, so the format makes no difference
+        // here; JPEG because this is decoded straight back with no grain to preserve.
+        let source = InstantFilmProcessor.rendition(
+            from: data, longEdge: 2048,
+            encoding: .init(format: .jpeg, quality: 0.95))?.data ?? data
         guard let decoded = UIImage(data: source) else { return nil }
         guard decoded.imageOrientation != .up || decoded.scale != 1 else { return decoded }
         let format = UIGraphicsImageRendererFormat.default()

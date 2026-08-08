@@ -308,8 +308,9 @@ struct FeedView: View {
     ///
     /// Signs the whole page in ONE batched call. This used to loop `signedURL(for:)` one post at
     /// a time, and each miss is a round-trip, so on a cold cache (first launch, or after the
-    /// 7-day URL TTL lapses) a 15-post page spent fifteen sequential round-trips before the
-    /// first image byte was requested. `signedURLs(for:)` mints the misses in parallel.
+    /// signed-URL TTL lapses) a 15-post page spent fifteen sequential round-trips before the
+    /// first image byte was requested. `signedURLs(for:)` now mints every miss in a single
+    /// `createSignedURLs` request instead of one `createSignedURL` per photo.
     /// Warms the cards that just arrived, not the whole feed again.
     ///
     /// This used to prefetch `feed.feed` entire on every page load, so five pages queued 15 then
