@@ -121,6 +121,24 @@ async function sendPush(deviceToken: string, title: string, body: string): Promi
   return res.ok;
 }
 
+// Blocks. This function runs with the SERVICE ROLE, so RLS is bypassed entirely and
+// `is_blocked_either_way` never applies here; every push path has to ask explicitly, same
+// reasoning as send-social-push's `blockedEitherWay` and send-daily-digest's `blockPairs`. This
+// payload is roll-level (name + shot count, not authored content), but every other push path
+// already checks blocks, and "every push path checks blocks" is a much easier invariant to keep
+// than a list of exceptions. Loaded once per run and reused across every roll in the batch, same
+// shape as send-daily-digest's blockPairs (many recipients x many sources, unlike
+// send-social-push's single-notify()-call door).
+async function loadBlockPairs(): Promise<Set<string>> {
+  const { data } = await supabase.from("blocks").select("blocker_id, blocked_id");
+  const pairs = new Set<string>();
+  for (const b of data ?? []) {
+    pairs.add(`${b.blocker_id}|${b.blocked_id}`);
+    pairs.add(`${b.blocked_id}|${b.blocker_id}`);
+  }
+  return pairs;
+}
+
 Deno.serve(async () => {
   // 1. Photos that have developed, belong to a roll, and haven't pushed yet.
   //    Personal instants (roll_id NULL) are excluded, they develop immediately
@@ -134,6 +152,8 @@ Deno.serve(async () => {
 
   if (error) return new Response(`query failed: ${error.message}`, { status: 500 });
   if (!photos?.length) return new Response("nothing to send");
+
+  const blockPairs = await loadBlockPairs();
 
   // 2. Collapse the batch into one entry per roll. `shooters` = everyone who took
   //    a shot in this developed batch (they already got a local notification);
@@ -155,6 +175,9 @@ Deno.serve(async () => {
   for (const [rollId, g] of rolls) {
     // 3. Recipients = roll members who took NO shots in this batch. Shooters are
     //    skipped because they already have the on-device local notification.
+    //    Also skipped: anyone blocked either-way with ANY shooter in this batch — the
+    //    roll developing is not their business to hear about from someone they've cut
+    //    contact with, the same way a blocked commenter's push never reaches you.
     const { data: members } = await supabase
       .from("roll_members")
       .select("user_id")
@@ -162,7 +185,8 @@ Deno.serve(async () => {
 
     const recipientIds = (members ?? [])
       .map((m) => m.user_id as string)
-      .filter((uid) => !g.shooters.has(uid));
+      .filter((uid) => !g.shooters.has(uid))
+      .filter((uid) => ![...g.shooters].some((shooter) => blockPairs.has(`${uid}|${shooter}`)));
 
     if (recipientIds.length) {
       const { data: tokens } = await supabase

@@ -53,6 +53,16 @@ CREATE TABLE IF NOT EXISTS public.photos (
 -- Small thumbnail uploaded alongside the full image (grids/feeds load ~30KB not MBs). Added
 -- here, before the storage policies that reference it, so a fresh run has the column ready.
 ALTER TABLE public.photos ADD COLUMN IF NOT EXISTS thumb_path TEXT;
+-- Mid-size feed rendition (see the "Feed-size rendition" section below for why). Added here too,
+-- not just at that section, because "photos: roll members can read shared" (storage policy,
+-- defined shortly after this table) already reads p.feed_path — a fresh run errored with
+-- "column p.feed_path does not exist" until this line moved up to precede it.
+ALTER TABLE public.photos ADD COLUMN IF NOT EXISTS feed_path TEXT;
+-- Moderation flag (see the "Auto-moderation" section below for why). Added here too, not just
+-- there, because "posts: create own" (defined shortly after the posts table) already reads
+-- p.hidden — a fresh run errored with "column p.hidden does not exist" until this line moved up
+-- to precede it.
+ALTER TABLE public.photos ADD COLUMN IF NOT EXISTS hidden BOOLEAN NOT NULL DEFAULT FALSE;
 
 -- ============================================================
 -- Invite gate: is this email allowed to sign in?
@@ -642,6 +652,11 @@ CREATE TABLE IF NOT EXISTS public.posts (
 ALTER TABLE public.posts ENABLE ROW LEVEL SECURITY;
 -- Thumbnail denormalized from the photo (see photos.thumb_path), so the feed loads small.
 ALTER TABLE public.posts ADD COLUMN IF NOT EXISTS thumb_path TEXT;
+-- Mid-size feed rendition denormalized from the photo (see photos.feed_path above, and the
+-- "Feed-size rendition" section below). Moved up for the same reason as photos.feed_path: the
+-- "posts: readable when shared to a post" storage policy defined shortly after this table
+-- already reads po.feed_path.
+ALTER TABLE public.posts ADD COLUMN IF NOT EXISTS feed_path TEXT;
 -- Marked once the push scanner has processed this post (tag + caption-mention notifications).
 ALTER TABLE public.posts ADD COLUMN IF NOT EXISTS push_sent BOOLEAN DEFAULT FALSE;
 
@@ -904,9 +919,13 @@ ON CONFLICT (email) DO NOTHING;
 -- Once a photo is reported by >= 2 DISTINCT users, hide it (and any feed posts of it) pending
 -- review. The client filters hidden content out of feeds + shared rolls. Review/restore from the
 -- dashboard: SELECT * FROM photos WHERE hidden;  then UPDATE ... SET hidden = FALSE (or delete).
+--
+-- photos.hidden itself is added earlier now (right after the photos table, near line 65), for
+-- the same "a policy defined before this section already reads it" reason as photos.feed_path.
+-- posts.hidden's first read (the "readable when shared to a post" storage policy) comes after
+-- this point, so it can stay here.
 -- ============================================================
-ALTER TABLE public.photos ADD COLUMN IF NOT EXISTS hidden BOOLEAN NOT NULL DEFAULT FALSE;
-ALTER TABLE public.posts  ADD COLUMN IF NOT EXISTS hidden BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE public.posts ADD COLUMN IF NOT EXISTS hidden BOOLEAN NOT NULL DEFAULT FALSE;
 
 CREATE OR REPLACE FUNCTION public.auto_hide_reported()
 RETURNS TRIGGER
@@ -1003,9 +1022,13 @@ CREATE INDEX IF NOT EXISTS blocks_blocker_idx          ON public.blocks (blocker
 -- The feed downloads this (~250KB) instead of the full 2048px file (~700KB), pixel-identical
 -- at feed-card width. Full image still used for full-screen / zoom / save. Older photos have
 -- NULL and fall back to storage_path.
+--
+-- The two ADD COLUMN statements that used to live here now run right after the photos/posts
+-- CREATE TABLE blocks (near lines 44 and 632) instead: the storage policies defined shortly
+-- after each table already SELECT feed_path, and a fresh top-to-bottom run errored with
+-- "column p.feed_path does not exist" before that column existed. Left as a marker so the
+-- column's purpose stays documented at the point it was originally introduced.
 -- ============================================================
-ALTER TABLE public.photos ADD COLUMN IF NOT EXISTS feed_path TEXT;
-ALTER TABLE public.posts  ADD COLUMN IF NOT EXISTS feed_path TEXT;
 
 -- ============================================================
 -- Security-advisor hardening (2026-07). All applied live; kept here as source of truth.
@@ -1528,3 +1551,695 @@ CREATE TABLE IF NOT EXISTS public.digest_state (
     last_sent_at timestamptz NOT NULL DEFAULT now()
 );
 ALTER TABLE public.digest_state ENABLE ROW LEVEL SECURITY;
+
+-- ============================================================
+-- Owner gate. Same identity check send-social-push uses for its OWNER_EMAIL
+-- constant: resolve against public.users.email, case insensitively, rather
+-- than pinning a UUID that would go stale if the owner's row is ever
+-- recreated. auth.uid() with no session is NULL, which matches nothing here
+-- and returns FALSE, not an error. Everything owner-gated below (the invite
+-- queue, the report queue, feedback) calls this, so it must be defined first.
+-- Applied separately as supabase/migrations/2026-08-07_admin_dashboard.sql.
+-- ============================================================
+CREATE OR REPLACE FUNCTION public.is_owner()
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+    SELECT EXISTS (
+        SELECT 1 FROM public.users
+        WHERE id = auth.uid()
+          AND lower(email) = lower('codyysb@gmail.com')
+    );
+$$;
+REVOKE ALL ON FUNCTION public.is_owner() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.is_owner() FROM anon;
+GRANT EXECUTE ON FUNCTION public.is_owner() TO authenticated;
+
+-- ============================================================
+-- Remote push: device token storage. Needed only for REMOTE push (a roll-mate's
+-- photo developing on their device); local notifications cover "your own photo
+-- developed" with no backend. Applied separately as supabase/push/device_tokens.sql,
+-- with the token-as-primary-key fix from supabase/migrations/2026-08-06_device_token_one_per_device.sql
+-- folded in directly since this file reflects the current shape, not the history.
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.device_tokens (
+    user_id    UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+    token      TEXT PRIMARY KEY,                    -- APNs device token (hex)
+    platform   TEXT NOT NULL DEFAULT 'ios',
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+ALTER TABLE public.device_tokens ENABLE ROW LEVEL SECURITY;
+
+-- A user can only see / write their own device tokens.
+DROP POLICY IF EXISTS "device_tokens: own tokens" ON public.device_tokens;
+CREATE POLICY "device_tokens: own tokens"
+    ON public.device_tokens FOR ALL
+    USING (user_id = auth.uid())
+    WITH CHECK (user_id = auth.uid());
+
+-- Helpful index for the Edge Function fan-out (look up tokens by user). Not implied
+-- by the primary key, which is the token.
+CREATE INDEX IF NOT EXISTS device_tokens_user_idx ON public.device_tokens (user_id);
+
+-- Registration has to be able to move a device from one account to another, and
+-- plain RLS cannot: an upsert becomes ON CONFLICT (token) DO UPDATE, whose USING
+-- clause is checked against the row that still belongs to the previous account, so
+-- the reassignment is silently filtered out. This function is the only way in.
+-- It writes auth.uid() and nothing else, so a caller can only ever claim a device
+-- for themselves.
+CREATE OR REPLACE FUNCTION public.register_device_token(
+    p_token    TEXT,
+    p_platform TEXT DEFAULT 'ios'
+)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    IF auth.uid() IS NULL THEN
+        RAISE EXCEPTION 'register_device_token: not authenticated';
+    END IF;
+
+    IF p_token IS NULL OR length(trim(p_token)) = 0 THEN
+        RAISE EXCEPTION 'register_device_token: token required';
+    END IF;
+
+    DELETE FROM public.device_tokens
+    WHERE token = p_token
+      AND user_id <> auth.uid();
+
+    INSERT INTO public.device_tokens (user_id, token, platform, updated_at)
+    VALUES (auth.uid(), p_token, COALESCE(p_platform, 'ios'), NOW())
+    ON CONFLICT (token) DO UPDATE
+        SET user_id    = auth.uid(),
+            platform   = EXCLUDED.platform,
+            updated_at = NOW();
+END;
+$$;
+
+-- anon is revoked explicitly: Supabase's stock default privileges grant EXECUTE on
+-- every new function to anon, and revoking PUBLIC leaves that grant in place.
+REVOKE ALL ON FUNCTION public.register_device_token(TEXT, TEXT) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.register_device_token(TEXT, TEXT) FROM anon;
+GRANT EXECUTE ON FUNCTION public.register_device_token(TEXT, TEXT) TO authenticated;
+
+-- Track which developed photos / comments have already triggered a remote push so the
+-- scheduled Edge Functions don't notify the same row twice. (post_reactions.push_sent,
+-- follows.push_sent and photo_reactions.push_sent are already added above, closer to
+-- their own tables; these three were missing from this file even though production has
+-- carried them since the push feature shipped.)
+ALTER TABLE public.photos         ADD COLUMN IF NOT EXISTS push_sent BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE public.post_comments  ADD COLUMN IF NOT EXISTS push_sent BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE public.photo_comments ADD COLUMN IF NOT EXISTS push_sent BOOLEAN NOT NULL DEFAULT FALSE;
+CREATE INDEX IF NOT EXISTS post_comments_unpushed_idx  ON public.post_comments (push_sent) WHERE push_sent = FALSE;
+CREATE INDEX IF NOT EXISTS photo_comments_unpushed_idx ON public.photo_comments (push_sent) WHERE push_sent = FALSE;
+
+-- ============================================================
+-- Invite requests from the website (request_invite RPC). The landing page asks a
+-- stranger for their email and a line about who they'd put on a roll. They have no
+-- session, so this follows the same shape as redeem_invite: an anon-callable
+-- SECURITY DEFINER function in front of tables no client role can touch directly.
+-- This does NOT allowlist anyone, it only records the ask. Applied separately as
+-- supabase/migrations/2026-08-07_invite_requests.sql.
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.invite_requests (
+    email      TEXT PRIMARY KEY,
+    note       TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    handled    BOOLEAN NOT NULL DEFAULT FALSE
+);
+
+CREATE TABLE IF NOT EXISTS public.invite_request_rate (
+    id           BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (id),
+    window_start TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    attempts     INT NOT NULL DEFAULT 0
+);
+INSERT INTO public.invite_request_rate (id) VALUES (TRUE) ON CONFLICT DO NOTHING;
+
+ALTER TABLE public.invite_requests     ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.invite_request_rate ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.invite_requests     FROM anon, authenticated;
+REVOKE ALL ON public.invite_request_rate FROM anon, authenticated;
+
+-- Always returns TRUE for a well-formed address, whether the row was new, already
+-- there, or dropped by the rate gate. A caller therefore cannot use this to test
+-- whether an address has already asked. The only FALSE is a malformed address.
+CREATE OR REPLACE FUNCTION public.request_invite(
+    p_email TEXT,
+    p_note  TEXT DEFAULT NULL
+)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_email    TEXT;
+    v_note     TEXT;
+    v_start    TIMESTAMPTZ;
+    v_attempts INT;
+BEGIN
+    v_email := lower(trim(COALESCE(p_email, '')));
+
+    IF length(v_email) > 254 OR v_email !~ '^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$' THEN
+        RETURN FALSE;
+    END IF;
+
+    v_note := NULLIF(left(trim(COALESCE(p_note, '')), 500), '');
+
+    SELECT window_start, attempts INTO v_start, v_attempts
+    FROM public.invite_request_rate WHERE id FOR UPDATE;
+
+    IF v_start < NOW() - INTERVAL '1 hour' THEN
+        UPDATE public.invite_request_rate SET window_start = NOW(), attempts = 1 WHERE id;
+    ELSIF v_attempts >= 60 THEN
+        RETURN TRUE;
+    ELSE
+        UPDATE public.invite_request_rate SET attempts = attempts + 1 WHERE id;
+    END IF;
+
+    INSERT INTO public.invite_requests (email, note)
+    VALUES (v_email, v_note)
+    ON CONFLICT (email) DO UPDATE
+        SET note = COALESCE(EXCLUDED.note, public.invite_requests.note);
+
+    RETURN TRUE;
+END;
+$$;
+
+-- anon is the point here: the caller is a stranger on the website with no session.
+-- authenticated is included so an existing user passing the link on doesn't error.
+REVOKE ALL ON FUNCTION public.request_invite(TEXT, TEXT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.request_invite(TEXT, TEXT) TO anon, authenticated;
+
+-- ============================================================
+-- SQL layer for the flim-app.com/admin dashboard: invite queue. The dashboard is a
+-- static page calling Supabase from the browser with the publishable key and the
+-- owner's own logged-in session, so grants alone can't be the gate — is_owner()
+-- inside each body is. Every mutation raises, every list function quietly returns
+-- nothing, for any non-owner caller. Applied separately as
+-- supabase/migrations/2026-08-07_admin_dashboard.sql (this is the final, gated
+-- shape of approve_invite_request; it superseded the ungated version originally
+-- shipped in supabase/migrations/2026-08-07_approve_invite_request.sql).
+-- ============================================================
+CREATE OR REPLACE FUNCTION public.list_invite_requests()
+RETURNS TABLE (
+    email      TEXT,
+    note       TEXT,
+    created_at TIMESTAMPTZ
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    IF NOT public.is_owner() THEN
+        RETURN;
+    END IF;
+
+    RETURN QUERY
+    SELECT ir.email, ir.note, ir.created_at
+    FROM public.invite_requests ir
+    WHERE NOT ir.handled
+    ORDER BY ir.created_at ASC;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.approve_invite_request(p_email TEXT)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_email TEXT;
+BEGIN
+    IF NOT public.is_owner() THEN
+        RAISE EXCEPTION 'owner only';
+    END IF;
+
+    v_email := lower(trim(COALESCE(p_email, '')));
+    IF v_email = '' THEN
+        RETURN FALSE;
+    END IF;
+
+    INSERT INTO public.allowed_emails (email, note)
+    VALUES (v_email, 'invite request')
+    ON CONFLICT (email) DO NOTHING;
+
+    UPDATE public.invite_requests SET handled = TRUE WHERE email = v_email;
+
+    RETURN TRUE;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.decline_invite_request(p_email TEXT)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_email TEXT;
+BEGIN
+    IF NOT public.is_owner() THEN
+        RAISE EXCEPTION 'owner only';
+    END IF;
+
+    v_email := lower(trim(COALESCE(p_email, '')));
+    IF v_email = '' THEN
+        RETURN FALSE;
+    END IF;
+
+    UPDATE public.invite_requests SET handled = TRUE WHERE email = v_email;
+
+    RETURN TRUE;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.list_invite_requests() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.list_invite_requests() FROM anon;
+GRANT EXECUTE ON FUNCTION public.list_invite_requests() TO authenticated;
+
+REVOKE ALL ON FUNCTION public.approve_invite_request(TEXT) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.approve_invite_request(TEXT) FROM anon;
+GRANT EXECUTE ON FUNCTION public.approve_invite_request(TEXT) TO authenticated;
+
+REVOKE ALL ON FUNCTION public.decline_invite_request(TEXT) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.decline_invite_request(TEXT) FROM anon;
+GRANT EXECUTE ON FUNCTION public.decline_invite_request(TEXT) TO authenticated;
+
+-- ============================================================
+-- SQL layer for the flim-app.com/admin dashboard: report queue. Same is_owner()
+-- gate as the invite queue above. Neither report table tracked whether a report
+-- had been looked at before this; push_sent (added near the block-enforcement
+-- section above) tracks whether send-social-push already notified the owner's
+-- phone, which is a separate concern from `handled`. Applied separately as
+-- supabase/migrations/2026-08-07_admin_dashboard.sql.
+-- ============================================================
+ALTER TABLE public.photo_reports ADD COLUMN IF NOT EXISTS handled BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE public.user_reports  ADD COLUMN IF NOT EXISTS handled BOOLEAN NOT NULL DEFAULT FALSE;
+
+CREATE INDEX IF NOT EXISTS photo_reports_unhandled_idx ON public.photo_reports (handled) WHERE handled = FALSE;
+CREATE INDEX IF NOT EXISTS user_reports_unhandled_idx  ON public.user_reports  (handled) WHERE handled = FALSE;
+
+CREATE OR REPLACE FUNCTION public.list_photo_reports()
+RETURNS TABLE (
+    report_id         UUID,
+    photo_id          UUID,
+    reason            TEXT,
+    report_count      BIGINT,
+    created_at        TIMESTAMPTZ,
+    reported_username TEXT,
+    hidden            BOOLEAN
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    IF NOT public.is_owner() THEN
+        RETURN;
+    END IF;
+
+    RETURN QUERY
+    WITH counts AS (
+        SELECT
+            pr.photo_id,
+            COUNT(DISTINCT pr.reporter_id) AS report_count,
+            MIN(pr.created_at)             AS first_reported_at
+        FROM public.photo_reports pr
+        WHERE NOT pr.handled
+        GROUP BY pr.photo_id
+    ),
+    latest AS (
+        SELECT DISTINCT ON (pr.photo_id)
+            pr.id, pr.photo_id, pr.reason
+        FROM public.photo_reports pr
+        WHERE NOT pr.handled
+        ORDER BY pr.photo_id, pr.created_at DESC
+    )
+    SELECT
+        latest.id,
+        latest.photo_id,
+        latest.reason,
+        counts.report_count,
+        counts.first_reported_at,
+        u.username,
+        ph.hidden
+    FROM latest
+    JOIN counts             ON counts.photo_id = latest.photo_id
+    JOIN public.photos ph   ON ph.id = latest.photo_id
+    JOIN public.users  u    ON u.id = ph.user_id
+    ORDER BY counts.first_reported_at ASC;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.list_user_reports()
+RETURNS TABLE (
+    report_id         UUID,
+    reported_id       UUID,
+    reported_username TEXT,
+    reason            TEXT,
+    report_count      BIGINT,
+    created_at        TIMESTAMPTZ
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    IF NOT public.is_owner() THEN
+        RETURN;
+    END IF;
+
+    RETURN QUERY
+    WITH counts AS (
+        SELECT
+            ur.reported_id,
+            COUNT(DISTINCT ur.reporter_id) AS report_count,
+            MIN(ur.created_at)             AS first_reported_at
+        FROM public.user_reports ur
+        WHERE NOT ur.handled
+        GROUP BY ur.reported_id
+    ),
+    latest AS (
+        SELECT DISTINCT ON (ur.reported_id)
+            ur.id, ur.reported_id, ur.reason
+        FROM public.user_reports ur
+        WHERE NOT ur.handled
+        ORDER BY ur.reported_id, ur.created_at DESC
+    )
+    SELECT
+        latest.id,
+        latest.reported_id,
+        u.username,
+        latest.reason,
+        counts.report_count,
+        counts.first_reported_at
+    FROM latest
+    JOIN counts          ON counts.reported_id = latest.reported_id
+    JOIN public.users u  ON u.id = latest.reported_id
+    ORDER BY counts.first_reported_at ASC;
+END;
+$$;
+
+-- Hide or restore a reported photo by hand. photos.hidden is what auto_hide_reported
+-- flips automatically at >= 2 distinct reporters; a manual call here either backs
+-- that up early or overrides a false positive. posts denormalizes the same photo,
+-- so a manual override has to touch both or the feed and the photo disagree.
+CREATE OR REPLACE FUNCTION public.set_photo_hidden(p_photo_id UUID, p_hidden BOOLEAN)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    IF NOT public.is_owner() THEN
+        RAISE EXCEPTION 'owner only';
+    END IF;
+
+    UPDATE public.photos SET hidden = p_hidden WHERE id = p_photo_id;
+    UPDATE public.posts  SET hidden = p_hidden WHERE photo_id = p_photo_id;
+
+    RETURN TRUE;
+END;
+$$;
+
+-- Dismissing a row from list_photo_reports clears every report underneath that
+-- photo, not just one, or the photo would reappear next load carrying whichever
+-- report happened to survive.
+CREATE OR REPLACE FUNCTION public.dismiss_photo_report(p_photo_id UUID)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    IF NOT public.is_owner() THEN
+        RAISE EXCEPTION 'owner only';
+    END IF;
+
+    UPDATE public.photo_reports SET handled = TRUE WHERE photo_id = p_photo_id AND NOT handled;
+
+    RETURN TRUE;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.dismiss_user_report(p_reported_id UUID)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    IF NOT public.is_owner() THEN
+        RAISE EXCEPTION 'owner only';
+    END IF;
+
+    UPDATE public.user_reports SET handled = TRUE WHERE reported_id = p_reported_id AND NOT handled;
+
+    RETURN TRUE;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.list_photo_reports() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.list_photo_reports() FROM anon;
+GRANT EXECUTE ON FUNCTION public.list_photo_reports() TO authenticated;
+
+REVOKE ALL ON FUNCTION public.list_user_reports() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.list_user_reports() FROM anon;
+GRANT EXECUTE ON FUNCTION public.list_user_reports() TO authenticated;
+
+REVOKE ALL ON FUNCTION public.set_photo_hidden(UUID, BOOLEAN) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.set_photo_hidden(UUID, BOOLEAN) FROM anon;
+GRANT EXECUTE ON FUNCTION public.set_photo_hidden(UUID, BOOLEAN) TO authenticated;
+
+REVOKE ALL ON FUNCTION public.dismiss_photo_report(UUID) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.dismiss_photo_report(UUID) FROM anon;
+GRANT EXECUTE ON FUNCTION public.dismiss_photo_report(UUID) TO authenticated;
+
+REVOKE ALL ON FUNCTION public.dismiss_user_report(UUID) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.dismiss_user_report(UUID) FROM anon;
+GRANT EXECUTE ON FUNCTION public.dismiss_user_report(UUID) TO authenticated;
+
+-- ============================================================
+-- In-app feedback capture. The app's only feedback path used to be a mailto:
+-- draft; this lands the report directly in the database plus build/device
+-- context. Shape mirrors invite_requests / redeem_invite: a table with RLS on
+-- and no policies, reachable only through SECURITY DEFINER functions, plus a
+-- singleton rate-gate table. Unlike invite_requests, the caller is a signed-in
+-- app user, so submit_feedback is granted to authenticated only, never anon,
+-- and records auth.uid() itself rather than trusting a caller-supplied id.
+-- Applied separately as supabase/migrations/2026-08-07_feedback.sql.
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.feedback (
+    id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id      UUID REFERENCES public.users(id) ON DELETE CASCADE,
+    message      TEXT NOT NULL,
+    app_version  TEXT,
+    app_build    TEXT,
+    os_version   TEXT,
+    device_model TEXT,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    handled      BOOLEAN NOT NULL DEFAULT FALSE
+);
+ALTER TABLE public.feedback ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.feedback FROM PUBLIC, anon, authenticated;
+
+CREATE INDEX IF NOT EXISTS feedback_unhandled_idx ON public.feedback (created_at) WHERE NOT handled;
+CREATE INDEX IF NOT EXISTS feedback_user_id_idx ON public.feedback (user_id);
+
+CREATE TABLE IF NOT EXISTS public.feedback_rate (
+    id           BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (id),
+    window_start TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    attempts     INT NOT NULL DEFAULT 0
+);
+INSERT INTO public.feedback_rate (id) VALUES (TRUE) ON CONFLICT DO NOTHING;
+ALTER TABLE public.feedback_rate ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.feedback_rate FROM PUBLIC, anon, authenticated;
+
+-- auth.uid() is the only source of the author; a caller cannot claim to be
+-- someone else. An empty/whitespace-only message returns FALSE rather than
+-- erroring (client-side validation miss, not abuse); an over-length message is
+-- silently trimmed to 2000 characters rather than rejected.
+CREATE OR REPLACE FUNCTION public.submit_feedback(
+    p_message      TEXT,
+    p_app_version  TEXT,
+    p_app_build    TEXT,
+    p_os_version   TEXT,
+    p_device_model TEXT
+)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+VOLATILE
+AS $$
+DECLARE
+    v_message  TEXT;
+    v_window   TIMESTAMPTZ;
+    v_attempts INT;
+BEGIN
+    IF auth.uid() IS NULL THEN
+        RETURN FALSE;
+    END IF;
+
+    v_message := LEFT(TRIM(COALESCE(p_message, '')), 2000);
+    IF v_message = '' THEN
+        RETURN FALSE;
+    END IF;
+
+    SELECT window_start, attempts INTO v_window, v_attempts
+    FROM public.feedback_rate
+    WHERE id = TRUE
+    FOR UPDATE;
+
+    IF v_window < NOW() - INTERVAL '1 hour' THEN
+        UPDATE public.feedback_rate SET window_start = NOW(), attempts = 1 WHERE id = TRUE;
+    ELSIF v_attempts >= 50 THEN
+        RAISE EXCEPTION 'rate_limited' USING ERRCODE = 'P0003';
+    ELSE
+        UPDATE public.feedback_rate SET attempts = attempts + 1 WHERE id = TRUE;
+    END IF;
+
+    INSERT INTO public.feedback (user_id, message, app_version, app_build, os_version, device_model)
+    VALUES (
+        auth.uid(),
+        v_message,
+        NULLIF(TRIM(COALESCE(p_app_version, '')), ''),
+        NULLIF(TRIM(COALESCE(p_app_build, '')), ''),
+        NULLIF(TRIM(COALESCE(p_os_version, '')), ''),
+        NULLIF(TRIM(COALESCE(p_device_model, '')), '')
+    );
+
+    RETURN TRUE;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.list_feedback()
+RETURNS TABLE (
+    id           UUID,
+    message      TEXT,
+    app_version  TEXT,
+    app_build    TEXT,
+    os_version   TEXT,
+    device_model TEXT,
+    username     TEXT,
+    created_at   TIMESTAMPTZ
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    IF NOT public.is_owner() THEN
+        RETURN;
+    END IF;
+
+    RETURN QUERY
+    SELECT
+        f.id,
+        f.message,
+        f.app_version,
+        f.app_build,
+        f.os_version,
+        f.device_model,
+        u.username,
+        f.created_at
+    FROM public.feedback f
+    LEFT JOIN public.users u ON u.id = f.user_id
+    WHERE NOT f.handled
+    ORDER BY f.created_at ASC;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.dismiss_feedback(p_id UUID)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    IF NOT public.is_owner() THEN
+        RAISE EXCEPTION 'owner only';
+    END IF;
+
+    UPDATE public.feedback SET handled = TRUE WHERE id = p_id;
+
+    RETURN TRUE;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.submit_feedback(TEXT, TEXT, TEXT, TEXT, TEXT) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.submit_feedback(TEXT, TEXT, TEXT, TEXT, TEXT) FROM anon;
+GRANT EXECUTE ON FUNCTION public.submit_feedback(TEXT, TEXT, TEXT, TEXT, TEXT) TO authenticated;
+
+REVOKE ALL ON FUNCTION public.list_feedback() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.list_feedback() FROM anon;
+GRANT EXECUTE ON FUNCTION public.list_feedback() TO authenticated;
+
+REVOKE ALL ON FUNCTION public.dismiss_feedback(UUID) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.dismiss_feedback(UUID) FROM anon;
+GRANT EXECUTE ON FUNCTION public.dismiss_feedback(UUID) TO authenticated;
+
+-- ============================================================
+-- Server-side sweep for orphaned objects in the `photos` bucket. Three client bugs
+-- can strand a Storage object without ever writing the row that references it; this
+-- gives that class of bug a permanent backstop. READ side only: a SECURITY DEFINER
+-- function that finds candidate orphans. It does not delete anything itself and does
+-- not touch storage.objects rows directly — deletion happens exclusively through the
+-- Storage HTTP API, from the sweep-orphaned-storage Edge Function.
+--
+-- Orphan definition: an object in bucket `photos` whose name appears in none of
+-- photos.{storage_path,thumb_path,feed_path}, posts.{storage_path,thumb_path,feed_path},
+-- users.{avatar_path,cover_path}, rolls.cover_path — AND older than p_min_age_hours
+-- (default 48, since Storage uploads land bytes before the row referencing them is
+-- written, so a recent unreferenced object is very likely a capture still in flight).
+-- If a future migration adds another column that can hold a `photos` object name, it
+-- MUST be added to the UNION below or this function will misreport live files.
+-- Applied separately as supabase/migrations/2026-08-08_orphaned_storage_sweep.sql.
+-- ============================================================
+CREATE OR REPLACE FUNCTION public.list_orphaned_photos_objects(
+    p_min_age_hours INTEGER DEFAULT 48,
+    p_max_rows      INTEGER DEFAULT 5000
+)
+RETURNS TABLE (
+    object_name TEXT,
+    size_bytes  BIGINT,
+    created_at  TIMESTAMPTZ
+)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+    WITH referenced AS (
+        SELECT storage_path AS p FROM public.photos WHERE storage_path IS NOT NULL
+        UNION SELECT thumb_path  FROM public.photos WHERE thumb_path  IS NOT NULL
+        UNION SELECT feed_path   FROM public.photos WHERE feed_path   IS NOT NULL
+        UNION SELECT storage_path FROM public.posts WHERE storage_path IS NOT NULL
+        UNION SELECT thumb_path   FROM public.posts WHERE thumb_path   IS NOT NULL
+        UNION SELECT feed_path    FROM public.posts WHERE feed_path    IS NOT NULL
+        UNION SELECT avatar_path FROM public.users WHERE avatar_path IS NOT NULL
+        UNION SELECT cover_path  FROM public.users WHERE cover_path  IS NOT NULL
+        UNION SELECT cover_path  FROM public.rolls WHERE cover_path  IS NOT NULL
+    )
+    SELECT o.name, (o.metadata ->> 'size')::BIGINT, o.created_at
+    FROM storage.objects o
+    WHERE o.bucket_id = 'photos'
+      AND o.created_at < now() - make_interval(hours => p_min_age_hours)
+      AND o.name NOT IN (SELECT p FROM referenced)
+    ORDER BY o.created_at ASC
+    LIMIT p_max_rows;
+$$;
+
+-- Internal function: only the sweep Edge Function (service_role) has any business
+-- calling this. It reads across photos/posts/users/rolls/storage.objects, none of
+-- which a client should be able to enumerate wholesale.
+REVOKE ALL ON FUNCTION public.list_orphaned_photos_objects(INTEGER, INTEGER) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.list_orphaned_photos_objects(INTEGER, INTEGER) FROM anon, authenticated;
