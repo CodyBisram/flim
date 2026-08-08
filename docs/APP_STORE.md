@@ -4,50 +4,151 @@ Copy-paste-ready metadata + a screenshot plan + reviewer notes. Tweak the voice 
 
 ---
 
-## Name & subtitle options
+## Name & subtitle
 
-### App name (30 char max)
-1. **FLIM** (4 chars): primary, brand-forward, short and memorable
-2. **FLIM: Disposable Camera** (23 chars): descriptive, keywords-loaded
-3. **Film Rolls** (11 chars): descriptive, generic alternative
+Shipped with 1.3:
 
-### Subtitle (30 char max)
-1. **Disposable camera for friends** (30 chars): current choice, descriptive + social angle
-2. **Shoot now, develop later** (25 chars): action-oriented, emphasizes the core mechanic
-3. **Shared rolls, real moments** (26 chars): warm, social, emphasizes shared experience
+| Field | Value | Chars |
+|---|---|---|
+| App name | `FLIM: Disposable Camera` | 23 / 30 |
+| Subtitle | `Shoot film with your friends` | 28 / 30 |
 
-**Recommendation:** Use app name `FLIM` + subtitle `Disposable camera for friends` (primary choice above).
+The App Store name is not the home screen name. `CFBundleDisplayName` is `FLIM` on both the app
+and the widget target, so the icon stays four characters no matter how long this field gets.
+
+### The version to switch to when signups open
+
+`film` sits in the subtitle today. Whether moving it into the name would rank it any higher is
+genuinely unsettled: Apple does not publish the relative weight of the name and the subtitle, and
+ASO practitioners disagree, with a common view being that the name leads slightly and a credible
+view being that the two are equivalent. If they are equivalent, moving `film` buys nothing at all
+and the question answers itself.
+
+Either way it was not done for 1.3, for two reasons that do not depend on the weighting.
+`FLIM: Disposable Film Camera` puts FLIM and Film two words apart, which reads as a typo (Apple does
+not fuzzy-match them, so the pun buys nothing and only costs clarity). And while the app is
+invite-only, someone who finds it by searching a broad term downloads it, hits an invite wall, and
+leaves. Ranking for discovery terms optimises a funnel that is deliberately closed.
+
+When the invite list opens, the pair below is worth revisiting. Its real gain is not `film`, it is
+`shared` and `rolls`, which we rank for nowhere today:
+
+| Field | Value | Chars |
+|---|---|---|
+| App name | `FLIM: Disposable Film Camera` | 28 / 30 |
+| Subtitle | `Shared rolls with your friends` | 30 / 30 |
+
+Both fields are metadata, editable on any submission, so this costs nothing to defer.
 
 ## Promotional text (170 char max, editable anytime without review)
 > Shoot on film, wait for it to develop, and share the moment with the people who actually matter. No likes to chase. No feed to doomscroll. Just your people.
 
 ## Description
 
-> **FLIM is a disposable camera for your closest friends.**
->
-> Point, shoot, and let it develop, just like the real thing. Personal shots appear in your Darkroom right away. Shots into a shared roll stay private until the whole roll reveals together at a fixed time: 12 hours after the roll was created. Every reveal feels like a little surprise waiting to happen. Grab an invite from a friend and start shooting.
->
-> **Real film feel.** Every photo gets FLIM's signature film look baked right in at capture: warm color, fine grain, and a subtle glow. No filters, no choices, no second-guessing. Just one beautiful look that works for every moment.
->
-> **Rolls for your people.** Start a shared roll with up to 50 friends and shoot together. Everyone's photos land in the same place, and the entire roll develops at once. Trips, parties, nights out, all revealed together. Join rolls with invite codes, comment on each other's shots, and react with emojis.
->
-> **A feed that's yours.** Follow friends, see their posts, react, and comment. It's invite-only and private by design. The people you see are the people you chose to invite. No public likes. No algorithm. No strangers. Just a calmer way to stay close to the people who matter.
+> **PASTE THE BLOCK BELOW.** Paragraphs are single unwrapped lines on purpose; App Store Connect
+> keeps your line breaks exactly as pasted, so hard-wrapping here produces a ragged listing.
 
-**Features:**
-- One signature film look, applied at capture (no post-processing)
-- 12-hour development window (photos reveal at the same time as their roll)
-- Shared rolls with up to 50 members via invite codes
-- Private photo feed from people you follow
-- Reactions (emojis) and comments on photos and posts
-- Photo tagging
-- Real blocking and reporting (reviewed within 24h)
-- Push notifications for roll reveals and social activity (comments, reactions)
-- Email OTP sign-in, invite-only access
+    FLIM is a disposable camera for your closest friends.
+
+    Point, shoot, and let it develop, just like the real thing. Personal shots land in your Darkroom right away. Shots into a shared roll stay hidden until the whole roll reveals at once, twelve hours after it started. Nobody sees them early, not even the person who took them. The waiting is what makes the reveal worth showing up for.
+
+    Real film feel. Every photo gets FLIM's film look baked in at capture: warm color, grain through the midtones where film puts it, and the soft red glow real film gives a bright window or a streetlight. No filters. No sliders. One look, applied the moment you shoot, the same for everyone.
+
+    Rolls for your people. Start a shared roll with up to 50 friends and shoot into it together. Everyone's photos land in the same place, and the whole roll develops at once. Trips, parties, nights out, all revealed together. Watch a roll fill up as its reveal gets closer, with a countdown on your lock screen, then play it back one shot at a time. Join with an invite code, comment on each other's photos, react with emojis.
+
+    A feed that's yours. Follow friends, see what they post, react and comment. Mention someone with @ to bring them into it. FLIM is invite-only, so everyone you see is someone a friend chose to let in. No public like counts. No algorithm deciding what you look at. No strangers.
+
+    FEATURES
+    • One film look, applied at capture, no post-processing
+    • Twelve hour development window, with a roll's shots revealing together
+    • Shared rolls with up to 50 members, joined by invite code
+    • A reveal that plays your roll back one shot at a time, with a lock screen countdown
+    • A private feed from the people you follow
+    • Reactions, comments, and @mentions on photos and posts
+    • Photo tagging you can edit any time, and you can untag yourself from anything
+    • Blocking and reporting, reviewed within 24 hours
+    • One daily notification rounding up what friends posted, instead of one per photo
+    • Email sign-in with a one time code, invite only
+
+    You need an invite to join. If you do not have a code yet, ask the friend who sent you here.
+
+### Why this differs from the 1.2 description
+
+Three deliberate cuts, kept here so nobody restores them by accident.
+
+"Every reveal feels like a little surprise waiting to happen" told the reader what to feel, and
+"little surprise" undersold the mechanic the whole app is built on. Replaced with the fact stated
+plainly: nobody sees them early, **not even the person who took them**. That had never been said
+anywhere in the copy and it does the persuading on its own.
+
+"Just one beautiful look that works for every moment" went the same way. Beautiful is the reader's
+call, and "works for every moment" is filler. What replaced it, grain through the midtones where
+film puts it, is lifted from our own 1.2 release notes and is the most convincing sentence written
+about the look so far.
+
+"Grab an invite from a friend and start shooting" moved from the end of the opening paragraph to
+the very bottom. It is a logistics note, and it was occupying the strongest real estate on the page.
 
 ## Keywords (100 char max, comma-separated, no spaces)
-`disposable,film,camera,photo,friends,retro,vintage,analog,rolls,develop,aesthetic,private,social,grain`
 
-Note: 100 chars exactly. Keywords are research-informed for Photo & Video + Social Networking categories; "disposable," "film," "camera," and "photo" are must-haves for app store visibility; "friends," "private," and "rolls" emphasize the social/closed-network angle; "grain," "analog," "vintage," and "aesthetic" signal the signature visual style.
+`photo,retro,vintage,analog,rolls,develop,instant,private,social,grain,polaroid,album,35mm,lofi,dump`
+
+99 chars. Rewritten for 1.3 because the name and subtitle changed.
+
+The rule that drives this list: **Apple indexes the app name, the subtitle, and the keyword field
+together and deduplicates across all three.** A word already in the name or subtitle is dead weight
+here. The previous list carried `disposable`, `camera`, `film` and `friends`, all four of which now
+appear in the name or the subtitle, so roughly 31 characters of a 100 character budget were buying
+ranking we already had. Removing them freed room for `polaroid`, `album`, `35mm`, `lofi` and `dump`.
+
+This holds regardless of how the name and subtitle are weighted relative to each other, which Apple
+does not publish and which practitioners disagree about. Deduplication is the part that is not in
+dispute.
+
+`dump` looks odd alone. Apple builds combinations across indexed terms, so `photo` plus `dump`
+covers "photo dump", which is how the people this app is for actually describe it. The same
+mechanism means `film` in the subtitle plus `camera` in the name already covers "film camera"
+without either word appearing here.
+
+Two rules if this is edited again: never repeat a word across name, subtitle and keywords, and do
+not add plurals of words already present. Apple handles both.
+
+## What's New (version 1.3)
+
+> **PASTE ONLY THE INDENTED BLOCK BELOW.** Everything under "Ship notes" is internal.
+
+    FLIM now runs on a lot more iPhones. If it would not install on someone's phone before, it probably will now.
+
+    Sharing a photo from the full screen view actually shares it. That button has never worked until now.
+
+    Tapping someone's name opens their profile the same way from everywhere in the app, with a way back out. Before, opening a profile from inside a roll could leave you on a screen with no exit.
+
+    Double tap a photo to like it, the same gesture wherever there is something to react to.
+
+    A shot that misses its roll because the roll finished developing now lands in your deck instead of getting stuck. Activity reads as sentences rather than breaking into a second column.
+
+    Underneath: photos no longer go missing if the app closes while one is uploading, and a long list of fixes to how photos load, save, and hold their place.
+
+### Ship notes (internal, do NOT paste)
+
+- The headline is the deployment target dropping from iOS 26.0 to 18.0 (`1a38bd1`). It needed zero
+  source changes because the iOS 26 calls were already behind availability checks with working
+  fallbacks. It is first in the notes because it is the only line that changes who can install the
+  app at all.
+- Do NOT re-claim Dynamic Type. 1.2 already said "text now follows your device's text size
+  setting". 1.3 widened it, which is not worth a second mention.
+- The share button claim is honest and worth making. It never worked in any shipped build: it
+  looked the image up by signed URL while `CachedImage` stores under `cacheKey|maxPixel`, so the
+  lookup could not hit and the button silently did nothing. Fixed in `59ce50e`.
+- "Photos no longer go missing" covers two real defects, both fixed this cycle: a capture killed
+  between its upload and its row insert left bytes with no photo (`c8083d6`), and the retry queue
+  could delete the image it was holding because `save` and `prune` were unsynchronised
+  (`5dfd0e4`). Claimable, but keep it vague in public copy; naming the mechanism invites the
+  question of how long it was there.
+- Not mentioned on purpose: blocked accounts could still fetch photo bytes with a cached path until
+  `58af639`. It is a security fix and the right move is to ship it quietly, not to advertise that
+  the hole existed.
+- No em dashes in any user-facing copy.
 
 ## What's New (version 1.2)
 
