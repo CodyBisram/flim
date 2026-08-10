@@ -29,6 +29,7 @@ struct UserPageView: View {
     private var isSelf: Bool { userId == auth.currentUser?.id }
     private var isFollowing: Bool { feed.isFollowing(userId) }
     private var isBlocked: Bool { feed.isBlocked(userId) }
+    private var followsMe: Bool { feed.followsMe(userId) }
 
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 3), count: 3)
 
@@ -180,11 +181,21 @@ struct UserPageView: View {
             }
             .padding(.bottom, 44)
 
-            VStack(spacing: 2) {
+            VStack(spacing: 4) {
                 Text(profile?.name ?? "…")
                     .flimFont(22, weight: .light, relativeTo: .title3).foregroundStyle(.white)
                 Text(profile?.handle ?? "@…")
                     .flimFont(13, relativeTo: .subheadline).foregroundStyle(FlimTheme.textTertiary)
+                // A transparency disclosure, not a vanity badge: FLIM's feed is private and
+                // follow-gated, so this literally means "this person can see what you post".
+                // Neutral tone/colour on purpose, it isn't a stat to be proud of.
+                if !isSelf && !isBlocked && FeedService.FollowRelationship.showsFollowsYouBadge(followsMe: followsMe) {
+                    Text("Follows you")
+                        .flimFont(11, weight: .medium, relativeTo: .caption)
+                        .foregroundStyle(FlimTheme.textTertiary)
+                        .padding(.horizontal, 8).padding(.vertical, 3)
+                        .background(Color.white.opacity(0.08), in: Capsule())
+                }
             }
 
             if let bio = profile?.bio, !bio.isEmpty {
@@ -203,7 +214,7 @@ struct UserPageView: View {
             // below (with its own Unblock) replaces it.
             if !isSelf && !isBlocked {
                 Button { toggleFollow() } label: {
-                    Text(isFollowing ? "Following" : "Follow")
+                    Text(FeedService.FollowRelationship.buttonLabel(following: isFollowing, followsMe: followsMe))
                         .flimFont(14, weight: .semibold, relativeTo: .subheadline)
                         .foregroundStyle(isFollowing ? .white : .black)
                         .frame(maxWidth: .infinity)
@@ -361,6 +372,7 @@ struct UserPageView: View {
         followers = await fr
         following = await fg
         if feed.followingIds.isEmpty, let uid = auth.currentUser?.id { await feed.loadFollowing(userId: uid) }
+        if feed.followerIds.isEmpty, let uid = auth.currentUser?.id { await feed.loadFollowers(userId: uid) }
         if let uid = auth.currentUser?.id { await feed.loadBlocked(userId: uid) }
         if let path = profile?.avatarPath { avatarURL = await feed.signedURL(for: path) }
         // Cover = chosen cover, else the newest shared shot, else the avatar. The newest-shot
@@ -470,6 +482,7 @@ struct DiscoverPeopleView: View {
             .task {
                 if let uid = auth.currentUser?.id {
                     await feed.loadFollowing(userId: uid)
+                    await feed.loadFollowers(userId: uid)
                     await feed.loadBlocked(userId: uid)
                     profiles = await feed.discoverProfiles(excluding: uid)
                 }
@@ -583,6 +596,7 @@ struct FollowListView: View {
             .task {
                 if let uid = auth.currentUser?.id {
                     await feed.loadFollowing(userId: uid)
+                    await feed.loadFollowers(userId: uid)   // so rows can offer "Follow back"
                     await feed.loadBlocked(userId: uid)   // so the list below filters blocked users
                 }
                 profiles = mode == .followers
@@ -612,7 +626,7 @@ struct FollowButton: View {
                 else { await feed.follow(userId, from: uid) }
             }
         } label: {
-            Text(following ? "Following" : "Follow")
+            Text(FeedService.FollowRelationship.buttonLabel(following: following, followsMe: feed.followsMe(userId)))
                 .flimFont(13, weight: .semibold, relativeTo: .subheadline)
                 .foregroundStyle(following ? .white : .black)
                 .padding(.horizontal, 16).padding(.vertical, 7)

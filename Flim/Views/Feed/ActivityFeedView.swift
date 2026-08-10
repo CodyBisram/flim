@@ -96,8 +96,10 @@ struct ActivityFeedView: View {
         // not after, so it doesn't add to first paint.
         async let activityTask = feed.fetchActivity(userId: uid)
         async let followingTask: Void = loadFollowingIfNeeded(uid)
+        async let followersTask: Void = loadFollowersIfNeeded(uid)
         items = await activityTask
         await followingTask
+        await followersTask
         // Thumbnails are the smallest rendition in the pipeline (~30KB) and deduped
         // by post here, five reactions on the same photo mint one signed URL, not
         // five, so this costs about the same as any other thumbnail row in the app.
@@ -182,6 +184,14 @@ struct ActivityFeedView: View {
     private func loadFollowingIfNeeded(_ uid: UUID) async {
         guard feed.followingIds.isEmpty else { return }
         await feed.loadFollowing(userId: uid)
+    }
+
+    /// Every `.follow` row here is already someone who follows you, that's why the row exists, so
+    /// this only matters for the `FollowButton`'s label ("Follow back" vs "Follow"). Same
+    /// lazy-load shape as `loadFollowingIfNeeded` above.
+    private func loadFollowersIfNeeded(_ uid: UUID) async {
+        guard feed.followerIds.isEmpty else { return }
+        await feed.loadFollowers(userId: uid)
     }
 
     /// Replaces the static "someone followed you" icon: a real follow-back button if you don't

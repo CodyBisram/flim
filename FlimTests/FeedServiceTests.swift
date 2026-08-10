@@ -46,6 +46,49 @@ final class FeedServiceTests: XCTestCase {
         XCTAssertEqual(service.tagsByPost[postA]?.map(\.taggedUserId), [other])
     }
 
+    // MARK: - FollowRelationship (follows-me / I-follow button label + badge)
+
+    func testButtonLabelWhenNeitherFollows() {
+        XCTAssertEqual(FeedService.FollowRelationship.buttonLabel(following: false, followsMe: false), "Follow")
+    }
+
+    func testButtonLabelWhenTheyFollowMeButIDoNotFollowBack() {
+        XCTAssertEqual(FeedService.FollowRelationship.buttonLabel(following: false, followsMe: true), "Follow back")
+    }
+
+    func testButtonLabelWhenIFollowButTheyDoNotFollowMe() {
+        XCTAssertEqual(FeedService.FollowRelationship.buttonLabel(following: true, followsMe: false), "Following")
+    }
+
+    func testButtonLabelWhenBothFollowEachOther() {
+        // Mutual: "Following" wins, there's nothing left to prompt a follow-back for.
+        XCTAssertEqual(FeedService.FollowRelationship.buttonLabel(following: true, followsMe: true), "Following")
+    }
+
+    func testFollowsYouBadgeShowsOnlyWhenTheyFollowMe() {
+        XCTAssertTrue(FeedService.FollowRelationship.showsFollowsYouBadge(followsMe: true))
+        XCTAssertFalse(FeedService.FollowRelationship.showsFollowsYouBadge(followsMe: false))
+    }
+
+    // MARK: - followsMe / isFollowing
+
+    func testFollowsMeReadsTheFollowerIdsSetIndependentlyOfFollowingIds() {
+        let service = FeedService()
+        let them = UUID()
+        service.followerIds = [them]
+        XCTAssertTrue(service.followsMe(them))
+        XCTAssertFalse(service.isFollowing(them))
+    }
+
+    // MARK: - resetForAccountChange clears followerIds too
+
+    func testResetForAccountChangeClearsFollowerIds() {
+        let service = FeedService()
+        service.followerIds = [UUID()]
+        service.resetForAccountChange()
+        XCTAssertTrue(service.followerIds.isEmpty)
+    }
+
     // MARK: - rank
 
     func testHigherLikeCountSortsFirst() async {
