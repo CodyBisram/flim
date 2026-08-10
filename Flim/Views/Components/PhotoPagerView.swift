@@ -208,6 +208,11 @@ struct PhotoPagerView: View {
                 showTagSheet = true
             }
         }
+        // Batched for every photo in the pager, not per swipe. Only where reactions actually
+        // show (a roll grid); the Darkroom's own-photos pager never renders a reaction bar.
+        .task {
+            if showsReactions { await photoService.fetchSuggestedEmoji(photoIds: photos.map(\.id)) }
+        }
         .confirmationDialog("Delete this photo?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
             Button("Delete", role: .destructive) {
                 guard let photo = pendingDeletePhoto else { return }
@@ -359,7 +364,7 @@ struct PhotoPagerView: View {
             VStack(spacing: 14) {
                 if showsReactions {
                     ReactionBar(
-                        defaults: PostEmoji.all,
+                        defaults: photoService.reactionDefaults(for: photo.id),
                         counts: Dictionary(grouping: reactions, by: \.emoji).mapValues(\.count),
                         mine: Set(reactions.filter { $0.userId == auth.currentUser?.id }.map(\.emoji))
                     ) { toggleReaction($0, on: photo) }

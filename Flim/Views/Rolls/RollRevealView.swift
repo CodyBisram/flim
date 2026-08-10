@@ -350,7 +350,7 @@ struct RollRevealView: View {
     private func reactionBar(for photo: Photo) -> some View {
         let reactions = viewModel.reactionsByPhoto[photo.id] ?? []
         return ReactionBar(
-            defaults: PostEmoji.all,
+            defaults: photoService.reactionDefaults(for: photo.id),
             counts: Dictionary(grouping: reactions, by: \.emoji).mapValues(\.count),
             mine: Set(reactions.filter { $0.userId == auth.currentUser?.id }.map(\.emoji))
         ) { emoji in

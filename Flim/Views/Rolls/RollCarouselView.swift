@@ -124,6 +124,8 @@ struct RollCarouselView: View {
         .onAppear { selection = min(max(startIndex, 0), max(0, photos.count - 1)) }
         .task(id: selection) { await loadAround(selection) }
         .task { sharedPhotoIds = await feed.postedPhotoIds(photos.map(\.id)) }
+        // Batched for the whole roll, same as `sharedPhotoIds` above, rather than once per swipe.
+        .task { await photoService.fetchSuggestedEmoji(photoIds: photos.map(\.id)) }
     }
 
     private var header: some View {
@@ -200,7 +202,7 @@ struct RollCarouselView: View {
                     }
                 }
                 ReactionBar(
-                    defaults: PostEmoji.all,
+                    defaults: photoService.reactionDefaults(for: photo.id),
                     counts: Dictionary(grouping: reactions, by: \.emoji).mapValues(\.count),
                     mine: Set(reactions.filter { $0.userId == auth.currentUser?.id }.map(\.emoji))
                 ) { toggleReaction($0, on: photo) }

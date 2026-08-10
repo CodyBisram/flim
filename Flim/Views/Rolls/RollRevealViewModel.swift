@@ -168,8 +168,13 @@ final class RollRevealViewModel {
         // Reactions don't gate the first frame, so they no longer sit in front of it. This used to
         // be a third sequential round trip before anything could be drawn.
         async let reactions = photoService.fetchReactions(photoIds: deck.map(\.id))
+        // Batched for the whole deck, same as `reactions`, and cached ON `photoService` itself
+        // (nothing here to assign back), so the reaction bar reads it straight off
+        // `photoService.reactionDefaults(for:)` once this lands.
+        async let suggestions: () = photoService.fetchSuggestedEmoji(photoIds: deck.map(\.id))
         let resolvedURLs = await signed
         let resolvedReactions = await reactions
+        _ = await suggestions
         guard AccountEpoch.isCurrent(epoch) else { return }
         urls = resolvedURLs
         reactionsByPhoto = resolvedReactions

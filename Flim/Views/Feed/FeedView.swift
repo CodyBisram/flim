@@ -124,6 +124,12 @@ struct FeedView: View {
             if let path = auth.currentUser?.avatarPath { myAvatarURL = await feed.signedURL(for: path) }
             if feed.feed.isEmpty { await reload() } else { didLoad = true; await checkNewPosts() }
         }
+        // Batched, and re-fires whenever the loaded set grows (first load, "New posts", or
+        // paging to the next page): `fetchSuggestedEmoji` itself skips anything already cached,
+        // so this only ever asks about the cards that just appeared.
+        .task(id: feed.feed.count) {
+            await photos.fetchSuggestedEmoji(photoIds: feed.feed.map(\.post.photoId))
+        }
         // The feed refreshes reactions on RETURN to the foreground rather than on a timer. The
         // detail view polls because attention is on one photo there; here the same pacing would
         // mean repeatedly refetching a screenful of posts the user is scrolling past, for the one
@@ -345,6 +351,7 @@ struct FeedPostCard: View {
     let item: FeedItem
     @Environment(AuthService.self) private var auth
     @Environment(FeedService.self) private var feed
+    @Environment(PhotoService.self) private var photos
 
     @State private var url: URL?
     @State private var avatarURL: URL?
@@ -471,7 +478,7 @@ struct FeedPostCard: View {
 
             // Emoji reactions (inline picker). Comment access lives in the preview + composer below.
             ReactionBar(
-                defaults: PostEmoji.all,
+                defaults: photos.reactionDefaults(for: post.photoId),
                 counts: Dictionary(grouping: reactions, by: \.emoji).mapValues(\.count),
                 mine: Set(reactions.filter { $0.userId == auth.currentUser?.id }.map(\.emoji))
             ) { toggleReaction($0) }

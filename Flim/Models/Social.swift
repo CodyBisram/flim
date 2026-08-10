@@ -174,7 +174,31 @@ struct ActivityItem: Identifiable {
 /// Emoji reactions. `all` is the default quick row; `palette` is the fuller set revealed
 /// when you slide open the picker to react with your own.
 enum PostEmoji {
-    static let all = ["❤️", "🔥", "😂", "😮", "🙌"]
+    /// The three reactions offered on every photo, in this order, always. Never contextual.
+    static let fixed = ["❤️", "🔥", "😂"]
+    /// What fills the last two slots when a photo has no contextual suggestion (or the
+    /// suggestion hasn't loaded yet), exactly what used to sit there before suggestions existed.
+    static let fallback = ["😮", "🙌"]
+    /// Today's five-emoji default row, unchanged. Kept as a plain constant (rather than only
+    /// `defaults(suggested:)`) because it's also the shape of the wider palette's own first row
+    /// and of the existing tests that pin it.
+    static let all = fixed + fallback
+
+    /// The reaction bar's five default slots for one photo: the three fixed reactions, then up
+    /// to two contextual suggestions from `get_suggested_emoji`, backfilled with `fallback` so
+    /// the row is always five long and never looks broken or half-empty. `suggested` is already
+    /// capped at 2 server-side, but this defensively re-caps and dedupes anyway, and drops
+    /// anything that collides with a fixed reaction.
+    static func defaults(suggested: [String]) -> [String] {
+        var slots: [String] = []
+        for emoji in suggested where slots.count < 2 && !fixed.contains(emoji) && !slots.contains(emoji) {
+            slots.append(emoji)
+        }
+        for emoji in fallback where slots.count < 2 && !slots.contains(emoji) {
+            slots.append(emoji)
+        }
+        return fixed + slots
+    }
 
     static let palette = [
         // Faces

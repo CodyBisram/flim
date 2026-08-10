@@ -64,6 +64,14 @@ final class PhotoService {
 
     var hasFailedUploads: Bool { !failedUploads.isEmpty }
 
+    /// `get_suggested_emoji`'s response, cached by photo id, for the reaction bar's two
+    /// contextual slots. An entry is always present once fetched: `[]` for "fetched, nothing
+    /// suggested" (a photo absent from the server's response), distinct from "never asked",
+    /// so `fetchSuggestedEmoji` knows not to re-request it every time a screen reappears. Absent
+    /// entirely just means not yet fetched, which `reactionDefaults(for:)` also reads as "show
+    /// the ordinary fallback two" until it lands.
+    private var suggestedEmojiByPhoto: [UUID: [String]] = [:]
+
     // Serial capture pipeline. Chaining each shot onto the previous one keeps bursts from
     // racing on the shared Core Image context or on `photos`/`failedUploads`, the race
     // that was making rapid multi-shot capture fail and prompt a retry.
@@ -78,6 +86,7 @@ final class PhotoService {
         uploadError = nil
         isUploading = false
         isLoading = false
+        suggestedEmojiByPhoto = [:]
     }
 
     // MARK: - Capture & Upload
@@ -114,7 +123,15 @@ final class PhotoService {
                 "capture waited=\(waited, privacy: .public)s filtered=\(filtering, privacy: .public)s uploaded=\(uploading, privacy: .public)s ok=\(photo != nil, privacy: .public)"
             )
 
-            if let photo { await onFinish(photo) }
+            if let photo {
+                // Fire-and-forget, on the RAW bytes (not `processed`, see `EmojiSuggestion`'s own
+                // doc for why), and only once the row exists so it has something to attach a
+                // suggestion to. Placed after the row lands and before `onFinish`, same spot as
+                // `Activation.log(.firstShot)` inside `captureAndUpload`: nothing here is awaited,
+                // so it can never delay the capture this photo belongs to.
+                EmojiSuggestion.suggest(rawData: rawData, photoId: photo.id)
+                await onFinish(photo)
+            }
         }
     }
 
@@ -874,6 +891,39 @@ final class PhotoService {
             .execute()
             .value) ?? []
         return Dictionary(grouping: all, by: \.photoId)
+    }
+
+    /// The reaction bar's five default slots for one photo: the three fixed reactions plus
+    /// whatever `fetchSuggestedEmoji` has cached for it (or the ordinary fallback two, if that
+    /// hasn't been fetched yet or came back empty).
+    func reactionDefaults(for photoId: UUID) -> [String] {
+        PostEmoji.defaults(suggested: suggestedEmojiByPhoto[photoId] ?? [])
+    }
+
+    /// Batched, deliberately: a feed page or a roll grid renders many photos at once, and
+    /// `get_suggested_emoji` is built to be asked about all of them in one call rather than once
+    /// per card. Skips any id already cached (see `suggestedEmojiByPhoto`'s own doc for what
+    /// "cached" means for a photo with no suggestion), so re-appearing at a screen doesn't
+    /// re-request photos it already has an answer for.
+    func fetchSuggestedEmoji(photoIds: [UUID]) async {
+        let ids = photoIds.filter { suggestedEmojiByPhoto[$0] == nil }
+        guard !ids.isEmpty else { return }
+        let epoch = AccountEpoch.current
+        struct Params: Encodable { let p_photo_ids: [UUID] }
+        struct Row: Decodable { let photoId: UUID; let suggestedEmoji: [String]
+            enum CodingKeys: String, CodingKey { case photoId = "photo_id"; case suggestedEmoji = "suggested_emoji" }
+        }
+        // A genuine failure (network down, decode error) leaves these ids uncached rather than
+        // poisoning them to `[]`, so the next fetch (the next time this screen appears) gets to
+        // retry them instead of the failure being mistaken for "the server said nothing".
+        guard let rows: [Row] = try? await supabase
+            .rpc("get_suggested_emoji", params: Params(p_photo_ids: ids))
+            .execute()
+            .value
+        else { return }
+        guard AccountEpoch.isCurrent(epoch) else { return }
+        let byId = Dictionary(uniqueKeysWithValues: rows.map { ($0.photoId, $0.suggestedEmoji) })
+        for id in ids { suggestedEmojiByPhoto[id] = byId[id] ?? [] }
     }
 
     func addReaction(photoId: UUID, emoji: String, userId: UUID) async {

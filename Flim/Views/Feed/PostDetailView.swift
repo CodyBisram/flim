@@ -29,6 +29,7 @@ struct PostDetailView: View {
     let item: FeedItem
     @Environment(AuthService.self) private var auth
     @Environment(FeedService.self) private var feed
+    @Environment(PhotoService.self) private var photoService
 
     @State private var url: URL?
     @State private var reactions: [PostReaction] = []
@@ -252,6 +253,9 @@ struct PostDetailView: View {
         .task(id: post.id) {
             await load()
         }
+        .task(id: post.id) {
+            await photoService.fetchSuggestedEmoji(photoIds: [post.photoId])
+        }
         // Someone else's reaction lands while you're looking at the photo, instead of only after
         // you leave and come back. Keyed on scenePhase as well as the post so a backgrounded app
         // isn't polling, and so returning to the foreground restarts at the fast interval.
@@ -335,7 +339,7 @@ struct PostDetailView: View {
 
     private var reactionBar: some View {
         ReactionBar(
-            defaults: PostEmoji.all,
+            defaults: photoService.reactionDefaults(for: post.photoId),
             counts: Dictionary(grouping: reactions, by: \.emoji).mapValues(\.count),
             mine: Set(reactions.filter { $0.userId == auth.currentUser?.id }.map(\.emoji))
         ) { toggle($0) }
