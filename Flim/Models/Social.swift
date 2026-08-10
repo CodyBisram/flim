@@ -200,20 +200,39 @@ enum PostEmoji {
         return fixed + slots
     }
 
-    static let palette = [
-        // Faces
+    private static let faces = [
         "❤️", "🔥", "😂", "😮", "🙌", "😍", "🥹", "😭", "😅", "🥰",
         "😎", "🤩", "🤯", "🥳", "😜", "😇", "🙂", "😊", "😌", "🥺",
         "😳", "😤", "🤔", "😬", "🥲", "🤣", "🙃", "😉", "🤗", "🫡",
         "😴", "🤤", "🥱", "😵‍💫", "🫠", "🫥", "😐", "🙄", "😏", "🤨",
         "😢", "😱", "😨", "😰", "🤧", "🤒", "🤕", "🥴", "🤢", "😷",
-        // Hearts + hands
+    ]
+    private static let heartsAndHands = [
         "🧡", "💛", "💚", "💙", "💜", "🖤", "🤍", "💕", "💘", "💔",
         "🫶", "👍", "👎", "🤙", "✌️", "🤞", "🙏", "👏", "🙌", "💪",
         "👌", "🤌", "🤝", "🫰", "🤟", "☝️", "👋", "🫂",
-        // Symbols + objects
+    ]
+    private static let symbolsAndObjects = [
         "💯", "✨", "👀", "💀", "🌟", "💥", "🎉", "📸", "🌈", "⚡️",
         "💫", "⭐️", "🎊", "🏆", "🥇", "🫧", "💐", "🌸", "🌺", "🍀",
-        "☀️", "🌙", "🌊", "🍕", "☕️", "🍺", "🎶", "💤", "❓", "‼️"
+        "☀️", "🌙", "🌊", "🍕", "☕️", "🍺", "🎶", "💤", "❓", "‼️",
     ]
+
+    /// The full palette, grouped into labelled sections for the browsable grid picker.
+    static let categories: [EmojiCategory] = [
+        EmojiCategory(name: "Faces", emojis: faces),
+        EmojiCategory(name: "Hearts + Hands", emojis: heartsAndHands),
+        EmojiCategory(name: "Symbols + Objects", emojis: symbolsAndObjects),
+    ]
+
+    /// The fuller set revealed when you open the picker, flattened back out for anything that
+    /// just wants the whole 108 (order matches `categories` end to end).
+    static let palette = categories.flatMap(\.emojis)
+}
+
+/// One labelled section of `PostEmoji.palette` (e.g. "Faces"), for a browsable grid.
+struct EmojiCategory: Equatable, Identifiable {
+    let name: String
+    let emojis: [String]
+    var id: String { name }
 }

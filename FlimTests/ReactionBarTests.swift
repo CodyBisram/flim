@@ -54,3 +54,90 @@ final class ReactionBarTests: XCTestCase {
         XCTAssertEqual(reactionDisplayOrder(counts: ["😂": 0], defaults: defaults), defaults)
     }
 }
+
+/// `emojiPickerSections`, the rule that turns `PostEmoji.categories` + recents into the browsable
+/// grid's sections. The keyboard escape hatch that used to sit next to this picker is gone (it
+/// opened whatever system keyboard the user last used, almost always the text one, and typing a
+/// non-emoji character silently dismissed the keyboard onto the photo pager underneath, which read
+/// as your keystroke swiping to the next photo); there's no runtime keyboard/focus state left in
+/// `ReactionBar` for a test to pin not being touched, so what's pinned instead is that the grid
+/// this replaced it with actually shows the whole palette, with nothing dropped or duplicated.
+final class EmojiPickerSectionsTests: XCTestCase {
+
+    func testNoRecentsYieldsExactlyTheSourceCategoriesUnchanged() {
+        let categories = [
+            EmojiCategory(name: "Faces", emojis: ["😀", "😂"]),
+            EmojiCategory(name: "Hands", emojis: ["👍", "🙏"]),
+        ]
+        let sections = emojiPickerSections(categories: categories, recents: [])
+        XCTAssertEqual(sections, [
+            EmojiPickerSection(name: "Faces", emojis: ["😀", "😂"]),
+            EmojiPickerSection(name: "Hands", emojis: ["👍", "🙏"]),
+        ])
+    }
+
+    func testRecentsArePromotedToALeadingSectionInMostRecentOrder() {
+        let categories = [EmojiCategory(name: "Faces", emojis: ["😀", "😂", "😭"])]
+        let sections = emojiPickerSections(categories: categories, recents: ["😭", "😀"])
+        XCTAssertEqual(sections.first, EmojiPickerSection(name: "Recents", emojis: ["😭", "😀"]))
+    }
+
+    func testARecentEmojiIsNotDuplicatedInItsOriginalCategory() {
+        let categories = [EmojiCategory(name: "Faces", emojis: ["😀", "😂", "😭"])]
+        let sections = emojiPickerSections(categories: categories, recents: ["😂"])
+        XCTAssertEqual(sections, [
+            EmojiPickerSection(name: "Recents", emojis: ["😂"]),
+            EmojiPickerSection(name: "Faces", emojis: ["😀", "😭"]),
+        ])
+    }
+
+    func testACategoryEmptiedEntirelyByRecentsIsDropped() {
+        let categories = [
+            EmojiCategory(name: "Faces", emojis: ["😀"]),
+            EmojiCategory(name: "Hands", emojis: ["👍"]),
+        ]
+        let sections = emojiPickerSections(categories: categories, recents: ["😀"])
+        XCTAssertEqual(sections, [
+            EmojiPickerSection(name: "Recents", emojis: ["😀"]),
+            EmojiPickerSection(name: "Hands", emojis: ["👍"]),
+        ])
+    }
+
+    /// The whole point of the grid: every DISTINCT emoji in `PostEmoji`'s palette renders exactly
+    /// once, whether or not any of them are recent. (`PostEmoji.palette` itself lists 🙌 twice, in
+    /// both "Faces" and "Hearts + Hands" on purpose, so the palette's own 108-item count isn't the
+    /// right thing to pin here, the *set* of distinct emoji is.)
+    func testEveryDistinctPaletteEmojiAppearsExactlyOnceRegardlessOfRecents() {
+        let distinct = Set(PostEmoji.palette)
+        for recents in [[], ["🔥"], ["🔥", "🫡", "🌊", "🔥"], Array(PostEmoji.palette.prefix(12))] {
+            let sections = emojiPickerSections(categories: PostEmoji.categories, recents: recents)
+            let rendered = sections.flatMap(\.emojis)
+            XCTAssertEqual(Set(rendered), distinct, "recents=\(recents)")
+            XCTAssertEqual(rendered.count, distinct.count, "recents=\(recents) produced a duplicate")
+        }
+    }
+
+    func testCategoryOrderFromThePaletteIsPreserved() {
+        let sections = emojiPickerSections(categories: PostEmoji.categories, recents: [])
+        XCTAssertEqual(sections.map(\.name), PostEmoji.categories.map(\.name))
+    }
+
+    /// The bug itself, pinned structurally: `ReactionBar` used to hold a `@FocusState` and a
+    /// hidden `TextField`, and `keyboardFocused = false` ran on every keystroke that wasn't an
+    /// emoji, dismissing the system keyboard onto the photo pager underneath (which read the
+    /// key-up as a swipe). Reflecting the view's own stored properties is exactly what would have
+    /// caught that class of bug returning: if anyone reintroduces a `FocusState` or a
+    /// `TextField`-bound property here, this fails without needing to drive a real keyboard.
+    func testTheComponentHoldsNoFocusStateOrTextFieldBinding() {
+        let bar = ReactionBar(counts: [:], mine: [], onReact: { _ in })
+        let mirror = Mirror(reflecting: bar)
+        XCTAssertFalse(mirror.children.isEmpty, "reflection found nothing; the view's storage shape changed")
+        for child in mirror.children {
+            let typeName = String(describing: type(of: child.value))
+            XCTAssertFalse(typeName.contains("FocusState"),
+                            "\(child.label ?? "?") is a FocusState (\(typeName)); this component must not focus a text field")
+            XCTAssertFalse(typeName.contains("TextField"),
+                            "\(child.label ?? "?") is bound to a TextField (\(typeName))")
+        }
+    }
+}

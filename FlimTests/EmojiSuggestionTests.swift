@@ -106,6 +106,34 @@ struct PostEmojiDefaultsTests {
     }
 }
 
+/// `PostEmoji.categories`, the labelled grouping the browsable picker grid is built from.
+/// `palette` is derived from `categories` (`categories.flatMap(\.emojis)`), so these pin that the
+/// derivation didn't drop, duplicate, or reorder anything relative to the flat list it replaced.
+struct PostEmojiCategoriesTests {
+    @Test("flattening the categories reproduces the palette exactly, in order")
+    func categoriesFlattenToThePalette() {
+        #expect(PostEmoji.categories.flatMap(\.emojis) == PostEmoji.palette)
+    }
+
+    @Test("the palette is still the full 108 entries")
+    func paletteIsStillOneHundredEight() {
+        #expect(PostEmoji.palette.count == 108)
+        // 🙌 is deliberately listed in both "Faces" and "Hearts + Hands" (it reads naturally in
+        // either), so the palette is 108 entries over 107 distinct emoji, not 108 distinct ones.
+        // `emojiPickerSections` is what's responsible for making sure the grid still renders it
+        // exactly once; see EmojiPickerSectionsTests.
+        #expect(Set(PostEmoji.palette).count == 107)
+    }
+
+    @Test("every category has a name and at least one emoji")
+    func everyCategoryIsNonEmptyAndNamed() {
+        for category in PostEmoji.categories {
+            #expect(!category.name.isEmpty)
+            #expect(!category.emojis.isEmpty)
+        }
+    }
+}
+
 /// `EmojiSuggestion.pick(fromQualifyingIdentifiers:)`, the pure dedup/cap-at-2 rule over
 /// already-floor-passing labels. Separated from Vision entirely (`VNClassificationObservation`
 /// has no public initializer, so nothing upstream of this point can be built in a test).
