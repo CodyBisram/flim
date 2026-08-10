@@ -22,11 +22,35 @@ enum EmojiSuggestion {
     /// `hasMinimumRecall(_:forPrecision:)`, not raw `confidence`: Vision's confidence numbers
     /// aren't comparable across its ~1,300 labels, so a bare threshold on them would accept and
     /// reject the wrong things depending on which label happened to fire. Asking "if this label
-    /// fires, how often is it actually right" is the calibrated question, and 0.9 precision means
-    /// at most roughly 1 in 10 accepted labels is a false positive. The trade for that is a low
-    /// recall floor, plenty of real matches never clear the bar, which is the right trade here: a
-    /// wrong emoji next to someone's photo is worse than a blank slot.
-    private static let precisionFloor: Float = 0.9
+    /// fires, how often is it actually right" is the calibrated question, and this floor means at
+    /// most roughly 1 in 5 accepted labels is a false positive. The trade for that is a lower
+    /// recall than a stricter floor would give, plenty of real matches still never clear the bar,
+    /// which is the right trade here: a wrong emoji next to someone's photo is worse than a blank
+    /// slot.
+    ///
+    /// 0.8, not the original 0.9. Measured (not guessed) by running `VNClassifyImageRequest`
+    /// against the look-regression pin's 13 real photographs (`pairs/*_neutral.jpg`, on macOS,
+    /// see `EmojiSuggestionRealPhotoTests`) at 0.9/0.8/0.7/0.6/0.5/0.4 and hand-checking every
+    /// resulting emoji against the actual photo, not just the label list. 0.9 produced a
+    /// suggestion for only 5 of 13 photos, of which 1 (an indoor neon sign against a fake-hedge
+    /// wall, misread as "sky") was already wrong, a Vision misclassification no floor fixes,
+    /// since it's wrong at the strictest floor tested. 0.8 lifts that to 7 of 13, adding a correct
+    /// laptop/screen hit (the exact 🖥️💻 scenario production has already seen fire) alongside one
+    /// new wrong one (an indoor restaurant booth misread as having sky overhead). Going lower, to
+    /// 0.7, looked like a bigger win at first (13 of 13 photos get a suggestion) but four separate
+    /// bedroom photos independently misfire "canine"/"dog" off rumpled bedding and a plush toy,
+    /// and it POLLUTES an already-correct single-emoji answer (a bed photo that was cleanly just
+    /// 🛏️ at 0.8) into a mixed-wrong 🛏️🐾 pair. 0.8 is the last floor before that pattern starts,
+    /// so it's the one point on the curve that both actually moves recall and doesn't yet trade
+    /// away a previously-clean answer.
+    private static let precisionFloor: Float = 0.8
+    /// Checked alongside `precisionFloor`, not just assumed: sweeping this from 0.01 up to 0.3 at
+    /// precision 0.8 (or 0.7) changes NOTHING in the qualifying label set for any of the 13 test
+    /// photos, identical counts start to finish. It only starts trimming anything past 0.3, and
+    /// even then only labels this table doesn't map anyway (e.g. `housewares`, `tool`). At the
+    /// precision this feature actually runs at, 0.01 is not a binding constraint, it's headroom
+    /// against a genuinely obscure label clearing precision on almost no real photos, kept at its
+    /// original value because raising it measurably does nothing today.
     private static let recallFloor: Float = 0.01
 
     /// Classifies the RAW capture (never the graded output) and, if anything confidently mapped,

@@ -647,6 +647,90 @@ final class PhotoService {
         }
     }
 
+    /// Photos this session has already attempted an emoji backfill for, so scrolling back and
+    /// forth over the same photo doesn't reclassify it (or retry a failed write) on every
+    /// re-appearance. Separate from `repairAttempted`: the two repairs run independently and one
+    /// succeeding says nothing about whether the other has been tried.
+    private var emojiBackfillAttempted: Set<UUID> = []
+
+    /// Opportunistically fills in a suggested emoji for a photo that predates FLIM 1.4's
+    /// on-capture classification (`EmojiSuggestion.suggest`, the only other caller of
+    /// `EmojiSuggestion.classify`), using ONLY bytes already sitting in the on-device image
+    /// cache. Same shape and the same "never downloads" discipline as `repairRenditions`: a photo
+    /// gets backfilled as a side effect of someone looking at it, which is exactly the set of
+    /// photos worth spending classification time on, and nothing here ever fetches bytes over the
+    /// network purely to classify them.
+    ///
+    /// Classifies the GRADED bytes, not a raw capture, unlike `EmojiSuggestion.suggest` at
+    /// capture time. Nothing upstream of the on-disk cache remembers a pre-1.4 photo's untouched
+    /// original, the cache only ever holds what a viewer downloaded to display, `photo.viewPath`
+    /// (the feed card, or the original for a photo that never got one). That means a backfilled
+    /// suggestion is classified through FLIM's own grain and warm shift and will be somewhat less
+    /// accurate than a fresh capture's. That is an acceptable trade for the back catalogue, and it
+    /// must STAY this way: fetching the original instead would spend real egress backfilling a
+    /// two-emoji hint, which is exactly the cost this whole repair family exists to avoid.
+    ///
+    /// Server-side, `set_photo_suggested_emoji` only succeeds for the photo's OWNER (see the
+    /// migration that added it: it checks `photos.user_id = auth.uid()` and returns `false`
+    /// otherwise, it never throws). This bails out before classifying anything for a photo
+    /// somebody else took, so a roll grid full of other members' photos never fires a guaranteed-
+    /// failing RPC call per photo, and so a graded-through-OUR-look classification can never
+    /// silently overwrite a roll-mate's own, better, capture-time suggestion.
+    func backfillSuggestedEmoji(for photo: Photo) async {
+        guard !emojiBackfillAttempted.contains(photo.id) else { return }
+        emojiBackfillAttempted.insert(photo.id)
+
+        let viewerId = try? await supabase.auth.session.user.id
+
+        // Only for a photo confirmed, via the ordinary read path, to have no suggestion yet.
+        // `fetchSuggestedEmoji` itself skips any id already cached, so this is a no-op network
+        // call when some other screen already asked about this exact photo this session.
+        // Without this check, a photo that already has a capture-time suggestion would get
+        // silently overwritten (`set_photo_suggested_emoji` upserts) by a worse graded-image
+        // guess every single time it's viewed.
+        await fetchSuggestedEmoji(photoIds: [photo.id])
+        guard Self.shouldAttemptEmojiBackfill(
+            photo: photo, viewerId: viewerId, existingSuggestion: suggestedEmojiByPhoto[photo.id]
+        ) else { return }
+
+        guard let bytes = await DiskImageCache.loadRaw(path: photo.viewPath) else { return }
+
+        // Off the main actor: Vision's classifier is real CPU work, and this class is
+        // MainActor-isolated.
+        let emoji = await Task.detached(priority: .utility) { EmojiSuggestion.classify(bytes) }.value
+        guard !emoji.isEmpty else { return }
+
+        struct Params: Encodable { let p_photo_id: UUID; let p_emoji: [String] }
+        guard (try? await supabase
+            .rpc("set_photo_suggested_emoji", params: Params(p_photo_id: photo.id, p_emoji: emoji))
+            .execute()) != nil
+        else { return }
+
+        // Keep the in-memory cache in step so the reaction bar can show this without a re-fetch.
+        suggestedEmojiByPhoto[photo.id] = emoji
+    }
+
+    /// Whether an emoji backfill is even worth attempting, given who's asking and what the
+    /// ordinary read path already knows about this photo. Pure and `nonisolated`, same reasoning
+    /// as `isRollDevelopedRefusal`: the actual side effects (reading the disk cache, classifying,
+    /// writing the RPC) stay inline in `backfillSuggestedEmoji`, this is only the gate in front of
+    /// them, and keeping it pure is what makes it testable without a live network or account.
+    ///
+    /// `viewerId` is `nil` whenever the session lookup itself failed (signed out, a dropped
+    /// token), which must refuse exactly like a mismatched id does, not be treated as "unknown,
+    /// try anyway": either way there is no proof this viewer owns `photo`, and the write would
+    /// just fail server-side.
+    ///
+    /// `existingSuggestion == []` (fetched, confirmed empty), not `== nil` (never fetched): `nil`
+    /// means the caller doesn't yet know whether a suggestion exists, and attempting on that would
+    /// risk the exact overwrite this whole check exists to prevent.
+    nonisolated static func shouldAttemptEmojiBackfill(
+        photo: Photo, viewerId: UUID?, existingSuggestion: [String]?
+    ) -> Bool {
+        guard let viewerId, viewerId == photo.userId else { return false }
+        return existingSuggestion == []
+    }
+
     func retryFailedUploads() async {
         let pending = await MainActor.run { () -> [FailedUpload] in
             let p = failedUploads

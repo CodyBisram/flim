@@ -743,7 +743,14 @@ struct PhotoPagerView: View {
             .filter { photos.indices.contains($0) }
             .map { photos[$0] }
         Task {
-            for photo in window { await photoService.repairRenditions(for: photo) }
+            for photo in window {
+                await photoService.repairRenditions(for: photo)
+                // Same "free, cached-bytes-only, never awaited by anything with UI riding on it"
+                // shape as the repair above. Ownership and "already has one" are both checked
+                // inside `backfillSuggestedEmoji` itself, so this is safe to fire for every photo
+                // in the window regardless of whether it's this pager's own account's photo.
+                await photoService.backfillSuggestedEmoji(for: photo)
+            }
         }
 
         guard showsReactions, let photo = current else { return }
