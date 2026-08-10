@@ -142,18 +142,40 @@ enum ContactSheetRenderer {
         cg.restoreGState()
     }
 
+    /// The eyebrow, roll name and date as one tightly-stacked unit, vertically centered in `rect`
+    /// rather than pinned to fixed offsets from the top and bottom of it. Pinning to fixed offsets
+    /// is what used to leave a hole between the name and the date whenever the name fit on one
+    /// line: the date sat where a two-line name would have ended, empty or not. Measuring the
+    /// name's actual rendered height and placing the date directly after it means the whole block
+    /// is only ever as tall as its own content, however many lines the name takes.
     private static func drawHeader(rollName: String, developedAt: Date, in rect: CGRect) {
-        drawCentered("DEVELOPED", font: .systemFont(ofSize: 22, weight: .semibold),
-                    color: UIColor(FlimTheme.accent), tracking: 4,
-                    in: CGRect(x: rect.minX, y: rect.minY + 48, width: rect.width, height: 30))
+        let eyebrowFont = UIFont.systemFont(ofSize: 20, weight: .semibold)
+        let nameFont = UIFont.systemFont(ofSize: 46, weight: .light)
+        let dateFont = UIFont.systemFont(ofSize: 22)
+        let nameInset: CGFloat = 48
+        let nameWidth = rect.width - nameInset * 2
 
-        drawCentered(rollName, font: .systemFont(ofSize: 54, weight: .light), color: .white,
-                    in: CGRect(x: rect.minX + 48, y: rect.minY + 96, width: rect.width - 96, height: 132),
+        let eyebrowHeight: CGFloat = 26
+        let nameHeight = measuredTextHeight(rollName, font: nameFont, width: nameWidth, maxLines: 2)
+        let dateHeight: CGFloat = 28
+        let gapEyebrowToName: CGFloat = 10
+        let gapNameToDate: CGFloat = 12
+
+        let blockHeight = eyebrowHeight + gapEyebrowToName + nameHeight + gapNameToDate + dateHeight
+        var y = rect.minY + max(0, (rect.height - blockHeight) / 2)
+
+        drawCentered("DEVELOPED", font: eyebrowFont, color: UIColor(FlimTheme.accent), tracking: 4,
+                    in: CGRect(x: rect.minX, y: y, width: rect.width, height: eyebrowHeight))
+        y += eyebrowHeight + gapEyebrowToName
+
+        drawCentered(rollName, font: nameFont, color: .white,
+                    in: CGRect(x: rect.minX + nameInset, y: y, width: nameWidth, height: nameHeight),
                     maxLines: 2)
+        y += nameHeight + gapNameToDate
 
         let dateText = "Developed \(dateFormatter.string(from: developedAt))"
-        drawCentered(dateText, font: .systemFont(ofSize: 24), color: UIColor(white: 0.6, alpha: 1),
-                    in: CGRect(x: rect.minX, y: rect.maxY - 56, width: rect.width, height: 30))
+        drawCentered(dateText, font: dateFont, color: UIColor(white: 0.6, alpha: 1),
+                    in: CGRect(x: rect.minX, y: y, width: rect.width, height: dateHeight))
     }
 
     private static func drawFooter(joinURL: URL, shown: Int, total: Int, truncated: Bool, in rect: CGRect) {
@@ -168,13 +190,25 @@ enum ContactSheetRenderer {
                     color: UIColor(white: 0.72, alpha: 1),
                     in: CGRect(x: rect.minX, y: y, width: rect.width, height: 28))
         y += 34
-        drawCentered(joinURL.absoluteString, font: .systemFont(ofSize: 23, weight: .semibold), color: .white,
-                    in: CGRect(x: rect.minX + 48, y: y, width: rect.width - 96, height: 32))
+        // No scheme, and quieter than a photograph: legible and obviously a link (brighter than
+        // the "Join this roll" label above it), but not competing with the frames for attention.
+        drawCentered(displayURL(joinURL), font: .systemFont(ofSize: 20, weight: .medium),
+                    color: UIColor(white: 0.88, alpha: 1),
+                    in: CGRect(x: rect.minX + 48, y: y, width: rect.width - 96, height: 28))
 
         // The mark, quiet: small, low-contrast, at the very bottom, not a logo lockup.
         drawCentered(AppInfo.appName, font: .systemFont(ofSize: 17, weight: .semibold),
                     color: UIColor(FlimTheme.accent).withAlphaComponent(0.65), tracking: 4,
                     in: CGRect(x: rect.minX, y: rect.maxY - 44, width: rect.width, height: 22))
+    }
+
+    /// `https://flim-app.com/join/AB12CD` without the scheme, so the footer reads `flim-app.com/
+    /// join/AB12CD`: still obviously a URL, without the loudest part of it being characters nobody
+    /// reads. Falls back to the full string for anything without a host, which no `joinURL` we
+    /// construct ever is, but a bare fallback beats an empty label.
+    private static func displayURL(_ url: URL) -> String {
+        guard let host = url.host else { return url.absoluteString }
+        return host + url.path
     }
 
     private static func drawCentered(_ text: String, font: UIFont, color: UIColor, tracking: CGFloat = 0,
@@ -188,6 +222,20 @@ enum ContactSheetRenderer {
         if tracking != 0 { attributes[.kern] = tracking }
         NSAttributedString(string: text, attributes: attributes)
             .draw(with: rect, options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine], context: nil)
+    }
+
+    /// How tall `text` actually renders at `width`, word-wrapped, capped at `maxLines` worth of the
+    /// font's line height. Used to size the roll name's slot in the header to its real content
+    /// instead of a fixed box that's oversized whenever the name fits on one line.
+    private static func measuredTextHeight(_ text: String, font: UIFont, width: CGFloat, maxLines: Int) -> CGFloat {
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineBreakMode = .byWordWrapping
+        let attributes: [NSAttributedString.Key: Any] = [.font: font, .paragraphStyle: paragraph]
+        let bounding = (text as NSString).boundingRect(
+            with: CGSize(width: max(0, width), height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin], attributes: attributes, context: nil)
+        let maxHeight = font.lineHeight * CGFloat(maxLines)
+        return min(bounding.height.rounded(.up), maxHeight)
     }
 
     private static let dateFormatter: DateFormatter = {

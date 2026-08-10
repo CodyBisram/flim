@@ -11,15 +11,20 @@ enum ContactSheetLayout {
     /// A frame's own aspect ratio (width / height), matching the app's 3:4 capture box.
     static let frameAspect: CGFloat = 3.0 / 4.0
 
-    /// Gutter between frames.
-    static let spacing: CGFloat = 10
+    /// Gutter between frames. Kept thin on purpose: a proof sheet reads as film because the frames
+    /// nearly touch, not because they're arranged in a layout with room to breathe.
+    static let spacing: CGFloat = 5
 
-    /// Room reserved at the top of the canvas for the eyebrow, roll name and date.
-    static let headerHeight: CGFloat = 300
+    /// Room reserved at the top of the canvas for the eyebrow, roll name and date. Sized to the
+    /// header's own content (see `ContactSheetRenderer.drawHeader`, which stacks and centers that
+    /// content tightly within this band) rather than to fill the top third of the sheet; the grid
+    /// gets whatever height this doesn't use.
+    static let headerHeight: CGFloat = 200
     /// Room reserved at the bottom for the join link and the quiet wordmark.
     static let footerHeight: CGFloat = 260
-    /// Left/right margin of the frame grid within the canvas.
-    static let gridInset: CGFloat = 64
+    /// Left/right margin of the frame grid within the canvas. Thin, so the grid runs nearly edge
+    /// to edge instead of reading as a screenshot of a layout.
+    static let gridInset: CGFloat = 24
 
     /// Splits the full canvas into the header, the frame grid, and the footer. The three regions
     /// never overlap: header and footer are fixed-height bands top and bottom, the grid gets
