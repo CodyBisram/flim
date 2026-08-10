@@ -171,8 +171,8 @@ struct ActivityItem: Identifiable {
     var postAuthor: UserProfile?
 }
 
-/// Emoji reactions. `all` is the default quick row; `palette` is the fuller set revealed
-/// when you slide open the picker to react with your own.
+/// Emoji reactions. `all` is the default quick row. The fuller browsable palette revealed when you
+/// slide open the picker lives in `EmojiCatalog`, generated at runtime rather than listed here.
 enum PostEmoji {
     /// The three reactions offered on every photo, in this order, always. Never contextual.
     static let fixed = ["❤️", "🔥", "😂"]
@@ -199,38 +199,10 @@ enum PostEmoji {
         }
         return fixed + slots
     }
-
-    private static let faces = [
-        "❤️", "🔥", "😂", "😮", "🙌", "😍", "🥹", "😭", "😅", "🥰",
-        "😎", "🤩", "🤯", "🥳", "😜", "😇", "🙂", "😊", "😌", "🥺",
-        "😳", "😤", "🤔", "😬", "🥲", "🤣", "🙃", "😉", "🤗", "🫡",
-        "😴", "🤤", "🥱", "😵‍💫", "🫠", "🫥", "😐", "🙄", "😏", "🤨",
-        "😢", "😱", "😨", "😰", "🤧", "🤒", "🤕", "🥴", "🤢", "😷",
-    ]
-    private static let heartsAndHands = [
-        "🧡", "💛", "💚", "💙", "💜", "🖤", "🤍", "💕", "💘", "💔",
-        "🫶", "👍", "👎", "🤙", "✌️", "🤞", "🙏", "👏", "🙌", "💪",
-        "👌", "🤌", "🤝", "🫰", "🤟", "☝️", "👋", "🫂",
-    ]
-    private static let symbolsAndObjects = [
-        "💯", "✨", "👀", "💀", "🌟", "💥", "🎉", "📸", "🌈", "⚡️",
-        "💫", "⭐️", "🎊", "🏆", "🥇", "🫧", "💐", "🌸", "🌺", "🍀",
-        "☀️", "🌙", "🌊", "🍕", "☕️", "🍺", "🎶", "💤", "❓", "‼️",
-    ]
-
-    /// The full palette, grouped into labelled sections for the browsable grid picker.
-    static let categories: [EmojiCategory] = [
-        EmojiCategory(name: "Faces", emojis: faces),
-        EmojiCategory(name: "Hearts + Hands", emojis: heartsAndHands),
-        EmojiCategory(name: "Symbols + Objects", emojis: symbolsAndObjects),
-    ]
-
-    /// The fuller set revealed when you open the picker, flattened back out for anything that
-    /// just wants the whole 108 (order matches `categories` end to end).
-    static let palette = categories.flatMap(\.emojis)
 }
 
-/// One labelled section of `PostEmoji.palette` (e.g. "Faces"), for a browsable grid.
+/// One labelled section of `EmojiCatalog`'s generated palette (e.g. "Animals and Nature"), for a
+/// browsable grid.
 struct EmojiCategory: Equatable, Identifiable {
     let name: String
     let emojis: [String]

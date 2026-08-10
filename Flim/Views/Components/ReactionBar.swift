@@ -55,6 +55,9 @@ struct ReactionBar: View {
 
     @State private var expanded = false
     @State private var displayOrder: [String] = []
+    /// The full generated palette's sections, empty until `EmojiCatalog` finishes (usually already
+    /// done by the time anyone opens the sheet, since `warm()` fires on every appear below).
+    @State private var catalogSections: [EmojiCategory] = []
     /// True once `displayOrder` has been built from a real (non-empty) `counts`, or once you've
     /// tapped something. Gates the one-shot re-sort in `onChange(of: counts)` below.
     @State private var orderSeeded = false
@@ -82,7 +85,14 @@ struct ReactionBar: View {
             .padding(.trailing, 4)
         }
         .sheet(isPresented: $expanded) { emojiPickerSheet }
-        .onAppear { rebuildOrder() }
+        .onAppear {
+            rebuildOrder()
+            // Fire-and-forget: gets the (relatively expensive, thousands of scalar + font checks)
+            // full palette generated well before anyone can reach the "+" button, so opening the
+            // sheet almost never has to wait on it. Safe to call from every bar's appear; only the
+            // first call in the process actually does anything.
+            EmojiCatalog.shared.warm()
+        }
         .onChange(of: counts) { _, new in
             // Per-photo hosts (the roll carousel, the photo pager) fetch a photo's reactions
             // ASYNCHRONOUSLY, so `counts` was still empty when this bar appeared and the rebuild
@@ -110,32 +120,41 @@ struct ReactionBar: View {
 
     private static let gridColumns = [GridItem(.adaptive(minimum: 44), spacing: 10)]
 
-    /// A browsable grid of the full 108-emoji palette, grouped into labelled sections with
-    /// recents promoted to the front. A sheet, not an overlay: see the note above `body`.
+    /// A browsable grid of the full device-renderable palette `EmojiCatalog` generates, grouped
+    /// into labelled sections with recents promoted to the front. A sheet, not an overlay: see the
+    /// note above `body`.
     private var emojiPickerSheet: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 22) {
-                ForEach(emojiPickerSections(categories: PostEmoji.categories, recents: recents)) { section in
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text(section.name)
-                            .flimFont(13, weight: .semibold)
-                            .foregroundStyle(FlimTheme.textTertiary)
-                            .textCase(.uppercase)
-                        LazyVGrid(columns: Self.gridColumns, spacing: 10) {
-                            ForEach(section.emojis, id: \.self) { emoji in
-                                Button { pick(emoji) } label: {
-                                    Text(emoji).flimFont(26)
-                                        .frame(width: 44, height: 44)
-                                        .background(mine.contains(emoji) ? accent.opacity(0.28) : Color.white.opacity(0.08), in: Circle())
+            if catalogSections.isEmpty {
+                // Only reachable if the sheet opened before `warm()` (fired on every bar's
+                // appear) finished generating; a brief loading state rather than an empty sheet.
+                ProgressView()
+                    .padding(.top, 60)
+            } else {
+                LazyVStack(alignment: .leading, spacing: 22) {
+                    ForEach(emojiPickerSections(categories: catalogSections, recents: recents)) { section in
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text(section.name)
+                                .flimFont(13, weight: .semibold)
+                                .foregroundStyle(FlimTheme.textTertiary)
+                                .textCase(.uppercase)
+                            LazyVGrid(columns: Self.gridColumns, spacing: 10) {
+                                ForEach(section.emojis, id: \.self) { emoji in
+                                    Button { pick(emoji) } label: {
+                                        Text(emoji).flimFont(26)
+                                            .frame(width: 44, height: 44)
+                                            .background(mine.contains(emoji) ? accent.opacity(0.28) : Color.white.opacity(0.08), in: Circle())
+                                    }
+                                    .accessibilityLabel("React \(emoji)")
                                 }
-                                .accessibilityLabel("React \(emoji)")
                             }
                         }
                     }
                 }
+                .padding(16)
             }
-            .padding(16)
         }
+        .task { catalogSections = await EmojiCatalog.shared.sections() }
         .background(FlimTheme.bg)
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)

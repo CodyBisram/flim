@@ -55,13 +55,13 @@ final class ReactionBarTests: XCTestCase {
     }
 }
 
-/// `emojiPickerSections`, the rule that turns `PostEmoji.categories` + recents into the browsable
-/// grid's sections. The keyboard escape hatch that used to sit next to this picker is gone (it
-/// opened whatever system keyboard the user last used, almost always the text one, and typing a
-/// non-emoji character silently dismissed the keyboard onto the photo pager underneath, which read
-/// as your keystroke swiping to the next photo); there's no runtime keyboard/focus state left in
-/// `ReactionBar` for a test to pin not being touched, so what's pinned instead is that the grid
-/// this replaced it with actually shows the whole palette, with nothing dropped or duplicated.
+/// `emojiPickerSections`, the rule that turns `EmojiCatalog`'s generated categories + recents into
+/// the browsable grid's sections. The keyboard escape hatch that used to sit next to this picker is
+/// gone (it opened whatever system keyboard the user last used, almost always the text one, and
+/// typing a non-emoji character silently dismissed the keyboard onto the photo pager underneath,
+/// which read as your keystroke swiping to the next photo); there's no runtime keyboard/focus state
+/// left in `ReactionBar` for a test to pin not being touched, so what's pinned instead is that the
+/// grid this replaced it with actually shows the whole palette, with nothing dropped or duplicated.
 final class EmojiPickerSectionsTests: XCTestCase {
 
     func testNoRecentsYieldsExactlyTheSourceCategoriesUnchanged() {
@@ -103,23 +103,27 @@ final class EmojiPickerSectionsTests: XCTestCase {
         ])
     }
 
-    /// The whole point of the grid: every DISTINCT emoji in `PostEmoji`'s palette renders exactly
-    /// once, whether or not any of them are recent. (`PostEmoji.palette` itself lists 🙌 twice, in
-    /// both "Faces" and "Hearts + Hands" on purpose, so the palette's own 108-item count isn't the
-    /// right thing to pin here, the *set* of distinct emoji is.)
-    func testEveryDistinctPaletteEmojiAppearsExactlyOnceRegardlessOfRecents() {
-        let distinct = Set(PostEmoji.palette)
-        for recents in [[], ["🔥"], ["🔥", "🫡", "🌊", "🔥"], Array(PostEmoji.palette.prefix(12))] {
-            let sections = emojiPickerSections(categories: PostEmoji.categories, recents: recents)
+    /// The whole point of the grid: every DISTINCT emoji `EmojiCatalog` generates renders exactly
+    /// once, whether or not any of them are recent. `EmojiCatalog.generate()` itself already
+    /// guarantees no duplicates (a single `seen` set across every category, flag, and ZWJ template),
+    /// so this is really pinning that `emojiPickerSections` doesn't reintroduce one when recents
+    /// overlap with the source categories.
+    func testEveryDistinctPaletteEmojiAppearsExactlyOnceRegardlessOfRecents() async {
+        let categories = await EmojiCatalog.shared.sections()
+        let distinct = Set(categories.flatMap(\.emojis))
+        let palette = categories.flatMap(\.emojis)
+        for recents in [[], ["🔥"], ["🔥", "🫡", "🌊", "🔥"], Array(palette.prefix(12))] {
+            let sections = emojiPickerSections(categories: categories, recents: recents)
             let rendered = sections.flatMap(\.emojis)
             XCTAssertEqual(Set(rendered), distinct, "recents=\(recents)")
             XCTAssertEqual(rendered.count, distinct.count, "recents=\(recents) produced a duplicate")
         }
     }
 
-    func testCategoryOrderFromThePaletteIsPreserved() {
-        let sections = emojiPickerSections(categories: PostEmoji.categories, recents: [])
-        XCTAssertEqual(sections.map(\.name), PostEmoji.categories.map(\.name))
+    func testCategoryOrderFromThePaletteIsPreserved() async {
+        let categories = await EmojiCatalog.shared.sections()
+        let sections = emojiPickerSections(categories: categories, recents: [])
+        XCTAssertEqual(sections.map(\.name), categories.map(\.name))
     }
 
     /// The bug itself, pinned structurally: `ReactionBar` used to hold a `@FocusState` and a
