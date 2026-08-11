@@ -1,6 +1,7 @@
 import Supabase
 import UIKit
 import UserNotifications
+import os
 
 /// Remote (APNs) push.
 ///
@@ -32,6 +33,12 @@ enum RemotePush {
     /// registration.
     private static let pendingDetachOwnerKey = "apnsPendingDetachOwner"
 
+    /// Background plumbing, not a user-facing failure: nothing here ever surfaces an error to the
+    /// signed-in person, but a claim that silently never happens is exactly how one account's push
+    /// notifications end up on a different account's phone for a month before anyone notices. See
+    /// `reclaimForCurrentAccount()` and `claim(_:)`.
+    private static let log = Logger(subsystem: "com.flim.app", category: "push")
+
     /// Ask iOS for an APNs device token. Safe to call repeatedly; iOS dedupes.
     @MainActor
     static func register() {
@@ -59,15 +66,29 @@ enum RemotePush {
     /// would stay registered to the previous account until iOS next rotated it.
     static func reclaimForCurrentAccount() async {
         await retryPendingDetach()
-        guard let hex = UserDefaults.standard.string(forKey: tokenKey) else { return }
+        guard let hex = UserDefaults.standard.string(forKey: tokenKey) else {
+            // Not necessarily a bug on its own (a fresh install with permission not yet granted
+            // looks like this too), but combined with `registerForRemoteIfAlreadyAuthorized()`
+            // running right alongside every call site of this function, it should be rare. A run
+            // of these for one account is the signal that its device token claim is stuck.
+            log.notice("reclaimForCurrentAccount: no cached device token to claim")
+            return
+        }
         await claim(hex)
     }
 
     private static func claim(_ hex: String) async {
-        guard (try? await supabase.auth.session) != nil else { return }
-        _ = try? await supabase
-            .rpc("register_device_token", params: ["p_token": hex, "p_platform": "ios"])
-            .execute()
+        guard (try? await supabase.auth.session) != nil else {
+            log.notice("claim: no session, dropping device token claim")
+            return
+        }
+        do {
+            try await supabase
+                .rpc("register_device_token", params: ["p_token": hex, "p_platform": "ios"])
+                .execute()
+        } catch {
+            log.error("claim: register_device_token failed: \(String(describing: error), privacy: .public)")
+        }
     }
 
     /// Detaches this device from the signed-in account.

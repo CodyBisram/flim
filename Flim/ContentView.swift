@@ -52,6 +52,16 @@ struct ContentView: View {
         .animation(.easeInOut(duration: 0.35), value: auth.isLoading)
         .animation(.easeInOut(duration: 0.35), value: auth.isResolvingProfile)
         .animation(.easeInOut(duration: 0.35), value: auth.profileUnavailable)
+        // Neither app launch nor sign-in ever asks iOS for a device token on its own; that only
+        // happens in response to `registerForRemoteNotifications()`, which today is called from
+        // `requestAuthorizationIfNeeded()` (post-capture, an undeveloped roll, or the primer) and
+        // nowhere else. A device that already granted permission in an earlier session can
+        // therefore go a whole launch, and a whole sign-in, without the app ever re-claiming the
+        // live token for whoever is signed in now, leaving it attached to whichever account last
+        // triggered one of those three call sites. This re-asks WITHOUT ever requesting
+        // authorization (see `shouldRegisterForRemote`), so a first-run user who hasn't seen the
+        // primer yet sees no change at all.
+        .task { await notifications.registerForRemoteIfAlreadyAuthorized() }
         // Every service cache is keyed by post, photo or roll id, never by account, so none of it
         // invalidates itself when the account changes. Signing out cleared the session and the
         // profile and left all of it populated.
@@ -76,9 +86,18 @@ struct ContentView: View {
             // would accumulate forever and nobody would ever be offered the retry.
             if let newId { Task { await photos.restoreFailedUploads(userId: newId) } }
             // Signing in does not prompt iOS for a new APNs token, so this device would stay
-            // registered to whoever was signed in last. Claiming it here is what stops one
-            // phone from collecting several accounts' notifications.
-            if newId != nil { Task { await RemotePush.reclaimForCurrentAccount() } }
+            // registered to whoever was signed in last. Re-asking here too (not just once at
+            // launch, in the `.task` above) covers the race where the account resolves before the
+            // launch-time `registerForRemoteNotifications()` call has come back with a token: by
+            // the time THIS runs, the session this device needs to claim under is guaranteed to be
+            // in hand. Registering is a no-op if the token hasn't changed; iOS dedupes. Claiming is
+            // what stops one phone from collecting several accounts' notifications.
+            if newId != nil {
+                Task {
+                    await notifications.registerForRemoteIfAlreadyAuthorized()
+                    await RemotePush.reclaimForCurrentAccount()
+                }
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .flimAccountDidChange)) { _ in
             // Sign-out posts this. currentUser goes to nil, which the onChange above also catches,

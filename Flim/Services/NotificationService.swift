@@ -20,6 +20,38 @@ final class NotificationService {
         await UNUserNotificationCenter.current().notificationSettings().authorizationStatus == .notDetermined
     }
 
+    /// Pure decision: given the OS's current authorization status, should we ask iOS for a fresh
+    /// APNs token? Split out from `registerForRemoteIfAlreadyAuthorized()` so the decision is
+    /// testable without a real `UNUserNotificationCenter` and without triggering an actual
+    /// registration. `.authorized`/`.provisional`/`.ephemeral` mean the user already said yes at
+    /// some point, so re-asking iOS for the token is silent (no system prompt). `.notDetermined`
+    /// and `.denied` must return false: this function backs a launch-time path that must NEVER be
+    /// the thing that shows the permission dialog, that's `requestAuthorizationIfNeeded()`'s job,
+    /// gated by the primer.
+    nonisolated static func shouldRegisterForRemote(given status: UNAuthorizationStatus) -> Bool {
+        switch status {
+        case .authorized, .provisional, .ephemeral:
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// Re-asks iOS for the current APNs device token when authorization was already granted in an
+    /// earlier session, WITHOUT ever requesting authorization. Safe to call on every launch and
+    /// again once an account resolves: a device token is only handed to the app in response to
+    /// `registerForRemoteNotifications()`, and neither app launch nor sign-in triggers that on
+    /// their own, so without this call a device that already has permission can go a long time
+    /// (a reinstall, a token rotation, simply never recapturing after granting permission) without
+    /// the signed-in account ever holding the live token, while some OTHER account that happened to
+    /// capture or open an undeveloped roll on this device keeps it instead.
+    func registerForRemoteIfAlreadyAuthorized() async {
+        let status = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
+        guard Self.shouldRegisterForRemote(given: status) else { return }
+        isAuthorized = true
+        RemotePush.register()
+    }
+
     func requestAuthorizationIfNeeded() async {
         let center = UNUserNotificationCenter.current()
         let settings = await center.notificationSettings()
