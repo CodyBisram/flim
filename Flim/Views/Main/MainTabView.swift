@@ -12,13 +12,22 @@ struct MainTabView: View {
     @State private var inviteCode: String?
     @Environment(NotificationService.self) private var notifications
     @Environment(NetworkMonitor.self) private var network
-    #if DEBUG
     @Environment(AuthService.self) private var auth
     @Environment(RollService.self) private var rolls
-    @Environment(PhotoService.self) private var photos
-    /// Owned here (not in RollsView) so `-openRollId` can push straight into a roll's detail
-    /// at launch, for App Store screenshots the sim can't reach by tapping.
+    @Environment(FeedService.self) private var feed
+    /// Owned here (not in RollsView) so a `reveal` push destination, and `-openRollId` in DEBUG,
+    /// can push straight into a roll's detail without the Rolls tab needing to already be open.
     @State private var rollsPath = NavigationPath()
+    /// Owned here (not in FeedView) so `profile` and `post` push destinations can push straight
+    /// into a page or a post without the Feed tab needing to already be open.
+    @State private var feedPath = NavigationPath()
+    /// Set alongside a `.post` push destination's `feedPath.append`, and read once by that same
+    /// post's `navigationDestination` closure, so a "someone commented" notification can land the
+    /// comment composer already focused. Not part of `feedPath` itself: a `NavigationPath` element
+    /// only carries what makes it Hashable, and a focus flag isn't part of a post's identity.
+    @State private var focusCommentsPostId: UUID?
+    #if DEBUG
+    @Environment(PhotoService.self) private var photos
     /// Drives `-openPhotoFullscreen`: presents the same full-screen viewer used from the
     /// darkroom/roll grids, without needing a tap to get there.
     @State private var debugFullscreenPhoto: Photo?
@@ -50,20 +59,20 @@ struct MainTabView: View {
                 }
             }
             Tab("Rolls", systemImage: "film.stack", value: 2) {
-                #if DEBUG
-                // `-openRollId` needs a path it can push onto; Release keeps the plain stack.
+                // A real path (not a plain stack) so a `reveal` push destination, and `-openRollId`
+                // in DEBUG, can push a roll's detail programmatically. RollsView declares its own
+                // `.navigationDestination(for: Roll.self)`, which this path pushes onto.
                 NavigationStack(path: $rollsPath) {
                     RollsView(scrollToTop: scrollSignal[2, default: 0])
                 }
-                #else
-                NavigationStack {
-                    RollsView(scrollToTop: scrollSignal[2, default: 0])
-                }
-                #endif
             }
             Tab("Feed", systemImage: "house", value: 3) {
-                NavigationStack {
+                NavigationStack(path: $feedPath) {
                     FeedView(scrollToTop: scrollSignal[3, default: 0])
+                }
+                .navigationDestination(for: ProfileRoute.self) { UserPageView(userId: $0.id) }
+                .navigationDestination(for: FeedItem.self) { item in
+                    PostDetailView(item: item, focusCommentsOnAppear: focusCommentsPostId == item.id)
                 }
             }
         }
@@ -113,6 +122,15 @@ struct MainTabView: View {
         .onReceive(NotificationCenter.default.publisher(for: .openCamera)) { _ in
             selected = 0
         }
+        .onReceive(NotificationCenter.default.publisher(for: .openPushDestination)) { note in
+            if let destination = note.object as? PushDestination {
+                route(to: destination)
+            }
+            // This view was alive to catch it, so the written copy is redundant, matching
+            // `.openRollInvite` just above. Leaving it would route the same tap again on the next
+            // cold launch.
+            PendingPushDestination.clear()
+        }
         // Show the soft primer once, after onboarding, with context, instead of a cold
         // system prompt on first launch (which gets denied far more often).
         .onChange(of: hasOnboarded) { _, done in if done { maybeShowNotifPrimer() } }
@@ -126,6 +144,12 @@ struct MainTabView: View {
             if let held = PendingRollInvite.take() {
                 selected = 2
                 inviteCode = held
+            }
+            // A notification tap that arrived before this view existed (cold start), or before
+            // anyone was signed in, left its destination on disk rather than losing it. See
+            // `PendingPushDestination` and `.openPushDestination` above.
+            if let pending = PendingPushDestination.take() {
+                route(to: pending)
             }
             maybeShowNotifPrimer()
             DiskImageCache.trim()   // keep the on-disk image cache bounded
@@ -181,6 +205,62 @@ struct MainTabView: View {
         return args[i + 1]
     }
     #endif
+
+    /// Executes a decoded notification tap. Called once from the live `.openPushDestination`
+    /// broadcast, and once from `onAppear` for whatever a cold start (or a start with nobody yet
+    /// signed in) left on disk.
+    ///
+    /// Every fetch below is scoped to the account signed in RIGHT NOW, and the id from the payload
+    /// is used only to look up content, never to decide whose it is. The payload has no way to say
+    /// who a push was really for (a token can outlive an account switch, and this device may not
+    /// be signed into the account the push was even sent to), so there is nothing to compare it
+    /// against. Instead this trusts the same row-level security every other screen already relies
+    /// on to answer "can THIS session see that id": if it can, the fetch returns the content and
+    /// this opens it; if it can't (wrong account, signed out and still not signed back in, or the
+    /// content is gone entirely — deleted, hidden, moderated, or a roll left) the fetch comes back
+    /// empty and this does nothing further, leaving whichever tab it already switched to as a
+    /// real, populated screen rather than a blank one.
+    private func route(to destination: PushDestination) {
+        switch destination {
+        case .feed:
+            selected = 3
+
+        case .reveal(let rollId):
+            selected = 2
+            Task {
+                guard let uid = auth.currentUser?.id else { return }
+                let epoch = AccountEpoch.current
+                try? await rolls.fetchRolls(for: uid)
+                guard AccountEpoch.isCurrent(epoch) else { return }
+                // Not a member (any more), or the roll is gone: RollsView is still showing a real,
+                // current list, so this is a graceful no-op rather than a dead end.
+                guard let roll = rolls.rolls.first(where: { $0.id == rollId }) else { return }
+                // RollDetailView's own `onAppear` decides whether to play the reveal: it only does
+                // that once per roll (`rollRevealSeen.<id>`), so a roll whose reveal already played
+                // opens the roll itself here, never a replay. See RollDetailView.
+                rollsPath.append(roll)
+            }
+
+        case .post(let postId, let comments):
+            selected = 3
+            Task {
+                let epoch = AccountEpoch.current
+                let post = await feed.fetchPosts(ids: [postId])[postId]
+                guard let post else { return }   // deleted, moderated, or blocked either way
+                let author = await feed.fetchProfile(id: post.userId)
+                guard AccountEpoch.isCurrent(epoch) else { return }
+                guard let author else { return }
+                focusCommentsPostId = comments ? postId : nil
+                feedPath.append(FeedItem(post: post, author: author))
+            }
+
+        case .profile(let userId):
+            // UserPageView loads and fails safely on its own (a blocked or vanished account shows
+            // its own real state, see `UserPageView.load()`), so there's nothing to pre-check here.
+            selected = 3
+            feedPath.append(ProfileRoute(id: userId))
+        }
+    }
 
     private func maybeShowNotifPrimer() {
         guard hasOnboarded, !didShowNotifPrimer else { return }

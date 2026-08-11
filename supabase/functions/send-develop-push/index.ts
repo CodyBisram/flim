@@ -92,8 +92,23 @@ async function importPrivateKey(pem: string): Promise<CryptoKey> {
   );
 }
 
-async function sendPush(deviceToken: string, title: string, body: string): Promise<boolean> {
+// Names the DESTINATION the notification opens (a roll that just developed), matching the same
+// `flim` contract every push function uses. See send-social-push for the full destination list;
+// this function only ever sends "reveal".
+interface FlimRoute {
+  t: "reveal";
+  id: string;
+}
+
+async function sendPush(
+  deviceToken: string,
+  title: string,
+  body: string,
+  flim?: FlimRoute,
+): Promise<boolean> {
   const jwt = await apnsAuthToken();
+  const payload: Record<string, unknown> = { aps: { alert: { title, body }, sound: "default" } };
+  if (flim) payload.flim = flim;
   const res = await fetch(`${APNS_HOST}/3/device/${deviceToken}`, {
     method: "POST",
     headers: {
@@ -102,7 +117,7 @@ async function sendPush(deviceToken: string, title: string, body: string): Promi
       "apns-push-type": "alert",
       "apns-priority": "10",
     },
-    body: JSON.stringify({ aps: { alert: { title, body }, sound: "default" } }),
+    body: JSON.stringify(payload),
   });
   // Structured per-send record: `host` shows which APNs environment we hit, so a
   // sandbox/production mismatch (production TestFlight token rejected by sandbox
@@ -199,8 +214,11 @@ Deno.serve(async () => {
       const title = `"${g.name}" developed 🎞`;
       const body = `${count} shot${count === 1 ? "" : "s"} ${count === 1 ? "is" : "are"} ready.`;
       const uniqueTokens = [...new Set((tokens ?? []).map((t) => t.token as string))];
+      // Built fresh from THIS iteration's rollId, never hoisted above the loop, so a run that
+      // processes several rolls back-to-back can't carry one roll's id into another's pushes.
+      const route: FlimRoute = { t: "reveal", id: rollId };
       for (const token of uniqueTokens) {
-        if (await sendPush(token, title, body)) sent++;
+        if (await sendPush(token, title, body, route)) sent++;
       }
     }
 

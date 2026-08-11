@@ -27,6 +27,10 @@ func shouldDismissPostDetailSideways(translation: CGSize, threshold: CGFloat = 9
 struct PostDetailView: View {
     @Environment(\.flimAccent) private var accent
     let item: FeedItem
+    /// Focuses the comment composer once this post's content has loaded, for a "post" push
+    /// destination whose payload carried `"comments": true`. Defaults false so every existing
+    /// caller (the profile grid, Activity) is unaffected.
+    var focusCommentsOnAppear: Bool = false
     @Environment(AuthService.self) private var auth
     @Environment(FeedService.self) private var feed
     @Environment(PhotoService.self) private var photoService
@@ -252,6 +256,7 @@ struct PostDetailView: View {
         // this screen once opened showing the PREVIOUS photo.
         .task(id: post.id) {
             await load()
+            if focusCommentsOnAppear { commentFocused = true }
         }
         .task(id: post.id) {
             await photoService.fetchSuggestedEmoji(photoIds: [post.photoId])

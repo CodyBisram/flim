@@ -139,6 +139,10 @@ async function importPrivateKey(pem: string): Promise<CryptoKey> {
   return await crypto.subtle.importKey("pkcs8", der, { name: "ECDSA", namedCurve: "P-256" }, false, ["sign"]);
 }
 
+// Matches the `flim` contract every push function uses (see send-social-push for the full
+// destination list). The digest always opens the feed, and the feed destination carries no id.
+const FEED_ROUTE = { t: "feed" as const };
+
 async function sendPush(deviceToken: string, title: string, body: string): Promise<boolean> {
   const jwt = await apnsAuthToken();
   const res = await fetch(`${APNS_HOST}/3/device/${deviceToken}`, {
@@ -151,7 +155,7 @@ async function sendPush(deviceToken: string, title: string, body: string): Promi
       // device's own schedule is both better for battery and less likely to arrive mid-sentence.
       "apns-priority": "5",
     },
-    body: JSON.stringify({ aps: { alert: { title, body }, sound: "default" } }),
+    body: JSON.stringify({ aps: { alert: { title, body }, sound: "default" }, flim: FEED_ROUTE }),
   });
   const reason = res.ok ? undefined : await res.text();
   console.log(JSON.stringify({

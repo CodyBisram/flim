@@ -90,8 +90,26 @@ async function importPrivateKey(pem: string): Promise<CryptoKey> {
   );
 }
 
-async function sendPush(deviceToken: string, title: string, body: string): Promise<boolean> {
+// Names the DESTINATION the notification opens, not the event that caused it, so a future
+// notification type that opens something already reachable needs no client change. `id` is
+// omitted for destinations that need none (the daily digest, elsewhere). `comments` is set only
+// on "post" pushes that are specifically about a comment, so the client can open with the
+// comment thread already showing.
+interface FlimRoute {
+  t: "reveal" | "post" | "profile" | "feed";
+  id?: string;
+  comments?: true;
+}
+
+async function sendPush(
+  deviceToken: string,
+  title: string,
+  body: string,
+  flim?: FlimRoute,
+): Promise<boolean> {
   const jwt = await apnsAuthToken();
+  const payload: Record<string, unknown> = { aps: { alert: { title, body }, sound: "default" } };
+  if (flim) payload.flim = flim;
   const res = await fetch(`${APNS_HOST}/3/device/${deviceToken}`, {
     method: "POST",
     headers: {
@@ -100,7 +118,7 @@ async function sendPush(deviceToken: string, title: string, body: string): Promi
       "apns-push-type": "alert",
       "apns-priority": "10",
     },
-    body: JSON.stringify({ aps: { alert: { title, body }, sound: "default" } }),
+    body: JSON.stringify(payload),
   });
   // Structured per-send record: `host` shows which APNs environment we hit, so a
   // sandbox/production mismatch (production TestFlight token rejected by sandbox
@@ -161,12 +179,13 @@ async function notify(
   fromId: string,
   title: string,
   body: string,
+  flim?: FlimRoute,
 ): Promise<number> {
   if (!toId || toId === fromId) return 0;
   if (await blockedEitherWay(toId, fromId)) return 0;
   let sent = 0;
   for (const token of await tokensFor(toId)) {
-    if (await sendPush(token, title, body)) sent++;
+    if (await sendPush(token, title, body, flim)) sent++;
   }
   return sent;
 }
@@ -221,10 +240,14 @@ Deno.serve(async () => {
     const preview = c.body.length > 90 ? c.body.slice(0, 87) + "…" : c.body;
     // Tracks who has already been pushed for this comment, so someone who is BOTH the post owner
     // and @mentioned in it gets one notification rather than two.
+    // Both this comment's owner-push and its mention-pushes land on the SAME comment, on the
+    // SAME post, so they share one route. Built fresh per comment row (from this row's own
+    // post_id), never hoisted, so nothing from a previous row's iteration can leak in.
+    const route: FlimRoute = { t: "post", id: c.post_id, comments: true };
     const notified = new Set<string>([c.user_id]);
     if (ownerId) {
       notified.add(ownerId);
-      sent += await notify(ownerId, c.user_id, `${name} commented`, preview);
+      sent += await notify(ownerId, c.user_id, `${name} commented`, preview, route);
     }
     // Capped: one comment can name any number of people, and without a limit a single comment
     // could fan out into dozens of pushes. Five is generous for a real conversation and useless
@@ -234,7 +257,7 @@ Deno.serve(async () => {
       if (notified.has(uid) || mentionPushes >= 5) continue;
       notified.add(uid);
       mentionPushes++;
-      sent += await notify(uid, c.user_id, `${name} mentioned you`, preview);
+      sent += await notify(uid, c.user_id, `${name} mentioned you`, preview, route);
     }
     await supabase.from("post_comments").update({ push_sent: true }).eq("id", c.id);
   }
@@ -254,7 +277,7 @@ Deno.serve(async () => {
       const uid = t.tagged_user_id as string;
       if (!notified.has(uid)) {
         notified.add(uid);
-        sent += await notify(uid, p.user_id, `${name} tagged you`, "in a photo");
+        sent += await notify(uid, p.user_id, `${name} tagged you`, "in a photo", { t: "post", id: p.id });
       }
     }
     await supabase.from("posts").update({ push_sent: true }).eq("id", p.id);
@@ -268,11 +291,19 @@ Deno.serve(async () => {
     .select("id, post_id, user_id, emoji, posts(user_id, hidden)")
     .eq("push_sent", false);
 
-  const groups = new Map<string, { ownerId?: string; reactorId: string; emojis: string[]; ids: string[] }>();
+  const groups = new Map<
+    string,
+    { postId: string; ownerId?: string; reactorId: string; emojis: string[]; ids: string[] }
+  >();
   for (const r of reactions ?? []) {
     const key = `${r.post_id}|${r.user_id}`;
-    const g = groups.get(key) ??
-      { ownerId: (r as { posts?: { user_id?: string } }).posts?.user_id, reactorId: r.user_id, emojis: [], ids: [] };
+    const g = groups.get(key) ?? {
+      postId: r.post_id,
+      ownerId: (r as { posts?: { user_id?: string } }).posts?.user_id,
+      reactorId: r.user_id,
+      emojis: [],
+      ids: [],
+    };
     g.emojis.push(r.emoji);
     g.ids.push(r.id);
     groups.set(key, g);
@@ -287,7 +318,10 @@ Deno.serve(async () => {
       // a push title is drawn by iOS's own notification UI where we have no such control, and a
       // tofu box in a banner is the most visible possible way to look broken. The reaction is one
       // tap away in the app.
-      sent += await notify(g.ownerId, g.reactorId, `${name} reacted`, "to your photo");
+      sent += await notify(g.ownerId, g.reactorId, `${name} reacted`, "to your photo", {
+        t: "post",
+        id: g.postId,
+      });
     }
     await supabase.from("post_reactions").update({ push_sent: true }).in("id", g.ids);
   }
@@ -358,7 +392,7 @@ Deno.serve(async () => {
       pushesForPost++;
       // `others[0]` stands in for the block check, the same simplification the roll-photo-comments
       // thread notification below uses when several people are folded into one push.
-      sent += await notify(taggedId, others[0], title, "to a photo you're in");
+      sent += await notify(taggedId, others[0], title, "to a photo you're in", { t: "post", id: postId });
     }
   }
 
@@ -418,9 +452,14 @@ Deno.serve(async () => {
         title = `${fromOthers.length} new comments`;
         body = "on a roll photo";
       }
+      // Routes into the roll itself (no per-photo destination exists in the contract), built
+      // fresh per photo group from that group's own rollId, so it can't drift onto another
+      // photo's roll. Omitted entirely when a photo somehow has no roll_id, leaving the client's
+      // safe "no routing data" fallback instead of a guess.
+      const route: FlimRoute | undefined = g.rollId ? { t: "reveal", id: g.rollId } : undefined;
       // `fromOthers[0].userId` is the sole/most recent commenter; blocks are checked against
       // them, so a blocked person can't reach you through a roll photo either.
-      sent += await notify(recipient, fromOthers[0].userId, title, body);
+      sent += await notify(recipient, fromOthers[0].userId, title, body, route);
     }
 
     await supabase.from("photo_comments").update({ push_sent: true }).in("id", g.items.map((it) => it.id));
@@ -469,8 +508,15 @@ Deno.serve(async () => {
       // glyph for. Inside the app an unrenderable reaction falls back to a placeholder chip, but
       // a push title is drawn by iOS's own notification UI where we have no such control, and a
       // tofu box in a banner is the most visible possible way to look broken. The reaction is one
-      // tap away in the app.
-      sent += await notify(g.ownerId, g.reactorId, `${name} reacted`, "to your photo");
+      // tap away in the app. Same "omit rather than guess" treatment as the roll-photo-comments
+      // route above when a photo somehow has no roll_id.
+      sent += await notify(
+        g.ownerId,
+        g.reactorId,
+        `${name} reacted`,
+        "to your photo",
+        g.rollId ? { t: "reveal", id: g.rollId } : undefined,
+      );
     }
     await supabase.from("photo_reactions").update({ push_sent: true }).in("id", g.ids);
   }
@@ -493,7 +539,10 @@ Deno.serve(async () => {
     // Title/body split the way the report pushes do. No "tap to see their profile": these
     // payloads carry no deep link, a tap just opens the app, and promising a destination the
     // notification cannot reach is worse than saying only what happened.
-    sent += await notify(f.following_id, f.follower_id, "New follower", `${name} started following you`);
+    sent += await notify(f.following_id, f.follower_id, "New follower", `${name} started following you`, {
+      t: "profile",
+      id: f.follower_id,
+    });
     // Composite primary key (follower_id, following_id): both halves are needed to address
     // the row, and there is no surrogate id to use instead.
     await supabase

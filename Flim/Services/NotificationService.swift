@@ -83,6 +83,10 @@ final class NotificationService {
             : "Everyone's photos from the roll are ready to see."
         content.sound = .default
         content.interruptionLevel = .timeSensitive
+        // Same `flim` payload a push would carry, so tapping this (the highest-value notification
+        // in the app) opens the reveal instead of falling back to the Darkroom. See
+        // `PushDestination` and `FlimAppDelegate.userNotificationCenter(_:didReceive:)`.
+        content.userInfo = ["flim": PushDestination.reveal(rollId: rollId).wireValue]
 
         let interval = max(1, developsAt.timeIntervalSinceNow)
         let trigger = UNTimeIntervalNotificationTrigger(timeInterval: interval, repeats: false)

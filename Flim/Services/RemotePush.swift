@@ -159,7 +159,16 @@ enum RemotePush {
 
 extension Notification.Name {
     /// Posted when a develop notification is tapped, so the UI can jump to the Darkroom.
+    ///
+    /// Also the SAFE FALLBACK for any notification tap `PushDestination.parse` cannot make sense
+    /// of: no `flim` payload (everything already delivered before this existed), an unrecognized
+    /// destination, or a malformed id. Never remove this without keeping an equivalent fallback,
+    /// pushes with no payload are still arriving on real phones.
     static let openDarkroom = Notification.Name("openDarkroom")
+    /// Posted with a `PushDestination` (as `object`) once a notification tap has been decoded.
+    /// `MainTabView` is the only listener, and it also checks `PendingPushDestination` on
+    /// `onAppear` for the cold-start case where nothing was listening yet when this posted.
+    static let openPushDestination = Notification.Name("openPushDestination")
     /// Posted to jump to the Camera tab (e.g. from the empty-Darkroom CTA).
     static let openCamera = Notification.Name("openCamera")
     /// Posted with a roll invite code (String) when a `…//join/CODE` deep link is opened.
@@ -205,13 +214,24 @@ final class FlimAppDelegate: NSObject, UIApplicationDelegate, UNUserNotification
         completionHandler([.banner, .sound])
     }
 
-    // Tapping a develop notification jumps to the Darkroom.
+    // Routes a tapped notification to wherever its `flim` payload names, falling back to the
+    // Darkroom (today's behaviour, unconditionally, for every notification already on a phone)
+    // when there is no payload, an unrecognized destination, or a malformed id.
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
-        NotificationCenter.default.post(name: .openDarkroom, object: nil)
+        let userInfo = response.notification.request.content.userInfo
+        guard let destination = PushDestination.parse(userInfo: userInfo) else {
+            NotificationCenter.default.post(name: .openDarkroom, object: nil)
+            completionHandler()
+            return
+        }
+        // Written down AND broadcast: a cold launch, or a launch with nobody signed in yet, has
+        // no `MainTabView` alive to catch the broadcast. See `PendingPushDestination`.
+        PendingPushDestination.store(destination)
+        NotificationCenter.default.post(name: .openPushDestination, object: destination)
         completionHandler()
     }
 }
