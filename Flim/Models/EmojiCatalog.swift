@@ -12,12 +12,12 @@ import CoreGraphics
 /// asked for a font by the literal name `"AppleColorEmoji"`, which is exactly the kind of
 /// per-OS-version fragility this whole feature exists to avoid: on one simulator runtime that name
 /// resolved to a font whose metadata (PostScript name, the `traitColorGlyphs` bit) was entirely
-/// correct, and which still failed to draw a single pixel — a lower-level asset problem than a
-/// wrong name would explain, but the fix applies regardless: never assume a name, always resolve
-/// through `CTFontCreateForString`, which asks CoreText for whatever font it would ACTUALLY pick to
-/// draw a given string on THIS OS, then prove it by drawing into a real bitmap and looking for ink.
-/// Cmap presence and shaped glyph counts are necessary but not sufficient (a font can report a
-/// glyph exists and still fail to rasterize it); only checking real pixels closes that gap.
+/// correct, and which still failed to draw a single pixel. The fix applies regardless of that
+/// detail: never assume a name, always resolve through `CTFontCreateForString`, which asks CoreText
+/// for whatever font it would ACTUALLY pick to draw a given string on THIS OS, then shape it and
+/// check the shaped glyph id, never pixels (see `RenderProbe.renders` for why a rasterize-and-scan
+/// approach was tried and rejected: it produces false negatives for largely achromatic emoji like
+/// 👟, 🎩, and 👓).
 ///
 /// Scope, decided deliberately:
 ///  - Single-scalar pictographs are the bulk of the set: every scalar in Unicode's emoji-relevant
@@ -202,53 +202,51 @@ private func isStandalonePictograph(_ scalar: Unicode.Scalar) -> Bool {
     }
 }
 
-/// Resolves and draws candidate text with zero dependence on any font's NAME, and only counts it
-/// as renderable if real ink came out. One instance is created per `generate()` call and reused
-/// across every candidate (font/context setup is the expensive part; reusing it is what keeps
-/// thousands of checks fast).
+/// Resolves and shapes candidate text with zero dependence on any font's NAME, and only counts it
+/// as renderable if the shape actually produced a real glyph — never by rasterizing and inspecting
+/// pixels. One instance is created per `generate()` call and reused across every candidate (font
+/// resolution is the expensive part; reusing it is what keeps thousands of checks fast).
 ///
 /// Not `private`: also used at the reaction-chip level (`ReactionRenderabilityCache`, see
 /// `ReactionGlyph.swift`) to check an incoming reaction's emoji before drawing it — reactions
 /// travel between phones, so a chip can carry a string generated on a newer OS than the one
 /// displaying it, unlike this file's own picker grid, which is filtered by this exact same check
 /// at generation time and therefore never shows anything the running device can't draw. Same
-/// check, reused rather than copied, per the type's own contract: name-independent, real pixels.
+/// check, reused rather than copied, per the type's own contract: name-independent, no pixels.
 final class RenderProbe {
     /// The plain system UI font, resolved by role rather than name. It cannot draw emoji itself,
     /// which is exactly what forces `CTFontCreateForString` below to perform REAL fallback
     /// resolution to whatever font this OS actually uses for a given string, rather than trusting
     /// a name I've hardcoded that might not match this OS's actual font registration.
     private let seedFont: CTFont
-    private let size = 40
-    private let context: CGContext?
 
     init() {
         seedFont = CTFontCreateUIFontForLanguage(.system, 28, nil)
             ?? CTFontCreateWithName("System" as CFString, 28, nil)
-        context = CGContext(
-            data: nil, width: size, height: size, bitsPerComponent: 8, bytesPerRow: 0,
-            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-        )
     }
 
-    /// True only if `text` (one scalar or several) draws as a SINGLE shaped glyph — the general
-    /// signal for "this OS ligatures this exact sequence" that works identically for a plain face,
-    /// a flag pair, and a ZWJ family — AND that glyph actually rasterizes as real ink, not a
-    /// fallback placeholder.
+    /// True only if `text` (one scalar or several) shapes to a SINGLE glyph — the general signal
+    /// for "this OS ligatures this exact sequence" that works identically for a plain face, a flag
+    /// pair, and a ZWJ family — AND that glyph is not `.notdef` (glyph id 0), the exact signal a
+    /// font gives for "I have no glyph for this", which is what renders as a tofu box.
     ///
-    /// A cmap check or a font's own reported traits are NOT enough on their own: while building
-    /// this, one simulator runtime resolved emoji correctly by every piece of metadata available —
-    /// right PostScript name, `traitColorGlyphs` correctly `true` — while its rasterizer produced
-    /// literally nothing, and separately (same runtime) even a plain non-emoji test string drew as
-    /// solid black ink indistinguishable from what a genuine monochrome glyph would produce. So a
-    /// font the OS itself flags as color-glyph (i.e. an emoji-style glyph) is only accepted if it
-    /// actually draws in COLOR; a font without that trait (a genuinely monochrome vector symbol,
-    /// true for some dingbats/arrows) only needs to draw real ink. Also rejects `LastResort`,
-    /// CoreText's own permanent, always-present "nothing else matched" sentinel font by name —
-    /// unlike naming an emoji font (which is what broke before), this name never changes across OS
-    /// versions, so it isn't the kind of fragility this rewrite exists to avoid.
+    /// Deliberately never rasterizes. An earlier version of this check drew the shaped line into a
+    /// bitmap and demanded a pixel whose channels differed by more than a threshold when the
+    /// resolved font reported the color-glyph trait, on the theory that "some ink" alone let a
+    /// broken rasterizer's solid-black fallback (see below) pass as a false positive. That threshold
+    /// asks "is this glyph colourful", not "can this device draw this glyph": Apple's largely
+    /// achromatic emoji designs (👟, 🎩, 👓 — sneaker, top hat, glasses, all near-equal RGB
+    /// everywhere) never produced a pixel saturated enough to clear it, so real, renderable glyphs
+    /// were rejected as tofu. Reading the glyph id directly off the shaped run sidesteps rasterizing
+    /// at all, so it can't be fooled in either direction: a genuinely broken rasterizer (the
+    /// original motivation — one simulator runtime resolved emoji correctly by every piece of font
+    /// metadata, including a correct cmap, yet drew nothing, while a plain non-emoji string on that
+    /// same runtime drew as solid black ink) still reports the correct, non-zero glyph id, because
+    /// glyph resolution and rasterization are separate steps in CoreText. Also still rejects
+    /// `LastResort`, CoreText's own permanent, always-present "nothing else matched" sentinel font by
+    /// name — unlike naming an emoji font (which is what broke before), this name never changes
+    /// across OS versions, so it isn't the kind of fragility this rewrite exists to avoid.
     func renders(_ text: String) -> Bool {
-        guard let context else { return false }
         let cfText = text as CFString
         let resolved = CTFontCreateForString(seedFont, cfText, CFRange(location: 0, length: text.utf16.count))
         guard !(CTFontCopyPostScriptName(resolved) as String).contains("LastResort") else { return false }
@@ -257,26 +255,11 @@ final class RenderProbe {
         let line = CTLineCreateWithAttributedString(attributed)
         let runs = (CTLineGetGlyphRuns(line) as? [CTRun]) ?? []
         let glyphCount = runs.reduce(0) { $0 + CTRunGetGlyphCount($1) }
-        guard glyphCount == 1 else { return false }
+        guard glyphCount == 1, let run = runs.first(where: { CTRunGetGlyphCount($0) == 1 }) else { return false }
 
-        context.clear(CGRect(x: 0, y: 0, width: size, height: size))
-        context.textPosition = CGPoint(x: 2, y: 8)
-        CTLineDraw(line, context)
-        guard let data = context.data else { return false }
-        let pixels = data.bindMemory(to: UInt8.self, capacity: size * size * 4)
-
-        var sawInk = false
-        var sawColor = false
-        for i in stride(from: 0, to: size * size * 4, by: 4) {
-            let r = pixels[i], g = pixels[i + 1], b = pixels[i + 2], a = pixels[i + 3]
-            if r != 0 || g != 0 || b != 0 || a != 0 { sawInk = true }
-            let channels = [r, g, b]
-            if let maxC = channels.max(), let minC = channels.min(), Int(maxC) - Int(minC) > 20 {
-                sawColor = true
-            }
-        }
-        let expectsColor = CTFontGetSymbolicTraits(resolved).contains(.traitColorGlyphs)
-        return expectsColor ? sawColor : sawInk
+        var glyph = CGGlyph()
+        CTRunGetGlyphs(run, CFRange(location: 0, length: 1), &glyph)
+        return glyph != 0
     }
 }
 

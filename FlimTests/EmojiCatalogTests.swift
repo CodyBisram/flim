@@ -75,4 +75,19 @@ struct EmojiCatalogTests {
         #expect(PostEmoji.fallback == ["😮", "🙌"])
         #expect(PostEmoji.all == ["❤️", "🔥", "😂", "😮", "🙌"])
     }
+
+    /// Pins the exact regression that shipped from a device: `RenderProbe.renders` used to demand
+    /// a SATURATED pixel (max channel minus min channel over a threshold) for any font reporting
+    /// the color-glyph trait. Apple's designs for these are almost entirely white/grey/black — R, G,
+    /// and B stay near-equal everywhere they're drawn — so nothing ever cleared that threshold and
+    /// every one of these real, renderable glyphs was rejected as tofu. The probe must accept a
+    /// glyph because the font actually HAS one (a non-`.notdef` glyph id), never because it looks
+    /// colourful.
+    @Test("achromatic emoji are accepted, not rejected for lacking a saturated pixel", arguments: [
+        "👟", "🎩", "👓", "🖤", "⚪", "🐧",
+    ])
+    func achromaticEmojiAreNotFalseNegatives(_ emoji: String) {
+        let probe = RenderProbe()
+        #expect(probe.renders(emoji), "\(emoji) should render on this OS but the probe rejected it")
+    }
 }
