@@ -206,7 +206,14 @@ private func isStandalonePictograph(_ scalar: Unicode.Scalar) -> Bool {
 /// as renderable if real ink came out. One instance is created per `generate()` call and reused
 /// across every candidate (font/context setup is the expensive part; reusing it is what keeps
 /// thousands of checks fast).
-private final class RenderProbe {
+///
+/// Not `private`: also used at the reaction-chip level (`ReactionRenderabilityCache`, see
+/// `ReactionGlyph.swift`) to check an incoming reaction's emoji before drawing it — reactions
+/// travel between phones, so a chip can carry a string generated on a newer OS than the one
+/// displaying it, unlike this file's own picker grid, which is filtered by this exact same check
+/// at generation time and therefore never shows anything the running device can't draw. Same
+/// check, reused rather than copied, per the type's own contract: name-independent, real pixels.
+final class RenderProbe {
     /// The plain system UI font, resolved by role rather than name. It cannot draw emoji itself,
     /// which is exactly what forces `CTFontCreateForString` below to perform REAL fallback
     /// resolution to whatever font this OS actually uses for a given string, rather than trusting

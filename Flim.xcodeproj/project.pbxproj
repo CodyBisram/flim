@@ -96,6 +96,7 @@
 		974360CA7307549DBE96DC56 /* SignedURLStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0468434B3C641D2DCB6BE2D7 /* SignedURLStoreTests.swift */; };
 		989096304D7D5617D123F9DC /* DarkroomViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6500B5D1912C151BD63BD56 /* DarkroomViewTests.swift */; };
 		990031401F422B02A345BBAF /* PinchZoomTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B17CBFAACCC8AFCBB5A8B72F /* PinchZoomTests.swift */; };
+		9ACB6AA5B0C0568525DF6DBA /* ReactionGlyphTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0675161FF2ACC25A92800B14 /* ReactionGlyphTests.swift */; };
 		A00F0B3005322C2FBEB54BB9 /* PrimaryButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BE06A9CEC95AF492BDBD575 /* PrimaryButton.swift */; };
 		A09941FBF687F7F4F17CC981 /* RollCarouselView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CCFCD9A339AA06647B7A1E1 /* RollCarouselView.swift */; };
 		A14025FE14C116AF28430EC0 /* PostDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F609967CE45299259DA37AC /* PostDetailView.swift */; };
@@ -119,6 +120,7 @@
 		BB6BDEA19FBF1F3F069D1B18 /* ShareImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE73B765C41AB33B6D7D43F4 /* ShareImage.swift */; };
 		BC9339EF423E0344336A96EF /* RemotePush.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE6E3DB97398A385FA3C9489 /* RemotePush.swift */; };
 		BCEEBC1EAA35491151CDFFD8 /* CapturedPhotoCropperTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD48D0114C23B26736D8280D /* CapturedPhotoCropperTests.swift */; };
+		BE5E4E80BF4FDB99AF77CC2A /* ReactionGlyph.swift in Sources */ = {isa = PBXBuildFile; fileRef = 792B11BFCD767C04628A64C4 /* ReactionGlyph.swift */; };
 		BEE3CFD14011AAB9DB96199A /* EmojiSuggestion.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFB805EB8E7D0A5F32D77193 /* EmojiSuggestion.swift */; };
 		BF7CC543E4B4AA9122A6A435 /* FlimAccentPalette.swift in Sources */ = {isa = PBXBuildFile; fileRef = 605C13CF0D2D65A1EA8701FF /* FlimAccentPalette.swift */; };
 		C284CAB6E1E4B68DD90A2B20 /* EmojiSuggestionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41A387A8908C61FB39ABB6DB /* EmojiSuggestionTests.swift */; };
@@ -206,6 +208,7 @@
 		0468434B3C641D2DCB6BE2D7 /* SignedURLStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignedURLStoreTests.swift; sourceTree = "<group>"; };
 		059C902C744871D28E4F21AF /* SquareCropSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SquareCropSheet.swift; sourceTree = "<group>"; };
 		060BA5995DD93E64A494A2E4 /* DarkroomViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DarkroomViewModel.swift; sourceTree = "<group>"; };
+		0675161FF2ACC25A92800B14 /* ReactionGlyphTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReactionGlyphTests.swift; sourceTree = "<group>"; };
 		09D7D1B34FF3ABA360DFCCC6 /* ReactionBarTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReactionBarTests.swift; sourceTree = "<group>"; };
 		0A093E4509E9F7972F5B26E7 /* MainTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabView.swift; sourceTree = "<group>"; };
 		0B10C6663F963898FEE63F64 /* FlimAppTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlimAppTests.swift; sourceTree = "<group>"; };
@@ -283,6 +286,7 @@
 		73A9AEBBBFB814304ABC8715 /* FeedbackService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedbackService.swift; sourceTree = "<group>"; };
 		76A0A3EA09696EA2921DCA7C /* SharePreviewSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharePreviewSheet.swift; sourceTree = "<group>"; };
 		76B80C9D40244DBAC934AF30 /* RenditionRepairTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RenditionRepairTests.swift; sourceTree = "<group>"; };
+		792B11BFCD767C04628A64C4 /* ReactionGlyph.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReactionGlyph.swift; sourceTree = "<group>"; };
 		799578BF49AD244204751AC0 /* UserPageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserPageView.swift; sourceTree = "<group>"; };
 		7A0B87FE1069C71306456DFF /* Roll.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Roll.swift; sourceTree = "<group>"; };
 		8118D8FA0343F18F835415D3 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
@@ -449,6 +453,7 @@
 				CCA22AED443B38D757C24F21 /* LiveRefresh.swift */,
 				C397B9ADEA0CAA5EA6AC693C /* Mentions.swift */,
 				CF062148240A383A260E8EE3 /* Photo.swift */,
+				792B11BFCD767C04628A64C4 /* ReactionGlyph.swift */,
 				C8C2F70774B76385A97528D7 /* RevealCover.swift */,
 				E4793701D6105661DA70B4C5 /* RevealPacing.swift */,
 				7A0B87FE1069C71306456DFF /* Roll.swift */,
@@ -654,6 +659,7 @@
 				E36FE0B8735BA0AADE0C8C7C /* ProfileCropGeometryTests.swift */,
 				E24F9D0E24ECACB558EE4F01 /* ProfileViewTests.swift */,
 				09D7D1B34FF3ABA360DFCCC6 /* ReactionBarTests.swift */,
+				0675161FF2ACC25A92800B14 /* ReactionGlyphTests.swift */,
 				6F68633DB99EF94E78C8EB57 /* RenditionBudgetTests.swift */,
 				76B80C9D40244DBAC934AF30 /* RenditionRepairTests.swift */,
 				4E46251D578F2FFDDCF93A27 /* RevealCoverTests.swift */,
@@ -844,6 +850,7 @@
 				D38ED66624883730EBF8F9FB /* ProfileCropGeometryTests.swift in Sources */,
 				E32D66765B2C8FFB2C8883DC /* ProfileViewTests.swift in Sources */,
 				DAEB96A018A4AC97A9C2B097 /* ReactionBarTests.swift in Sources */,
+				9ACB6AA5B0C0568525DF6DBA /* ReactionGlyphTests.swift in Sources */,
 				539DA206E23BE57487C12F48 /* RenditionBudgetTests.swift in Sources */,
 				E593751C4C8AE813D0BD6368 /* RenditionRepairTests.swift in Sources */,
 				156318788528259D05333A6E /* RevealCoverTests.swift in Sources */,
@@ -941,6 +948,7 @@
 				94D54440B811F938257FD796 /* ProfileView.swift in Sources */,
 				793DFF7AB411740E0874DD22 /* QuickCaptureIntent.swift in Sources */,
 				3F49B2B6996C065BA82A0395 /* ReactionBar.swift in Sources */,
+				BE5E4E80BF4FDB99AF77CC2A /* ReactionGlyph.swift in Sources */,
 				BC9339EF423E0344336A96EF /* RemotePush.swift in Sources */,
 				EB68FF079329A5B42211E166 /* RevealCover.swift in Sources */,
 				736A395F1D60C6C8348E4706 /* RevealPacing.swift in Sources */,

@@ -177,9 +177,14 @@ struct ReactionBar: View {
     private func chip(_ emoji: String) -> some View {
         let count = counts[emoji] ?? 0
         let isMine = mine.contains(emoji)
-        return Button { react(emoji) } label: {
+        // `emoji` can be a reaction someone else sent from a newer OS than this device's; see
+        // `ReactionGlyph.swift`. The fixed/default slots and anything reacted from this device's
+        // own picker always resolve to `.emoji` here (they're already render-filtered or ancient),
+        // so this never adds visible cost there, only when a chip carries something unfamiliar.
+        let glyph = reactionGlyph(for: emoji, renders: ReactionRenderabilityCache.shared.renders)
+        return Button { react(glyph.toggleValue) } label: {
             HStack(spacing: 4) {
-                Text(emoji).flimFont(16)
+                chipGlyph(glyph)
                 if count > 0 {
                     Text("\(count)")
                         .flimFont(13, weight: .semibold, relativeTo: .footnote)
@@ -196,7 +201,28 @@ struct ReactionBar: View {
         .buttonStyle(.plain)
         .animation(.snappy(duration: 0.28), value: count)
         .animation(.spring(response: 0.28, dampingFraction: 0.5), value: pressed)
-        .accessibilityLabel("React \(emoji)")
+        .accessibilityLabel(accessibilityLabel(for: glyph))
+    }
+
+    /// The chip's leading glyph: the emoji itself, or a neutral placeholder (same treatment as the
+    /// "+" button's SF Symbol elsewhere in this bar) when this device can't draw what arrived.
+    @ViewBuilder
+    private func chipGlyph(_ glyph: ReactionGlyph) -> some View {
+        switch glyph {
+        case .emoji(let text):
+            Text(text).flimFont(16)
+        case .placeholder:
+            Image(systemName: "questionmark.square.dashed")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(.white.opacity(0.85))
+        }
+    }
+
+    private func accessibilityLabel(for glyph: ReactionGlyph) -> String {
+        switch glyph {
+        case .emoji(let text): return "React \(text)"
+        case .placeholder: return "a reaction this phone cannot show"
+        }
     }
 
     private func pick(_ emoji: String) {
