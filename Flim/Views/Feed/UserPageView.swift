@@ -169,9 +169,25 @@ struct UserPageView: View {
                             CachedImage(url: coverURL, maxPixel: 1000) { $0.resizable().scaledToFill() } placeholder: { Color.clear }
                         }
                     }
-                    // Darken the top (under the buttons) + fade into the page at the bottom.
-                    .overlay(LinearGradient(colors: [.black.opacity(0.55), .clear, FlimTheme.bg],
-                                            startPoint: .top, endPoint: .bottom))
+                    // Darken the top (under the status bar) + fade into the page at the bottom,
+                    // with EXPLICIT stops so there is a real band of untouched photograph between
+                    // the two.
+                    //
+                    // Three bare colours spaced themselves evenly, which put "clear" at exactly the
+                    // halfway line: the top half was progressively darkened and the bottom half
+                    // progressively swallowed, so the cover was only ever at full strength along a
+                    // single hairline and every photo read as washed out. The scrim also did not
+                    // need to be that broad. The back and gear buttons carry their own circular
+                    // scrims, so the only thing genuinely relying on this is the status bar text
+                    // across the top few points.
+                    .overlay(LinearGradient(
+                        stops: [
+                            .init(color: .black.opacity(0.5), location: 0),
+                            .init(color: .clear,              location: 0.30),
+                            .init(color: .clear,              location: 0.62),
+                            .init(color: FlimTheme.bg,        location: 1.0),
+                        ],
+                        startPoint: .top, endPoint: .bottom))
                     .clipped()
                 Button { if avatarURL != nil { showAvatarViewer = true } } label: {
                     avatarCircle
