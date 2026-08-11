@@ -67,12 +67,20 @@ struct MainTabView: View {
                 }
             }
             Tab("Feed", systemImage: "house", value: 3) {
+                // Both destinations are declared INSIDE the stack, on its content, not on the
+                // NavigationStack itself. Hung on the stack they are outside the navigation
+                // hierarchy, so a value appended to `feedPath` has no destination visible from
+                // where it is pushed: SwiftUI logs "no matching navigationDestination
+                // declaration" and renders its own yellow placeholder, which is a pushed screen
+                // that is blank apart from a back button. That is what tapping a reaction
+                // notification did. The Rolls tab never had the bug because RollsView declares
+                // its own destination inside itself.
                 NavigationStack(path: $feedPath) {
                     FeedView(scrollToTop: scrollSignal[3, default: 0])
-                }
-                .navigationDestination(for: ProfileRoute.self) { UserPageView(userId: $0.id) }
-                .navigationDestination(for: FeedItem.self) { item in
-                    PostDetailView(item: item, focusCommentsOnAppear: focusCommentsPostId == item.id)
+                        .navigationDestination(for: ProfileRoute.self) { UserPageView(userId: $0.id) }
+                        .navigationDestination(for: FeedItem.self) { item in
+                            PostDetailView(item: item, focusCommentsOnAppear: focusCommentsPostId == item.id)
+                        }
                 }
             }
         }
