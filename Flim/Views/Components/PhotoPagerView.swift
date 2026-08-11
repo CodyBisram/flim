@@ -66,7 +66,6 @@ struct PhotoPagerView: View {
     /// (the neighbours you can reach with one swipe), so opening a big roll doesn't fire a fetch
     /// for every shot in it at once.
     @State private var resolvedURLs: [UUID: URL] = [:]
-    @State private var sharedIds: Set<UUID> = []
     @State private var reportedIds: Set<UUID> = []
     @State private var reactions: [PhotoReaction] = []
     /// Drives the heart that blooms over a double tap, matching the feed's.
@@ -197,6 +196,13 @@ struct PhotoPagerView: View {
             // when the page turns springs the NEW photo back to the old one's resting scale.
             scale = 1; offset = .zero; lastOffset = .zero; dragX = 0; pinchStart = nil
             Task { await resolveAround(selection) }
+        }
+        .task {
+            // One batched query for the whole session rather than a `hasPosted` round trip per
+            // photo in `resolveAround`'s window. The Darkroom's own reload already warms this,
+            // but a roll's pager (RollDetailView, MainTabView) opens straight into this view
+            // with nothing preloaded, so it still needs to ask once.
+            if let uid = auth.currentUser?.id { await feed.loadMyPostedPhotoIds(userId: uid) }
         }
         .task {
             await resolveAround(selection)
@@ -379,7 +385,7 @@ struct PhotoPagerView: View {
                 // Own photos, and any roll photo (you're a member if you can see it), can be
                 // shared to your page.
                 if (photo.userId == auth.currentUser?.id || photo.rollId != nil), !showShareComposer {
-                    let shared = sharedIds.contains(photo.id)
+                    let shared = feed.myPostedPhotoIds.contains(photo.id)
                     Button { shareToPage(photo) } label: {
                         Label(shared ? "Shared to your page" : "Share to your page",
                               systemImage: shared ? "checkmark.circle.fill" : "square.and.arrow.up")
@@ -644,7 +650,9 @@ struct PhotoPagerView: View {
         let caption = shareCaptionDraft
         let tags = pendingTags
         Haptics.tap()
-        sharedIds.insert(photo.id)
+        // Written to FeedService's shared set, not local state, so the Darkroom grid shows the
+        // new badge the moment you go back without needing its own reload.
+        feed.myPostedPhotoIds.insert(photo.id)
         showShareComposer = false
         captionFocused = false
         Task {
@@ -656,7 +664,7 @@ struct PhotoPagerView: View {
                 withAnimation { showSharedToast = false }
             } catch {
                 // Didn't reach the server, un-mark so the Share button comes back for a retry.
-                sharedIds.remove(photo.id)
+                feed.myPostedPhotoIds.remove(photo.id)
                 Haptics.error()
             }
         }
@@ -696,11 +704,12 @@ struct PhotoPagerView: View {
         }
     }
 
-    /// Resolves full-res URLs and share state for the ±1 window around `index`, and (when the roll
-    /// grid shows reactions) refetches the current photo's reactions. URLs don't change so they're
-    /// resolved once; share/reaction state is live so it's re-read as you swipe.
+    /// Resolves full-res URLs for the ±1 window around `index`, and (when the roll grid shows
+    /// reactions) refetches the current photo's reactions. URLs don't change so they're resolved
+    /// once; reaction state is live so it's re-read as you swipe. Share state lives in
+    /// `feed.myPostedPhotoIds` instead, loaded once for the whole session, not per swipe.
     private func resolveAround(_ index: Int) async {
-        guard let uid = auth.currentUser?.id else { return }
+        guard auth.currentUser?.id != nil else { return }
         // Same fix as RollCarouselView: the refetch at the end of this function is async, so
         // without clearing, the bar shows the PREVIOUS photo's counts under the new photo.
         if showsReactions { reactions = [] }
@@ -713,9 +722,6 @@ struct PhotoPagerView: View {
                 if let full = try? await photoService.signedURL(for: photo.viewPath) {
                     resolvedURLs[photo.id] = full
                 }
-            }
-            if !sharedIds.contains(photo.id), await feed.hasPosted(photoId: photo.id, userId: uid) {
-                sharedIds.insert(photo.id)
             }
         }
         // Warm the neighbours' decoded images, not just their URLs. TabView(.page) used to keep

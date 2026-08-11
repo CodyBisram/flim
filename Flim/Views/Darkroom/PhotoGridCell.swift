@@ -14,6 +14,10 @@ struct PhotoGridCell: View {
     /// shot in a roll develops together), so their tiles pass `false` and get a quiet animated
     /// hourglass instead of repeating the same number on every tile.
     var showsCountdown: Bool = true
+    /// Whether this photo already has a post on the signed-in user's page. Quiet on purpose: most
+    /// tiles in a Darkroom grid are unshared, so only the minority (shared) state gets a mark
+    /// rather than every tile carrying a badge.
+    var isShared: Bool = false
 
     var body: some View {
         // A clear square anchor sizes each cell to exactly 1/3 of the grid width; the image
@@ -46,10 +50,25 @@ struct PhotoGridCell: View {
                         .padding(5)
                 }
             }
+            // A quiet mark on the shared minority, not the unshared majority: matches the roll
+            // tag's corner-scrim treatment so the grid doesn't grow a second visual language.
+            // Fixed size rather than `flimFont`, same reasoning as the roll tag right above: a
+            // glyph living in a small fixed badge just clips if Dynamic Type scales it, and the
+            // app-wide `flimDynamicTypeCeiling()` already bounds how far that growth can go.
+            .overlay(alignment: .topTrailing) {
+                if photo.isReady, isShared {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .padding(5)
+                        .background(Circle().fill(.black.opacity(0.45)))
+                        .padding(5)
+                }
+            }
             .contentShape(Rectangle())
             .accessibilityElement()
             .accessibilityLabel(photo.isReady
-                ? "Photo\(rollName.map { " from \($0)" } ?? ""), \(photo.takenAt.formatted(date: .abbreviated, time: .omitted))"
+                ? "Photo\(rollName.map { " from \($0)" } ?? ""), \(photo.takenAt.formatted(date: .abbreviated, time: .omitted))\(isShared ? ", shared to your page" : "")"
                 : "Developing photo")
             .accessibilityAddTraits(photo.isReady ? .isButton : [])
     }

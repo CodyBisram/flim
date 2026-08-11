@@ -13,6 +13,11 @@ final class FeedService {
     /// you" is a free membership check anywhere in the app: a badge on a profile, "Follow back"
     /// copy on a button, or a suggestion-ranking signal, all read this one set.
     var followerIds: Set<UUID> = []
+    /// Ids of the signed-in user's own photos that already have a post, the Darkroom grid's
+    /// "shared to your page" badge and the pager's share button both read this instead of a
+    /// per-photo `hasPosted` round trip. Mirrors `followingIds`/`followerIds`: loaded once,
+    /// updated optimistically by `createPost`/`deletePost`'s callers.
+    var myPostedPhotoIds: Set<UUID> = []
     var isLoadingFeed = false
     /// Set when a feed page fails to load, so an unreachable server reads as "couldn't load,
     /// retry" rather than as an empty feed. Cleared on the next successful page.
@@ -78,6 +83,27 @@ final class FeedService {
     }
 
     func followsMe(_ id: UUID) -> Bool { followerIds.contains(id) }
+
+    /// Batched, one query for every photo the user owns rather than `hasPosted` per photo. Same
+    /// `AccountEpoch` guard as `loadFollowing`/`loadFollowers`: capture before the await, write
+    /// only if nothing has switched accounts underneath it since.
+    func loadMyPostedPhotoIds(userId: UUID) async {
+        let epoch = AccountEpoch.current
+        let posted = await fetchMyPostedPhotoIds(userId: userId)
+        guard AccountEpoch.isCurrent(epoch) else { return }
+        myPostedPhotoIds = posted
+    }
+
+    private func fetchMyPostedPhotoIds(userId: UUID) async -> Set<UUID> {
+        struct Row: Decodable { let photo_id: UUID }
+        let rows: [Row] = (try? await supabase
+            .from("posts").select("photo_id")
+            .eq("user_id", value: userId.uuidString)
+            .execute().value) ?? []
+        return Set(rows.map(\.photo_id))
+    }
+
+    func hasSharedPhoto(_ id: UUID) -> Bool { myPostedPhotoIds.contains(id) }
 
     /// Pure follow-button/badge copy, pulled out of the views so the four
     /// (following, followsMe) combinations are cheap to pin with a plain unit test.
@@ -429,6 +455,7 @@ final class FeedService {
         feed = []
         followingIds = []
         followerIds = []
+        myPostedPhotoIds = []
         blockedIds = []
         reactionsByPost = [:]
         commentsByPost = [:]

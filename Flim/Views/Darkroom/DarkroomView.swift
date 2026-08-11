@@ -19,6 +19,7 @@ struct DarkroomView: View {
     @Environment(AuthService.self) private var auth
     @Environment(PhotoService.self) private var photoService
     @Environment(RollService.self) private var rolls
+    @Environment(FeedService.self) private var feed
     @Environment(\.displayScale) private var displayScale
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -478,7 +479,8 @@ struct DarkroomView: View {
 
             LazyVGrid(columns: columns, spacing: 2) {
                 ForEach(vm.developedPhotos) { photo in
-                    PhotoGridCell(photo: photo, signedURL: vm.signedURLCache[photo.id], rollName: rollName(for: photo.rollId))
+                    PhotoGridCell(photo: photo, signedURL: vm.signedURLCache[photo.id], rollName: rollName(for: photo.rollId),
+                                  isShared: feed.myPostedPhotoIds.contains(photo.id))
                         .matchedTransitionSource(id: photo.id, in: photoNS)
                         .overlay { if isSelecting { selectionMark(photo.id) } }
                         .onTapGesture {
@@ -540,6 +542,9 @@ struct DarkroomView: View {
         ImageLoader.prefetch(prefetch, maxPixel: 400, scale: displayScale)
         if rolls.rolls.isEmpty { try? await rolls.fetchRolls(for: userId) }   // for roll labels
         unsortedCount = await photoService.fetchUnsorted(userId: userId).count
+        // One batched query for the whole grid's "shared to your page" badge, not a `hasPosted`
+        // round trip per tile.
+        await feed.loadMyPostedPhotoIds(userId: userId)
         checkForReveal()
     }
 

@@ -89,6 +89,49 @@ final class FeedServiceTests: XCTestCase {
         XCTAssertTrue(service.followerIds.isEmpty)
     }
 
+    // MARK: - myPostedPhotoIds (Darkroom "shared to your page" badge / pager share button)
+
+    /// A photo already in the batched set reads as shared; one that isn't, doesn't. This is the
+    /// pure logic behind PhotoGridCell's badge and PhotoPagerView's share button, both of which
+    /// just read `myPostedPhotoIds`/`hasSharedPhoto` rather than issuing their own query.
+    func testHasSharedPhotoReadsTheBatchedSet() {
+        let service = FeedService()
+        let shared = UUID()
+        let unshared = UUID()
+        service.myPostedPhotoIds = [shared]
+        XCTAssertTrue(service.hasSharedPhoto(shared))
+        XCTAssertFalse(service.hasSharedPhoto(unshared))
+    }
+
+    /// Sharing a photo during the session (PhotoPagerView's `confirmShare`) inserts straight into
+    /// this set rather than a local, view-only one, so a photo shared mid-session immediately
+    /// reads as shared everywhere that reads the set, including the Darkroom grid it returns to.
+    func testSharingDuringSessionMovesThePhotoIntoTheSet() {
+        let service = FeedService()
+        let photo = UUID()
+        XCTAssertFalse(service.hasSharedPhoto(photo))
+        service.myPostedPhotoIds.insert(photo)   // optimistic insert, mirrors confirmShare
+        XCTAssertTrue(service.hasSharedPhoto(photo))
+    }
+
+    /// A share that fails to reach the server rolls the optimistic insert back, mirrors
+    /// `confirmShare`'s `catch` branch, so the button comes back for a retry rather than lying
+    /// about a share that never landed.
+    func testFailedShareRollsBackTheOptimisticInsert() {
+        let service = FeedService()
+        let photo = UUID()
+        service.myPostedPhotoIds.insert(photo)
+        service.myPostedPhotoIds.remove(photo)
+        XCTAssertFalse(service.hasSharedPhoto(photo))
+    }
+
+    func testResetForAccountChangeClearsMyPostedPhotoIds() {
+        let service = FeedService()
+        service.myPostedPhotoIds = [UUID()]
+        service.resetForAccountChange()
+        XCTAssertTrue(service.myPostedPhotoIds.isEmpty)
+    }
+
     // MARK: - rank
 
     func testHigherLikeCountSortsFirst() async {
