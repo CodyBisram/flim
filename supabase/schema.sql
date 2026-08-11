@@ -2578,15 +2578,32 @@ GRANT EXECUTE ON FUNCTION public.set_photo_suggested_emoji(UUID, TEXT[]) TO auth
 -- ------------------------------------------------------------
 -- Read path: the reveal gate. A photo's own owner can always read their own
 -- suggestion back (it's their photo; they already know what's in it, no spoiler
--- risk). Anyone else, a fellow roll member, only gets it once that photo's
--- develops_at has passed, mirrors "photos: roll members can see" (roll
--- membership, NOT hidden, NOT blocked) plus the one predicate that policy is
--- missing on purpose everywhere else, develops_at <= now(). Batched by an array
--- of photo ids (feed/roll views render many photos at once, one RPC beats N),
--- and a photo id the caller isn't allowed to see (wrong id, undeveloped
--- roll-mate's photo, blocked party, hidden) is silently absent from the result,
--- never an error, so a client can't distinguish "not visible yet" from "no
--- suggestion exists" by error shape, both just produce no row for that id.
+-- risk). A fellow roll member only gets it once that photo's develops_at has
+-- passed, mirrors "photos: roll members can see" (roll membership, NOT hidden,
+-- NOT blocked) plus the one predicate that policy is missing on purpose
+-- everywhere else, develops_at <= now(). A third branch, added when this
+-- function shipped without it and the feed silently showed no suggestions at
+-- all (every feed photo is visible via a follow, not a roll, so the roll
+-- branch above never matched): anyone who can see the photo because it was
+-- shared as a post. This mirrors "photos: readable when shared to a post"
+-- (storage.objects) exactly: EXISTS a post row for this photo, NOT
+-- posts.hidden, NOT is_blocked_either_way keyed off the POST's user_id (the
+-- sharer, who can be a roll-mate re-sharing someone else's shot onto their own
+-- page, not necessarily p.user_id). No develops_at check in this branch,
+-- deliberately, for two reasons: the storage policy it mirrors has none
+-- either (posting is an act of publishing, not gated on the source photo's
+-- reveal timer, "posts: create own" itself never checks develops_at), and a
+-- suggestion is strictly less sensitive than the pixels describing it, so
+-- gating the emoji tighter than the photo it's attached to would protect
+-- nothing: anyone who could construct a post for an undeveloped photo already
+-- exposed its bytes through the mirrored storage policy, adding a develops_at
+-- check here would just make the emoji lag behind a photo the caller can
+-- already open. Batched by an array of photo ids (feed/roll views render many
+-- photos at once, one RPC beats N), and a photo id the caller isn't allowed to
+-- see (wrong id, undeveloped roll-mate's photo, blocked party, hidden) is
+-- silently absent from the result, never an error, so a client can't
+-- distinguish "not visible yet" from "no suggestion exists" by error shape,
+-- both just produce no row for that id.
 -- ------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.get_suggested_emoji(p_photo_ids UUID[])
 RETURNS TABLE (photo_id UUID, suggested_emoji TEXT[])
@@ -2607,6 +2624,12 @@ AS $$
                 AND public.is_roll_member(p.roll_id)
                 AND NOT public.is_blocked_either_way(auth.uid(), p.user_id)
                 AND p.develops_at <= now()
+              )
+            OR EXISTS (
+                SELECT 1 FROM public.posts po
+                WHERE po.photo_id = p.id
+                  AND NOT po.hidden
+                  AND NOT public.is_blocked_either_way(auth.uid(), po.user_id)
               )
           );
 $$;
