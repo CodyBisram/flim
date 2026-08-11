@@ -488,7 +488,10 @@ struct FeedPostCard: View {
             if !commentPreview.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
                     Button { showComments = true } label: {
-                        Text("View all \(comments.count) comments")
+                        // "View all 1 comments" was wrong twice over: the plural, and "all" of a
+                        // single thing. One comment is already fully shown in the preview below,
+                        // so the singular is an invitation to reply rather than to see more.
+                        Text(comments.count == 1 ? "View 1 comment" : "View all \(comments.count) comments")
                             .flimFont(12, relativeTo: .caption).foregroundStyle(FlimTheme.textTertiary)
                             .contentTransition(.numericText())
                             .animation(.snappy(duration: 0.28), value: comments.count)
