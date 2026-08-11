@@ -8,6 +8,12 @@
 // reactions from one friend is a single notification, the way Lapse did it, not
 // one-per-emoji.
 //
+// Also notifies people TAGGED in a post's photo when it gets reacted to, aggregated per
+// POST rather than per reactor or per reacting person ("3 people reacted to a photo
+// you're in"), so a popular post doesn't multiply the owner's per-reactor noise across
+// everyone tagged in it. See the comment above that block for the dedup-with-owner and
+// idempotency reasoning.
+//
 // Also notifies the APP OWNER whenever a content report lands (photo_reports /
 // user_reports) so UGC can be actioned within 24h (App Store Guideline 1.2).
 // Same poll + push_sent-flag pattern as everything else here; auto-hide at >=2
@@ -254,10 +260,12 @@ Deno.serve(async () => {
     await supabase.from("posts").update({ push_sent: true }).eq("id", p.id);
   }
 
-  // ---- Reactions: batch per (post, reactor) → one push listing their emoji ----
+  // ---- Reactions: batch per (post, reactor) → one push listing their emoji, to the OWNER ----
+  // `hidden` is pulled through the join so the tagged-people block below (which reads from this
+  // same `reactions` array) can skip a hidden post/photo without a second query.
   const { data: reactions } = await supabase
     .from("post_reactions")
-    .select("id, post_id, user_id, emoji, posts(user_id)")
+    .select("id, post_id, user_id, emoji, posts(user_id, hidden)")
     .eq("push_sent", false);
 
   const groups = new Map<string, { ownerId?: string; reactorId: string; emojis: string[]; ids: string[] }>();
@@ -273,10 +281,85 @@ Deno.serve(async () => {
   for (const g of groups.values()) {
     if (g.ownerId && g.ownerId !== g.reactorId) {
       const name = await handle(g.reactorId);
-      const emojis = [...new Set(g.emojis)].join(" ");
-      sent += await notify(g.ownerId, g.reactorId, `${name} reacted ${emojis}`, "to your photo");
+      // Deliberately WITHOUT the emoji. The picker now offers every emoji the sender's OS can
+      // draw, so a reaction chosen on a newer iPhone can be a character an older one has no
+      // glyph for. Inside the app an unrenderable reaction falls back to a placeholder chip, but
+      // a push title is drawn by iOS's own notification UI where we have no such control, and a
+      // tofu box in a banner is the most visible possible way to look broken. The reaction is one
+      // tap away in the app.
+      sent += await notify(g.ownerId, g.reactorId, `${name} reacted`, "to your photo");
     }
     await supabase.from("post_reactions").update({ push_sent: true }).in("id", g.ids);
+  }
+
+  // ---- Reactions (continued): notify people TAGGED in the photo, once per post per run, never
+  //      once per reactor. Copying the owner batching above verbatim would multiply that noise
+  //      across everyone tagged (eight reactors -> eight pushes to EACH tagged person, not just
+  //      the owner), so this aggregates every reactor across the WHOLE post into a single push
+  //      per (post, tagged person): "<name> reacted" / "to a photo you're in" for one reactor,
+  //      "<n> people reacted" / "to a photo you're in" for more than one.
+  //
+  //      Idempotency: this reads the SAME `reactions` rows fetched above (push_sent = false), and
+  //      those exact row ids are marked push_sent = true in the owner loop just above, before any
+  //      notify() call below runs. There's no separate flag for this feature to fall out of sync
+  //      with: one query, one set of reaction ids, one place they get marked done. A second run
+  //      only ever sees reactions that arrived after this one, so a reaction can't produce a
+  //      second "reacted to a photo you're in" push any more than it can produce a second owner
+  //      push.
+  //
+  //      Dedup with the owner path: if the post's owner is also tagged in it, skip them here
+  //      unconditionally (`taggedId === p.ownerId`), the same way the comment path above always
+  //      adds ownerId to its `notified` set regardless of whether that push actually sent. The
+  //      owner already has their own reaction push (or is excluded from it by `notify()`'s
+  //      self-check); this block is for everyone ELSE tagged in the photo.
+  const postAgg = new Map<string, { ownerId?: string; hidden: boolean; reactorIds: Set<string> }>();
+  for (const r of reactions ?? []) {
+    const meta = (r as { posts?: { user_id?: string; hidden?: boolean } }).posts;
+    const p = postAgg.get(r.post_id) ??
+      { ownerId: meta?.user_id, hidden: meta?.hidden ?? false, reactorIds: new Set<string>() };
+    p.reactorIds.add(r.user_id);
+    postAgg.set(r.post_id, p);
+  }
+
+  const reactedPostIds = [...postAgg.keys()];
+  const tagsByPost = new Map<string, string[]>();
+  if (reactedPostIds.length > 0) {
+    const { data: tagRows } = await supabase
+      .from("post_tags")
+      .select("post_id, tagged_user_id")
+      .in("post_id", reactedPostIds);
+    for (const t of tagRows ?? []) {
+      const arr = tagsByPost.get(t.post_id) ?? [];
+      arr.push(t.tagged_user_id as string);
+      tagsByPost.set(t.post_id, arr);
+    }
+  }
+
+  for (const [postId, p] of postAgg) {
+    if (p.hidden) continue; // hidden post, or its photo (which hides the post via the same trigger)
+    const tagged = tagsByPost.get(postId);
+    if (!tagged || tagged.length === 0) continue;
+
+    // Capped at 20 pushes per post: a photo can be tagged with any number of people, and without
+    // a limit a single popular post could fan out unbounded. Matches the reasoning behind the
+    // 5-mention cap on comments above, sized up because tags are set by the post's owner (not
+    // free text), so a large real group photo is the worst case, not an attacker.
+    let pushesForPost = 0;
+    for (const taggedId of tagged) {
+      if (pushesForPost >= 20) break;
+      if (taggedId === p.ownerId) continue;
+      // Never notify someone about their own reaction: count only reactions from OTHER people.
+      const others = [...p.reactorIds].filter((id) => id !== taggedId);
+      if (others.length === 0) continue;
+
+      const title = others.length === 1
+        ? `${await handle(others[0])} reacted`
+        : `${others.length} people reacted`;
+      pushesForPost++;
+      // `others[0]` stands in for the block check, the same simplification the roll-photo-comments
+      // thread notification below uses when several people are folded into one push.
+      sent += await notify(taggedId, others[0], title, "to a photo you're in");
+    }
   }
 
   // ---- Roll photo comments: notify the OWNER + that photo's THREAD (people who already
@@ -381,8 +464,13 @@ Deno.serve(async () => {
   for (const g of rxByKey.values()) {
     if (g.ownerId && g.ownerId !== g.reactorId && !(await mutedInRoll(g.rollId)).has(g.ownerId)) {
       const name = await handle(g.reactorId);
-      const emojis = [...new Set(g.emojis)].join(" ");
-      sent += await notify(g.ownerId, g.reactorId, `${name} reacted ${emojis}`, "to your photo");
+      // Deliberately WITHOUT the emoji. The picker now offers every emoji the sender's OS can
+      // draw, so a reaction chosen on a newer iPhone can be a character an older one has no
+      // glyph for. Inside the app an unrenderable reaction falls back to a placeholder chip, but
+      // a push title is drawn by iOS's own notification UI where we have no such control, and a
+      // tofu box in a banner is the most visible possible way to look broken. The reaction is one
+      // tap away in the app.
+      sent += await notify(g.ownerId, g.reactorId, `${name} reacted`, "to your photo");
     }
     await supabase.from("photo_reactions").update({ push_sent: true }).in("id", g.ids);
   }
