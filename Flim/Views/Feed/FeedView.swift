@@ -532,8 +532,15 @@ struct FeedPostCard: View {
                             .animation(.snappy(duration: 0.28), value: comments.count)
                     }
                     ForEach(commentPreview) { info in
-                        HStack(alignment: .top, spacing: 8) {
-                            HStack(alignment: .top, spacing: 4) {
+                        // firstTextBaseline, not top. The comment is 14pt and the trailing
+                        // controls are 11 and 12, so aligning top EDGES parks the smaller cluster
+                        // against the top of the bigger text's line box and it reads as floating
+                        // high. Baseline alignment sits them on the same line as the words. It
+                        // still does the job .top was picked for, keeping the controls on the
+                        // FIRST line when the comment wraps to two, because the baseline in
+                        // question is the first line's.
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            HStack(alignment: .firstTextBaseline, spacing: 4) {
                                 Button { route = ProfileRoute(id: info.comment.userId) } label: {
                                     Text(info.handle).flimFont(14, weight: .semibold, relativeTo: .subheadline).foregroundStyle(.white)
                                 }
@@ -559,7 +566,9 @@ struct FeedPostCard: View {
                                 .accessibilityLabel("Reply to \(info.handle)")
                             }
                             Button { likeComment(info) } label: {
-                                HStack(spacing: 3) {
+                                // Baseline here too, so the count and the heart sit on the row's
+                                // baseline rather than this pair centring on its own.
+                                HStack(alignment: .firstTextBaseline, spacing: 3) {
                                     if info.likeCount > 0 {
                                         Text("\(info.likeCount)").flimFont(11, relativeTo: .caption).foregroundStyle(FlimTheme.textTertiary)
                                             .contentTransition(.numericText())
