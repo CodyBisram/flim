@@ -113,6 +113,38 @@ without either word appearing here.
 Two rules if this is edited again: never repeat a word across name, subtitle and keywords, and do
 not add plurals of words already present. Apple handles both.
 
+## What's New (version 1.4)
+
+> **PASTE ONLY THE INDENTED BLOCK BELOW.** Everything under "Ship notes" is internal.
+
+    Tapping a notification now opens the thing it is about. The post, the comment, the profile, the roll that just developed. It used to put you on the camera every time, whatever it said.
+
+    Reply to a comment, right under it, instead of starting a new one at the bottom.
+
+    The reaction bar suggests an emoji or two based on what is actually in the photo, next to the usual heart and fire. Behind the plus, the picker now holds every emoji your phone can draw instead of a fixed handful.
+
+    Your Darkroom marks the shots you have already shared, so you can tell developed from developed and posted without opening each one.
+
+    Profiles say "Follows you" when someone already does, and the button says "Follow back" rather than pretending you found them first.
+
+    A reaction to a photo you are tagged in now reaches you, and shows up in Activity, the same as a reaction to one you took.
+
+    Underneath: pull to refresh no longer interrupts itself, cover photos are no longer washed out, and a photo can no longer go missing if its upload fails halfway.
+
+### Ship notes (internal, do NOT paste)
+
+- The notification line is first because it is the biggest behavioural change: every tap used to
+  land on the camera, and one of those notifications is "your roll developed", which was sending
+  people away from the reveal at the exact moment they were told to go and see it.
+- Say nothing about activation instrumentation, device token pruning, the render probe, caches, or
+  schema work. None of it is a user-facing feature and the analytics line in particular belongs in
+  the privacy label, not the release notes.
+- "photos no longer go missing" is claimable and was claimed in 1.3 as well, because a different
+  cause was fixed each time. 1.3 fixed a capture killed between upload and row insert. 1.4 fixed
+  the retry queue deleting the image it was holding. Keep it vague in public copy.
+- Do NOT re-claim Dynamic Type, tooltips, or anything from 1.1 and 1.2's notes.
+- No em dashes in any user-facing copy.
+
 ## What's New (version 1.3)
 
 > **PASTE ONLY THE INDENTED BLOCK BELOW.** Everything under "Ship notes" is internal.
@@ -241,7 +273,17 @@ FLIM includes user-generated content (photos, comments, tags, reactions). Apple'
 - **Device ID (APNs push token)**: for push notifications (roll reveals, social activity). Ephemeral; rotates when the OS issues a new one.
 
 ### Usage Data
-- None collected.
+- **Product Interaction**, **linked to identity**, purpose **App Functionality** and **Analytics**.
+  `activation_events` records one row per person per milestone: first launch, first shot, roll
+  created, roll joined, invite sent, invite redeemed, post shared, reveal watched. It is written by
+  the app, stored in our own Supabase project, and readable only by the owner. It records that
+  something happened once, never a frequency, never content.
+- This said "None collected" until 1.4 and that was true then. The instrumentation shipped in 1.4,
+  so the label had to change with it. Declaring nothing while a shipped build collects something is
+  the mismatch Apple actually penalises.
+- **Tracking stays NO.** It is first party, never shared with a data broker, and never used for
+  cross-app or cross-site advertising, so no ATT prompt is required. Over-declaring this as
+  Tracking would be its own error.
 
 ### Diagnostics
 - **Crash Data / Performance Data**: on-device crash, hang, and CPU-exception diagnostics via
@@ -257,7 +299,13 @@ FLIM includes user-generated content (photos, comments, tags, reactions). Apple'
   no advertising identifier, and nothing that identifies a device across installs.
 
 ### Tracking / Analytics
-- **None.** No analytics SDK, no advertising, no third-party tracking. One-way social graph (follows) is optional; blocking is bidirectional and RLS-enforced.
+- **No tracking.** No advertising, no third-party tracking, no data broker, nothing that follows
+  anyone across apps or sites, so the ASC Tracking toggle stays off and no ATT prompt is needed.
+- **First-party product analytics only**, the milestone rows described under Usage Data above.
+  Deliberately kept in our own database rather than sent to an analytics vendor, because the App
+  Store description promises no algorithm and no strangers and shipping behaviour to a third party
+  to measure retention would contradict that for the sake of charts.
+- One-way social graph (follows) is optional; blocking is bidirectional and RLS-enforced.
 
 **Not collected:** Location, contacts, browsing history, purchases, health data, search history, financial information, precise location.
 

@@ -25,8 +25,13 @@ control you have. We keep it short because we collect very little.
 - **Safety data**: users you block and any content or accounts you report, so we can review them.
 - **A device push token** *(only if you enable notifications)*: to tell you when your roll
   develops and when friends react to or comment on your posts.
-- **Basic technical info**: app version and iOS version, included when you send feedback so we can
-  reproduce issues.
+- **What you write when you send feedback**, along with your app version, build number, iOS version
+  and device model, so we can reproduce what you are describing.
+- **A short list of firsts**: the first time you launch the app, take a shot, create or join a roll,
+  send or redeem an invite, share a post, and watch a reveal. One record per person per event, tied
+  to your account, kept in our own database. It exists so we can tell which parts of FLIM people
+  actually reach, rather than guessing. It records that a thing happened once, never how often, and
+  never what was in the photograph. No analytics company is involved and nothing is shared with one.
 - **Crash and performance diagnostics**: if the app crashes, hangs, or overuses the processor, iOS
   gives us a technical report (app version and a stack trace of where it happened) so we can fix
   it. These contain no photos and no message content, and are tied to your account only so a
