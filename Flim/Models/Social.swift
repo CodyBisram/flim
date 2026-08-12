@@ -165,6 +165,11 @@ struct ActivityItem: Identifiable {
         /// Emoji, reacted to a photo you're TAGGED in but do not own. Distinct from `.like`: that
         /// case's copy ("reacted to your photo") would be false here, the photo isn't yours.
         case likeTagged(String)
+        /// Body of a comment YOU wrote that someone else liked. Only one case, unlike
+        /// `.like`/`.likeTagged`: those split on whether the reacted-to photo is yours (you can be
+        /// tagged in someone else's), but a comment has exactly one author, so a comment-like push
+        /// only ever reaches that one person. There's no "tagged" analog to split off.
+        case commentLiked(String)
     }
     let id = UUID()
     let kind: Kind

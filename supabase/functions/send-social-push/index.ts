@@ -14,6 +14,10 @@
 // everyone tagged in it. See the comment above that block for the dedup-with-owner and
 // idempotency reasoning.
 //
+// Also notifies a comment's AUTHOR when someone likes it, batched per comment the same
+// way reactions are batched per post ("3 people liked your comment"), never one push per
+// like, and never for a self-like.
+//
 // Also notifies the APP OWNER whenever a content report lands (photo_reports /
 // user_reports) so UGC can be actioned within 24h (App Store Guideline 1.2).
 // Same poll + push_sent-flag pattern as everything else here; auto-hide at >=2
@@ -560,6 +564,74 @@ Deno.serve(async () => {
       );
     }
     await supabase.from("photo_reactions").update({ push_sent: true }).in("id", g.ids);
+  }
+
+  // ---- Comment likes: batch every NEW like on a comment into ONE push to the comment's
+  //      AUTHOR, "<name> liked your comment" for a single liker, "<n> people liked your
+  //      comment" for more, the same shape as the tagged-photo-reactions block above
+  //      (post_reactions) that folds every reactor on a post into one push per recipient,
+  //      rather than one push per like. A popular comment must not fire a push per like.
+  //
+  //      Self-likes are dropped while the group is built, before any notify() call, so a
+  //      comment's own author liking their own comment can never itself put anyone in the
+  //      group; notify()'s own self-check is a second, redundant guard on top of that.
+  //      `notify()` still re-checks blocks in both directions before anything is sent, same
+  //      door every user-to-user push here goes through.
+  //
+  //      comment_likes has no id in its original schema (composite PK
+  //      (comment_id, user_id)); a surrogate `id` was added alongside `push_sent` in
+  //      2026-08-12_comment_likes_push_sent.sql specifically so a whole group can be marked
+  //      done with one `.in("id", ids)`, the same shape every other push_sent table here
+  //      uses, instead of one UPDATE per (comment_id, user_id) pair (the shape the
+  //      composite-keyed `follows` block below has to fall back to).
+  //
+  //      Every row this reads is marked push_sent = true once processed, including rows
+  //      that were the ONLY like in their group and turned out to be a self-like: an
+  //      unmarked skip would be re-evaluated by every future poll forever.
+  const { data: commentLikes } = await supabase
+    .from("comment_likes")
+    .select("id, comment_id, user_id, post_comments(user_id, body, post_id)")
+    .eq("push_sent", false);
+
+  const likesByComment = new Map<string, {
+    authorId?: string; body: string; postId?: string; likerIds: Set<string>; ids: string[];
+  }>();
+  for (const cl of commentLikes ?? []) {
+    const meta = (cl as { post_comments?: { user_id?: string; body?: string; post_id?: string } }).post_comments;
+    const g = likesByComment.get(cl.comment_id) ?? {
+      authorId: meta?.user_id,
+      body: meta?.body ?? "",
+      postId: meta?.post_id,
+      likerIds: new Set<string>(),
+      ids: [],
+    };
+    // Never let a self-like into the group: liking your own comment must never notify you.
+    if (meta?.user_id !== cl.user_id) g.likerIds.add(cl.user_id);
+    g.ids.push(cl.id);
+    likesByComment.set(cl.comment_id, g);
+  }
+
+  for (const g of likesByComment.values()) {
+    if (g.authorId && g.likerIds.size > 0) {
+      const likers = [...g.likerIds];
+      const title = likers.length === 1
+        ? `${await handle(likers[0])} liked your comment`
+        : `${likers.length} people liked your comment`;
+      // Truncated the same way the comment-notification preview above is, not quoted.
+      const preview = g.body.length > 90 ? g.body.slice(0, 87) + "…" : g.body;
+      // Opens the post with the comment thread showing, same route the original
+      // comment-notification uses. `likers[0]` stands in for the block check, the same
+      // simplification the tagged-photo-reactions and roll-photo-comments blocks above use
+      // when several people are folded into one push.
+      sent += await notify(
+        g.authorId,
+        likers[0],
+        title,
+        preview,
+        g.postId ? { t: "post", id: g.postId, comments: true } : undefined,
+      );
+    }
+    await supabase.from("comment_likes").update({ push_sent: true }).in("id", g.ids);
   }
 
   // ---- New followers → notify the person who was followed.

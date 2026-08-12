@@ -1161,6 +1161,21 @@ final class FeedService {
                 .gt("created_at", value: sinceStr).execute().value) ?? []
             total += taggedReactions.count
         }
+
+        // Likes on your own comments, same "the badge can never disagree with the list" reasoning
+        // as the tagged-reaction count above; `activityCommentLikes` is the matching Activity-list
+        // source. `.gt("created_at", ...)` at the DB already excludes the column's nullable-but-rare
+        // NULLs (NULL never satisfies a comparison), so `Row`'s non-optional `created_at` is safe here.
+        struct OwnComment: Decodable { let id: UUID }
+        let ownComments: [OwnComment] = (try? await supabase.from("post_comments").select("id")
+            .eq("user_id", value: userId.uuidString).execute().value) ?? []
+        let ownCommentIds = ownComments.map(\.id.uuidString)
+        if !ownCommentIds.isEmpty {
+            let commentLikes: [Row] = (try? await supabase.from("comment_likes").select("created_at")
+                .in("comment_id", values: ownCommentIds).neq("user_id", value: userId.uuidString)
+                .gt("created_at", value: sinceStr).execute().value) ?? []
+            total += commentLikes.count
+        }
         return total
     }
 
@@ -1179,17 +1194,19 @@ final class FeedService {
         async let followRaws = activityFollows(userId: userId)
         async let taggedRaws = activityTagged(userId: userId)
         async let taggedReactionRaws = activityReactionsOnTaggedPosts(userId: userId)
+        async let commentLikeRaws = activityCommentLikes(userId: userId)
 
         await blockedDone
         var raws: [ActivityRaw]
         do {
-            // These four used to swallow their errors, so an unreachable server produced an
+            // These used to swallow their errors, so an unreachable server produced an
             // empty array indistinguishable from a genuinely quiet account, and the view said
             // "No activity yet". Surfaced instead, so the view can offer a retry.
             raws = try await ownPostRaws
             raws += try await followRaws
             raws += try await taggedRaws
             raws += try await taggedReactionRaws
+            raws += try await commentLikeRaws
             guard AccountEpoch.isCurrent(epoch) else { return [] }
             activityError = nil
         } catch {
@@ -1330,6 +1347,55 @@ final class FeedService {
     ) -> Bool {
         guard postOwnerId != viewerId else { return false }   // covered by activityOnOwnPosts
         return reactorId != viewerId                          // not your own reaction
+    }
+
+    /// Likes on comments YOU wrote. First the caller's own comment ids, then any `comment_likes`
+    /// row against that set from someone else, matching `send-social-push`'s "your comment got
+    /// liked" event so opening Activity from that push has a row to show, same reasoning as
+    /// `activityReactionsOnTaggedPosts` above.
+    ///
+    /// `comment_likes.id` and `.push_sent` exist only for the service-role push function and are
+    /// never selected here.
+    private func activityCommentLikes(userId: UUID) async throws -> [ActivityRaw] {
+        struct Own: Decodable { let id: UUID }
+        let owned: [Own] = try await supabase.from("post_comments")
+            .select("id")
+            .eq("user_id", value: userId.uuidString)
+            .execute().value
+        let commentIds = owned.map(\.id.uuidString)
+        guard !commentIds.isEmpty else { return [] }
+
+        struct L: Decodable {
+            let user_id: UUID
+            // Nullable: defaults to NOW() but historical rows can carry a genuine NULL.
+            let created_at: Date?
+            let post_comments: C?
+            struct C: Decodable { let user_id: UUID; let body: String; let post_id: UUID }
+        }
+        let ls: [L] = try await supabase.from("comment_likes")
+            .select("user_id,created_at,post_comments(user_id,body,post_id)")
+            .in("comment_id", values: commentIds)
+            .neq("user_id", value: userId.uuidString)
+            .order("created_at", ascending: false).limit(40).execute().value
+
+        return ls.compactMap { like in
+            // No embedded comment (deleted between the two queries) or no created_at (can't be
+            // placed in the feed's newest-first order, and no fabricated date is more honest than
+            // a wrong one) drops the row rather than guessing.
+            guard let comment = like.post_comments, let date = like.created_at,
+                  Self.shouldIncludeCommentLike(likerId: like.user_id, viewerId: userId)
+            else { return nil }
+            return ActivityRaw(kind: .commentLiked(comment.body), actorId: like.user_id, date: date,
+                                postId: comment.post_id)
+        }
+    }
+
+    /// The pure exclusion rule behind `activityCommentLikes`: a like on your own comment, by
+    /// yourself, isn't activity about you. `.neq` on the query already enforces this same rule
+    /// server-side; kept here too as a plain, testable function, same reasoning as
+    /// `shouldIncludeTaggedPostReaction` above.
+    nonisolated static func shouldIncludeCommentLike(likerId: UUID, viewerId: UUID) -> Bool {
+        likerId != viewerId
     }
 
     #if DEBUG

@@ -816,6 +816,22 @@ DROP POLICY IF EXISTS "comment_likes: remove own" ON public.comment_likes;
 CREATE POLICY "comment_likes: remove own"
     ON public.comment_likes FOR DELETE USING (auth.uid() = user_id);
 
+-- Push notifications for comment likes ("<name> liked your comment"), same poll +
+-- push_sent-flag pattern as every other table send-social-push scans. comment_likes'
+-- primary key is the composite (comment_id, user_id) above and stays that way; `id` is a
+-- surrogate added ONLY so a batch of likes can be marked done with `.in("id", ids)`, the
+-- same shape post_reactions/photo_reactions/post_comments/photo_comments already use,
+-- instead of one UPDATE per (comment_id, user_id) pair. gen_random_uuid() is volatile, so
+-- backfilling this column assigns a genuinely distinct id to every existing row.
+-- The one-time backfill that marks every PRE-EXISTING like push_sent = TRUE (so the first
+-- poll after deploy doesn't blast a push for the entire historical table) deliberately does
+-- NOT live here; see supabase/migrations/2026-08-12_comment_likes_push_sent.sql for why and
+-- run it before this file is re-applied against a database that already has that column.
+ALTER TABLE public.comment_likes ADD COLUMN IF NOT EXISTS id UUID NOT NULL DEFAULT gen_random_uuid();
+ALTER TABLE public.comment_likes ADD COLUMN IF NOT EXISTS push_sent BOOLEAN NOT NULL DEFAULT FALSE;
+CREATE UNIQUE INDEX IF NOT EXISTS comment_likes_id_idx ON public.comment_likes (id);
+CREATE INDEX IF NOT EXISTS comment_likes_unpushed_idx ON public.comment_likes (push_sent) WHERE push_sent = FALSE;
+
 -- ROLL PHOTO COMMENTS -----------------------------------------
 -- Comments on a shared roll's photos. Visible to roll members; notifications go only to the
 -- photo's owner + people already in that photo's thread (see send-social-push), never the

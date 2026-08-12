@@ -35,6 +35,7 @@ func activityActionText(_ kind: ActivityItem.Kind) -> String {
         case .placeholder: return "reacted to a photo you're in"
         }
     case .comment(let body): return "commented: “\(body)”"
+    case .commentLiked(let body): return "liked your comment: “\(body)”"
     case .follow: return "started following you"
     case .tagged: return "tagged you in a photo"
     }
@@ -290,7 +291,7 @@ struct ActivityFeedView: View {
                     .background(FlimTheme.bg, in: Circle())
                     .overlay(Circle().stroke(FlimTheme.bg, lineWidth: 2))
             }
-        case .comment, .tagged:
+        case .comment, .tagged, .commentLiked:
             Image(systemName: icon(kind))
                 .font(.system(size: 9, weight: .bold))
                 .foregroundStyle(.white)
@@ -364,6 +365,7 @@ private struct ActivityLine: View {
         switch kind {
         case .like, .likeTagged: return "heart.fill"
         case .comment: return "bubble.right.fill"
+        case .commentLiked: return "heart.fill"
         case .follow: return "person.fill.badge.plus"
         case .tagged: return "tag.fill"
         }

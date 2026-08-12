@@ -99,4 +99,12 @@ final class ActivityActionTextTests: XCTestCase {
         XCTAssertEqual(activityActionText(.follow), "started following you")
         XCTAssertEqual(activityActionText(.tagged), "tagged you in a photo")
     }
+
+    /// `.commentLiked` carries the LIKED comment's own body, quoted the same way `.comment` quotes
+    /// the comment itself, so the row reads as "which comment got liked" rather than a bare "liked
+    /// your comment" with nothing to identify it.
+    @MainActor
+    func testCommentLikedQuotesTheLikedCommentsBody() {
+        XCTAssertEqual(activityActionText(.commentLiked("nice!")), "liked your comment: “nice!”")
+    }
 }
