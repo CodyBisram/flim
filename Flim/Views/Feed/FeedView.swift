@@ -521,7 +521,16 @@ struct FeedPostCard: View {
             // Comment preview → @handle taps to their page; "View all" is the ONLY way
             // into the comments sheet (the photo tile itself no longer opens it).
             if !commentPreview.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
+                // Touch targets here are honest, not 44pt: every direction is boxed in by another
+                // tappable view (ReactionBar above, "View N comments" below it, Reply and the
+                // like button next to each other, the comment text across the Spacer), so a
+                // control can only grow into the dead space between it and a neighbour, never
+                // past the midpoint, or the later-declared view would silently steal the earlier
+                // one's taps. The insets below are half the MEASURED gap to each neighbour: 14pt
+                // row spacing halves to 7, the outer VStack's 12pt spacing to ReactionBar halves
+                // to 6, and the 8pt gaps between Reply/like/comment-text halve to 4. If any of
+                // those spacings change, these insets must move with them.
+                VStack(alignment: .leading, spacing: 14) {
                     Button { showComments = true } label: {
                         // "View all 1 comments" was wrong twice over: the plural, and "all" of a
                         // single thing. One comment is already fully shown in the preview below,
@@ -531,6 +540,7 @@ struct FeedPostCard: View {
                             .contentTransition(.numericText())
                             .animation(.snappy(duration: 0.28), value: comments.count)
                     }
+                    .expandTapTarget(top: 6, leading: 4, bottom: 7, trailing: 4)
                     ForEach(commentPreview) { info in
                         // firstTextBaseline, not top. The comment is 14pt and the trailing
                         // controls are 11 and 12, so aligning top EDGES parks the smaller cluster
@@ -563,6 +573,7 @@ struct FeedPostCard: View {
                                     Text("Reply").flimFont(11, relativeTo: .caption)
                                         .foregroundStyle(FlimTheme.textTertiary)
                                 }
+                                .expandTapTarget(top: 7, leading: 4, bottom: 7, trailing: 4)
                                 .accessibilityLabel("Reply to \(info.handle)")
                             }
                             Button { likeComment(info) } label: {
@@ -580,6 +591,11 @@ struct FeedPostCard: View {
                                         .frame(width: 16, alignment: .trailing)
                                 }
                             }
+                            // Leading neighbour is Reply when present, the comment text across the
+                            // Spacer when it isn't; either way the nearest tappable edge is 8pt
+                            // away, so 4 leading holds. Trailing edge is the card's own padding,
+                            // genuinely dead space, so it takes the full gap to the card edge.
+                            .expandTapTarget(top: 7, leading: 4, bottom: 7, trailing: 14)
                         }
                     }
                 }

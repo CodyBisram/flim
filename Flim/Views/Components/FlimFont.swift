@@ -68,6 +68,22 @@ extension View {
             .contentShape(Rectangle())
             .padding(-inset)
     }
+
+    /// Same technique as `expandTapTarget(by:)`, per edge: a touch target may grow into dead
+    /// space, never into a neighbour's.
+    ///
+    /// Use this where a control is boxed in by other tappable views on some sides but has real
+    /// dead space (a card's own padding, an empty margin) on others. Measure the gap to each
+    /// tappable neighbour and pass at most half of it for that edge; the two controls then meet
+    /// exactly instead of overlapping. When two views 18pt apart both take the full 9, their
+    /// touch areas meet at the midpoint. Take more and the areas overlap, and per SwiftUI's own
+    /// hit-testing order, the LATER-declared view silently wins the overlap and swallows taps
+    /// meant for the earlier one.
+    func expandTapTarget(top: CGFloat = 0, leading: CGFloat = 0, bottom: CGFloat = 0, trailing: CGFloat = 0) -> some View {
+        padding(EdgeInsets(top: top, leading: leading, bottom: bottom, trailing: trailing))
+            .contentShape(Rectangle())
+            .padding(EdgeInsets(top: -top, leading: -leading, bottom: -bottom, trailing: -trailing))
+    }
 }
 
 /// How far the app lets text grow.
