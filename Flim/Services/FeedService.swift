@@ -1064,6 +1064,29 @@ final class FeedService {
             .eq("following_id", value: userId.uuidString)
             .gt("created_at", value: sinceStr).execute().value) ?? []
         total += follows.count
+
+        // Being tagged, and reactions to a photo you are IN, both appear on the Activity screen but
+        // were never counted here, so the bell stayed dark while the list had something new in it.
+        // A notification that leads to a screen whose badge disagrees with its contents reads as
+        // the app losing track, which is the same complaint that surfaced the tagged-reaction row
+        // in the first place.
+        struct TagRow: Decodable { let post_id: UUID; let created_at: Date }
+        let tags: [TagRow] = (try? await supabase.from("post_tags").select("post_id,created_at")
+            .eq("tagged_user_id", value: userId.uuidString)
+            .execute().value) ?? []
+        total += tags.filter { $0.created_at > since }.count
+
+        // Reactions on those posts, minus the ones already counted above (a post you own) and your
+        // own reactions, matching `activityReactionsOnTaggedPosts`'s exclusions exactly so the
+        // badge can never disagree with the list it is counting.
+        let ownedIds = Set(postIds)
+        let taggedNotOwned = tags.map(\.post_id.uuidString).filter { !ownedIds.contains($0) }
+        if !taggedNotOwned.isEmpty {
+            let taggedReactions: [Row] = (try? await supabase.from("post_reactions").select("created_at")
+                .in("post_id", values: taggedNotOwned).neq("user_id", value: userId.uuidString)
+                .gt("created_at", value: sinceStr).execute().value) ?? []
+            total += taggedReactions.count
+        }
         return total
     }
 
@@ -1071,25 +1094,28 @@ final class FeedService {
 
     func fetchActivity(userId: UUID) async -> [ActivityItem] {
         let epoch = AccountEpoch.current
-        // The three source branches (activity on your posts, new followers, tags of you) are
-        // independent round-trip sets, run them concurrently instead of one after another. The
-        // block refresh is independent too; it just has to finish before the filter below. The
-        // rows are already RLS-clean of blocked-either-way activity, but this view can be reached
-        // without the Feed tab ever loading, and re-checking protects anything cached pre-block.
+        // The four source branches (activity on your posts, new followers, tags of you, reactions
+        // on posts you're tagged in) are independent round-trip sets, run them concurrently instead
+        // of one after another. The block refresh is independent too; it just has to finish before
+        // the filter below. The rows are already RLS-clean of blocked-either-way activity, but this
+        // view can be reached without the Feed tab ever loading, and re-checking protects anything
+        // cached pre-block.
         async let blockedDone: Void = loadBlocked(userId: userId)
         async let ownPostRaws = activityOnOwnPosts(userId: userId)
         async let followRaws = activityFollows(userId: userId)
         async let taggedRaws = activityTagged(userId: userId)
+        async let taggedReactionRaws = activityReactionsOnTaggedPosts(userId: userId)
 
         await blockedDone
         var raws: [ActivityRaw]
         do {
-            // These three used to swallow their errors, so an unreachable server produced an
+            // These four used to swallow their errors, so an unreachable server produced an
             // empty array indistinguishable from a genuinely quiet account, and the view said
             // "No activity yet". Surfaced instead, so the view can offer a retry.
             raws = try await ownPostRaws
             raws += try await followRaws
             raws += try await taggedRaws
+            raws += try await taggedReactionRaws
             guard AccountEpoch.isCurrent(epoch) else { return [] }
             activityError = nil
         } catch {
@@ -1168,6 +1194,64 @@ final class FeedService {
             guard let author = t.posts?.user_id, author != userId else { return nil }
             return ActivityRaw(kind: .tagged, actorId: author, date: t.created_at, postId: t.post_id)
         }
+    }
+
+    /// Reactions on posts you're TAGGED in, distinct from `activityOnOwnPosts` (reactions on
+    /// posts you OWN). Added because `send-social-push` sends "N people reacted to a photo
+    /// you're in" for exactly this event, and until this existed the app had nothing to show
+    /// for that push: `activityOnOwnPosts` only looks at your own `postIds`, `activityTagged`
+    /// only reports the tag itself, never a later reaction on it. Opening Activity from that
+    /// push showed nothing, which reads as more broken than showing nothing at all.
+    ///
+    /// One query for every reaction on every post you're tagged in (regardless of who owns
+    /// it), then `shouldIncludeTaggedPostReaction` throws out the two cases that don't belong
+    /// here: the post is one you own (`activityOnOwnPosts` already has that row, a second one
+    /// here would double it) and the reaction is your own (reacting to a photo you're in isn't
+    /// activity about you). `.neq` on the query does the same for your own reactions already,
+    /// this is the same rule kept as a plain, testable function rather than only living inside
+    /// a query filter no test can exercise.
+    private func activityReactionsOnTaggedPosts(userId: UUID) async throws -> [ActivityRaw] {
+        struct T: Decodable {
+            let post_id: UUID; let posts: P?
+            struct P: Decodable { let user_id: UUID }
+        }
+        let tags: [T] = try await supabase.from("post_tags")
+            .select("post_id,posts(user_id)")
+            .eq("tagged_user_id", value: userId.uuidString)
+            .execute().value
+        let owners = Dictionary(uniqueKeysWithValues: tags.compactMap { t -> (UUID, UUID)? in
+            guard let owner = t.posts?.user_id else { return nil }
+            return (t.post_id, owner)
+        })
+        let postIds = owners.keys.map(\.uuidString)
+        guard !postIds.isEmpty else { return [] }
+
+        struct R: Decodable { let user_id: UUID; let emoji: String; let created_at: Date; let post_id: UUID }
+        let rs: [R] = try await supabase.from("post_reactions")
+            .select("user_id,emoji,created_at,post_id")
+            .in("post_id", values: postIds)
+            .neq("user_id", value: userId.uuidString)
+            .order("created_at", ascending: false).limit(40).execute().value
+
+        return rs.compactMap { r in
+            guard let owner = owners[r.post_id],
+                  Self.shouldIncludeTaggedPostReaction(
+                      postOwnerId: owner, reactorId: r.user_id, viewerId: userId)
+            else { return nil }
+            return ActivityRaw(kind: .likeTagged(r.emoji), actorId: r.user_id, date: r.created_at,
+                                postId: r.post_id)
+        }
+    }
+
+    /// The pure exclusion rule behind `activityReactionsOnTaggedPosts`. `nonisolated static`,
+    /// same reasoning as `PhotoService.shouldAttemptEmojiBackfill`: the network round trips stay
+    /// inline above, this is only the gate in front of them, kept pure so it's testable without a
+    /// live account.
+    nonisolated static func shouldIncludeTaggedPostReaction(
+        postOwnerId: UUID, reactorId: UUID, viewerId: UUID
+    ) -> Bool {
+        guard postOwnerId != viewerId else { return false }   // covered by activityOnOwnPosts
+        return reactorId != viewerId                          // not your own reaction
     }
 
     #if DEBUG

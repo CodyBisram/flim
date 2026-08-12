@@ -12,6 +12,34 @@ func buildActivityThumbURLs(items: [ActivityItem], urlsByPath: [String: URL]) ->
     }, uniquingKeysWith: { a, _ in a })
 }
 
+/// The Activity screen's one sentence per row, top-level (not a method on the view) so it's
+/// testable without standing up `ActivityFeedView` itself, same reasoning as
+/// `buildActivityThumbURLs` above. `@MainActor` because it reads `ReactionRenderabilityCache.shared`,
+/// same as every other caller of that cache.
+@MainActor
+func activityActionText(_ kind: ActivityItem.Kind) -> String {
+    switch kind {
+    case .like(let emoji):
+        // Don't splice a string this device can't draw into the sentence, an unrenderable
+        // emoji would leave tofu sitting mid-line; see `ReactionGlyph.swift`.
+        switch reactionGlyph(for: emoji, renders: ReactionRenderabilityCache.shared.renders) {
+        case .emoji(let text): return "reacted \(text) to your photo"
+        case .placeholder: return "reacted to your photo"
+        }
+    case .likeTagged(let emoji):
+        // Matches the push that names this exact event ("N people reacted to a photo you're
+        // in", `send-social-push`), so the sentence you land on from the push agrees with the
+        // one that sent it. Not "your photo": you're tagged in it, you don't own it.
+        switch reactionGlyph(for: emoji, renders: ReactionRenderabilityCache.shared.renders) {
+        case .emoji(let text): return "reacted \(text) to a photo you're in"
+        case .placeholder: return "reacted to a photo you're in"
+        }
+    case .comment(let body): return "commented: “\(body)”"
+    case .follow: return "started following you"
+    case .tagged: return "tagged you in a photo"
+    }
+}
+
 struct ActivityFeedView: View {
     @Environment(\.flimAccent) private var accent
     @Environment(AuthService.self) private var auth
@@ -151,7 +179,7 @@ struct ActivityFeedView: View {
                 // opens the profile (see the note on `row`), and it was what cost the typography.
                 ActivityLine(
                     handle: item.actor.handle,
-                    action: actionText(item.kind),
+                    action: activityActionText(item.kind),
                     onHandle: { profileRoute = ProfileRoute(id: item.actor.id) },
                     onBody: { openDestination(item) }
                 )
@@ -242,7 +270,7 @@ struct ActivityFeedView: View {
     @ViewBuilder
     private func badge(_ kind: ActivityItem.Kind) -> some View {
         switch kind {
-        case .like(let emoji):
+        case .like(let emoji), .likeTagged(let emoji):
             // `emoji` arrived over the network from whoever reacted, possibly on a newer OS than
             // this device's; see `ReactionGlyph.swift`. `ReactionBar`'s own picker never produces
             // anything this device can't draw, but a row here can be about a reaction someone else
@@ -332,24 +360,9 @@ private struct ActivityLine: View {
     }
 }
 
-    private func actionText(_ kind: ActivityItem.Kind) -> String {
-        switch kind {
-        case .like(let emoji):
-            // Same fallback as `badge(_:)` above: don't splice a string this device can't draw
-            // into the sentence, an unrenderable emoji would leave tofu sitting mid-line.
-            switch reactionGlyph(for: emoji, renders: ReactionRenderabilityCache.shared.renders) {
-            case .emoji(let text): return "reacted \(text) to your photo"
-            case .placeholder: return "reacted to your photo"
-            }
-        case .comment(let body): return "commented: “\(body)”"
-        case .follow: return "started following you"
-        case .tagged: return "tagged you in a photo"
-        }
-    }
-
     private func icon(_ kind: ActivityItem.Kind) -> String {
         switch kind {
-        case .like: return "heart.fill"
+        case .like, .likeTagged: return "heart.fill"
         case .comment: return "bubble.right.fill"
         case .follow: return "person.fill.badge.plus"
         case .tagged: return "tag.fill"

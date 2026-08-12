@@ -151,10 +151,13 @@ struct FeedItem: Identifiable, Hashable {
 /// One line in the Activity screen, something someone did involving you.
 struct ActivityItem: Identifiable {
     enum Kind {
-        case like(String)      // emoji
+        case like(String)      // emoji, reacted to a photo YOU OWN
         case comment(String)   // body
         case follow
         case tagged            // tagged you in a photo
+        /// Emoji, reacted to a photo you're TAGGED in but do not own. Distinct from `.like`: that
+        /// case's copy ("reacted to your photo") would be false here, the photo isn't yours.
+        case likeTagged(String)
     }
     let id = UUID()
     let kind: Kind

@@ -60,14 +60,22 @@ enum EmojiSuggestion {
     /// are exactly what degrades a classifier, and this is the one place in the pipeline where the
     /// untouched capture is still in memory once a photo has a row to attach a suggestion to (see
     /// `PhotoService.enqueueCapture`, the only caller).
-    static func suggest(rawData: Data, photoId: UUID) {
+    ///
+    /// - Parameter onWritten: called with the emoji once the RPC write actually lands, `@MainActor`
+    ///   so the caller (`PhotoService`) can patch its own cache directly instead of that photo's
+    ///   entry sitting stale until something re-fetches it. Never called if there was nothing to
+    ///   write or the write failed, both of which already leave the caller's own state untouched.
+    static func suggest(rawData: Data, photoId: UUID,
+                        onWritten: @escaping @MainActor ([String]) -> Void = { _ in }) {
         Task.detached(priority: .utility) {
             let emoji = classify(rawData)
             guard !emoji.isEmpty else { return }
             struct Params: Encodable { let p_photo_id: UUID; let p_emoji: [String] }
-            _ = try? await supabase
+            guard (try? await supabase
                 .rpc("set_photo_suggested_emoji", params: Params(p_photo_id: photoId, p_emoji: emoji))
-                .execute()
+                .execute()) != nil
+            else { return }
+            await onWritten(emoji)
         }
     }
 

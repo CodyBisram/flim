@@ -64,13 +64,57 @@ final class PhotoService {
 
     var hasFailedUploads: Bool { !failedUploads.isEmpty }
 
+    /// One photo's `get_suggested_emoji` state. `.negative` records WHEN the empty answer was
+    /// fetched (not just that it was), which is what lets a suggestion that lands right after
+    /// eventually surface again; see `suggestedEmojiByPhoto`'s own doc for why a bare `[]` isn't
+    /// enough.
+    ///
+    /// Not `private`: `shouldRefetchSuggestion` (below) takes one directly, and is `nonisolated`
+    /// so it's testable without a live account, the same reasoning as `shouldAttemptEmojiBackfill`.
+    enum SuggestionCacheEntry: Equatable {
+        case found([String])
+        case negative(Date)
+    }
+
     /// `get_suggested_emoji`'s response, cached by photo id, for the reaction bar's two
-    /// contextual slots. An entry is always present once fetched: `[]` for "fetched, nothing
-    /// suggested" (a photo absent from the server's response), distinct from "never asked",
-    /// so `fetchSuggestedEmoji` knows not to re-request it every time a screen reappears. Absent
-    /// entirely just means not yet fetched, which `reactionDefaults(for:)` also reads as "show
-    /// the ordinary fallback two" until it lands.
-    private var suggestedEmojiByPhoto: [UUID: [String]] = [:]
+    /// contextual slots. An entry is always present once fetched: `.negative` for "fetched,
+    /// nothing suggested as of this timestamp" (a photo absent from the server's response),
+    /// distinct from "never asked", so `fetchSuggestedEmoji` knows not to re-request it every
+    /// time a screen reappears. Absent entirely just means not yet fetched, which
+    /// `reactionDefaults(for:)` also reads as "show the ordinary fallback two" until it lands.
+    ///
+    /// A `.negative` used to be permanent (a bare `[]`), which poisoned a photo the instant
+    /// anything read it before its suggestion existed. That happens constantly, not rarely:
+    /// on-capture classification (`EmojiSuggestion.suggest`) and the opportunistic backfill
+    /// (`backfillSuggestedEmoji`) both write their result well after the row itself is visible,
+    /// so a feed or grid that asks about a fresh photo the moment it appears routinely reads
+    /// "nothing yet" a beat before the write lands, and that answer used to stick for the rest
+    /// of the session.
+    ///
+    /// Fixed two ways, deliberately not just one:
+    ///  - Both writers that run on THIS device (the capture classifier, via
+    ///    `noteSuggestionWritten`, and the backfill, directly) patch this cache the moment their
+    ///    write succeeds, so the common case, a screen reappearing after its own capture or its
+    ///    own backfill, self-heals immediately with no extra network call.
+    ///  - Direct patching only reaches a write this device's own `PhotoService` instance knows
+    ///    about. It CANNOT reach a suggestion written by this same user from a different device
+    ///    or a different app launch, there is nothing local to hook. `negativeCacheTTL` covers
+    ///    that gap: a negative older than the TTL is treated as unfetched again the next time
+    ///    `fetchSuggestedEmoji` is asked about it, so it retries instead of staying poisoned
+    ///    until the app restarts. This is deliberately NOT "stop caching negatives": most photos
+    ///    genuinely have none, and re-asking about every one of them on every screen appearance
+    ///    would be a request storm against a metered backend. Bounding the retry to once per TTL
+    ///    window keeps that cost flat while still healing eventually.
+    private var suggestedEmojiByPhoto: [UUID: SuggestionCacheEntry] = [:]
+
+    /// How long a `.negative` is trusted before `fetchSuggestedEmoji` will ask again. Short
+    /// enough that a suggestion missed by the direct-patch paths above (a race, or a write from
+    /// another device) surfaces on the next ordinary reappearance of a screen rather than needing
+    /// a restart; long enough that scrolling back and forth over the same photo within that
+    /// window doesn't re-request it. Not `private`, so tests can pin the exact boundary rather
+    /// than a value copy-pasted from here. `nonisolated`, like `shouldRefetchSuggestion` itself,
+    /// a plain `TimeInterval` constant needs no actor to read safely.
+    nonisolated static let negativeCacheTTL: TimeInterval = 90
 
     // Serial capture pipeline. Chaining each shot onto the previous one keeps bursts from
     // racing on the shared Core Image context or on `photos`/`failedUploads`, the race
@@ -129,7 +173,15 @@ final class PhotoService {
                 // suggestion to. Placed after the row lands and before `onFinish`, same spot as
                 // `Activation.log(.firstShot)` inside `captureAndUpload`: nothing here is awaited,
                 // so it can never delay the capture this photo belongs to.
-                EmojiSuggestion.suggest(rawData: rawData, photoId: photo.id)
+                //
+                // `onWritten` patches `suggestedEmojiByPhoto` the moment the classifier's write
+                // actually lands, so a screen that read this exact photo moments too early (before
+                // classification finished) self-heals immediately instead of waiting out
+                // `negativeCacheTTL`. See `suggestedEmojiByPhoto`'s own doc for why both this and
+                // the TTL exist together.
+                EmojiSuggestion.suggest(rawData: rawData, photoId: photo.id) { [weak self] emoji in
+                    self?.noteSuggestionWritten(photoId: photo.id, emoji: emoji)
+                }
                 await onFinish(photo)
             }
         }
@@ -690,7 +742,7 @@ final class PhotoService {
         // guess every single time it's viewed.
         await fetchSuggestedEmoji(photoIds: [photo.id])
         guard Self.shouldAttemptEmojiBackfill(
-            photo: photo, viewerId: viewerId, existingSuggestion: suggestedEmojiByPhoto[photo.id]
+            photo: photo, viewerId: viewerId, existingSuggestion: knownSuggestion(for: photo.id)
         ) else { return }
 
         guard let bytes = await DiskImageCache.loadRaw(path: photo.viewPath) else { return }
@@ -707,7 +759,29 @@ final class PhotoService {
         else { return }
 
         // Keep the in-memory cache in step so the reaction bar can show this without a re-fetch.
-        suggestedEmojiByPhoto[photo.id] = emoji
+        noteSuggestionWritten(photoId: photo.id, emoji: emoji)
+    }
+
+    /// Patches `suggestedEmojiByPhoto` the moment a write to `set_photo_suggested_emoji` from
+    /// THIS device is known to have landed, so the reaction bar can show it without waiting for a
+    /// re-fetch or for `negativeCacheTTL` to lapse. Called from `backfillSuggestedEmoji` directly
+    /// and from the on-capture classifier via the `onWritten` callback passed to
+    /// `EmojiSuggestion.suggest`. See `suggestedEmojiByPhoto`'s own doc for why this alone isn't
+    /// sufficient (it can't reach a write from another device) and what covers the rest.
+    private func noteSuggestionWritten(photoId: UUID, emoji: [String]) {
+        suggestedEmojiByPhoto[photoId] = .found(emoji)
+    }
+
+    /// `suggestedEmojiByPhoto[photoId]` translated into the shape `shouldAttemptEmojiBackfill`
+    /// expects: `nil` for "unknown", `[]` for "confirmed no suggestion", a real suggestion
+    /// otherwise. Kept separate from the raw cache so callers outside this file never need to know
+    /// `SuggestionCacheEntry` exists.
+    private func knownSuggestion(for photoId: UUID) -> [String]? {
+        switch suggestedEmojiByPhoto[photoId] {
+        case nil: return nil
+        case .found(let emoji): return emoji
+        case .negative: return []
+        }
     }
 
     /// Whether an emoji backfill is even worth attempting, given who's asking and what the
@@ -981,16 +1055,30 @@ final class PhotoService {
     /// whatever `fetchSuggestedEmoji` has cached for it (or the ordinary fallback two, if that
     /// hasn't been fetched yet or came back empty).
     func reactionDefaults(for photoId: UUID) -> [String] {
-        PostEmoji.defaults(suggested: suggestedEmojiByPhoto[photoId] ?? [])
+        PostEmoji.defaults(suggested: knownSuggestion(for: photoId) ?? [])
+    }
+
+    /// Whether `id` is worth asking `get_suggested_emoji` about again: never fetched, or fetched
+    /// negative long enough ago that `negativeCacheTTL` has lapsed. A found suggestion never
+    /// expires, once real it can't become un-true. `nonisolated static` and given `now` rather
+    /// than reading `.now` itself so the TTL boundary is directly testable.
+    nonisolated static func shouldRefetchSuggestion(_ entry: SuggestionCacheEntry?, now: Date) -> Bool {
+        switch entry {
+        case nil: return true
+        case .found: return false
+        case .negative(let fetchedAt): return now.timeIntervalSince(fetchedAt) > negativeCacheTTL
+        }
     }
 
     /// Batched, deliberately: a feed page or a roll grid renders many photos at once, and
     /// `get_suggested_emoji` is built to be asked about all of them in one call rather than once
-    /// per card. Skips any id already cached (see `suggestedEmojiByPhoto`'s own doc for what
-    /// "cached" means for a photo with no suggestion), so re-appearing at a screen doesn't
-    /// re-request photos it already has an answer for.
+    /// per card. Skips any id whose cache entry doesn't warrant a refetch (see
+    /// `shouldRefetchSuggestion` and `suggestedEmojiByPhoto`'s own doc), so re-appearing at a
+    /// screen doesn't re-request photos it already has a durable answer for, while a negative
+    /// old enough to have gone stale still gets retried.
     func fetchSuggestedEmoji(photoIds: [UUID]) async {
-        let ids = photoIds.filter { suggestedEmojiByPhoto[$0] == nil }
+        let now = Date.now
+        let ids = photoIds.filter { Self.shouldRefetchSuggestion(suggestedEmojiByPhoto[$0], now: now) }
         guard !ids.isEmpty else { return }
         let epoch = AccountEpoch.current
         struct Params: Encodable { let p_photo_ids: [UUID] }
@@ -998,8 +1086,8 @@ final class PhotoService {
             enum CodingKeys: String, CodingKey { case photoId = "photo_id"; case suggestedEmoji = "suggested_emoji" }
         }
         // A genuine failure (network down, decode error) leaves these ids uncached rather than
-        // poisoning them to `[]`, so the next fetch (the next time this screen appears) gets to
-        // retry them instead of the failure being mistaken for "the server said nothing".
+        // poisoning them to `.negative`, so the next fetch (the next time this screen appears)
+        // gets to retry them instead of the failure being mistaken for "the server said nothing".
         guard let rows: [Row] = try? await supabase
             .rpc("get_suggested_emoji", params: Params(p_photo_ids: ids))
             .execute()
@@ -1007,7 +1095,10 @@ final class PhotoService {
         else { return }
         guard AccountEpoch.isCurrent(epoch) else { return }
         let byId = Dictionary(uniqueKeysWithValues: rows.map { ($0.photoId, $0.suggestedEmoji) })
-        for id in ids { suggestedEmojiByPhoto[id] = byId[id] ?? [] }
+        for id in ids {
+            let emoji = byId[id] ?? []
+            suggestedEmojiByPhoto[id] = emoji.isEmpty ? .negative(now) : .found(emoji)
+        }
     }
 
     func addReaction(photoId: UUID, emoji: String, userId: UUID) async {

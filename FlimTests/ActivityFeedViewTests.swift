@@ -66,3 +66,37 @@ final class ActivityFeedViewTests: XCTestCase {
         XCTAssertEqual(result[postB.id], urlB)
     }
 }
+
+/// `activityActionText`, the sentence-per-kind logic behind each Activity row.
+///
+/// Regression this guards: a push exists ("N people reacted to a photo you're in",
+/// `send-social-push`) for a reaction on a post you're TAGGED in but don't own, and until
+/// `.likeTagged` existed the app had no row for that event at all, opening Activity from that
+/// push showed nothing. This pins that `.likeTagged` renders its own, correctly-worded sentence
+/// rather than reusing `.like`'s "to your photo" (false: the viewer doesn't own the post).
+final class ActivityActionTextTests: XCTestCase {
+    @MainActor
+    func testOwnPostReactionSaysYourPhoto() {
+        XCTAssertEqual(activityActionText(.like("❤️")), "reacted ❤️ to your photo")
+    }
+
+    @MainActor
+    func testTaggedPostReactionSaysAPhotoYoureIn() {
+        // Matches the push's own wording, "to a photo you're in", so the sentence you land on
+        // from the push agrees with the one that sent it.
+        XCTAssertEqual(activityActionText(.likeTagged("🔥")), "reacted 🔥 to a photo you're in")
+    }
+
+    @MainActor
+    func testTaggedPostReactionNeverClaimsOwnership() {
+        let text = activityActionText(.likeTagged("😍"))
+        XCTAssertFalse(text.contains("your photo"), "`.likeTagged` must never say \"your photo\": \(text)")
+    }
+
+    @MainActor
+    func testOtherKindsAreUnaffected() {
+        XCTAssertEqual(activityActionText(.comment("nice!")), "commented: “nice!”")
+        XCTAssertEqual(activityActionText(.follow), "started following you")
+        XCTAssertEqual(activityActionText(.tagged), "tagged you in a photo")
+    }
+}
