@@ -274,7 +274,7 @@ struct CameraView: View {
             if let roll = note.object as? Roll { selectedRoll = roll }
         }
         .sheet(isPresented: $showRollPicker) {
-            RollPickerSheet(rolls: rolls.rolls, closed: rolls.closedRollIds, selected: $selectedRoll)
+            RollPickerSheet(rolls: rolls.rolls, selected: $selectedRoll)
         }
     }
 
@@ -821,9 +821,12 @@ private struct ShutterButton: View {
 private struct RollPickerSheet: View {
     @Environment(\.flimAccent) private var accent
     let rolls: [Roll]
-    var closed: Set<UUID> = []
     @Binding var selected: Roll?
     @Environment(\.dismiss) private var dismiss
+
+    /// Still-open rolls first, then rolls that developed within the last day, each group keeping
+    /// the newest-created-first order it arrived in. See `rollPickerDestinations`.
+    private var destinations: [Roll] { rollPickerDestinations(from: rolls, now: .now) }
 
     var body: some View {
         NavigationStack {
@@ -847,8 +850,8 @@ private struct RollPickerSheet: View {
                     }
                     .listRowBackground(FlimTheme.bgElevated)
 
-                    ForEach(rolls) { roll in
-                        let isClosed = closed.contains(roll.id)
+                    ForEach(destinations) { roll in
+                        let isClosed = roll.isDeveloped
                         Button {
                             selected = roll
                             dismiss()
@@ -872,8 +875,10 @@ private struct RollPickerSheet: View {
                         .listRowBackground(FlimTheme.bgElevated)
                     }
 
-                    if rolls.isEmpty {
-                        Text("Start a roll in the Rolls tab to share photos with friends. They'll all develop together.")
+                    if destinations.isEmpty {
+                        Text(rolls.isEmpty
+                             ? "Start a roll in the Rolls tab to share photos with friends. They'll all develop together."
+                             : "All your rolls have developed. Start a new one in the Rolls tab to keep sharing.")
                             .flimFont(13)
                             .foregroundStyle(FlimTheme.textTertiary)
                             .padding(.vertical, 8)

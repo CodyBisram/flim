@@ -8,8 +8,6 @@ final class RollService {
     var rolls: [Roll] = []
     var memberCounts: [UUID: Int] = [:]
     var coverPaths: [UUID: String] = [:]   // roll id → cover thumbnail path (thumb_path preferred)
-    /// Rolls whose reveal (created_at + delay) has passed, closed to new shots.
-    var closedRollIds: Set<UUID> { Set(rolls.filter(\.isDeveloped).map(\.id)) }
     var isLoading = false
     var error: String?
 
@@ -323,6 +321,26 @@ final class RollService {
             .upsert(JoinPayload(rollId: rollId, userId: userId))
             .execute()
     }
+}
+
+/// Destinations for the camera's "Send to…" picker: a partition of `rolls`, not a re-sort.
+/// `rolls` arrives ordered `created_at DESC`, and that relative order is preserved within each
+/// group, because a roll's usability (still open vs. developed) has nothing to do with when it
+/// was created, and re-sorting by date would bury the one tappable roll under stale ones.
+///
+/// Returns still-open rolls first, then rolls that developed within `grace` of `now`. A roll
+/// that developed longer than `grace` ago is omitted entirely.
+///
+/// The recently-developed group is not selectable, `Roll.isDeveloped` is permanent, so it is
+/// never tappable again. It exists only so a roll someone was actively shooting into doesn't
+/// silently disappear from the picker the instant it closes. Past `grace`, that information
+/// stops being useful and becomes clutter, so those rows drop off too.
+func rollPickerDestinations(from rolls: [Roll], now: Date, grace: TimeInterval = 24 * 60 * 60) -> [Roll] {
+    let open = rolls.filter { !$0.isDeveloped(now: now) }
+    let recentlyDeveloped = rolls.filter { roll in
+        roll.isDeveloped(now: now) && now.timeIntervalSince(roll.revealAt) < grace
+    }
+    return open + recentlyDeveloped
 }
 
 enum RollError: LocalizedError {
