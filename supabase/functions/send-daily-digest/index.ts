@@ -143,6 +143,46 @@ async function importPrivateKey(pem: string): Promise<CryptoKey> {
 // destination list). The digest always opens the feed, and the feed destination carries no id.
 const FEED_ROUTE = { t: "feed" as const };
 
+// Prunes a device token APNs has told us is genuinely dead, so it stops being retried on
+// every future run. ONLY on 410 Unregistered: 400 BadDeviceToken is left alone on purpose,
+// because that status is also what a valid production TestFlight token gets back from the
+// SANDBOX host (see the `host` field above) — an environment mismatch, not a dead device.
+// Deleting on 400 would wipe out perfectly good tokens for every user the first time the
+// environment was misconfigured, which is a far worse failure than a stale row sitting
+// around. 410's body carries Apple's own guard against a race with a fresh registration:
+// `timestamp` (ms since epoch) is when Apple decided the token went bad, so the DELETE only
+// removes the row if it was NOT touched again after that moment. A token re-registered
+// between us sending and this response arriving has a newer `updated_at` and survives.
+// Never throws: a failed prune is a logged warning, not a reason to abandon the rest of the
+// digest run.
+async function deleteDeadToken(deviceToken: string, status: number, body: string | undefined): Promise<void> {
+  if (status !== 410) return;
+
+  let invalidAtIso: string | null = null;
+  try {
+    const parsed = body ? JSON.parse(body) : null;
+    if (parsed?.reason && parsed.reason !== "Unregistered") return; // not the case we handle
+    if (typeof parsed?.timestamp === "number") invalidAtIso = new Date(parsed.timestamp).toISOString();
+  } catch {
+    // Malformed/missing body: still trust the 410 status itself, just skip the timestamp guard.
+  }
+
+  try {
+    let query = supabase.from("device_tokens").delete().eq("token", deviceToken);
+    if (invalidAtIso) query = query.lte("updated_at", invalidAtIso);
+    const { data, error } = await query.select("user_id");
+    if (error) {
+      console.warn(JSON.stringify({ at: "device_token_prune_failed", token8: deviceToken.slice(0, 8), error: error.message }));
+      return;
+    }
+    for (const row of (data ?? []) as { user_id: string }[]) {
+      console.log(JSON.stringify({ at: "device_token_pruned", userId: row.user_id, token8: deviceToken.slice(0, 8), status }));
+    }
+  } catch (e) {
+    console.warn(JSON.stringify({ at: "device_token_prune_failed", token8: deviceToken.slice(0, 8), error: String(e) }));
+  }
+}
+
 async function sendPush(deviceToken: string, title: string, body: string): Promise<boolean> {
   const jwt = await apnsAuthToken();
   const res = await fetch(`${APNS_HOST}/3/device/${deviceToken}`, {
@@ -163,6 +203,7 @@ async function sendPush(deviceToken: string, title: string, body: string): Promi
     host: APNS_HOST, apnsId: res.headers.get("apns-id"),
     token8: deviceToken.slice(0, 8), reason,
   }));
+  if (!res.ok) await deleteDeadToken(deviceToken, res.status, reason);
   return res.ok;
 }
 
