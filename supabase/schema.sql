@@ -1086,6 +1086,17 @@ REVOKE EXECUTE ON FUNCTION public.delete_account() FROM PUBLIC, anon;
 REVOKE EXECUTE ON FUNCTION public.join_roll(text) FROM PUBLIC, anon;
 REVOKE EXECUTE ON FUNCTION public.is_roll_member(uuid) FROM PUBLIC, anon;
 REVOKE EXECUTE ON FUNCTION public.is_roll_developed(uuid) FROM PUBLIC, anon;
+-- These three were the only functions in the file revoked without being granted back, relying
+-- silently on Supabase's default privileges having handed `authenticated` execute when they were
+-- first created. Production is fine, because that grant has never been disturbed. A genuine
+-- rebuild from this file was not: `authenticated` came out with no execute on any of them, which
+-- breaks join_roll outright and, worse, breaks every RLS policy that calls is_roll_member or
+-- is_roll_developed inside USING or WITH CHECK, across photos, rolls, roll_members,
+-- photo_comments, photo_reactions, post_tags and roll_notification_mutes, for every signed-in
+-- user at once. Relying on a platform default is not the same as stating the grant.
+GRANT EXECUTE ON FUNCTION public.join_roll(text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.is_roll_member(uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.is_roll_developed(uuid) TO authenticated;
 REVOKE EXECUTE ON FUNCTION public.is_email_allowed(text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.is_email_allowed(text) TO anon, authenticated;
 

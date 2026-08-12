@@ -131,6 +131,7 @@ final class PhotoService {
         isUploading = false
         isLoading = false
         suggestedEmojiByPhoto = [:]
+        emojiBackfillAttempted = []
     }
 
     // MARK: - Capture & Upload
@@ -179,8 +180,9 @@ final class PhotoService {
                 // classification finished) self-heals immediately instead of waiting out
                 // `negativeCacheTTL`. See `suggestedEmojiByPhoto`'s own doc for why both this and
                 // the TTL exist together.
+                let epoch = AccountEpoch.current
                 EmojiSuggestion.suggest(rawData: rawData, photoId: photo.id) { [weak self] emoji in
-                    self?.noteSuggestionWritten(photoId: photo.id, emoji: emoji)
+                    self?.noteSuggestionWritten(photoId: photo.id, emoji: emoji, epoch: epoch)
                 }
                 await onFinish(photo)
             }
@@ -328,11 +330,18 @@ final class PhotoService {
             // The photo is still returned and its renditions still upload: it exists server-side
             // under the account that took it, and abandoning that work would lose a real photo.
             // Only the shared list is left alone.
+            //
+            // Fast path only: skips the extra rendition-upload/return work below when already
+            // obviously stale. Does NOT by itself prove the epoch is still current by the time the
+            // write below runs, `await MainActor.run` is itself a suspension this guard cannot see
+            // past, so the closure re-checks with no `await` between that check and the writes it
+            // guards, same discipline as `captureAsPersonalFallback`.
             guard AccountEpoch.isCurrent(epoch) else {
                 uploadRenditions(photoId: photoId, userId: userId, imageData: imageData)
                 return inserted
             }
             await MainActor.run {
+                guard AccountEpoch.isCurrent(epoch) else { return }
                 loadedPhotos.insert(inserted, at: 0)
                 isUploading = false
             }
@@ -738,6 +747,7 @@ final class PhotoService {
     func backfillSuggestedEmoji(for photo: Photo) async {
         guard !emojiBackfillAttempted.contains(photo.id) else { return }
         emojiBackfillAttempted.insert(photo.id)
+        let epoch = AccountEpoch.current
 
         let viewerId = try? await supabase.auth.session.user.id
 
@@ -766,7 +776,7 @@ final class PhotoService {
         else { return }
 
         // Keep the in-memory cache in step so the reaction bar can show this without a re-fetch.
-        noteSuggestionWritten(photoId: photo.id, emoji: emoji)
+        noteSuggestionWritten(photoId: photo.id, emoji: emoji, epoch: epoch)
     }
 
     /// Patches `suggestedEmojiByPhoto` the moment a write to `set_photo_suggested_emoji` from
@@ -775,7 +785,14 @@ final class PhotoService {
     /// and from the on-capture classifier via the `onWritten` callback passed to
     /// `EmojiSuggestion.suggest`. See `suggestedEmojiByPhoto`'s own doc for why this alone isn't
     /// sufficient (it can't reach a write from another device) and what covers the rest.
-    private func noteSuggestionWritten(photoId: UUID, emoji: [String]) {
+    ///
+    /// - Parameter epoch: guarded like every other write this release, though not for a leak this
+    ///   one could actually cause: the payload is keyed by an immutable photo id and carries
+    ///   nothing account-specific, so a stale write here would just be a harmless no-op patch to a
+    ///   cache entry nobody but that same photo id reads. Threaded through anyway so this file
+    ///   reads consistently and nobody has to re-derive that it's safe.
+    private func noteSuggestionWritten(photoId: UUID, emoji: [String], epoch: Int) {
+        guard AccountEpoch.isCurrent(epoch) else { return }
         suggestedEmojiByPhoto[photoId] = .found(emoji)
     }
 

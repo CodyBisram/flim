@@ -31,6 +31,13 @@ struct PostDetailView: View {
     /// destination whose payload carried `"comments": true`. Defaults false so every existing
     /// caller (the profile grid, Activity) is unaffected.
     var focusCommentsOnAppear: Bool = false
+    /// Called right after this view has actually set `commentFocused = true` in response to
+    /// `focusCommentsOnAppear`, so the caller can clear whatever one-shot flag armed it. Not
+    /// called at all when `focusCommentsOnAppear` is false, and never called synchronously by the
+    /// caller right after pushing: doing that would race SwiftUI's own destination-construction
+    /// pass for THIS push and cancel the very focus it was meant to arm. See `MainTabView`'s
+    /// `focusCommentsPostId` for why the flag must be cleared at all.
+    var onCommentsFocusConsumed: (() -> Void)?
     @Environment(AuthService.self) private var auth
     @Environment(FeedService.self) private var feed
     @Environment(PhotoService.self) private var photoService
@@ -256,7 +263,10 @@ struct PostDetailView: View {
         // this screen once opened showing the PREVIOUS photo.
         .task(id: post.id) {
             await load()
-            if focusCommentsOnAppear { commentFocused = true }
+            if focusCommentsOnAppear {
+                commentFocused = true
+                onCommentsFocusConsumed?()
+            }
         }
         .task(id: post.id) {
             await photoService.fetchSuggestedEmoji(photoIds: [post.photoId])

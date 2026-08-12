@@ -1,5 +1,20 @@
 import SwiftUI
 
+/// Whether the post about to be pushed at `pushedPostId` should land with the comment composer
+/// already focused, and what `focusCommentsPostId` becomes once that focus has been consumed.
+///
+/// Pure so the one-shot rule is structural rather than a claim in a comment: a stray keyboard
+/// popping on a post you were only looking at (a feed card, a profile grid, an Activity row)
+/// happened because the flag that armed the FIRST focus was never cleared, so SwiftUI re-evaluating
+/// the same `navigationDestination` closure for a later, ordinary push of the SAME post re-armed it
+/// too. Consuming this decision's `nextFocusPostId` (see `MainTabView`'s use, from
+/// `PostDetailView`'s own consumed callback, not synchronously after the push) is what makes the
+/// arm-and-clear atomic from the caller's point of view.
+func focusCommentsDecision(currentFocusPostId: UUID?, pushedPostId: UUID) -> (shouldFocus: Bool, nextFocusPostId: UUID?) {
+    let shouldFocus = currentFocusPostId == pushedPostId
+    return (shouldFocus, shouldFocus ? nil : currentFocusPostId)
+}
+
 struct MainTabView: View {
     @Environment(\.flimAccent) private var accent
     @State private var selected = 0
@@ -21,10 +36,17 @@ struct MainTabView: View {
     /// Owned here (not in FeedView) so `profile` and `post` push destinations can push straight
     /// into a page or a post without the Feed tab needing to already be open.
     @State private var feedPath = NavigationPath()
-    /// Set alongside a `.post` push destination's `feedPath.append`, and read once by that same
-    /// post's `navigationDestination` closure, so a "someone commented" notification can land the
-    /// comment composer already focused. Not part of `feedPath` itself: a `NavigationPath` element
-    /// only carries what makes it Hashable, and a focus flag isn't part of a post's identity.
+    /// Set alongside a `.post` push destination's `feedPath.append`, so a "someone commented"
+    /// notification can land the comment composer already focused. Not part of `feedPath` itself:
+    /// a `NavigationPath` element only carries what makes it Hashable, and a focus flag isn't part
+    /// of a post's identity.
+    ///
+    /// Cleared, not just read, by `PostDetailView`'s `onCommentsFocusConsumed` callback once that
+    /// post has actually set focus, via `focusCommentsDecision` above. The `navigationDestination`
+    /// closure below is re-evaluated by SwiftUI every time a `FeedItem` for ANY post is pushed
+    /// (including this same one again later, through an ordinary route like a feed card or a
+    /// profile grid), so leaving this set after the first, intended focus would re-arm the
+    /// keyboard on every later, unrelated visit to the same post.
     @State private var focusCommentsPostId: UUID?
     #if DEBUG
     @Environment(PhotoService.self) private var photos
@@ -79,7 +101,12 @@ struct MainTabView: View {
                     FeedView(scrollToTop: scrollSignal[3, default: 0])
                         .navigationDestination(for: ProfileRoute.self) { UserPageView(userId: $0.id) }
                         .navigationDestination(for: FeedItem.self) { item in
-                            PostDetailView(item: item, focusCommentsOnAppear: focusCommentsPostId == item.id)
+                            let decision = focusCommentsDecision(currentFocusPostId: focusCommentsPostId, pushedPostId: item.id)
+                            PostDetailView(
+                                item: item,
+                                focusCommentsOnAppear: decision.shouldFocus,
+                                onCommentsFocusConsumed: { focusCommentsPostId = decision.nextFocusPostId }
+                            )
                         }
                 }
             }
