@@ -167,7 +167,8 @@ struct PhotoPagerView: View {
                                memberNames: memberNames) { pendingProfile = ProfileRoute(id: $0) }
         }
         .sheet(isPresented: $showTagSheet) {
-            TagPhotoSheet(url: composerPhoto.flatMap { resolvedURLs[$0.id] }, tags: $pendingTags)
+            TagPhotoSheet(url: composerPhoto.flatMap { resolvedURLs[$0.id] }, tags: $pendingTags,
+                          rollId: composerPhoto?.rollId)
         }
         .overlay(alignment: .top) {
             if showSharedToast {
@@ -657,11 +658,19 @@ struct PhotoPagerView: View {
         captionFocused = false
         Task {
             do {
-                try await feed.createPost(photo: photo, caption: caption, userId: uid, tags: tags)
-                Haptics.success()
-                withAnimation { showSharedToast = true }
-                try? await Task.sleep(for: .seconds(2))
-                withAnimation { showSharedToast = false }
+                let tagsSaved = try await feed.createPost(photo: photo, caption: caption, userId: uid, tags: tags)
+                if shouldWarnThatTagsDidNotSave(tagsSaved) {
+                    // The post itself is live, only the tags failed to attach, so this is not the
+                    // "didn't reach the server" branch below: the share stands, un-marking it would
+                    // claim the whole thing failed when it didn't.
+                    Haptics.error()
+                    flashError("Shared, but the tags didn't save. Try again from Edit tags.")
+                } else {
+                    Haptics.success()
+                    withAnimation { showSharedToast = true }
+                    try? await Task.sleep(for: .seconds(2))
+                    withAnimation { showSharedToast = false }
+                }
             } catch {
                 // Didn't reach the server, un-mark so the Share button comes back for a retry.
                 feed.myPostedPhotoIds.remove(photo.id)

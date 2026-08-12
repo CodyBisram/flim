@@ -19,7 +19,19 @@ struct SortDeckView: View {
     // The last swipe, held un-committed so it can be undone (even a delete).
     @State private var lastPhoto: Photo?
     @State private var lastAction: SortAction?
+    /// Caption/tags that ride along with `lastPhoto`/`lastAction` when the held action is a
+    /// compose-sheet publish rather than the plain swipe-right/Post fast path (which leaves both
+    /// empty). Held separately, not as part of `SortAction`, because enum cases can't carry
+    /// default-valued associated data, and every other call site constructing a `.publish` would
+    /// otherwise have to spell out empty values.
+    @State private var lastCaption: String?
+    @State private var lastTags: [PendingTag] = []
     @State private var publishError: String?
+    /// The compose sheet, opened from the pill under the top card or a tap on the card itself.
+    @State private var showCompose = false
+    @State private var composePhoto: Photo?
+    @State private var composeCaption = ""
+    @State private var composeTags: [PendingTag] = []
     /// Retired after a few sorts. A permanent hint is furniture, and stops being read.
     @AppStorage("flim.sortDeck.sortsCompleted") private var sortsCompleted = 0
 
@@ -69,6 +81,9 @@ struct SortDeckView: View {
                     }
                     .padding(.horizontal, 18)
                     .padding(.vertical, 10)
+                    if let top = cards.first {
+                        composeHint(for: top)
+                    }
                     if let publishError {
                         Text(publishError)
                             .flimFont(13, relativeTo: .subheadline)
@@ -86,10 +101,48 @@ struct SortDeckView: View {
         .onDisappear {
             // Safety net if dismissed some other way, commit any still-held action.
             if let p = lastPhoto, let a = lastAction {
-                lastPhoto = nil; lastAction = nil
-                Task { await commit(p, a) }
+                let caption = lastCaption, tags = lastTags
+                lastPhoto = nil; lastAction = nil; lastCaption = nil; lastTags = []
+                Task { await commit(p, a, caption: caption, tags: tags) }
             }
         }
+        .sheet(isPresented: $showCompose) {
+            if let composePhoto {
+                SortDeckComposeSheet(photo: composePhoto, url: urls[composePhoto.id],
+                                      caption: $composeCaption, tags: $composeTags) {
+                    // Same publish path as swipe-right/the Post button, just carrying what was
+                    // typed into the sheet: `performSwipe` already commits the PREVIOUS held
+                    // action, flies this card off, and holds this one for undo exactly as it does
+                    // for the fast path.
+                    performSwipe(.publish, caption: composeCaption, tags: composeTags)
+                }
+            }
+        }
+    }
+
+    /// The pill under the top card: both the hint that a caption/tags are possible and, along
+    /// with the card itself, a tap target into the compose sheet. This is not a hidden gesture,
+    /// swipe-right/the green Post button still publish instantly with neither.
+    private func composeHint(for photo: Photo) -> some View {
+        Button { openCompose(for: photo) } label: {
+            Label("Add a caption or tag people", systemImage: "square.and.pencil")
+                .flimFont(13, weight: .medium, relativeTo: .subheadline)
+                .foregroundStyle(.white)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(Color.white.opacity(0.1), in: Capsule())
+        }
+        .accessibilityLabel("Add a caption or tag people on this photo")
+        .padding(.bottom, 6)
+    }
+
+    private func openCompose(for photo: Photo) {
+        guard !showCompose else { return }
+        Haptics.tap()
+        composePhoto = photo
+        composeCaption = ""
+        composeTags = []
+        showCompose = true
     }
 
     // MARK: - Header
@@ -158,6 +211,13 @@ struct SortDeckView: View {
             .offset(isTop ? drag : .zero)
             .rotationEffect(.degrees(isTop ? Double(drag.width / 22) : 0))
             .gesture(isTop ? dragGesture : nil)
+            // Simultaneous, not exclusive, with the drag gesture above: a genuine tap never
+            // travels far enough for `dragGesture`'s onChanged/onEnded to fire, so the two don't
+            // compete, and the card becomes the larger target the compose pill's affordance
+            // promises. Lower cards in the stack keep the gesture attached (harmless, `isTop`
+            // guards the action) rather than branching the modifier itself, matching how
+            // `dragLabels` above is gated.
+            .simultaneousGesture(TapGesture().onEnded { if isTop { openCompose(for: photo) } })
     }
 
     private var dragLabels: some View {
@@ -245,7 +305,10 @@ struct SortDeckView: View {
             }
     }
 
-    private func performSwipe(_ action: SortAction) {
+    /// `caption`/`tags` are only ever non-empty when this came from the compose sheet; the plain
+    /// swipe-right and the green Post button both call this with neither, so they stay exactly
+    /// the instant, caption-less, tag-less publish they always were.
+    private func performSwipe(_ action: SortAction, caption: String? = nil, tags: [PendingTag] = []) {
         guard let photo = cards.first else { return }
         Haptics.tap()
 
@@ -257,11 +320,14 @@ struct SortDeckView: View {
 
         // The previous swipe can no longer be undone, commit it now, and hold this one.
         if let p = lastPhoto, let a = lastAction {
-            lastPhoto = nil; lastAction = nil
-            Task { await commit(p, a) }
+            let prevCaption = lastCaption, prevTags = lastTags
+            lastPhoto = nil; lastAction = nil; lastCaption = nil; lastTags = []
+            Task { await commit(p, a, caption: prevCaption, tags: prevTags) }
         }
         lastPhoto = photo
         lastAction = action
+        lastCaption = caption
+        lastTags = tags
         sortsCompleted += 1
 
         // Advance the deck after the card flies off.
@@ -278,10 +344,10 @@ struct SortDeckView: View {
     private func closeDeck() {
         guard !closing else { return }   // auto-dismiss + button could both fire
         closing = true
-        let p = lastPhoto, a = lastAction
-        lastPhoto = nil; lastAction = nil
+        let p = lastPhoto, a = lastAction, caption = lastCaption, tags = lastTags
+        lastPhoto = nil; lastAction = nil; lastCaption = nil; lastTags = []
         Task {
-            if let p, let a { await commit(p, a) }
+            if let p, let a { await commit(p, a, caption: caption, tags: tags) }
             dismiss()
         }
     }
@@ -291,14 +357,18 @@ struct SortDeckView: View {
         Haptics.select()
         lastPhoto = nil
         lastAction = nil
+        lastCaption = nil
+        lastTags = []
         drag = .zero
         withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
             cards.insert(photo, at: 0)
         }
     }
 
-    /// Applies a sort action to the backend.
-    private func commit(_ photo: Photo, _ action: SortAction) async {
+    /// Applies a sort action to the backend. `caption`/`tags` only apply to `.publish`; the plain
+    /// swipe-right/Post fast path calls this with neither, exactly as before.
+    private func commit(_ photo: Photo, _ action: SortAction, caption: String? = nil,
+                         tags: [PendingTag] = []) async {
         guard let uid = auth.currentUser?.id else { return }
         switch action {
         case .archive:
@@ -306,7 +376,14 @@ struct SortDeckView: View {
         case .publish:
             await photoService.markSorted(photoId: photo.id)
             do {
-                try await feed.createPost(photo: photo, caption: nil, userId: uid)
+                let tagsSaved = try await feed.createPost(photo: photo, caption: caption, userId: uid, tags: tags)
+                if shouldWarnThatTagsDidNotSave(tagsSaved) {
+                    // The post itself is live, only the tags failed to attach; a genuine failure
+                    // still has to speak up, same reasoning as the publish failure right below,
+                    // it just isn't the same failure.
+                    Haptics.error()
+                    publishError = "Posted, but the tags didn't save. Try again from Edit tags."
+                }
             } catch {
                 // The photo is already marked sorted and the card is gone, so silence here means
                 // someone believes they published something that never left the device. This is

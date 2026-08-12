@@ -219,6 +219,29 @@ final class FeedService {
         return Dictionary(list.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
     }
 
+    /// Raw, newest-tagged-first ids of everyone the caller has tagged on their OWN posts, not yet
+    /// deduped, self-filtered, or capped (`QuickTagChips.selectedIds` does that). Feeds
+    /// `TagPhotoSheet`'s quick-tag row for a personal photo, where there's no roll to draw
+    /// candidates from instead.
+    func recentlyTaggedUserIds(by userId: UUID) async -> [UUID] {
+        struct PostRow: Decodable { let id: UUID }
+        let posts: [PostRow] = (try? await supabase.from("posts").select("id")
+            .eq("user_id", value: userId.uuidString)
+            .order("created_at", ascending: false)
+            .limit(200)
+            .execute().value) ?? []
+        guard !posts.isEmpty else { return [] }
+
+        struct TagRow: Decodable { let tagged_user_id: UUID }
+        let rows: [TagRow] = (try? await supabase.from("post_tags")
+            .select("tagged_user_id")
+            .in("post_id", values: posts.map(\.id.uuidString))
+            .order("created_at", ascending: false)
+            .limit(60)
+            .execute().value) ?? []
+        return rows.map(\.tagged_user_id)
+    }
+
     private let discoverLimit = 50
 
     /// "Suggested" people to follow, ranked in four tiers. People who already follow you but you
@@ -838,7 +861,22 @@ final class FeedService {
 
     // MARK: - Posts
 
-    func createPost(photo: Photo, caption: String?, userId: UUID, tags: [PendingTag] = []) async throws {
+    /// Creates the post, then attaches `tags` if any were given.
+    ///
+    /// Returns whether the tags saved: `true` once they're confirmed attached (or there were none
+    /// to attach at all), `false` on a genuine tag-insert failure the caller should surface (with
+    /// a retry via the post's own "Edit tags"), and `nil` when it was cancelled rather than failed
+    /// (not the user's fault, so nothing to show). This never throws for the tag insert: by the
+    /// time it runs the post already exists, and a failed tag insert must not make a publish that
+    /// genuinely succeeded look like it failed, which is what throwing here would do to every
+    /// caller. Only the post write itself can still throw.
+    ///
+    /// This used to swallow the tag insert behind a bare `try?`: the post published, the tags
+    /// silently never stuck, and nobody who was meant to be tagged was ever notified, with no
+    /// error surfaced to the person who tagged them either. Mirrors `updatePostCaption` and
+    /// `deletePost`'s tri-state treatment of their own writes.
+    @discardableResult
+    func createPost(photo: Photo, caption: String?, userId: UUID, tags: [PendingTag] = []) async throws -> Bool? {
         struct Insert: Encodable {
             let user_id: UUID
             let photo_id: UUID
@@ -861,10 +899,17 @@ final class FeedService {
         )).select("id").single().execute().value
         Activation.log(.postShared)
 
-        guard !tags.isEmpty else { return }
+        guard !tags.isEmpty else { return true }
         struct TagInsert: Encodable { let post_id: UUID; let tagged_user_id: UUID; let x: Double; let y: Double }
         let rows = tags.map { TagInsert(post_id: created.id, tagged_user_id: $0.user.id, x: $0.x, y: $0.y) }
-        _ = try? await supabase.from("post_tags").insert(rows).execute()
+        do {
+            try await supabase.from("post_tags").insert(rows).execute()
+        } catch {
+            guard !UserFacingError.isCancellation(error) else { return nil }
+            Self.log.error("createPost tag insert failed: \(String(describing: error), privacy: .public)")
+            return false
+        }
+        return true
     }
 
     /// Deletes a post (owner only, enforced by the "posts: delete own" policy).
@@ -1457,3 +1502,10 @@ func resolvedCaption(afterSaving saved: Bool?, attempted: String?, previous: Str
 /// inside a list already leaves it in place either way, since only a `true` result ever removes
 /// it from `FeedService.feed`, so this is the same call in the same shape either way.
 func shouldTreatAsDeleted(afterDeleting saved: Bool?) -> Bool { saved == true }
+
+/// Whether a "tags didn't save" warning should show, given `createPost`'s tri-state tag-save
+/// result: `true` once the tags are confirmed saved (or there were none to attach), `false` on a
+/// genuine tag-insert failure, `nil` when it was cancelled rather than failed. Only a genuine
+/// failure is something to fix; a success (with or without tags) or a cancellation both mean
+/// there's nothing wrong to tell anyone about.
+func shouldWarnThatTagsDidNotSave(_ tagsSaved: Bool?) -> Bool { tagsSaved == false }

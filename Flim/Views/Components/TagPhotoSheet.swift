@@ -27,11 +27,25 @@ struct TagPhotoSheet: View {
     @Environment(\.flimAccent) private var accent
     let url: URL?
     @Binding var tags: [PendingTag]
+    /// The roll this photo belongs to, when known: drives the quick-tag row toward that roll's
+    /// OTHER members instead of the personal-photo fallback. Nil for a personal photo, or for a
+    /// caller (editing an already-shared photo's tags) that doesn't have this in hand, in which
+    /// case the row falls back to recently-tagged people.
+    var rollId: UUID? = nil
     /// Called when Done is tapped. The share composer leaves this empty (it persists the tags as
     /// part of creating the post); editing an already-shared photo uses it to save the changes.
     var onDone: () -> Void = {}
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(AuthService.self) private var auth
+    @Environment(FeedService.self) private var feed
+    @Environment(RollService.self) private var rollService
+
+    /// Nil until `loadQuickTags` decides there's anything to show. Kept separate from
+    /// `quickTagPeople.isEmpty` so "still loading" and "loaded, nobody to offer" both render
+    /// nothing, rather than a header with no chips under it or a flash of an empty row.
+    @State private var quickTagHeader: String?
+    @State private var quickTagPeople: [UserProfile] = []
 
     /// Tags still carry a position because the column and the model still do, and a tag has to go
     /// somewhere. The centre is the honest value for "unplaced": nothing renders it, and if
@@ -45,6 +59,9 @@ struct TagPhotoSheet: View {
                 FlimTheme.bg.ignoresSafeArea()
                 VStack(spacing: 0) {
                     photoHeader
+                    if let quickTagHeader, !quickTagPeople.isEmpty {
+                        quickTagRow(header: quickTagHeader)
+                    }
                     FollowingList(emptyMessage: "Follow people to tag them.") { profile in
                         checkmark(for: profile)
                     } onSelect: { toggle($0) }
@@ -59,6 +76,88 @@ struct TagPhotoSheet: View {
                         .foregroundStyle(accent).fontWeight(.semibold)
                 }
             }
+        }
+        .task { await loadQuickTags() }
+    }
+
+    /// Likely-next-tag chips, one tap each: a roll photo's OTHER members (regardless of the
+    /// follow graph, since `FollowingList` below already covers that path), or, for a personal
+    /// photo, whoever was tagged most recently on the caller's own posts. Horizontal scroll
+    /// rather than wrap, so this stays one scannable line above the full list.
+    private func quickTagRow(header: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(header.uppercased())
+                .flimFont(11, weight: .medium, relativeTo: .caption)
+                .tracking(1)
+                .foregroundStyle(FlimTheme.textTertiary)
+                .padding(.horizontal, 16)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 14) {
+                    ForEach(quickTagPeople) { profile in
+                        quickTagChip(profile)
+                    }
+                }
+                .padding(.horizontal, 16)
+            }
+        }
+        .padding(.top, 10)
+        .padding(.bottom, 4)
+    }
+
+    private func quickTagChip(_ profile: UserProfile) -> some View {
+        let selected = tags.contains { $0.user.id == profile.id }
+        return Button { toggle(profile) } label: {
+            VStack(spacing: 6) {
+                ZStack(alignment: .bottomTrailing) {
+                    AvatarView(path: profile.avatarPath, name: profile.username, size: 50)
+                        .overlay(Circle().stroke(selected ? accent : .clear, lineWidth: 2))
+                    if selected {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 16))
+                            .foregroundStyle(accent)
+                            .background(Circle().fill(FlimTheme.bg))
+                    }
+                }
+                Text(profile.username.map { "@\($0)" } ?? profile.name)
+                    .flimFont(11, relativeTo: .caption2)
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+            }
+            .frame(width: 62)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(profile.name)\(selected ? ", tagged" : "")")
+    }
+
+    /// Picks the quick-tag row's source and resolves it to profiles. Renders nothing if it comes
+    /// up empty, whether that's a personal photo nobody's ever been tagged on, or a roll with no
+    /// one else in it: an empty header with no chips under it would read as broken furniture.
+    private func loadQuickTags() async {
+        guard let selfId = auth.currentUser?.id else { return }
+        await feed.loadBlocked(userId: selfId)   // so a blocked party never shows up as a chip
+
+        let rollMemberIds: [UUID]?
+        if let rollId {
+            rollMemberIds = (try? await rollService.fetchMemberIds(for: rollId)) ?? []
+        } else {
+            rollMemberIds = nil
+        }
+        let recentIds = rollId == nil ? await feed.recentlyTaggedUserIds(by: selfId) : []
+
+        let candidates = QuickTagChips.candidateIds(rollMemberIds: rollMemberIds, recentlyTaggedIds: recentIds)
+        let picked = QuickTagChips.selectedIds(from: candidates, selfId: selfId, blockedIds: feed.blockedIds)
+        guard !picked.isEmpty else { return }
+
+        let profiles = await feed.fetchProfiles(ids: picked)
+        quickTagPeople = picked.compactMap { profiles[$0] }
+        guard !quickTagPeople.isEmpty else { return }
+
+        if let rollId {
+            if rollService.rolls.isEmpty { try? await rollService.fetchRolls(for: selfId) }
+            let name = rollService.rolls.first { $0.id == rollId }?.name
+            quickTagHeader = "From \(name ?? "this roll")"
+        } else {
+            quickTagHeader = "Recently tagged"
         }
     }
 

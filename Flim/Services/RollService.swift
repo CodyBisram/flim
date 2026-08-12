@@ -246,6 +246,21 @@ final class RollService {
             .value
     }
 
+    /// Roll members as plain ids, ordered by when they joined. Feeds `TagPhotoSheet`'s quick-tag
+    /// row, which only needs ids (resolved to `UserProfile` via `FeedService.fetchProfiles`), not
+    /// the full `AppUser` roster `fetchMembers` returns.
+    func fetchMemberIds(for rollId: UUID) async throws -> [UUID] {
+        struct Row: Decodable { let user_id: UUID }
+        let rows: [Row] = try await supabase
+            .from("roll_members")
+            .select("user_id")
+            .eq("roll_id", value: rollId.uuidString)
+            .order("joined_at", ascending: true)
+            .execute()
+            .value
+        return rows.map(\.user_id)
+    }
+
     /// Renames a roll (creator only, enforced by RLS) and updates the local copy.
     func renameRoll(rollId: UUID, name: String) async throws {
         struct Update: Encodable { let name: String }
