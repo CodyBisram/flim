@@ -1,13 +1,13 @@
 import Foundation
 import Supabase
 
-/// The eight activation milestones the product can act on. Each is a one-time-per-user
+/// The ten activation milestones the product can act on. Each is a one-time-per-user
 /// "did this ever happen" milestone, not an event stream: the server's unique index on
 /// (user_id, event) is what makes it safe to fire this on every capture/join/share rather than
 /// something the client has to locally remember not to repeat. See
 /// `supabase/migrations/2026-08-08_activation_events.sql` for the full server-side contract.
 ///
-/// Raw values are exactly the eight strings the server's CHECK constraint allows. Nothing
+/// Raw values are exactly the ten strings the server's CHECK constraint allows. Nothing
 /// outside `Activation.log(_:)` should ever hand the RPC a bare string: a typo there is a loud
 /// server-side rejection, not a silently poisoned row, and routing every call through this enum
 /// is what keeps a typo from ever reaching that call in the first place.
@@ -20,6 +20,15 @@ enum ActivationEvent: String {
     case inviteRedeemed = "invite_redeemed"
     case postShared = "post_shared"
     case revealWatched = "reveal_watched"
+    /// Fires once onboarding ends, from either its own CTA or Skip (see
+    /// `OnboardingView.finishOnboarding()`). Sits between `firstLaunch` and `firstShot` so the
+    /// funnel can tell "abandoned onboarding" apart from "reached the camera and left".
+    case onboardingFinished = "onboarding_finished"
+    /// Fires the moment the app confirms it HAS camera authorization (`CameraViewModel.start()`'s
+    /// `.authorized` branch), not merely that it asked. Also sits between `firstLaunch` and
+    /// `firstShot`, distinguishing a permission denial from someone who reached a working camera
+    /// and simply never shot.
+    case cameraAuthorized = "camera_authorized"
 }
 
 /// Fire-and-forget activation instrumentation. `log_activation_event` is safe to call this

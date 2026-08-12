@@ -35,6 +35,7 @@ struct OnboardingView: View {
                 _ = await AVCaptureDevice.requestAccess(for: .video)
             }
             hasOnboarded = true
+            Activation.log(.onboardingFinished)
         }
     }
 

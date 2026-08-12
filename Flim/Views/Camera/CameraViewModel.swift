@@ -72,6 +72,19 @@ final class CameraViewModel: NSObject {
     enum Permission { case unknown, authorized, denied }
     var permission: Permission = .unknown
 
+    /// Guards `Activation.log(.cameraAuthorized)` against firing on every single tab visit.
+    /// `start()` runs on every `CameraView` appearance (see that file's own comment on
+    /// `startCameraFlow()`), so without this an instance that lives for the whole app session
+    /// would fire one RPC per tab switch back to Camera. The server already dedupes per
+    /// (user, event), so this is purely a call-volume optimization, not a correctness guard,
+    /// which is why it is safe to key on an in-memory, per-instance flag rather than a
+    /// persisted one: it resets on every fresh launch (one harmless extra call, dropped by the
+    /// server's own dedupe) instead of surviving a reinstall or account switch the way a
+    /// `UserDefaults`-backed flag would, which is exactly the "local flag that lies" failure
+    /// mode the other activation events avoid by leaning on server-side dedupe in the first
+    /// place.
+    private var hasLoggedCameraAuthorized = false
+
     /// Which camera is active. Front has no hardware flash, so the UI hides the flash toggle.
     var cameraPosition: AVCaptureDevice.Position = .back
     var isFront: Bool { cameraPosition == .front }
@@ -130,6 +143,10 @@ final class CameraViewModel: NSObject {
         switch AVCaptureDevice.authorizationStatus(for: .video) {
         case .authorized:
             permission = .authorized
+            if !hasLoggedCameraAuthorized {
+                hasLoggedCameraAuthorized = true
+                Activation.log(.cameraAuthorized)
+            }
         case .notDetermined:
             permission = await AVCaptureDevice.requestAccess(for: .video) ? .authorized : .denied
         default:

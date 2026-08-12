@@ -2648,3 +2648,95 @@ $$;
 REVOKE ALL ON FUNCTION public.get_suggested_emoji(UUID[]) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.get_suggested_emoji(UUID[]) FROM anon;
 GRANT EXECUTE ON FUNCTION public.get_suggested_emoji(UUID[]) TO authenticated;
+
+-- ============================================================
+-- Widen public.activation_events' event allowlist by exactly two values, so
+-- the funnel can explain its biggest leak instead of only measuring it: 9 of
+-- 25 accounts never took a photo, and until now nothing was recorded between
+-- `first_launch` and `first_shot`, so the data could only ever say "they
+-- launched and never shot", conflating abandoning onboarding, denying camera
+-- permission, and reaching a working camera and leaving. Those need three
+-- different responses.
+--
+-- New events, in the funnel's narrative order right after first_launch and
+-- before first_shot:
+--   onboarding_finished  <- reached the end of onboarding
+--   camera_authorized    <- camera permission was granted
+--
+-- Applied separately as
+-- supabase/migrations/2026-08-12_activation_events_onboarding_camera.sql.
+-- ⚠️ run this BEFORE pushing the Swift client that calls
+--    log_activation_event('onboarding_finished') /
+--    log_activation_event('camera_authorized').
+--
+-- No table, index, RLS policy, or RPC signature changes here, only the CHECK
+-- constraint's allowed set and activation_funnel()'s known-event list widen.
+-- The DROP/ADD below are two clauses of the SAME ALTER TABLE statement (one
+-- atomic DDL command, not two separate ones): if the new constraint's
+-- validation scan against existing rows ever failed, Postgres rolls the whole
+-- statement back and the table keeps its prior constraint, never
+-- unconstrained. Every existing row only ever contains the original 8 event
+-- values, all of which remain in this list, so that scan is guaranteed to
+-- pass.
+-- ============================================================
+ALTER TABLE public.activation_events
+    DROP CONSTRAINT IF EXISTS activation_events_event_check,
+    ADD CONSTRAINT activation_events_event_check CHECK (event IN (
+        'first_launch', 'onboarding_finished', 'camera_authorized', 'first_shot',
+        'roll_created', 'roll_joined', 'invite_sent', 'invite_redeemed',
+        'post_shared', 'reveal_watched'
+    ));
+
+-- activation_funnel()'s known-event list is hardcoded (not derived from the
+-- CHECK constraint or any other source), so it must be widened here too, in
+-- the same order, or the two new events would silently never appear in the
+-- very report they exist to feed.
+CREATE OR REPLACE FUNCTION public.activation_funnel()
+RETURNS TABLE (
+    event          TEXT,
+    distinct_users BIGINT,
+    total_users    BIGINT
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_total BIGINT;
+BEGIN
+    IF NOT public.is_owner() THEN
+        RETURN;
+    END IF;
+
+    SELECT COUNT(*) INTO v_total FROM public.users;
+
+    RETURN QUERY
+    SELECT
+        ev.event,
+        COALESCE(COUNT(DISTINCT ae.user_id), 0)::BIGINT AS distinct_users,
+        v_total AS total_users
+    FROM unnest(ARRAY[
+        'first_launch', 'onboarding_finished', 'camera_authorized', 'first_shot',
+        'roll_created', 'roll_joined', 'invite_sent', 'invite_redeemed',
+        'post_shared', 'reveal_watched'
+    ]) WITH ORDINALITY AS ev(event, ord)
+    LEFT JOIN public.activation_events ae ON ae.event = ev.event
+    GROUP BY ev.event, ev.ord
+    ORDER BY ev.ord;
+END;
+$$;
+
+-- Grants unchanged, re-stated for safety; CREATE OR REPLACE FUNCTION does not
+-- touch existing grants, but re-asserting costs nothing and keeps this
+-- section self-contained the same way earlier REPLACE'd functions in this
+-- file do. log_activation_event(TEXT) itself is untouched here: same
+-- signature, same body, same grants.
+REVOKE ALL ON FUNCTION public.activation_funnel() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.activation_funnel() FROM anon;
+GRANT EXECUTE ON FUNCTION public.activation_funnel() TO authenticated;
+
+-- No backfill for either new event: unlike first_shot (proved by
+-- photos.taken_at), nothing in the existing schema is evidence that
+-- onboarding finished or camera permission was granted, same policy as
+-- first_launch and invite_sent above, so both start empty and are populated
+-- only by the client going forward.
