@@ -56,9 +56,27 @@ struct PostDetailView: View {
     @State private var reportedToast = false
     /// Separate from `reportedToast` rather than an enum: mirrors FeedView's toast shape.
     @State private var reportFailedToast = false
+    /// A delete that didn't reach the server. Distinct from dismissing: staying on a post that
+    /// still exists is correct, so a failed delete must leave this screen open, not close it.
+    @State private var deleteFailedToast = false
     @State private var route: ProfileRoute?
     @State private var showEditTags = false
     @State private var editingTags: [PendingTag] = []
+    @State private var showEditCaption = false
+    @State private var captionDraft = ""
+    /// The caption after a save attempt has resolved, overriding `item.post.caption`. `item` is
+    /// a value passed in at push time (e.g. from a profile grid's own post list, not from
+    /// `FeedService.feed`), so it never sees the write this screen just made; without this a
+    /// successful edit would only show after leaving and returning. Double-optional: `nil` means
+    /// "no attempt has resolved yet, use item's caption", `.some(nil)` means "resolved to no
+    /// caption" (an edit to an empty caption, on a post that started with none). A FAILED save
+    /// resolves to `.some(item.post.caption)`, i.e. whatever the server still holds, never the
+    /// attempted text: see `resolvedCaption(afterSaving:attempted:previous:)`.
+    @State private var captionOverride: String??
+    /// What a caption edit didn't manage to save, so reopening "Edit caption" starts from the
+    /// attempted text rather than the unchanged server value it was never able to replace.
+    @State private var pendingCaptionRetry: String?
+    @State private var captionFailedToast = false
     /// Swipe-down-to-go-back state: only armed at the top of the scroll.
     @State private var atTop = true
     @State private var dragY: CGFloat = 0
@@ -68,8 +86,12 @@ struct PostDetailView: View {
     @Environment(\.scenePhase) private var scenePhase
     @FocusState private var commentFocused: Bool
 
-    private var post: Post { item.post }
-    private var isOwn: Bool { post.userId == auth.currentUser?.id }
+    private var post: Post {
+        var p = item.post
+        if let captionOverride { p.caption = captionOverride }
+        return p
+    }
+    private var isOwn: Bool { post.isOwned(by: auth.currentUser?.id) }
 
     var body: some View {
         ZStack {
@@ -168,6 +190,7 @@ struct PostDetailView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     if isOwn {
+                        Button { captionDraft = pendingCaptionRetry ?? post.caption ?? ""; showEditCaption = true } label: { Label("Edit caption", systemImage: "pencil") }
                         Button { beginEditingTags() } label: {
                             Label((feed.tagsByPost[post.id] ?? []).isEmpty ? "Tag people" : "Edit tags",
                                   systemImage: "person.crop.circle.badge.plus")
@@ -203,6 +226,18 @@ struct PostDetailView: View {
                     .padding(.horizontal, 16).padding(.vertical, 10)
                     .background(.ultraThinMaterial, in: Capsule())
                     .transition(.move(edge: .top).combined(with: .opacity))
+            } else if captionFailedToast {
+                Label("Couldn't save caption. Try again.", systemImage: "exclamationmark.triangle.fill")
+                    .flimFont(13, weight: .medium).foregroundStyle(.white)
+                    .padding(.horizontal, 16).padding(.vertical, 10)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            } else if deleteFailedToast {
+                Label("Couldn't delete that. Check your connection and try again.", systemImage: "exclamationmark.triangle.fill")
+                    .flimFont(13, weight: .medium).foregroundStyle(.white)
+                    .padding(.horizontal, 16).padding(.vertical, 10)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
         .sheet(item: $shareItem) { SharePreviewSheet(photo: $0.image) }
@@ -211,10 +246,51 @@ struct PostDetailView: View {
                 Task { await feed.setTags(editingTags, on: post.id) }
             }
         }
+        .sheet(isPresented: $showEditCaption) {
+            EditCaptionSheet(caption: $captionDraft) {
+                guard let uid = auth.currentUser?.id else { return }
+                let trimmed = captionDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+                let newCaption = trimmed.isEmpty ? nil : trimmed
+                // Read BEFORE the write, not `item.post.caption`: a prior edit this session may
+                // already have moved `captionOverride` past whatever `item` still holds, and a
+                // failure below must fall back to that, not revert an already-accepted edit.
+                let previousCaption = post.caption
+                Task {
+                    let saved = await feed.updatePostCaption(postId: post.id, caption: newCaption, userId: uid)
+                    // Cancelled, not failed: something else superseded this save (the view going
+                    // away, a second edit racing this one), so leave everything untouched rather
+                    // than accuse the user of a failure that didn't happen.
+                    guard saved != nil else { return }
+                    captionOverride = resolvedCaption(afterSaving: saved, attempted: newCaption, previous: previousCaption)
+                    if saved == false {
+                        // Keep what was typed so reopening "Edit caption" starts from the
+                        // attempted text, not the caption that failed to change.
+                        pendingCaptionRetry = trimmed
+                        Haptics.error()
+                        withAnimation { captionFailedToast = true }
+                        try? await Task.sleep(for: .seconds(2)); withAnimation { captionFailedToast = false }
+                    } else {
+                        pendingCaptionRetry = nil
+                    }
+                }
+            }
+        }
         .confirmationDialog("Delete this post?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
             Button("Delete", role: .destructive) {
                 Haptics.warning()
-                Task { await feed.deletePost(id: post.id); dismiss() }
+                Task {
+                    let deleted = await feed.deletePost(id: post.id)
+                    if shouldTreatAsDeleted(afterDeleting: deleted) {
+                        dismiss()   // it's actually gone, safe to leave
+                    } else if deleted == false {
+                        // Not gone: staying here, where the post still visibly exists, is the
+                        // honest state. Dismissing would tell someone it's down when it isn't.
+                        Haptics.error()
+                        withAnimation { deleteFailedToast = true }
+                        try? await Task.sleep(for: .seconds(2)); withAnimation { deleteFailedToast = false }
+                    }
+                    // deleted == nil: cancelled, not a failure, stay silent.
+                }
             }
             Button("Cancel", role: .cancel) {}
         } message: {

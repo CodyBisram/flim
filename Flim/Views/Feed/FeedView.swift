@@ -392,6 +392,15 @@ struct FeedPostCard: View {
     @State private var showBlockConfirm = false
     @State private var showEditCaption = false
     @State private var captionDraft = ""
+    /// What a caption edit didn't manage to save, so reopening "Edit caption" starts from the
+    /// attempted text rather than the unchanged server value it was never able to replace.
+    /// `nil` once there's nothing outstanding, either because nothing has been tried yet or the
+    /// last attempt saved.
+    @State private var pendingCaptionRetry: String?
+    @State private var captionFailedToast = false
+    /// A delete that didn't reach the server. The card stays in the feed either way, since only
+    /// a successful `deletePost` removes it from `feed`, so this just says why it's still here.
+    @State private var deleteFailedToast = false
     @State private var showEditTags = false
     @State private var editingTags: [PendingTag] = []
     @State private var reportedToast = false
@@ -402,7 +411,7 @@ struct FeedPostCard: View {
     @FocusState private var commentFocused: Bool
 
     private var post: Post { item.post }
-    private var isOwn: Bool { post.userId == auth.currentUser?.id }
+    private var isOwn: Bool { post.isOwned(by: auth.currentUser?.id) }
     // Reactions + comments live in the batch-loaded FeedService cache (one fetch per page, not
     // per card). Reading them here keeps every card in sync as it recycles.
     // Filtered again here (on top of FeedService's own filtering) as defense-in-depth: cards can
@@ -598,7 +607,21 @@ struct FeedPostCard: View {
             EditCaptionSheet(caption: $captionDraft) {
                 guard let uid = auth.currentUser?.id else { return }
                 let trimmed = captionDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-                Task { await feed.updatePostCaption(postId: post.id, caption: trimmed.isEmpty ? nil : trimmed, userId: uid) }
+                let newCaption = trimmed.isEmpty ? nil : trimmed
+                Task {
+                    let saved = await feed.updatePostCaption(postId: post.id, caption: newCaption, userId: uid)
+                    if saved == true {
+                        pendingCaptionRetry = nil
+                    } else if saved == false {
+                        // Keep what was typed so reopening "Edit caption" starts from the
+                        // attempted text, not the caption that failed to change.
+                        pendingCaptionRetry = trimmed
+                        Haptics.error()
+                        withAnimation { captionFailedToast = true }
+                        try? await Task.sleep(for: .seconds(2)); withAnimation { captionFailedToast = false }
+                    }
+                    // saved == nil: cancelled, not a failure, nothing to say.
+                }
             }
         }
         .overlay(alignment: .top) {
@@ -614,12 +637,35 @@ struct FeedPostCard: View {
                     .padding(.horizontal, 16).padding(.vertical, 10)
                     .background(.ultraThinMaterial, in: Capsule())
                     .transition(.move(edge: .top).combined(with: .opacity))
+            } else if captionFailedToast {
+                Label("Couldn't save caption. Try again.", systemImage: "exclamationmark.triangle.fill")
+                    .flimFont(13, weight: .medium).foregroundStyle(.white)
+                    .padding(.horizontal, 16).padding(.vertical, 10)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            } else if deleteFailedToast {
+                Label("Couldn't delete that. Check your connection and try again.", systemImage: "exclamationmark.triangle.fill")
+                    .flimFont(13, weight: .medium).foregroundStyle(.white)
+                    .padding(.horizontal, 16).padding(.vertical, 10)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
         .confirmationDialog("Delete this post?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
             Button("Delete", role: .destructive) {
                 Haptics.warning()
-                Task { await feed.deletePost(id: post.id) }
+                Task {
+                    let deleted = await feed.deletePost(id: post.id)
+                    if deleted == false {
+                        // Still here (`deletePost` only removes it from `feed` on success), so
+                        // say why rather than leave the card looking untouched.
+                        Haptics.error()
+                        withAnimation { deleteFailedToast = true }
+                        try? await Task.sleep(for: .seconds(2)); withAnimation { deleteFailedToast = false }
+                    }
+                    // deleted == true: the card is already gone via `feed`. deleted == nil:
+                    // cancelled, not a failure, stay silent.
+                }
             }
             Button("Cancel", role: .cancel) {}
         } message: {
@@ -670,7 +716,7 @@ struct FeedPostCard: View {
     @ViewBuilder
     private var postActions: some View {
         if isOwn {
-            Button { captionDraft = post.caption ?? ""; showEditCaption = true } label: { Label("Edit caption", systemImage: "pencil") }
+            Button { captionDraft = pendingCaptionRetry ?? post.caption ?? ""; showEditCaption = true } label: { Label("Edit caption", systemImage: "pencil") }
             Button { beginEditingTags() } label: {
                 Label(tagCount == 0 ? "Tag people" : "Edit tags", systemImage: "person.crop.circle.badge.plus")
             }
@@ -775,49 +821,6 @@ struct FeedPostCard: View {
                 Haptics.error()
             }
         }
-    }
-}
-
-// MARK: - Edit caption
-
-private struct EditCaptionSheet: View {
-    @Environment(\.flimAccent) private var accent
-    @Binding var caption: String
-    let onSave: () -> Void
-    @Environment(\.dismiss) private var dismiss
-    @FocusState private var focused: Bool
-
-    var body: some View {
-        NavigationStack {
-            ZStack {
-                FlimTheme.bg.ignoresSafeArea()
-                VStack {
-                    TextField("Add a caption…", text: $caption, axis: .vertical)
-                        .lineLimit(1...5)
-                        .flimFont(16, relativeTo: .body).foregroundStyle(.white).tint(accent)
-                        .focused($focused)
-                        .padding(14)
-                        .background(FlimTheme.bgElevated, in: RoundedRectangle(cornerRadius: 12))
-                        .padding(.horizontal, 20).padding(.top, 20)
-                    Spacer()
-                }
-            }
-            .navigationBarTitleDisplayMode(.inline)
-            .flimInlineTitle("Edit Caption")
-            .toolbarColorScheme(.dark, for: .navigationBar)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Cancel") { dismiss() }.foregroundStyle(.white)
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Save") { onSave(); dismiss() }
-                        .foregroundStyle(accent).fontWeight(.semibold)
-                }
-            }
-            .onAppear { focused = true }
-        }
-        .presentationDetents([.height(220)])
-        .presentationBackground(FlimTheme.bg)
     }
 }
 

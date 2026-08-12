@@ -49,6 +49,13 @@ struct Post: Codable, Identifiable, Hashable {
     /// Path for the feed card, mid-size rendition if present, else the full image.
     var cardPath: String { feedPath ?? storagePath }
 
+    /// Whether `userId` is the poster, i.e. whether owner-only actions (edit caption, tag,
+    /// delete) should be offered. A client-side gate only, purely for which menu items to
+    /// show: the actual write is enforced server-side by RLS (`posts: update own` /
+    /// `posts: delete own`, both `auth.uid() = user_id`), so this never needs to be trusted
+    /// as the source of truth for what a request is allowed to do.
+    func isOwned(by userId: UUID?) -> Bool { userId == self.userId }
+
     enum CodingKeys: String, CodingKey {
         case id, caption
         case userId = "user_id"

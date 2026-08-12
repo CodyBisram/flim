@@ -867,22 +867,60 @@ final class FeedService {
         _ = try? await supabase.from("post_tags").insert(rows).execute()
     }
 
-    func deletePost(id: UUID) async {
-        _ = try? await supabase.from("posts").delete().eq("id", value: id.uuidString).execute()
+    /// Deletes a post (owner only, enforced by the "posts: delete own" policy).
+    ///
+    /// Returns `true` once the delete has actually landed, `false` on a genuine failure the
+    /// caller should tell the user about, and `nil` when it was cancelled rather than failed
+    /// (not the user's fault, so nothing to show). Mirrors `updatePostCaption`, and the same
+    /// decision `PhotoService.deletePhoto`/`deletePhotos` already made for photos: the local
+    /// `feed` removal is gated on the write actually succeeding.
+    ///
+    /// This used to swallow the error and remove the card from `feed` regardless of whether the
+    /// delete ever reached the server. That is worse than a caption silently not saving: it told
+    /// someone their photo was taken down while it stayed live and visible to everyone else,
+    /// with nothing left on screen to prompt a retry.
+    @discardableResult
+    func deletePost(id: UUID) async -> Bool? {
+        do {
+            try await supabase.from("posts").delete().eq("id", value: id.uuidString).execute()
+        } catch {
+            guard !UserFacingError.isCancellation(error) else { return nil }
+            Self.log.error("deletePost failed: \(String(describing: error), privacy: .public)")
+            return false
+        }
         feed.removeAll { $0.post.id == id }
+        return true
     }
 
-    /// Edit a post's caption (owner only, enforced by the "posts: update own" policy). Updates the
-    /// local feed so the card reflects it immediately.
-    func updatePostCaption(postId: UUID, caption: String?, userId: UUID) async {
+    /// Edit a post's caption (owner only, enforced by the "posts: update own" policy).
+    ///
+    /// Returns `true` once the write has actually landed, `false` on a genuine failure the
+    /// caller should tell the user about (with an invitation to retry), and `nil` when the save
+    /// was cancelled rather than failed (the view it was fired from went away, or a second edit
+    /// superseded this one), which is not the user's fault, so nothing to show.
+    ///
+    /// This used to run the update, swallow whatever `try?` handed back, and apply the new
+    /// caption to `feed` regardless of whether the server ever agreed: a caption that failed to
+    /// save still showed the new text on screen, with the server quietly holding the old one,
+    /// until the next reload (if ever) revealed the mismatch. The local update is now gated on
+    /// the write actually succeeding, so a failed save cannot look like one that worked.
+    @discardableResult
+    func updatePostCaption(postId: UUID, caption: String?, userId: UUID) async -> Bool? {
         struct U: Encodable { let caption: String? }
-        _ = try? await supabase.from("posts").update(U(caption: caption))
-            .eq("id", value: postId.uuidString).eq("user_id", value: userId.uuidString).execute()
+        do {
+            try await supabase.from("posts").update(U(caption: caption))
+                .eq("id", value: postId.uuidString).eq("user_id", value: userId.uuidString).execute()
+        } catch {
+            guard !UserFacingError.isCancellation(error) else { return nil }
+            Self.log.error("updatePostCaption failed: \(String(describing: error), privacy: .public)")
+            return false
+        }
         if let i = feed.firstIndex(where: { $0.post.id == postId }) {
             var p = feed[i].post
             p.caption = caption
             feed[i] = FeedItem(post: p, author: feed[i].author)
         }
+        return true
     }
 
     /// Whether the user has already shared this photo (to toggle the share affordance).
@@ -1334,3 +1372,22 @@ final class FeedService {
     }
     #endif
 }
+
+/// What a post's caption should read after an edit attempt, given `updatePostCaption`'s
+/// tri-state result: `true` on success, `false` on a genuine failure, `nil` on cancellation.
+///
+/// Pulled out as a free, pure function rather than inlined in each screen that presents
+/// `EditCaptionSheet`, so "a failed save keeps showing what the server still holds, never the
+/// attempted text" is one decision, tested once, instead of trusted twice.
+func resolvedCaption(afterSaving saved: Bool?, attempted: String?, previous: String?) -> String? {
+    saved == true ? attempted : previous
+}
+
+/// Whether a post should now be treated as gone, given `deletePost`'s tri-state result: `true`
+/// on success, `false` on a genuine failure, `nil` on cancellation.
+///
+/// Mirrors `resolvedCaption`: only a confirmed success may change what's on screen. A screen
+/// showing a single post uses this to decide whether to dismiss; a screen showing the post
+/// inside a list already leaves it in place either way, since only a `true` result ever removes
+/// it from `FeedService.feed`, so this is the same call in the same shape either way.
+func shouldTreatAsDeleted(afterDeleting saved: Bool?) -> Bool { saved == true }
