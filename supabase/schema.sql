@@ -1122,6 +1122,114 @@ GRANT EXECUTE ON FUNCTION public.is_email_allowed(text) TO anon, authenticated;
 --  * leaked-password protection (HIBP): Pro-plan feature, enable in dashboard after upgrading.
 
 -- ============================================================
+-- Covered posts: a bounded set of POSTS hidden from everyone except their
+-- authors and the owner. Applied separately as
+-- supabase/migrations/2026-08-12_covered_posts.sql (that file also carries
+-- the one-time username-keyed seed, deliberately NOT mirrored here; this
+-- file is re-run in production as the standing workflow, and re-seeding on
+-- every run is not what a schema source of truth should do).
+--
+-- This restricts who can SEE a bounded set of posts. It does not touch
+-- accounts, follows, comments, reactions, Discover, or search, and it does
+-- not restrict what the covered authors themselves can see — their own
+-- feeds, search, and everyone else's non-covered posts are all unaffected.
+--
+-- Membership AND the window are DATA (public.covered_post_windows), not
+-- literals in a policy body. The window is compared only against a POST's
+-- OWN created_at, never against now() — this is a permanent restriction on
+-- WHICH posts are covered, not a timer, and it must never be turned into
+-- one: adding any now()-relative clause here would silently republish these
+-- posts on a schedule nobody asked for. Flip every row's `active` to FALSE
+-- and both predicates below evaluate back to their pre-covered-posts value
+-- (unconditionally TRUE) with no other change, because post_is_covered
+-- short-circuits to FALSE the moment no matching row is active.
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.covered_post_windows (
+    user_id      UUID PRIMARY KEY REFERENCES public.users(id) ON DELETE CASCADE,
+    window_start TIMESTAMPTZ NOT NULL,
+    window_end   TIMESTAMPTZ NOT NULL,
+    active       BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at   TIMESTAMPTZ DEFAULT NOW(),
+    CHECK (window_end > window_start)
+);
+ALTER TABLE public.covered_post_windows ENABLE ROW LEVEL SECURITY;
+-- No policies -> deny-all to every client role, same shape as
+-- allowed_emails above. Readable only through the SECURITY DEFINER helpers
+-- below; writable only via the SQL editor / service role.
+
+-- Owner exemption, tested by uuid so it composes inside a two-argument
+-- visibility predicate the same way is_blocked_either_way(a, b) does. This
+-- is a NEW OVERLOAD of is_owner() (no args, defined further down this file
+-- for the admin dashboard's RPCs); that function is untouched, its calls are
+-- unaffected. Created here defensively with CREATE OR REPLACE rather than
+-- assumed to already exist, so this file has no ordering dependency on any
+-- other migration having run first.
+CREATE OR REPLACE FUNCTION public.is_owner(p_user UUID)
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+    SELECT EXISTS (
+        SELECT 1 FROM public.users
+        WHERE id = p_user
+          AND lower(email) = lower('codyysb@gmail.com')
+    );
+$$;
+REVOKE ALL ON FUNCTION public.is_owner(uuid) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.is_owner(uuid) FROM anon;
+GRANT EXECUTE ON FUNCTION public.is_owner(uuid) TO authenticated;
+
+-- TRUE only when p_author has an ACTIVE covered_post_windows row whose
+-- [window_start, window_end) contains p_created_at. STABLE, SECURITY
+-- DEFINER so it can bypass covered_post_windows' own deny-all RLS to be
+-- callable from the posts/storage policies at all, same reason
+-- is_blocked_either_way and is_roll_member are definer functions.
+CREATE OR REPLACE FUNCTION public.post_is_covered(p_author UUID, p_created_at TIMESTAMPTZ)
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+    SELECT EXISTS (
+        SELECT 1 FROM public.covered_post_windows w
+        WHERE w.user_id = p_author
+          AND w.active
+          AND p_created_at >= w.window_start
+          AND p_created_at <  w.window_end
+    );
+$$;
+REVOKE ALL ON FUNCTION public.post_is_covered(uuid, timestamptz) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.post_is_covered(uuid, timestamptz) TO authenticated;
+
+-- The predicate "posts: readable by authenticated" and "photos: readable
+-- when shared to a post" (storage.objects) both add below. FALSE only when
+-- the post IS covered AND the viewer is neither the owner nor one of the
+-- covered authors (symmetric: any active row in covered_post_windows is
+-- enough to see any covered post, regardless of whose post it is — this is
+-- deliberately NOT a mutual seal: it grants extra visibility into a bounded
+-- set of posts, it never removes visibility the viewer already had).
+CREATE OR REPLACE FUNCTION public.covered_post_visible(p_viewer UUID, p_author UUID, p_created_at TIMESTAMPTZ)
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+    SELECT
+        NOT public.post_is_covered(p_author, p_created_at)
+        OR public.is_owner(p_viewer)
+        OR EXISTS (
+            SELECT 1 FROM public.covered_post_windows w
+            WHERE w.user_id = p_viewer AND w.active
+        );
+$$;
+REVOKE ALL ON FUNCTION public.covered_post_visible(uuid, uuid, timestamptz) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.covered_post_visible(uuid, uuid, timestamptz) TO authenticated;
+
+-- ============================================================
 -- Block enforcement at the RLS level (App Store Guideline 1.2).
 -- Blocking used to be a client-only filter, so a blocked user's comments,
 -- reactions, tags, and roll photos still surfaced (and the block was one-way).
@@ -1167,11 +1275,17 @@ CREATE INDEX IF NOT EXISTS blocks_blocked_idx ON public.blocks (blocked_id, bloc
 
 -- Feed posts: hide posts authored by anyone in a block relationship with the viewer, and
 -- anything auto-hidden by moderation (see "Auto-moderation, enforced at RLS" above, this is
--- the definition of this policy name that actually survives a full run of this file).
+-- the definition of this policy name that actually survives a full run of this file). Also
+-- adds public.covered_post_visible (see "Covered posts" above): a covered post is readable
+-- only by its author, the other covered authors, or the owner.
 DROP POLICY IF EXISTS "posts: readable by authenticated" ON public.posts;
 CREATE POLICY "posts: readable by authenticated"
     ON public.posts FOR SELECT TO authenticated
-    USING (NOT hidden AND NOT public.is_blocked_either_way(auth.uid(), user_id));
+    USING (
+        NOT hidden
+        AND NOT public.is_blocked_either_way(auth.uid(), user_id)
+        AND public.covered_post_visible(auth.uid(), user_id, created_at)
+    );
 
 -- Post comments: hide comments authored by a blocked party (even on posts you can see).
 DROP POLICY IF EXISTS "post_comments: readable" ON public.post_comments;
@@ -1238,7 +1352,13 @@ CREATE POLICY "photos: roll members can read shared"
 
 -- Posted photo BYTES (storage.objects): mirrors "posts: readable by authenticated" above,
 -- which already keys NOT hidden and the block check off po.user_id. Same cached-path risk as
--- the roll-photo policy just above; this closes it for photos shared to a post.
+-- the roll-photo policy just above; this closes it for photos shared to a post. Also mirrors
+-- the covered_post_visible check: verified in Docker that a plain (non-SECURITY-DEFINER)
+-- EXISTS subquery against public.posts is already subject to posts' own RLS for the querying
+-- role, so a covered post's bytes were already unreachable through this subquery even before
+-- this line existed; it's added anyway for the same "don't rely on implicit RLS propagation
+-- across a subquery" reasoning the NOT hidden / block checks just above it were already added
+-- for, not because a leak was found.
 DROP POLICY IF EXISTS "photos: readable when shared to a post" ON storage.objects;
 CREATE POLICY "photos: readable when shared to a post"
     ON storage.objects FOR SELECT TO authenticated
@@ -1247,7 +1367,8 @@ CREATE POLICY "photos: readable when shared to a post"
         AND EXISTS (SELECT 1 FROM public.posts po
                     WHERE storage.objects.name IN (po.storage_path, po.thumb_path, po.feed_path)
                       AND NOT po.hidden
-                      AND NOT public.is_blocked_either_way(auth.uid(), po.user_id))
+                      AND NOT public.is_blocked_either_way(auth.uid(), po.user_id)
+                      AND public.covered_post_visible(auth.uid(), po.user_id, po.created_at))
     );
 
 -- Roll photo comments: keep the membership/ownership check, drop the blocked author's.
