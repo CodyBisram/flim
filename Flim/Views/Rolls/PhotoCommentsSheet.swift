@@ -84,11 +84,19 @@ struct PhotoCommentsSheet: View {
                         .accessibilityLabel("Delete your comment")
                         // 9 + 17.5 either side = 44, same reach as everywhere else this small.
                         .expandTapTarget(by: 17.5)
+                    } else {
+                        // Same reply-as-mention control as CommentsSheet. Not on your own
+                        // comments: replying to yourself would just mention yourself.
+                        Button { reply(to: comment) } label: {
+                            Text("Reply").flimFont(10, relativeTo: .caption).foregroundStyle(FlimTheme.textTertiary)
+                        }
+                        .accessibilityLabel("Reply to \(handle(comment.userId))")
+                        // Same reach as the delete button it swaps places with above.
+                        .expandTapTarget(by: 17.5)
                     }
                 }
-                // Rendered as mentions, but note a roll photo's comments live in photo_comments,
-                // which the push function does not scan for mentions, so an @ here highlights and
-                // links without notifying. Flagged rather than silently half-working.
+                // send-social-push now scans photo_comments for @mentions too (it used to be
+                // post_comments only), so an @ here both links AND notifies, same as the feed.
                 // Wired, not a no-op. MentionText renders @handles in the accent color with a
                 // real tap target, so an empty closure here made a link that looks identical to
                 // the working ones in the feed do nothing at all.
@@ -110,6 +118,13 @@ struct PhotoCommentsSheet: View {
                         focus: $focused) { send() }
             .padding(.horizontal, 16).padding(.vertical, 10)
             .background(FlimTheme.bg)
+    }
+
+    /// Focuses the composer with `@handle ` in front, preserving whatever was already typed.
+    private func reply(to comment: PhotoComment) {
+        Haptics.tap()
+        draft = prefillingReply(to: handle(comment.userId), in: draft)
+        focused = true
     }
 
     private func handle(_ userId: UUID) -> String {

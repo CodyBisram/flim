@@ -108,4 +108,29 @@ final class MentionsTests: XCTestCase {
     func testCompletingIsANoOpWithoutAMentionInProgress() {
         XCTAssertEqual(completingMention(in: "hey there", with: "ana"), "hey there")
     }
+
+    // MARK: - prefillingReply (the Reply control's prefill)
+
+    func testReplyOnAnEmptyComposerJustInsertsTheMention() {
+        XCTAssertEqual(prefillingReply(to: "@ana", in: ""), "@ana ")
+    }
+
+    func testReplyPrependsWithoutLosingExistingText() {
+        // Someone half way through a thought who taps Reply should not lose it.
+        XCTAssertEqual(prefillingReply(to: "@ana", in: "wait this reminds me"), "@ana wait this reminds me")
+    }
+
+    func testReplyDoesNotDuplicateAnAlreadyPresentMention() {
+        XCTAssertEqual(prefillingReply(to: "@ana", in: "@ana already replying"), "@ana already replying")
+    }
+
+    func testReplyToADifferentPersonStillPrepends() {
+        // "@an" is a prefix of "@ana" but not the same mention, so this must still prepend.
+        XCTAssertEqual(prefillingReply(to: "@ana", in: "@an hey"), "@ana @an hey")
+    }
+
+    func testReplyHandlesUnderscoresAndDigitsInTheHandle() {
+        XCTAssertEqual(prefillingReply(to: "@ana_b12", in: ""), "@ana_b12 ")
+        XCTAssertEqual(prefillingReply(to: "@ana_b12", in: "@ana_b12 already there"), "@ana_b12 already there")
+    }
 }

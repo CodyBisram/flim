@@ -85,6 +85,14 @@ struct CommentsSheet: View {
                             Image(systemName: "xmark").font(.system(size: 10)).foregroundStyle(FlimTheme.textTertiary)
                         }
                         .accessibilityLabel("Delete your comment")
+                    } else {
+                        // A reply is just a mention someone didn't have to type, not a nested
+                        // thread. Own comments don't get this: replying to yourself would just
+                        // mention yourself, which is nonsense, and commenting again already covers it.
+                        Button { reply(to: info) } label: {
+                            Text("Reply").flimFont(12, relativeTo: .caption).foregroundStyle(FlimTheme.textTertiary)
+                        }
+                        .accessibilityLabel("Reply to \(info.handle)")
                     }
                 }
                 MentionText(text: info.comment.body, color: FlimTheme.textSecondary) { username in
@@ -170,6 +178,13 @@ struct CommentsSheet: View {
                 Haptics.error()
             }
         }
+    }
+
+    /// Focuses the composer with `@handle ` in front, preserving whatever was already typed.
+    private func reply(to info: CommentInfo) {
+        Haptics.tap()
+        draft = prefillingReply(to: info.handle, in: draft)
+        focused = true
     }
 
     private func toggleLike(_ info: CommentInfo) {

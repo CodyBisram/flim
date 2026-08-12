@@ -100,3 +100,17 @@ func completingMention(in text: String, with username: String) -> String {
     guard let query = mentionQuery(in: text) else { return text }
     return String(text.dropLast(query.count)) + username + " "
 }
+
+/// Prefills a comment composer for replying to someone: puts `handle` (already including the
+/// leading `@`, as `UserProfile.handle` does) at the START of `draft`, followed by a space so
+/// typing continues naturally.
+///
+/// A reply is just a mention someone didn't have to type, not a separate structure, so this is
+/// plain string composition rather than anything that touches `mentionRuns`. Existing text is
+/// preserved, never overwritten, so someone half way through a thought who taps Reply doesn't
+/// lose it. Tapping Reply again on the same person doesn't duplicate the mention.
+func prefillingReply(to handle: String, in draft: String) -> String {
+    let mention = "\(handle) "
+    guard !draft.hasPrefix(mention) else { return draft }
+    return mention + draft
+}

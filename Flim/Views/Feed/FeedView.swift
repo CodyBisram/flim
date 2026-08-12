@@ -513,6 +513,16 @@ struct FeedPostCard: View {
                                 .lineLimit(2).multilineTextAlignment(.leading)
                             }
                             Spacer(minLength: 8)
+                            // The card has its own composer, so it is a place you can comment and
+                            // therefore a place you can reply. Same rule as the sheets: not on your
+                            // own comment, where the prefill would mention yourself.
+                            if info.comment.userId != auth.currentUser?.id {
+                                Button { reply(to: info) } label: {
+                                    Text("Reply").flimFont(11, relativeTo: .caption)
+                                        .foregroundStyle(FlimTheme.textTertiary)
+                                }
+                                .accessibilityLabel("Reply to \(info.handle)")
+                            }
                             Button { likeComment(info) } label: {
                                 HStack(spacing: 3) {
                                     if info.likeCount > 0 {
@@ -711,6 +721,14 @@ struct FeedPostCard: View {
         Task { await feed.reactToPost(post.id, emoji: emoji, userId: uid) }
     }
 
+
+    /// Focuses this card's composer with `@handle ` in front, preserving whatever was already
+    /// typed. Same helper the two comment sheets use, so the three surfaces cannot drift.
+    private func reply(to info: CommentInfo) {
+        Haptics.tap()
+        draft = prefillingReply(to: info.handle, in: draft)
+        commentFocused = true
+    }
 
     private func likeComment(_ info: CommentInfo) {
         guard let uid = auth.currentUser?.id else { return }
