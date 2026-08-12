@@ -34,6 +34,7 @@
 		2AE813EB776EADC01EEF7A24 /* ActivityFeedViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D86D048DA64F5454E17D0F34 /* ActivityFeedViewTests.swift */; };
 		2CBF2A7682471B5C6BF9FE84 /* PersonalInviteLinkTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0B2C33A2244A999EF8CCD60 /* PersonalInviteLinkTests.swift */; };
 		2EDCE64ACD1C1B9060F4B36B /* UserPageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 799578BF49AD244204751AC0 /* UserPageView.swift */; };
+		3070CADC3F21984D682B9058 /* UserFacingError.swift in Sources */ = {isa = PBXBuildFile; fileRef = E76395E2FEC6D1DFCEAC9E84 /* UserFacingError.swift */; };
 		322A5492683DD8B6D58B77C6 /* RollsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33D109A1C315CD466659A10F /* RollsView.swift */; };
 		3329F6BEB76AA76B288DE250 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49A4B9AB5111472363BE0ECF /* OnboardingView.swift */; };
 		33C4DC997AC45611BC769B13 /* CommentComposer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D27190BB76B91D0B8A60887 /* CommentComposer.swift */; };
@@ -163,6 +164,7 @@
 		F481F3480FA48F9A14DD9E0E /* PhotoServiceEmojiCacheTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27C91B091C398BBCB5FF3E74 /* PhotoServiceEmojiCacheTests.swift */; };
 		F4848A8A893A600ADD23FA27 /* RollRevealLiveActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C9B65302E5927CCF5F996F /* RollRevealLiveActivity.swift */; };
 		F49C20EEF5B515D8924048EE /* PhotoExportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC186737296AABC10E4A1C48 /* PhotoExportTests.swift */; };
+		F4F2482F4D0C3255D7D82689 /* UserFacingErrorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03FF9DA2DBDEF3CFA038F0ED /* UserFacingErrorTests.swift */; };
 		F5701A740A6BFD822B551A03 /* InstantFilmProcessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14C863F6302D9B2BFBA71B6C /* InstantFilmProcessor.swift */; };
 		F63EEF7D9CF0A8333B587BE8 /* ColorProfileTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1BCF6EBC279A8B682333548 /* ColorProfileTests.swift */; };
 		F7DB8CBEBE8B5B6A7FA4EEA9 /* CubeLUT.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EF884AA4C8711AA4738DA8C /* CubeLUT.swift */; };
@@ -210,6 +212,7 @@
 		01ECCD46517220EBFD0EC621 /* PhotoService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoService.swift; sourceTree = "<group>"; };
 		01F7C56CF5A21FB71964CFEB /* FlimApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlimApp.swift; sourceTree = "<group>"; };
 		0361D553ECF38F99C180ACF4 /* FollowingList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FollowingList.swift; sourceTree = "<group>"; };
+		03FF9DA2DBDEF3CFA038F0ED /* UserFacingErrorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserFacingErrorTests.swift; sourceTree = "<group>"; };
 		0468434B3C641D2DCB6BE2D7 /* SignedURLStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignedURLStoreTests.swift; sourceTree = "<group>"; };
 		059C902C744871D28E4F21AF /* SquareCropSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SquareCropSheet.swift; sourceTree = "<group>"; };
 		060BA5995DD93E64A494A2E4 /* DarkroomViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DarkroomViewModel.swift; sourceTree = "<group>"; };
@@ -359,6 +362,7 @@
 		E24F9D0E24ECACB558EE4F01 /* ProfileViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileViewTests.swift; sourceTree = "<group>"; };
 		E36FE0B8735BA0AADE0C8C7C /* ProfileCropGeometryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileCropGeometryTests.swift; sourceTree = "<group>"; };
 		E4793701D6105661DA70B4C5 /* RevealPacing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RevealPacing.swift; sourceTree = "<group>"; };
+		E76395E2FEC6D1DFCEAC9E84 /* UserFacingError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserFacingError.swift; sourceTree = "<group>"; };
 		EE73B765C41AB33B6D7D43F4 /* ShareImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareImage.swift; sourceTree = "<group>"; };
 		EFC0C65109A81467AB59472B /* AuthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthService.swift; sourceTree = "<group>"; };
 		F0C42110E6AE811C6B12C87A /* PhotoStoragePathsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoStoragePathsTests.swift; sourceTree = "<group>"; };
@@ -586,6 +590,7 @@
 				C4E4408D99715C85F7767AC1 /* RollLiveActivity.swift */,
 				633F60D6D348ADEA4D94D263 /* RollService.swift */,
 				85C6F9C983DFB1E2ECF57092 /* SignedURLStore.swift */,
+				E76395E2FEC6D1DFCEAC9E84 /* UserFacingError.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -685,6 +690,7 @@
 				8160A75F102252932FFC426A /* RollServiceTests.swift */,
 				4B7E5F0D581D43A4722CD6D9 /* RollTests.swift */,
 				0468434B3C641D2DCB6BE2D7 /* SignedURLStoreTests.swift */,
+				03FF9DA2DBDEF3CFA038F0ED /* UserFacingErrorTests.swift */,
 			);
 			path = FlimTests;
 			sourceTree = "<group>";
@@ -880,6 +886,7 @@
 				0BA7F7EE88D072B80A399232 /* RollServiceTests.swift in Sources */,
 				B24553011D30469838CCA923 /* RollTests.swift in Sources */,
 				974360CA7307549DBE96DC56 /* SignedURLStoreTests.swift in Sources */,
+				F4F2482F4D0C3255D7D82689 /* UserFacingErrorTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -997,6 +1004,7 @@
 				1A636EF87FB2E349B9F555DC /* SupabaseClient.swift in Sources */,
 				58ACCFC04DEF968BFD005E0A /* TagPhotoSheet.swift in Sources */,
 				F8B7B0BD9EA2812E69282C03 /* Theme.swift in Sources */,
+				3070CADC3F21984D682B9058 /* UserFacingError.swift in Sources */,
 				2EDCE64ACD1C1B9060F4B36B /* UserPageView.swift in Sources */,
 				6FDE9DF7E6D1E48B36B0FFCC /* UsernameView.swift in Sources */,
 			);

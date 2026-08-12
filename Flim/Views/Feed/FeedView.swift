@@ -15,6 +15,13 @@ struct FeedView: View {
     @State private var myAvatarURL: URL?
     @State private var hasNewPosts = false
     @State private var didLoad = false
+    /// A pull-to-refresh that genuinely failed while the feed already had content on screen.
+    /// `loadFeed` deliberately leaves the existing posts in place on a failed refresh (see its
+    /// own comment), which is right for not blanking the screen, but a failure that touches
+    /// nothing on screen also needs to say SOMETHING, or a real outage looks like "nothing
+    /// happened" instead of "try again". `feed.feedError`'s own full-screen `ErrorState` only
+    /// ever shows for an empty feed, so a refresh of a populated one needs this instead.
+    @State private var refreshFailedToast = false
     @State private var unreadActivity = 0
     /// The previous `lastActivitySeen`, handed to Activity so it can show a "New" section.
     @State private var activitySeenBefore: Date?
@@ -113,6 +120,14 @@ struct FeedView: View {
                                 }
                                 .padding(.top, 8)
                                 .transition(.move(edge: .top).combined(with: .opacity))
+                            } else if refreshFailedToast {
+                                Label("Couldn't refresh", systemImage: "wifi.exclamationmark")
+                                    .flimFont(13, weight: .semibold)
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 16).padding(.vertical, 8)
+                                    .background(.ultraThinMaterial, in: Capsule())
+                                    .padding(.top, 8)
+                                    .transition(.move(edge: .top).combined(with: .opacity))
                             }
                         }
                     }
@@ -301,9 +316,20 @@ struct FeedView: View {
 
     private func reload() async {
         guard let uid = auth.currentUser?.id else { didLoad = true; return }
+        // Captured before the load: `loadFeed` leaves an already-populated `feed` untouched on a
+        // genuine failure (so a flaky refresh doesn't blank the screen), which means `feed.feed`
+        // staying non-empty afterward can't by itself say whether this refresh worked. Only a feed
+        // that already had something on screen needs the toast below; an empty one falls through
+        // to `feed.feedError`'s own full-screen `ErrorState` instead.
+        let hadContent = !feed.feed.isEmpty
         await feed.loadFeed(currentUserId: uid)
         didLoad = true
         hasNewPosts = false
+        if hadContent, feed.feedError != nil {
+            Haptics.error()
+            withAnimation { refreshFailedToast = true }
+            Task { try? await Task.sleep(for: .seconds(2)); withAnimation { refreshFailedToast = false } }
+        }
         if let path = auth.currentUser?.avatarPath { myAvatarURL = await feed.signedURL(for: path) }
         unreadActivity = await feed.unreadActivityCount(
             userId: uid, since: Date(timeIntervalSince1970: lastActivitySeen))

@@ -188,6 +188,7 @@ final class PhotoService {
     }
 
     private static let captureLog = Logger(subsystem: "com.flim.app", category: "capture")
+    private static let errorLog = Logger(subsystem: "com.flim.app", category: "photos")
 
     /// `Duration` to seconds. `.seconds` is a static factory on Duration, not a read accessor,
     /// so the components have to be recombined by hand.
@@ -486,9 +487,15 @@ final class PhotoService {
             // the FALLBACK insert itself somehow also comes back 42501, which the fallback's own
             // `rollId: nil` payload should make impossible. Left in rather than removed: it is
             // still a correct, harmless description of the code if that assumption is ever wrong.
+            // Unlike a feed page load, cancellation here isn't a no-op: `record` is appended to
+            // `failedUploads` below regardless of why the upload didn't land, so a message is
+            // always owed, even if the underlying error happens to be a `CancellationError`. The
+            // raw error goes to the Logger either way; nobody reading this pill can act on
+            // Swift's own description of it.
+            Self.errorLog.error("capture failed to upload: \(String(describing: error), privacy: .public)")
             let message = Self.isRollDevelopedRefusal(rollId: rollId, error: error)
                 ? "This roll finished developing before this photo could be saved to it."
-                : error.localizedDescription
+                : UserFacingError.genericMessage
             // The queue is what the retry pill counts, so it holds the capture either way. Only
             // the promise changes: if the disk write failed, the photo lives until the app quits
             // and the copy says so rather than implying it is safe.
@@ -934,7 +941,7 @@ final class PhotoService {
         do {
             try await supabase.storage.from("photos").remove(paths: photo.allStoragePaths)
         } catch {
-            await MainActor.run { uploadError = error.localizedDescription; Haptics.error() }
+            await reportDeleteFailure(error, context: "storage remove")
             return false
         }
         do {
@@ -946,9 +953,20 @@ final class PhotoService {
             await MainActor.run { loadedPhotos.removeAll { $0.id == photo.id } }
             return true
         } catch {
-            await MainActor.run { uploadError = error.localizedDescription; Haptics.error() }
+            await reportDeleteFailure(error, context: "row delete")
             return false
         }
+    }
+
+    /// Shared tail of a failed delete (single or batch). Nothing about the delete actually
+    /// happened, so unlike `queueForRetry` (which always appends a retry record regardless of
+    /// why), a cancelled delete has nothing to explain: the caller's optimistic UI reverts on the
+    /// `false` return either way, and a superseded delete showing an error would be the same
+    /// false alarm as the feed's cancelled refresh.
+    private func reportDeleteFailure(_ error: Error, context: String) async {
+        guard let message = UserFacingError.messageIfNotCancelled(for: error) else { return }
+        Self.errorLog.error("delete failed (\(context, privacy: .public)): \(String(describing: error), privacy: .public)")
+        await MainActor.run { uploadError = message; Haptics.error() }
     }
 
     /// Deletes several photos in one round trip (one storage call + one DB call), far faster
@@ -962,7 +980,7 @@ final class PhotoService {
         do {
             try await supabase.storage.from("photos").remove(paths: toDelete.flatMap(\.allStoragePaths))
         } catch {
-            await MainActor.run { uploadError = error.localizedDescription; Haptics.error() }
+            await reportDeleteFailure(error, context: "batch storage remove")
             return false
         }
         do {
@@ -970,7 +988,7 @@ final class PhotoService {
             await MainActor.run { loadedPhotos.removeAll { ids.contains($0.id.uuidString) } }
             return true
         } catch {
-            await MainActor.run { uploadError = error.localizedDescription; Haptics.error() }
+            await reportDeleteFailure(error, context: "batch row delete")
             return false
         }
     }

@@ -1,12 +1,15 @@
 import Foundation
 import Observation
 import Supabase
+import os
 
 /// Backs the social layer: the follow graph, shared posts, the home feed, and
 /// reactions + comments on posts.
 @MainActor
 @Observable
 final class FeedService {
+    private static let log = Logger(subsystem: "com.flim.app", category: "feed")
+
     var feed: [FeedItem] = []
     var followingIds: Set<UUID> = []
     /// Who follows ME. Loaded once (mirrors `followingIds`) rather than per-profile, so "follows
@@ -483,20 +486,26 @@ final class FeedService {
         followingIds = following
         await loadBlocked(userId: currentUserId, epoch: epoch)
         guard AccountEpoch.isCurrent(epoch) else { return }
-        // Reset for a fresh first page.
-        feed = []
-        reactionsByPost = [:]
-        commentsByPost = [:]
-        tagsByPost = [:]
-        tagProfiles = [:]
+        // Reset pagination bookkeeping for a fresh first page, but deliberately leave `feed`
+        // (and its reaction/comment/tag caches) alone until the new page actually lands, see
+        // `loadMoreFeed`'s `replacingFeed`. Clearing `feed` here, before the network round trip
+        // even starts, would empty it the instant this line runs. FeedView's `.refreshable`
+        // pull-to-refresh is hosted on the ScrollView that only exists while `feed` is non-empty,
+        // so that flash-to-empty tears the scroll view down mid-pull, cancelling this very load:
+        // the reported "Couldn't load / CancellationError" was that reset, not a real failure.
         feedOffset = 0
         hasMoreFeed = true
-        await loadMoreFeed(currentUserId: currentUserId)
+        await loadMoreFeed(currentUserId: currentUserId, replacingFeed: true)
     }
 
     /// Loads the next page and batch-fetches its reactions + comments (2–3 queries for the whole
     /// page, instead of ~4 per card).
-    func loadMoreFeed(currentUserId: UUID) async {
+    ///
+    /// - Parameter replacingFeed: `loadFeed`'s fresh-page case. `feed` (and its caches) are
+    ///   replaced atomically once the new page is ready, rather than cleared up front and
+    ///   appended into afterwards, so nothing on screen goes empty while the network round trip
+    ///   is still in flight, see `loadFeed`'s comment.
+    func loadMoreFeed(currentUserId: UUID, replacingFeed: Bool = false) async {
         guard hasMoreFeed, !isLoadingMoreFeed else { return }
         isLoadingMoreFeed = true
         defer { isLoadingMoreFeed = false }
@@ -519,11 +528,18 @@ final class FeedService {
                     .range(from: feedOffset, to: feedOffset + feedPageSize - 1)
                     .execute().value
             } catch {
+                guard AccountEpoch.isCurrent(epoch) else { return }
                 // A failed page must not look like the end of the feed: `?? []` here meant a
                 // dropped connection set hasMoreFeed = false and left the view showing the
                 // "It's quiet in here" empty state, as if nobody had posted.
-                guard AccountEpoch.isCurrent(epoch) else { return }
-                feedError = error.localizedDescription
+                //
+                // Cancellation is excluded: it means this load was superseded (an account switch,
+                // a second reload racing this one), not that the request actually failed, so
+                // there's nothing to tell anyone and whatever `feedError`/`feed` already held
+                // stays exactly as it was.
+                guard let message = UserFacingError.messageIfNotCancelled(for: error) else { return }
+                Self.log.error("loadMoreFeed failed: \(String(describing: error), privacy: .public)")
+                feedError = message
                 return
             }
             // Guarded here, not only before the final append. This loop writes pagination state
@@ -542,7 +558,17 @@ final class FeedService {
                 profiles[post.userId].map { FeedItem(post: post, author: $0) }
             }
         }
-        guard !items.isEmpty else { return }
+        guard !items.isEmpty else {
+            // A fresh load that genuinely has nothing to show (e.g. everyone followed was
+            // unfollowed or blocked) still needs to clear whatever the previous page left behind;
+            // `loadMoreFeed`'s ordinary "no more pages" return is the only other way here, and
+            // that one has nothing stale to clear because it's always appending.
+            if replacingFeed, AccountEpoch.isCurrent(epoch) {
+                reactionsByPost = [:]; commentsByPost = [:]; tagsByPost = [:]; tagProfiles = [:]
+                feed = []
+            }
+            return
+        }
 
         // Batch reactions + comments + tags for this page's posts in one pass.
         let postIds = items.map(\.post.id)
@@ -556,11 +582,21 @@ final class FeedService {
         // One guard covering every write below, placed after the LAST await rather than before
         // the first merge, so nothing lands from a session that has since been replaced.
         guard AccountEpoch.isCurrent(epoch) else { return }
-        reactionsByPost.merge(fetchedReactions) { _, new in new }
-        commentsByPost.merge(fetchedComments) { _, new in new }
-        tagsByPost.merge(tagMap) { _, new in new }
-        tagProfiles.merge(tagProf) { _, new in new }
-        feed.append(contentsOf: items)
+        if replacingFeed {
+            // Replace, not merge: the previous page's caches belong to posts that are about to
+            // disappear from `feed` entirely, keeping them around would just be stale memory.
+            reactionsByPost = fetchedReactions
+            commentsByPost = fetchedComments
+            tagsByPost = tagMap
+            tagProfiles = tagProf
+            feed = items
+        } else {
+            reactionsByPost.merge(fetchedReactions) { _, new in new }
+            commentsByPost.merge(fetchedComments) { _, new in new }
+            tagsByPost.merge(tagMap) { _, new in new }
+            tagProfiles.merge(tagProf) { _, new in new }
+            feed.append(contentsOf: items)
+        }
     }
 
     /// Loads tags for a single post (e.g. a detail view opened outside the feed) into the caches.
@@ -1120,7 +1156,11 @@ final class FeedService {
             activityError = nil
         } catch {
             guard AccountEpoch.isCurrent(epoch) else { return [] }
-            activityError = error.localizedDescription
+            // Same cancellation carve-out as `loadMoreFeed`: a superseded load is not a failure,
+            // say nothing rather than show whoever's looking a Swift error description.
+            guard let message = UserFacingError.messageIfNotCancelled(for: error) else { return [] }
+            Self.log.error("fetchActivity failed: \(String(describing: error), privacy: .public)")
+            activityError = message
             return []
         }
 
