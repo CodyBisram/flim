@@ -1300,13 +1300,16 @@ final class PhotoService {
             .execute().value) ?? []
     }
 
-    /// Personal instants that haven't been sorted yet (shown in the swipe deck), newest first.
+    /// Personal instants that haven't been sorted yet (shown in the swipe deck), oldest first: you
+    /// relive the session in the order you shot it, the same order the roll reveal plays
+    /// (`RollRevealViewModel.loadDeck` sorts `takenAt` ascending too), the way a physical roll
+    /// develops front to back.
     func fetchUnsorted(userId: UUID) async -> [Photo] {
         (try? await supabase
             .from("photos").select()
             .eq("user_id", value: userId.uuidString)
             .eq("is_sorted", value: false)
-            .order("taken_at", ascending: false)
+            .order("taken_at", ascending: true)
             .execute().value) ?? []
     }
 

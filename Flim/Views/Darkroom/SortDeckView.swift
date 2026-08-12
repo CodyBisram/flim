@@ -46,6 +46,17 @@ struct SortDeckView: View {
     /// means the triage screen shows a different picture than the one that gets developed.
     static let cardAspect: CGFloat = 3.0 / 4.0
 
+    /// Shared by the header and the card so the X/Undo row and the card below it line up. 20pt
+    /// reads slightly tighter than the card's 22pt corner radius, close enough that the corner
+    /// still visually "sits inside" the margin instead of a wider gap making the two look
+    /// unrelated.
+    private static let horizontalMargin: CGFloat = 20
+
+    /// The largest control circle (Delete). Every `circleButton` reserves this much vertical
+    /// space for its circle, so Keep/Delete/Post captions land on one baseline even though the
+    /// circles themselves stay different sizes.
+    private static let largestCircleSize: CGFloat = 64
+
     /// The largest 3:4 card that fits the available area.
     ///
     /// A complete 3:4 photo still fills ~82% of the height the old full-bleed card used, so
@@ -79,21 +90,12 @@ struct SortDeckView: View {
                         }
                         .frame(width: geo.size.width, height: geo.size.height)
                     }
-                    .padding(.horizontal, 18)
+                    .padding(.horizontal, Self.horizontalMargin)
                     .padding(.vertical, 10)
                     if let top = cards.first {
                         composeHint(for: top)
                     }
-                    if let publishError {
-                        Text(publishError)
-                            .flimFont(13, relativeTo: .subheadline)
-                            .foregroundStyle(Color(red: 1, green: 0.42, blue: 0.42))
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, 24)
-                            .padding(.bottom, 4)
-                            .transition(.opacity)
-                    }
-                    controls
+                    controls.overlay(alignment: .bottom) { publishErrorBanner }
                 }
             }
         }
@@ -136,6 +138,25 @@ struct SortDeckView: View {
         .padding(.bottom, 6)
     }
 
+    /// Overlaid on `controls`, not inserted into the VStack: it used to sit between the compose
+    /// pill and `controls`, so the whole control row jumped down when a publish/delete error
+    /// appeared and back up when it cleared. Anchored to `controls`' own bottom edge rather than
+    /// to the button row itself, so it lands inside `controls`' existing 30pt trailing padding
+    /// (otherwise-blank space below the captions) regardless of whether the swipe hint line below
+    /// the buttons is showing, and doesn't reach up far enough to compete with the compose pill
+    /// above.
+    @ViewBuilder private var publishErrorBanner: some View {
+        if let publishError {
+            Text(publishError)
+                .flimFont(13, relativeTo: .subheadline)
+                .foregroundStyle(Color(red: 1, green: 0.42, blue: 0.42))
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 24)
+                .padding(.bottom, 4)
+                .transition(.opacity)
+        }
+    }
+
     private func openCompose(for photo: Photo) {
         guard !showCompose else { return }
         Haptics.tap()
@@ -147,28 +168,32 @@ struct SortDeckView: View {
 
     // MARK: - Header
 
+    /// Centred with a ZStack/overlay, not balanced between two Spacers: "Undo" (icon + text) is
+    /// far wider than the leading X, so a Spacer-balanced title sits left of centre, and it would
+    /// shift sideways the moment Undo appears/disappears. Centring the title on the whole header
+    /// instead means it's fixed to the screen and never moves regardless of what's in the
+    /// leading/trailing row.
     private var header: some View {
-        HStack {
-            Button { closeDeck() } label: {
-                Image(systemName: "xmark").font(.system(size: 16, weight: .medium)).foregroundStyle(.white)
-            }
-            Spacer()
+        ZStack {
             if !cards.isEmpty {
                 Text("\(cards.count) to sort")
                     .flimFont(13, weight: .medium, relativeTo: .footnote).foregroundStyle(FlimTheme.textSecondary)
             }
-            Spacer()
-            if lastPhoto != nil {
-                Button { undo() } label: {
-                    Label("Undo", systemImage: "arrow.uturn.backward")
-                        .flimFont(13, weight: .semibold)
-                        .foregroundStyle(accent)
+            HStack {
+                Button { closeDeck() } label: {
+                    Image(systemName: "xmark").font(.system(size: 16, weight: .medium)).foregroundStyle(.white)
                 }
-            } else {
-                Color.clear.frame(width: 44, height: 1)
+                Spacer()
+                if lastPhoto != nil {
+                    Button { undo() } label: {
+                        Label("Undo", systemImage: "arrow.uturn.backward")
+                            .flimFont(13, weight: .semibold)
+                            .foregroundStyle(accent)
+                    }
+                }
             }
         }
-        .padding(.horizontal, 20).padding(.top, 16).padding(.bottom, 8)
+        .padding(.horizontal, Self.horizontalMargin).padding(.top, 16).padding(.bottom, 8)
     }
 
     // MARK: - Card
@@ -284,6 +309,10 @@ struct SortDeckView: View {
                     .background(Color.white.opacity(0.08), in: Circle())
                     .overlay(Circle().stroke(tint.opacity(0.4), lineWidth: 1))
             }
+            // Every circle gets the same vertical slot (the largest, Delete's), centred within
+            // it, so the three captions below land on one baseline even though Delete's circle is
+            // deliberately bigger than Keep/Post's.
+            .frame(height: Self.largestCircleSize)
             Text(caption)
                 .flimFont(11, relativeTo: .caption2)
                 .foregroundStyle(FlimTheme.textSecondary)

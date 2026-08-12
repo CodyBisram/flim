@@ -108,7 +108,7 @@ interface FlimRoute {
 // Prunes a device token APNs has told us is genuinely dead, so it stops being retried on
 // every future run. ONLY on 410 Unregistered: 400 BadDeviceToken is left alone on purpose,
 // because that status is also what a valid production TestFlight token gets back from the
-// SANDBOX host (see the `host` field above) — an environment mismatch, not a dead device.
+// SANDBOX host (see the `host` field above), an environment mismatch, not a dead device.
 // Deleting on 400 would wipe out perfectly good tokens for every user the first time the
 // environment was misconfigured, which is a far worse failure than a stale row sitting
 // around. 410's body carries Apple's own guard against a race with a fresh registration:
@@ -249,6 +249,93 @@ async function ownerTokens(): Promise<string[]> {
   return [...new Set(tokens)];
 }
 
+// --- Covered posts. This function runs with the SERVICE ROLE, so RLS is bypassed entirely
+//     and the "posts: readable by authenticated" policy's covered_post_visible(...) clause
+//     (supabase/migrations/2026-08-12_covered_posts.sql) never applies here, the same reason
+//     `blockedEitherWay` above has to re-implement blocks by hand. Without an explicit check,
+//     a covered post, hidden from everyone except its author, the other two named accounts,
+//     and the owner, could still generate a push to someone outside that set (a tag on a new
+//     covered post, or a mention inside a comment on one), telling them a post exists that
+//     they can never open.
+//
+//     Mirrors public.post_is_covered / public.covered_post_visible byte-for-byte: a post is
+//     covered only when its author has an ACTIVE covered_post_windows row whose half-open
+//     [window_start, window_end) contains the post's own created_at, and a covered post is
+//     visible only to the owner or to another ACTIVE covered_post_windows member (symmetric
+//     among the three, regardless of whose post it is). Fetched ONCE per invocation and
+//     evaluated in TypeScript, the same "small table, fetch once" shape blockCache uses, not a
+//     per-post RPC round trip.
+interface CoveredWindow {
+  start: number;
+  end: number;
+  active: boolean;
+}
+
+interface CoveredPostContext {
+  /** False if either lookup below failed. Every check fails CLOSED when this is false: a run
+   *  that sends fewer pushes is recoverable, an announced hidden post is not. */
+  loaded: boolean;
+  windowByAuthor: Map<string, CoveredWindow>;
+  /** Owner ids, union active covered_post_windows member ids: exactly who
+   *  covered_post_visible allows to see ANY covered post. */
+  allowedViewers: Set<string>;
+}
+
+async function loadCoveredPostContext(): Promise<CoveredPostContext> {
+  const windowByAuthor = new Map<string, CoveredWindow>();
+  const allowedViewers = new Set<string>();
+
+  const { data: windowRows, error: windowsError } = await supabase
+    .from("covered_post_windows")
+    .select("user_id, window_start, window_end, active");
+  if (windowsError) {
+    console.warn(JSON.stringify({ at: "covered_post_windows_fetch_failed", error: windowsError.message }));
+    return { loaded: false, windowByAuthor, allowedViewers };
+  }
+  for (const row of windowRows ?? []) {
+    const userId = row.user_id as string;
+    const active = Boolean(row.active);
+    windowByAuthor.set(userId, {
+      start: new Date(row.window_start as string).getTime(),
+      end: new Date(row.window_end as string).getTime(),
+      active,
+    });
+    if (active) allowedViewers.add(userId);
+  }
+
+  const { data: ownerRows, error: ownerError } = await supabase
+    .from("users")
+    .select("id")
+    .ilike("email", OWNER_EMAIL);
+  if (ownerError) {
+    console.warn(JSON.stringify({ at: "covered_post_owner_lookup_failed", error: ownerError.message }));
+    return { loaded: false, windowByAuthor, allowedViewers };
+  }
+  for (const o of ownerRows ?? []) allowedViewers.add(o.id as string);
+
+  return { loaded: true, windowByAuthor, allowedViewers };
+}
+
+/// TRUE when `viewerId` may be told about a post authored by `authorId` at `createdAtIso`.
+/// Mirrors public.covered_post_visible(viewer, author, created_at) exactly: not covered at all
+/// -> visible to everyone; covered -> visible only to the owner or another active
+/// covered_post_windows member. Fails CLOSED: if `ctx.loaded` is false (the windows or owner
+/// lookup above errored), every post is treated as NOT visible to anyone.
+function coveredPostVisibleTo(
+  ctx: CoveredPostContext,
+  viewerId: string,
+  authorId: string,
+  createdAtIso: string,
+): boolean {
+  if (!ctx.loaded) return false;
+  const w = ctx.windowByAuthor.get(authorId);
+  if (!w || !w.active) return true; // not covered at all
+  const t = new Date(createdAtIso).getTime();
+  const covered = t >= w.start && t < w.end;
+  if (!covered) return true;
+  return ctx.allowedViewers.has(viewerId);
+}
+
 // --- @mentions. Mirrors Flim/Models/Mentions.swift: an @ only starts a mention at a word
 //     boundary (so an email address doesn't mention its domain), and a username is letters,
 //     digits and underscore, matching AuthService.isValidUsername. Usernames are stored
@@ -273,14 +360,20 @@ async function mentionedUserIds(text: string): Promise<string[]> {
 Deno.serve(async () => {
   let sent = 0;
 
+  // Fetched once per run, evaluated per (recipient, post) below wherever a recipient isn't
+  // guaranteed to be the post's own author. See the "Covered posts" section above for the
+  // fail-closed contract.
+  const coveredCtx = await loadCoveredPostContext();
+
   // ---- Comments: one push per comment, to the post owner (never self) ----
   const { data: comments } = await supabase
     .from("post_comments")
-    .select("id, post_id, user_id, body, posts(user_id)")
+    .select("id, post_id, user_id, body, posts(user_id, created_at)")
     .eq("push_sent", false);
 
   for (const c of comments ?? []) {
-    const ownerId = (c as { posts?: { user_id?: string } }).posts?.user_id;
+    const postMeta = (c as { posts?: { user_id?: string; created_at?: string } }).posts;
+    const ownerId = postMeta?.user_id;
     const name = await handle(c.user_id);
     const preview = c.body.length > 90 ? c.body.slice(0, 87) + "…" : c.body;
     // Tracks who has already been pushed for this comment, so someone who is BOTH the post owner
@@ -290,6 +383,8 @@ Deno.serve(async () => {
     // post_id), never hoisted, so nothing from a previous row's iteration can leak in.
     const route: FlimRoute = { t: "post", id: c.post_id, comments: true };
     const notified = new Set<string>([c.user_id]);
+    // The owner push never needs a covered-post check: ownerId IS the post's author, so if the
+    // post is covered, its own author is trivially allowed to be told about activity on it.
     if (ownerId) {
       notified.add(ownerId);
       sent += await notify(ownerId, c.user_id, `${name} commented`, preview, route);
@@ -300,6 +395,12 @@ Deno.serve(async () => {
     let mentionPushes = 0;
     for (const uid of await mentionedUserIds(c.body)) {
       if (notified.has(uid) || mentionPushes >= 5) continue;
+      // A mention, unlike the owner push above, can name ANYONE, including someone outside the
+      // covered-post allowed set, this is the exact leak the "Covered posts" section exists to
+      // close: telling a stranger they were mentioned in a post they can never open.
+      if (ownerId && postMeta?.created_at && !coveredPostVisibleTo(coveredCtx, uid, ownerId, postMeta.created_at)) {
+        continue;
+      }
       notified.add(uid);
       mentionPushes++;
       sent += await notify(uid, c.user_id, `${name} mentioned you`, preview, route);
@@ -310,7 +411,7 @@ Deno.serve(async () => {
   // ---- New posts: notify people tagged in the photo + @mentioned in the caption ----
   const { data: newPosts } = await supabase
     .from("posts")
-    .select("id, user_id, caption")
+    .select("id, user_id, caption, created_at")
     .eq("push_sent", false);
 
   for (const p of newPosts ?? []) {
@@ -320,20 +421,25 @@ Deno.serve(async () => {
     const notified = new Set<string>([p.user_id]);
     for (const t of tagRows ?? []) {
       const uid = t.tagged_user_id as string;
-      if (!notified.has(uid)) {
-        notified.add(uid);
-        sent += await notify(uid, p.user_id, `${name} tagged you`, "in a photo", { t: "post", id: p.id });
-      }
+      if (notified.has(uid)) continue;
+      // The post itself may be covered (this IS the confirmed leak: a brand-new covered post,
+      // tagging someone outside the allowed set, was notified regardless). `p.user_id` is the
+      // post's own author, so this asks exactly what covered_post_visible would ask RLS.
+      if (!coveredPostVisibleTo(coveredCtx, uid, p.user_id, p.created_at as string)) continue;
+      notified.add(uid);
+      sent += await notify(uid, p.user_id, `${name} tagged you`, "in a photo", { t: "post", id: p.id });
     }
     await supabase.from("posts").update({ push_sent: true }).eq("id", p.id);
   }
 
   // ---- Reactions: batch per (post, reactor) → one push listing their emoji, to the OWNER ----
   // `hidden` is pulled through the join so the tagged-people block below (which reads from this
-  // same `reactions` array) can skip a hidden post/photo without a second query.
+  // same `reactions` array) can skip a hidden post/photo without a second query. `created_at` is
+  // pulled through the same join so that same block can evaluate covered-post visibility for
+  // tagged people without a second query either.
   const { data: reactions } = await supabase
     .from("post_reactions")
-    .select("id, post_id, user_id, emoji, posts(user_id, hidden)")
+    .select("id, post_id, user_id, emoji, posts(user_id, hidden, created_at)")
     .eq("push_sent", false);
 
   const groups = new Map<
@@ -391,11 +497,14 @@ Deno.serve(async () => {
   //      adds ownerId to its `notified` set regardless of whether that push actually sent. The
   //      owner already has their own reaction push (or is excluded from it by `notify()`'s
   //      self-check); this block is for everyone ELSE tagged in the photo.
-  const postAgg = new Map<string, { ownerId?: string; hidden: boolean; reactorIds: Set<string> }>();
+  const postAgg = new Map<
+    string,
+    { ownerId?: string; hidden: boolean; createdAt?: string; reactorIds: Set<string> }
+  >();
   for (const r of reactions ?? []) {
-    const meta = (r as { posts?: { user_id?: string; hidden?: boolean } }).posts;
+    const meta = (r as { posts?: { user_id?: string; hidden?: boolean; created_at?: string } }).posts;
     const p = postAgg.get(r.post_id) ??
-      { ownerId: meta?.user_id, hidden: meta?.hidden ?? false, reactorIds: new Set<string>() };
+      { ownerId: meta?.user_id, hidden: meta?.hidden ?? false, createdAt: meta?.created_at, reactorIds: new Set<string>() };
     p.reactorIds.add(r.user_id);
     postAgg.set(r.post_id, p);
   }
@@ -427,6 +536,11 @@ Deno.serve(async () => {
     for (const taggedId of tagged) {
       if (pushesForPost >= 20) break;
       if (taggedId === p.ownerId) continue;
+      // Same leak this whole section closes, on the reaction path: a tagged person outside the
+      // covered-post allowed set must not be told a covered post got reacted to.
+      if (p.ownerId && p.createdAt && !coveredPostVisibleTo(coveredCtx, taggedId, p.ownerId, p.createdAt)) {
+        continue;
+      }
       // Never notify someone about their own reaction: count only reactions from OTHER people.
       const others = [...p.reactorIds].filter((id) => id !== taggedId);
       if (others.length === 0) continue;

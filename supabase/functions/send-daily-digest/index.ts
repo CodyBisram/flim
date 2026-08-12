@@ -3,7 +3,7 @@
 //
 // ONE notification per person per day summarising what the people they follow posted, instead of
 // a push per post. At a hundred follows, per-post notifications are an uninstall, and worse, they
-// train people to switch notifications off entirely — which costs the reveal alerts that are the
+// train people to switch notifications off entirely, which costs the reveal alerts that are the
 // whole point of the app. A digest is a fixed one-per-day cost no matter how active the network
 // gets.
 //
@@ -20,7 +20,7 @@
 // Requires: supabase/migrations/2026-08-03_daily_digest_state.sql
 //
 // SCHEDULED (pg_cron job `flim-daily-digest`):  0 14-23,0-1 * * *
-//   Hourly, but only between 14:00 and 01:00 UTC — roughly 10am to 9pm US Eastern. The other two
+//   Hourly, but only between 14:00 and 01:00 UTC, roughly 10am to 9pm US Eastern. The other two
 //   push functions run every minute because they're reacting to something the user just did; this
 //   one initiates contact, so the hour it fires is the hour someone's phone buzzes. Since each
 //   person gets at most one digest per DIGEST_INTERVAL_HOURS, restricting WHEN the job runs is
@@ -62,6 +62,99 @@ const supabase = createClient(
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
 );
 
+// Mirrors the constant in send-social-push. There is one owner, and this is their address, not
+// something worth deriving from a table.
+const OWNER_EMAIL = "codyysb@gmail.com";
+
+// ---- Covered posts --------------------------------------------------------
+//
+// This function runs with the SERVICE ROLE, so RLS is bypassed entirely and the
+// "posts: readable by authenticated" policy's covered_post_visible(...) clause
+// (supabase/migrations/2026-08-12_covered_posts.sql) never applies here. Without an explicit
+// check, a covered post, hidden from everyone except its author, the other two named
+// accounts, and the owner, would be summarised in a digest sent to any of their followers,
+// which is exactly the leak this section exists to close.
+//
+// Mirrors public.post_is_covered / public.covered_post_visible byte-for-byte: a post is
+// covered only when its author has an ACTIVE covered_post_windows row whose half-open
+// [window_start, window_end) contains the post's own created_at, and a covered post is
+// visible only to the owner or to another ACTIVE covered_post_windows member (symmetric among
+// the three, regardless of whose post it is). Fetched ONCE per invocation, evaluated in
+// TypeScript, per the same "small table, fetch once" shape send-daily-digest already uses for
+// blocks, not a per-post RPC round trip.
+
+interface CoveredWindow {
+  start: number;
+  end: number;
+  active: boolean;
+}
+
+interface CoveredPostContext {
+  /** False if either lookup below failed. Every check fails CLOSED when this is false: a
+   *  digest that goes out with fewer items is recoverable, an announced hidden post is not. */
+  loaded: boolean;
+  windowByAuthor: Map<string, CoveredWindow>;
+  /** Owner ids, union active covered_post_windows member ids: exactly who covered_post_visible
+   *  allows to see ANY covered post. */
+  allowedViewers: Set<string>;
+}
+
+async function loadCoveredPostContext(): Promise<CoveredPostContext> {
+  const windowByAuthor = new Map<string, CoveredWindow>();
+  const allowedViewers = new Set<string>();
+
+  const { data: windowRows, error: windowsError } = await supabase
+    .from("covered_post_windows")
+    .select("user_id, window_start, window_end, active");
+  if (windowsError) {
+    console.warn(JSON.stringify({ at: "covered_post_windows_fetch_failed", error: windowsError.message }));
+    return { loaded: false, windowByAuthor, allowedViewers };
+  }
+  for (const row of windowRows ?? []) {
+    const userId = row.user_id as string;
+    const active = Boolean(row.active);
+    windowByAuthor.set(userId, {
+      start: new Date(row.window_start as string).getTime(),
+      end: new Date(row.window_end as string).getTime(),
+      active,
+    });
+    if (active) allowedViewers.add(userId);
+  }
+
+  const { data: ownerRows, error: ownerError } = await supabase
+    .from("users")
+    .select("id")
+    .ilike("email", OWNER_EMAIL);
+  if (ownerError) {
+    console.warn(JSON.stringify({ at: "covered_post_owner_lookup_failed", error: ownerError.message }));
+    return { loaded: false, windowByAuthor, allowedViewers };
+  }
+  for (const o of ownerRows ?? []) allowedViewers.add(o.id as string);
+
+  return { loaded: true, windowByAuthor, allowedViewers };
+}
+
+/// TRUE when `viewerId` may be told about a post authored by `authorId` at `createdAtIso`.
+/// Mirrors public.covered_post_visible(viewer, author, created_at) exactly: not covered at all
+/// -> visible to everyone; covered -> visible only to the owner or another active
+/// covered_post_windows member. Fails CLOSED: if `ctx.loaded` is false (the windows or owner
+/// lookup above errored), every post is treated as NOT visible to anyone, rather than risk
+/// silently treating an uncheckable post as "not covered."
+function coveredPostVisibleTo(
+  ctx: CoveredPostContext,
+  viewerId: string,
+  authorId: string,
+  createdAtIso: string,
+): boolean {
+  if (!ctx.loaded) return false;
+  const w = ctx.windowByAuthor.get(authorId);
+  if (!w || !w.active) return true; // not covered at all
+  const t = new Date(createdAtIso).getTime();
+  const covered = t >= w.start && t < w.end;
+  if (!covered) return true;
+  return ctx.allowedViewers.has(viewerId);
+}
+
 // ---- Copy ---------------------------------------------------------------
 //
 // Pure, and exported, so it can be exercised without APNs, a database, or a schedule. The wording
@@ -77,7 +170,7 @@ export interface DigestCopy {
 ///
 /// `handles` are the posters, most-recent first, WITHOUT the leading @. Names up to three people
 /// because a notification title truncates around there on the lock screen, and a name you
-/// recognise is what makes this worth opening — "5 new photos" could be from anyone.
+/// recognise is what makes this worth opening, "5 new photos" could be from anyone.
 export function digestCopy(handles: string[], photoCount: number): DigestCopy {
   const names = handles.map((h) => `@${h}`);
   const photos = photoCount === 1 ? "1 new photo" : `${photoCount} new photos`;
@@ -146,7 +239,7 @@ const FEED_ROUTE = { t: "feed" as const };
 // Prunes a device token APNs has told us is genuinely dead, so it stops being retried on
 // every future run. ONLY on 410 Unregistered: 400 BadDeviceToken is left alone on purpose,
 // because that status is also what a valid production TestFlight token gets back from the
-// SANDBOX host (see the `host` field above) — an environment mismatch, not a dead device.
+// SANDBOX host (see the `host` field above), an environment mismatch, not a dead device.
 // Deleting on 400 would wipe out perfectly good tokens for every user the first time the
 // environment was misconfigured, which is a far worse failure than a stale row sitting
 // around. 410's body carries Apple's own guard against a race with a fresh registration:
@@ -212,6 +305,10 @@ async function sendPush(deviceToken: string, title: string, body: string): Promi
 Deno.serve(async () => {
   const now = Date.now();
   const maxWindowStart = new Date(now - MAX_WINDOW_HOURS * 3600_000);
+
+  // Fetched once per run, evaluated per (recipient, post) below. See the "Covered posts"
+  // section above for the fail-closed contract.
+  const coveredCtx = await loadCoveredPostContext();
 
   // Everyone with a registered device is a candidate; nobody else can be notified anyway.
   const { data: tokenRows } = await supabase.from("device_tokens").select("user_id, token");
@@ -284,6 +381,11 @@ Deno.serve(async () => {
       if (poster === userId) return false;                       // your own posts aren't news
       if (!following.has(poster)) return false;
       if (blockPairs.has(`${userId}|${poster}`)) return false;
+      // Covered posts (see "Covered posts" above) are excluded from anyone the SQL policy
+      // would also hide them from. This is the same check RLS would apply on a normal client
+      // read of `posts`; it's re-implemented here only because this function bypasses RLS via
+      // the service role, exactly like the block check just above it.
+      if (!coveredPostVisibleTo(coveredCtx, userId, poster, p.created_at as string)) return false;
       return new Date(p.created_at).getTime() > since;
     });
     if (theirs.length === 0) continue;
