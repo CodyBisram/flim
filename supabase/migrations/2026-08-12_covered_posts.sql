@@ -25,7 +25,22 @@
 --     two-argument visibility predicate the same way is_blocked_either_way(a, b)
 --     already does elsewhere in this schema).
 -- Everyone else gets nothing back for a covered post: not the row, and not
--- the photo bytes in Storage. Posts by the same three authors OUTSIDE the
+-- the photo bytes in Storage.
+--
+-- ONE EXCEPTION, and it is not a hole. If a covered post's photo came from a
+-- SHARED ROLL, the roll's other members can still see that photo, because
+-- "photos: roll members can see" grants it on roll membership alone and knows
+-- nothing about posts. That is the roll working as designed: those people were
+-- already looking at that photograph in the roll before it was ever posted, so
+-- hiding the POST takes nothing away from them and reveals nothing new. What
+-- they lose is its placement in the feed and on the author's profile, which is
+-- what this rule is for. Anyone NOT in that roll still gets nothing.
+--
+-- Checked against production when this was written: none of the covered posts
+-- came from a roll, and none of the three authors shared a roll with anyone
+-- outside the allowed set, so the exception was not reachable at all.
+--
+-- Posts by the same three authors OUTSIDE the
 -- window are completely unaffected (still public to every signed-in user,
 -- same as today). Posts by anyone else are completely unaffected.
 --
