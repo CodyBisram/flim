@@ -27,6 +27,9 @@ struct CommentComposer: View {
 
         var textSize: CGFloat { self == .surface ? 15 : 14 }
         var buttonSize: CGFloat { self == .surface ? 30 : 26 }
+        /// The clear ("x") button next to it. Smaller than the send button, it's a way out, not
+        /// the primary action, and shouldn't compete with it for weight.
+        var clearButtonSize: CGFloat { self == .surface ? 22 : 20 }
         var lineLimit: ClosedRange<Int> { self == .surface ? 1...4 : 1...3 }
         var horizontalPadding: CGFloat { self == .surface ? 14 : 12 }
         var verticalPadding: CGFloat { self == .surface ? 10 : 8 }
@@ -58,6 +61,14 @@ struct CommentComposer: View {
         !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isSending
     }
 
+    /// Clears the draft and drops focus. The way out for someone who typed something (a reply
+    /// prefill or otherwise) and changed their mind, rather than backspacing it by hand.
+    private func clear() {
+        Haptics.tap()
+        draft = ""
+        focus.wrappedValue = false
+    }
+
     var body: some View {
         VStack(spacing: 8) {
             if showsMentionSuggestions {
@@ -74,6 +85,18 @@ struct CommentComposer: View {
                     .padding(.vertical, style.verticalPadding)
                     .background { style.fieldBackground }
 
+                if !draft.isEmpty {
+                    Button(action: clear) {
+                        Image(systemName: "xmark.circle.fill")
+                            // Same fixed-size reasoning as the send button below: it sits in the
+                            // same row and shouldn't grow the row when the field needs the space.
+                            .font(.system(size: style.clearButtonSize))
+                            .foregroundStyle(FlimTheme.textTertiary)
+                    }
+                    .accessibilityLabel("Clear comment")
+                    .transition(.scale.combined(with: .opacity))
+                }
+
                 if canSend || style.showsDisabledSendButton {
                     Button(action: onSend) {
                         Image(systemName: "arrow.up.circle.fill")
@@ -89,6 +112,16 @@ struct CommentComposer: View {
                 }
             }
             .animation(.snappy(duration: 0.2), value: canSend)
+            .animation(.snappy(duration: 0.2), value: draft.isEmpty)
+        }
+        // An abandoned reply (an untouched `@handle ` prefill) shouldn't outlive the tap that
+        // made it: losing focus without a single character typed clears it, so the next tap into
+        // the box starts clean instead of carrying a half-finished mention forward. Real typing,
+        // of any length, is never touched by this.
+        .onChange(of: focus.wrappedValue) { _, isFocused in
+            if !isFocused, isUntouchedReplyPrefill(draft) {
+                draft = ""
+            }
         }
     }
 }

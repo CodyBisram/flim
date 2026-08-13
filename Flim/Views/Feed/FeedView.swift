@@ -371,6 +371,13 @@ struct FeedView: View {
 
 // MARK: - Post card
 
+/// Whether "View N comments" has anything to offer beyond what `commentPreview` already shows in
+/// full. `commentPreview` can equal every comment there is (one or two total, or a third for "your
+/// own latest" alongside them), and the row would just repeat what's already on screen.
+func hasCommentsBeyondPreview(total: Int, shownInPreview: Int) -> Bool {
+    total > shownInPreview
+}
+
 struct FeedPostCard: View {
     @Environment(\.flimAccent) private var accent
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -518,8 +525,8 @@ struct FeedPostCard: View {
                 mine: Set(reactions.filter { $0.userId == auth.currentUser?.id }.map(\.emoji))
             ) { toggleReaction($0) }
 
-            // Comment preview → @handle taps to their page; "View all" is the ONLY way
-            // into the comments sheet (the photo tile itself no longer opens it).
+            // Comment preview → @handle taps to their page, the body opens the comments sheet,
+            // and so does "View N comments" when there's more than the preview already shows.
             if !commentPreview.isEmpty {
                 // Touch targets here are honest, not 44pt: every direction is boxed in by another
                 // tappable view (ReactionBar above, "View N comments" below it, Reply and the
@@ -531,16 +538,18 @@ struct FeedPostCard: View {
                 // to 6, and the 8pt gaps between Reply/like/comment-text halve to 4. If any of
                 // those spacings change, these insets must move with them.
                 VStack(alignment: .leading, spacing: 14) {
-                    Button { showComments = true } label: {
-                        // "View all 1 comments" was wrong twice over: the plural, and "all" of a
-                        // single thing. One comment is already fully shown in the preview below,
-                        // so the singular is an invitation to reply rather than to see more.
-                        Text(comments.count == 1 ? "View 1 comment" : "View all \(comments.count) comments")
-                            .flimFont(12, relativeTo: .caption).foregroundStyle(FlimTheme.textTertiary)
-                            .contentTransition(.numericText())
-                            .animation(.snappy(duration: 0.28), value: comments.count)
+                    // Only rendered when it actually offers something the preview below doesn't
+                    // already show in full; with every comment already visible (the common case
+                    // for one or two comments) it would just repeat what's on screen.
+                    if hasCommentsBeyondPreview(total: comments.count, shownInPreview: commentPreview.count) {
+                        Button { showComments = true } label: {
+                            Text("View all \(comments.count) comments")
+                                .flimFont(12, relativeTo: .caption).foregroundStyle(FlimTheme.textTertiary)
+                                .contentTransition(.numericText())
+                                .animation(.snappy(duration: 0.28), value: comments.count)
+                        }
+                        .expandTapTarget(top: 6, leading: 4, bottom: 7, trailing: 4)
                     }
-                    .expandTapTarget(top: 6, leading: 4, bottom: 7, trailing: 4)
                     ForEach(commentPreview) { info in
                         // firstTextBaseline, not top. The comment is 14pt and the trailing
                         // controls are 11 and 12, so aligning top EDGES parks the smaller cluster
@@ -550,20 +559,26 @@ struct FeedPostCard: View {
                         // FIRST line when the comment wraps to two, because the baseline in
                         // question is the first line's.
                         HStack(alignment: .firstTextBaseline, spacing: 8) {
-                            HStack(alignment: .firstTextBaseline, spacing: 4) {
-                                Button { route = ProfileRoute(id: info.comment.userId) } label: {
-                                    Text(info.handle).flimFont(14, weight: .semibold, relativeTo: .subheadline).foregroundStyle(.white)
-                                }
-                                MentionText(text: info.comment.body) { username in
-                                    Haptics.tap()
-                                    Task {
-                                        if let profile = await feed.fetchProfile(username: username) {
-                                            route = ProfileRoute(id: profile.id)
-                                        }
+                            // Handle and body in one Text (handle bold, linked to the profile)
+                            // rather than a handle Button beside a separate MentionText: a wrapped
+                            // second line returns to the leading edge this way instead of
+                            // indenting under where the body happened to start. Tapping the body
+                            // itself opens the comments sheet, same destination as "View N
+                            // comments" above; mentions keep resolving to their own profile.
+                            MentionText(
+                                text: info.comment.body,
+                                handle: info.handle,
+                                onHandleTap: { route = ProfileRoute(id: info.comment.userId) },
+                                onBodyTap: { showComments = true }
+                            ) { username in
+                                Haptics.tap()
+                                Task {
+                                    if let profile = await feed.fetchProfile(username: username) {
+                                        route = ProfileRoute(id: profile.id)
                                     }
                                 }
-                                .lineLimit(2).multilineTextAlignment(.leading)
                             }
+                            .lineLimit(2).multilineTextAlignment(.leading)
                             Spacer(minLength: 8)
                             // The card has its own composer, so it is a place you can comment and
                             // therefore a place you can reply. Same rule as the sheets: not on your

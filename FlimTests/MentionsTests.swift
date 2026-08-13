@@ -133,4 +133,34 @@ final class MentionsTests: XCTestCase {
         XCTAssertEqual(prefillingReply(to: "@ana_b12", in: ""), "@ana_b12 ")
         XCTAssertEqual(prefillingReply(to: "@ana_b12", in: "@ana_b12 already there"), "@ana_b12 already there")
     }
+
+    // MARK: - isUntouchedReplyPrefill (drives auto-clear on blur)
+
+    func testFreshPrefillIsUntouched() {
+        XCTAssertTrue(isUntouchedReplyPrefill(prefillingReply(to: "@ana", in: "")))
+    }
+
+    func testAnythingTypedAfterThePrefillIsNotUntouched() {
+        XCTAssertFalse(isUntouchedReplyPrefill(prefillingReply(to: "@ana", in: "wait")))
+        XCTAssertFalse(isUntouchedReplyPrefill("@ana hi"))
+    }
+
+    func testEvenASingleExtraCharacterCountsAsTyped() {
+        XCTAssertFalse(isUntouchedReplyPrefill("@ana  "))   // one more space than the prefill leaves
+        XCTAssertFalse(isUntouchedReplyPrefill("@ana"))     // missing the trailing space entirely
+    }
+
+    func testPlainTextWithNoMentionIsNeverUntouched() {
+        XCTAssertFalse(isUntouchedReplyPrefill(""))
+        XCTAssertFalse(isUntouchedReplyPrefill("just typing "))
+    }
+
+    func testASecondMentionIsNotAnUntouchedPrefill() {
+        // Two runs, not one: this is somebody who typed a second @mention, not an abandoned reply.
+        XCTAssertFalse(isUntouchedReplyPrefill("@ana @ben "))
+    }
+
+    func testUnderscoresAndDigitsInTheHandleStillCountAsUntouched() {
+        XCTAssertTrue(isUntouchedReplyPrefill(prefillingReply(to: "@ana_b12", in: "")))
+    }
 }

@@ -114,3 +114,18 @@ func prefillingReply(to handle: String, in draft: String) -> String {
     guard !draft.hasPrefix(mention) else { return draft }
     return mention + draft
 }
+
+/// Whether `draft` is nothing more than an unmodified `prefillingReply` result: a single mention
+/// followed by exactly one trailing space and nothing else.
+///
+/// Drives auto-clearing an abandoned reply on blur. Deliberately structural rather than comparing
+/// against the exact string `prefillingReply` produced for a specific handle: anyone who taps Reply,
+/// looks at the box, and looks away without typing a single character has left the same shape
+/// behind regardless of who they were replying to, and this is cheap to check without every host
+/// having to remember what it prefilled. The moment a single character is added or removed, the
+/// shape breaks and this returns false, so real typing is never at risk.
+func isUntouchedReplyPrefill(_ draft: String) -> Bool {
+    guard draft.hasSuffix(" ") else { return false }
+    let runs = mentionRuns(in: String(draft.dropLast()))
+    return runs.count == 1 && runs[0].username != nil
+}
