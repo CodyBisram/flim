@@ -41,7 +41,9 @@ When the invite list opens, the pair below is worth revisiting. Its real gain is
 Both fields are metadata, editable on any submission, so this costs nothing to defer.
 
 ## Promotional text (170 char max, editable anytime without review)
-> Shoot on film, wait for it to develop, and share the moment with the people who actually matter. No likes to chase. No feed to doomscroll. Just your people.
+> Shoot together, wait together, see them together. FLIM is a disposable camera for your group. No filters to pick, no likes to chase, no feed to fall into.
+>
+> Previous (also fine, evergreen): Shoot on film, wait for it to develop, and share the moment with the people who actually matter. No likes to chase. No feed to doomscroll. Just your people.
 
 ## Description
 
@@ -119,17 +121,23 @@ not add plurals of words already present. Apple handles both.
 
     Tapping a notification now opens the thing it is about. The post, the comment, the profile, the roll that just developed. It used to put you on the camera every time, whatever it said.
 
-    Reply to a comment, right under it, instead of starting a new one at the bottom.
+    Reply to a comment right under it, instead of starting a new one at the bottom. And you will know when someone likes what you wrote.
 
     The reaction bar suggests an emoji or two based on what is actually in the photo, next to the usual heart and fire. Behind the plus, the picker now holds every emoji your phone can draw instead of a fixed handful.
 
-    Your Darkroom marks the shots you have already shared, so you can tell developed from developed and posted without opening each one.
+    Add a caption or tag people while you are sorting, instead of posting first and going back for it afterwards. Tagging now leads with the people you are most likely to pick, so it is usually one tap.
+
+    Edit a caption anywhere your photo lives, not just from the feed.
+
+    Sorting deals your oldest shot first, so a session plays back in the order you took it.
 
     Profiles say "Follows you" when someone already does, and the button says "Follow back" rather than pretending you found them first.
 
     A reaction to a photo you are tagged in now reaches you, and shows up in Activity, the same as a reaction to one you took.
 
-    Underneath: pull to refresh no longer interrupts itself, cover photos are no longer washed out, and a photo can no longer go missing if its upload fails halfway.
+    Your Darkroom marks the shots you have already shared, so you can tell developed from developed and posted without opening each one.
+
+    Underneath: pull to refresh no longer interrupts itself, cover photos are no longer washed out, rolls you can no longer shoot into stop cluttering the camera, the small controls are easier to hit, and an edit or a delete that quietly failed now says so instead of looking like it worked.
 
 ### Ship notes (internal, do NOT paste)
 
