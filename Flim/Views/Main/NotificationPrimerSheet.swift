@@ -7,6 +7,11 @@ struct NotificationPrimerSheet: View {
     @Environment(\.flimAccent) private var accent
     @Environment(NotificationService.self) private var notifications
     @Environment(\.dismiss) private var dismiss
+    /// Called only when the person actually chooses "Turn on notifications" or "Not now", never
+    /// on a swipe-away. Lets the caller (`MainTabView`) tell a genuine decision, which should
+    /// never ask again, apart from an interrupted presentation, which may retry later. See
+    /// `shouldPresentNotifPrimer`.
+    var onDecision: () -> Void = {}
 
     var body: some View {
         VStack(spacing: 16) {
@@ -24,7 +29,7 @@ struct NotificationPrimerSheet: View {
                 .padding(.horizontal, 34)
             Spacer()
             Button {
-                Task { await notifications.requestAuthorizationIfNeeded(); dismiss() }
+                Task { await notifications.requestAuthorizationIfNeeded(); onDecision(); dismiss() }
             } label: {
                 Text("Turn on notifications")
                     .flimFont(16, weight: .semibold, relativeTo: .body)
@@ -33,7 +38,7 @@ struct NotificationPrimerSheet: View {
                     .padding(.vertical, 15)
                     .background(accent, in: Capsule())
             }
-            Button { dismiss() } label: {
+            Button { onDecision(); dismiss() } label: {
                 Text("Not now")
                     .flimFont(15, relativeTo: .subheadline)
                     .foregroundStyle(FlimTheme.textTertiary)

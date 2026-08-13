@@ -17,8 +17,10 @@ struct ProfileView: View {
     @Environment(\.flimAccent) private var accent
     @Environment(AuthService.self) private var auth
     @Environment(PhotoService.self) private var photos
+    @Environment(NotificationService.self) private var notifications
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
+    @Environment(\.scenePhase) private var scenePhase
 
     @State private var showDeleteConfirm = false
     @State private var isDeleting = false
@@ -26,6 +28,9 @@ struct ProfileView: View {
     @State private var showWipeConfirm = false
     @State private var showBlockedUsers = false
     @State private var showFeedbackSheet = false
+    /// Guards `requestAuthorizationIfNeeded()` against a double tap while the OS's one-shot
+    /// prompt (or the settings read backing it) is still in flight.
+    @State private var isRequestingNotifAuth = false
 
     @AppStorage(InstantFilmProcessor.neutralCaptureKey) private var neutralCapture = false
     @AppStorage("developNotificationsEnabled") private var notificationsEnabled = true
@@ -44,8 +49,39 @@ struct ProfileView: View {
         NavigationStack {
             List {
                 Section {
+                    // `developNotificationsEnabled` is a preference layered ON TOP of the OS's own
+                    // permission, not a substitute for it: the toggle only means anything once
+                    // notifications are actually authorized, so this row surfaces that authorization
+                    // as its own thing rather than letting the toggle silently lie about working.
+                    switch notifications.authorizationState {
+                    case .notDetermined:
+                        notificationStatusRow(
+                            title: "Notifications are off",
+                            subtitle: "Turn them on to get develop reminders and reactions.",
+                            icon: "bell.slash"
+                        ) {
+                            guard !isRequestingNotifAuth else { return }
+                            isRequestingNotifAuth = true
+                            Task {
+                                await notifications.requestAuthorizationIfNeeded()
+                                isRequestingNotifAuth = false
+                            }
+                        }
+                        .disabled(isRequestingNotifAuth)
+                    case .denied:
+                        notificationStatusRow(
+                            title: "Notifications are off in Settings",
+                            subtitle: "Turn them on in iOS Settings to get develop reminders and reactions.",
+                            icon: "bell.slash"
+                        ) {
+                            if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
+                        }
+                    case .authorized:
+                        EmptyView()
+                    }
                     Toggle("Develop reminders", isOn: $notificationsEnabled)
                         .tint(accent)
+                        .disabled(notifications.authorizationState != .authorized)
                     Toggle("Sound effects", isOn: $soundEffects)
                         .tint(accent)
                 } header: { sectionHeader("Notifications & Sound") }
@@ -183,6 +219,14 @@ struct ProfileView: View {
                 Text("Deletes all your photos, thumbnails, avatar/cover, and posts from storage. Resets your egress baseline. Your account stays.")
             }
         }
+        .task { await notifications.refreshAuthorizationState() }
+        // Someone who leaves for iOS Settings to flip notifications on (or off) and comes back
+        // must see the change here without relaunching; a settings READ never shows a system
+        // dialog, so this is safe to run every time the app returns to the foreground.
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active else { return }
+            Task { await notifications.refreshAuthorizationState() }
+        }
         .presentationBackground(FlimTheme.bg)
         .presentationDetents([.large])
     }
@@ -193,6 +237,27 @@ struct ProfileView: View {
         Text(text.uppercased())
             .flimFont(11, weight: .medium, relativeTo: .caption).tracking(2)
             .foregroundStyle(FlimTheme.textTertiary)
+    }
+
+    /// A two-line explanatory row for the "not authorized yet" and "denied" notification states,
+    /// each with its own recovery action (asking iOS, or opening Settings).
+    private func notificationStatusRow(title: String, subtitle: String, icon: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 14) {
+                Image(systemName: icon)
+                    .font(.system(size: 15))
+                    .foregroundStyle(accent)
+                    .frame(width: 22)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).flimFont(15, relativeTo: .body).foregroundStyle(.white)
+                    Text(subtitle).flimFont(11, relativeTo: .caption).foregroundStyle(FlimTheme.textTertiary)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(FlimTheme.textTertiary)
+            }
+        }
     }
 
     private func linkRow(_ title: String, icon: String, action: @escaping () -> Void) -> some View {

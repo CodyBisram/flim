@@ -15,6 +15,38 @@ func focusCommentsDecision(currentFocusPostId: UUID?, pushedPostId: UUID) -> (sh
     return (shouldFocus, shouldFocus ? nil : currentFocusPostId)
 }
 
+/// Whether `maybeShowNotifPrimer` should present the soft primer again on this launch.
+///
+/// Not yet decided (most often a swipe-away, which is not a decision): may retry, but only up to
+/// `maxPresentations` times ever, so an interrupted presentation can't turn into nagging on every
+/// single launch.
+///
+/// Decided ("Turn on notifications" or "Not now" was tapped) is normally a permanent no. But
+/// `decided == true` together with `osStatusIsUndetermined == true` proves iOS was demonstrably
+/// NEVER asked on this install: had "Turn on" actually run `requestAuthorizationIfNeeded()`, iOS
+/// would now report `.authorized` or `.denied`, never `.notDetermined`. That combination is
+/// exactly what the old dismiss-driven bug left behind (every swipe-away used to be recorded as a
+/// decision), plus anyone who tapped "Not now" and never got the real system prompt. That group
+/// gets re-asked exactly once, tracked by `didRetryUnaskedPrimer` and wholly independent of
+/// `maxPresentations`/`timesShown`, so the two mechanisms can't feed each other. `.authorized` and
+/// `.denied` never re-present: iOS already has a real answer, and for `.denied` a second system
+/// prompt is not even possible.
+///
+/// Pure so both rules are structural rather than a claim in a comment, the way `shouldTreatAsDeleted`
+/// and `resolvedCaption` pin `FeedService`'s rules.
+func shouldPresentNotifPrimer(
+    decided: Bool,
+    timesShown: Int,
+    osStatusIsUndetermined: Bool,
+    didRetryUnaskedPrimer: Bool,
+    maxPresentations: Int = 3
+) -> Bool {
+    if !decided {
+        return timesShown < maxPresentations
+    }
+    return osStatusIsUndetermined && !didRetryUnaskedPrimer
+}
+
 struct MainTabView: View {
     @Environment(\.flimAccent) private var accent
     @State private var selected = 0
@@ -22,7 +54,17 @@ struct MainTabView: View {
     @State private var scrollSignal: [Int: Int] = [:]
     @AppStorage("hasOnboarded") private var hasOnboarded = false
     @AppStorage("accentColor") private var accentColor = "amber"   // re-tints on change
-    @AppStorage("didShowNotifPrimer") private var didShowNotifPrimer = false
+    /// True only once the person has genuinely decided (tapped "Turn on notifications" or "Not
+    /// now"), never merely because the sheet was shown. A swipe-away leaves this false, see
+    /// `shouldPresentNotifPrimer` and the `.sheet` below.
+    @AppStorage("didShowNotifPrimer") private var didDecideNotifPrimer = false
+    /// How many times the primer has been presented (shown, not necessarily decided), across all
+    /// launches. Caps retries after a swipe-away so an undecided primer can't nag forever.
+    @AppStorage("notifPrimerPresentationCount") private var notifPrimerPresentationCount = 0
+    /// Whether the one-time "decided, but iOS was never actually asked" recovery presentation has
+    /// already happened. Separate from `notifPrimerPresentationCount` on purpose: the two caps
+    /// must never be able to feed each other, see `shouldPresentNotifPrimer`.
+    @AppStorage("didRetryUnaskedNotifPrimer") private var didRetryUnaskedNotifPrimer = false
     @State private var showNotifPrimer = false
     @State private var inviteCode: String?
     @Environment(NotificationService.self) private var notifications
@@ -138,8 +180,10 @@ struct MainTabView: View {
             PhotoPagerView(photos: [photo], signedURLs: [:])
         }
         #endif
-        .sheet(isPresented: $showNotifPrimer, onDismiss: { didShowNotifPrimer = true }) {
-            NotificationPrimerSheet()
+        // No `onDismiss` here on purpose: a swipe-away must not count as a decision. Only the
+        // sheet's own buttons report a decision, via `onDecision`, see `NotificationPrimerSheet`.
+        .sheet(isPresented: $showNotifPrimer) {
+            NotificationPrimerSheet(onDecision: { didDecideNotifPrimer = true })
         }
         .sheet(isPresented: Binding(get: { inviteCode != nil }, set: { if !$0 { inviteCode = nil } })) {
             JoinRollView(initialCode: inviteCode ?? "")
@@ -298,14 +342,36 @@ struct MainTabView: View {
     }
 
     private func maybeShowNotifPrimer() {
-        guard hasOnboarded, !didShowNotifPrimer else { return }
+        guard hasOnboarded else { return }
         Task {
-            if await notifications.isUndetermined() {
-                try? await Task.sleep(for: .seconds(1))   // let them land on the app first
-                showNotifPrimer = true
-            } else {
-                didShowNotifPrimer = true   // already decided elsewhere; don't ask again
+            // Read the real, live OS status rather than trusting stored state: `didDecideNotifPrimer`
+            // alone can't tell a genuine decision from the old dismiss-driven bug, only iOS's own
+            // answer can, see `shouldPresentNotifPrimer`.
+            let osStatusIsUndetermined = await notifications.isUndetermined()
+            guard shouldPresentNotifPrimer(
+                decided: didDecideNotifPrimer,
+                timesShown: notifPrimerPresentationCount,
+                osStatusIsUndetermined: osStatusIsUndetermined,
+                didRetryUnaskedPrimer: didRetryUnaskedNotifPrimer
+            ) else {
+                // Not decided yet here, but iOS already has a real answer (granted or denied
+                // through some other route, e.g. the Profile settings row): treat that as the
+                // decision so this stops asking, matching how a genuine "Turn on"/"Not now" would.
+                if !didDecideNotifPrimer, !osStatusIsUndetermined {
+                    didDecideNotifPrimer = true
+                }
+                return
             }
+            try? await Task.sleep(for: .seconds(1))   // let them land on the app first
+            if didDecideNotifPrimer {
+                // The one-time recovery presentation: `decided` is true but iOS was demonstrably
+                // never asked. Marked BEFORE presenting, not on dismissal, so a swipe-away here
+                // still can't reopen this recovery a second time.
+                didRetryUnaskedNotifPrimer = true
+            } else {
+                notifPrimerPresentationCount += 1
+            }
+            showNotifPrimer = true
         }
     }
 }

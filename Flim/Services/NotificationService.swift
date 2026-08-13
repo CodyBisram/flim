@@ -5,10 +5,24 @@ import UserNotifications
 /// with no backend, when you capture a photo we schedule a local notification for its
 /// `develops_at`. (Remote push, for roll-mates' photos developing on *their* devices,
 /// is handled separately by the Supabase Edge Function, see `supabase/push/`.)
+/// The OS's notification permission, collapsed to the three states Settings UI actually needs to
+/// branch on. `.provisional`/`.ephemeral` are folded into `.authorized`: the app can already post
+/// notifications either way, and there is no "ask again" affordance for them regardless.
+enum NotificationAuthorizationState: Equatable {
+    case notDetermined
+    case authorized
+    case denied
+}
+
 @MainActor
 @Observable
 final class NotificationService {
     private(set) var isAuthorized = false
+    /// The OS's current permission state, for surfaces (ProfileView) that need to tell "never
+    /// asked" apart from "asked and declined" rather than just a yes/no. Starts `.notDetermined`;
+    /// call `refreshAuthorizationState()` to get a real answer, notably on scenePhase becoming
+    /// `.active` so a trip to iOS Settings and back is reflected without a relaunch.
+    private(set) var authorizationState: NotificationAuthorizationState = .notDetermined
 
     /// Asks for permission the first time it matters (call right before scheduling).
     /// No-ops once the user has already decided. When permission is in hand we also
@@ -37,6 +51,31 @@ final class NotificationService {
         }
     }
 
+    /// Pure: collapses the OS's five-case `UNAuthorizationStatus` down to the three states
+    /// ProfileView's settings row actually branches on. Split out so the mapping is testable
+    /// without a real `UNUserNotificationCenter`.
+    nonisolated static func authorizationState(for status: UNAuthorizationStatus) -> NotificationAuthorizationState {
+        switch status {
+        case .authorized, .provisional, .ephemeral:
+            return .authorized
+        case .denied:
+            return .denied
+        case .notDetermined:
+            return .notDetermined
+        @unknown default:
+            return .notDetermined
+        }
+    }
+
+    /// Re-reads the OS's current authorization state without ever prompting. Safe to call
+    /// anytime, including on every foreground: a `UNUserNotificationCenter.notificationSettings()`
+    /// read never shows a system dialog, only `requestAuthorization` does.
+    func refreshAuthorizationState() async {
+        let status = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
+        authorizationState = Self.authorizationState(for: status)
+        isAuthorized = Self.shouldRegisterForRemote(given: status)
+    }
+
     /// Re-asks iOS for the current APNs device token when authorization was already granted in an
     /// earlier session, WITHOUT ever requesting authorization. Safe to call on every launch and
     /// again once an account resolves: a device token is only handed to the app in response to
@@ -49,6 +88,7 @@ final class NotificationService {
         let status = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
         guard Self.shouldRegisterForRemote(given: status) else { return }
         isAuthorized = true
+        authorizationState = .authorized
         RemotePush.register()
     }
 
@@ -59,10 +99,13 @@ final class NotificationService {
         case .notDetermined:
             let granted = (try? await center.requestAuthorization(options: [.alert, .sound, .badge])) ?? false
             isAuthorized = granted
+            authorizationState = granted ? .authorized : .denied
         case .authorized, .provisional, .ephemeral:
             isAuthorized = true
+            authorizationState = .authorized
         default:
             isAuthorized = false
+            authorizationState = .denied
         }
         if isAuthorized {
             RemotePush.register()
