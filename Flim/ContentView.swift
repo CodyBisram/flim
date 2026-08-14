@@ -6,11 +6,19 @@ struct ContentView: View {
     @Environment(FeedService.self) private var feed
     @Environment(RollService.self) private var rolls
     @Environment(NotificationService.self) private var notifications
+    @Environment(VersionGateService.self) private var versionGate
+    @Environment(\.scenePhase) private var scenePhase
 
     /// The account the caches currently belong to. Compared against the live one so a SWITCH is
     /// detected, not just a sign-out: signing out and straight back in as someone else is exactly
     /// the case that leaves one person's photos and feed on another person's screen.
     @State private var cachedAccountId: UUID?
+
+    /// The `latest_version` a person already dismissed the nudge for. Compared, not a plain
+    /// bool, so dismissing 1.5.0's nudge doesn't swallow a later, genuinely newer 1.6.0 nudge.
+    /// See `shouldPresentVersionNudge`.
+    @AppStorage("dismissedVersionGateNudge") private var dismissedNudgeVersion = ""
+    @State private var showVersionNudge = false
 
     var body: some View {
         Group {
@@ -111,5 +119,39 @@ struct ContentView: View {
             Task { await notifications.cancelAllRollDevelopNotifications() }
             RollLiveActivity.endAll()
         }
+        // Attached to the outer Group, not inside any one branch, so it covers whichever of
+        // auth/onboarding/MainTabView is showing right now: a blocked build must not be able to
+        // reach sign-in either. `set` is a no-op — there is no way to dismiss this; it only
+        // closes once a later, passing `check()` moves `decision` off `.blocked`.
+        .fullScreenCover(isPresented: Binding(get: { versionGate.decision == .blocked }, set: { _ in })) {
+            VersionGateBlockingView(message: versionGate.message)
+        }
+        .sheet(isPresented: $showVersionNudge, onDismiss: {
+            // Recorded on dismissal, not presentation, and for every way the sheet closes (the
+            // sheet's own buttons, or a swipe-away): unlike the notification primer, there's no
+            // OS-level side effect a swipe needs to be told apart from, so any dismissal is a
+            // real one. See `VersionGateNudgeSheet`.
+            dismissedNudgeVersion = versionGate.latestVersion
+        }) {
+            VersionGateNudgeSheet(message: versionGate.message)
+        }
+        .task { await refreshVersionGate() }
+        // Mirrors ProfileView's notification-status re-check: cheap, side-effect-free, and the
+        // one moment a stale "you're on the latest version" is actually noticeable.
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active else { return }
+            Task { await refreshVersionGate() }
+        }
+    }
+
+    /// Re-checks `app_release_gate` and recomputes whether the nudge should be showing. Called on
+    /// launch and on return to the foreground; `VersionGateService` itself never polls.
+    private func refreshVersionGate() async {
+        await versionGate.check()
+        showVersionNudge = shouldPresentVersionNudge(
+            decision: versionGate.decision,
+            latestVersion: versionGate.latestVersion,
+            dismissedVersion: dismissedNudgeVersion
+        )
     }
 }

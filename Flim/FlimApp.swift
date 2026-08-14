@@ -25,6 +25,7 @@ struct FlimApp: App {
     @State private var notifications = NotificationService()
     @State private var feed = FeedService()
     @State private var network = NetworkMonitor()
+    @State private var versionGate = VersionGateService()
 
     var body: some Scene {
         WindowGroup {
@@ -36,6 +37,7 @@ struct FlimApp: App {
                 .environment(notifications)
                 .environment(feed)
                 .environment(network)
+                .environment(versionGate)
                 .preferredColorScheme(.dark)
                 // Text scales with the user's Dynamic Type setting, up to the ceiling declared in
                 // FlimTypeScale. The ceiling exists because several surfaces here are

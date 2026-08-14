@@ -2877,3 +2877,75 @@ GRANT EXECUTE ON FUNCTION public.activation_funnel() TO authenticated;
 -- onboarding finished or camera permission was granted, same policy as
 -- first_launch and invite_sent above, so both start empty and are populated
 -- only by the client going forward.
+
+-- ============================================================
+-- App version gate (single-row config table). Applied separately as
+-- supabase/migrations/2026-08-13_app_release_gate.sql; read that file's
+-- header comment for the full danger explanation, the arm/disarm sequence,
+-- and how this was verified. Summary only, here:
+--
+-- ⚠️ minimum_version must NEVER exceed a build that is already APPROVED AND
+-- RELEASED on the App Store, never one merely submitted. Raising it above a
+-- build nobody has yet is an install-bricking mistake with no in-app
+-- recovery, not a bug to file. Sequence: ship → wait until it's actually
+-- live → only then raise minimum_version.
+--
+-- Seeded INERT ('0.0.0' / '0.0.0') so a fresh run of this file does nothing
+-- until the owner deliberately arms it. ON CONFLICT DO NOTHING so re-running
+-- this file never stomps a value the owner has since raised in production.
+-- Single-row-ness is structural (id BOOLEAN PK CHECK (id)), same trick as
+-- redeem_invite_rate / invite_request_rate above.
+--
+-- RLS: SELECT open to anon AND authenticated (has to be readable pre-sign-in,
+-- so a hard-blocked client never reaches the auth screen). No write policy of
+-- any kind, and the REVOKE below is the part that matters, not the absence
+-- of a write policy: Supabase's default privileges grant INSERT/UPDATE/
+-- DELETE (and TRUNCATE) to anon/authenticated on every new public table at
+-- CREATE time, and a bare GRANT SELECT does not remove them. Verified in
+-- Docker against the actual grant catalog (information_schema.
+-- role_table_grants), not just against RLS: after REVOKE ALL + GRANT SELECT,
+-- anon/authenticated show SELECT only, and INSERT/UPDATE/DELETE/TRUNCATE all
+-- fail with "permission denied for table", at the grant layer, before RLS is
+-- even evaluated.
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.app_release_gate (
+    id               BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (id),  -- single-row table
+    minimum_version  TEXT NOT NULL DEFAULT '0.0.0',   -- below this: hard block
+    latest_version   TEXT NOT NULL DEFAULT '0.0.0',   -- below this: dismissible nudge
+    message          TEXT,                             -- optional custom line, NULL uses the app's default copy
+    updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+INSERT INTO public.app_release_gate (id, minimum_version, latest_version)
+VALUES (TRUE, '0.0.0', '0.0.0')
+ON CONFLICT (id) DO NOTHING;
+
+ALTER TABLE public.app_release_gate ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "app_release_gate: readable by anyone" ON public.app_release_gate;
+CREATE POLICY "app_release_gate: readable by anyone"
+    ON public.app_release_gate FOR SELECT
+    TO anon, authenticated
+    USING (true);
+
+REVOKE ALL ON public.app_release_gate FROM anon, authenticated, PUBLIC;
+GRANT SELECT ON public.app_release_gate TO anon, authenticated;
+
+-- Keeps updated_at honest on every UPDATE (owner arming/disarming the gate),
+-- without relying on a manual SET updated_at = NOW() being remembered.
+CREATE OR REPLACE FUNCTION public.app_release_gate_touch_updated_at()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    NEW.updated_at := NOW();
+    RETURN NEW;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.app_release_gate_touch_updated_at() FROM PUBLIC, anon, authenticated;
+
+DROP TRIGGER IF EXISTS app_release_gate_touch_updated_at ON public.app_release_gate;
+CREATE TRIGGER app_release_gate_touch_updated_at
+    BEFORE UPDATE ON public.app_release_gate
+    FOR EACH ROW EXECUTE FUNCTION public.app_release_gate_touch_updated_at();
