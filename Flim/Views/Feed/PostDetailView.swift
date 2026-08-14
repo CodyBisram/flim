@@ -147,6 +147,16 @@ struct PostDetailView: View {
                 }
                 .padding(16)
             }
+            // See FeedView: without this, focusing the comment composer left the keyboard with
+            // no way out but Send. Rides alongside the swipe-to-go-back gesture below the same
+            // way scrolling itself already does (that gesture is `simultaneousGesture`, not
+            // `gesture`, specifically so it never steals recognition from the ScrollView's own
+            // pan), so a downward drag at the top can both walk the keyboard down and build up
+            // the pop transition at once. That double effect only happens right at the top with
+            // the keyboard already up, and swiping there to go back was already possible before
+            // this change; this doesn't add a new way to leave the screen, only a new thing that
+            // can happen alongside it.
+            .scrollDismissesKeyboard(.interactively)
             // Tracks whether the content is at the very top, which is the only place the
             // swipe-down below is allowed to take over from scrolling.
             .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, y in

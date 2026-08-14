@@ -51,6 +51,9 @@ struct PhotoCommentsSheet: View {
                             }
                             .padding(16)
                         }
+                        // See FeedView: without this, Reply left the keyboard with no way out but
+                        // Send. The sheet's own drag-to-dismiss still works underneath this.
+                        .scrollDismissesKeyboard(.interactively)
                     }
                     composer
                 }

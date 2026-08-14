@@ -86,6 +86,13 @@ struct FeedView: View {
                             .padding(.vertical, 16)
                         }
                         .refreshable { await reload() }
+                        // Swiping the feed puts the keyboard away. Without this there was no way
+                        // out of a comment composer at all: nothing here dismissed the keyboard,
+                        // so tapping "Add a comment" or Reply and changing your mind left you
+                        // stuck with it up and only the send button reachable. Interactively
+                        // rather than immediately, so the keyboard tracks the drag and a small
+                        // scroll to read the rest of a card doesn't yank it away mid-sentence.
+                        .scrollDismissesKeyboard(.interactively)
                         // This ScrollViewReader only mounts once feed.feed goes non-empty (the
                         // sibling branch above is the skeleton/empty state), a fresh view
                         // identity, so its very first layout pass. Reported: that first pass can

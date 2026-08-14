@@ -56,6 +56,10 @@ struct CommentsSheet: View {
                             }
                             .padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 8)
                         }
+                        // See FeedView: without this, Reply/"Add a comment" left the keyboard with
+                        // no way out but Send. Sheet's own drag-to-dismiss still works underneath
+                        // this: iOS already disambiguates the two, the same way Messages does.
+                        .scrollDismissesKeyboard(.interactively)
                     }
                     MentionSuggestions(draft: $draft)
                     composer
