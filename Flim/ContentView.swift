@@ -55,6 +55,11 @@ struct ContentView: View {
                     .transition(.opacity)
             }
         }
+        // The single app-level install of "tap anywhere to dismiss the keyboard". Every screen
+        // with a text field gets it for free; `.keyboardDismissExempt()` is the only opt-out, used
+        // by mention suggestions so picking one doesn't also close the keyboard. See
+        // KeyboardDismiss.swift for why this observes taps instead of capturing them.
+        .dismissesKeyboardOnBackgroundTap()
         .animation(.easeInOut(duration: 0.35), value: auth.currentUser?.id)
         .animation(.easeInOut(duration: 0.35), value: auth.currentUser?.username)
         .animation(.easeInOut(duration: 0.35), value: auth.isLoading)
