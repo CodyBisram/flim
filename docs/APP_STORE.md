@@ -115,6 +115,30 @@ without either word appearing here.
 Two rules if this is edited again: never repeat a word across name, subtitle and keywords, and do
 not add plurals of words already present. Apple handles both.
 
+## What's New (version 1.4.1)
+
+> **PASTE ONLY THE INDENTED BLOCK BELOW.** Everything under "Ship notes" is internal.
+
+    If you never saw the prompt asking about notifications, FLIM now asks again. Some people were never asked at all, which meant they quietly got nothing, and the only way out was deleting the app and reinstalling it. Your Profile also shows whether notifications are actually on, with a way to turn them on, instead of a switch that looked on either way.
+
+    The keyboard goes away when you tap off it, or swipe the feed down. Before this there was no way to put it away at all once you started a comment.
+
+    Replying says who you are replying to, right above where you type, with a way to call it off. Cancelling drops the reply and keeps what you had written.
+
+    Tap a comment to open the thread.
+
+    Deleting a photo you had posted now clears the post from your feed straight away instead of leaving a card behind for the next refresh.
+
+    Tidier comments on each card, and a few small things sitting where they should.
+
+### Ship notes (internal, do NOT paste)
+
+Version gate shipped in this build (`app_release_gate`), but it can only ever act on 1.4.1 and
+later: 1.4 has no code that reads it. It cannot be used to pull anyone up to 1.4.1.
+
+The notification fix is the reason to get this out. 11 of 27 accounts had no push token, and its
+one-time recovery only reaches an install once that install is running 1.4.1.
+
 ## What's New (version 1.4)
 
 > **PASTE ONLY THE INDENTED BLOCK BELOW.** Everything under "Ship notes" is internal.
