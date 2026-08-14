@@ -163,4 +163,24 @@ final class MentionsTests: XCTestCase {
     func testUnderscoresAndDigitsInTheHandleStillCountAsUntouched() {
         XCTAssertTrue(isUntouchedReplyPrefill(prefillingReply(to: "@ana_b12", in: "")))
     }
+
+    // MARK: - draftAfterCancellingReply (the reply banner's ✕)
+
+    func testCancellingAnUntouchedReplyClearsTheDraft() {
+        XCTAssertEqual(draftAfterCancellingReply(prefillingReply(to: "@ana", in: "")), "")
+    }
+
+    func testCancellingAReplyWithTypedTextKeepsIt() {
+        // A real sentence, mention and all, must survive cancelling WHO it's aimed at.
+        let typed = prefillingReply(to: "@ana", in: "wait this reminds me")
+        XCTAssertEqual(draftAfterCancellingReply(typed), typed)
+    }
+
+    func testCancellingWithPlainTextNeverTypedAsAReplyKeepsIt() {
+        XCTAssertEqual(draftAfterCancellingReply("just a comment"), "just a comment")
+    }
+
+    func testCancellingAnEmptyDraftStaysEmpty() {
+        XCTAssertEqual(draftAfterCancellingReply(""), "")
+    }
 }

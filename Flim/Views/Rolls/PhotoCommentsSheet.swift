@@ -16,6 +16,9 @@ struct PhotoCommentsSheet: View {
 
     @State private var comments: [PhotoComment] = []
     @State private var draft = ""
+    /// Who `draft` is replying to, if anyone. Owned here, not inferred from `draft`'s text, so
+    /// `CommentComposer` can show an explicit "Replying to…" banner.
+    @State private var replyTarget: String?
     @State private var sending = false
     @State private var loaded = false
     @FocusState private var focused: Bool
@@ -118,15 +121,18 @@ struct PhotoCommentsSheet: View {
 
     private var composer: some View {
         CommentComposer(draft: $draft, style: .surface, isSending: sending,
-                        focus: $focused) { send() }
+                        replyTarget: $replyTarget, focus: $focused) { send() }
             .padding(.horizontal, 16).padding(.vertical, 10)
             .background(FlimTheme.bg)
     }
 
-    /// Focuses the composer with `@handle ` in front, preserving whatever was already typed.
+    /// Focuses the composer with `@handle ` in front, preserving whatever was already typed, and
+    /// arms the banner naming who it's for.
     private func reply(to comment: PhotoComment) {
         Haptics.tap()
-        draft = prefillingReply(to: handle(comment.userId), in: draft)
+        let target = handle(comment.userId)
+        draft = prefillingReply(to: target, in: draft)
+        replyTarget = target
         focused = true
     }
 
@@ -143,7 +149,9 @@ struct PhotoCommentsSheet: View {
     private func send() {
         guard let uid = auth.currentUser?.id, canSend, !sending else { return }
         let body = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        let target = replyTarget
         draft = ""
+        replyTarget = nil
         focused = false
         Task {
             sending = true
@@ -152,6 +160,7 @@ struct PhotoCommentsSheet: View {
             sending = false
             if created == nil {
                 draft = body   // restore instead of silently losing the comment
+                replyTarget = target
                 Haptics.error()
             }
         }

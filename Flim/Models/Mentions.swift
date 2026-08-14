@@ -129,3 +129,13 @@ func isUntouchedReplyPrefill(_ draft: String) -> Bool {
     let runs = mentionRuns(in: String(draft.dropLast()))
     return runs.count == 1 && runs[0].username != nil
 }
+
+/// What `draft` should become when a reply is cancelled (the banner's ✕, not the field's own
+/// clear button): unchanged if it holds real writing, emptied if it's still exactly what
+/// `prefillingReply` left behind and nobody has touched it since.
+///
+/// Losing a typed sentence because someone changed their mind about WHO they were replying to,
+/// not WHAT they were saying, would be worse than the ambiguity a reply banner exists to fix.
+func draftAfterCancellingReply(_ draft: String) -> String {
+    isUntouchedReplyPrefill(draft) ? "" : draft
+}

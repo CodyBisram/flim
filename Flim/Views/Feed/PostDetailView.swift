@@ -48,6 +48,9 @@ struct PostDetailView: View {
     @State private var heartBurst = false
     @State private var comments: [CommentInfo] = []
     @State private var draft = ""
+    /// Who `draft` is replying to, if anyone. Owned here, not inferred from `draft`'s text, so
+    /// `CommentComposer` can show an explicit "Replying to…" banner.
+    @State private var replyTarget: String?
     @State private var sending = false
     @State private var shareItem: ShareImage?
     @State private var showReportConfirm = false
@@ -503,7 +506,7 @@ struct PostDetailView: View {
 
     private var commentInput: some View {
         CommentComposer(draft: $draft, style: .surface, isSending: sending,
-                        focus: $commentFocused) { send() }
+                        replyTarget: $replyTarget, focus: $commentFocused) { send() }
             .padding(.horizontal, 16).padding(.vertical, 10)
             .background(.ultraThinMaterial)
     }
@@ -563,6 +566,7 @@ struct PostDetailView: View {
         guard let uid = auth.currentUser?.id, canSend else { return }
         let body = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         draft = ""
+        replyTarget = nil
         commentFocused = false
         sending = true
         Task {

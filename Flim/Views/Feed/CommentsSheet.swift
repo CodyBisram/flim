@@ -21,6 +21,10 @@ struct CommentsSheet: View {
     var onOpenProfile: (UUID) -> Void
 
     @State private var draft = ""
+    /// Who `draft` is replying to, if anyone. Owned here, not inferred from `draft`'s text, so
+    /// `CommentComposer` can show an explicit "Replying to…" banner instead of leaving it
+    /// ambiguous whether the leading `@handle` was tapped or typed.
+    @State private var replyTarget: String?
     @State private var sending = false
     @State private var loaded = false
     @FocusState private var focused: Bool
@@ -147,7 +151,8 @@ struct CommentsSheet: View {
         // Suggestions are placed by the body above, outside the material, so they aren't
         // requested here.
         CommentComposer(draft: $draft, style: .surface, isSending: sending,
-                        showsMentionSuggestions: false, focus: $focused) { send() }
+                        showsMentionSuggestions: false, replyTarget: $replyTarget,
+                        focus: $focused) { send() }
             .padding(.horizontal, 16).padding(.vertical, 10)
             .background(.ultraThinMaterial)
     }
@@ -171,7 +176,9 @@ struct CommentsSheet: View {
     private func send() {
         guard let uid = auth.currentUser?.id, canSend else { return }
         let body = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        let target = replyTarget
         draft = ""
+        replyTarget = nil
         Haptics.tap()
         Task {
             sending = true
@@ -179,15 +186,18 @@ struct CommentsSheet: View {
             sending = false
             if !ok {
                 draft = body   // don't lose what they typed, restore and let them retry
+                replyTarget = target
                 Haptics.error()
             }
         }
     }
 
-    /// Focuses the composer with `@handle ` in front, preserving whatever was already typed.
+    /// Focuses the composer with `@handle ` in front, preserving whatever was already typed, and
+    /// arms the banner naming who it's for.
     private func reply(to info: CommentInfo) {
         Haptics.tap()
         draft = prefillingReply(to: info.handle, in: draft)
+        replyTarget = info.handle
         focused = true
     }
 

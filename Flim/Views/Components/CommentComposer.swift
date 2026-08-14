@@ -54,6 +54,12 @@ struct CommentComposer: View {
     /// places `MentionSuggestions` itself for layout reasons (it sits outside the composer's
     /// background in the comments sheet, above the material).
     var showsMentionSuggestions: Bool = true
+    /// Who this draft is replying to (their handle, `@`-prefixed), owned by the caller rather than
+    /// inferred from `draft`'s text. Inferring it from a leading `@handle ` is what made the old
+    /// UI ambiguous: nothing distinguished a tapped Reply from someone just typing that themselves,
+    /// and once typing started even that signal vanished. This is the source of truth instead, and
+    /// drives the "Replying to…" banner below.
+    @Binding var replyTarget: String?
     var focus: FocusState<Bool>.Binding
     let onSend: () -> Void
 
@@ -61,16 +67,46 @@ struct CommentComposer: View {
         !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isSending
     }
 
-    /// Clears the draft and drops focus. The way out for someone who typed something (a reply
-    /// prefill or otherwise) and changed their mind, rather than backspacing it by hand.
+    /// Clears the draft, exits reply mode, and drops focus. The way out for someone who typed
+    /// something (a reply prefill or otherwise) and changed their mind, rather than backspacing
+    /// it by hand. Distinct from `cancelReply` below: this always empties the whole field, so
+    /// there's nothing left to be replying WITH, and the banner has nothing left to describe.
     private func clear() {
         Haptics.tap()
         draft = ""
+        replyTarget = nil
         focus.wrappedValue = false
+    }
+
+    /// The reply banner's ✕. Exits reply mode without discarding real writing: an untouched
+    /// prefill (never typed into) clears with it, but a real sentence stays exactly as typed,
+    /// mention text and all. Distinct from `clear` above, which always empties the field
+    /// regardless of reply state; this only ever touches the reply target.
+    private func cancelReply() {
+        Haptics.tap()
+        replyTarget = nil
+        draft = draftAfterCancellingReply(draft)
     }
 
     var body: some View {
         VStack(spacing: 8) {
+            if let replyTarget {
+                HStack(spacing: 6) {
+                    Text("Replying to \(replyTarget)")
+                        .flimFont(12, relativeTo: .caption)
+                        .foregroundStyle(FlimTheme.textTertiary)
+                    Spacer()
+                    Button(action: cancelReply) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(FlimTheme.textTertiary)
+                    }
+                    .accessibilityLabel("Cancel reply")
+                    .expandTapTarget(by: 10)
+                }
+                .padding(.horizontal, style.horizontalPadding)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
             if showsMentionSuggestions {
                 MentionSuggestions(draft: $draft)
             }
@@ -114,13 +150,16 @@ struct CommentComposer: View {
             .animation(.snappy(duration: 0.2), value: canSend)
             .animation(.snappy(duration: 0.2), value: draft.isEmpty)
         }
+        .animation(.snappy(duration: 0.2), value: replyTarget)
         // An abandoned reply (an untouched `@handle ` prefill) shouldn't outlive the tap that
-        // made it: losing focus without a single character typed clears it, so the next tap into
-        // the box starts clean instead of carrying a half-finished mention forward. Real typing,
-        // of any length, is never touched by this.
+        // made it: losing focus without a single character typed clears it and exits reply mode
+        // with it, so the next tap into the box starts clean instead of carrying a half-finished
+        // mention (or a banner naming someone it no longer applies to) forward. Real typing, of
+        // any length, is never touched by this.
         .onChange(of: focus.wrappedValue) { _, isFocused in
             if !isFocused, isUntouchedReplyPrefill(draft) {
                 draft = ""
+                replyTarget = nil
             }
         }
     }

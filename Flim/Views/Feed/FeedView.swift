@@ -536,14 +536,14 @@ struct FeedPostCard: View {
             // and so does "View N comments" when there's more than the preview already shows.
             if !commentPreview.isEmpty {
                 // Touch targets here are honest, not 44pt: every direction is boxed in by another
-                // tappable view (ReactionBar above, "View N comments" below it, Reply and the
-                // like button next to each other, the comment text across the Spacer), so a
-                // control can only grow into the dead space between it and a neighbour, never
-                // past the midpoint, or the later-declared view would silently steal the earlier
-                // one's taps. The insets below are half the MEASURED gap to each neighbour: 14pt
-                // row spacing halves to 7, the outer VStack's 12pt spacing to ReactionBar halves
-                // to 6, and the 8pt gaps between Reply/like/comment-text halve to 4. If any of
-                // those spacings change, these insets must move with them.
+                // tappable view (ReactionBar above, "View N comments" below it, the comment text
+                // across the Spacer from the like button), so a control can only grow into the
+                // dead space between it and a neighbour, never past the midpoint, or the
+                // later-declared view would silently steal the earlier one's taps. The insets
+                // below are half the MEASURED gap to each neighbour: 14pt row spacing halves to
+                // 7, the outer VStack's 12pt spacing to ReactionBar halves to 6, and the 8pt gap
+                // between the comment text and the like button halves to 4. If any of those
+                // spacings change, these insets must move with them.
                 VStack(alignment: .leading, spacing: 14) {
                     // Only rendered when it actually offers something the preview below doesn't
                     // already show in full; with every comment already visible (the common case
@@ -587,17 +587,10 @@ struct FeedPostCard: View {
                             }
                             .lineLimit(2).multilineTextAlignment(.leading)
                             Spacer(minLength: 8)
-                            // The card has its own composer, so it is a place you can comment and
-                            // therefore a place you can reply. Same rule as the sheets: not on your
-                            // own comment, where the prefill would mention yourself.
-                            if info.comment.userId != auth.currentUser?.id {
-                                Button { reply(to: info) } label: {
-                                    Text("Reply").flimFont(11, relativeTo: .caption)
-                                        .foregroundStyle(FlimTheme.textTertiary)
-                                }
-                                .expandTapTarget(top: 7, leading: 4, bottom: 7, trailing: 4)
-                                .accessibilityLabel("Reply to \(info.handle)")
-                            }
+                            // Reply lives in the comments sheet now, not here: this preview is
+                            // read-only apart from the like, matching Instagram's own inline
+                            // preview. The comment's own text already opens that sheet, where
+                            // Reply is one tap away.
                             Button { likeComment(info) } label: {
                                 // Baseline here too, so the count and the heart sit on the row's
                                 // baseline rather than this pair centring on its own.
@@ -612,20 +605,19 @@ struct FeedPostCard: View {
                                         .symbolEffect(.bounce, value: info.likedByMe)
                                         .frame(width: 16, alignment: .trailing)
                                 }
-                                // Fixed width so "Reply" lands at the same x on every row. The
-                                // count only renders above zero, so without this the cluster is
-                                // ~10pt narrower on an unliked comment, and since the whole group
-                                // is pushed right by the Spacer, Reply shifts with it: two
-                                // comments in the same card visibly disagree about where Reply
-                                // sits. 32 holds a two digit count; a wider one grows past it
-                                // rather than clipping, which costs alignment only where the
-                                // number is already unusual.
-                                .frame(minWidth: 32, alignment: .trailing)
+                                // No fixed minWidth here anymore: that existed only so "Reply"
+                                // landed at the same x on every row regardless of the like
+                                // count's digit width. With Reply gone this is the only trailing
+                                // control, right-aligned by the Spacer above with nothing to its
+                                // right to stay level with, so a row with a two-digit count and
+                                // one without can differ in width without anything looking
+                                // misaligned.
                             }
-                            // Leading neighbour is Reply when present, the comment text across the
-                            // Spacer when it isn't; either way the nearest tappable edge is 8pt
-                            // away, so 4 leading holds. Trailing edge is the card's own padding,
-                            // genuinely dead space, so it takes the full gap to the card edge.
+                            // Leading neighbour is always the comment text across the Spacer now
+                            // (Reply used to sit between them); that Spacer enforces an 8pt
+                            // minimum gap, so 4 leading still holds. Trailing edge is the card's
+                            // own padding, genuinely dead space, so it takes the full gap to the
+                            // card edge.
                             .expandTapTarget(top: 7, leading: 4, bottom: 7, trailing: 14)
                         }
                     }
@@ -633,8 +625,9 @@ struct FeedPostCard: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            // Inline comment composer
-            CommentComposer(draft: $draft, style: .inlineCard,
+            // Inline comment composer. Reply lives in the comments sheet, not this card, so
+            // there's never a reply target to show here.
+            CommentComposer(draft: $draft, style: .inlineCard, replyTarget: .constant(nil),
                             focus: $commentFocused) { sendComment() }
         }
         .padding(14)
@@ -847,15 +840,6 @@ struct FeedPostCard: View {
         guard let uid = auth.currentUser?.id else { return }
         Haptics.tap()
         Task { await feed.reactToPost(post.id, emoji: emoji, userId: uid) }
-    }
-
-
-    /// Focuses this card's composer with `@handle ` in front, preserving whatever was already
-    /// typed. Same helper the two comment sheets use, so the three surfaces cannot drift.
-    private func reply(to info: CommentInfo) {
-        Haptics.tap()
-        draft = prefillingReply(to: info.handle, in: draft)
-        commentFocused = true
     }
 
     private func likeComment(_ info: CommentInfo) {
