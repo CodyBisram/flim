@@ -236,6 +236,10 @@ struct PhotoPagerView: View {
                         flashError("Couldn't delete that. Check your connection and try again.")
                         return
                     }
+                    // Confirmed gone server-side (posts.photo_id cascades), so drop any post of
+                    // it from the already-loaded feed too, otherwise the Feed tab keeps showing
+                    // this device's own now-imageless card until the next pull-to-refresh.
+                    feed.dropPost(forDeletedPhotoId: photo.id)
                     onDelete()
                     dismiss()
                 }

@@ -937,6 +937,41 @@ final class FeedService {
         return true
     }
 
+    /// Drops the posts for photos that `PhotoService.deletePhoto`/`deletePhotos` has just
+    /// CONFIRMED are gone (call only on a `true` return, never speculatively): `posts.photo_id`
+    /// is `ON DELETE CASCADE`, so the row really is gone server-side for everyone the instant the
+    /// photo is. Nobody else's feed goes stale (they reload from the server), but this device's
+    /// already-loaded `feed` doesn't know that on its own, so without this a deleted-and-posted
+    /// photo keeps showing its own now-imageless card here until the next pull-to-refresh, and
+    /// the person who deleted it reasonably reads a card that's still sitting there as "the
+    /// delete didn't work" rather than as a stale cache.
+    ///
+    /// Also clears `reactionsByPost`/`commentsByPost`/`tagsByPost` for the removed post(s) (they
+    /// would otherwise hold entries keyed to a post id nothing displays anymore) and drops the
+    /// photo id(s) out of `myPostedPhotoIds`, so the "already shared" badge doesn't keep reading
+    /// true for a photo that no longer has a post at all.
+    func dropPosts(forDeletedPhotoIds photoIds: some Sequence<UUID>) {
+        let ids = Set(photoIds)
+        guard !ids.isEmpty else { return }
+        let removedPostIds = feed.filter { ids.contains($0.post.photoId) }.map(\.post.id)
+        guard !removedPostIds.isEmpty else {
+            myPostedPhotoIds.subtract(ids)
+            return
+        }
+        feed.removeAll { ids.contains($0.post.photoId) }
+        for postId in removedPostIds {
+            reactionsByPost.removeValue(forKey: postId)
+            commentsByPost.removeValue(forKey: postId)
+            tagsByPost.removeValue(forKey: postId)
+        }
+        myPostedPhotoIds.subtract(ids)
+    }
+
+    /// Single-photo convenience over `dropPosts(forDeletedPhotoIds:)`, for `deletePhoto`'s callers.
+    func dropPost(forDeletedPhotoId photoId: UUID) {
+        dropPosts(forDeletedPhotoIds: [photoId])
+    }
+
     /// Edit a post's caption (owner only, enforced by the "posts: update own" policy).
     ///
     /// Returns `true` once the write has actually landed, `false` on a genuine failure the

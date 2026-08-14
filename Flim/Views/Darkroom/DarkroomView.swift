@@ -409,7 +409,13 @@ struct DarkroomView: View {
             let ok = await photoService.deletePhotos(batch)
             showUndoToast = false
             pendingDelete = []
-            if !ok { restoreAfterFailedDelete(batch) }
+            if ok {
+                // Confirmed gone server-side, so any post among these photos has to go too, or
+                // this device's already-loaded feed keeps showing an imageless card for it.
+                feed.dropPosts(forDeletedPhotoIds: batch.map(\.id))
+            } else {
+                restoreAfterFailedDelete(batch)
+            }
         }
     }
 
@@ -429,7 +435,11 @@ struct DarkroomView: View {
         showUndoToast = false
         Task {
             let ok = await photoService.deletePhotos(batch)
-            if !ok { restoreAfterFailedDelete(batch) }
+            if ok {
+                feed.dropPosts(forDeletedPhotoIds: batch.map(\.id))
+            } else {
+                restoreAfterFailedDelete(batch)
+            }
         }
     }
 

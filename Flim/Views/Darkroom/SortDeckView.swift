@@ -421,6 +421,10 @@ struct SortDeckView: View {
                 publishError = "Couldn't share that one. It's in your Darkroom, share it from there."
             }
         case .trash:
+            // No `feed.dropPost` needed here: `cards` only ever holds unsorted photos
+            // (`fetchUnsorted`, `is_sorted = false`), and the only path that creates a post
+            // (`.publish` above) marks the photo sorted BEFORE calling `createPost`, so a photo
+            // still in this deck can never have a post to drop.
             let ok = await photoService.deletePhoto(photo)
             if !ok {
                 // `deletePhoto` deliberately leaves the row in place when the server refuses
