@@ -636,6 +636,98 @@ DROP POLICY IF EXISTS "follows: delete own" ON public.follows;
 CREATE POLICY "follows: delete own"
     ON public.follows FOR DELETE USING (auth.uid() = follower_id);
 
+-- ============================================================
+-- Auto-follow the owner at signup.
+--
+-- Every new account should follow the owner from the moment it exists, at
+-- his request. This fires on public.users, not auth.users / a Supabase Auth
+-- hook: public.users is the row the app actually inserts on first login
+-- (AuthService.completeOnboarding's `INSERT INTO users`), and it already
+-- carries `email`, so the owner is resolved by email here the same way
+-- is_owner()/is_owner(uuid) do, rather than a pinned UUID that would go
+-- stale if the owner's row is ever recreated. Defined here (right after the
+-- follows table it targets) because, unlike is_blocked_either_way's
+-- consumers, nothing about this function needs anything defined later in
+-- this file.
+--
+-- Resilience, each one deliberate:
+--   1. No owner row yet (fresh database, or the owner hasn't completed
+--      onboarding on this environment) -> v_owner_id is NULL -> RETURN NEW
+--      immediately, no INSERT attempted. A signup must NEVER fail because
+--      this could not find someone to follow.
+--   2. The row being inserted IS the owner's own account -> skip before
+--      attempting the INSERT. follows already has CHECK (follower_id <>
+--      following_id), which would abort the very transaction that creates
+--      the owner's own account if this relied on the constraint alone
+--      instead of checking first — the constraint is a backstop, not the
+--      mechanism.
+--   3. ON CONFLICT DO NOTHING against the (follower_id, following_id) PK:
+--      idempotent if this ever runs twice for the same pair.
+--   4. EXCEPTION WHEN OTHERS swallows anything else unforeseen (some future
+--      constraint, etc.) and still returns NEW. The one job this trigger is
+--      not allowed to do is take down account creation.
+--
+-- push_sent is deliberately left at its column default (FALSE): a freshly
+-- signed-up user auto-following the owner is a real "someone joined" event,
+-- and at signup volume this is one push per new account, not a burst. That
+-- is a genuine judgment call (arguably useful, arguably noise) — landed on
+-- "useful" because it is low-volume by construction and mirrors what would
+-- happen if that same person had tapped Follow by hand. The BACKFILL for
+-- existing accounts is the actual burst case; it lives in its own one-time
+-- migration (supabase/migrations/2026-08-14_auto_follow_owner_backfill.sql,
+-- NOT mirrored here — see that file for why) and marks its rows
+-- push_sent = TRUE up front so send-social-push's poll never fires on them.
+--
+-- Trigger function, not called by any client role, so no role needs
+-- EXECUTE — same shape as block_severs_follows/auto_hide_reported above.
+-- ============================================================
+CREATE OR REPLACE FUNCTION public.auto_follow_owner()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_owner_id UUID;
+BEGIN
+    SELECT id INTO v_owner_id
+    FROM public.users
+    WHERE lower(email) = lower('codyysb@gmail.com')
+    LIMIT 1;
+
+    IF v_owner_id IS NULL THEN
+        RETURN NEW;
+    END IF;
+
+    IF NEW.id = v_owner_id THEN
+        RETURN NEW;
+    END IF;
+
+    INSERT INTO public.follows (follower_id, following_id)
+    VALUES (NEW.id, v_owner_id)
+    ON CONFLICT (follower_id, following_id) DO NOTHING;
+
+    RETURN NEW;
+EXCEPTION WHEN OTHERS THEN
+    RETURN NEW;
+END;
+$$;
+REVOKE EXECUTE ON FUNCTION public.auto_follow_owner() FROM PUBLIC, anon, authenticated;
+
+DROP TRIGGER IF EXISTS auto_follow_owner_trigger ON public.users;
+CREATE TRIGGER auto_follow_owner_trigger
+    AFTER INSERT ON public.users
+    FOR EACH ROW EXECUTE FUNCTION public.auto_follow_owner();
+
+-- To undo (two statements):
+--   1. DROP TRIGGER IF EXISTS auto_follow_owner_trigger ON public.users;
+--      -- stops future signups from auto-following the owner.
+--   2. See supabase/migrations/2026-08-14_auto_follow_owner_backfill.sql
+--      for the matching DELETE that removes exactly the rows the backfill
+--      created (nothing this trigger created — those are ordinary follows
+--      indistinguishable from, and as reversible as, any user tapping
+--      Follow themselves, i.e. by that user unfollowing in the app).
+
 -- POSTS ------------------------------------------------------
 -- storage_path + taken_at are denormalized from the photo so the feed needs no
 -- cross-user access to the photos table; posts themselves are public to signed-in users.
@@ -2752,6 +2844,20 @@ GRANT EXECUTE ON FUNCTION public.set_photo_suggested_emoji(UUID, TEXT[]) TO auth
 -- silently absent from the result, never an error, so a client can't
 -- distinguish "not visible yet" from "no suggestion exists" by error shape,
 -- both just produce no row for that id.
+--
+-- The post-sharing branch also carries public.covered_post_visible(auth.uid(),
+-- po.user_id, po.created_at), added 2026-08-14 (see
+-- supabase/migrations/2026-08-14_suggested_emoji_covered_posts.sql). This
+-- SECURITY DEFINER function bypasses "posts: readable by authenticated" RLS
+-- by construction, so it needed to be taught the same covered-post rule that
+-- policy enforces, or a caller holding a covered post's photo_id could still
+-- read its suggested-emoji array after the post row and photo bytes were
+-- hidden. Reuses the existing helper rather than re-deriving the rule, same
+-- as the posts/storage policies do. Per-row: a mixed array containing one
+-- covered id and one ordinary id returns only the ordinary row, not zero
+-- rows and not an error. Cost: one extra STABLE, PK-indexed, short-
+-- circuiting boolean call, only inside this branch's EXISTS, only for ids
+-- that already matched a post row.
 -- ------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.get_suggested_emoji(p_photo_ids UUID[])
 RETURNS TABLE (photo_id UUID, suggested_emoji TEXT[])
@@ -2778,6 +2884,7 @@ AS $$
                 WHERE po.photo_id = p.id
                   AND NOT po.hidden
                   AND NOT public.is_blocked_either_way(auth.uid(), po.user_id)
+                  AND public.covered_post_visible(auth.uid(), po.user_id, po.created_at)
               )
           );
 $$;

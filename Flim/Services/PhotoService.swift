@@ -1,4 +1,6 @@
+import CoreGraphics
 import Foundation
+import ImageIO
 import Observation
 import Supabase
 import os
@@ -154,11 +156,15 @@ final class PhotoService {
             let startedAt = ContinuousClock.now
             // A processing failure falls back to the untouched capture bytes, which are always
             // JPEG (`CapturedPhotoCropper`'s own re-encode, or the camera's own output if no crop
-            // was needed), matching the pipeline's own JPEG output.
-            let processed = await InstantFilmProcessor.process(rawData, stock: stock)?.data ?? rawData
+            // was needed), matching the pipeline's own JPEG output. `graded` carries the SAME
+            // pixels the master was encoded from (see `gradeForCapture`), so `captureAndUpload`
+            // can thread them straight into the thumb/feed renditions instead of re-decoding the
+            // master JPEG a second time.
+            let (processed, graded) = await Self.gradeForCapture(rawData: rawData, stock: stock)
             let filteredAt = ContinuousClock.now
 
-            let photo = await captureAndUpload(imageData: processed, userId: userId, rollId: rollId)
+            let photo = await captureAndUpload(imageData: processed, userId: userId, rollId: rollId,
+                                               gradedImage: graded)
             let finishedAt = ContinuousClock.now
 
             let waited = Self.seconds(queuedAt.duration(to: startedAt))
@@ -189,6 +195,45 @@ final class PhotoService {
         }
     }
 
+    /// Grades a capture once and returns both the encoded master bytes and the graded pixels
+    /// behind them, so the caller can encode the thumb/feed renditions from those SAME pixels
+    /// instead of re-decoding the master JPEG a second time (see `uploadRenditions`'s own doc for
+    /// what that used to cost: worse quality AND larger files, at once).
+    ///
+    /// Mirrors `InstantFilmProcessor.process`'s own non-calibration branch exactly, `gradedPixels`
+    /// then `encodeImage` at `fullEncoding`, so the master bytes this produces are byte-identical
+    /// to what `process` would have produced. Nothing about the master's quality, dimensions, or
+    /// encoding changes here, only what gets handed onward alongside it.
+    ///
+    /// The Film Lab calibration path (`neutralCaptureKey`, TestFlight-only) stays on the ORIGINAL
+    /// `process` entry point instead: it deliberately returns an UNGRADED image, so there is no
+    /// graded CGImage to share with the renditions at all. Taking the fast path here anyway would
+    /// silently re-grade what calibration needs to stay neutral, invalidating the calibration
+    /// captures without a single visible symptom.
+    ///
+    /// A processing failure falls back to the untouched capture bytes with no graded image
+    /// returned, same as `process`'s own documented fallback; the caller then re-derives the
+    /// renditions from those raw bytes exactly as it always has.
+    ///
+    /// Off the main actor, like `process` itself: this runs the same full-resolution Core Image
+    /// graph.
+    ///
+    /// Not `private`: same reasoning as `isRollDevelopedRefusal`/`developDate` below, this is
+    /// deterministic given its inputs and the `neutralCaptureKey` default, which is what makes the
+    /// calibration branch above directly testable without a live capture.
+    nonisolated static func gradeForCapture(rawData: Data, stock: FilmStock) async -> (data: Data, graded: CGImage?) {
+        if UserDefaults.standard.bool(forKey: InstantFilmProcessor.neutralCaptureKey), !AppInfo.isAppStore {
+            let data = await InstantFilmProcessor.process(rawData, stock: stock)?.data ?? rawData
+            return (data, nil)
+        }
+        return await Task.detached(priority: .userInitiated) { () -> (Data, CGImage?) in
+            guard let cg = InstantFilmProcessor.gradedPixels(rawData, stock: stock),
+                  let master = InstantFilmProcessor.encodeImage(cg, InstantFilmProcessor.fullEncoding)
+            else { return (rawData, nil) }
+            return (master.data, cg)
+        }.value
+    }
+
     private static let captureLog = Logger(subsystem: "com.flim.app", category: "capture")
     private static let errorLog = Logger(subsystem: "com.flim.app", category: "photos")
 
@@ -203,9 +248,16 @@ final class PhotoService {
     ///   `FailedUpload`), this attempt reuses that SAME id and Storage path instead of minting a
     ///   new one, so a row-insert failure after a successful upload can be retried without
     ///   stranding the bytes that already made it to Storage.
+    /// - Parameter gradedImage: the graded pixels `imageData` was encoded from, when the caller
+    ///   has them (a fresh shutter press, via `gradeForCapture`). Threaded into `uploadRenditions`
+    ///   so the thumb/feed renditions encode from these SAME pixels instead of re-decoding
+    ///   `imageData`. `nil` on every retry path (`retryFailedUploads`, `restoreFailedUploads`):
+    ///   only the encoded bytes survive a queued capture on disk, never the decoded pixels, so
+    ///   those calls fall back to `uploadRenditions`'s own imageData-based path, same as today.
     @discardableResult
     func captureAndUpload(imageData: Data, userId: UUID, rollId: UUID?,
-                          retryOf pending: FailedUpload? = nil) async -> Photo? {
+                          retryOf pending: FailedUpload? = nil,
+                          gradedImage: CGImage? = nil) async -> Photo? {
         // A capture makes two round trips (storage upload, then the row insert) before inserting
         // into the shared list. Same class as createRoll: an INSERT of new content, so a
         // completion that outlives its account would splice the departing account's photo into
@@ -337,7 +389,7 @@ final class PhotoService {
             // past, so the closure re-checks with no `await` between that check and the writes it
             // guards, same discipline as `captureAsPersonalFallback`.
             guard AccountEpoch.isCurrent(epoch) else {
-                uploadRenditions(photoId: photoId, userId: userId, imageData: imageData)
+                uploadRenditions(photoId: photoId, userId: userId, imageData: imageData, gradedImage: gradedImage)
                 return inserted
             }
             await MainActor.run {
@@ -345,7 +397,7 @@ final class PhotoService {
                 loadedPhotos.insert(inserted, at: 0)
                 isUploading = false
             }
-            uploadRenditions(photoId: photoId, userId: userId, imageData: imageData)
+            uploadRenditions(photoId: photoId, userId: userId, imageData: imageData, gradedImage: gradedImage)
             return inserted
         } catch {
             // A failed upload belongs to the account that attempted it. Queueing its retry under
@@ -375,7 +427,8 @@ final class PhotoService {
             if Self.isRollDevelopedRefusal(rollId: rollId, error: error) {
                 return await captureAsPersonalFallback(
                     photoId: photoId, userId: userId, path: path, imageData: imageData,
-                    record: record, rollId: rollId, persisted: persisted, epoch: epoch
+                    record: record, rollId: rollId, persisted: persisted, epoch: epoch,
+                    gradedImage: gradedImage
                 )
             }
 
@@ -410,7 +463,8 @@ final class PhotoService {
     /// of this function already uses, just with `rollId` swapped to nil before the insert.
     private func captureAsPersonalFallback(
         photoId: UUID, userId: UUID, path: String, imageData: Data,
-        record: FailedUpload, rollId: UUID?, persisted: Bool, epoch: Int
+        record: FailedUpload, rollId: UUID?, persisted: Bool, epoch: Int,
+        gradedImage: CGImage? = nil
     ) async -> Photo? {
         let payload = InsertPhoto(
             id: photoId, userId: userId, rollId: nil, storagePath: path,
@@ -439,7 +493,7 @@ final class PhotoService {
             // past, so the closure re-checks with no `await` between that check and the writes it
             // guards, same discipline as `queueForRetry`.
             guard AccountEpoch.isCurrent(epoch) else {
-                uploadRenditions(photoId: photoId, userId: userId, imageData: imageData)
+                uploadRenditions(photoId: photoId, userId: userId, imageData: imageData, gradedImage: gradedImage)
                 return inserted
             }
             await MainActor.run {
@@ -452,7 +506,7 @@ final class PhotoService {
                 // on a String coalesces two equal values into one appearance).
                 personalFallbackCount += 1
             }
-            uploadRenditions(photoId: photoId, userId: userId, imageData: imageData)
+            uploadRenditions(photoId: photoId, userId: userId, imageData: imageData, gradedImage: gradedImage)
             return inserted
         } catch {
             // The fallback insert itself failed, e.g. the network dropped again right here. Do not
@@ -537,7 +591,16 @@ final class PhotoService {
     /// time this runs. Retried once, because the common failure here is a brief network dropout
     /// right after a capture, and the cost of never retrying is that every future view of this
     /// photo downloads the full image instead of a ~30KB thumbnail, forever.
-    private func uploadRenditions(photoId: UUID, userId: UUID, imageData: Data) {
+    ///
+    /// - Parameter gradedImage: when present (a fresh capture, see `gradeForCapture`), both
+    ///   renditions are downsampled and encoded from THESE pixels, via `losslessPNG`, the same
+    ///   pixels `imageData` itself was encoded from. Without this, both renditions used to encode
+    ///   from `imageData`, which is already a lossy q0.85 JPEG, so the smaller renditions were a
+    ///   JPEG-of-a-JPEG: measurably worse (median 1.56 8-bit levels of error on the feed card, the
+    ///   rendition people see most, p99 9, max 45) AND ~3% larger, at once. `nil` on every retry
+    ///   path, which only ever has `imageData` on hand, falls back to that same imageData-based
+    ///   encode exactly as before.
+    private func uploadRenditions(photoId: UUID, userId: UUID, imageData: Data, gradedImage: CGImage? = nil) {
         Task { [weak self] in
             guard let self else { return }
             let prefix = "\(userId.uuidString.lowercased())/\(photoId.uuidString.lowercased())"
@@ -554,14 +617,25 @@ final class PhotoService {
                 return nil
             }
 
-            // Encoded OFF the main actor. Both of these do an ImageIO downsample plus an encode,
-            // tens of milliseconds each on a full-resolution capture, and this class is now
+            // Encoded OFF the main actor. Both of these do a downsample plus an encode, tens of
+            // milliseconds each on a full-resolution capture, and this class is now
             // @MainActor-isolated, so leaving them inline would stutter the UI on every shot. The
             // detached task is what makes that annotation safe rather than a regression.
-            let (thumbEncoded, feedEncoded) = await Task.detached(priority: .utility) {
-                (InstantFilmProcessor.thumbnail(from: imageData),
-                 InstantFilmProcessor.feedRendition(from: imageData))
+            //
+            // `[gradedImage]` captures a copy into THIS closure only, so the decoded bitmap (large:
+            // the full capture resolution, uncompressed) is released as soon as this detached task
+            // returns, rather than staying pinned for the two Storage uploads and the row patch
+            // still to come below.
+            var gradedImage = gradedImage
+            let (thumbEncoded, feedEncoded) = await Task.detached(priority: .utility) { [gradedImage] in
+                if let gradedImage, let losslessPNG = Self.losslessPNG(gradedImage) {
+                    return (InstantFilmProcessor.rendition(from: losslessPNG, longEdge: 500, encoding: InstantFilmProcessor.thumbEncoding),
+                            InstantFilmProcessor.rendition(from: losslessPNG, longEdge: 1400, encoding: InstantFilmProcessor.feedEncoding))
+                }
+                return (InstantFilmProcessor.thumbnail(from: imageData),
+                        InstantFilmProcessor.feedRendition(from: imageData))
             }.value
+            gradedImage = nil
 
             var thumbPath: String?
             if let thumbEncoded {
@@ -615,6 +689,29 @@ final class PhotoService {
                 if let feedPath { self.loadedPhotos[i].feedPath = feedPath }
             }
         }
+    }
+
+    /// A lossless PNG of an already-graded `CGImage`, so `InstantFilmProcessor.rendition(from:
+    /// longEdge:encoding:)` — the SAME ImageIO downsample-then-encode path every other rendition
+    /// already goes through (`thumbnail`, `feedRendition`, `repairRenditions`) — can produce the
+    /// thumb/feed renditions straight from the graded pixels instead of from the lossy q0.85
+    /// master JPEG.
+    ///
+    /// The PNG never leaves this process; it exists only as a lossless carrier between "pixels
+    /// already in memory" and the `Data`-shaped entry point `rendition` expects, so the two
+    /// renditions cost one extra downsample each rather than a second generation of JPEG loss.
+    /// This is the same technique `LookRenditionSweep.generationLoss` uses to measure that loss:
+    /// a PNG round-trip is bit-for-bit lossless, so nothing but the downsample differs from
+    /// resampling the CGImage directly.
+    ///
+    /// Not `private`, so it can be pinned directly: pure pixels-in-bytes-out, no access to any
+    /// state on this class.
+    nonisolated static func losslessPNG(_ cg: CGImage) -> Data? {
+        let out = NSMutableData()
+        guard let dest = CGImageDestinationCreateWithData(out, "public.png" as CFString, 1, nil) else { return nil }
+        CGImageDestinationAddImage(dest, cg, nil)
+        guard CGImageDestinationFinalize(dest) else { return nil }
+        return out as Data
     }
 
     /// Photos this session has already tried to repair, so a swipe back and forth doesn't retry a

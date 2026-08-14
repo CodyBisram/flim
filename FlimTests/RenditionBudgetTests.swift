@@ -23,6 +23,15 @@ final class RenditionBudgetTests: XCTestCase {
         return max(w, h)
     }
 
+    private func shortEdge(ofEncodedImage data: Data) -> Int {
+        guard let src = CGImageSourceCreateWithData(data as CFData, nil),
+              let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any],
+              let w = props[kCGImagePropertyPixelWidth] as? Int,
+              let h = props[kCGImagePropertyPixelHeight] as? Int
+        else { return 0 }
+        return min(w, h)
+    }
+
     private var source: Data { LookFixture.daylight.pngData() }
 
     // MARK: - Dimensions
@@ -40,9 +49,47 @@ final class RenditionBudgetTests: XCTestCase {
     }
 
     func testTheThumbnailStillCoversAGridCellOnA3xScreen() {
-        // A 3-column cell is about 128pt, so about 384px at 3x. Falling under that would make
-        // every grid in the app soft, which is the failure mode worth guarding in this direction.
-        XCTAssertGreaterThanOrEqual(longEdge(ofEncodedImage: InstantFilmProcessor.thumbnail(from: source)!.data), 384)
+        // The grid square-crops each cell, so the dimension that has to cover it is the
+        // thumbnail's SHORT edge, not its long edge. A 500px-long-edge thumbnail on our 3:4
+        // capture aspect (see `LookFixture.pixelSize`, and `source` below) has a short edge of
+        // 500 * 3/4 = 375, not 500 — asserting the LONG edge against 384 was checking a number
+        // the thumbnail can never fail on, since the long edge is always the full 500.
+        let thumb = InstantFilmProcessor.thumbnail(from: source)!.data
+        let measuredShortEdge = shortEdge(ofEncodedImage: thumb)
+        XCTAssertEqual(measuredShortEdge, 375, "thumbnail short edge moved off the 3:4 assumption this test's arithmetic depends on")
+
+        // What the short edge actually has to cover: a 3-column grid cell's pixel WIDTH on the
+        // narrowest 3x-scale iPhone this app still supports. Derived from the grid's own layout
+        // code (`DarkroomView.columns` / `RollDetailView.columns`, identical in both), not
+        // asserted by feel:
+        //   - 3 equal flexible columns
+        //   - GridItem `spacing: 2` between columns → 2 gutters × 2pt = 4pt for 3 columns
+        //   - `.padding(.horizontal, 2)` around the whole grid → 4pt total (both sides)
+        //   cellWidth(pt) = (screenWidth - 4 - 4) / 3
+        //
+        // Screen width: the narrowest 3x-scale iPhone still within this app's iOS 18 deployment
+        // target (and still on Apple's current supported-device list) is the 375×812pt family —
+        // iPhone XS, 12 mini, 13 mini. That is the actual worst case, not the ~390pt "standard"
+        // width the original doc on `InstantFilmProcessor.thumbnail` estimated "about 128pt"
+        // (hence "about 384px") from; 390pt is wider than the true narrowest device, so it
+        // overstated the requirement.
+        let narrowestScreenWidthPt: CGFloat = 375
+        let outerPaddingPt: CGFloat = 2 * 2
+        let interColumnGapsPt: CGFloat = 2 * 2
+        let columns: CGFloat = 3
+        let scale: CGFloat = 3
+        let cellWidthPt = (narrowestScreenWidthPt - outerPaddingPt - interColumnGapsPt) / columns
+        let requiredShortEdgePx = Int((cellWidthPt * scale).rounded(.up))
+        XCTAssertEqual(requiredShortEdgePx, 367, "grid constants moved; recompute this test's requirement")
+
+        // 375 >= 367: on the grid's own numbers, the 500px thumbnail DOES cover a 3-column cell
+        // even on the narrowest 3x device, with an 8px margin. The 384px figure in the original
+        // (wrong-axis) test was never the real requirement; it was derived from a wider,
+        // non-worst-case screen.
+        XCTAssertGreaterThanOrEqual(
+            measuredShortEdge, requiredShortEdgePx,
+            "thumbnail short edge is \(measuredShortEdge)px, the narrowest 3x grid cell needs \(requiredShortEdgePx)px"
+        )
     }
 
     func testTheFeedCardIsUnchangedAt1400() {
