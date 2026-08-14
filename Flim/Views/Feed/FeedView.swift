@@ -612,6 +612,15 @@ struct FeedPostCard: View {
                                         .symbolEffect(.bounce, value: info.likedByMe)
                                         .frame(width: 16, alignment: .trailing)
                                 }
+                                // Fixed width so "Reply" lands at the same x on every row. The
+                                // count only renders above zero, so without this the cluster is
+                                // ~10pt narrower on an unliked comment, and since the whole group
+                                // is pushed right by the Spacer, Reply shifts with it: two
+                                // comments in the same card visibly disagree about where Reply
+                                // sits. 32 holds a two digit count; a wider one grows past it
+                                // rather than clipping, which costs alignment only where the
+                                // number is already unusual.
+                                .frame(minWidth: 32, alignment: .trailing)
                             }
                             // Leading neighbour is Reply when present, the comment text across the
                             // Spacer when it isn't; either way the nearest tappable edge is 8pt
