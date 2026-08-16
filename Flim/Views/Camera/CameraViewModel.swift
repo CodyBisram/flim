@@ -611,16 +611,16 @@ final class CameraViewModel: NSObject {
                 )
             }
             Self.shutterTappedAt = Date()
-            Self.log.info("shutter tapped, front flash path")
+            Self.log.notice("shutter tapped, front flash path")
             withAnimation(.easeOut(duration: 0.12)) { flashOpacity = 1 }
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 await self.waitForExposureToSettle()
-                Self.log.info("AE settled \(Self.sinceShutterMS(), privacy: .public)ms after the tap")
+                Self.log.notice("AE settled \(Self.sinceShutterMS(), privacy: .public)ms after the tap")
                 guard generation == self.captureGeneration else { return }
                 self.rememberCaptureGeneration(generation, forSettingsID: settings.uniqueID)
                 self.output.capturePhoto(with: settings, delegate: self)
-                Self.log.info("capturePhoto called \(Self.sinceShutterMS(), privacy: .public)ms after the tap")
+                Self.log.notice("capturePhoto called \(Self.sinceShutterMS(), privacy: .public)ms after the tap")
                 self.startCaptureWatchdog(generation: generation)
             }
         } else {
@@ -753,7 +753,7 @@ extension CameraViewModel: AVCapturePhotoCaptureDelegate {
         _ output: AVCapturePhotoOutput,
         didCapturePhotoFor resolvedSettings: AVCaptureResolvedPhotoSettings
     ) {
-        Self.log.info("""
+        Self.log.notice("""
             didCapturePhoto \(Self.sinceShutterMS(), privacy: .public)ms after the tap, \
             flashEnabled=\(resolvedSettings.isFlashEnabled, privacy: .public)
             """)
