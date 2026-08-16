@@ -16,6 +16,39 @@ func pagingStep(forDragWidth width: CGFloat, threshold: CGFloat = 60) -> Int? {
     return width < 0 ? 1 : -1
 }
 
+/// A photo's resolved URL in `PhotoPagerView`, plus whether that URL is the real upgrade
+/// (`viewPath`, the ~1400px feed rendition or, for the ~4% of photos with no feed rendition yet,
+/// the full master) or just the grid's seeded thumbnail standing in for it.
+struct PhotoResolutionState: Equatable {
+    var url: URL?
+    var isFull: Bool
+}
+
+/// Merges one `resolveAround` attempt into a photo's resolution state. Pure and free-standing so
+/// the retry behaviour is testable without a network or a view: `PhotoPagerView.resolveAround`
+/// used to key the whole upgrade attempt off `resolvedURLs[photo.id] == nil`, but the thumbnail
+/// line right above it had already filled that slot, so once the upgrade's `signedURL` call
+/// failed once (a network hiccup), the guard was permanently true and the upgrade could never be
+/// attempted again for the rest of the session, leaving a thumbnail stretched to full screen.
+///
+/// `current.isFull` is the real guard now: a photo that already has its full URL is left alone
+/// (settles, does not loop, matching photos with no feed rendition whose `viewPath` falls back to
+/// the master and resolves on the first attempt), while anything short of that is retried on
+/// every call, i.e. every time that photo re-enters the ±1 swipe window, rather than being
+/// defeated forever by one failed attempt.
+func resolvePhotoUpgrade(current: PhotoResolutionState, thumbnail: URL?, fullFetch: URL?) -> PhotoResolutionState {
+    guard !current.isFull else { return current }
+    var next = current
+    if next.url == nil, let thumbnail {
+        next.url = thumbnail
+    }
+    if let fullFetch {
+        next.url = fullFetch
+        next.isFull = true
+    }
+    return next
+}
+
 /// The single swipeable full-screen photo viewer, opened at whichever grid photo was tapped.
 /// One component for both the Darkroom and a roll's grid (it replaced three near-duplicate views:
 /// FullScreenPhotoView, DarkroomPhotoPagerView, RollPhotoPagerView, which had drifted apart and
@@ -66,6 +99,10 @@ struct PhotoPagerView: View {
     /// (the neighbours you can reach with one swipe), so opening a big roll doesn't fire a fetch
     /// for every shot in it at once.
     @State private var resolvedURLs: [UUID: URL] = [:]
+    /// Which photos in `resolvedURLs` hold the real upgrade rather than just the seeded
+    /// thumbnail, see `resolvePhotoUpgrade`. A photo not in here is retried on its next visit to
+    /// the ±1 window instead of being stuck on the thumbnail for the rest of the session.
+    @State private var fullyResolvedIds: Set<UUID> = []
     @State private var reportedIds: Set<UUID> = []
     @State private var reactions: [PhotoReaction] = []
     /// Drives the heart that blooms over a double tap, matching the feed's.
@@ -718,9 +755,17 @@ struct PhotoPagerView: View {
     }
 
     /// Resolves full-res URLs for the ±1 window around `index`, and (when the roll grid shows
-    /// reactions) refetches the current photo's reactions. URLs don't change so they're resolved
-    /// once; reaction state is live so it's re-read as you swipe. Share state lives in
-    /// `feed.myPostedPhotoIds` instead, loaded once for the whole session, not per swipe.
+    /// reactions) refetches the current photo's reactions. A photo's upgrade is retried on every
+    /// visit to the window until it succeeds (see `resolvePhotoUpgrade`); reaction state is live
+    /// so it's re-read as you swipe. Share state lives in `feed.myPostedPhotoIds` instead, loaded
+    /// once for the whole session, not per swipe.
+    ///
+    /// A failed upgrade is deliberately silent (no `flashError`, unlike the actions below it):
+    /// the photo is still fully visible, just softer than it will be once the retry lands, and
+    /// nothing about it needs the person's attention or a decision from them the way a failed
+    /// delete/share/report does. It is what `errorToast` is reserved for elsewhere in this file.
+    /// A blurry-then-sharpens photo already IS the visible feedback; a toast on top of it would
+    /// just be noise for something that quietly fixes itself.
     private func resolveAround(_ index: Int) async {
         guard auth.currentUser?.id != nil else { return }
         // Same fix as RollCarouselView: the refetch at the end of this function is async, so
@@ -728,14 +773,20 @@ struct PhotoPagerView: View {
         if showsReactions { reactions = [] }
         for i in [index - 1, index, index + 1] where photos.indices.contains(i) {
             let photo = photos[i]
-            if resolvedURLs[photo.id] == nil {
-                if let thumb = signedURLs[photo.id] { resolvedURLs[photo.id] = thumb }
-                // `viewPath`, matching the `cacheKey` used below and in `photoPage`: the feed
-                // card when this photo has one, the original only as its own fallback.
-                if let full = try? await photoService.signedURL(for: photo.viewPath) {
-                    resolvedURLs[photo.id] = full
-                }
-            }
+            guard !fullyResolvedIds.contains(photo.id) else { continue }
+            // `viewPath`, matching the `cacheKey` used below and in `photoPage`: the feed
+            // card when this photo has one, the original only as its own fallback. `try?`
+            // still swallows a failed fetch here (there is nothing more specific to do with
+            // the error), but unlike before, failing no longer permanently blocks the retry:
+            // see `resolvePhotoUpgrade`.
+            let full = try? await photoService.signedURL(for: photo.viewPath)
+            let next = resolvePhotoUpgrade(
+                current: PhotoResolutionState(url: resolvedURLs[photo.id], isFull: false),
+                thumbnail: signedURLs[photo.id],
+                fullFetch: full
+            )
+            resolvedURLs[photo.id] = next.url
+            if next.isFull { fullyResolvedIds.insert(photo.id) }
         }
         // Warm the neighbours' decoded images, not just their URLs. TabView(.page) used to keep
         // the adjacent pages mounted, so they were already decoded by the time you swiped; the

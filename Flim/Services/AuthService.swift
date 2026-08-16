@@ -54,12 +54,10 @@ final class AuthService {
     /// sign-in just started and leave the user on the username screen.
     private var lastSessionUserId: UUID?
 
-    /// Set by `redeemInvite` when a code was actually redeemed in this attempt. `log_activation_event`
-    /// no-ops without a session, and redemption itself happens BEFORE one exists (the RPC is reachable
-    /// by the anon role, ahead of `verifyOTP`), so the event can't be logged there; this flag lets the
-    /// `verifyOTP` that completes the same sign-up fire it once authenticated, then clears itself so a
-    /// later, unrelated sign-in never double-attributes.
-    private var pendingInviteRedeemed = false
+    // Whether a code was actually redeemed for the email currently signing up lives in
+    // `PendingInviteRedeemed`, not here: see that type's own doc for why an in-memory flag isn't
+    // enough (it doesn't survive the app being reclaimed while the person is away checking email
+    // for the OTP `verifyOTP` below is waiting on).
 
     /// Records which account is live, bumping the epoch when it actually changes.
     private func noteSession(_ id: UUID?) {
@@ -212,8 +210,10 @@ final class AuthService {
                 .execute()
                 .value
             // Consumed by the `verifyOTP` that completes this same sign-up, once a session
-            // actually exists for the activation RPC to attribute the event to.
-            if redeemed { pendingInviteRedeemed = true }
+            // actually exists for the activation RPC to attribute the event to. Persisted (see
+            // `PendingInviteRedeemed`), not just held in memory, so it survives the app being
+            // reclaimed while the person is off reading the code out of their email.
+            if redeemed { PendingInviteRedeemed.markRedeemed(for: normalizedEmail) }
             return redeemed
         } catch let error as PostgrestError where Self.isRateLimited(code: error.code, message: error.message) {
             throw AuthError.rateLimited
@@ -225,8 +225,10 @@ final class AuthService {
         try await supabase.auth.verifyOTP(email: email, token: token, type: .email)
         let session = try await supabase.auth.session
         noteSession(session.user.id)
-        if pendingInviteRedeemed {
-            pendingInviteRedeemed = false
+        // Keyed by `email`, not a bare flag: only a redemption that actually belongs to THIS
+        // email can complete here, so a code redeemed for one address and abandoned can never
+        // attach itself to a later, unrelated sign-in. See `PendingInviteRedeemed`.
+        if PendingInviteRedeemed.take(for: email) {
             Activation.log(.inviteRedeemed)
         }
         let epoch = AccountEpoch.current   // after the bump, see signInWithPassword

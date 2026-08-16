@@ -65,4 +65,69 @@ final class PhotoPagerTests: XCTestCase {
         XCTAssertGreaterThan(pagingDragOffset(width: 100, index: 0, count: 3), 0)
         XCTAssertLessThan(pagingDragOffset(width: -100, index: 2, count: 3), 0)
     }
+
+    // MARK: - resolvePhotoUpgrade
+
+    private let thumbURL = URL(string: "https://example.com/thumb.jpg")!
+    private let fullURL = URL(string: "https://example.com/full.jpg")!
+    private let otherFullURL = URL(string: "https://example.com/full2.jpg")!
+
+    func testFirstAttemptSeedsTheThumbnailBeforeTheFullFetchLands() {
+        // Nothing resolved yet, and the full fetch is still in flight (nil): the thumbnail should
+        // still show up immediately so the viewer never shows a bare spinner over a photo the
+        // grid already had a preview for.
+        let next = resolvePhotoUpgrade(current: PhotoResolutionState(url: nil, isFull: false),
+                                        thumbnail: thumbURL, fullFetch: nil)
+        XCTAssertEqual(next.url, thumbURL)
+        XCTAssertFalse(next.isFull)
+    }
+
+    func testSuccessfulFetchUpgradesToTheFullURLAndMarksItFull() {
+        let next = resolvePhotoUpgrade(current: PhotoResolutionState(url: thumbURL, isFull: false),
+                                        thumbnail: thumbURL, fullFetch: fullURL)
+        XCTAssertEqual(next.url, fullURL)
+        XCTAssertTrue(next.isFull)
+    }
+
+    /// This is the actual bug: a failed `signedURL` fetch (`fullFetch == nil`) used to be
+    /// indistinguishable from "never attempted" once the thumbnail had already filled the slot,
+    /// so the upgrade could never be retried for the rest of the session. `isFull` staying false
+    /// here is what makes the NEXT call (the photo's next visit to the swipe window) try again
+    /// instead of treating the thumbnail as good enough forever.
+    func testFailedFetchLeavesTheThumbnailShowingButDoesNotMarkItFull() {
+        let next = resolvePhotoUpgrade(current: PhotoResolutionState(url: thumbURL, isFull: false),
+                                        thumbnail: thumbURL, fullFetch: nil)
+        XCTAssertEqual(next.url, thumbURL, "the photo must stay visible, not regress to a spinner")
+        XCTAssertFalse(next.isFull, "a failed fetch must remain retryable")
+    }
+
+    /// Once a photo has the real upgrade, later calls (a later re-entry into the swipe window)
+    /// must leave it alone: no further network fetch is implied by this being pure, but the
+    /// state itself must not regress or flicker back to the thumbnail.
+    func testAlreadyFullIsLeftAloneRegardlessOfWhatIsPassedIn() {
+        let settled = PhotoResolutionState(url: fullURL, isFull: true)
+        XCTAssertEqual(resolvePhotoUpgrade(current: settled, thumbnail: thumbURL, fullFetch: nil), settled)
+        XCTAssertEqual(resolvePhotoUpgrade(current: settled, thumbnail: nil, fullFetch: otherFullURL), settled)
+    }
+
+    /// A photo with no feed rendition yet (`feedPath == nil`, ~4% of photos): `viewPath` falls
+    /// back to the master, which exists, so the very first fetch succeeds and settles. It must
+    /// not keep "retrying" (there's nothing left to retry) or loop.
+    func testAPhotoWithNoFeedRenditionSettlesOnTheFirstSuccessfulFetch() {
+        let next = resolvePhotoUpgrade(current: PhotoResolutionState(url: nil, isFull: false),
+                                        thumbnail: nil, fullFetch: fullURL)
+        XCTAssertEqual(next.url, fullURL)
+        XCTAssertTrue(next.isFull)
+        // A second call against this already-settled state is a no-op, not another attempt.
+        XCTAssertEqual(resolvePhotoUpgrade(current: next, thumbnail: nil, fullFetch: otherFullURL), next)
+    }
+
+    func testNoThumbnailAndNoFetchLeavesTheSlotEmpty() {
+        // Neither seeded nor fetched yet: the view falls back to its own spinner, this state must
+        // not fabricate a URL.
+        let next = resolvePhotoUpgrade(current: PhotoResolutionState(url: nil, isFull: false),
+                                        thumbnail: nil, fullFetch: nil)
+        XCTAssertNil(next.url)
+        XCTAssertFalse(next.isFull)
+    }
 }
