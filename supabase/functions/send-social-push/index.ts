@@ -148,11 +148,19 @@ async function deleteDeadToken(deviceToken: string, status: number, body: string
 async function sendPush(
   deviceToken: string,
   title: string,
-  body: string,
+  body?: string,
   flim?: FlimRoute,
 ): Promise<boolean> {
   const jwt = await apnsAuthToken();
-  const payload: Record<string, unknown> = { aps: { alert: { title, body }, sound: "default" } };
+  // `body` is omitted from `alert` entirely when absent/empty, never sent as `body: ""`. APNs's
+  // `alert` dictionary only requires `title`; a real title-only alert renders as a clean
+  // single-line banner, while an explicit empty-string body risks a blank second line depending
+  // on surface (lock screen, notification center, watchOS mirroring). Used by the "New follower"
+  // push, the one push in this file with nothing left to say once the actor's name is in the
+  // title.
+  const alert: Record<string, string> = { title };
+  if (body) alert.body = body;
+  const payload: Record<string, unknown> = { aps: { alert, sound: "default" } };
   if (flim) payload.flim = flim;
   const res = await fetch(`${APNS_HOST}/3/device/${deviceToken}`, {
     method: "POST",
@@ -223,7 +231,7 @@ async function notify(
   toId: string | undefined,
   fromId: string,
   title: string,
-  body: string,
+  body?: string,
   flim?: FlimRoute,
 ): Promise<number> {
   if (!toId || toId === fromId) return 0;
@@ -357,6 +365,195 @@ async function mentionedUserIds(text: string): Promise<string[]> {
   return (data ?? []).map((u) => u.id as string);
 }
 
+// ============================================================
+// Reaction emoji safety.
+//
+// The reaction picker (EmojiCatalog.swift) generates its palette at runtime from Unicode scalar
+// properties, filtered only by what the SENDER's OWN device can draw. That means a reaction typed
+// on a newer iPhone can be a codepoint the RECIPIENT's older iPhone has no glyph for. Inside the
+// app, an unrenderable reaction falls back to a neutral placeholder chip (ReactionGlyph.swift,
+// ReactionRenderabilityCache) because the app controls that draw call. A push notification's
+// banner is drawn by iOS's own notification UI, where there is no such control, so an unknown
+// emoji there becomes a tofu box on someone's lock screen, the most visible possible way to look
+// broken.
+//
+// The floor is FLIM's deployment target, iOS 18.0 (project.yml), which ships Unicode Emoji 15.1.
+// Any emoji ASSIGNED at or before Emoji 15.1 is guaranteed safe to draw on every FLIM user's
+// phone; anything assigned later (Emoji 16.0, shipped in iOS 18.4; Emoji 17.0, shipped in iOS 26)
+// is not, because a recipient still on iOS 18.0-18.3 has no glyph for it yet. This intentionally
+// tracks Unicode's OWN version metadata rather than a hand-picked "common emoji" list: emoji-data.txt
+// (https://unicode.org/Public/17.0.0/ucd/emoji/emoji-data.txt, the current cumulative revision, so
+// every codepoint's introduction version is authoritative back to Emoji 0.6) tags every assigned
+// codepoint with the exact Emoji version it first appeared in.
+//
+// SAFE_SCALAR_RANGES below is every codepoint tagged "Emoji" in that file with version < 16.0,
+// restricted to the same scan window EmojiCatalog.swift's own picker walks (0x2000-0x2BFF,
+// 0x1F000-0x1FAFF), with the component-only sub-ranges removed (skin-tone modifiers 0x1F3FB-
+// 0x1F3FF, bare regional-indicator letters 0x1F1E6-0x1F1FF; flags are handled separately below),
+// mirroring isStandalonePictograph's exclusions in EmojiCatalog.swift exactly. Within that window,
+// Emoji 16.0 added exactly 7 new single-scalar pictographs and Emoji 17.0 added 7 more, all 14
+// deliberately absent from these ranges: harp U+1FA89, shovel U+1FA8F, leafless tree U+1FABE,
+// fingerprint U+1FAC6, root vegetable U+1FADC, splatter U+1FADF, face with bags under eyes
+// U+1FAE9 (all E16.0); landslide U+1F6D8, trombone U+1FA8A, treasure chest U+1FA8E, hairy
+// creature U+1FAC8, orca U+1FACD, distorted face U+1FAEA, fight cloud U+1FAEF (all E17.0). To
+// regenerate this table if the safety floor ever moves, re-run that same filter (property ==
+// "Emoji", version < target) against a current emoji-data.txt.
+//
+// Country/region flags and ZWJ sequences aren't single scalars, so they're checked separately,
+// below, against the same "assigned by Emoji 15.1" bar.
+const SAFE_SCALAR_RANGES: readonly (readonly [number, number])[] = [
+  [0x203C, 0x203C], [0x2049, 0x2049], [0x2122, 0x2122], [0x2139, 0x2139], [0x2194, 0x2199], [0x21A9, 0x21AA],
+  [0x231A, 0x231B], [0x2328, 0x2328], [0x23CF, 0x23CF], [0x23E9, 0x23F3], [0x23F8, 0x23FA], [0x24C2, 0x24C2],
+  [0x25AA, 0x25AB], [0x25B6, 0x25B6], [0x25C0, 0x25C0], [0x25FB, 0x25FE], [0x2600, 0x2604], [0x260E, 0x260E],
+  [0x2611, 0x2611], [0x2614, 0x2615], [0x2618, 0x2618], [0x261D, 0x261D], [0x2620, 0x2620], [0x2622, 0x2623],
+  [0x2626, 0x2626], [0x262A, 0x262A], [0x262E, 0x262F], [0x2638, 0x263A], [0x2640, 0x2640], [0x2642, 0x2642],
+  [0x2648, 0x2653], [0x265F, 0x2660], [0x2663, 0x2663], [0x2665, 0x2666], [0x2668, 0x2668], [0x267B, 0x267B],
+  [0x267E, 0x267F], [0x2692, 0x2697], [0x2699, 0x2699], [0x269B, 0x269C], [0x26A0, 0x26A1], [0x26A7, 0x26A7],
+  [0x26AA, 0x26AB], [0x26B0, 0x26B1], [0x26BD, 0x26BE], [0x26C4, 0x26C5], [0x26C8, 0x26C8], [0x26CE, 0x26CF],
+  [0x26D1, 0x26D1], [0x26D3, 0x26D4], [0x26E9, 0x26EA], [0x26F0, 0x26F5], [0x26F7, 0x26FA], [0x26FD, 0x26FD],
+  [0x2702, 0x2702], [0x2705, 0x2705], [0x2708, 0x270D], [0x270F, 0x270F], [0x2712, 0x2712], [0x2714, 0x2714],
+  [0x2716, 0x2716], [0x271D, 0x271D], [0x2721, 0x2721], [0x2728, 0x2728], [0x2733, 0x2734], [0x2744, 0x2744],
+  [0x2747, 0x2747], [0x274C, 0x274C], [0x274E, 0x274E], [0x2753, 0x2755], [0x2757, 0x2757], [0x2763, 0x2764],
+  [0x2795, 0x2797], [0x27A1, 0x27A1], [0x27B0, 0x27B0], [0x27BF, 0x27BF], [0x2934, 0x2935], [0x2B05, 0x2B07],
+  [0x2B1B, 0x2B1C], [0x2B50, 0x2B50], [0x2B55, 0x2B55], [0x1F004, 0x1F004], [0x1F0CF, 0x1F0CF], [0x1F170, 0x1F171],
+  [0x1F17E, 0x1F17F], [0x1F18E, 0x1F18E], [0x1F191, 0x1F19A], [0x1F201, 0x1F202], [0x1F21A, 0x1F21A], [0x1F22F, 0x1F22F],
+  [0x1F232, 0x1F23A], [0x1F250, 0x1F251], [0x1F300, 0x1F321], [0x1F324, 0x1F393], [0x1F396, 0x1F397], [0x1F399, 0x1F39B],
+  [0x1F39E, 0x1F3F0], [0x1F3F3, 0x1F3F5], [0x1F3F7, 0x1F3FA], [0x1F400, 0x1F4FD], [0x1F4FF, 0x1F53D], [0x1F549, 0x1F54E],
+  [0x1F550, 0x1F567], [0x1F56F, 0x1F570], [0x1F573, 0x1F57A], [0x1F587, 0x1F587], [0x1F58A, 0x1F58D], [0x1F590, 0x1F590],
+  [0x1F595, 0x1F596], [0x1F5A4, 0x1F5A5], [0x1F5A8, 0x1F5A8], [0x1F5B1, 0x1F5B2], [0x1F5BC, 0x1F5BC], [0x1F5C2, 0x1F5C4],
+  [0x1F5D1, 0x1F5D3], [0x1F5DC, 0x1F5DE], [0x1F5E1, 0x1F5E1], [0x1F5E3, 0x1F5E3], [0x1F5E8, 0x1F5E8], [0x1F5EF, 0x1F5EF],
+  [0x1F5F3, 0x1F5F3], [0x1F5FA, 0x1F64F], [0x1F680, 0x1F6C5], [0x1F6CB, 0x1F6D2], [0x1F6D5, 0x1F6D7], [0x1F6DC, 0x1F6E5],
+  [0x1F6E9, 0x1F6E9], [0x1F6EB, 0x1F6EC], [0x1F6F0, 0x1F6F0], [0x1F6F3, 0x1F6FC], [0x1F7E0, 0x1F7EB], [0x1F7F0, 0x1F7F0],
+  [0x1F90C, 0x1F93A], [0x1F93C, 0x1F945], [0x1F947, 0x1F9FF], [0x1FA70, 0x1FA7C], [0x1FA80, 0x1FA88], [0x1FA90, 0x1FABD],
+  [0x1FABF, 0x1FAC5], [0x1FACE, 0x1FADB], [0x1FAE0, 0x1FAE8], [0x1FAF0, 0x1FAF8],
+];
+
+// Two-letter regional-indicator codes for every RGI_Emoji_Flag_Sequence Unicode's own
+// emoji-sequences.txt (https://unicode.org/Public/emoji/16.0/emoji-sequences.txt) tags with a
+// version before E16.0. Emoji 16.0's only addition to this list within the whole revision was the
+// flag for Sark ("CQ"), deliberately absent here for the same reason the 14 scalars above are:
+// iOS 18.0-18.3 has no glyph for it. Country flags outnumber every other emoji category (258
+// entries), which is why they're their own table rather than folded into SAFE_SCALAR_RANGES: a
+// flag is TWO regional-indicator letters, never a single scalar, and "is this pair an officially
+// recognized flag" isn't answerable from a codepoint range the way a single pictograph is (most
+// of the 676 possible two-letter combinations aren't a flag at all).
+const SAFE_FLAG_CODES = new Set<string>([
+  "AC", "AD", "AE", "AF", "AG", "AI", "AL", "AM", "AO", "AQ", "AR", "AS", "AT",
+  "AU", "AW", "AX", "AZ", "BA", "BB", "BD", "BE", "BF", "BG", "BH", "BI", "BJ",
+  "BL", "BM", "BN", "BO", "BQ", "BR", "BS", "BT", "BV", "BW", "BY", "BZ", "CA",
+  "CC", "CD", "CF", "CG", "CH", "CI", "CK", "CL", "CM", "CN", "CO", "CP", "CR",
+  "CU", "CV", "CW", "CX", "CY", "CZ", "DE", "DG", "DJ", "DK", "DM", "DO", "DZ",
+  "EA", "EC", "EE", "EG", "EH", "ER", "ES", "ET", "EU", "FI", "FJ", "FK", "FM",
+  "FO", "FR", "GA", "GB", "GD", "GE", "GF", "GG", "GH", "GI", "GL", "GM", "GN",
+  "GP", "GQ", "GR", "GS", "GT", "GU", "GW", "GY", "HK", "HM", "HN", "HR", "HT",
+  "HU", "IC", "ID", "IE", "IL", "IM", "IN", "IO", "IQ", "IR", "IS", "IT", "JE",
+  "JM", "JO", "JP", "KE", "KG", "KH", "KI", "KM", "KN", "KP", "KR", "KW", "KY",
+  "KZ", "LA", "LB", "LC", "LI", "LK", "LR", "LS", "LT", "LU", "LV", "LY", "MA",
+  "MC", "MD", "ME", "MF", "MG", "MH", "MK", "ML", "MM", "MN", "MO", "MP", "MQ",
+  "MR", "MS", "MT", "MU", "MV", "MW", "MX", "MY", "MZ", "NA", "NC", "NE", "NF",
+  "NG", "NI", "NL", "NO", "NP", "NR", "NU", "NZ", "OM", "PA", "PE", "PF", "PG",
+  "PH", "PK", "PL", "PM", "PN", "PR", "PS", "PT", "PW", "PY", "QA", "RE", "RO",
+  "RS", "RU", "RW", "SA", "SB", "SC", "SD", "SE", "SG", "SH", "SI", "SJ", "SK",
+  "SL", "SM", "SN", "SO", "SR", "SS", "ST", "SV", "SX", "SY", "SZ", "TA", "TC",
+  "TD", "TF", "TG", "TH", "TJ", "TK", "TL", "TM", "TN", "TO", "TR", "TT", "TV",
+  "TW", "TZ", "UA", "UG", "UM", "UN", "US", "UY", "UZ", "VA", "VC", "VE", "VG",
+  "VI", "VN", "VU", "WF", "WS", "XK", "YE", "YT", "ZA", "ZM", "ZW",
+]);
+
+// The complete, closed set of ZWJ sequences and Unicode-tag subdivision flags FLIM's OWN reaction
+// picker can ever produce (EmojiCatalog.swift's `zwjTemplates` + `subdivisionFlags`, copied here
+// verbatim; keep the two lists in sync if that file's set ever changes). Unlike single scalars and
+// flags, Unicode exposes no scalar-level property that says "these components combine into a real
+// sequence", so there is no way to derive this list from a version filter the way the two tables
+// above are derived; it has to be the same finite, curated list the client itself is limited to.
+// Every entry here was individually checked against Unicode's emoji-zwj-sequences.txt
+// (https://unicode.org/Public/emoji/16.0/emoji-zwj-sequences.txt): the newest is E15.1 (the
+// phoenix and the brown mushroom), so this list needs no further
+// version filtering, it already IS the filtered result. Emoji 16.0 added zero new RGI ZWJ
+// sequences, and Emoji 17.0 has not published an RGI ZWJ list yet, so nothing here is at risk of
+// having quietly become unsafe; if EmojiCatalog.swift's zwjTemplates ever grows, re-check each
+// new entry's version the same way before adding it here.
+const SAFE_MULTI_SCALAR_SEQUENCES = new Set<string>([
+  // People and Body: gender-neutral professions/roles (all E12.0-E12.1).
+  "\u{1F9D1}\u{200D}\u{1F4BB}", "\u{1F9D1}\u{200D}\u{1F3A8}", "\u{1F9D1}\u{200D}\u{1F373}",
+  "\u{1F9D1}\u{200D}\u{1F33E}", "\u{1F9D1}\u{200D}\u{1F680}", "\u{1F9D1}\u{200D}\u{1F692}",
+  "\u{1F9D1}\u{200D}\u{2695}\u{FE0F}", "\u{1F9D1}\u{200D}\u{1F3EB}", "\u{1F9D1}\u{200D}\u{2696}\u{FE0F}",
+  "\u{1F9D1}\u{200D}\u{2708}\u{FE0F}", "\u{1F9D1}\u{200D}\u{1F527}", "\u{1F9D1}\u{200D}\u{1F52C}",
+  "\u{1F9D1}\u{200D}\u{1F3A4}", "\u{1F9D1}\u{200D}\u{1F393}", "\u{1F9D1}\u{200D}\u{1F3ED}",
+  "\u{1F9D1}\u{200D}\u{1F4BC}",
+  "\u{1F9D1}\u{200D}\u{1F91D}\u{200D}\u{1F9D1}", "\u{1F9D1}\u{200D}\u{1F9AF}", "\u{1F9D1}\u{200D}\u{1F9BD}",
+  "\u{1F9D1}\u{200D}\u{1F9BC}", "\u{1F441}\u{FE0F}\u{200D}\u{1F5E8}\u{FE0F}",
+  // Smileys and Emotion: faces that only exist as ZWJ sequences (E13.1).
+  "\u{1F635}\u{200D}\u{1F4AB}", "\u{1F62E}\u{200D}\u{1F4A8}", "\u{1F636}\u{200D}\u{1F32B}\u{FE0F}",
+  // Flags: not representable as a single scalar or a regional-indicator pair.
+  "\u{1F3F3}\u{FE0F}\u{200D}\u{1F308}", "\u{1F3F4}\u{200D}\u{2620}\u{FE0F}", "\u{1F3F3}\u{FE0F}\u{200D}\u{26A7}\u{FE0F}",
+  // Animals and Nature: concepts that only exist as ZWJ sequences.
+  "\u{1F408}\u{200D}\u{2B1B}", "\u{1F415}\u{200D}\u{1F9BA}", "\u{1F43B}\u{200D}\u{2744}\u{FE0F}",
+  "\u{1F426}\u{200D}\u{2B1B}", "\u{1F426}\u{200D}\u{1F525}",
+  // Food and Drink: same story, this specific concept only exists as a ZWJ sequence (E15.1).
+  "\u{1F344}\u{200D}\u{1F7EB}",
+  // Subdivision flags (Unicode TAG-character sequences, England/Scotland/Wales; all E5.0).
+  "\u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F}",
+  "\u{1F3F4}\u{E0067}\u{E0062}\u{E0073}\u{E0063}\u{E0074}\u{E007F}",
+  "\u{1F3F4}\u{E0067}\u{E0062}\u{E0077}\u{E006C}\u{E0073}\u{E007F}",
+]);
+
+/// True only when `emoji` is guaranteed to render on every FLIM user's phone: iOS 18.0 (the app's
+/// deployment floor) already ships Emoji 15.1, so anything assigned at or before that revision is
+/// safe for everyone, and anything assigned after it, or not recognized at all, is not. FAILS
+/// CLOSED: an emoji this function has never seen a version for (a brand-new one, a malformed
+/// string, a skin-tone/gender ZWJ variant FLIM's own picker doesn't offer) returns false, not a
+/// guess. Structural cases, matching exactly what a FLIM client can ever produce
+/// (EmojiCatalog.swift): a single safe scalar with an optional trailing variation selector
+/// (U+FE0F), one of the closed set of ZWJ/tag sequences in SAFE_MULTI_SCALAR_SEQUENCES, or a
+/// two-letter regional-indicator flag pair in SAFE_FLAG_CODES.
+function isSafeReactionEmoji(emoji: string): boolean {
+  if (SAFE_MULTI_SCALAR_SEQUENCES.has(emoji)) return true;
+
+  const codePoints = Array.from(emoji).map((c) => c.codePointAt(0)!);
+
+  // Country/region flag: exactly two regional-indicator letters (U+1F1E6..U+1F1FF each).
+  if (codePoints.length === 2 && codePoints.every((cp) => cp >= 0x1F1E6 && cp <= 0x1F1FF)) {
+    const code = codePoints.map((cp) => String.fromCharCode(0x41 + (cp - 0x1F1E6))).join("");
+    return SAFE_FLAG_CODES.has(code);
+  }
+
+  const isSafeScalar = (cp: number) => SAFE_SCALAR_RANGES.some(([lo, hi]) => cp >= lo && cp <= hi);
+
+  // A single safe scalar, alone or with the emoji variation selector appended.
+  if (codePoints.length === 1) return isSafeScalar(codePoints[0]);
+  if (codePoints.length === 2 && codePoints[1] === 0xFE0F) return isSafeScalar(codePoints[0]);
+
+  // A safe scalar carrying a skin-tone modifier. The modifiers themselves (U+1F3FB..U+1F3FF) are
+  // Emoji 2.0, from 2015, so they render everywhere this app can run; only the base emoji decides
+  // safety. Without this, ✌🏽 and 💪🏽 fell back to a bare "to your photo" while the identical
+  // reaction without a modifier got its emoji. Measured against production, skin-tone variants are
+  // about 1% of reactions, so the cost was small, but it fell on people making a deliberate choice
+  // about how they are represented, which is the wrong place to be silently lossy.
+  if (codePoints.length === 2 && codePoints[1] >= 0x1F3FB && codePoints[1] <= 0x1F3FF) {
+    return isSafeScalar(codePoints[0]);
+  }
+  if (codePoints.length === 3 && codePoints[1] === 0xFE0F
+      && codePoints[2] >= 0x1F3FB && codePoints[2] <= 0x1F3FF) {
+    return isSafeScalar(codePoints[0]);
+  }
+
+  return false;
+}
+
+/// Builds the reaction body: `"❤️ to your photo"` when the emoji is known-safe for every FLIM
+/// user (see isSafeReactionEmoji above), otherwise exactly today's wording, `"to your photo"`,
+/// verbatim, never a guess. Shared by both reaction push sites (post reactions, roll-photo
+/// reactions) so the fallback text can't drift between them. Placement is the BODY, not the
+/// title: every other push in this file keeps its title to exactly "{name} + verb" ({name}
+/// commented, {name} tagged you, {name} mentioned you, {name} liked your comment) and puts the
+/// event-specific detail in the body; putting the emoji in the title would make this the one push
+/// whose title carries extra content, and it reads worse split across two lines ("{name} reacted
+/// ❤️" / "to your photo") than kept together in one ("{name} reacted" / "❤️ to your photo").
+function reactionBody(emoji: string): string {
+  return isSafeReactionEmoji(emoji) ? `${emoji} to your photo` : "to your photo";
+}
+
 Deno.serve(async () => {
   let sent = 0;
 
@@ -463,16 +660,18 @@ Deno.serve(async () => {
   for (const g of groups.values()) {
     if (g.ownerId && g.ownerId !== g.reactorId) {
       const name = await handle(g.reactorId);
-      // Deliberately WITHOUT the emoji. The picker now offers every emoji the sender's OS can
-      // draw, so a reaction chosen on a newer iPhone can be a character an older one has no
-      // glyph for. Inside the app an unrenderable reaction falls back to a placeholder chip, but
-      // a push title is drawn by iOS's own notification UI where we have no such control, and a
-      // tofu box in a banner is the most visible possible way to look broken. The reaction is one
-      // tap away in the app.
-      sent += await notify(g.ownerId, g.reactorId, `${name} reacted`, "to your photo", {
-        t: "post",
-        id: g.postId,
-      });
+      // The emoji shown is the LAST one in this batch (`g.emojis` is appended in fetch order), so
+      // a reactor who left several before this run picked up sees the most recent one, not an
+      // arbitrary first. `reactionBody` decides whether it's safe to show at all; see the
+      // "Reaction emoji safety" section above for the full derivation and the fail-closed
+      // fallback to exactly today's "to your photo".
+      sent += await notify(
+        g.ownerId,
+        g.reactorId,
+        `${name} reacted`,
+        reactionBody(g.emojis[g.emojis.length - 1]),
+        { t: "post", id: g.postId },
+      );
     }
     await supabase.from("post_reactions").update({ push_sent: true }).in("id", g.ids);
   }
@@ -549,6 +748,11 @@ Deno.serve(async () => {
         ? `${await handle(others[0])} reacted`
         : `${others.length} people reacted`;
       pushesForPost++;
+      // No emoji here on purpose, unlike the owner push above: `postAgg` only tracks WHO reacted
+      // (`reactorIds`), not what with, and even if it did, a >1-reactor push has no single emoji
+      // to attribute without picking one and calling it representative, exactly the guess
+      // "Reaction emoji safety" above exists to avoid. Making the 1-reactor case show an emoji
+      // while the 2+ case never can would also read as inconsistent rather than deliberate.
       // `others[0]` stands in for the block check, the same simplification the roll-photo-comments
       // thread notification below uses when several people are folded into one push.
       sent += await notify(taggedId, others[0], title, "to a photo you're in", { t: "post", id: postId });
@@ -662,18 +866,16 @@ Deno.serve(async () => {
   for (const g of rxByKey.values()) {
     if (g.ownerId && g.ownerId !== g.reactorId && !(await mutedInRoll(g.rollId)).has(g.ownerId)) {
       const name = await handle(g.reactorId);
-      // Deliberately WITHOUT the emoji. The picker now offers every emoji the sender's OS can
-      // draw, so a reaction chosen on a newer iPhone can be a character an older one has no
-      // glyph for. Inside the app an unrenderable reaction falls back to a placeholder chip, but
-      // a push title is drawn by iOS's own notification UI where we have no such control, and a
-      // tofu box in a banner is the most visible possible way to look broken. The reaction is one
-      // tap away in the app. Same "omit rather than guess" treatment as the roll-photo-comments
-      // route above when a photo somehow has no roll_id.
+      // Same emoji treatment as the post-reactions push above: `reactionBody` shows the LAST
+      // emoji in this batch only when it's safe for every FLIM user (see "Reaction emoji safety"
+      // above), otherwise falls back to exactly today's "to your photo". Route omission (no
+      // `flim` payload when a photo somehow has no roll_id) is the same "omit rather than guess"
+      // treatment as the roll-photo-comments route above, unrelated to the emoji decision.
       sent += await notify(
         g.ownerId,
         g.reactorId,
         `${name} reacted`,
-        "to your photo",
+        reactionBody(g.emojis[g.emojis.length - 1]),
         g.rollId ? { t: "reveal", id: g.rollId } : undefined,
       );
     }
@@ -763,10 +965,14 @@ Deno.serve(async () => {
 
   for (const f of follows ?? []) {
     const name = await handle(f.follower_id);
-    // Title/body split the way the report pushes do. No "tap to see their profile": these
-    // payloads carry no deep link, a tap just opens the app, and promising a destination the
-    // notification cannot reach is worse than saying only what happened.
-    sent += await notify(f.following_id, f.follower_id, "New follower", `${name} started following you`, {
+    // Title-only: matches the house shape every other push in this file uses, the actor's name +
+    // verb in the title ("{name} commented", "{name} tagged you", "{name} liked your comment"),
+    // rather than the inverted "New follower" title / "{name} started following you" body this
+    // used to have. There's nothing left to say in the body once the name and the event are both
+    // in the title, and `sendPush` omits the `body` key entirely when none is given (see above
+    // its definition), so this renders as a clean single-line banner, never a blank second line.
+    // Still routes to the follower's profile.
+    sent += await notify(f.following_id, f.follower_id, `${name} started following you`, undefined, {
       t: "profile",
       id: f.follower_id,
     });
