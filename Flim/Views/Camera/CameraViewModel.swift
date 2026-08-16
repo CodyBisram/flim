@@ -73,19 +73,30 @@ final class CameraViewModel: NSObject {
     /// flipping cameras, navigating away).
     private let screenBrightness = RestorableOverride<CGFloat>()
 
-    /// An exposure-duration cap (bounding AE's worst case to 1/8s) and
-    /// `photoQualityPrioritization = .speed` were both prototyped alongside `screenBrightness`
-    /// above, on the theory that they'd backstop a scene the screen fails to light. Deliberately
-    /// NOT shipped here: both change what the sensor actually captures (a hard exposure ceiling
-    /// can underexpose a scene the screen genuinely can't reach; `.speed` trades the multi-frame
-    /// fusion pass for a single frame), and `screenBrightness` alone should already remove the
-    /// slow-exposure "hang" this whole fix exists for, since AE now meters a genuinely lit scene
-    /// instead of gathering light for several seconds. Shipping a quality-affecting change
-    /// alongside a quality-neutral one would also make it impossible to tell which one actually
-    /// fixed the bug. If the brightness fix alone turns out not to be enough on-device, reach for
-    /// the exposure cap first (it only matters in the pathological case, same backstop shape as
-    /// `waitForExposureToSettle`'s cap below) before `.speed`, which is the one with a visible
-    /// quality cost on every affected shot.
+    /// Caps continuous AE's own worst-case exposure duration to 1/8s (clamped into whatever the
+    /// active format actually allows) for the duration of a front-camera screen-flash capture,
+    /// restored afterwards exactly like `screenBrightness` above.
+    ///
+    /// This was prototyped alongside `screenBrightness` and deliberately left unshipped on the
+    /// theory that `screenBrightness` alone would remove the slow-exposure "hang" this whole fix
+    /// exists for, since AE would meter a genuinely lit scene instead of gathering light for
+    /// several seconds. Reported on-device as not enough on its own: the screen is a much weaker,
+    /// more diffuse light source than a real flash, so in the dim rooms this feature exists for, a
+    /// brightened screen can still leave AE reaching for a multi-second exposure. That is the
+    /// leading candidate for the remaining three seconds, not a second, OS-driven flash stacked on
+    /// top of this one: front-camera `AVCapturePhotoSettings.flashMode` can only ever resolve to
+    /// `.off`
+    /// (see `capturePhoto()`'s own `output.supportedFlashModes.contains(flashMode)` guard, and
+    /// `AVCaptureDevice.hasFlash`, which gates it, is hardware-only and false for every front
+    /// camera), so there is no Retina-Flash-style second sequence to strip out here, only a real,
+    /// uncapped exposure to bound. `waitForExposureToSettle` already polls
+    /// `device.isAdjustingExposure` rather than assuming a fixed time, but it cannot make AE
+    /// converge faster than AE itself is willing to, and once `output.capturePhoto` is triggered
+    /// the still capture's own exposure is entirely outside that wait's control; this cap bounds
+    /// both. A hard ceiling can underexpose a scene the screen genuinely can't reach, which is why
+    /// this is scoped to the front-flash path only (see `capturePhoto()`) rather than applied
+    /// globally, same tradeoff `waitForExposureToSettle`'s own cap already makes.
+    private let exposureCeiling = RestorableOverride<CMTime>()
 
     /// Hardware flash mode for the LED (distinct from `flashOpacity`, the on-screen
     /// shutter blink). Off by default; the camera UI cycles Off → Auto → On.
@@ -389,6 +400,7 @@ final class CameraViewModel: NSObject {
         // pinned at full brightness, restore() is a no-op when nothing is outstanding. Before
         // the input swap below, ahead of anything that could touch the device being swapped out.
         screenBrightness.restore()
+        exposureCeiling.restore()
         cameraPosition = isFront ? .back : .front
         // A pending handback belongs to the lens being swapped out; `addVideoInput` puts the new
         // one into continuous focus itself.
@@ -518,6 +530,7 @@ final class CameraViewModel: NSObject {
         // screen pinned at full brightness. Unconditional and ahead of the early-return below, so
         // it still fires even if the session was already stopped by an earlier call.
         screenBrightness.restore()
+        exposureCeiling.restore()
         guard session.isRunning else { return }
         // No more metadata is coming, so the last frame's rectangles would otherwise still be on
         // screen when the viewfinder comes back, hanging over a scene that has since changed.
@@ -577,13 +590,37 @@ final class CameraViewModel: NSObject {
                 set: { activeScreen()?.brightness = $0 },
                 to: 1.0
             )
+            // Bounds AE's worst case so a scene the screen can't fully light doesn't turn into a
+            // multi-second exposure, see `exposureCeiling`'s own doc. Clamped into the active
+            // format's own allowed range: setting `activeMaxExposureDuration` outside
+            // `minExposureDuration...maxExposureDuration` raises.
+            if let device = currentDevice {
+                let format = device.activeFormat
+                let cap = CMTimeMaximum(
+                    format.minExposureDuration,
+                    CMTimeMinimum(CMTime(value: 1, timescale: 8), format.maxExposureDuration)
+                )
+                exposureCeiling.begin(
+                    get: { device.activeMaxExposureDuration },
+                    set: { duration in
+                        guard (try? device.lockForConfiguration()) != nil else { return }
+                        device.activeMaxExposureDuration = duration
+                        device.unlockForConfiguration()
+                    },
+                    to: cap
+                )
+            }
+            Self.shutterTappedAt = Date()
+            Self.log.info("shutter tapped, front flash path")
             withAnimation(.easeOut(duration: 0.12)) { flashOpacity = 1 }
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 await self.waitForExposureToSettle()
+                Self.log.info("AE settled \(Self.sinceShutterMS(), privacy: .public)ms after the tap")
                 guard generation == self.captureGeneration else { return }
                 self.rememberCaptureGeneration(generation, forSettingsID: settings.uniqueID)
                 self.output.capturePhoto(with: settings, delegate: self)
+                Self.log.info("capturePhoto called \(Self.sinceShutterMS(), privacy: .public)ms after the tap")
                 self.startCaptureWatchdog(generation: generation)
             }
         } else {
@@ -638,10 +675,31 @@ final class CameraViewModel: NSObject {
     /// working capture is never cut short. Only a capture that is still unfinished after that
     /// gets forcibly reset.
     @MainActor
+    /// Timing instrumentation for the front-flash duration, which four separate fixes have now
+    /// failed to shift. Every theory so far has been argued from source and none could separate
+    /// "the exposure genuinely takes seconds" from "the delegate callback never arrives and the
+    /// watchdog is what ends the flash at its own 3s timeout". Those need opposite fixes, so the
+    /// next attempt is measured rather than reasoned. Read with Console.app, subsystem
+    /// com.flim.app, category camera.
+    private static let log = Logger(subsystem: "com.flim.app", category: "camera")
+    nonisolated(unsafe) private static var shutterTappedAt: Date?
+
+    nonisolated private static func sinceShutterMS() -> Int {
+        guard let start = shutterTappedAt else { return -1 }
+        return Int(Date().timeIntervalSince(start) * 1000)
+    }
+
     private func startCaptureWatchdog(generation: Int) {
         Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(3))
             guard let self, generation == self.captureGeneration, self.isCapturing else { return }
+            // Reaching here at all means didCapturePhoto never fired. If the flash duration is
+            // pinned near 3s, THIS is what is ending it, and no amount of exposure tuning will
+            // help: the callback is missing, not late.
+            Self.log.error("""
+                WATCHDOG fired \(Self.sinceShutterMS(), privacy: .public)ms after the tap. \
+                didCapturePhoto never arrived. isExposing=\(self.isExposing, privacy: .public)
+                """)
             if self.isExposing {
                 try? await Task.sleep(for: .seconds(2))
                 guard generation == self.captureGeneration, self.isCapturing else { return }
@@ -649,6 +707,7 @@ final class CameraViewModel: NSObject {
             self.isCapturing = false
             withAnimation(.easeOut(duration: 0.3)) { self.flashOpacity = 0 }
             self.screenBrightness.restore()
+            self.exposureCeiling.restore()
         }
 
     }
@@ -694,14 +753,19 @@ extension CameraViewModel: AVCapturePhotoCaptureDelegate {
         _ output: AVCapturePhotoOutput,
         didCapturePhotoFor resolvedSettings: AVCaptureResolvedPhotoSettings
     ) {
+        Self.log.info("""
+            didCapturePhoto \(Self.sinceShutterMS(), privacy: .public)ms after the tap, \
+            flashEnabled=\(resolvedSettings.isFlashEnabled, privacy: .public)
+            """)
         let fade = resolvedSettings.isFlashEnabled ? 0.15 : 0.3
         Task { @MainActor in
             self.isExposing = false
             withAnimation(.easeOut(duration: fade)) { self.flashOpacity = 0 }
             // The sensor has already captured the frame, there is nothing left for the extra
-            // screen light to do. `restore()` is a no-op on the (common) captures that never
-            // called `begin()` in the first place.
+            // screen light (or the exposure ceiling that bounded it) to do. `restore()` is a
+            // no-op on the (common) captures that never called `begin()` in the first place.
             self.screenBrightness.restore()
+            self.exposureCeiling.restore()
         }
     }
 
@@ -757,6 +821,7 @@ extension CameraViewModel: AVCapturePhotoCaptureDelegate {
             self.isCapturing = false
             self.flashOpacity = 0   // safety net in case the capture errored before the callbacks above fired
             self.screenBrightness.restore()   // same safety net; a no-op if already restored
+            self.exposureCeiling.restore()   // same safety net; a no-op if already restored
             guard let data else {
                 // A genuine capture failure (hardware fault, interrupted session, no file data
                 // at all), rare, but silent otherwise: the shutter had already animated and
