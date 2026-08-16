@@ -63,41 +63,6 @@ final class CameraViewModel: NSObject {
     /// genuinely mid-exposure, which would darken the shot it was lighting.
     private var isExposing = false
 
-    /// The screen-flash's REAL light source: raises the display's actual backlight to full for a
-    /// front-camera flash capture, restored afterwards. Before this, "screen flash" only drew a
-    /// white SwiftUI overlay (`flashOpacity` below) on top of whatever brightness the display
-    /// already happened to be at, which in a dark room (auto-brightness near its floor, exactly
-    /// when anyone reaches for a screen flash) emitted almost no light. See
-    /// `RestorableOverride`'s own doc for why restoration is structured this way rather than
-    /// called by hand at every exit path (success, error, watchdog timeout, backgrounding,
-    /// flipping cameras, navigating away).
-    private let screenBrightness = RestorableOverride<CGFloat>()
-
-    /// Caps continuous AE's own worst-case exposure duration to 1/8s (clamped into whatever the
-    /// active format actually allows) for the duration of a front-camera screen-flash capture,
-    /// restored afterwards exactly like `screenBrightness` above.
-    ///
-    /// This was prototyped alongside `screenBrightness` and deliberately left unshipped on the
-    /// theory that `screenBrightness` alone would remove the slow-exposure "hang" this whole fix
-    /// exists for, since AE would meter a genuinely lit scene instead of gathering light for
-    /// several seconds. Reported on-device as not enough on its own: the screen is a much weaker,
-    /// more diffuse light source than a real flash, so in the dim rooms this feature exists for, a
-    /// brightened screen can still leave AE reaching for a multi-second exposure. That is the
-    /// leading candidate for the remaining three seconds, not a second, OS-driven flash stacked on
-    /// top of this one: front-camera `AVCapturePhotoSettings.flashMode` can only ever resolve to
-    /// `.off`
-    /// (see `capturePhoto()`'s own `output.supportedFlashModes.contains(flashMode)` guard, and
-    /// `AVCaptureDevice.hasFlash`, which gates it, is hardware-only and false for every front
-    /// camera), so there is no Retina-Flash-style second sequence to strip out here, only a real,
-    /// uncapped exposure to bound. `waitForExposureToSettle` already polls
-    /// `device.isAdjustingExposure` rather than assuming a fixed time, but it cannot make AE
-    /// converge faster than AE itself is willing to, and once `output.capturePhoto` is triggered
-    /// the still capture's own exposure is entirely outside that wait's control; this cap bounds
-    /// both. A hard ceiling can underexpose a scene the screen genuinely can't reach, which is why
-    /// this is scoped to the front-flash path only (see `capturePhoto()`) rather than applied
-    /// globally, same tradeoff `waitForExposureToSettle`'s own cap already makes.
-    private let exposureCeiling = RestorableOverride<CMTime>()
-
     /// Hardware flash mode for the LED (distinct from `flashOpacity`, the on-screen
     /// shutter blink). Off by default; the camera UI cycles Off → Auto → On.
     var flashMode: AVCaptureDevice.FlashMode = .off
@@ -121,7 +86,10 @@ final class CameraViewModel: NSObject {
     /// place.
     private var hasLoggedCameraAuthorized = false
 
-    /// Which camera is active. Front has no hardware flash, so the UI hides the flash toggle.
+    /// Which camera is active. Front has no hardware LED, but `isFlashSupported` below still
+    /// shows the flash toggle for it: `output.supportedFlashModes` includes `.on` for the front
+    /// camera on this hardware too, which is what lets "flash on" resolve to iOS's own front
+    /// screen-flash sequence in `capturePhoto()`.
     var cameraPosition: AVCaptureDevice.Position = .back
     var isFront: Bool { cameraPosition == .front }
 
@@ -396,11 +364,6 @@ final class CameraViewModel: NSObject {
 
     /// Switches between the back and front cameras.
     func flipCamera() {
-        // Flipping away from a front-flash capture still in flight must not leave the screen
-        // pinned at full brightness, restore() is a no-op when nothing is outstanding. Before
-        // the input swap below, ahead of anything that could touch the device being swapped out.
-        screenBrightness.restore()
-        exposureCeiling.restore()
         cameraPosition = isFront ? .back : .front
         // A pending handback belongs to the lens being swapped out; `addVideoInput` puts the new
         // one into continuous focus itself.
@@ -526,11 +489,6 @@ final class CameraViewModel: NSObject {
     }
 
     func stopRunning() {
-        // Navigating away (tab switch, `CameraView.onDisappear`) mid-capture must not leave the
-        // screen pinned at full brightness. Unconditional and ahead of the early-return below, so
-        // it still fires even if the session was already stopped by an earlier call.
-        screenBrightness.restore()
-        exposureCeiling.restore()
         guard session.isRunning else { return }
         // No more metadata is coming, so the last frame's rectangles would otherwise still be on
         // screen when the viewfinder comes back, hanging over a scene that has since changed.
@@ -566,99 +524,35 @@ final class CameraViewModel: NSObject {
             connection.isVideoMirrored = isFront
         }
 
-        // Front camera has no hardware LED: "flash on" here means screen-as-flash, brightening
-        // the display to light the subject instead. Triggering the capture at the same instant
-        // as the brighten (the old behavior) meant the sensor's continuous auto-exposure was
-        // still metered against the dim pre-flash scene, in a dark room, where AE had already
-        // cranked exposure way up expecting darkness, the sudden extra light blew the shot out;
-        // in a brighter room the same shot looked fine. Reported on-device as the screen-flash
-        // being "either really good or really bad" with no in-between. Brightening the screen
-        // FIRST and giving AE a beat to re-converge against the now-lit scene before triggering
-        // the actual capture means exposure is metered for the scene the sensor is about to see,
-        // not the one before the flash.
-        //
-        // `flashOpacity` alone (a SwiftUI overlay) never emitted real light, it was drawn at
-        // whatever brightness the display already happened to be at. `screenBrightness.begin`
-        // below is the actual fix: it raises the display's real backlight to full, restored on
-        // every exit path (see `RestorableOverride`'s doc). Set instantly rather than ramped:
-        // `UIScreen.brightness` has no native animation, and the SwiftUI overlay's own 0.12s fade
-        // already supplies the perceived ramp on top of light that's already at full output
-        // underneath it.
+        // Front camera has no hardware LED, but on-device measurement (dark room, front camera,
+        // flash on) showed `output.supportedFlashModes` DOES include `.on` here, `flashMode = .on`
+        // above sticks, and `AVCaptureResolvedPhotoSettings.isFlashEnabled` resolves true: this
+        // hardware runs its own Retina-Flash-style brighten/meter/capture sequence once
+        // `capturePhoto` is called, entirely independent of anything this app does first. This app
+        // used to ALSO run a manual pre-brighten (`flashOpacity`/`screenBrightness`), an
+        // AE-settle wait (`waitForExposureToSettle`), and an `exposureCeiling` clamp ahead of that,
+        // stacking a second, app-owned flash sequence in front of the OS's own one. The measured
+        // cost of the app's half: 772ms spent polling `isAdjustingExposure`, every single time,
+        // without it ever actually reporting settled, because iOS was about to re-meter from
+        // scratch anyway as part of its own sequence, that wait could not converge any faster than
+        // AE itself and had nothing left to accomplish once a second, redundant meter was
+        // guaranteed to follow it. Removed rather than tuned: this app was duplicating a feature
+        // the platform already owns, and the wait was pure waste on this path, not a wait with the
+        // wrong cap. iOS still visibly brightens the screen as part of its own sequence, so the
+        // user-visible "flash" this existed for is preserved by the platform, not the app;
+        // `willCapturePhotoFor` below already suppresses this app's own `flashOpacity` overlay
+        // whenever `isFlashEnabled` is true (previously only ever true for a rear LED flash), so no
+        // separate change was needed there to avoid a double flash on top of iOS's own.
         if isFront && flashMode == .on {
-            screenBrightness.begin(
-                get: { activeScreen()?.brightness ?? 1 },
-                set: { activeScreen()?.brightness = $0 },
-                to: 1.0
-            )
-            // Bounds AE's worst case so a scene the screen can't fully light doesn't turn into a
-            // multi-second exposure, see `exposureCeiling`'s own doc. Clamped into the active
-            // format's own allowed range: setting `activeMaxExposureDuration` outside
-            // `minExposureDuration...maxExposureDuration` raises.
-            if let device = currentDevice {
-                let format = device.activeFormat
-                let cap = CMTimeMaximum(
-                    format.minExposureDuration,
-                    CMTimeMinimum(CMTime(value: 1, timescale: 8), format.maxExposureDuration)
-                )
-                exposureCeiling.begin(
-                    get: { device.activeMaxExposureDuration },
-                    set: { duration in
-                        guard (try? device.lockForConfiguration()) != nil else { return }
-                        device.activeMaxExposureDuration = duration
-                        device.unlockForConfiguration()
-                    },
-                    to: cap
-                )
-            }
             Self.shutterTappedAt = Date()
             Self.log.notice("shutter tapped, front flash path")
-            withAnimation(.easeOut(duration: 0.12)) { flashOpacity = 1 }
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                await self.waitForExposureToSettle()
-                Self.log.notice("AE settled \(Self.sinceShutterMS(), privacy: .public)ms after the tap")
-                guard generation == self.captureGeneration else { return }
-                self.rememberCaptureGeneration(generation, forSettingsID: settings.uniqueID)
-                self.output.capturePhoto(with: settings, delegate: self)
-                Self.log.notice("capturePhoto called \(Self.sinceShutterMS(), privacy: .public)ms after the tap")
-                self.startCaptureWatchdog(generation: generation)
-            }
-        } else {
-            rememberCaptureGeneration(generation, forSettingsID: settings.uniqueID)
-            output.capturePhoto(with: settings, delegate: self)
-            startCaptureWatchdog(generation: generation)
         }
-    }
-
-    /// Waits for continuous auto-exposure to actually settle against the newly-lit scene.
-    ///
-    /// Replaces a flat 260ms guess. That was wrong in both directions: in a lit room AE
-    /// re-converges almost immediately, so it was pure added latency on every single front-flash
-    /// shot, and in a dim room, which is when anyone reaches for the screen flash, 260ms is
-    /// nowhere near enough, so the shot metered against a half-adapted scene. That is the
-    /// "either really good or really bad, no in-between" behaviour, still half-present after the
-    /// fixed wait was introduced.
-    ///
-    /// Capped so a scene AE can never settle on (a pitch-dark room) still takes a photo rather
-    /// than hanging on the white screen forever. Re-checked after `screenBrightness` above landed,
-    /// on the reasoning that a genuinely brightened screen should make AE converge fast: this loop
-    /// is already adaptive (it polls `isAdjustingExposure` and returns the moment AE reports
-    /// settled, in 20ms steps), not a flat wait, so in the common case it should now exit in well
-    /// under 700ms without any code change here. The 700ms ceiling itself is left alone rather
-    /// than shrunk further: it only matters for the pathological case (brightness change not yet
-    /// visually propagated, or a room the screen still can't reach), and it is exactly what
-    /// protects against the "either really good or really bad" regression this file already
-    /// describes above, shrinking it trades a small latency win in the common case (which no
-    /// longer needs it) for real risk in the uncommon one (which still does).
-    private func waitForExposureToSettle(cap: Duration = .milliseconds(700)) async {
-        guard let device = currentDevice else { return }
-        // A short beat first: `isAdjustingExposure` doesn't flip true the instant the scene
-        // changes, so polling immediately would read "settled" from before the screen lit up.
-        try? await Task.sleep(for: .milliseconds(60))
-        let deadline = ContinuousClock.now.advanced(by: cap)
-        while device.isAdjustingExposure, ContinuousClock.now < deadline {
-            try? await Task.sleep(for: .milliseconds(20))
+        rememberCaptureGeneration(generation, forSettingsID: settings.uniqueID)
+        output.capturePhoto(with: settings, delegate: self)
+        if isFront && flashMode == .on {
+            Self.log.notice("capturePhoto called \(Self.sinceShutterMS(), privacy: .public)ms after the tap")
         }
+        startCaptureWatchdog(generation: generation)
     }
 
     /// Recovers the UI if AVFoundation's completion callbacks never arrive.
@@ -706,8 +600,6 @@ final class CameraViewModel: NSObject {
             }
             self.isCapturing = false
             withAnimation(.easeOut(duration: 0.3)) { self.flashOpacity = 0 }
-            self.screenBrightness.restore()
-            self.exposureCeiling.restore()
         }
 
     }
@@ -728,22 +620,19 @@ extension CameraViewModel: AVCapturePhotoCaptureDelegate {
         willCapturePhotoFor resolvedSettings: AVCaptureResolvedPhotoSettings
     ) {
         if resolvedSettings.isFlashEnabled {
-            // The rear LED is about to fire, it IS the flash. A white screen overlay on top of
-            // it reads as a glitch, so the rear+flash case shows no overlay at all.
+            // A real device-driven flash is about to fire: the rear LED, or (see `capturePhoto()`)
+            // front-camera screen-as-flash, which measurement showed also resolves
+            // `isFlashEnabled == true` on this hardware and runs entirely inside iOS's own
+            // sequence. Either way this app's overlay on top of it would read as a glitch or a
+            // double flash, so neither case shows this app's own overlay.
             return
         }
-        // Front camera has no LED, so an explicit "flash on" there means screen-as-flash: brighten
-        // the display itself in place of hardware flash, timed to the real exposure. Every other
-        // no-flash shot (front or rear) keeps a subtle blink so the shutter still feels responsive.
-        // `isFront` and `flashMode` are main-actor isolated, like the rest of this type, so they
-        // are read INSIDE the hop below, not out here on AVFoundation's delegate queue. Reading
-        // them here used to race whatever main-actor code was mutating them at the same instant
-        // (a flip-camera or flash-toggle tap), one line above the hop that this file's own
-        // comment already said every other write on this delegate goes through.
+        // No device-driven flash for this shot: keep a subtle blink so the shutter still feels
+        // responsive. `isFront`/`flashMode` are main-actor isolated, like the rest of this type,
+        // so they are read INSIDE the hop below, not out here on AVFoundation's delegate queue.
         Task { @MainActor in
-            let opacity: Double = (self.isFront && self.flashMode == .on) ? 1 : 0.35
             self.isExposing = true
-            self.flashOpacity = opacity
+            self.flashOpacity = 0.35
         }
     }
 
@@ -761,11 +650,6 @@ extension CameraViewModel: AVCapturePhotoCaptureDelegate {
         Task { @MainActor in
             self.isExposing = false
             withAnimation(.easeOut(duration: fade)) { self.flashOpacity = 0 }
-            // The sensor has already captured the frame, there is nothing left for the extra
-            // screen light (or the exposure ceiling that bounded it) to do. `restore()` is a
-            // no-op on the (common) captures that never called `begin()` in the first place.
-            self.screenBrightness.restore()
-            self.exposureCeiling.restore()
         }
     }
 
@@ -820,8 +704,6 @@ extension CameraViewModel: AVCapturePhotoCaptureDelegate {
             guard expectedGeneration == nil || expectedGeneration == self.captureGeneration else { return }
             self.isCapturing = false
             self.flashOpacity = 0   // safety net in case the capture errored before the callbacks above fired
-            self.screenBrightness.restore()   // same safety net; a no-op if already restored
-            self.exposureCeiling.restore()   // same safety net; a no-op if already restored
             guard let data else {
                 // A genuine capture failure (hardware fault, interrupted session, no file data
                 // at all), rare, but silent otherwise: the shutter had already animated and
