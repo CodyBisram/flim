@@ -433,7 +433,6 @@ struct UserPageView: View {
         async let fr = feed.followerCount(userId)
         async let fg = feed.followingCount(userId)
         async let bd = feed.fetchProfileBadges(userId)
-        async let st = feed.fetchProfileFilmStats(userId)
         // Resolved alongside the others, not awaited inline below, specifically so `identity`
         // and `unseenBadgeIds` can be WRITTEN back to back with no `await` between them (see
         // below). An `await` between those two writes would let SwiftUI render the badge strip
@@ -454,21 +453,17 @@ struct UserPageView: View {
         followers = await fr
         following = await fg
         let badges = await bd
-        let stats = await st
         let unseen = await ub
         let viewerHeld = await vb
-        // The signup number lives on the profile row itself and never depends on either RPC
-        // below, so a profile still shows a clean number (and nothing else) if `profile_badges`
-        // or `profile_film_stats` fail, e.g. offline, or before this migration is deployed.
-        // Nothing renders at all if `signupOrdinal` itself is missing (a profile row from before
-        // that column existed): see `UserProfile.signupOrdinal`.
+        // The signup number lives on the profile row itself and never depends on
+        // `profile_badges`, so a profile still shows a clean number (and nothing else) if that
+        // RPC fails, e.g. offline, or before this migration is deployed. Nothing renders at all
+        // if `signupOrdinal` itself is missing (a profile row from before that column existed):
+        // see `UserProfile.signupOrdinal`.
         if let signupNumber = profile?.signupOrdinal {
             identity = ProfileIdentity(
                 signupNumber: signupNumber,
-                badges: badges,
-                frameCount: stats?.framesShot ?? 0,
-                rollCount: stats?.rollsDeveloped ?? 0,
-                shootingSince: stats?.shootingSince
+                badges: badges
             )
             // Set together with `identity` above, per the comment on `ub`. Own profile only, and
             // at most once per visit to this view, see `badgeRevealArmed`.

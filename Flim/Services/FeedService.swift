@@ -283,6 +283,10 @@ final class FeedService {
     /// Frames shot, rolls developed, and the date of the first frame ever, for any profile. `nil`
     /// on any failure (offline, or the RPC not deployed yet), the caller then treats the profile
     /// as having no stats yet rather than showing an error.
+    ///
+    /// Not called anywhere right now: `UserPageView` stopped rendering the film stats line (it
+    /// duplicated the social counts row below it), so it stopped fetching this too. Left in place
+    /// for whatever surface wants frame/roll counts next, rather than deleted with the call site.
     func fetchProfileFilmStats(_ id: UUID) async -> ProfileFilmStats? {
         struct Params: Encodable { let p_profile_id: UUID }
         let rows: [ProfileFilmStats] = (try? await supabase
@@ -306,10 +310,30 @@ final class FeedService {
     var unseenBadgeCount = 0
 
     /// Refreshes `unseenBadgeCount` from the server. Called whenever the count could plausibly
-    /// have changed, i.e. every time the Feed tab (re)appears, see `FeedView.reload()`.
+    /// have changed, i.e. every time the Feed tab (re)appears, see `FeedView.reload()`. Pure read:
+    /// this will NOT surface something newly true until something else (`refreshOwnBadges()`, or
+    /// someone else opening this account's profile) has ratcheted it into `earned_badges` first.
     func refreshUnseenBadgeCount() async {
         let epoch = AccountEpoch.current
         let count: Int = (try? await supabase.rpc("unseen_badge_count").execute().value) ?? 0
+        guard AccountEpoch.isCurrent(epoch) else { return }
+        unseenBadgeCount = count
+    }
+
+    /// Ratchets the signed-in account's own badge predicates server-side, then sets
+    /// `unseenBadgeCount` from the same round trip, rather than following a write with a separate
+    /// `unseen_badge_count()` read. This is the ONLY path that reliably lights the tab dot for a
+    /// badge the signed-in account just earned: `profile_badges` (and therefore the ratchet) used
+    /// to only ever fire when somebody opened A profile, so a badge could sit un-recorded forever
+    /// if nobody happened to open this account's own page. Zero on any failure (offline, or the
+    /// RPC not deployed yet), degrading to "no dot yet" rather than an error.
+    ///
+    /// Deliberately not called on every feed reload, unlike `refreshUnseenBadgeCount()` above:
+    /// this evaluates twelve predicates over photos and rolls server-side, and badges are not
+    /// time critical. See `MainTabView`'s once-per-launch call, next to `Usage.log(.appOpen)`.
+    func refreshOwnBadges() async {
+        let epoch = AccountEpoch.current
+        let count: Int = (try? await supabase.rpc("refresh_own_badges").execute().value) ?? 0
         guard AccountEpoch.isCurrent(epoch) else { return }
         unseenBadgeCount = count
     }
@@ -1089,6 +1113,10 @@ final class FeedService {
         )).select("id").single().execute().value
         Activation.log(.postShared)
         Usage.log(.postShared)
+        // Sharing is the other moment a badge most plausibly just became true (`shared` itself,
+        // first time; `well_met` can only start accruing once something exists to react to).
+        // Fire-and-forget: this must never gate the post the user just watched succeed.
+        Task { await refreshOwnBadges() }
 
         guard !tags.isEmpty else { return true }
         struct TagInsert: Encodable { let post_id: UUID; let tagged_user_id: UUID; let x: Double; let y: Double }

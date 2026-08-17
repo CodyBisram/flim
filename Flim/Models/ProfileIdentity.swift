@@ -5,11 +5,17 @@ import Foundation
 /// unfakeable and permanent, badges only ever show what was actually earned, and the stats only
 /// ever go up.
 ///
-/// Sourced from `profiles.signup_ordinal` (the number) and the `profile_badges` /
-/// `profile_film_stats` RPCs (badges and stats), see `FeedService.fetchProfileBadges` and
-/// `FeedService.fetchProfileFilmStats`. Built in `UserPageView.load()`. Either RPC failing
+/// Sourced from `profiles.signup_ordinal` (the number) and the `profile_badges` RPC (badges),
+/// see `FeedService.fetchProfileBadges`. Built in `UserPageView.load()`. That RPC failing
 /// degrades quietly: the number always comes from the profile row alone and never depends on
-/// them, see that call site.
+/// it, see that call site.
+///
+/// This used to also carry frame/roll counts and a "shooting since" date, rendered as a film
+/// stats line beneath the stamps. That line was cut: it duplicated the social counts row right
+/// below it ("40 shared · 47 followers · 47 following" already says how much this account has
+/// shared), so it told an overlapping fact twice. `profile_film_stats` and
+/// `FeedService.fetchProfileFilmStats` still exist for a future caller, they're just not fetched
+/// on this page anymore, see `UserPageView.load()`.
 struct ProfileIdentity: Equatable {
     /// The permanent signup number, e.g. the 37th account ever created. Never edited, never
     /// reused, and rendered as quiet typography rather than a chip: see `FrameNumberLabel`.
@@ -18,17 +24,6 @@ struct ProfileIdentity: Equatable {
     /// deliberately no locked/greyed state anywhere in the UI for the rest of the catalog: a
     /// visible locked badge turns a profile into a to-do list.
     var badges: [ProfileBadge]
-    var frameCount: Int
-    var rollCount: Int
-    /// The date of this account's very first frame, from `profile_film_stats.shooting_since`.
-    /// `nil` for a zero-photo account (never an error condition), backs the "since <Month Year>"
-    /// clause in the stats line; that clause is simply omitted when this is `nil`.
-    var shootingSince: Date?
-
-    /// Whether the film-stats line has anything to say. A brand-new account has zero frames and
-    /// zero rolls, and "0 frames · 0 rolls" reads as a deficit exactly like Lapse's crying-emoji
-    /// friend count, so the line is omitted entirely rather than shown at zero.
-    var hasStats: Bool { frameCount > 0 || rollCount > 0 }
 }
 
 /// One earned achievement stamp, dated to the month it was earned so it reads as a record
@@ -39,19 +34,23 @@ struct ProfileBadge: Identifiable, Equatable {
     let earnedAt: Date
 }
 
-/// The catalog of stamps a profile can carry, exactly the nine `badge_id`s `profile_badges` can
-/// return; raw values match those strings so a row decodes straight into a case. A case existing
-/// here does NOT mean it renders anywhere for an account that hasn't earned it — every call site
-/// only ever iterates a profile's own `badges` array, never this `allCases`.
+/// The catalog of stamps a profile can carry, exactly the fourteen `badge_id`s `profile_badges`
+/// can return; raw values match those strings so a row decodes straight into a case. A case
+/// existing here does NOT mean it renders anywhere for an account that hasn't earned it — every
+/// call site only ever iterates a profile's own `badges` array, never this `allCases`.
 ///
-/// Seven of these are earned automatically. The last two, `foundingCrew` and `testRoll`, are
+/// Twelve of these are earned automatically. The last two, `foundingCrew` and `testRoll`, are
 /// granted by hand and never computed, so they arrive as a surprise rather than something you can
 /// see coming.
 ///
 /// No explanation below may name another person or say which roll a badge came from: badges are
 /// permanent, so a handle or a roll reference baked into one would sit on a profile forever. This
 /// is why `broughtSomeone` in particular never says who was invited, the backend deliberately
-/// stores no such reference to begin with.
+/// stores no such reference to begin with. `fullHouse` in particular must never read as personal
+/// to the reader either: its `earned_at` is the moment a roll's fifth distinct contributor first
+/// shot into it, which is the same timestamp for every contributor of that roll, including
+/// someone who arrived sixth, seventh, or later — see `fullHouse`'s cases below for how that
+/// shapes the copy.
 enum ProfileBadgeKind: String, CaseIterable {
     case firstLight = "first_light"
     case fullRoll = "full_roll"
@@ -60,6 +59,11 @@ enum ProfileBadgeKind: String, CaseIterable {
     case firstIn = "first_in"
     case rollMaker = "roll_maker"
     case broughtSomeone = "brought_someone"
+    case joinedIn = "joined_in"
+    case chippedIn = "chipped_in"
+    case shared = "shared"
+    case wellMet = "well_met"
+    case fullHouse = "full_house"
     case foundingCrew = "founding_crew"
     case testRoll = "test_roll"
 
@@ -74,6 +78,11 @@ enum ProfileBadgeKind: String, CaseIterable {
         case .firstIn: return "First In"
         case .rollMaker: return "Roll Maker"
         case .broughtSomeone: return "Brought Someone"
+        case .joinedIn: return "Joined In"
+        case .chippedIn: return "Chipped In"
+        case .shared: return "Shared"
+        case .wellMet: return "Well Met"
+        case .fullHouse: return "Full House"
         case .foundingCrew: return "Founding Crew"
         case .testRoll: return "Test Roll"
         }
@@ -104,6 +113,22 @@ enum ProfileBadgeKind: String, CaseIterable {
             // Not "and they stuck around": the predicate only proves they signed up, and nothing
             // measures whether they stayed. Copy must not claim more than the data does.
             return "You invited someone, and they joined."
+        case .joinedIn:
+            return "You joined a roll someone else started."
+        case .chippedIn:
+            return "You shot into a roll you didn't start."
+        case .shared:
+            // Common (roughly two thirds of accounts), so this reads as a plain fact, not a
+            // triumph, unlike the rarer badges around it.
+            return "You posted a frame to the feed."
+        case .wellMet:
+            return "Someone else reacted to one of your photos."
+        case .fullHouse:
+            // Never "when you joined" or anything else that reads as personal timing: earned_at
+            // is the moment the roll's FIFTH contributor's first photo landed, one shared instant
+            // for every contributor of that roll, including someone who arrived sixth or later.
+            // This describes the roll filling up, not the reader's own arrival.
+            return "A roll you shot into filled up with five or more photographers."
         case .foundingCrew:
             return "Part of the crew that got this off the ground."
         case .testRoll:
@@ -115,7 +140,7 @@ enum ProfileBadgeKind: String, CaseIterable {
     /// a badge they don't hold themselves; see `ProfileStampView`. Never shown for a badge the
     /// viewer already has, at that point "how to earn this" is pointless.
     ///
-    /// Six of these describe real, repeatable product behaviour, written as an instruction. The
+    /// Eleven of these describe real, repeatable product behaviour, written as an instruction. The
     /// other three are NOT earnable by ordinary action, and this deliberately does not pretend
     /// otherwise: `founding100` is a closed window (say what it was, not how to get it),
     /// `foundingCrew` and `testRoll` are handed out by hand (say so plainly, never phrase either
@@ -139,6 +164,16 @@ enum ProfileBadgeKind: String, CaseIterable {
             return "Start a roll, and get people to shoot into it."
         case .broughtSomeone:
             return "Invite someone, and have them join."
+        case .joinedIn:
+            return "Join a roll someone else started."
+        case .chippedIn:
+            return "Shoot into a roll you didn't start."
+        case .shared:
+            return "Post a frame to the feed."
+        case .wellMet:
+            return "Shoot something, and have someone else react to it."
+        case .fullHouse:
+            return "Shoot into a roll that grows to five or more photographers."
         case .foundingCrew:
             return "Given by hand to the crew that got this off the ground, not something you can earn."
         case .testRoll:

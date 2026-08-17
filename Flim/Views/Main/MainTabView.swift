@@ -219,6 +219,11 @@ struct MainTabView: View {
             // (rather than in FlimApp's init) is the whole point: init runs before sign-in.
             Activation.log(.firstLaunch)
             Usage.log(.appOpen)
+            // Once per launch, not on every feed reload: this ratchets twelve predicates
+            // server-side, and badges are not time critical. This is also the only reliable path
+            // that lights the tab dot for a badge earned since the last launch, see
+            // `FeedService.refreshOwnBadges`.
+            Task { await feed.refreshOwnBadges() }
             // A roll link that opened the app from cold arrives before this view exists, so the
             // notification finds nobody. The code is on disk; collect it here.
             if let held = PendingRollInvite.take() {

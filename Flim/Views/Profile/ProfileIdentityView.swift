@@ -16,11 +16,19 @@ struct FrameNumberLabel: View {
     }
 }
 
-/// The stamp row + film-stats line that anchor a profile's identity below the name/handle.
-/// Renders NOTHING when a profile has no badges and no stats: that's the brand-new-account case,
-/// and it must not read as an empty grid the way Lapse's "0 friends 😢" does. The signup number
-/// above this (see `FrameNumberLabel`) is the one thing a new account already has, so it carries
-/// the empty state instead of a placeholder here.
+/// The stamp row that anchors a profile's identity below the name/handle.
+///
+/// This used to also carry a film-stats line ("128 frames · 9 rolls · since Aug 2026") beneath
+/// the stamps. That line is gone: it duplicated the social counts row `UserPageView` already
+/// renders just below this strip ("40 shared · 47 followers · 47 following" already says how
+/// much this account has shared), so it told an overlapping fact twice. `ProfileFilmStats` and
+/// `FeedService.fetchProfileFilmStats` still exist for a future caller, they're just not fetched
+/// here anymore, see `UserPageView.load()`.
+///
+/// Renders NOTHING when a profile has no badges: that's the brand-new-account case, and it must
+/// not read as an empty grid the way Lapse's "0 friends 😢" does. The signup number above this
+/// (see `FrameNumberLabel`) is the one thing a new account already has, so it carries the empty
+/// state instead of a placeholder here.
 struct ProfileIdentityStrip: View {
     let identity: ProfileIdentity
     /// Badge ids earned but never shown to their owner yet. Only ever non-empty when this strip
@@ -50,7 +58,9 @@ struct ProfileIdentityStrip: View {
     var body: some View {
         VStack(spacing: 14) {
             if !identity.badges.isEmpty {
-                HStack(alignment: .top, spacing: 18) {
+                // A wrapping layout, not an `HStack`: see `ProfileStampFlowLayout` for why an
+                // unconstrained row here used to widen every ancestor up to the `ScrollView`.
+                ProfileStampFlowLayout {
                     ForEach(unseenOrderedBadges, id: \.badge.id) { entry in
                         ProfileStampView(
                             badge: entry.badge,
@@ -60,11 +70,7 @@ struct ProfileIdentityStrip: View {
                         )
                     }
                 }
-            }
-            if identity.hasStats {
-                Text(statsLine)
-                    .flimFont(12, relativeTo: .caption)
-                    .foregroundStyle(FlimTheme.textTertiary)
+                .padding(.horizontal, 24)
             }
         }
         // Keyed on the unseen set itself: it's set once, together with `identity`, when
@@ -92,13 +98,89 @@ struct ProfileIdentityStrip: View {
             return (badge, index)
         }
     }
+}
 
-    private var statsLine: String {
-        let frames = "\(identity.frameCount) frame\(identity.frameCount == 1 ? "" : "s")"
-        let rolls = "\(identity.rollCount) roll\(identity.rollCount == 1 ? "" : "s")"
-        guard let shootingSince = identity.shootingSince else { return "\(frames) · \(rolls)" }
-        let since = "since \(shootingSince.formatted(.dateTime.month(.abbreviated).year()))"
-        return "\(frames) · \(rolls) · \(since)"
+/// Wraps stamps onto as many centred lines as needed instead of one ever-widening row.
+///
+/// A plain `HStack` reports the sum of every stamp's width as ITS size, and once that's wider
+/// than the screen the overflow doesn't just clip in place: a `VStack` is exactly as wide as its
+/// widest child, so that oversized width propagates back down through every ancestor up to the
+/// `ScrollView`. That's what the six-badge overflow bug actually was, not three separate bugs:
+/// the trailing-pinned signup number and the purple invite button both live in siblings of this
+/// row, and once the page's own content measured wider than the device, everything anchored to a
+/// trailing edge got pushed off past the right side of the screen while the row itself clipped at
+/// both edges (`ScrollView` clips its content to its own bounds by default).
+///
+/// This layout caps itself at whatever width its parent proposes and wraps instead, so it can
+/// never widen an ancestor again regardless of how many badges a profile earns.
+private struct ProfileStampFlowLayout: Layout {
+    var horizontalSpacing: CGFloat = 18
+    var verticalSpacing: CGFloat = 14
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard !subviews.isEmpty else { return .zero }
+        let maxWidth = proposal.width ?? .infinity
+        let rows = rows(for: subviews, maxWidth: maxWidth)
+        let height = rows.reduce(CGFloat(0)) { $0 + $1.height } + CGFloat(max(0, rows.count - 1)) * verticalSpacing
+        // Never wider than what was proposed — that's the entire fix. Only falls back to the
+        // widest row's own width when the parent proposed an unbounded width in the first place
+        // (e.g. a preview with no bounding container).
+        let width = maxWidth.isFinite ? maxWidth : (rows.map(\.width).max() ?? 0)
+        return CGSize(width: width, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let rows = rows(for: subviews, maxWidth: bounds.width)
+        var y = bounds.minY
+        for row in rows {
+            var x = bounds.minX + (bounds.width - row.width) / 2
+            for item in row.items {
+                item.subview.place(at: CGPoint(x: x, y: y), anchor: .topLeading, proposal: ProposedViewSize(item.size))
+                x += item.size.width + horizontalSpacing
+            }
+            y += row.height + verticalSpacing
+        }
+    }
+
+    private struct Item {
+        let subview: LayoutSubview
+        let size: CGSize
+    }
+
+    private struct Row {
+        let items: [Item]
+        let width: CGFloat
+        let height: CGFloat
+    }
+
+    /// Greedily fills a row until the next stamp would push it past `maxWidth`, then starts a new
+    /// one. Every stamp reports a fixed size regardless of what's proposed to it (see
+    /// `ProfileStampView`'s own `.frame(width: 92)`), so `.unspecified` here just asks each one
+    /// for that fixed size rather than trying to shrink it — the same reason this grows at large
+    /// Dynamic Type sizes by wrapping sooner (each stamp gets taller, never wider) instead of by
+    /// compressing anything.
+    private func rows(for subviews: Subviews, maxWidth: CGFloat) -> [Row] {
+        var rows: [Row] = []
+        var items: [Item] = []
+        var rowWidth: CGFloat = 0
+        var rowHeight: CGFloat = 0
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            let widthIfAdded = items.isEmpty ? size.width : rowWidth + horizontalSpacing + size.width
+            if maxWidth.isFinite, !items.isEmpty, widthIfAdded > maxWidth {
+                rows.append(Row(items: items, width: rowWidth, height: rowHeight))
+                items = []
+                rowWidth = 0
+                rowHeight = 0
+            }
+            rowWidth = items.isEmpty ? size.width : rowWidth + horizontalSpacing + size.width
+            rowHeight = max(rowHeight, size.height)
+            items.append(Item(subview: subview, size: size))
+        }
+        if !items.isEmpty {
+            rows.append(Row(items: items, width: rowWidth, height: rowHeight))
+        }
+        return rows
     }
 }
 
@@ -178,23 +260,16 @@ private struct ProfileStampView: View {
             }
             Haptics.reveal()   // the same soft-knock-then-success cue as a roll finishing developing
         }
-        .popover(isPresented: $showExplanation) {
-            VStack(spacing: 10) {
-                Text(badge.kind.explanation)
-                    .flimFont(13, relativeTo: .subheadline)
-                    .foregroundStyle(.white)
-                    .multilineTextAlignment(.center)
-                if let howToEarn {
-                    Text(howToEarn)
-                        .flimFont(12, relativeTo: .footnote)
-                        .foregroundStyle(FlimTheme.textTertiary)
-                        .multilineTextAlignment(.center)
-                }
-            }
-            .padding(16)
-            .frame(maxWidth: 240)
-            .presentationCompactAdaptation(.popover)
-            .presentationBackground(FlimTheme.bgElevated)
+        // `arrowEdge: .top` is already the default, stated explicitly here: the point is to keep
+        // it, rather than let the system reach for a sideways edge to force the popover onto
+        // screen. That only used to happen because the anchoring stamp itself could be
+        // off-screen (see the overflow bug above) or crowded against a neighbour by the same
+        // unconstrained row; a wrapped, on-screen stamp has real room above/below it, so the
+        // system keeps the vertical arrow instead of flipping sideways into a neighbouring stamp.
+        .popover(isPresented: $showExplanation, arrowEdge: .top) {
+            BadgeExplanationPopover(explanation: badge.kind.explanation, howToEarn: howToEarn)
+                .presentationCompactAdaptation(.popover)
+                .presentationBackground(FlimTheme.bgElevated)
         }
         .accessibilityLabel(isUnseen ? "\(badge.kind.label), new, earned \(monthText)" : "\(badge.kind.label), earned \(monthText)")
         .accessibilityHint("Double tap to hear what this stamp means")
@@ -202,6 +277,40 @@ private struct ProfileStampView: View {
 
     private var monthText: String {
         "·\(badge.earnedAt.formatted(.dateTime.month(.abbreviated).year()))·".uppercased()
+    }
+}
+
+/// The stamp popover's content, factored out of `ProfileStampView.body` so it can be sized
+/// correctly and previewed on its own without a live tap.
+///
+/// Two things were wrong before: the text truncated with an ellipsis, and the box could point
+/// sideways into a neighbouring stamp (fixed at the `.popover` call site via `arrowEdge: .top`).
+/// The truncation was purely a sizing bug, not a text-length one — `Text` had no `lineLimit` set,
+/// but a `maxWidth` alone leaves the popover free to first collapse toward a single-line ideal
+/// size and clip whatever didn't fit, rather than actually measuring the wrapped height. Giving
+/// it a concrete, fixed width instead of a flexible max is what makes the `Text`s below wrap in
+/// the first place, and `.fixedSize(horizontal: false, vertical: true)` then forces this view to
+/// report ITS true wrapped height back to the popover container instead of an ambiguous guess.
+private struct BadgeExplanationPopover: View {
+    let explanation: String
+    let howToEarn: String?
+
+    var body: some View {
+        VStack(spacing: 10) {
+            Text(explanation)
+                .flimFont(13, relativeTo: .subheadline)
+                .foregroundStyle(.white)
+                .multilineTextAlignment(.center)
+            if let howToEarn {
+                Text(howToEarn)
+                    .flimFont(12, relativeTo: .footnote)
+                    .foregroundStyle(FlimTheme.textTertiary)
+                    .multilineTextAlignment(.center)
+            }
+        }
+        .frame(width: 220)
+        .fixedSize(horizontal: false, vertical: true)
+        .padding(16)
     }
 }
 
@@ -226,10 +335,7 @@ private struct ProfileStampView: View {
                         ProfileBadge(id: "1", kind: .fullRoll, earnedAt: DateComponents(calendar: .current, year: 2026, month: 8, day: 2).date ?? .now),
                         ProfileBadge(id: "2", kind: .darkroom, earnedAt: DateComponents(calendar: .current, year: 2026, month: 8, day: 14).date ?? .now),
                         ProfileBadge(id: "3", kind: .firstIn, earnedAt: DateComponents(calendar: .current, year: 2026, month: 9, day: 1).date ?? .now),
-                    ],
-                    frameCount: 128,
-                    rollCount: 9,
-                    shootingSince: DateComponents(calendar: .current, year: 2026, month: 8, day: 1).date ?? .now
+                    ]
                 ),
                 viewerBadgeKindIds: []
             )
@@ -257,10 +363,7 @@ private struct ProfileStampView: View {
                         ProfileBadge(id: "1", kind: .fullRoll, earnedAt: DateComponents(calendar: .current, year: 2026, month: 8, day: 2).date ?? .now),
                         ProfileBadge(id: "2", kind: .darkroom, earnedAt: DateComponents(calendar: .current, year: 2026, month: 8, day: 14).date ?? .now),
                         ProfileBadge(id: "3", kind: .firstIn, earnedAt: DateComponents(calendar: .current, year: 2026, month: 9, day: 1).date ?? .now),
-                    ],
-                    frameCount: 128,
-                    rollCount: 9,
-                    shootingSince: DateComponents(calendar: .current, year: 2026, month: 8, day: 1).date ?? .now
+                    ]
                 ),
                 viewerBadgeKindIds: [ProfileBadgeKind.fullRoll.rawValue, ProfileBadgeKind.darkroom.rawValue]
             )
@@ -278,14 +381,8 @@ private struct ProfileStampView: View {
                 FrameNumberLabel(number: 4108)
             }
             .padding(.horizontal, 28)
-            // No badges, no stats: this view renders nothing below the number, on purpose.
-            ProfileIdentityStrip(identity: ProfileIdentity(
-                signupNumber: 4108,
-                badges: [],
-                frameCount: 0,
-                rollCount: 0,
-                shootingSince: nil
-            ))
+            // No badges: this view renders nothing below the number, on purpose.
+            ProfileIdentityStrip(identity: ProfileIdentity(signupNumber: 4108, badges: []))
         }
         .padding(.vertical, 40)
     }
@@ -309,10 +406,7 @@ private struct ProfileStampView: View {
                         ProfileBadge(id: "1", kind: .firstLight, earnedAt: DateComponents(calendar: .current, year: 2026, month: 6, day: 2).date ?? .now),
                         ProfileBadge(id: "2", kind: .darkroom, earnedAt: DateComponents(calendar: .current, year: 2026, month: 7, day: 14).date ?? .now),
                         ProfileBadge(id: "3", kind: .fullRoll, earnedAt: .now),
-                    ],
-                    frameCount: 42,
-                    rollCount: 4,
-                    shootingSince: DateComponents(calendar: .current, year: 2026, month: 6, day: 1).date ?? .now
+                    ]
                 ),
                 unseenBadgeIds: ["3"],
                 // Own profile: every badge shown is one the viewer already holds, so no how-to
@@ -322,4 +416,136 @@ private struct ProfileStampView: View {
         }
         .padding(.vertical, 40)
     }
+}
+
+// MARK: - Wrap-layout regression coverage (one, six, fourteen badges)
+//
+// These exist specifically so the row-overflow bug can't come back silently: one badge must
+// still read as deliberate rather than a stray fragment, six is the exact count from the device
+// report that started this, and fourteen is the full catalog (all twelve automatic kinds plus
+// the two hand-granted ones) now that `joined_in`, `chipped_in`, `shared`, `well_met`, and
+// `full_house` are real cases rather than a queued five.
+
+#Preview("Wrap: one badge") {
+    ZStack {
+        FlimTheme.bg.ignoresSafeArea()
+        VStack(spacing: 20) {
+            HStack {
+                Spacer()
+                FrameNumberLabel(number: 4108)
+            }
+            .padding(.horizontal, 28)
+            // A single stamp should still read as deliberate, centred typography, not like a
+            // one-cell grid with a dangling remainder.
+            ProfileIdentityStrip(
+                identity: ProfileIdentity(
+                    signupNumber: 4108,
+                    badges: [
+                        ProfileBadge(id: "1", kind: .firstLight, earnedAt: DateComponents(calendar: .current, year: 2026, month: 8, day: 2).date ?? .now),
+                    ]
+                ),
+                viewerBadgeKindIds: [ProfileBadgeKind.firstLight.rawValue]
+            )
+        }
+        .padding(.vertical, 40)
+    }
+}
+
+#Preview("Wrap: six badges (device parity)") {
+    // The exact count from the on-device report, Founding 100 first (the stamp that was clipped
+    // by the left edge): must wrap onto multiple centred lines, never overflow the screen.
+    ZStack {
+        FlimTheme.bg.ignoresSafeArea()
+        VStack(spacing: 20) {
+            HStack {
+                Spacer()
+                FrameNumberLabel(number: 37)
+            }
+            .padding(.horizontal, 28)
+            ProfileIdentityStrip(
+                identity: ProfileIdentity(
+                    signupNumber: 37,
+                    badges: [
+                        ProfileBadge(id: "1", kind: .founding100, earnedAt: DateComponents(calendar: .current, year: 2026, month: 6, day: 2).date ?? .now),
+                        ProfileBadge(id: "2", kind: .firstLight, earnedAt: DateComponents(calendar: .current, year: 2026, month: 6, day: 3).date ?? .now),
+                        ProfileBadge(id: "3", kind: .fullRoll, earnedAt: DateComponents(calendar: .current, year: 2026, month: 6, day: 20).date ?? .now),
+                        ProfileBadge(id: "4", kind: .darkroom, earnedAt: DateComponents(calendar: .current, year: 2026, month: 7, day: 1).date ?? .now),
+                        ProfileBadge(id: "5", kind: .firstIn, earnedAt: DateComponents(calendar: .current, year: 2026, month: 7, day: 14).date ?? .now),
+                        ProfileBadge(id: "6", kind: .rollMaker, earnedAt: DateComponents(calendar: .current, year: 2026, month: 8, day: 1).date ?? .now),
+                    ]
+                ),
+                viewerBadgeKindIds: Set(ProfileBadgeKind.allCases.map(\.rawValue))
+            )
+        }
+        .padding(.vertical, 40)
+    }
+}
+
+/// Every `ProfileBadgeKind`, one stamp each, for the wrap-layout stress previews below: the full
+/// fourteen-badge catalog is now a realistic count (twelve automatic, plus the two hand-granted
+/// ones a founding/test account could also hold), not a padded fixture the way the old
+/// eleven-badge version was before these five kinds existed for real.
+private let allCatalogStampBadges: [ProfileBadge] = ProfileBadgeKind.allCases
+    .enumerated()
+    .map { index, kind in
+        ProfileBadge(
+            id: "\(index)",
+            kind: kind,
+            earnedAt: DateComponents(calendar: .current, year: 2026, month: 1 + (index % 12), day: 1).date ?? .now
+        )
+    }
+
+#Preview("Wrap: fourteen badges (full catalog)") {
+    ZStack {
+        FlimTheme.bg.ignoresSafeArea()
+        VStack(spacing: 20) {
+            HStack {
+                Spacer()
+                FrameNumberLabel(number: 12)
+            }
+            .padding(.horizontal, 28)
+            ProfileIdentityStrip(
+                identity: ProfileIdentity(signupNumber: 12, badges: allCatalogStampBadges),
+                viewerBadgeKindIds: Set(ProfileBadgeKind.allCases.map(\.rawValue))
+            )
+        }
+        .padding(.vertical, 40)
+    }
+}
+
+#Preview("Wrap: fourteen badges, largest Dynamic Type, narrowest device") {
+    ZStack {
+        FlimTheme.bg.ignoresSafeArea()
+        VStack(spacing: 20) {
+            HStack {
+                Spacer()
+                FrameNumberLabel(number: 12)
+            }
+            .padding(.horizontal, 28)
+            ProfileIdentityStrip(
+                identity: ProfileIdentity(signupNumber: 12, badges: allCatalogStampBadges),
+                viewerBadgeKindIds: Set(ProfileBadgeKind.allCases.map(\.rawValue))
+            )
+        }
+        .padding(.vertical, 40)
+    }
+    .frame(width: 375)   // iPhone SE width, the narrowest device FLIM still supports
+    .dynamicTypeSize(FlimTypeScale.maximum)
+}
+
+#Preview("Stamp explanation popover: longest copy, largest Dynamic Type, narrowest device") {
+    // `fullRoll` carries both the longest explanation AND the longest how-to line in the
+    // catalog, the worst case for the popover's height, checked on the narrowest device FLIM
+    // still supports at the largest type size the app allows.
+    ZStack {
+        FlimTheme.bg.ignoresSafeArea()
+        BadgeExplanationPopover(
+            explanation: ProfileBadgeKind.fullRoll.explanation,
+            howToEarn: ProfileBadgeKind.fullRoll.howToEarn
+        )
+        .background(FlimTheme.bgElevated, in: RoundedRectangle(cornerRadius: 14))
+        .padding(20)
+    }
+    .frame(width: 375)
+    .dynamicTypeSize(FlimTypeScale.maximum)
 }

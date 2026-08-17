@@ -333,6 +333,13 @@ struct RollDetailView: View {
             RollRevealView(rollId: roll.id, rollName: displayName.isEmpty ? roll.name : displayName,
                            photos: chronologicalDeveloped, memberNames: memberNames)
         }
+        .onChange(of: showReveal) { wasShowing, isShowing in
+            // Finishing a reveal is one of the two moments a badge most plausibly just became
+            // true (full_house, chipped_in, joined_in, roll_maker, darkroom all key off roll or
+            // photo activity around exactly this roll). Fire-and-forget: worst case is the tab
+            // dot catching up a moment later, never a blocking spinner on the roll screen.
+            if wasShowing, !isShowing { Task { await feed.refreshOwnBadges() } }
+        }
         .sheet(isPresented: $showMembers) {
             RollMembersView(roll: roll)
         }
