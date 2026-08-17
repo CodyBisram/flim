@@ -408,6 +408,9 @@ struct FeedPostCard: View {
     /// Which post in `group` is currently showing. Only meaningful (and only ever moved by the
     /// user) when `group.count > 1`; a single-post group never leaves 0.
     @State private var currentIndex = 0
+    /// Live horizontal offset while a multi-post card's swipe is in flight; always settles back
+    /// to 0. See `swipeGesture`.
+    @State private var dragX: CGFloat = 0
     @State private var urlByPost: [UUID: URL] = [:]
     @State private var avatarURL: URL?
     /// Keyed per post rather than one shared field, so switching photos mid-draft doesn't lose
@@ -524,34 +527,52 @@ struct FeedPostCard: View {
             if group.count > 1 {
                 // Multiple posts from the same run: swipeable, with a position indicator so the
                 // reaction/comment counts changing underneath you as you swipe reads as "a
-                // different post", not a glitch. The horizontal page transition itself, plus the
-                // haptic and the numeric readout below both firing only once a swipe actually
-                // completes, is what makes that read as deliberate rather than accidental.
-                TabView(selection: $currentIndex) {
-                    ForEach(Array(group.items.enumerated()), id: \.offset) { index, groupItem in
-                        photoContent(for: groupItem, isCurrent: index == safeIndex)
-                            .tag(index)
+                // different post", not a glitch. The haptic and the numeric readout below both
+                // firing only once a swipe actually completes is what makes that read as
+                // deliberate rather than accidental.
+                //
+                // Deliberately NOT `TabView(.page)`, which is what this branch used until this
+                // fix. PhotoPagerView and RollCarouselView (see their own comments, on `pager`
+                // and on this same ZStack respectively) each hit the identical defect — a swipe
+                // settling with the next photo's dead space sliced into frame — three separate
+                // times, from three different root causes, and both abandoned TabView(.page) for
+                // plain state advancing a single mounted photo. This follows RollCarouselView's
+                // shape: there is no swipe-to-dismiss to disambiguate against here (that only
+                // exists in a full-screen viewer), so the swipe gesture below is the only thing
+                // this needs, and it never mounts a neighbouring photo for a desynced TabView to
+                // leak into frame in the first place.
+                //
+                // What neither of those two views had to solve: this card sits inside the feed's
+                // own vertical `ScrollView`. `.simultaneousGesture`, not `.gesture` — a plain
+                // `.gesture` would compete for every touch that starts on the card, including a
+                // vertical scroll, and freeze the feed's own pan the instant a finger goes down on
+                // a photo. Attached alongside the ScrollView's pan recognizer instead, both get to
+                // see every touch; `swipeGesture` only ever acts (moves the photo, or counts as a
+                // completed swipe) when the horizontal component actually dominates, so a vertical
+                // drag on the card is left entirely to the ScrollView, exactly as it is over a
+                // single-post card.
+                //
+                // No forced aspect ratio either, unlike the old TabView branch: that only existed
+                // because a paging TabView needs a fixed frame to swipe cleanly between pages.
+                // Mounting one photo at a time has no such requirement, so this sizes exactly the
+                // way a single-post card's `photoContent` already does, and a multi-post card
+                // presents each photo identically to how a lone card would.
+                photoContent(for: item)
+                    .id(item.post.id)
+                    .transition(.opacity)
+                    .offset(x: dragX)
+                    .simultaneousGesture(swipeGesture)
+                    .overlay(alignment: .topTrailing) { positionIndicator }
+                    // Deleting the currently-shown post (or any post before it) shifts everything
+                    // after it down by one and shrinks `group.count`; without this, `currentIndex`
+                    // itself would keep pointing past the new end until the next swipe, which is a
+                    // valid index for nothing. `safeIndex` already guards every READ of
+                    // `item`/`post`, this keeps `currentIndex` itself in sync with the same bound.
+                    .onChange(of: group.count) { _, newCount in
+                        currentIndex = min(currentIndex, newCount - 1)
                     }
-                }
-                .tabViewStyle(.page(indexDisplayMode: .never))
-                // Pages need a fixed frame to swipe between cleanly; a lone card instead lets its
-                // own image dictate the height via `.scaledToFit()`, which is why only this branch
-                // fixes an aspect ratio.
-                .aspectRatio(3.0 / 4.0, contentMode: .fit)
-                .frame(maxWidth: .infinity)
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-                .onChange(of: currentIndex) { _, _ in Haptics.tap() }
-                // Deleting the currently-shown post (or any post before it) shifts everything
-                // after it down by one and shrinks `group.count`; without this, `currentIndex`
-                // itself would keep pointing past the new end until the next swipe, which is a
-                // valid tag for nothing. `safeIndex` already guards every READ of `item`/`post`,
-                // this keeps the TabView's own selection binding in sync with the same bound.
-                .onChange(of: group.count) { _, newCount in
-                    currentIndex = min(currentIndex, newCount - 1)
-                }
-                .overlay(alignment: .topTrailing) { positionIndicator }
             } else {
-                photoContent(for: item, isCurrent: true)
+                photoContent(for: item)
             }
 
             if let caption = post.caption, !caption.isEmpty {
@@ -865,14 +886,16 @@ struct FeedPostCard: View {
     }
 
     /// One photo of the card: the image itself plus everything drawn on top of it (grain, tags,
-    /// the double-tap heart). Shared by the single-post card and every page of a multi-post one,
-    /// so a swipeable card's pages look and behave exactly like a lone card's photo does.
+    /// the double-tap heart). Shared by the single-post card and a multi-post one, so a
+    /// swipeable card's current photo looks and behaves exactly like a lone card's photo does.
     ///
-    /// Gestures and the context menu inside always act on `item`/`post` (the CURRENT photo), not
-    /// on `groupItem`: a `TabView(.page)` only makes the page actually on screen hit-testable, and
-    /// that page is `item` by construction, so this is never actually ambiguous in practice.
+    /// Only ever called with `item`, the CURRENT photo: unlike the `TabView(.page)` this replaced,
+    /// which mounted every page in the group at once and needed `isCurrent` to tell them apart, a
+    /// multi-post card now mounts this exactly once, swapped by `currentIndex` (see the multi-post
+    /// branch above), so there is never a second, off-screen instance of this for anything inside
+    /// it to be ambiguous about.
     @ViewBuilder
-    private func photoContent(for groupItem: FeedItem, isCurrent: Bool) -> some View {
+    private func photoContent(for groupItem: FeedItem) -> some View {
         Group {
             if let photoURL = urlByPost[groupItem.post.id] {
                 CachedImage(url: photoURL, maxPixel: 1400, cacheKey: groupItem.post.cardPath) { image in
@@ -887,15 +910,13 @@ struct FeedPostCard: View {
             .frame(maxWidth: .infinity)
             .overlay { GrainOverlay().opacity(0.5) }
             .overlay {
-                if isCurrent {
-                    Image(systemName: "heart.fill")
-                        .font(.system(size: 90))
-                        .foregroundStyle(.white)
-                        .shadow(radius: 8)
-                        .scaleEffect(heartBurst ? 1 : 0.4)
-                        .opacity(heartBurst ? 0.9 : 0)
-                        .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.55), value: heartBurst)
-                }
+                Image(systemName: "heart.fill")
+                    .font(.system(size: 90))
+                    .foregroundStyle(.white)
+                    .shadow(radius: 8)
+                    .scaleEffect(heartBurst ? 1 : 0.4)
+                    .opacity(heartBurst ? 0.9 : 0)
+                    .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.55), value: heartBurst)
             }
             .overlay {
                 PhotoTags(tags: feed.tagsByPost[groupItem.post.id] ?? [], profiles: feed.tagProfiles) { route = ProfileRoute(id: $0) }
@@ -942,6 +963,33 @@ struct FeedPostCard: View {
                 }
             }
             .clipShape(Circle())
+    }
+
+    /// Advances between a multi-post card's photos on a horizontal swipe, following the finger
+    /// and resisting at the first/last post the same way `PhotoPagerView` and `RollCarouselView`
+    /// do (same free functions, same feel). See the multi-post branch above for why this is
+    /// `simultaneousGesture` rather than `gesture`: both `onChanged` and `onEnded` bail out
+    /// whenever the drag's vertical component dominates, so a vertical drag never nudges the
+    /// photo and is left entirely to the feed's own `ScrollView`.
+    private var swipeGesture: some Gesture {
+        DragGesture(minimumDistance: 20)
+            .onChanged { value in
+                guard abs(value.translation.width) > abs(value.translation.height) else { return }
+                dragX = pagingDragOffset(width: value.translation.width, index: safeIndex, count: group.count)
+            }
+            .onEnded { value in
+                withAnimation(.easeOut(duration: 0.18)) { dragX = 0 }
+                guard abs(value.translation.width) > abs(value.translation.height),
+                      let delta = pagingStep(forDragWidth: value.translation.width) else { return }
+                step(delta)
+            }
+    }
+
+    private func step(_ delta: Int) {
+        let next = safeIndex + delta
+        guard group.items.indices.contains(next) else { return }
+        Haptics.tap()
+        withAnimation(.easeOut(duration: 0.22)) { currentIndex = next }
     }
 
     private func doubleTapLike() {
