@@ -65,7 +65,25 @@ struct FollowingList<Accessory: View>: View {
                 .foregroundStyle(.white).tint(accent)
                 .autocorrectionDisabled()
                 .textInputAutocapitalization(.never)
+            // Deliberately a button rather than clearing the query automatically when someone is
+            // picked. This list is multi-select: tagging three people whose names all start with
+            // the same letters is one search and three taps, and auto-clearing would make it one
+            // search per person. Clearing is the less common intent, so it gets a control instead
+            // of happening on its own. Same mark and reasoning as CommentComposer's own clear.
+            if !query.isEmpty {
+                Button {
+                    Haptics.tap()
+                    query = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 17))
+                        .foregroundStyle(FlimTheme.textTertiary)
+                }
+                .accessibilityLabel("Clear search")
+                .transition(.scale.combined(with: .opacity))
+            }
         }
+        .animation(.snappy(duration: 0.2), value: query.isEmpty)
         .padding(.horizontal, 14).padding(.vertical, 11)
         .background(FlimTheme.bgElevated, in: Capsule())
         .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 12)
