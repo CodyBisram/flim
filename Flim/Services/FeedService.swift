@@ -40,10 +40,31 @@ final class FeedService {
     var tagProfiles: [UUID: UserProfile] = [:]
 
     // Infinite-scroll pagination.
+    //
+    // Keyset (cursor), not offset: `posts` has no uniqueness on `created_at` and is inserted into
+    // constantly, so a page fetched by ROW POSITION (`.range(from:to:)`) silently drifts under
+    // concurrent writes. An insert above the window shifts every row below it down by one, so the
+    // next page re-asks for positions that now hold rows already shown (a duplicate); a delete
+    // shifts everything the other way, so the next page skips a row nobody ever saw. Anchoring to
+    // the last-loaded row's own place in the feed's order, and asking for "everything after that
+    // point" rather than "rows N through M", makes both classes of drift impossible: inserting or
+    // deleting anywhere in the list can never move where an already-anchored cursor points.
     private let feedPageSize = 15
-    private var feedOffset = 0
+    private var feedCursor: FeedCursor?
     var hasMoreFeed = true
     var isLoadingMoreFeed = false
+
+    /// A boundary in the feed's own `created_at DESC, id DESC` order: "everything strictly after
+    /// this row", see `keysetFilter(after:)`. `id` is the tiebreaker `created_at` alone can't be:
+    /// `posts.created_at` is `TIMESTAMPTZ DEFAULT NOW()` with no uniqueness constraint, so two posts
+    /// sharing the exact same timestamp (same insert transaction, e.g. a seed script, or two shares
+    /// landing in the same request) are a real, not hypothetical, case. `id` is a primary key, so
+    /// pairing it with `created_at` is always a strict total order, and a tie is resolved the same
+    /// way every time rather than by insertion-order luck.
+    struct FeedCursor: Equatable {
+        let createdAt: Date
+        let id: UUID
+    }
 
     // MARK: - Follows
 
@@ -490,8 +511,57 @@ final class FeedService {
         feedError = nil
         activityError = nil
         hasMoreFeed = true
+        feedCursor = nil
         isLoadingMoreFeed = false
         isLoadingFeed = false
+    }
+
+    // MARK: - Feed pagination (pure)
+    //
+    // Pulled out of `loadMoreFeed` so the cursor-advance and tie-break rules are one decision,
+    // tested once, rather than trusted inline in a function that also does network I/O.
+
+    /// Where keyset pagination should resume after `page` (already ordered `created_at DESC, id
+    /// DESC`, `loadMoreFeed`'s own query order): the last row's place in that order, so the next
+    /// fetch can ask for "everything after this point" instead of a row count.
+    ///
+    /// `nil` for an empty page: there is no row to anchor to, so the caller should leave whatever
+    /// cursor it already had alone rather than clobber it with nothing.
+    static func nextFeedCursor(afterPage page: [Post]) -> FeedCursor? {
+        guard let last = page.last else { return nil }
+        return FeedCursor(createdAt: last.createdAt, id: last.id)
+    }
+
+    /// Raw PostgREST filter syntax for "strictly after `cursor` in `created_at DESC, id DESC`
+    /// order": `created_at < cursor.createdAt`, OR tied on `created_at` and `id < cursor.id`.
+    ///
+    /// The tie branch is not defensive padding. `posts.created_at` has no uniqueness constraint, so
+    /// two posts sharing the exact timestamp (the same insert transaction: a seed script, or two
+    /// shares landing in the same request) are a real case, and a bare `created_at < cursor` would
+    /// silently drop every post that shares the boundary timestamp with it. Comparing `id` too, in
+    /// the same direction as the query's own secondary `.order`, turns the pair into a strict total
+    /// order: a tie is resolved the same way on every page, so nothing at or before the cursor is
+    /// ever re-fetched, and nothing strictly after it is ever skipped.
+    static func keysetFilter(after cursor: FeedCursor) -> String {
+        // `.rawValue` (the encoding `.lt`/`.eq`/etc. use for a `Date` argument) is ambiguous here:
+        // both PostgREST's and Realtime's `*FilterValue` conformances for `Date` are visible through
+        // `import Supabase`. Formatted explicitly instead, with the same options PostgREST's own
+        // conformance uses, so the two stay in sync.
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let ts = formatter.string(from: cursor.createdAt)
+        return "created_at.lt.\(ts),and(created_at.eq.\(ts),id.lt.\(cursor.id.uuidString))"
+    }
+
+    /// `page`, minus anything already in `existingIds`.
+    ///
+    /// A backstop, not the primary defense: `keysetFilter(after:)`'s own `id <` comparison should
+    /// already make a re-fetch of an already-shown row impossible. This exists so that even if that
+    /// guarantee were ever violated (a future query change, a server-side quirk at the exact tie
+    /// boundary), a duplicate still can't reach `feed.append(contentsOf:)`, which is the append this
+    /// pagination rewrite exists to make safe.
+    static func dedupedItems(_ page: [FeedItem], excluding existingIds: Set<UUID>) -> [FeedItem] {
+        page.filter { !existingIds.contains($0.post.id) }
     }
 
     // MARK: - Feed
@@ -516,7 +586,7 @@ final class FeedService {
         // pull-to-refresh is hosted on the ScrollView that only exists while `feed` is non-empty,
         // so that flash-to-empty tears the scroll view down mid-pull, cancelling this very load:
         // the reported "Couldn't load / CancellationError" was that reset, not a real failure.
-        feedOffset = 0
+        feedCursor = nil
         hasMoreFeed = true
         await loadMoreFeed(currentUserId: currentUserId, replacingFeed: true)
     }
@@ -537,18 +607,33 @@ final class FeedService {
         var authorIds = Array(followingIds)
         authorIds.append(currentUserId)
 
-        // Keep pulling pages until we have visible items, so a page that's entirely blocked
-        // users doesn't leave nothing to trigger the next load (which would stall pagination).
+        // Ids already on screen, so a keyset page that re-returns a row exactly at the cursor
+        // boundary (see `FeedCursor`'s tiebreaker) is caught client-side too, not just by the
+        // query's own `id <` comparison. Snapshotted once, not re-read per loop iteration:
+        // `replacingFeed`'s page is about to replace `feed` outright, so there is nothing to dedup
+        // against, and showing the same top posts again on a pull-to-refresh is correct, not a bug.
+        let existingIds: Set<UUID> = replacingFeed ? [] : Set(feed.map(\.post.id))
+
+        // Keep pulling pages until we have visible items, so a page that's entirely blocked users
+        // (or, at the boundary, entirely a duplicate of what's already shown) doesn't leave nothing
+        // to trigger the next load, which would stall pagination.
         var items: [FeedItem] = []
         while hasMoreFeed, items.isEmpty {
             let posts: [Post]
             do {
-                posts = try await supabase
+                // Keyset, not offset: `.range(from:to:)` asks for a row POSITION, which drifts
+                // under concurrent inserts/deletes into `posts` (see the property comment on
+                // `feedCursor`). Anchoring to the last-loaded row and asking for everything after it
+                // in the same `created_at DESC, id DESC` order is immune to both.
+                let filtered = supabase
                     .from("posts").select()
                     .in("user_id", values: authorIds.map(\.uuidString))
                     .eq("hidden", value: false)
+                let cursored = feedCursor.map { filtered.or(FeedService.keysetFilter(after: $0)) } ?? filtered
+                posts = try await cursored
                     .order("created_at", ascending: false)
-                    .range(from: feedOffset, to: feedOffset + feedPageSize - 1)
+                    .order("id", ascending: false)
+                    .limit(feedPageSize)
                     .execute().value
             } catch {
                 guard AccountEpoch.isCurrent(epoch) else { return }
@@ -567,19 +652,24 @@ final class FeedService {
             }
             // Guarded here, not only before the final append. This loop writes pagination state
             // the moment the page lands, so a stale response could advance the NEW account's
-            // offset and switch off its `hasMoreFeed` before anything visible was appended,
+            // cursor and switch off its `hasMoreFeed` before anything visible was appended,
             // truncating a feed that had only just been reset.
             guard AccountEpoch.isCurrent(epoch) else { return }
             feedError = nil
 
-            feedOffset += posts.count
+            // Advanced from the raw page, before blocked-user filtering or dedup, exactly like the
+            // old offset advanced by the raw `posts.count`: the cursor must move past every row this
+            // page looked at, even the ones that end up filtered out, or the next fetch would just
+            // ask for the same page again.
+            if let next = FeedService.nextFeedCursor(afterPage: posts) { feedCursor = next }
             if posts.count < feedPageSize { hasMoreFeed = false }
 
             let visible = posts.filter { !blockedIds.contains($0.userId) }
             let profiles = await fetchProfiles(ids: Array(Set(visible.map(\.userId))))
-            items = visible.compactMap { post in
+            let candidates = visible.compactMap { post in
                 profiles[post.userId].map { FeedItem(post: post, author: $0) }
             }
+            items = FeedService.dedupedItems(candidates, excluding: existingIds)
         }
         guard !items.isEmpty else {
             // A fresh load that genuinely has nothing to show (e.g. everyone followed was

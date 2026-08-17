@@ -259,4 +259,80 @@ final class FeedServiceTests: XCTestCase {
         let ranked = FeedService.rank([newer, older])
         XCTAssertEqual(ranked.map(\.id), [older.id, newer.id])
     }
+
+    // MARK: - nextFeedCursor(afterPage:) / keysetFilter(after:) / dedupedItems(_:excluding:)
+    //
+    // `loadMoreFeed`'s keyset pagination, pulled out as pure functions so the cursor-advance and
+    // tie-break rules are pinned once instead of trusted inline in a function that also does
+    // network I/O. See the fix for the duplicate-posts bug: paging by row POSITION
+    // (`.range(from:to:)`) drifted under concurrent inserts/deletes into `posts`; anchoring to the
+    // last-loaded row's own place in the feed's `created_at DESC, id DESC` order cannot drift,
+    // because nothing about inserting or deleting elsewhere in that order can move where an
+    // already-anchored row sits relative to its own neighbors.
+
+    /// A page is already ordered `created_at DESC, id DESC` by the query itself, so the LAST post
+    /// in the array is the oldest one shown, i.e. the correct anchor for "everything after this".
+    /// Anchoring to the first post instead would re-request rows already on screen forever.
+    func testNextFeedCursorAnchorsToTheLastPostInThePage() {
+        let newest = post(photoId: UUID())
+        let middle = post(photoId: UUID())
+        let oldest = post(photoId: UUID())
+        let cursor = FeedService.nextFeedCursor(afterPage: [newest, middle, oldest])
+        XCTAssertEqual(cursor, FeedService.FeedCursor(createdAt: oldest.createdAt, id: oldest.id))
+    }
+
+    /// An empty page (the end of the feed, or a page that was entirely filtered) has no row to
+    /// anchor to; `loadMoreFeed` relies on this to leave a still-valid cursor untouched rather than
+    /// overwrite it with nothing.
+    func testNextFeedCursorIsNilForAnEmptyPage() {
+        XCTAssertNil(FeedService.nextFeedCursor(afterPage: []))
+    }
+
+    /// The exact PostgREST filter syntax `loadMoreFeed` sends: strictly older than the cursor, OR
+    /// tied on `created_at` and strictly before it on `id`. Pinned as a literal string because the
+    /// duplicate/skip bug this replaces was exactly this kind of off-by-one in the comparison, not
+    /// something a looser assertion (e.g. "contains lt") would have caught.
+    func testKeysetFilterComparesCreatedAtThenBreaksTiesById() {
+        let id = UUID()
+        let cursor = FeedService.FeedCursor(createdAt: Date(timeIntervalSince1970: 1_700_000_000), id: id)
+        let filter = FeedService.keysetFilter(after: cursor)
+        XCTAssertEqual(
+            filter,
+            "created_at.lt.2023-11-14T22:13:20.000Z,and(created_at.eq.2023-11-14T22:13:20.000Z,id.lt.\(id.uuidString))"
+        )
+    }
+
+    /// Two posts sharing the exact boundary timestamp (the real case `created_at`'s missing
+    /// uniqueness constraint allows, e.g. a batch insert) still produce distinct filters keyed by
+    /// their own `id`, so a tie is resolved consistently rather than by whichever the client
+    /// happened to load first.
+    func testKeysetFilterDiffersForTwoCursorsAtTheSameTimestamp() {
+        let ts = Date(timeIntervalSince1970: 1_700_000_000)
+        let a = FeedService.FeedCursor(createdAt: ts, id: UUID())
+        let b = FeedService.FeedCursor(createdAt: ts, id: UUID())
+        XCTAssertNotEqual(FeedService.keysetFilter(after: a), FeedService.keysetFilter(after: b))
+    }
+
+    private func feedItem(post: Post) -> FeedItem {
+        let author = UserProfile(id: post.userId, username: "a", avatarPath: nil, bio: nil,
+                                  displayName: nil, coverPath: nil, createdAt: .now)
+        return FeedItem(post: post, author: author)
+    }
+
+    /// The backstop behind the keyset query's own `id <` tiebreaker: a post already on screen is
+    /// dropped from a newly-fetched page rather than appended a second time.
+    func testDedupedItemsDropsPostsAlreadyInExistingIds() {
+        let kept = feedItem(post: post(photoId: UUID()))
+        let duplicate = feedItem(post: post(photoId: UUID()))
+        let result = FeedService.dedupedItems([kept, duplicate], excluding: [duplicate.post.id])
+        XCTAssertEqual(result.map(\.post.id), [kept.post.id])
+    }
+
+    /// A refresh's `existingIds` is empty (`loadMoreFeed` never dedups a `replacingFeed` page
+    /// against the feed it's about to replace), so every item in the page survives unchanged.
+    func testDedupedItemsKeepsEverythingWhenExcludingNothing() {
+        let items = [feedItem(post: post(photoId: UUID())), feedItem(post: post(photoId: UUID()))]
+        let result = FeedService.dedupedItems(items, excluding: [])
+        XCTAssertEqual(result.map(\.post.id), items.map(\.post.id))
+    }
 }
