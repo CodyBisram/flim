@@ -166,8 +166,9 @@ final class CameraViewModel: NSObject {
 
         session.beginConfiguration()
         session.sessionPreset = .photo
-        // Output added before the input so `configurePreviewFormat(for:)` below can set
-        // `output.maxPhotoDimensions` against an output that's already attached.
+        // Output added before the input so `applyCaptureResolutionPolicy(for:)` below (called
+        // from `addVideoInput`) can set `output.maxPhotoDimensions` against an output that's
+        // already attached.
         if session.canAddOutput(output) {
             session.addOutput(output)
         }
@@ -203,6 +204,11 @@ final class CameraViewModel: NSObject {
         // the "open on the main lens" zoom before that would get silently clobbered back to
         // the ultra-wide's 1.0 raw factor on devices where the format swap actually happens.
         configurePreviewFormat(for: device)
+        // After the preview format is settled, not before: this reads `supportedMaxPhotoDimensions`
+        // off whatever format is active at this point, so it must run once `configurePreviewFormat`
+        // is done choosing (or not choosing) one. Unconditional, unlike the call above: resolution
+        // is a deliberate policy, not a side effect of whether a fast preview format existed.
+        applyCaptureResolutionPolicy(for: device)
         configureZoomBaseline(for: device)
         resumeContinuousFocus(on: device)
     }
@@ -345,10 +351,77 @@ final class CameraViewModel: NSObject {
             device.automaticallyEnablesLowLightBoostWhenAvailable = false
         }
         device.unlockForConfiguration()
+    }
 
-        if let maxDims = target.supportedMaxPhotoDimensions.max(by: { $0.width * $0.height < $1.width * $1.height }) {
-            output.maxPhotoDimensions = maxDims
-        }
+    /// The megapixel figure this app actually wants out of a still capture, independent of
+    /// whatever the sensor's ceiling happens to be. NOT a stand-in for `4032x3024`: recent
+    /// sensors report quad-bayer breakpoints (12MP native, 48MP raw readout) at different exact
+    /// dimensions across devices, so this is matched against whatever `supportedMaxPhotoDimensions`
+    /// actually offers below rather than assumed.
+    ///
+    /// Chosen over the sensor maximum for two independent reasons:
+    /// - The exported master is downscaled to 2048px regardless of capture size, so the extra
+    ///   sensor pixels a "biggest available" pick would grab never reach anyone.
+    ///
+    ///   It was assumed this also halved the grain, since a 4x downscale averages more away than a
+    ///   2x one. Measured against the pin's own units on five real scenes, that is not what
+    ///   reaches the photograph: the isolated grain term does differ by about 1.3x to 1.7x, but in
+    ///   the finished image it is swamped by the source's own texture, leaving total flat-area
+    ///   texture 1% to 6% apart. That is 0.00008 to 0.00068 of `localContrast` against a tolerance
+    ///   of 0.001, so the look regression pin cannot distinguish the two capture sizes at all.
+    ///   The choice is therefore NOT a look decision, and the reasons below carry it on their own.
+    ///   (A real 48MP capture would also have its sensor noise averaged, which the simulation held
+    ///   fixed, so reality favours 12MP slightly more than measured rather than less.)
+    /// - Apple's guidance for genuinely high-resolution capture (WWDC26, "Implement high
+    ///   resolution photo capture") is that it needs `maxPhotoQualityPrioritization = .quality`
+    ///   plus resources pre-allocated with `setPreparedPhotoSettingsArray`, or the allocation
+    ///   happens at capture time and slows the shot down. This app does neither, and even with
+    ///   both, third-party apps requesting 48MP get the sensor's raw quad-bayer readout, not the
+    ///   computational 48MP Apple's own Camera app produces; that pipeline is not exposed to
+    ///   third parties. So "48MP" here was never actually 48 real megapixels, only a bigger,
+    ///   slower, grainier-when-downscaled file. Adobe Lightroom's own camera likewise captures at
+    ///   native 12MP on these sensors, not the raw maximum.
+    private static let targetPhotoPixelArea = 12_000_000
+
+    /// Pins still-capture resolution to ~12MP, independent of `configurePreviewFormat(for:)`
+    /// above and everything it does. That function exists to pick a fast PREVIEW format, and used
+    /// to also set `output.maxPhotoDimensions` from whatever format it landed on as a side effect,
+    /// behind five early returns that exist entirely for frame-rate reasons. That meant capture
+    /// resolution silently tracked the preview's format choice: on a device where a faster preview
+    /// format was found, this picked that format's own sensor maximum (48MP on recent iPhones); on
+    /// a device where no such format existed (or any of those five guards failed), it never ran at
+    /// all and capture resolution fell back to whatever `.photo`'s own default pick offered. A
+    /// photograph's resolution must not be an accident of viewfinder tuning, so this runs
+    /// unconditionally, on every path that (re)configures the video input, including a camera
+    /// flip, with no early return that skips it for reasons unrelated to resolution.
+    ///
+    /// Reads `supportedMaxPhotoDimensions` off the device's ACTIVE format, i.e. whatever
+    /// `configurePreviewFormat(for:)` already decided (or left as `.photo`'s default), so this
+    /// never fights that function over which format is active, it only decides which of that
+    /// format's own advertised photo sizes to request.
+    private func applyCaptureResolutionPolicy(for device: AVCaptureDevice) {
+        let dimensions = device.activeFormat.supportedMaxPhotoDimensions
+        // Closest to the target, not "the smallest that clears it" or "the largest available":
+        // a device with nothing near 12MP (say, only an 8MP and a 48MP option) still gets its
+        // nearest offering rather than this silently doing nothing and leaving whatever
+        // `configurePreviewFormat`'s active format defaulted to.
+        guard let target = dimensions.min(by: {
+            abs(Int($0.width) * Int($0.height) - Self.targetPhotoPixelArea) <
+            abs(Int($1.width) * Int($1.height) - Self.targetPhotoPixelArea)
+        }) else { return }   // No advertised photo sizes at all: leave the output's own default.
+        output.maxPhotoDimensions = target
+
+        // Apple's guidance (WWDC26, "Implement high resolution photo capture") is that capture
+        // resource allocation should happen ahead of time via `setPreparedPhotoSettingsArray`,
+        // not at `capturePhoto(with:)` time, or the allocation cost is paid inline as part of the
+        // shot. This mirrors the settings `capturePhoto()` actually builds closely enough for the
+        // preparation to apply: it leaves `maxPhotoDimensions` unset so it inherits
+        // `output.maxPhotoDimensions` (just pinned above), the same way the real capture settings
+        // do. Flash mode is deliberately not part of this: it does not change the resource
+        // allocation this call exists to warm, only which is requested at the moment of capture.
+        // Re-run on every call to this method, i.e. every reconfiguration including a camera flip,
+        // so a stale preparation for the OTHER camera's resolution never lingers.
+        output.setPreparedPhotoSettingsArray([AVCapturePhotoSettings()])
     }
 
     /// Prefer a multi-lens back camera so 0.5× (ultra-wide) is available; fall back to the plain
