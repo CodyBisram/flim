@@ -128,6 +128,8 @@ final class PhotoService {
     /// signing back in returns your unsent captures instead of finding them deleted.
     func resetForAccountChange() {
         loadedPhotos = []
+        hasMore = true
+        photoCursor = nil
         failedUploads = []
         uploadError = nil
         isUploading = false
@@ -1316,7 +1318,31 @@ final class PhotoService {
     private let pageSize = 30
     /// Whether another page is available for the current feed.
     private(set) var hasMore = true
-    private var loadedCount = 0
+
+    /// Keyset (cursor), not offset: `photos` has no uniqueness on `develops_at` and is written to
+    /// constantly, so a page fetched by ROW POSITION (`.range(from:to:)`) silently drifts under
+    /// concurrent writes. Distinctively for this table, the write that moves rows isn't only an
+    /// insert or delete: a ROLL REVEAL patches `develops_at`-crossing photos, or a whole roll's
+    /// worth of rows can land past the boundary the instant the roll's fixed reveal time (see
+    /// `rollRevealDate`) passes, shifting every position below it mid-scroll and re-serving rows
+    /// already shown. The project's own notes record this as two separate roll-count bugs.
+    /// Anchoring to the last-loaded row's own place in the query's order, and asking for
+    /// "everything after that point" rather than "rows N through M", makes that drift impossible.
+    private var photoCursor: PhotoCursor?
+
+    /// A boundary in `photos`' own `develops_at DESC, id DESC` order: "everything strictly after
+    /// this row", see `keysetFilter(after:)`. Compare `FeedService.FeedCursor`'s own doc, where a
+    /// `created_at` tie is a rare same-transaction collision: here a tie is the ORDINARY case, not
+    /// the edge case. `rollDevelopDelay` fixes one `develops_at` for an entire roll at creation
+    /// time, and every shot in that roll crosses it at THE SAME INSTANT when it reveals, so a
+    /// roll's photos routinely share one `develops_at` in a batch, not by coincidence. `id` (a
+    /// primary key) is what turns the pair into a strict total order regardless: a bare
+    /// `develops_at <` comparison would silently skip every photo sharing the boundary instant,
+    /// which for a roll reveal mid-scroll could be most of the roll, not a single stray row.
+    struct PhotoCursor: Equatable {
+        let developsAt: Date
+        let id: UUID
+    }
 
     func fetchPersonalPhotos(userId: UUID, reset: Bool = true) async throws {
         // Only sorted photos live in the Darkroom; unsorted instants wait in the sort deck.
@@ -1444,17 +1470,53 @@ final class PhotoService {
             .value
     }
 
-    /// Loads one page of photos (newest develop-time first), appending to `photos`. `reset`
-    /// starts a fresh feed; otherwise it continues from where the last page left off. Only
-    /// the visible pages are ever fetched, and signed URLs are resolved lazily per cell.
-    // Every mutation of `photos`/`hasMore`/`loadedCount`/`isLoading` below is wrapped in
-    // `MainActor.run`, this class isn't @MainActor-isolated, and once the network `await`
-    // suspends, execution resumes on a background executor by default. `photos` is read
-    // directly by SwiftUI grids/lists every time this app loads a page, so mutating it off the
-    // main thread while a render pass reads it is a real (if narrow-window) data race, not a
-    // hypothetical one, the same class of bug as the `MainActor.run` wraps already present
-    // elsewhere in this file (captureAndUpload, deletePhoto(s)), just missed here even though
-    // this is the single most-invoked mutator in the file (every Darkroom/roll list load).
+    // MARK: - Photo pagination (pure)
+    //
+    // Pulled out of `fetchPage` so the cursor-advance and tie-break rules are one decision,
+    // tested once, rather than trusted inline in a function that also does network I/O. Mirrors
+    // `FeedService`'s `nextFeedCursor`/`keysetFilter`/`dedupedItems` exactly, so the two pagers
+    // cannot drift apart from each other.
+
+    /// Where keyset pagination should resume after `page` (already ordered `develops_at DESC, id
+    /// DESC`, `fetchPage`'s own query order): the last row's place in that order, so the next
+    /// fetch can ask for "everything after this point" instead of a row count.
+    ///
+    /// `nil` for an empty page: there is no row to anchor to, so the caller should leave whatever
+    /// cursor it already had alone rather than clobber it with nothing.
+    static func nextPhotoCursor(afterPage page: [Photo]) -> PhotoCursor? {
+        guard let last = page.last else { return nil }
+        return PhotoCursor(developsAt: last.developsAt, id: last.id)
+    }
+
+    /// Raw PostgREST filter syntax for "strictly after `cursor` in `develops_at DESC, id DESC`
+    /// order": `develops_at < cursor.developsAt`, OR tied on `develops_at` and `id < cursor.id`.
+    /// Same shape as `FeedService.keysetFilter(after:)`; see `PhotoCursor`'s own doc for why the
+    /// tie branch is load-bearing far more often here than it is for the feed.
+    static func keysetFilter(after cursor: PhotoCursor) -> String {
+        // Same explicit formatting `FeedService.keysetFilter(after:)` uses, for the same reason:
+        // `.rawValue` is ambiguous between PostgREST's and Realtime's `*FilterValue`
+        // conformances for `Date`, both visible through `import Supabase`.
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let ts = formatter.string(from: cursor.developsAt)
+        return "develops_at.lt.\(ts),and(develops_at.eq.\(ts),id.lt.\(cursor.id.uuidString))"
+    }
+
+    /// `page`, minus anything already in `existingIds`.
+    ///
+    /// A backstop, not the primary defense: `keysetFilter(after:)`'s own `id <` comparison should
+    /// already make a re-fetch of an already-shown row impossible. This exists so that even if
+    /// that guarantee were ever violated, a duplicate still can't reach `loadedPhotos.append`.
+    static func dedupedPhotos(_ page: [Photo], excluding existingIds: Set<UUID>) -> [Photo] {
+        page.filter { !existingIds.contains($0.id) }
+    }
+
+    /// Loads one page of photos (newest develop-time first), appending to `loadedPhotos`. `reset`
+    /// starts a fresh list; otherwise it continues from where the last page left off. Only the
+    /// visible pages are ever fetched, and signed URLs are resolved lazily per cell.
+    ///
+    /// Keyset, not offset (see `photoCursor`'s own doc for why `.range(from:to:)` drifts under
+    /// concurrent writes to `photos`, roll reveals above all).
     private func fetchPage(
         reset: Bool,
         blockedIds: Set<UUID> = [],
@@ -1464,43 +1526,60 @@ final class PhotoService {
         let epoch = AccountEpoch.current
         let limit = pageSize ?? self.pageSize
         if reset {
-            await MainActor.run {
-                loadedCount = 0
-                hasMore = true
-                loadedPhotos = []
-            }
+            photoCursor = nil
+            hasMore = true
+            loadedPhotos = []
         }
         guard hasMore else { return }
 
-        await MainActor.run { isLoading = true }
+        isLoading = true
+        // Covers every return below, including the epoch guard inside the loop: without this,
+        // a response that arrives after an account switch left `isLoading` stuck true forever,
+        // the same discipline `FeedService.loadMoreFeed`'s own `isLoadingMoreFeed` uses.
+        defer { isLoading = false }
 
-        let base = supabase.from("photos").select()
-        let page: [Photo]
-        do {
-            page = try await filter(base)
+        // Ids already on screen, so a keyset page that re-returns a row exactly at the cursor
+        // boundary (see `PhotoCursor`'s tiebreaker) is caught client-side too, not just by the
+        // query's own `id <` comparison. Snapshotted once, not re-read per loop iteration: a
+        // `reset` page just cleared `loadedPhotos` above, so there is nothing yet to dedup
+        // against, and a fresh load showing the same top photos again would be correct anyway.
+        let existingIds: Set<UUID> = Set(loadedPhotos.map(\.id))
+
+        // Keep pulling pages until we have visible items, so a page that's entirely blocked
+        // users (or, at the boundary, entirely a duplicate of what's already shown) doesn't
+        // leave nothing to trigger the next load, which would stall pagination.
+        var visible: [Photo] = []
+        while hasMore, visible.isEmpty {
+            let base = supabase.from("photos").select()
+            let filtered = filter(base)
+            let cursored = photoCursor.map { filtered.or(PhotoService.keysetFilter(after: $0)) } ?? filtered
+            let page: [Photo] = try await cursored
                 .order("develops_at", ascending: false)
-                .range(from: loadedCount, to: loadedCount + limit - 1)
+                .order("id", ascending: false)
+                .limit(limit)
                 .execute()
                 .value
-        } catch {
-            await MainActor.run { isLoading = false }
-            throw error
+
+            // Discard a response that outlived its account. The request went out under whichever
+            // session was live when it started and returns THAT account's data, correctly;
+            // writing it here after a switch is what silently undoes the cache reset. Guarded
+            // here, not only before the final append: this loop writes pagination state the
+            // moment each page lands, so a stale response could advance the NEW account's cursor
+            // and switch off its `hasMore` before anything visible was appended, truncating a
+            // list that had only just been reset. See AccountEpoch.
+            guard AccountEpoch.isCurrent(epoch) else { return }
+
+            // Advanced from the RAW page, before blocked-user filtering or dedup: the cursor must
+            // move past every row this page looked at, even the ones filtered out, or the next
+            // fetch would just ask for the same page again.
+            if let next = PhotoService.nextPhotoCursor(afterPage: page) { photoCursor = next }
+            if page.count < limit { hasMore = false }
+
+            let candidates = blockedIds.isEmpty ? page : page.filter { !blockedIds.contains($0.userId) }
+            visible = PhotoService.dedupedPhotos(candidates, excluding: existingIds)
         }
 
-        // Discard a response that outlived its account. The request went out under whichever
-        // session was live when it started and returns THAT account's data, correctly; writing it
-        // here after a switch is what silently undoes the cache reset. See AccountEpoch.
-        guard AccountEpoch.isCurrent(epoch) else { return }
-        let visible = blockedIds.isEmpty ? page : page.filter { !blockedIds.contains($0.userId) }
-        await MainActor.run {
-            loadedPhotos.append(contentsOf: visible)
-            // Advance pagination by the raw page size (not the filtered count) so a
-            // blocked-heavy page doesn't get re-requested, the offset tracks server rows,
-            // not rendered ones.
-            loadedCount += page.count
-            if page.count < limit { hasMore = false }
-            isLoading = false
-        }
+        loadedPhotos.append(contentsOf: visible)
     }
 
     // MARK: - Signed URLs

@@ -869,6 +869,19 @@ CREATE POLICY "post_tags: owner removes"
         EXISTS (SELECT 1 FROM public.posts p WHERE p.id = post_id AND p.user_id = auth.uid())
     );
 
+-- Push notifications for a tag added AFTER its post was already announced ("Edit tags",
+-- FeedService.setTags): the "New posts" block in send-social-push only scans posts where
+-- push_sent = false, so a tag added once that flips true would otherwise never be picked up by
+-- anything. post_tags already has its own `id` primary key (unlike comment_likes, which needed a
+-- surrogate added in 2026-08-12_comment_likes_push_sent.sql), so only push_sent itself is needed
+-- here, no id column. The one-time backfill that marks every PRE-EXISTING tag row
+-- push_sent = TRUE (so the first poll after this column exists doesn't blast a push for every tag
+-- ever created) deliberately does NOT live here; see
+-- supabase/migrations/2026-08-17_post_tags_push_sent.sql for why and run it before this file is
+-- re-applied against a database that already has this column.
+ALTER TABLE public.post_tags ADD COLUMN IF NOT EXISTS push_sent BOOLEAN NOT NULL DEFAULT FALSE;
+CREATE INDEX IF NOT EXISTS post_tags_unpushed_idx ON public.post_tags (push_sent) WHERE push_sent = FALSE;
+
 -- POST COMMENTS ----------------------------------------------
 CREATE TABLE IF NOT EXISTS public.post_comments (
     id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),

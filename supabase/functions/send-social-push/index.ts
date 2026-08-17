@@ -563,13 +563,27 @@ Deno.serve(async () => {
   const coveredCtx = await loadCoveredPostContext();
 
   // ---- Comments: one push per comment, to the post owner (never self) ----
+  // `hidden` is pulled through the join, same as the tagged-photo-reactions block further down,
+  // so a comment (or an @mention inside one) on a post that's been auto-hidden (auto_hide_reported
+  // at >=2 distinct reporters, or set_photo_hidden) never announces it. "posts: readable by
+  // authenticated" requires NOT hidden with NO owner exception (unlike photos, which has one for
+  // exactly this reason), so a hidden post cannot be opened by ANYONE right now, including its own
+  // author: the owner's own comment notification is suppressed too, deliberately, not just
+  // everyone else's, because tapping it would land them on the same "post not found" as any other
+  // recipient. If that RLS exception is ever added for posts, this guard should be revisited.
   const { data: comments } = await supabase
     .from("post_comments")
-    .select("id, post_id, user_id, body, posts(user_id, created_at)")
+    .select("id, post_id, user_id, body, posts(user_id, hidden, created_at)")
     .eq("push_sent", false);
 
   for (const c of comments ?? []) {
-    const postMeta = (c as { posts?: { user_id?: string; created_at?: string } }).posts;
+    const postMeta = (c as { posts?: { user_id?: string; hidden?: boolean; created_at?: string } }).posts;
+    if (postMeta?.hidden) {
+      // Mark done without notifying anyone, mirroring the tagged-photo-reactions guard below:
+      // an unmarked skip would be re-evaluated by every future poll forever.
+      await supabase.from("post_comments").update({ push_sent: true }).eq("id", c.id);
+      continue;
+    }
     const ownerId = postMeta?.user_id;
     const name = await handle(c.user_id);
     const preview = c.body.length > 90 ? c.body.slice(0, 87) + "…" : c.body;
@@ -606,15 +620,29 @@ Deno.serve(async () => {
   }
 
   // ---- New posts: notify people tagged in the photo + @mentioned in the caption ----
+  // `hidden` is selected directly (this query already reads straight from `posts`, no join
+  // needed) so a post that was auto-hidden within the ~60s before this poll never announces a
+  // tag. Same reasoning and same "skip everyone, including the owner, but still mark sent" shape
+  // as the comments block above; see its comment for why the owner is not exempted.
   const { data: newPosts } = await supabase
     .from("posts")
-    .select("id, user_id, caption, created_at")
+    .select("id, user_id, caption, created_at, hidden")
     .eq("push_sent", false);
 
   for (const p of newPosts ?? []) {
+    if (p.hidden) {
+      await supabase.from("posts").update({ push_sent: true }).eq("id", p.id);
+      continue;
+    }
     const name = await handle(p.user_id);
     // Notify each person tagged in the photo (never the poster).
-    const { data: tagRows } = await supabase.from("post_tags").select("tagged_user_id").eq("post_id", p.id);
+    //
+    // Also marks every one of THESE tag rows push_sent = true below (not just the post), because
+    // post_tags now carries its own push_sent column for the "tag added after publishing" block
+    // further down, which polls post_tags directly wherever push_sent = false. Without marking
+    // them here, that block would see these same at-creation tags as still unsent the moment this
+    // post's own push_sent flips true, and fire a second, duplicate "tagged you" push for each.
+    const { data: tagRows } = await supabase.from("post_tags").select("id, tagged_user_id").eq("post_id", p.id);
     const notified = new Set<string>([p.user_id]);
     for (const t of tagRows ?? []) {
       const uid = t.tagged_user_id as string;
@@ -626,7 +654,65 @@ Deno.serve(async () => {
       notified.add(uid);
       sent += await notify(uid, p.user_id, `${name} tagged you`, "in a photo", { t: "post", id: p.id });
     }
+    if (tagRows && tagRows.length > 0) {
+      await supabase.from("post_tags").update({ push_sent: true }).in("id", tagRows.map((t) => t.id));
+    }
     await supabase.from("posts").update({ push_sent: true }).eq("id", p.id);
+  }
+
+  // ---- Tags added AFTER publishing: notify someone tagged via "Edit tags"
+  //      (FeedService.setTags, Flim/Services/FeedService.swift) on a post whose OWN push_sent is
+  //      already true. The "New posts" block above only scans posts where push_sent = false, and
+  //      marks every tag that exists on the post AT THAT MOMENT as push_sent = true (the update
+  //      just above), so a tag added LATER, once the post has already been announced, would
+  //      otherwise never be picked up by anything: the post never becomes push_sent = false again,
+  //      and the new post_tags row sits at its own default of push_sent = false forever, telling
+  //      no one, while the app UI still reports the tag as saved. This block is that missing path:
+  //      it polls post_tags directly, independent of the post's own push_sent, so it is the only
+  //      block that can see this kind of row.
+  //
+  //      Requires post_tags.push_sent (supabase/migrations/2026-08-17_post_tags_push_sent.sql,
+  //      mirrored into schema.sql), added the same shape comment_likes got in
+  //      2026-08-12_comment_likes_push_sent.sql: a one-time backfill marks every EXISTING tag row
+  //      push_sent = TRUE at migration time (not filtered by any date cutoff, for the same reason
+  //      that migration gives; a manual, possibly-delayed deploy makes a fixed cutoff wrong), so
+  //      the very first poll after this column exists does not fire a "tagged you" push for every
+  //      tag ever created. Unlike comment_likes, post_tags already carries a real, non-composite
+  //      `id` primary key, so no surrogate id column is needed here, only push_sent itself.
+  //
+  //      Same guards as the tags-on-a-new-post block above: the hidden-post check ("posts:
+  //      readable by authenticated" has no owner exception, so a hidden post can't be opened by
+  //      anyone right now, its own author included, see the comments-block note near the top of
+  //      this function) and the covered-post visibility check. Adds an explicit self-tag guard
+  //      (only the post's owner can INSERT a post_tags row, so a self-tag means the owner tagged
+  //      themselves in their own photo); `notify()`'s own toId===fromId check would already no-op
+  //      this case, since fromId here is always the post's owner, but checking first avoids an
+  //      unnecessary `handle()` lookup and says the intent plainly. `notify()` remains the one door
+  //      that enforces blocks in both directions, same as every other push in this file.
+  //
+  //      Marked done the same single `.in("id", ids)` shape every other id-keyed table here uses:
+  //      every fetched row is marked push_sent = true, whether it produced a push or was skipped
+  //      (hidden post, self-tag, covered-post visibility, or a block), so nothing here is ever
+  //      re-evaluated by a future poll.
+  const { data: laterTags } = await supabase
+    .from("post_tags")
+    .select("id, post_id, tagged_user_id, posts(user_id, hidden, created_at)")
+    .eq("push_sent", false);
+
+  for (const t of laterTags ?? []) {
+    const postMeta = (t as { posts?: { user_id?: string; hidden?: boolean; created_at?: string } }).posts;
+    const ownerId = postMeta?.user_id;
+    const taggedId = t.tagged_user_id as string;
+    if (!ownerId || !postMeta?.created_at) continue; // fail-closed: no post metadata, no push
+    if (postMeta.hidden) continue; // hidden post, nobody (including its author) can open it right now
+    if (taggedId === ownerId) continue; // self-tag: the owner tagged themselves in their own photo
+    if (!coveredPostVisibleTo(coveredCtx, taggedId, ownerId, postMeta.created_at)) continue;
+
+    const name = await handle(ownerId);
+    sent += await notify(taggedId, ownerId, `${name} tagged you`, "in a photo", { t: "post", id: t.post_id });
+  }
+  if (laterTags && laterTags.length > 0) {
+    await supabase.from("post_tags").update({ push_sent: true }).in("id", laterTags.map((t) => t.id));
   }
 
   // ---- Reactions: batch per (post, reactor) → one push listing their emoji, to the OWNER ----
