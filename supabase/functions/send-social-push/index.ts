@@ -8,6 +8,12 @@
 // reactions from one friend is a single notification, the way Lapse did it, not
 // one-per-emoji.
 //
+// Also notifies everyone ELSE already in a post's comment thread when a new comment lands
+// ("{name} also commented"), not just the post's owner: the owner's own push is suppressed by
+// `notify()`'s self-check whenever the owner is the one replying, which used to mean nobody
+// still in the conversation heard about it. Distinct copy from the owner's "{name} commented"
+// so it never reads as "your photo got commented on."
+//
 // Also notifies people TAGGED in a post's photo when it gets reacted to, aggregated per
 // POST rather than per reactor or per reacting person ("3 people reacted to a photo
 // you're in"), so a popular post doesn't multiply the owner's per-reactor noise across
@@ -562,7 +568,16 @@ Deno.serve(async () => {
   // fail-closed contract.
   const coveredCtx = await loadCoveredPostContext();
 
-  // ---- Comments: one push per comment, to the post owner (never self) ----
+  // ---- Comments: one push per comment, to the post owner (never self), to anyone @mentioned,
+  //      and to everyone ELSE who already has a comment on this same post ("thread
+  //      participants"). Before this block existed, only the post's OWNER was ever told about a
+  //      new comment; someone who commented earlier and got a reply had no way to find out short
+  //      of reopening the post. Confirmed in production: ricky posted, tristan commented, ricky
+  //      replied, tristan got nothing, because `notify()` correctly self-suppresses the owner
+  //      push when the owner IS the commenter. Thread participants close that gap with their own
+  //      distinct copy, "{name} also commented", never the owner's "{name} commented": an
+  //      identical-looking push would read as "your photo got a comment" to someone whose photo
+  //      it isn't.
   // `hidden` is pulled through the join, same as the tagged-photo-reactions block further down,
   // so a comment (or an @mention inside one) on a post that's been auto-hidden (auto_hide_reported
   // at >=2 distinct reporters, or set_photo_hidden) never announces it. "posts: readable by
@@ -571,6 +586,8 @@ Deno.serve(async () => {
   // author: the owner's own comment notification is suppressed too, deliberately, not just
   // everyone else's, because tapping it would land them on the same "post not found" as any other
   // recipient. If that RLS exception is ever added for posts, this guard should be revisited.
+  // The new thread-participant push sits INSIDE this same hidden-post skip, not beside it: it is
+  // reached only when the post is not hidden, the same as the owner and mention pushes above it.
   const { data: comments } = await supabase
     .from("post_comments")
     .select("id, post_id, user_id, body, posts(user_id, hidden, created_at)")
@@ -587,10 +604,12 @@ Deno.serve(async () => {
     const ownerId = postMeta?.user_id;
     const name = await handle(c.user_id);
     const preview = c.body.length > 90 ? c.body.slice(0, 87) + "…" : c.body;
-    // Tracks who has already been pushed for this comment, so someone who is BOTH the post owner
-    // and @mentioned in it gets one notification rather than two.
-    // Both this comment's owner-push and its mention-pushes land on the SAME comment, on the
-    // SAME post, so they share one route. Built fresh per comment row (from this row's own
+    // Tracks who has already been pushed for this comment, so someone who is the post owner,
+    // @mentioned in it, and/or an earlier thread participant, all at once, gets exactly one
+    // notification, the strongest one that applies (owner > mention > thread), rather than one
+    // per role.
+    // All three of this comment's pushes (owner, mention, thread) land on the SAME comment, on
+    // the SAME post, so they share one route. Built fresh per comment row (from this row's own
     // post_id), never hoisted, so nothing from a previous row's iteration can leak in.
     const route: FlimRoute = { t: "post", id: c.post_id, comments: true };
     const notified = new Set<string>([c.user_id]);
@@ -615,6 +634,31 @@ Deno.serve(async () => {
       notified.add(uid);
       mentionPushes++;
       sent += await notify(uid, c.user_id, `${name} mentioned you`, preview, route);
+    }
+    // Thread participants: everyone who already has a comment on this same post, other than
+    // this comment's own author, and other than anyone already notified above as the owner or a
+    // mention (`notified` covers both). Read fresh per comment row rather than reused across
+    // rows, so a post with several unsent comments in the same poll always reflects the current
+    // set of commenters. Same title shape as every other push in this file (actor + verb), with
+    // "also" doing the work of distinguishing this from the owner's "{name} commented": without
+    // it, a thread participant would see an identical-looking push and reasonably think it was
+    // their own photo that got commented on.
+    const { data: threadRows } = await supabase
+      .from("post_comments")
+      .select("user_id")
+      .eq("post_id", c.post_id)
+      .neq("user_id", c.user_id);
+    const threadParticipants = new Set<string>((threadRows ?? []).map((r) => r.user_id as string));
+    for (const uid of threadParticipants) {
+      if (notified.has(uid)) continue;
+      // Same covered-post leak as the mention loop above: a thread participant can be anyone who
+      // once commented, including someone outside the covered-post allowed set if the post's
+      // covered window opened after their comment landed.
+      if (ownerId && postMeta?.created_at && !coveredPostVisibleTo(coveredCtx, uid, ownerId, postMeta.created_at)) {
+        continue;
+      }
+      notified.add(uid);
+      sent += await notify(uid, c.user_id, `${name} also commented`, preview, route);
     }
     await supabase.from("post_comments").update({ push_sent: true }).eq("id", c.id);
   }
