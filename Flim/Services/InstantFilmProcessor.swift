@@ -186,9 +186,10 @@ enum InstantFilmProcessor {
     /// error). `encoding` exists so the encoder sweep can hold the grade fixed and vary only the
     /// codec; production always takes the default.
     static func process(_ data: Data, stock: FilmStock,
-                        encoding: EncodeSpec = fullEncoding) async -> EncodedImage? {
+                        encoding: EncodeSpec = fullEncoding,
+                        grain: GrainComposite = .sourceOver) async -> EncodedImage? {
         await Task.detached(priority: .userInitiated) {
-            processSync(data, stock: stock, encoding: encoding)
+            processSync(data, stock: stock, encoding: encoding, grain: grain)
         }.value
     }
 
@@ -246,8 +247,8 @@ enum InstantFilmProcessor {
     /// grain, vignette, or bloom, the neutral half of a (neutral, Lapse) pair for LUT fitting.
     static let neutralCaptureKey = "neutralCapture"
 
-    private static func processSync(_ data: Data, stock: FilmStock,
-                                    encoding: EncodeSpec) -> EncodedImage? {
+    private static func processSync(_ data: Data, stock: FilmStock, encoding: EncodeSpec,
+                                    grain: GrainComposite = .sourceOver) -> EncodedImage? {
         // Apply embedded EXIF orientation so the output is upright.
         guard let source = CIImage(data: data, options: [.applyOrientationProperty: true]) else {
             return nil
@@ -279,7 +280,8 @@ enum InstantFilmProcessor {
             return EncodedImage(data: jpeg, format: .jpeg)
         }
 
-        guard let cg = gradedPixels(source, extent: extent, stock: stock) else { return nil }
+        guard let cg = gradedPixels(source, extent: extent, stock: stock,
+                                    grain: grain) else { return nil }
         return encodeImage(cg, encoding)
     }
 
@@ -290,17 +292,18 @@ enum InstantFilmProcessor {
     /// encoder sweep feeds these identical pixels to every candidate codec and quality, which is
     /// the only way the drift it reports is attributable to the encoder and nothing else. The
     /// shipping path is unchanged: `processSync` is exactly this plus `encodeImage`.
-    static func gradedPixels(_ data: Data, stock: FilmStock) -> CGImage? {
+    static func gradedPixels(_ data: Data, stock: FilmStock,
+                             grain: GrainComposite = .sourceOver) -> CGImage? {
         guard let source = CIImage(data: data, options: [.applyOrientationProperty: true]) else {
             return nil
         }
         let extent = source.extent
         guard !extent.isEmpty else { return nil }
-        return gradedPixels(source, extent: extent, stock: stock)
+        return gradedPixels(source, extent: extent, stock: stock, grain: grain)
     }
 
-    private static func gradedPixels(_ source: CIImage, extent: CGRect,
-                                     stock: FilmStock) -> CGImage? {
+    private static func gradedPixels(_ source: CIImage, extent: CGRect, stock: FilmStock,
+                                     grain: GrainComposite = .sourceOver) -> CGImage? {
         // Scene-adaptive exposure, deliberately GENTLE, night must stay night (a city
         // skyline can't get daylighted), so only truly underexposed scenes get a nudge.
         // Mirrors scripts/fit_lut.py normalize_exposure exactly (the LUT was fitted against
@@ -334,7 +337,7 @@ enum InstantFilmProcessor {
         // dirt or sensor dust rather than grain, worst of all on flat evenly-lit surfaces where
         // there is no detail to sit inside. Reducing the amount only made it fainter dirt; the
         // problem was never the strength, it was the scale.
-        image = grainOverlay(on: image, amount: params.grain)
+        image = grainOverlay(on: image, amount: params.grain, composite: grain)
 
         // Downscale the finished image to the storage cap (keeps egress sane, look intact).
         let longEdge = max(extent.width, extent.height)
@@ -559,9 +562,45 @@ enum InstantFilmProcessor {
             ])
     }
 
-    /// Fine film grain: desaturated random noise composited at low opacity, at FULL sensor
-    /// resolution (see the call site) so the storage downscale averages it into soft film-like
-    /// texture rather than leaving discrete specks.
+    /// How the noise layer is composited onto the frame.
+    ///
+    /// This is the one lever this enum exists for, and it is a LOOK decision: source-over adds
+    /// light, the mean-preserving form does not. Both cases stay in the code so switching is a
+    /// default-argument change rather than a rewrite.
+    ///
+    /// Currently `.sourceOver`, i.e. the shipped look, DESPITE `.meanPreserving` being measured
+    /// better on 2026-08-17 (median saturation gap to Lapse −0.079 → −0.028, mean lift +0.019 → 0,
+    /// texture 1.26x). It is held back deliberately: renditions are never rewritten, so the first
+    /// build that ships `.meanPreserving` splits the feed into two looks permanently, and Cody
+    /// wanted an unrelated profile change tested on TestFlight without that confound. Flipping it
+    /// means changing the default on ALL FIVE signatures below, not just `grainOverlay`, since the
+    /// outer entry points pass their own default down and would override it.
+    ///
+    /// The 11 look-regression baselines are recorded against `.sourceOver`, so they pass as-is and
+    /// must be re-recorded (`FLIM_RECORD_LOOK_BASELINE=1`) at the same time as any flip.
+    enum GrainComposite {
+        /// What shipped up to 2026-08-17: the layer composited straight over the frame. Measured,
+        /// that layer is a WHITE veil at random opacity rather than grey noise (see
+        /// `precompensated`), so the composite could only ever add light:
+        ///
+        ///     E[out] = (1 − amount/2)·base + amount/2
+        ///
+        /// Rendered production-faithfully across the owner's 13 calibration scenes that is a median
+        /// +0.019 mean and +0.024 p50, and a median 0.051 of measured saturation, before any colour
+        /// value is involved at all.
+        case sourceOver
+
+        /// The same noise, the same alpha, the same mask, with the composite's known bias removed.
+        case meanPreserving
+    }
+
+    /// Fine film grain: a random-opacity layer composited over the frame at FULL sensor resolution
+    /// (see the call site) so the storage downscale averages it into soft film-like texture rather
+    /// than leaving discrete specks.
+    ///
+    /// It reads as "desaturated noise at low opacity", and that is what this code was written to
+    /// be, but it is not what Core Image builds out of it: measured, the layer is white at a random
+    /// opacity (`precompensated` has the numbers). Which is why `composite` exists.
     ///
     /// Deliberately no Lanczos pre-upscale of the noise. That was added to fake grain clumping
     /// back when this ran at the final stored resolution and single-pixel noise looked like
@@ -571,7 +610,8 @@ enum InstantFilmProcessor {
     /// confirm the mask is actually connected. The halation rewrite is the argument for that: its
     /// tint maths was right and its compositing silently lifted the whole frame, and only a
     /// render-and-measure test caught it.
-    static func grainOverlay(on image: CIImage, amount: CGFloat) -> CIImage {
+    static func grainOverlay(on image: CIImage, amount: CGFloat,
+                             composite: GrainComposite = .sourceOver) -> CIImage {
         let extent = image.extent
         guard amount > 0, !extent.isInfinite, !extent.isEmpty,
               let noise = CIFilter(name: "CIRandomGenerator")?.outputImage else { return image }
@@ -584,17 +624,96 @@ enum InstantFilmProcessor {
             .applyingFilter("CIColorMatrix", parameters: [
                 "inputAVector": CIVector(x: 0, y: 0, z: 0, w: amount)
             ])
+
+        // The frame the layer is composited ONTO. The composite carries a deterministic lift equal
+        // to the veil's average opacity; `meanPreserving` cancels exactly that in the background
+        // beforehand, which leaves the noise term itself — amplitude, spatial scale, distribution,
+        // and the tone mask below — completely untouched. See `precompensated`.
+        let background = composite == .meanPreserving ? precompensated(image, amount: amount) : image
         let grained = grainLayer.applyingFilter("CISourceOverCompositing", parameters: [
-            kCIInputBackgroundImageKey: image
+            kCIInputBackgroundImageKey: background
         ])
 
         // Modulate by luminance: blend between the ungrained image (where the mask is 0) and the
         // uniformly grained one (where it is 1), per pixel. Doing it as a blend rather than by
         // varying the noise layer's own alpha is what keeps the midtone result bit-identical to
         // the approved look, since the mask is exactly 1.0 there.
+        //
+        // The clean branch is the ORIGINAL image, not the pre-compensated one, and that is what
+        // makes the correction exact at every mask value: the grained branch is unbiased on its
+        // own, so any mix of the two is unbiased too.
         return grained.applyingFilter("CIBlendWithMask", parameters: [
             kCIInputBackgroundImageKey: image,
             kCIInputMaskImageKey: grainLuminanceMask(for: image)
+        ])
+    }
+
+    /// The frame, pre-scaled so that compositing the grain layer over it leaves the frame's tone
+    /// exactly where it started.
+    ///
+    /// WHAT THE LAYER ACTUALLY IS, measured rather than assumed (`GrainCompositeProbe.anatomy`
+    /// renders it and reads the pixels back in the linear working space):
+    ///
+    ///   layer mean 0.02982, layer alpha mean 0.03006, at `amount` 0.06
+    ///
+    /// Its colour is essentially WHITE at a random opacity, not mid-grey noise at a fixed low
+    /// opacity. `CIRandomGenerator` emits four independent random channels which Core Image treats
+    /// as PREMULTIPLIED, so `CIColorControls` un-premultiplies (rgb ÷ a, usually well above 1) and
+    /// clamps, and what comes out the other side is a white veil whose opacity is the noise. So the
+    /// composite is:
+    ///
+    ///     out = base + a·(1 − base),     a = amount·u,  u ∈ 0...1, mean ½
+    ///
+    /// It can only ever ADD light, most of it where there is least, and its expectation is affine
+    /// in base with constant coefficients:
+    ///
+    ///     E[out] = (1 − amount/2)·base + amount/2
+    ///
+    /// Measured at `amount` 0.06: +0.0298 at black, +0.0233 at a linear midtone, +0.0036 near
+    /// white, with the fitted slope (−0.03005) and intercept (+0.02982) both landing on amount/2 to
+    /// within 0.8%. That is not texture, it is a veil, and it is why grain measured +0.019 mean and
+    /// +0.024 p50 across the owner's 13 calibration scenes. It costs measured saturation too, since
+    /// `(max − min)/max` falls whenever all three channels are lifted together.
+    ///
+    /// Applying the exact inverse affine to the background first cancels it:
+    ///
+    ///     base′ = (base − amount/2) / (1 − amount/2)      ⟹      E[out] = base
+    ///
+    /// per pixel, at every tone, for any amount. What is left is
+    ///
+    ///     out = base + (a − amount/2)·(1 − base)
+    ///
+    /// a mean-zero modulation of the veil's DENSITY: the frame is pre-darkened by the veil's
+    /// average opacity, and the noise then thickens and thins it around that. Nothing about the
+    /// noise itself changes: same generator, same alpha, same amplitude, same 1-pixel spatial
+    /// scale, same `grainAnchors` mask. Only the DC term is gone.
+    ///
+    /// Overlay and soft light were the obvious alternatives, and both were built and measured on
+    /// all thirteen calibration scenes before this was chosen (`GrainCompositeSweep`, 2026-08-17):
+    ///
+    ///   - SOFT LIGHT is not actually mean-preserving. Its response is not linear in the blend
+    ///     value, so a symmetric noise layer still lifts the frame: +0.0033 in the midtone band and
+    ///     +0.0016 over the whole frame, about a twelfth of the bug left in place. It fails the one
+    ///     requirement it was a candidate for.
+    ///   - OVERLAY is mean-preserving (±0.0002 on flat patches), and it is still the wrong change
+    ///     to make HERE. It cannot use the existing layer at all: because the layer is a white veil
+    ///     rather than grey noise, overlay needs a different noise image built from scratch, with a
+    ///     new amplitude constant that has never been looked at by anyone. At the closest scale
+    ///     tried it delivered 0.11× the texture this composite delivers (median across the thirteen
+    ///     scenes, measured as `localContrast` above a grainless render), so adopting it means
+    ///     re-tuning grain strength and re-approving the result. Grain amplitude and placement are
+    ///     their own decision, with their own measurement; they do not belong in a tone fix.
+    ///
+    /// This one changes the noise term not at all, so the fix stays interpretable.
+    private static func precompensated(_ image: CIImage, amount: CGFloat) -> CIImage {
+        let gain = 1 / (1 - amount / 2)
+        let bias = -(amount / 2) * gain
+        return image.applyingFilter("CIColorMatrix", parameters: [
+            "inputRVector": CIVector(x: gain, y: 0, z: 0, w: 0),
+            "inputGVector": CIVector(x: 0, y: gain, z: 0, w: 0),
+            "inputBVector": CIVector(x: 0, y: 0, z: gain, w: 0),
+            "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 1),
+            "inputBiasVector": CIVector(x: bias, y: bias, z: bias, w: 0)
         ])
     }
 }
