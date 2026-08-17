@@ -439,7 +439,6 @@ struct PostThumb: View {
 // MARK: - Discover people
 
 struct DiscoverPeopleView: View {
-    @Environment(\.flimAccent) private var accent
     @Environment(AuthService.self) private var auth
     @Environment(FeedService.self) private var feed
     @Environment(\.dismiss) private var dismiss
@@ -456,7 +455,7 @@ struct DiscoverPeopleView: View {
             ZStack {
                 FlimTheme.bg.ignoresSafeArea()
                 VStack(spacing: 0) {
-                    searchField
+                    PeopleSearchField(query: $searchText, prompt: "Search by username")
 
                     if shown.isEmpty && loaded {
                         Spacer()
@@ -514,27 +513,6 @@ struct DiscoverPeopleView: View {
         .presentationBackground(FlimTheme.bg)
     }
 
-    private var searchField: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass").foregroundStyle(FlimTheme.textTertiary)
-            TextField("", text: $searchText, prompt: Text("Search by username").foregroundStyle(FlimTheme.textTertiary))
-                .autocorrectionDisabled()
-                .textInputAutocapitalization(.never)
-                .foregroundStyle(.white)
-                .tint(accent)
-            if !searchText.isEmpty {
-                Button { searchText = "" } label: {
-                    Image(systemName: "xmark.circle.fill").foregroundStyle(FlimTheme.textTertiary)
-                }
-                .accessibilityLabel("Clear search")
-            }
-        }
-        .flimFont(15)
-        .padding(.horizontal, 14).padding(.vertical, 11)
-        .background(FlimTheme.bgElevated, in: Capsule())
-        .padding(.horizontal, 18).padding(.top, 10).padding(.bottom, 4)
-    }
-
 }
 
 /// A reusable person row (avatar + handle + bio + follow button) for people lists.
@@ -579,25 +557,41 @@ struct FollowListView: View {
 
     @State private var profiles: [UserProfile] = []
     @State private var loaded = false
+    @State private var query = ""
+
+    /// The people actually shown, once search narrows the loaded list.
+    private var shown: [UserProfile] { profiles.filter { personMatches($0, query: query) } }
 
     var body: some View {
         NavigationStack {
             ZStack {
                 FlimTheme.bg.ignoresSafeArea()
-                if profiles.isEmpty && loaded {
-                    Text(mode == .followers ? "No followers yet" : "Not following anyone yet")
-                        .flimFont(14, relativeTo: .subheadline).foregroundStyle(FlimTheme.textTertiary).padding(40)
-                } else {
-                    ScrollView {
-                        LazyVStack(spacing: 4) {
-                            ForEach(profiles) { profile in
-                                NavigationLink { UserPageView(userId: profile.id) } label: {
-                                    PersonRow(profile: profile)
+                VStack(spacing: 0) {
+                    PeopleSearchField(query: $query)
+
+                    if shown.isEmpty && loaded {
+                        Spacer()
+                        // Two different emptys: nobody here at all, versus nobody matching the
+                        // search. Reusing the "no followers yet" copy while a search is active
+                        // would tell someone with 40 followers that they have none.
+                        Text(profiles.isEmpty
+                             ? (mode == .followers ? "No followers yet" : "Not following anyone yet")
+                             : "No one matches “\(query)”")
+                            .flimFont(14, relativeTo: .subheadline).foregroundStyle(FlimTheme.textTertiary)
+                            .multilineTextAlignment(.center).padding(40)
+                        Spacer()
+                    } else {
+                        ScrollView {
+                            LazyVStack(spacing: 4) {
+                                ForEach(shown) { profile in
+                                    NavigationLink { UserPageView(userId: profile.id) } label: {
+                                        PersonRow(profile: profile)
+                                    }
+                                    .buttonStyle(.plain)
                                 }
-                                .buttonStyle(.plain)
                             }
+                            .padding(.vertical, 8)
                         }
-                        .padding(.vertical, 8)
                     }
                 }
             }

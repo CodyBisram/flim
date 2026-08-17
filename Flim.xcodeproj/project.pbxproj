@@ -166,6 +166,7 @@
 		E08486964EB7755AF68AAE46 /* FocusCommentsDecisionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A1DF3242DF37C9E6E0DDB68 /* FocusCommentsDecisionTests.swift */; };
 		E132A62DD98C56BC83EB715E /* AppInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A194AB5EE948FBA8903D086 /* AppInfo.swift */; };
 		E32D66765B2C8FFB2C8883DC /* ProfileViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E24F9D0E24ECACB558EE4F01 /* ProfileViewTests.swift */; };
+		E383A0EABB2339BAB0476EDB /* PeopleSearchFieldTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 661C9A57B20EE6E81E51EA9B /* PeopleSearchFieldTests.swift */; };
 		E3917AFE742C6E4745A3292C /* MetaChip.swift in Sources */ = {isa = PBXBuildFile; fileRef = 373B00DF38CFC40848E59929 /* MetaChip.swift */; };
 		E3D1E6E334F232D564729AE1 /* PinchZoom.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3EF17B9249B262F2D8A2C799 /* PinchZoom.swift */; };
 		E53D957844CA00D2B88C5608 /* EmojiCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5698D3272C4A1C9EAAFBAC56 /* EmojiCatalog.swift */; };
@@ -199,6 +200,7 @@
 		FABF503D5FA8CAFBC757E315 /* RollLiveActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4E4408D99715C85F7767AC1 /* RollLiveActivity.swift */; };
 		FBA97460D3E2825697549E67 /* NotifPrimerPresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A51C3AC7DC2AEC16BA152EA4 /* NotifPrimerPresentationTests.swift */; };
 		FCA334B4E2EBB1ABDA1D7663 /* VersionGateBlockingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 147B2BC0EFA598B20C13C00A /* VersionGateBlockingView.swift */; };
+		FD142693F03E5A8C21E2EF8E /* PeopleSearchField.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D57B674A9A7991DFBFF8014 /* PeopleSearchField.swift */; };
 		FD353271770C9545F7CD5972 /* CommentsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4B503FFA5A021E632A20DB4 /* CommentsSheet.swift */; };
 		FD944ED3A07EC2925623D43B /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BFE9FBCA04098DC6F972D9A /* ContentView.swift */; };
 		FED3D0B6682D508B89CE788D /* PendingInviteRedeemed.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EDFD7F431FDA7B7408A49EB /* PendingInviteRedeemed.swift */; };
@@ -292,6 +294,7 @@
 		3A7B0511BE80DC5094BD7F98 /* RollRevealView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollRevealView.swift; sourceTree = "<group>"; };
 		3B04FC26356A4531AF0A539D /* AccountEpochTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountEpochTests.swift; sourceTree = "<group>"; };
 		3CEA4E3C37801DCE0D47B428 /* PhotoPagerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoPagerView.swift; sourceTree = "<group>"; };
+		3D57B674A9A7991DFBFF8014 /* PeopleSearchField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeopleSearchField.swift; sourceTree = "<group>"; };
 		3EF17B9249B262F2D8A2C799 /* PinchZoom.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinchZoom.swift; sourceTree = "<group>"; };
 		3F90A7FA0AD7F2B443E7E332 /* OTPInputTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OTPInputTests.swift; sourceTree = "<group>"; };
 		4016CE892900287C20E82E97 /* FeedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedView.swift; sourceTree = "<group>"; };
@@ -326,6 +329,7 @@
 		635F41BDBDCA4E6DD118E4DE /* MentionsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MentionsTests.swift; sourceTree = "<group>"; };
 		64F58EA5779DD43E35F781DB /* PendingRollInviteTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PendingRollInviteTests.swift; sourceTree = "<group>"; };
 		659573B57F39ED8C122771FD /* AvatarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AvatarView.swift; sourceTree = "<group>"; };
+		661C9A57B20EE6E81E51EA9B /* PeopleSearchFieldTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeopleSearchFieldTests.swift; sourceTree = "<group>"; };
 		6D27190BB76B91D0B8A60887 /* CommentComposer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommentComposer.swift; sourceTree = "<group>"; };
 		6D3CAAA6097E82270360343F /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		6DFDB4DE1DC1004D009E8E05 /* VersionGateDecisionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VersionGateDecisionTests.swift; sourceTree = "<group>"; };
@@ -504,6 +508,7 @@
 				5AC2BCF4765864C0FBC18FD1 /* MentionSuggestions.swift */,
 				DEA48CFF1B11D82BD2BCCF3B /* MentionText.swift */,
 				373B00DF38CFC40848E59929 /* MetaChip.swift */,
+				3D57B674A9A7991DFBFF8014 /* PeopleSearchField.swift */,
 				3CEA4E3C37801DCE0D47B428 /* PhotoPagerView.swift */,
 				24DE0B6E57BFD6B0DE4804A0 /* PhotoTags.swift */,
 				3EF17B9249B262F2D8A2C799 /* PinchZoom.swift */,
@@ -740,6 +745,7 @@
 				3F90A7FA0AD7F2B443E7E332 /* OTPInputTests.swift */,
 				39BF564647A39785A6BD0AB9 /* PendingInviteRedeemedTests.swift */,
 				64F58EA5779DD43E35F781DB /* PendingRollInviteTests.swift */,
+				661C9A57B20EE6E81E51EA9B /* PeopleSearchFieldTests.swift */,
 				C0B2C33A2244A999EF8CCD60 /* PersonalInviteLinkTests.swift */,
 				BC186737296AABC10E4A1C48 /* PhotoExportTests.swift */,
 				70A90D72A092EB706FDA25E4 /* PhotoPagerTests.swift */,
@@ -954,6 +960,7 @@
 				3764DD443F769BADCDB5371D /* OptimisticRollbackTests.swift in Sources */,
 				677E53FF7558F00EF53191E1 /* PendingInviteRedeemedTests.swift in Sources */,
 				5CE110813E0248422EC20423 /* PendingRollInviteTests.swift in Sources */,
+				E383A0EABB2339BAB0476EDB /* PeopleSearchFieldTests.swift in Sources */,
 				2CBF2A7682471B5C6BF9FE84 /* PersonalInviteLinkTests.swift in Sources */,
 				F49C20EEF5B515D8924048EE /* PhotoExportTests.swift in Sources */,
 				739BB01BA9567EC6C9789387 /* PhotoPagerTests.swift in Sources */,
@@ -1064,6 +1071,7 @@
 				3329F6BEB76AA76B288DE250 /* OnboardingView.swift in Sources */,
 				190AE824AFE7011E41CCEC4A /* PendingInvite.swift in Sources */,
 				FED3D0B6682D508B89CE788D /* PendingInviteRedeemed.swift in Sources */,
+				FD142693F03E5A8C21E2EF8E /* PeopleSearchField.swift in Sources */,
 				3B9C5D883F61F8F4D2587186 /* PhoneAuthView.swift in Sources */,
 				501F195F7187429C965AE299 /* Photo.swift in Sources */,
 				5BC43DD28869E8A440458914 /* PhotoCommentsSheet.swift in Sources */,
