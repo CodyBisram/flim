@@ -58,28 +58,16 @@ struct FeedView: View {
                         ScrollView {
                             LazyVStack(spacing: 20) {
                                 Color.clear.frame(height: 0).id("top")
-                                // Consecutive posts by the same author collapse into one
-                                // swipeable card (`FeedGrouping`, pinned by `FeedGroupingTests`).
-                                // This only changes presentation: `feed.feed` itself keeps its
-                                // server order, untouched, and a group of one renders exactly as
-                                // a lone card always has.
-                                let groups = FeedGrouping.grouped(feed.feed)
-                                ForEach(groups) { group in
-                                    FeedPostCard(group: group)
+                                ForEach(feed.feed) { item in
+                                    FeedPostCard(item: item)
                                         .scrollTransition { content, phase in
                                             content
                                                 .opacity(phase.isIdentity ? 1 : 0.55)
                                                 .scaleEffect(phase.isIdentity ? 1 : 0.96)
                                         }
                                         .onAppear {
-                                            // Near the bottom → load the next page + warm its
-                                            // images. Checked against the last GROUP, not the last
-                                            // raw post: a trailing burst from one author collapses
-                                            // into one card, but its last post is still exactly
-                                            // `feed.feed.last`, so this fires once, the same as it
-                                            // always did, regardless of how many photos that last
-                                            // card holds.
-                                            if group.id == groups.last?.id, let uid = auth.currentUser?.id {
+                                            // Near the bottom → load the next page + warm its images.
+                                            if item.id == feed.feed.last?.id, let uid = auth.currentUser?.id {
                                                 Task {
                                                     // Where the new page will start, captured
                                                     // before loading so only its cards are warmed.
@@ -400,24 +388,14 @@ func hasCommentsBeyondPreview(total: Int, shownInPreview: Int) -> Bool {
 struct FeedPostCard: View {
     @Environment(\.flimAccent) private var accent
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    let group: FeedGroup
+    let item: FeedItem
     @Environment(AuthService.self) private var auth
     @Environment(FeedService.self) private var feed
     @Environment(PhotoService.self) private var photos
 
-    /// Which post in `group` is currently showing. Only meaningful (and only ever moved by the
-    /// user) when `group.count > 1`; a single-post group never leaves 0.
-    @State private var currentIndex = 0
-    /// Live horizontal offset while a multi-post card's swipe is in flight; always settles back
-    /// to 0. See `swipeGesture`.
-    @State private var dragX: CGFloat = 0
-    @State private var urlByPost: [UUID: URL] = [:]
+    @State private var url: URL?
     @State private var avatarURL: URL?
-    /// Keyed per post rather than one shared field, so switching photos mid-draft doesn't lose
-    /// what was typed for the one you swiped away from: the composer belongs to whichever photo
-    /// is showing, but coming back to an earlier photo in the same card should find its draft
-    /// exactly as it was left.
-    @State private var draftByPost: [UUID: String] = [:]
+    @State private var draft = ""
     @State private var showComments = false
     @State private var route: ProfileRoute?
     /// A profile chosen inside the comment sheet, opened once that sheet has closed.
@@ -446,18 +424,6 @@ struct FeedPostCard: View {
     @State private var shareItem: ShareImage?
     @FocusState private var commentFocused: Bool
 
-    /// `currentIndex` clamped into `group.items`. A separate step from `item` below so the clamp
-    /// only has to be reasoned about once, e.g. after the currently-shown post is deleted out from
-    /// under a still-mounted card and `group.count` shrinks.
-    private var safeIndex: Int { min(max(currentIndex, 0), group.count - 1) }
-    /// The post currently on screen: index 0 for a single-post group, and everything below (the
-    /// reaction bar, the comment preview, the composer, the caption, the ••• menu) reads from
-    /// this rather than from `group` directly, so it all tracks the swipe.
-    /// Indexes `group.rest` directly rather than going through `group.items` (`[first] + rest`),
-    /// which would reallocate that concatenation on every read of `item`/`post` — and this is read
-    /// many times per render, more so on the large groups (dozens of posts from one author in one
-    /// sitting) this feature exists for.
-    private var item: FeedItem { safeIndex == 0 ? group.first : (group.rest[safe: safeIndex - 1] ?? group.first) }
     private var post: Post { item.post }
     private var isOwn: Bool { post.isOwned(by: auth.currentUser?.id) }
     // Reactions + comments live in the batch-loaded FeedService cache (one fetch per page, not
@@ -481,11 +447,7 @@ struct FeedPostCard: View {
         return shown
     }
     private var iLiked: Bool { reactions.contains { $0.emoji == "❤️" && $0.userId == auth.currentUser?.id } }
-    /// The composer's draft, scoped to the currently-showing post (see `draftByPost`).
-    private var draft: Binding<String> {
-        Binding(get: { draftByPost[post.id] ?? "" }, set: { draftByPost[post.id] = $0 })
-    }
-    private var canSend: Bool { !draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    private var canSend: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -520,60 +482,44 @@ struct FeedPostCard: View {
             // The print, shown at its native aspect (no square crop). Single tap opens it,
             // double tap likes it (with a heart burst). A 3:4 default sizes the placeholder so
             // there's no layout jump before the image resolves.
-            //
-            // A group of one renders exactly this, nothing more: no TabView, no indicator, no
-            // extra state churn, so the overwhelming common case (a lone post) is unchanged from
-            // before grouping existed.
-            if group.count > 1 {
-                // Multiple posts from the same run: swipeable, with a position indicator so the
-                // reaction/comment counts changing underneath you as you swipe reads as "a
-                // different post", not a glitch. The haptic and the numeric readout below both
-                // firing only once a swipe actually completes is what makes that read as
-                // deliberate rather than accidental.
-                //
-                // Deliberately NOT `TabView(.page)`, which is what this branch used until this
-                // fix. PhotoPagerView and RollCarouselView (see their own comments, on `pager`
-                // and on this same ZStack respectively) each hit the identical defect — a swipe
-                // settling with the next photo's dead space sliced into frame — three separate
-                // times, from three different root causes, and both abandoned TabView(.page) for
-                // plain state advancing a single mounted photo. This follows RollCarouselView's
-                // shape: there is no swipe-to-dismiss to disambiguate against here (that only
-                // exists in a full-screen viewer), so the swipe gesture below is the only thing
-                // this needs, and it never mounts a neighbouring photo for a desynced TabView to
-                // leak into frame in the first place.
-                //
-                // What neither of those two views had to solve: this card sits inside the feed's
-                // own vertical `ScrollView`. `.simultaneousGesture`, not `.gesture` — a plain
-                // `.gesture` would compete for every touch that starts on the card, including a
-                // vertical scroll, and freeze the feed's own pan the instant a finger goes down on
-                // a photo. Attached alongside the ScrollView's pan recognizer instead, both get to
-                // see every touch; `swipeGesture` only ever acts (moves the photo, or counts as a
-                // completed swipe) when the horizontal component actually dominates, so a vertical
-                // drag on the card is left entirely to the ScrollView, exactly as it is over a
-                // single-post card.
-                //
-                // No forced aspect ratio either, unlike the old TabView branch: that only existed
-                // because a paging TabView needs a fixed frame to swipe cleanly between pages.
-                // Mounting one photo at a time has no such requirement, so this sizes exactly the
-                // way a single-post card's `photoContent` already does, and a multi-post card
-                // presents each photo identically to how a lone card would.
-                photoContent(for: item)
-                    .id(item.post.id)
-                    .transition(.opacity)
-                    .offset(x: dragX)
-                    .simultaneousGesture(swipeGesture)
-                    .overlay(alignment: .topTrailing) { positionIndicator }
-                    // Deleting the currently-shown post (or any post before it) shifts everything
-                    // after it down by one and shrinks `group.count`; without this, `currentIndex`
-                    // itself would keep pointing past the new end until the next swipe, which is a
-                    // valid index for nothing. `safeIndex` already guards every READ of
-                    // `item`/`post`, this keeps `currentIndex` itself in sync with the same bound.
-                    .onChange(of: group.count) { _, newCount in
-                        currentIndex = min(currentIndex, newCount - 1)
+            Group {
+                if let url {
+                    CachedImage(url: url, maxPixel: 1400, cacheKey: post.cardPath) { image in
+                        image.resizable().scaledToFit()
+                    } placeholder: {
+                        ShimmerPlaceholder(cornerRadius: 12).aspectRatio(3.0 / 4.0, contentMode: .fit)
                     }
-            } else {
-                photoContent(for: item)
+                } else {
+                    ShimmerPlaceholder(cornerRadius: 12).aspectRatio(3.0 / 4.0, contentMode: .fit)
+                }
             }
+                .frame(maxWidth: .infinity)
+                .overlay { GrainOverlay().opacity(0.5) }
+                .overlay {
+                    Image(systemName: "heart.fill")
+                        .font(.system(size: 90))
+                        .foregroundStyle(.white)
+                        .shadow(radius: 8)
+                        .scaleEffect(heartBurst ? 1 : 0.4)
+                        .opacity(heartBurst ? 0.9 : 0)
+                        .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.55), value: heartBurst)
+                }
+                .overlay {
+                    PhotoTags(tags: feed.tagsByPost[post.id] ?? [], profiles: feed.tagProfiles) { route = ProfileRoute(id: $0) }
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                // Two fingers lift the print off the feed; one finger still likes it and opens
+                // it. Applied after the clip so the lifted snapshot has the card's own corners.
+                .pinchToZoom()
+                .contentShape(Rectangle())
+                .onTapGesture(count: 2) { doubleTapLike() }
+                // The same actions as the ••• button above, on the photo itself. Long-press is
+                // where people already reach for these, and it puts them on the thing being
+                // acted on instead of a 34pt target in the corner.
+                .contextMenu { postActions }
+                .accessibilityElement()
+                .accessibilityLabel("Photo by \(item.author.handle)")
+                .accessibilityHint("Double-tap to like, or react below")
 
             if let caption = post.caption, !caption.isEmpty {
                 Text(caption).flimFont(14, relativeTo: .subheadline).foregroundStyle(FlimTheme.textSecondary)
@@ -681,24 +627,15 @@ struct FeedPostCard: View {
 
             // Inline comment composer. Reply lives in the comments sheet, not this card, so
             // there's never a reply target to show here.
-            CommentComposer(draft: draft, style: .inlineCard, replyTarget: .constant(nil),
+            CommentComposer(draft: $draft, style: .inlineCard, replyTarget: .constant(nil),
                             focus: $commentFocused) { sendComment() }
         }
         .padding(14)
         .background(FlimTheme.bgElevated, in: RoundedRectangle(cornerRadius: 20))
-        // Author avatar is shared by the whole run (same author throughout the card), so this
-        // fetches it once regardless of how many photos the card holds or how far you swipe.
-        // reactions + comments already loaded in the feed batch, no per-card query.
         .task {
-            if let path = group.first.author.avatarPath { avatarURL = await feed.signedURL(for: path) }
-        }
-        // Re-fires as the swipe moves to a different post, 1400px rendition (falls back to full).
-        // Guarded so a post already resolved (including one you've swiped back to) isn't
-        // re-fetched; `signedURL` itself is cache-backed too, but this skips the async hop
-        // entirely on top of that.
-        .task(id: item.post.id) {
-            guard urlByPost[item.post.id] == nil else { return }
-            urlByPost[item.post.id] = await feed.signedURL(for: item.post.cardPath)
+            url = await feed.signedURL(for: post.cardPath)   // 1400px rendition (falls back to full)
+            if let path = item.author.avatarPath { avatarURL = await feed.signedURL(for: path) }
+            // reactions + comments already loaded in the feed batch, no per-card query.
         }
         // onDismiss, not inline: pushing the profile while the comment sheet is still on screen
         // is what put it inside the sheet. The id is parked here and acted on once the sheet is
@@ -711,19 +648,17 @@ struct FeedPostCard: View {
         .navigationDestination(item: $route) { UserPageView(userId: $0.id) }
         .sheet(item: $shareItem) { SharePreviewSheet(photo: $0.image) }
         .sheet(isPresented: $showEditTags) {
-            TagPhotoSheet(url: urlByPost[post.id], tags: $editingTags) {
-                let postId = post.id
-                Task { await feed.setTags(editingTags, on: postId) }
+            TagPhotoSheet(url: url, tags: $editingTags) {
+                Task { await feed.setTags(editingTags, on: post.id) }
             }
         }
         .sheet(isPresented: $showEditCaption) {
             EditCaptionSheet(caption: $captionDraft) {
                 guard let uid = auth.currentUser?.id else { return }
-                let postId = post.id
                 let trimmed = captionDraft.trimmingCharacters(in: .whitespacesAndNewlines)
                 let newCaption = trimmed.isEmpty ? nil : trimmed
                 Task {
-                    let saved = await feed.updatePostCaption(postId: postId, caption: newCaption, userId: uid)
+                    let saved = await feed.updatePostCaption(postId: post.id, caption: newCaption, userId: uid)
                     if saved == true {
                         pendingCaptionRetry = nil
                     } else if saved == false {
@@ -768,12 +703,8 @@ struct FeedPostCard: View {
         .confirmationDialog("Delete this post?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
             Button("Delete", role: .destructive) {
                 Haptics.warning()
-                // Captured now, not read again inside the Task: this is the post the dialog was
-                // raised for, and it should stay the one deleted even though `post` itself would
-                // keep tracking the swipe if a page redraw happened to land in between.
-                let postId = post.id
                 Task {
-                    let deleted = await feed.deletePost(id: postId)
+                    let deleted = await feed.deletePost(id: post.id)
                     if deleted == false {
                         // Still here (`deletePost` only removes it from `feed` on success), so
                         // say why rather than leave the card looking untouched.
@@ -781,10 +712,7 @@ struct FeedPostCard: View {
                         withAnimation { deleteFailedToast = true }
                         try? await Task.sleep(for: .seconds(2)); withAnimation { deleteFailedToast = false }
                     }
-                    // deleted == true: gone from `feed`, so gone from `group` too on the next
-                    // render. A single-post group's card disappears entirely; a multi-post one
-                    // reflows around the gap and clamps `currentIndex` back into range (see its
-                    // declaration), landing on whichever post is now in that spot. deleted == nil:
+                    // deleted == true: the card is already gone via `feed`. deleted == nil:
                     // cancelled, not a failure, stay silent.
                 }
             }
@@ -795,9 +723,8 @@ struct FeedPostCard: View {
         .confirmationDialog("Report this photo?", isPresented: $showReportConfirm, titleVisibility: .visible) {
             Button("Report", role: .destructive) {
                 guard let uid = auth.currentUser?.id else { return }
-                let reportedPost = post
                 Task {
-                    if await feed.reportPost(reportedPost, from: uid) {
+                    if await feed.reportPost(post, from: uid) {
                         Haptics.success()   // the report went through, matching the toast
                         withAnimation { reportedToast = true }
                         try? await Task.sleep(for: .seconds(2)); withAnimation { reportedToast = false }
@@ -816,15 +743,14 @@ struct FeedPostCard: View {
             Button("Block", role: .destructive) {
                 guard let uid = auth.currentUser?.id else { return }
                 Haptics.warning()
-                let targetId = post.userId
                 Task {
-                    await feed.block(targetId, from: uid)
+                    await feed.block(post.userId, from: uid)
                     // `feed.block` rolls its optimistic state back on a failed write, so this
                     // reflects whether it actually landed rather than assuming it always does.
-                    // Stripping the cards here regardless would leave the feed looking blocked for
-                    // someone it hadn't actually taken effect for.
-                    if feed.isBlocked(targetId) {
-                        withAnimation { feed.feed.removeAll { $0.author.id == targetId } }
+                    // Stripping the card here regardless would leave it looking blocked on a
+                    // feed the person you tried to block can still see.
+                    if feed.isBlocked(post.userId) {
+                        withAnimation { feed.feed.removeAll { $0.author.id == post.userId } }
                     }
                 }
             }
@@ -870,83 +796,16 @@ struct FeedPostCard: View {
     private func removeMyTag() {
         guard let uid = auth.currentUser?.id else { return }
         Haptics.tap()
-        let postId = post.id
-        Task { await feed.removeMyTag(from: postId, userId: uid) }
+        Task { await feed.removeMyTag(from: post.id, userId: uid) }
     }
 
     private func saveToCameraRoll() {
-        // Captured now: the download below can outlast a quick swipe away from this photo.
-        let storagePath = post.storagePath
         Task {
-            guard let full = await feed.signedURL(for: storagePath),
+            guard let full = await feed.signedURL(for: post.storagePath),
                   let (data, _) = try? await URLSession.shared.data(from: full),
                   let image = UIImage(data: data) else { return }
             shareItem = ShareImage(image: image)
         }
-    }
-
-    /// One photo of the card: the image itself plus everything drawn on top of it (grain, tags,
-    /// the double-tap heart). Shared by the single-post card and a multi-post one, so a
-    /// swipeable card's current photo looks and behaves exactly like a lone card's photo does.
-    ///
-    /// Only ever called with `item`, the CURRENT photo: unlike the `TabView(.page)` this replaced,
-    /// which mounted every page in the group at once and needed `isCurrent` to tell them apart, a
-    /// multi-post card now mounts this exactly once, swapped by `currentIndex` (see the multi-post
-    /// branch above), so there is never a second, off-screen instance of this for anything inside
-    /// it to be ambiguous about.
-    @ViewBuilder
-    private func photoContent(for groupItem: FeedItem) -> some View {
-        Group {
-            if let photoURL = urlByPost[groupItem.post.id] {
-                CachedImage(url: photoURL, maxPixel: 1400, cacheKey: groupItem.post.cardPath) { image in
-                    image.resizable().scaledToFit()
-                } placeholder: {
-                    ShimmerPlaceholder(cornerRadius: 12).aspectRatio(3.0 / 4.0, contentMode: .fit)
-                }
-            } else {
-                ShimmerPlaceholder(cornerRadius: 12).aspectRatio(3.0 / 4.0, contentMode: .fit)
-            }
-        }
-            .frame(maxWidth: .infinity)
-            .overlay { GrainOverlay().opacity(0.5) }
-            .overlay {
-                Image(systemName: "heart.fill")
-                    .font(.system(size: 90))
-                    .foregroundStyle(.white)
-                    .shadow(radius: 8)
-                    .scaleEffect(heartBurst ? 1 : 0.4)
-                    .opacity(heartBurst ? 0.9 : 0)
-                    .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.55), value: heartBurst)
-            }
-            .overlay {
-                PhotoTags(tags: feed.tagsByPost[groupItem.post.id] ?? [], profiles: feed.tagProfiles) { route = ProfileRoute(id: $0) }
-            }
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-            // Two fingers lift the print off the feed; one finger still likes it and opens
-            // it. Applied after the clip so the lifted snapshot has the card's own corners.
-            .pinchToZoom()
-            .contentShape(Rectangle())
-            .onTapGesture(count: 2) { doubleTapLike() }
-            // The same actions as the ••• button above, on the photo itself. Long-press is
-            // where people already reach for these, and it puts them on the thing being
-            // acted on instead of a 34pt target in the corner.
-            .contextMenu { postActions }
-            .accessibilityElement()
-            .accessibilityLabel("Photo by \(groupItem.author.handle)")
-            .accessibilityHint("Double-tap to like, or react below")
-    }
-
-    /// "N of M", the thing that keeps a multi-post card's changing reaction/comment counts from
-    /// reading as a glitch: it says plainly that a swipe just moved to a different post.
-    private var positionIndicator: some View {
-        Text("\(safeIndex + 1) of \(group.count)")
-            .flimFont(12, weight: .semibold, relativeTo: .caption)
-            .foregroundStyle(.white)
-            .contentTransition(.numericText())
-            .animation(.snappy(duration: 0.22), value: currentIndex)
-            .padding(.horizontal, 10).padding(.vertical, 5)
-            .background(.ultraThinMaterial, in: Capsule())
-            .padding(10)
     }
 
     private var avatar: some View {
@@ -965,33 +824,6 @@ struct FeedPostCard: View {
             .clipShape(Circle())
     }
 
-    /// Advances between a multi-post card's photos on a horizontal swipe, following the finger
-    /// and resisting at the first/last post the same way `PhotoPagerView` and `RollCarouselView`
-    /// do (same free functions, same feel). See the multi-post branch above for why this is
-    /// `simultaneousGesture` rather than `gesture`: both `onChanged` and `onEnded` bail out
-    /// whenever the drag's vertical component dominates, so a vertical drag never nudges the
-    /// photo and is left entirely to the feed's own `ScrollView`.
-    private var swipeGesture: some Gesture {
-        DragGesture(minimumDistance: 20)
-            .onChanged { value in
-                guard abs(value.translation.width) > abs(value.translation.height) else { return }
-                dragX = pagingDragOffset(width: value.translation.width, index: safeIndex, count: group.count)
-            }
-            .onEnded { value in
-                withAnimation(.easeOut(duration: 0.18)) { dragX = 0 }
-                guard abs(value.translation.width) > abs(value.translation.height),
-                      let delta = pagingStep(forDragWidth: value.translation.width) else { return }
-                step(delta)
-            }
-    }
-
-    private func step(_ delta: Int) {
-        let next = safeIndex + delta
-        guard group.items.indices.contains(next) else { return }
-        Haptics.tap()
-        withAnimation(.easeOut(duration: 0.22)) { currentIndex = next }
-    }
-
     private func doubleTapLike() {
         guard let uid = auth.currentUser?.id else { return }
         Haptics.tap()
@@ -1000,42 +832,32 @@ struct FeedPostCard: View {
             Task { try? await Task.sleep(for: .milliseconds(650)); heartBurst = false }
         }
         if !iLiked {
-            // Captured now: a double tap can be immediately followed by a swipe, and this must
-            // still land on the post that was actually tapped, not whatever is showing once the
-            // request completes.
-            let postId = post.id
-            Task { await feed.reactToPost(postId, emoji: "❤️", userId: uid) }
+            Task { await feed.reactToPost(post.id, emoji: "❤️", userId: uid) }
         }
     }
 
     private func toggleReaction(_ emoji: String) {
         guard let uid = auth.currentUser?.id else { return }
         Haptics.tap()
-        let postId = post.id
-        Task { await feed.reactToPost(postId, emoji: emoji, userId: uid) }
+        Task { await feed.reactToPost(post.id, emoji: emoji, userId: uid) }
     }
 
     private func likeComment(_ info: CommentInfo) {
         guard let uid = auth.currentUser?.id else { return }
         Haptics.tap()
-        let postId = post.id
-        Task { await feed.toggleCommentLike(info, postId: postId, userId: uid) }
+        Task { await feed.toggleCommentLike(info, postId: post.id, userId: uid) }
     }
 
     private func sendComment() {
         guard let uid = auth.currentUser?.id, canSend else { return }
-        // Captured now, including `draft` itself: sending is async, and a swipe mid-flight must
-        // not move where the comment lands, nor overwrite a DIFFERENT post's draft if the failure
-        // path below has to restore it.
-        let postId = post.id
-        let body = draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        draftByPost[postId] = ""
+        let body = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        draft = ""
         commentFocused = false
         Haptics.tap()
         Task {
-            let ok = await feed.commentOnPost(postId, body: body, userId: uid)
+            let ok = await feed.commentOnPost(post.id, body: body, userId: uid)
             if !ok {
-                draftByPost[postId] = body   // restore instead of silently losing the comment
+                draft = body   // restore instead of silently losing the comment
                 Haptics.error()
             }
         }
@@ -1064,8 +886,4 @@ struct FeedCardSkeleton: View {
         .padding(14)
         .background(FlimTheme.bgElevated.opacity(0.5), in: RoundedRectangle(cornerRadius: 20))
     }
-}
-
-private extension Array {
-    subscript(safe i: Int) -> Element? { indices.contains(i) ? self[i] : nil }
 }
