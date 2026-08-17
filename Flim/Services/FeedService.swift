@@ -240,6 +240,104 @@ final class FeedService {
         return Dictionary(list.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
     }
 
+    // MARK: - Profile identity (badges, film stats)
+
+    /// The earned-only badge list for any profile, oldest first (see `ProfileIdentity`).
+    /// `profile_badges` is `SECURITY DEFINER` and callable about anyone; a failure (offline, or
+    /// the RPC not deployed yet) degrades to an empty list rather than surfacing an error, this
+    /// strip is decoration on a profile, never something worth blocking the page on.
+    func fetchProfileBadges(_ id: UUID) async -> [ProfileBadge] {
+        struct Params: Encodable { let p_profile_id: UUID }
+        struct Row: Decodable { let badge_id: String; let earned_at: Date }
+        let rows: [Row] = (try? await supabase
+            .rpc("profile_badges", params: Params(p_profile_id: id))
+            .execute().value) ?? []
+        return rows
+            .compactMap { row in
+                ProfileBadgeKind(rawValue: row.badge_id).map { ProfileBadge(id: row.badge_id, kind: $0, earnedAt: row.earned_at) }
+            }
+            .sorted { $0.earnedAt < $1.earnedAt }
+    }
+
+    /// The signed-in account's own earned badge kind ids (raw `badge_id` strings), fetched once
+    /// per account and cached rather than re-fetched on every profile visit. Backs "how to earn
+    /// this" in a stranger's badge popover (see `ProfileBadgeKind.howToEarn` and
+    /// `ProfileStampView`): knowing what the viewer already holds is what lets that line show
+    /// only for badges they don't have yet. `nil` means "not fetched yet", distinct from an
+    /// empty (but fetched) set. Cleared in `resetForAccountChange()`.
+    var viewerBadgeKindIds: Set<String>?
+
+    /// Returns `viewerBadgeKindIds`, fetching and caching it first if this is the first call this
+    /// account. `profile_badges` is callable about any profile including your own, so this reuses
+    /// it for the signed-in account; the ratchet write it performs as a side effect is harmless
+    /// here, this account already knows its own set. Degrades to an empty (but now cached) set on
+    /// failure, matching `fetchProfileBadges`, so a stranger's popover just omits the how-to line
+    /// rather than erroring.
+    func fetchViewerBadgeKindIds(_ viewerId: UUID) async -> Set<String> {
+        if let cached = viewerBadgeKindIds { return cached }
+        let ids = Set(await fetchProfileBadges(viewerId).map { $0.kind.rawValue })
+        viewerBadgeKindIds = ids
+        return ids
+    }
+
+    /// Frames shot, rolls developed, and the date of the first frame ever, for any profile. `nil`
+    /// on any failure (offline, or the RPC not deployed yet), the caller then treats the profile
+    /// as having no stats yet rather than showing an error.
+    func fetchProfileFilmStats(_ id: UUID) async -> ProfileFilmStats? {
+        struct Params: Encodable { let p_profile_id: UUID }
+        let rows: [ProfileFilmStats] = (try? await supabase
+            .rpc("profile_film_stats", params: Params(p_profile_id: id))
+            .execute().value) ?? []
+        return rows.first
+    }
+
+    // MARK: - Badge reveal (own profile only)
+    //
+    // The whole payoff of a badge is the moment its owner sees the stamp actually land, so none
+    // of this fetches or mutates anyone but the signed-in account: every RPC below takes zero
+    // params by design, there is no "whose badges" argument to get wrong. See
+    // `UserPageView.load()` for how the fetch and the reveal are sequenced, and
+    // `markOwnBadgesSeen`'s own comment for why marking never happens at fetch time.
+
+    /// How many earned badges the signed-in account hasn't seen yet. Backs the dot on the way to
+    /// their own profile (see `FeedView`'s avatar button, the closest thing this app has to a
+    /// profile tab). Zero on any failure (offline, or the RPC not deployed yet), which degrades
+    /// to no dot rather than an error.
+    var unseenBadgeCount = 0
+
+    /// Refreshes `unseenBadgeCount` from the server. Called whenever the count could plausibly
+    /// have changed, i.e. every time the Feed tab (re)appears, see `FeedView.reload()`.
+    func refreshUnseenBadgeCount() async {
+        let epoch = AccountEpoch.current
+        let count: Int = (try? await supabase.rpc("unseen_badge_count").execute().value) ?? 0
+        guard AccountEpoch.isCurrent(epoch) else { return }
+        unseenBadgeCount = count
+    }
+
+    /// Ids of badges earned but never shown to their owner, always the signed-in account's own.
+    /// Empty on any failure, which degrades to "nothing to reveal" rather than an error, matching
+    /// `fetchProfileBadges`.
+    func fetchOwnUnseenBadgeIds() async -> Set<String> {
+        struct Row: Decodable { let badge_id: String }
+        let rows: [Row] = (try? await supabase.rpc("own_unseen_badges").execute().value) ?? []
+        return Set(rows.map(\.badge_id))
+    }
+
+    /// Marks every currently-unseen badge as seen for the signed-in account, and clears the tab
+    /// dot immediately rather than waiting on another round trip. Idempotent server-side, so a
+    /// second call (a retry, or a second profile visit before the first write lands) is harmless.
+    ///
+    /// Only ever called by `UserPageView` AFTER the reveal animation has actually rendered, never
+    /// on fetch: marking at fetch time would let a load that gets backgrounded, or a view that
+    /// never finishes appearing, silently burn the moment, the badge would just exist next time
+    /// with no ceremony.
+    func markOwnBadgesSeen() async {
+        let epoch = AccountEpoch.current
+        _ = try? await supabase.rpc("mark_own_badges_seen").execute()
+        guard AccountEpoch.isCurrent(epoch) else { return }
+        unseenBadgeCount = 0
+    }
+
     /// Raw, newest-tagged-first ids of everyone the caller has tagged on their OWN posts, not yet
     /// deduped, self-filtered, or capped (`QuickTagChips.selectedIds` does that). Feeds
     /// `TagPhotoSheet`'s quick-tag row for a personal photo, where there's no roll to draw
@@ -514,6 +612,8 @@ final class FeedService {
         feedCursor = nil
         isLoadingMoreFeed = false
         isLoadingFeed = false
+        unseenBadgeCount = 0
+        viewerBadgeKindIds = nil
     }
 
     // MARK: - Feed pagination (pure)
@@ -988,6 +1088,7 @@ final class FeedService {
             caption: (trimmed?.isEmpty ?? true) ? nil : trimmed
         )).select("id").single().execute().value
         Activation.log(.postShared)
+        Usage.log(.postShared)
 
         guard !tags.isEmpty else { return true }
         struct TagInsert: Encodable { let post_id: UUID; let tagged_user_id: UUID; let x: Double; let y: Double }

@@ -8,6 +8,25 @@ struct UserPageView: View {
     @Environment(FeedService.self) private var feed
 
     @State private var profile: UserProfile?
+    @State private var identity: ProfileIdentity?
+    /// Badge ids earned but never shown to their owner, only ever fetched for `isSelf`. See
+    /// `ProfileIdentityStrip` for how this drives the press-onto-the-page reveal, and
+    /// `badgeRevealArmed` for why this is fetched at most once per time this view is on screen.
+    @State private var unseenBadgeIds: Set<String> = []
+    /// Set the first time `load()` successfully fetches `unseenBadgeIds` for your own profile,
+    /// and never fetched again after that for the rest of this view's lifetime.
+    ///
+    /// Without this, a pull-to-refresh or the settings/edit-profile sheet's `onDismiss` (both of
+    /// which call `load()` again) would re-ask the server every time, and since the server only
+    /// clears an id once `markOwnBadgesSeen()` has actually landed, a refresh that lands BEFORE
+    /// that write completes would refetch the same still-unseen id and replay the whole reveal a
+    /// second time on the same visit.
+    @State private var badgeRevealArmed = false
+    /// The signed-in account's own earned badge kind ids, for "how to earn this" in the popover
+    /// on someone else's stamp; see `ProfileIdentityStrip` and `ProfileBadgeKind.howToEarn`. On
+    /// your own profile this is just this profile's own badges, no extra fetch needed since every
+    /// badge shown here is already one you hold.
+    @State private var viewerBadgeKindIds: Set<String> = []
     @State private var posts: [Post] = []
     @State private var avatarURL: URL?
     @State private var coverURL: URL?
@@ -200,8 +219,21 @@ struct UserPageView: View {
             VStack(spacing: 4) {
                 Text(profile?.name ?? "…")
                     .flimFont(22, weight: .light, relativeTo: .title3).foregroundStyle(.white)
-                Text(profile?.handle ?? "@…")
-                    .flimFont(13, relativeTo: .subheadline).foregroundStyle(FlimTheme.textTertiary)
+                // The handle stays visually centered; the signup number is pinned to the
+                // trailing edge of the same row instead of its own line, quiet enough that it
+                // reads like an edge number on film stock rather than a second headline.
+                ZStack {
+                    Text(profile?.handle ?? "@…")
+                        .flimFont(13, relativeTo: .subheadline).foregroundStyle(FlimTheme.textTertiary)
+                    if let identity {
+                        HStack {
+                            Spacer()
+                            FrameNumberLabel(number: identity.signupNumber)
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 28)
                 // A transparency disclosure, not a vanity badge: FLIM's feed is private and
                 // follow-gated, so this literally means "this person can see what you post".
                 // Neutral tone/colour on purpose, it isn't a stat to be proud of.
@@ -218,6 +250,23 @@ struct UserPageView: View {
                 Text(bio)
                     .flimFont(14, relativeTo: .subheadline).foregroundStyle(FlimTheme.textSecondary)
                     .multilineTextAlignment(.center).padding(.horizontal, 40)
+            }
+
+            // Earned stamps + film stats, FLIM's replacement for social-proof chips. Renders
+            // nothing at all for a brand-new account; see ProfileIdentityStrip.
+            //
+            // `unseenBadgeIds` (and the reveal it drives) is only ever non-empty on `isSelf`:
+            // `load()` never fetches it for anyone else's profile, so this can pass it
+            // unconditionally without a second `isSelf` check here.
+            if let identity, !isBlocked {
+                ProfileIdentityStrip(
+                    identity: identity,
+                    unseenBadgeIds: unseenBadgeIds,
+                    onUnseenBadgesRevealed: {
+                        Task { await feed.markOwnBadgesSeen() }
+                    },
+                    viewerBadgeKindIds: viewerBadgeKindIds
+                )
             }
 
             HStack(spacing: 26) {
@@ -383,10 +432,54 @@ struct UserPageView: View {
         async let ps = feed.fetchUserPosts(userId: userId)
         async let fr = feed.followerCount(userId)
         async let fg = feed.followingCount(userId)
+        async let bd = feed.fetchProfileBadges(userId)
+        async let st = feed.fetchProfileFilmStats(userId)
+        // Resolved alongside the others, not awaited inline below, specifically so `identity`
+        // and `unseenBadgeIds` can be WRITTEN back to back with no `await` between them (see
+        // below). An `await` between those two writes would let SwiftUI render the badge strip
+        // once with badges present but `unseenBadgeIds` still empty, and a `ProfileStampView`'s
+        // `pressed` starting state and its one-shot `.task` are both decided at that first
+        // render, off the `isUnseen` value it saw THEN. A later render that flips `isUnseen` to
+        // true would find the animation permanently already-skipped for that stamp.
+        let shouldFetchUnseen = isSelf && !badgeRevealArmed
+        async let ub: Set<String> = shouldFetchUnseen ? await feed.fetchOwnUnseenBadgeIds() : []
+        // Only fetched (and cached) for someone else's profile; on your own, every badge shown
+        // is already one you hold, see `viewerBadgeKindIds`'s own comment above.
+        async let vb: Set<String> = {
+            guard !isSelf, let uid = auth.currentUser?.id else { return [] }
+            return await feed.fetchViewerBadgeKindIds(uid)
+        }()
         profile = await p
         posts = await ps
         followers = await fr
         following = await fg
+        let badges = await bd
+        let stats = await st
+        let unseen = await ub
+        let viewerHeld = await vb
+        // The signup number lives on the profile row itself and never depends on either RPC
+        // below, so a profile still shows a clean number (and nothing else) if `profile_badges`
+        // or `profile_film_stats` fail, e.g. offline, or before this migration is deployed.
+        // Nothing renders at all if `signupOrdinal` itself is missing (a profile row from before
+        // that column existed): see `UserProfile.signupOrdinal`.
+        if let signupNumber = profile?.signupOrdinal {
+            identity = ProfileIdentity(
+                signupNumber: signupNumber,
+                badges: badges,
+                frameCount: stats?.framesShot ?? 0,
+                rollCount: stats?.rollsDeveloped ?? 0,
+                shootingSince: stats?.shootingSince
+            )
+            // Set together with `identity` above, per the comment on `ub`. Own profile only, and
+            // at most once per visit to this view, see `badgeRevealArmed`.
+            if shouldFetchUnseen {
+                badgeRevealArmed = true
+                unseenBadgeIds = unseen
+            }
+            viewerBadgeKindIds = isSelf ? Set(badges.map { $0.kind.rawValue }) : viewerHeld
+        } else {
+            identity = nil
+        }
         if feed.followingIds.isEmpty, let uid = auth.currentUser?.id { await feed.loadFollowing(userId: uid) }
         if feed.followerIds.isEmpty, let uid = auth.currentUser?.id { await feed.loadFollowers(userId: uid) }
         if let uid = auth.currentUser?.id { await feed.loadBlocked(userId: uid) }

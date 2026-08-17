@@ -143,6 +143,19 @@ struct FeedView: View {
         }
         .navigationBarHidden(true)
         .task {
+            // `feed_viewed` semantics: once per time this view genuinely appears, i.e. the
+            // initial mount plus every later switch BACK to the Feed tab, since a `Tab`'s content
+            // view appears/disappears with the tab switch in this codebase (see
+            // `CameraViewModel.start()`'s own comment on why it needs a firing guard for exactly
+            // this reappearance). Riding on this same `.task`, not a new `.onAppear`, is what
+            // keeps it to that: `.task` runs once per appear regardless of how many times `body`
+            // re-evaluates from a `@State`/`@Observable` change, so this does not fire on every
+            // scroll or re-render. It also does not fire merely because the app returns to the
+            // foreground while the Feed tab stays selected in the background: SwiftUI does not
+            // tear this view down for a scene-phase change alone, only `onChange(of: scenePhase)`
+            // below reacts to that, and it does not log usage. Net effect: this counts distinct
+            // looks at the feed, not renders, scrolls, or idle-in-background time.
+            Usage.log(.feedViewed)
             if let path = auth.currentUser?.avatarPath { myAvatarURL = await feed.signedURL(for: path) }
             if feed.feed.isEmpty { await reload() } else { didLoad = true; await checkNewPosts() }
         }
@@ -232,7 +245,10 @@ struct FeedView: View {
                 }
                 .accessibilityLabel("Find friends")
 
-                // Your avatar → your own page.
+                // Your avatar → your own page. There's no separate Profile tab in this app, this
+                // avatar is the one way in, so it's also where a newly earned, unseen badge gets
+                // flagged: same red-dot-on-topTrailing language as the bell above, just presence
+                // rather than a count, since "you have something new" is the whole message.
                 if let uid = auth.currentUser?.id {
                     NavigationLink {
                         UserPageView(userId: uid)
@@ -250,8 +266,16 @@ struct FeedView: View {
                             }
                             .clipShape(Circle())
                             .overlay(Circle().stroke(accent.opacity(0.4), lineWidth: 1))
+                            .overlay(alignment: .topTrailing) {
+                                if feed.unseenBadgeCount > 0 {
+                                    Circle()
+                                        .fill(Color.red)
+                                        .frame(width: 11, height: 11)
+                                        .overlay(Circle().stroke(FlimTheme.bg, lineWidth: 1.5))
+                                }
+                            }
                     }
-                    .accessibilityLabel("Your page")
+                    .accessibilityLabel(feed.unseenBadgeCount > 0 ? "Your page, new badge earned" : "Your page")
                 }
             }
 
@@ -340,6 +364,10 @@ struct FeedView: View {
         if let path = auth.currentUser?.avatarPath { myAvatarURL = await feed.signedURL(for: path) }
         unreadActivity = await feed.unreadActivityCount(
             userId: uid, since: Date(timeIntervalSince1970: lastActivitySeen))
+        // Whether it could have changed since the last time this tab was on screen: a badge is
+        // only ever earned server-side (a roll developing, an invite landing), so "every time you
+        // come back to Feed" is as often as it's worth asking.
+        await feed.refreshUnseenBadgeCount()
         await prefetchFeedImages()
     }
 

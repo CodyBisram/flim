@@ -218,6 +218,7 @@ struct MainTabView: View {
             // ContentView), so this is "reached the main UI", not process start. Firing here
             // (rather than in FlimApp's init) is the whole point: init runs before sign-in.
             Activation.log(.firstLaunch)
+            Usage.log(.appOpen)
             // A roll link that opened the app from cold arrives before this view exists, so the
             // notification finds nobody. The code is on disk; collect it here.
             if let held = PendingRollInvite.take() {

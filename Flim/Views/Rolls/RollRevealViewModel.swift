@@ -209,6 +209,7 @@ final class RollRevealViewModel {
             // itself came back non-nil (a nil presence just means the viewer count read failed,
             // the view was still recorded).
             Activation.log(.revealWatched)
+            Usage.log(.revealWatched)
             guard AccountEpoch.isCurrent(epoch) else { return }
             presence = recorded
         }

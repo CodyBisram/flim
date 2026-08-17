@@ -380,6 +380,7 @@ final class PhotoService {
             // Every successful capture, not just the first ever: the server dedupes by
             // (user, event), so this is what makes "first shot" correct without a local flag.
             Activation.log(.firstShot)
+            Usage.log(.photoCaptured)
 
             // The photo is still returned and its renditions still upload: it exists server-side
             // under the account that took it, and abandoning that work would lose a real photo.
@@ -487,7 +488,13 @@ final class PhotoService {
             // The row exists now, independent of whether this account is still the current one
             // below, same reasoning as the ordinary success path above.
             await failedUploadStore.remove(id: photoId, userId: userId)
+            // This fallback insert and the ordinary success path above are mutually exclusive
+            // outcomes of the SAME capture (this only runs from the catch branch after the
+            // primary insert refused with a roll-developed error, see this function's own
+            // header), never both, so logging here alongside the fallback's own `Activation.log`
+            // cannot double-count a single capture the way logging at both unconditionally would.
             Activation.log(.firstShot)
+            Usage.log(.photoCaptured)
 
             // Fast path only: skips the extra rendition-upload/return work below when already
             // obviously stale. Does NOT by itself prove the epoch is still current by the time the

@@ -12,6 +12,11 @@ struct UserProfile: Codable, Identifiable, Hashable {
     /// Kept out of Discover's suggestions. Optional with a `false` default so a client that
     /// predates the column, or any query selecting a narrower set of fields, still decodes.
     var hiddenFromDiscovery: Bool? = false
+    /// The permanent "you are the Nth member" number, `profiles.signup_ordinal`. Optional so a
+    /// row from before that column existed on the view still decodes instead of failing the
+    /// whole profile fetch; `nil` is the only degraded state, never a crash. See
+    /// `ProfileIdentity` for how the UI reads this.
+    var signupOrdinal: Int?
 
     /// Whether this profile should be offered as someone to follow.
     var isSuggestable: Bool { hiddenFromDiscovery != true }
@@ -27,6 +32,7 @@ struct UserProfile: Codable, Identifiable, Hashable {
         case coverPath = "cover_path"
         case createdAt = "created_at"
         case hiddenFromDiscovery = "hidden_from_discovery"
+        case signupOrdinal = "signup_ordinal"
     }
 }
 
