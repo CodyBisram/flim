@@ -17,6 +17,16 @@ struct PeopleSearchField: View {
     @Environment(\.flimAccent) private var accent
     @Binding var query: String
     var prompt: String = "Search by name or username"
+    /// Set when this field is the first thing inside a bare sheet, under a visible drag indicator,
+    /// rather than under a navigation bar.
+    ///
+    /// SwiftUI draws `.presentationDragIndicator(.visible)` OVER the sheet's content instead of
+    /// insetting anything for it: the grabber sits roughly 5 to 9 points below the sheet's top
+    /// edge, and the default 8 points of top padding put the capsule's own top edge at 8.5, so the
+    /// two literally overlapped and the grabber read as part of the search field. Measured off a
+    /// device screenshot of the emoji picker, which is the only host with this problem — the other
+    /// three all sit under a navigation bar, where 8 is right and anything more looks adrift.
+    var underSheetGrabber = false
 
     var body: some View {
         HStack(spacing: 8) {
@@ -42,7 +52,11 @@ struct PeopleSearchField: View {
         .animation(.snappy(duration: 0.2), value: query.isEmpty)
         .padding(.horizontal, 14).padding(.vertical, 11)
         .background(FlimTheme.bgElevated, in: Capsule())
-        .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 12)
+        .padding(.horizontal, 16)
+        // Enough to clear the grabber with real space under it, and close enough to the 12 + 16
+        // that separates this from whatever follows that the field doesn't sit lopsided.
+        .padding(.top, underSheetGrabber ? 22 : 8)
+        .padding(.bottom, 12)
     }
 }
 

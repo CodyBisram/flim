@@ -69,9 +69,9 @@ actor EmojiCatalog {
     }
 
     /// Every generated emoji's precomputed lowercase search tokens (Unicode component names for
-    /// most entries, region names for flags, the small curated synonym table layered on top), for
-    /// the picker's search field. Computed once alongside `sections()` in the same background
-    /// pass, not per keystroke: see `generate()`.
+    /// most entries, region names for flags, `emojiSearchAliases` layered on top, and each of
+    /// those words' `searchStem`), for the picker's search field. Computed once alongside
+    /// `sections()` in the same background pass, not per keystroke: see `generate()`.
     func searchTokens() async -> [String: [String]] {
         await data().tokens
     }
@@ -159,53 +159,326 @@ private let zwjTemplates: [(text: String, category: String)] = [
     ("🍄‍🟫", "Food and Drink"),
 ]
 
-/// The one curated part of the search index: Unicode's own component names miss the words people
-/// actually type to search for an emoji ("pray" doesn't appear anywhere in FOLDED HANDS' name,
-/// "love" doesn't appear in HEAVY BLACK HEART's, "lol" and "100" aren't Unicode names at all).
-/// There is no way to derive these from scalar properties the way everything else in this file is,
-/// so this is unavoidably a hand-maintained list, like `zwjTemplates` above — but kept deliberately
-/// small: production reaction data across the app's whole history is 29 reactions using 8 distinct
-/// emoji, with ❤️, 🔥, and 😂 alone covering 79% of them. This covers the everyday vocabulary around
-/// the emoji people actually reach for, not a completionist keyword mapping. Keyed by emoji string
-/// rather than by concept, so an entry for an emoji THIS device can't draw is simply never
-/// reachable, exactly like every other part of the catalog degrading the same way.
-private let synonymTokens: [String: [String]] = [
-    "❤️": ["love"], "🧡": ["love"], "💛": ["love"], "💚": ["love"], "💙": ["love"], "💜": ["love"],
-    "🖤": ["love"], "🤍": ["love"], "🤎": ["love"], "💕": ["love"], "💞": ["love"], "💗": ["love"],
-    "😍": ["love", "crush"], "😘": ["love", "kiss"],
-    "🔥": ["lit", "hot", "flames"],
-    "😂": ["lol", "haha", "funny", "lmao"], "🤣": ["lol", "haha", "funny", "lmao"],
-    "😭": ["crying", "sobbing"], "😢": ["crying", "sad"],
-    "🙏": ["pray", "please", "thanks", "thank"],
-    "💯": ["100", "hundred"],
-    "👍": ["yes", "ok", "okay", "agree", "thumbsup"], "👎": ["no", "disagree", "thumbsdown"],
-    "😊": ["happy", "smile"], "😀": ["happy", "smile"], "😁": ["happy", "smile"],
-    "🙁": ["sad"], "☹️": ["sad"],
-    "😡": ["angry", "mad"], "😠": ["angry", "mad"],
-    "😮": ["wow", "shocked", "surprised"], "😲": ["wow", "shocked", "surprised"],
-    "🙌": ["yay", "celebrate", "hooray"], "🎉": ["yay", "celebrate", "party", "congrats"],
-    "🥳": ["celebrate", "party"],
-    "😴": ["tired", "sleepy", "sleep"], "🥱": ["tired", "sleepy", "bored"],
-    "🤔": ["thinking", "hmm"],
-    "😳": ["blushing", "embarrassed"],
-    "🤗": ["hug"],
-    "🙈": ["oops", "embarrassed"],
-    "😎": ["cool"],
-    "🤮": ["sick", "gross", "ill"], "🤢": ["sick", "gross"],
-    "💀": ["dead", "dying"], "😵": ["dead", "dizzy"],
-    "👀": ["eyes", "looking", "watching"],
-    "🫡": ["salute", "respect"],
-    "😏": ["smirk"],
-    "🥺": ["pleading", "cute"],
-    "🤷": ["shrug", "whatever", "idk"],
-    "💔": ["heartbroken", "breakup"],
-    "🍑": ["butt", "peach"],
-    "🍆": ["eggplant"],
-    "💩": ["poop", "shit", "crap"],
-    "🖕": ["middle finger"],
-    "✅": ["done", "check", "yes"], "❌": ["no", "wrong", "cancel"],
-    "⭐": ["star", "favorite"], "🌟": ["star", "favorite"],
+/// The one curated part of the search index, keyed by the word you'd type rather than by the emoji
+/// it should find: Unicode's own component names are formal, frozen in 2010, and miss most of what
+/// people actually type. Measured against the generated catalog before this existed, "laugh"
+/// matched exactly one emoji (🤣, the only one whose Unicode name contains the word at all — 😂 is
+/// FACE WITH TEARS OF JOY, 😆 is SMILING FACE WITH OPEN MOUTH AND TIGHTLY-CLOSED EYES), "sad"
+/// matched nothing whatsoever, and "happy" matched a raised hand. Unicode exposes no keyword
+/// property to derive these from, so, like `zwjTemplates` above, this is unavoidably hand-maintained.
+///
+/// It used to be deliberately tiny, on the reasoning that production reaction data is dominated by
+/// a handful of emoji. That was the wrong bar: the picker's search field is judged against the one
+/// on the keyboard people already use, where typing "laugh" fills the row. The right size is
+/// "everyday vocabulary", not "the emoji already in the data" — the whole point of search is to
+/// reach the ones that AREN'T. It's still not CLDR: no synonym chains, no rare concepts, one
+/// obvious set of answers per word people actually type at a photo.
+///
+/// Keyword → emoji, not emoji → keywords, because the maintainable question is "what should typing
+/// this give me", and the answer wants to be read as a row. It's inverted into per-emoji tokens
+/// once, inside `generate()`. An entry naming an emoji THIS device can't draw is simply never
+/// reachable (the emoji never enters the catalog, so nothing carries its tokens), exactly like
+/// every other part of this file degrading the same way.
+///
+/// Every emoji here must be spelled in its CANONICAL presentation form — bare when the scalar is
+/// `Emoji_Presentation=Yes` (😀, 🔥, ⭐), with a trailing `U+FE0F` when it isn't (❤️, ☺️, ✌️) —
+/// because these are matched against `generate()`'s own keys by exact string equality, so a wrong
+/// variation selector silently does nothing rather than failing loudly. `EmojiCatalogTests` checks
+/// that invariant for every entry, which is also why this isn't `private`.
+let emojiSearchAliases: [String: [String]] = [
+    // MARK: - Laughing, joy, and the everyday reaction vocabulary
+    "laugh": ["😂", "🤣", "😆", "😹", "😅", "😄", "😃"],
+    "lol": ["😂", "🤣", "😆", "😹"],
+    "haha": ["😂", "🤣", "😆"],
+    "lmao": ["😂", "🤣"],
+    "funny": ["😂", "🤣", "😆", "🤡"],
+    "hilarious": ["😂", "🤣"],
+    "giggle": ["😆", "🤭", "😹"],
+    "happy": ["😀", "😃", "😄", "😁", "😊", "🙂", "🥰", "😌", "🤗", "🥳"],
+    "smile": ["😀", "😃", "😄", "😁", "😊", "🙂", "😸"],
+    "grin": ["😀", "😃", "😄", "😁"],
+    "joy": ["😂", "😊", "🥹", "🎉"],
+    "excited": ["🤩", "😆", "🥳", "😻"],
+    "proud": ["🥹", "🤩", "💪", "🏆"],
+
+    // MARK: - Sadness, hurt, and worry
+    "sad": ["😢", "😭", "🙁", "☹️", "😞", "😔", "😥", "😿", "💔", "🥲"],
+    "cry": ["😢", "😭", "🥲", "😿", "😥"],
+    "sob": ["😭", "😢"],
+    "upset": ["😞", "😔", "😩", "😫", "💔"],
+    "hurt": ["💔", "😢", "🤕"],
+    "lonely": ["🥺", "😔", "🫂"],
+    "sorry": ["🙏", "😔", "🥺"],
+    "worried": ["😟", "😰", "😬", "🥺"],
+    "stressed": ["😩", "😫", "😰", "🤯"],
+    "disappointed": ["😞", "😔", "👎"],
+
+    // MARK: - Anger and disgust
+    "angry": ["😠", "😡", "🤬", "😤", "👿", "😾"],
+    "mad": ["😠", "😡", "🤬", "😤"],
+    "rage": ["🤬", "😡", "👿"],
+    "annoyed": ["😒", "🙄", "😤"],
+    "gross": ["🤢", "🤮", "😷", "💩"],
+    "sick": ["🤢", "🤮", "🤒", "🤕", "😷"],
+    "eww": ["🤢", "🤮"],
+
+    // MARK: - Love and affection
+    "love": ["❤️", "😍", "🥰", "😘", "💕", "💖", "💗", "💘", "💞", "💓", "❣️", "😻", "🫶"],
+    "heart": ["❤️", "🧡", "💛", "💚", "💙", "💜", "🖤", "🤍", "🤎", "💕", "💖", "💗", "💘", "💞", "💓", "💝", "❣️", "💌", "🫶"],
+    "crush": ["😍", "🥰", "😻", "💘"],
+    "kiss": ["😘", "😗", "😙", "😚", "💋", "💏", "😽"],
+    "hug": ["🤗", "🫂"],
+    "cute": ["🥰", "😍", "🥺", "🐣", "🐶", "🐱"],
+    "romance": ["❤️", "💐", "🌹", "💏", "🕯️"],
+    "heartbroken": ["💔", "😭", "😢"],
+    "breakup": ["💔", "😭"],
+    "wedding": ["💍", "👰", "🤵", "💒", "🎊"],
+    "marry": ["💍", "👰", "🤵", "💒"],
+
+    // MARK: - Shock, fear, confusion
+    "wow": ["😮", "😲", "🤯", "😱", "🤩", "‼️"],
+    "shocked": ["😮", "😲", "😱", "🤯"],
+    "surprised": ["😮", "😲", "🎉", "🤯"],
+    "omg": ["😱", "😲", "🤯", "😮"],
+    "scared": ["😱", "😨", "😰", "🙀", "👻"],
+    "creepy": ["😨", "👻", "🕷️", "💀"],
+    "confused": ["😕", "🤨", "😵‍💫", "🤷", "❓"],
+    "shrug": ["🤷"],
+    "idk": ["🤷", "😕"],
+    "whatever": ["🤷", "🙄", "😒"],
+    "thinking": ["🤔", "🧐", "💭"],
+    "hmm": ["🤔", "🧐"],
+    "facepalm": ["🤦", "🙈"],
+    "awkward": ["😬", "😅", "😳"],
+    "embarrassed": ["😳", "🙈", "😅"],
+    "oops": ["🙈", "😅", "😬"],
+    "blush": ["😳", "☺️", "🥰"],
+
+    // MARK: - Attitude, banter, mischief
+    "cool": ["😎", "🆒", "🕶️", "🔥"],
+    "smirk": ["😏"],
+    "wink": ["😉", "😜"],
+    "tongue": ["😛", "😜", "😝", "🤪", "👅"],
+    "silly": ["🤪", "😜", "🤡", "😝"],
+    "crazy": ["🤪", "🤯", "😵‍💫"],
+    "nerd": ["🤓", "🧐", "📚"],
+    "sarcastic": ["🙄", "😒", "😏"],
+    "lie": ["🤥", "🧢"],
+    "secret": ["🤫", "🤐", "🔒", "🤝"],
+    "quiet": ["🤫", "🤐"],
+    "evil": ["😈", "👿", "💀"],
+    "angel": ["😇", "👼"],
+    "clown": ["🤡"],
+    "poop": ["💩"],
+    "shit": ["💩"],
+    "dead": ["💀", "☠️", "😵", "⚰️"],
+    "sleep": ["😴", "😪", "🥱", "💤", "🛏️"],
+    "tired": ["😴", "🥱", "😩", "😪"],
+    "bored": ["🥱", "😑", "😐"],
+    "hungry": ["😋", "🤤", "🍕", "🍔"],
+    "drunk": ["🥴", "🍻", "🍺", "🍷"],
+    "rich": ["🤑", "💰", "💵", "💎"],
+
+    // MARK: - Hands and gestures
+    "yes": ["👍", "✅", "🆗", "🙌", "☑️"],
+    "ok": ["👌", "👍", "🆗", "✅"],
+    "agree": ["👍", "💯", "🙌", "🤝"],
+    "thumbsup": ["👍"],
+    "no": ["👎", "❌", "🚫", "🙅"],
+    "nope": ["👎", "❌", "🙅"],
+    "thumbsdown": ["👎"],
+    "clap": ["👏", "🙌"],
+    "applause": ["👏", "🙌"],
+    "bravo": ["👏", "🙌", "🏆"],
+    "wave": ["👋", "🌊"],
+    "hi": ["👋", "🙂"],
+    "hello": ["👋", "🙂"],
+    "bye": ["👋", "✌️"],
+    "peace": ["✌️", "🕊️", "☮️"],
+    "strong": ["💪", "🔥", "🦾"],
+    "muscle": ["💪", "🏋️", "🦾"],
+    "flex": ["💪", "😎"],
+    "fist": ["👊", "🤛", "🤜", "✊"],
+    "pray": ["🙏"],
+    "please": ["🙏", "🥺"],
+    "thanks": ["🙏", "🤗", "💐"],
+    "thank": ["🙏", "🤗"],
+    "salute": ["🫡"],
+    "respect": ["🫡", "🙇", "🙏"],
+    "eyes": ["👀", "👁️"],
+    "look": ["👀", "🔍", "👁️"],
+    "watching": ["👀", "📺"],
+    "point": ["👉", "👈", "👆", "👇"],
+    "middle finger": ["🖕"],
+
+    // MARK: - Celebration and milestones
+    "party": ["🎉", "🎊", "🥳", "🪩", "🍾", "🎈"],
+    "celebrate": ["🎉", "🎊", "🥳", "🍾", "🙌", "🥂"],
+    "congrats": ["🎉", "🎊", "👏", "🏆", "🥂"],
+    "yay": ["🎉", "🙌", "🥳"],
+    "hooray": ["🎉", "🙌", "🥳"],
+    "birthday": ["🎂", "🎈", "🎁", "🥳", "🎉"],
+    "cheers": ["🥂", "🍻", "🍾", "🍷"],
+    "gift": ["🎁", "🎀"],
+    "win": ["🏆", "🥇", "🎯", "🙌"],
+    "winner": ["🏆", "🥇", "👑"],
+    "trophy": ["🏆", "🥇", "🎖️"],
+    "goat": ["🐐", "🏆"],
+    "fire": ["🔥"],
+    "lit": ["🔥", "🎉", "🪩"],
+    "hot": ["🔥", "🥵", "🌶️", "☀️"],
+    "cold": ["🥶", "❄️", "🧊", "⛄"],
+    "perfect": ["💯", "👌", "✨"],
+    "hundred": ["💯"],
+    "star": ["⭐", "🌟", "✨", "🌠"],
+    "sparkle": ["✨", "🌟", "💫"],
+    "magic": ["✨", "🪄", "🔮", "🎩"],
+    "lucky": ["🍀", "🎰", "🌈"],
+    "new": ["🆕", "✨", "🐣"],
+
+    // MARK: - Photos, film, and making things
+    "photo": ["📷", "📸", "🖼️", "🎞️"],
+    "camera": ["📷", "📸", "🎥", "📹"],
+    "picture": ["📷", "🖼️", "📸"],
+    "film": ["🎞️", "🎬", "📽️", "🎥"],
+    "movie": ["🎬", "🍿", "📽️", "🎥"],
+    "video": ["📹", "🎥", "📺"],
+    "art": ["🎨", "🖌️", "🖼️", "✏️"],
+    "draw": ["✏️", "🖍️", "🎨"],
+    "music": ["🎵", "🎶", "🎧", "🎤", "🎸"],
+    "song": ["🎵", "🎶", "🎤"],
+    "sing": ["🎤", "🎶", "🎵"],
+    "dance": ["💃", "🕺", "🪩", "🎶"],
+    "book": ["📚", "📖", "📕"],
+    "read": ["📖", "📚", "🤓"],
+    "write": ["✍️", "📝", "✏️"],
+    "idea": ["💡", "🤔", "✨"],
+
+    // MARK: - Food and drink
+    "food": ["🍕", "🍔", "🍟", "🌮", "🍣", "🍜", "🍝", "🥗", "🍲", "😋"],
+    "eat": ["😋", "🍽️", "🍕", "🍴"],
+    "yum": ["😋", "🤤", "😍"],
+    "pizza": ["🍕"],
+    "burger": ["🍔", "🍟"],
+    "taco": ["🌮", "🌯"],
+    "sushi": ["🍣", "🍱", "🥢"],
+    "coffee": ["☕", "🥐"],
+    "tea": ["🍵", "🧋"],
+    "beer": ["🍺", "🍻"],
+    "wine": ["🍷", "🍾", "🥂"],
+    "cocktail": ["🍸", "🍹", "🥃"],
+    "drink": ["🍺", "🍷", "☕", "🥤", "🍸"],
+    "cake": ["🍰", "🎂", "🧁"],
+    "dessert": ["🍰", "🍦", "🍩", "🍪", "🧁"],
+    "icecream": ["🍦", "🍨"],
+    "candy": ["🍬", "🍫", "🍭"],
+    "cook": ["🍳", "🔪", "🥘", "🧑‍🍳"],
+    "breakfast": ["🍳", "🥐", "☕", "🥞"],
+
+    // MARK: - Places, weather, and getting there
+    "travel": ["✈️", "🧳", "🗺️", "🌍", "🚆"],
+    "trip": ["✈️", "🧳", "🚗", "🗺️"],
+    "vacation": ["🏖️", "✈️", "🌴", "🕶️"],
+    "beach": ["🏖️", "🌊", "🌴", "🐚", "☀️"],
+    "summer": ["☀️", "🏖️", "🍉", "🕶️"],
+    "winter": ["❄️", "⛄", "🧣", "🎿"],
+    "snow": ["❄️", "⛄", "🌨️", "🏂"],
+    "rain": ["🌧️", "☔", "⛈️", "🌈"],
+    "storm": ["⛈️", "🌩️", "🌪️", "⚡"],
+    "sun": ["☀️", "🌞", "🌅", "😎"],
+    "night": ["🌙", "🌃", "✨", "😴"],
+    "moon": ["🌙", "🌛", "🌝", "🌕"],
+    "rainbow": ["🌈", "🏳️‍🌈"],
+    "pride": ["🏳️‍🌈", "🏳️‍⚧️", "🌈"],
+    "nature": ["🌳", "🌲", "🍃", "🌿", "⛰️"],
+    "flower": ["🌸", "🌺", "🌻", "🌷", "🌹", "🌼", "💐"],
+    "plant": ["🪴", "🌱", "🌿", "🌵"],
+    "space": ["🚀", "🌌", "🪐", "👽", "🌠"],
+    "world": ["🌍", "🌎", "🌏", "🗺️"],
+    "ocean": ["🌊", "🐬", "🐟", "🏖️", "⛵"],
+    "swim": ["🏊", "🌊", "🩱"],
+    "home": ["🏠", "🏡", "🛋️", "🔑"],
+    "city": ["🏙️", "🌃", "🚕", "🏢"],
+    "car": ["🚗", "🚙", "🏎️", "🛣️"],
+    "drive": ["🚗", "🛣️", "🚙"],
+    "bike": ["🚲", "🚴", "🛵"],
+    "plane": ["✈️", "🛫", "🛬"],
+    "train": ["🚆", "🚂", "🚇"],
+
+    // MARK: - People, animals, and everyday life
+    "baby": ["👶", "🍼", "🧸", "🐣"],
+    "family": ["👪", "🏠", "❤️"],
+    "friend": ["🫂", "🧑‍🤝‍🧑", "🤝", "❤️"],
+    "dog": ["🐶", "🐕", "🦮", "🐩", "🐕‍🦺"],
+    "puppy": ["🐶", "🐕"],
+    "cat": ["🐱", "🐈", "🐈‍⬛", "😻", "🐾"],
+    "kitten": ["🐱", "🐈"],
+    "pet": ["🐶", "🐱", "🐾", "🐹"],
+    "bird": ["🐦", "🦅", "🕊️", "🦜"],
+    "fish": ["🐟", "🐠", "🎣", "🍣"],
+    "bug": ["🐛", "🐜", "🐝", "🦋", "🕷️"],
+    "work": ["💼", "💻", "🏢", "📊", "🧑‍💻"],
+    "job": ["💼", "🧑‍💻", "🏢"],
+    "busy": ["😩", "💼", "⏰", "🏃"],
+    "school": ["🏫", "📚", "✏️", "🎓"],
+    "study": ["📚", "✏️", "🤓", "📝"],
+    "exam": ["📝", "😰", "📚"],
+    "graduate": ["🎓", "🎉", "🧑‍🎓"],
+    "gym": ["💪", "🏋️", "🏃", "🤸"],
+    "workout": ["💪", "🏋️", "🏃", "🧘"],
+    "exercise": ["🏃", "🏋️", "🚴", "🧘"],
+    "run": ["🏃", "👟", "🎽"],
+    "yoga": ["🧘", "🧎"],
+    "sport": ["⚽", "🏀", "🏈", "⚾", "🎾", "🏐"],
+    "game": ["🎮", "🕹️", "🎲", "♟️"],
+    "gaming": ["🎮", "🕹️"],
+    "money": ["💰", "💵", "💸", "🤑", "💳"],
+    "shopping": ["🛒", "🛍️", "💳"],
+    "phone": ["📱", "☎️", "📞"],
+    "call": ["📞", "☎️", "📱"],
+    "message": ["💬", "🗨️", "📩", "💭"],
+    "chat": ["💬", "🗨️", "📱"],
+    "email": ["📧", "📩", "✉️"],
+    "time": ["⏰", "⌛", "⏳", "🕐"],
+    "late": ["⏰", "🏃", "😬"],
+    "clean": ["🧼", "🧹", "🧽", "✨"],
+    "health": ["🏥", "💊", "🩺", "🍎"],
+    "doctor": ["🧑‍⚕️", "🏥", "🩺"],
+    "medicine": ["💊", "💉", "🩹"],
+
+    // MARK: - Marks, status, and signals
+    "check": ["✅", "☑️", "✔️"],
+    "done": ["✅", "☑️", "🏁", "🙌"],
+    "correct": ["✅", "✔️", "💯"],
+    "wrong": ["❌", "🚫", "👎"],
+    "cancel": ["❌", "🚫", "⛔"],
+    "stop": ["🛑", "✋", "⛔", "🚫"],
+    "warning": ["⚠️", "🚨", "❗"],
+    "careful": ["⚠️", "👀", "🚨"],
+    "urgent": ["🚨", "❗", "⏰"],
+    "question": ["❓", "🤔", "🙋"],
+    "key": ["🔑", "🗝️", "🔓"],
+    "lock": ["🔒", "🔐", "🔑"],
+    "search": ["🔍", "👀", "🔎"],
+    "up": ["⬆️", "📈", "🔺"],
+    "down": ["⬇️", "📉", "🔻"],
+    "chart": ["📊", "📈", "📉"],
 ]
+
+/// `emojiSearchAliases` read the other way round: emoji → the keywords that should find it. Built
+/// once per `generate()` pass rather than stored, so the table above stays the single place any of
+/// this is maintained.
+func aliasTokensByEmoji() -> [String: [String]] {
+    var inverted: [String: [String]] = [:]
+    for (keyword, emojis) in emojiSearchAliases {
+        for emoji in emojis {
+            inverted[emoji, default: []].append(keyword)
+        }
+    }
+    // Dictionary iteration order is not stable, and these end up in a user-visible ranking, so
+    // sort: two runs of the same build must produce the same tokens in the same order.
+    return inverted.mapValues { $0.sorted() }
+}
 
 /// Runs entirely off the actor: called from inside `Task.detached`, touches no actor state, so it
 /// never needs to hop onto `EmojiCatalog`'s executor just to compute.
@@ -214,13 +487,14 @@ private func generate() -> EmojiCatalogData {
     var tokensByEmoji: [String: [String]] = [:]
     var seen = Set<String>()
     let probe = RenderProbe()
+    let aliases = aliasTokensByEmoji()
 
     func add(_ text: String, to category: String, tokens: [String]) {
         guard !text.isEmpty, seen.insert(text).inserted else { return }
         byCategory[category, default: []].append(text)
         var deduped: [String] = []
         var dedupedSeen = Set<String>()
-        for token in tokens + (synonymTokens[text] ?? []) where dedupedSeen.insert(token).inserted {
+        for token in withStems(tokens + (aliases[text] ?? [])) where dedupedSeen.insert(token).inserted {
             deduped.append(token)
         }
         tokensByEmoji[text] = deduped
@@ -363,6 +637,56 @@ func regionCode(forFlag text: String) -> String? {
 /// `EmojiCatalogTests` as a pure function.
 func keycapSearchTokens(base: Character, text: String) -> [String] {
     emojiSearchTokens(for: text) + [String(base).lowercased()]
+}
+
+/// A crude, deliberately symmetric suffix stem: "smiling" and "smile" both reduce to "smil",
+/// "laughing" and "laugh" to "laugh", "dogs" to "dog". Nothing here is linguistics — it strips
+/// `-ing`/`-ed`, then a plural `-s`/`-es`, then a silent `-e`, then an undoubled consonant
+/// ("running" → "runn" → "run") — and it does not need to be, because it is only ever applied to
+/// BOTH sides of a comparison. A stem that is wrong in the same way for the token and the query
+/// still matches them to each other, which is the entire job.
+///
+/// It exists because the catalog's tokens come from Unicode's own frozen, formal names, which are
+/// full of participles a person would never type: 😊 is SMILING FACE WITH SMILING EYES, so before
+/// this, typing the actual word "smile" found nothing at all, while "smiling" found twenty. Each
+/// rule only fires if at least three characters survive, so short words are left alone ("eye" stays
+/// "eye" rather than collapsing into "ey", and "ice" stays "ice").
+///
+/// Stems are stored ALONGSIDE the real words at generation time (see `withStems`), never in place
+/// of them, so an exact word match still outranks a stem match. Not `private`: exercised directly
+/// by `EmojiCatalogTests`, and used by `emojiSearchRank` to stem the query the same way.
+func searchStem(_ word: String) -> String {
+    var stem = Substring(word)
+    @discardableResult
+    func drop(_ count: Int) -> Bool {
+        guard stem.count - count >= 3 else { return false }
+        stem = stem.dropLast(count)
+        return true
+    }
+    if stem.hasSuffix("ing") { drop(3) } else if stem.hasSuffix("ed") { drop(2) }
+    if stem.hasSuffix("es") {
+        if !drop(2) { drop(1) }          // "eyes" → "eye", not the two-letter "ey"
+    } else if stem.hasSuffix("s") {
+        drop(1)
+    }
+    if stem.hasSuffix("e") { drop(1) }
+    if let last = stem.last, stem.dropLast().last == last, !"aeiou".contains(last) { drop(1) }
+    return String(stem)
+}
+
+/// `tokens` plus each one's `searchStem`, when the stem differs from the word itself. Precomputing
+/// these into the stored token list is what keeps search cheap: `emojiSearchRank` then stems only
+/// the query, once per keystroke, instead of stemming every token of all ~3,500 entries on every
+/// keystroke. Order is preserved and stems are appended, never substituted.
+func withStems(_ tokens: [String]) -> [String] {
+    var out: [String] = []
+    out.reserveCapacity(tokens.count * 2)
+    for token in tokens {
+        out.append(token)
+        let stem = searchStem(token)
+        if stem != token { out.append(stem) }
+    }
+    return out
 }
 
 /// Splits any string into lowercase word tokens, breaking on anything that isn't a letter or digit

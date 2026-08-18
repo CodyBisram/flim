@@ -180,6 +180,110 @@ struct EmojiCatalogTests {
         #expect(results.isEmpty)
     }
 
+    @Test("a stem-only match still ranks, behind exact and prefix matches")
+    func stemMatchRanksLast() {
+        // Unicode calls 😊 SMILING FACE WITH SMILING EYES, so the word a person actually types
+        // ("smile") appears nowhere in its tokens. Generation stores each word's stem alongside
+        // it (see `withStems`), which is what lets the query's own stem find it.
+        let tokens = withStems(["smiling", "face"])
+        #expect(emojiSearchRank(tokens, query: "smiling") == 0)
+        #expect(emojiSearchRank(tokens, query: "smilin") == 1)
+        #expect(emojiSearchRank(tokens, query: "smile") == 2)
+    }
+
+    @Test("stemming matches plurals without matching unrelated words that share a stem prefix")
+    func stemmingIsWholeStemNotPrefix() {
+        #expect(emojiSearchRank(withStems(["dog", "face"]), query: "dogs") == 2)
+        // "fire" stems to "fir", which IS a prefix of "first" — the whole-stem rule is what stops
+        // FIRST PLACE MEDAL from answering a search for fire.
+        #expect(emojiSearchRank(withStems(["first", "place", "medal"]), query: "fire") == nil)
+    }
+
+    @Test("stems are added alongside the real words, never in place of them")
+    func stemsAreAdditive() {
+        let tokens = withStems(["smiling", "face"])
+        #expect(tokens.contains("smiling"))
+        #expect(tokens.contains("face"))
+        #expect(tokens.contains("smil"))
+    }
+
+    @Test("stemming leaves short words alone rather than collapsing them")
+    func stemmingLeavesShortWordsAlone() {
+        // Every rule only fires if at least three characters survive it, so these are unchanged
+        // and can't cross-match each other.
+        #expect(searchStem("eye") == "eye")
+        #expect(searchStem("eyes") == "eye")
+        #expect(searchStem("ice") == "ice")
+        #expect(searchStem("cry") == "cry")
+    }
+
+    @Test("a word and its participle stem to the same thing, in both directions")
+    func stemmingIsSymmetric() {
+        // The stemmer is crude on purpose; what it has to be is symmetric, since it is only ever
+        // applied to both sides of a comparison.
+        #expect(searchStem("smile") == searchStem("smiling"))
+        #expect(searchStem("laugh") == searchStem("laughing"))
+        #expect(searchStem("dance") == searchStem("dancing"))
+        #expect(searchStem("run") == searchStem("running"))
+        #expect(searchStem("kiss") == searchStem("kissing"))
+    }
+
+    // MARK: - Search aliases
+
+    @Test("every alias emoji is spelled in its canonical presentation form")
+    func aliasEmojiUseCanonicalPresentationForm() {
+        // Aliases are matched against `generate()`'s own keys by exact string equality, and those
+        // keys are bare when the scalar is Emoji_Presentation=Yes and carry U+FE0F when it isn't.
+        // A wrong variation selector here would silently find nothing instead of failing, so this
+        // is the check that makes the table honest. Multi-scalar sequences (the ZWJ entries) are
+        // spelled as `zwjTemplates` spells them and are skipped here.
+        for (keyword, emojis) in emojiSearchAliases {
+            for emoji in emojis {
+                let scalars = Array(emoji.unicodeScalars)
+                let isSingle = scalars.count == 1
+                let isSelected = scalars.count == 2 && scalars[1].value == 0xFE0F
+                guard isSingle || isSelected, let base = scalars.first else { continue }
+                let canonical = base.properties.isEmojiPresentation ? String(base) : "\(base)\u{FE0F}"
+                #expect(emoji == canonical,
+                        "\"\(keyword)\" lists \(emoji), which the catalog would key as \(canonical)")
+            }
+        }
+    }
+
+    @Test("aliases invert to per-emoji tokens, so one keyword reaches every emoji it lists")
+    func aliasesInvertToTokens() {
+        let inverted = aliasTokensByEmoji()
+        // The bug this whole table exists for: "laugh" appears in no Unicode name but 🤣's, so
+        // 😂 could only ever be found by typing "tears" or "joy".
+        #expect(inverted["😂"]?.contains("laugh") == true)
+        #expect(inverted["😆"]?.contains("laugh") == true)
+        #expect(inverted["😢"]?.contains("sad") == true)
+        // Inversion is a fan-out, not a rename: an emoji listed under several keywords carries
+        // all of them.
+        #expect((inverted["🔥"]?.count ?? 0) > 1)
+    }
+
+    @Test("alias tokens are sorted, so two runs of the same build rank identically")
+    func aliasTokensAreDeterministic() {
+        // Dictionary iteration order isn't stable across runs and these feed a visible ranking.
+        for (_, tokens) in aliasTokensByEmoji() {
+            #expect(tokens == tokens.sorted())
+        }
+    }
+
+    @Test("searching a real generated catalog for everyday words finds more than a token result")
+    func everydayWordsFindRealResults() async {
+        // The regression this pins is the shipped one: "laugh" returned exactly one emoji, the
+        // only one with the word in its Unicode name, while the system keyboard filled a row.
+        let categories = await EmojiCatalog.shared.sections()
+        let tokens = await EmojiCatalog.shared.searchTokens()
+        for word in ["laugh", "sad", "happy", "love", "party", "food"] {
+            let results = emojiSearchResults(categories: categories, tokens: tokens, query: word)
+            let count = results.flatMap(\.emojis).count
+            #expect(count >= 5, "\"\(word)\" found only \(count) emoji")
+        }
+    }
+
     @Test("search ranks exact matches ahead of partial matches within results")
     func searchResultsRankExactFirst() {
         let categories = [EmojiCategory(name: "Test", emojis: ["🎆", "🔥"])]

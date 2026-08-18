@@ -42,21 +42,37 @@ func emojiPickerSections(categories: [EmojiCategory], recents: [String]) -> [Emo
 /// Ranks one emoji's match against `query` using its precomputed search tokens
 /// (`EmojiCatalog.searchTokens()`): `0` for an exact whole-word match (some token equals `query`
 /// exactly), `1` for a prefix-only match (some token starts with `query` but isn't equal to it),
-/// `nil` for no match. Whole-word by prefix, never substring, so typing "dog" finds DOG FACE (a
-/// "dog" token) but "og" finds nothing (no token in the catalog starts with "og"). Exact matches
-/// rank first so typing "fire" puts 🔥, whose only token IS "fire", ahead of multi-word entries
-/// where "fire" is merely a prefix of one word, like "fire engine" or "fireworks".
+/// `2` for a match that only holds once both sides are stemmed, `nil` for no match. Whole-word by
+/// prefix, never substring, so typing "dog" finds DOG FACE (a "dog" token) but "og" finds nothing
+/// (no token in the catalog starts with "og"). Exact matches rank first so typing "fire" puts 🔥,
+/// whose only token IS "fire", ahead of multi-word entries where "fire" is merely a prefix of one
+/// word, like "fire engine" or "fireworks".
+///
+/// The stemmed pass is last because it is the loosest, and it is here because Unicode's own names
+/// are written in participles nobody types: without it, "smile" matched nothing while "smiling"
+/// matched twenty faces, and "dogs" found no dog. `searchStem` is applied to the query once here;
+/// the tokens already carry their own stems from generation time (see `withStems`), so this stays
+/// one pass over the same list rather than re-stemming the whole catalog per keystroke. When the
+/// query is its own stem there is nothing new to find — ranks 0 and 1 have already searched those
+/// same stems — so it exits instead.
+///
+/// The stemmed pass matches WHOLE stems, not stem prefixes, because stemming plus prefixing
+/// compounds into nonsense: "fire" stems to "fir", and a prefix test on that also drags in FIRST
+/// PLACE MEDAL and FIRST QUARTER MOON. Whole stems keep it to the words people actually meant.
 func emojiSearchRank(_ tokens: [String], query: String) -> Int? {
     let query = query.lowercased()
     guard !query.isEmpty else { return nil }
     if tokens.contains(query) { return 0 }
     if tokens.contains(where: { $0.hasPrefix(query) }) { return 1 }
+    let stem = searchStem(query)
+    guard stem != query else { return nil }
+    if tokens.contains(stem) { return 2 }
     return nil
 }
 
-/// Search results as a single labelled section, ranked exact-whole-word matches first and
-/// prefix-only matches after (stable within each rank, so ties keep the palette's own category
-/// order). Returns `[]` for an empty query so callers can tell "not searching" (show the normal
+/// Search results as a single labelled section, ranked exact-whole-word matches first, then
+/// prefix-only matches, then stem-only matches (stable within each rank, so ties keep the
+/// palette's own category order). Returns `[]` for an empty query so callers can tell "not searching" (show the normal
 /// browsable grid) apart from "searched and found nothing" (show a real empty state); browsing via
 /// `emojiPickerSections` never needs that distinction since it has no "no results" case.
 func emojiSearchResults(categories: [EmojiCategory], tokens: [String: [String]], query: String) -> [EmojiPickerSection] {
@@ -177,7 +193,7 @@ struct ReactionBar: View {
     /// narrow it down. A sheet, not an overlay: see the note above `body`.
     private var emojiPickerSheet: some View {
         VStack(spacing: 0) {
-            PeopleSearchField(query: $query, prompt: "Search emoji")
+            PeopleSearchField(query: $query, prompt: "Search emoji", underSheetGrabber: true)
             ScrollView {
                 if catalogSections.isEmpty {
                     // Only reachable if the sheet opened before `warm()` (fired on every bar's
