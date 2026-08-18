@@ -80,23 +80,51 @@ struct ProfileBadgeColumn: View {
     }
 }
 
-/// The width every pill in one group should render at: the widest natural label among them.
+/// The width every pill in one group renders at: the widest label among them, measured directly.
 ///
 /// Pills used to size to their own text, which read as objects rather than form fields but left
-/// four medals of four different widths flanking an avatar, and that reads as untidy rather than
-/// characterful. Neither a global constant nor per-label hugging is right: a constant has to be
-/// wide enough for the longest label in the whole catalogue, so most pills carry dead space for a
-/// word they will never show, and hugging gives up on alignment entirely.
+/// four medals of four different widths flanking an avatar, and that reads as untidy. Neither a
+/// global constant nor per-label hugging is right: a constant has to be wide enough for the
+/// longest label in the whole catalogue, so most pills carry dead space for a word they will never
+/// show, and hugging gives up on alignment entirely. The answer is per-GROUP uniformity: whatever
+/// four badges a profile is showing, all four match the widest of those four and no wider.
 ///
-/// This is the third answer. Each pill reports its own natural width, the enclosing group keeps
-/// the maximum, and every pill in that group renders at it. So a profile showing FOUNDER,
-/// FOUNDING 100, OPEN DOOR and PATRON sizes all four to FOUNDING 100 and no wider, and a profile
-/// showing four short labels gets four compact pills. Uniform where it shows, never padded for a
-/// label that is not on screen.
-struct BadgePillWidthKey: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = max(value, nextValue())
+/// The first attempt collected widths through a `PreferenceKey` and fed the maximum back down
+/// through the environment. It shipped a truncated FOUNDING 100 on a real profile, because the
+/// flanking columns are `.overlay`s attached AFTER the modifier that was supposed to be measuring
+/// them: the pills sat outside the subtree doing the collecting, so the group settled on a width
+/// derived from an incomplete set. That is a genuinely fiddly failure mode, invisible in a
+/// preview, and the lesson is that layout feedback loops are the wrong tool when the answer can
+/// simply be computed.
+///
+/// So it is computed. `NSAttributedString` measures the same string, at the same weight, with the
+/// same tracking, which is exactly what CoreText will lay out; the only thing that has to be kept
+/// in step by hand is the horizontal padding, named once here and used by `BadgePillLabel`.
+/// `UIFontMetrics` applies the same Dynamic Type curve `flimFont(_:relativeTo: .caption2)` applies,
+/// so this does not silently clip at larger text sizes, which is the obvious way a measured-width
+/// approach goes wrong.
+enum BadgePillMetrics {
+    /// Base point size and tracking, matching `BadgePillLabel`'s own `flimFont`/`tracking` call.
+    static let pointSize: CGFloat = 10
+    static let tracking: CGFloat = 0.6
+    /// Padding either side of the label inside the capsule.
+    static let horizontalPadding: CGFloat = 12
+
+    /// The width that fits the widest of `kinds`, including padding. `nil` for an empty set, which
+    /// callers pass straight through to mean "size to your own label".
+    static func uniformWidth(for kinds: [ProfileBadgeKind]) -> CGFloat? {
+        guard !kinds.isEmpty else { return nil }
+        let scaled = UIFontMetrics(forTextStyle: .caption2).scaledValue(for: pointSize)
+        let font = UIFont.systemFont(ofSize: scaled, weight: .semibold)
+        let widest = kinds
+            .map { kind -> CGFloat in
+                let text = kind.label.uppercased() as NSString
+                return text.size(withAttributes: [.font: font, .kern: tracking]).width
+            }
+            .max() ?? 0
+        // `size(withAttributes:)` adds the trailing kern after the final glyph; keeping it is the
+        // safe direction to be wrong in, since a point of slack cannot truncate anything.
+        return widest.rounded(.up) + horizontalPadding * 2
     }
 }
 
@@ -114,23 +142,9 @@ extension EnvironmentValues {
 }
 
 extension View {
-    /// Collects the widest pill inside this view and feeds it back down so they all match.
-    func uniformBadgePillWidths() -> some View {
-        modifier(UniformBadgePillWidths())
-    }
-}
-
-private struct UniformBadgePillWidths: ViewModifier {
-    @State private var width: CGFloat = 0
-
-    func body(content: Content) -> some View {
-        content
-            .environment(\.uniformBadgePillWidth, width > 0 ? width : nil)
-            .onPreferenceChange(BadgePillWidthKey.self) { measured in
-                // Only ever grows within a group's lifetime. Letting it shrink as rows appear and
-                // disappear during a sheet's load would make every pill twitch.
-                if measured > width { width = measured }
-            }
+    /// Sizes every `BadgePillLabel` inside this view to fit the widest of `kinds`.
+    func uniformBadgePillWidths(for kinds: [ProfileBadgeKind]) -> some View {
+        environment(\.uniformBadgePillWidth, BadgePillMetrics.uniformWidth(for: kinds))
     }
 }
 
@@ -221,28 +235,13 @@ struct BadgePillLabel: View {
 
     var body: some View {
         Text(kind.label.uppercased())
-            .flimFont(10, weight: .semibold, relativeTo: .caption2)
-            .tracking(0.6)
+            .flimFont(BadgePillMetrics.pointSize, weight: .semibold, relativeTo: .caption2)
+            .tracking(BadgePillMetrics.tracking)
             .lineLimit(1)
             .minimumScaleFactor(0.75)
             .foregroundStyle(muted ? hue.opacity(0.75) : tier.foreground(accent: accent))
-            .padding(.horizontal, 12)
+            .padding(.horizontal, BadgePillMetrics.horizontalPadding)
             .padding(.vertical, 6)
-            // Report this label's natural width, then take the group's. A hidden copy at natural
-            // size is what gets measured, so applying the group width below can never feed back
-            // into the measurement and oscillate.
-            .background(alignment: .center) {
-                Text(kind.label.uppercased())
-                    .flimFont(10, weight: .semibold, relativeTo: .caption2)
-                    .tracking(0.6)
-                    .lineLimit(1)
-                    .fixedSize()
-                    .padding(.horizontal, 12)
-                    .background(GeometryReader { geo in
-                        Color.clear.preference(key: BadgePillWidthKey.self, value: geo.size.width)
-                    })
-                    .hidden()
-            }
             .frame(width: uniformWidth)
             .background {
                 if muted {
@@ -397,10 +396,11 @@ struct AvatarBadgeFlanking<Avatar: View>: View {
     @ViewBuilder let avatar: () -> Avatar
 
     var body: some View {
-        // Both columns are measured as ONE group, so the left pair and the right pair match each
-        // other rather than only matching within their own column.
+        // Both columns are measured as ONE group, so the left pair matches the right rather than
+        // each column only matching itself. Computed from the kinds directly, so it does not
+        // matter that the columns are overlays attached after this.
         avatar()
-            .uniformBadgePillWidths()
+            .uniformBadgePillWidths(for: (leftBadges + rightBadges).map(\.kind))
             .overlay(alignment: .leading) {
                 ProfileBadgeColumn(badges: leftBadges, alignment: .trailing, viewerBadgeKindIds: viewerBadgeKindIds)
                     .alignmentGuide(.leading) { d in d[.trailing] + gap }

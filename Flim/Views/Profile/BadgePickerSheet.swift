@@ -313,7 +313,7 @@ private struct BadgePickerContent: View {
             }
         }
         .background(FlimTheme.bgElevated, in: RoundedRectangle(cornerRadius: 14))
-        .uniformBadgePillWidths()
+        .uniformBadgePillWidths(for: rankedBadges.map(\.kind))
     }
 
     private func badgeRow(_ badge: ProfileBadge) -> some View {
@@ -450,7 +450,7 @@ private struct BadgePickerContent: View {
                     }
                 }
                 .background(FlimTheme.bgElevated.opacity(0.6), in: RoundedRectangle(cornerRadius: 14))
-                .uniformBadgePillWidths()
+                .uniformBadgePillWidths(for: lockedKinds)
             }
         }
     }

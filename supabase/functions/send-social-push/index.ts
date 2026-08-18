@@ -105,6 +105,46 @@ async function importPrivateKey(pem: string): Promise<CryptoKey> {
 // omitted for destinations that need none (the daily digest, elsewhere). `comments` is set only
 // on "post" pushes that are specifically about a comment, so the client can open with the
 // comment thread already showing.
+// Badge display names, for the "you earned X" push below.
+//
+// ⚠️ DUPLICATED FROM ProfileBadgeKind.label (Flim/Models/ProfileIdentity.swift).
+// There is no shared source between Swift and this function, and the alternative
+// (pushing the raw badge_id, or storing UI copy in the database) is worse than a
+// table that has to be kept in step. An id missing from here does NOT break the
+// push: it falls back to "You earned a badge", so adding a badge and forgetting
+// this map degrades the wording rather than the notification.
+const BADGE_LABELS: Record<string, string> = {
+  founder: "Founder",
+  founding_crew: "Founding Crew",
+  founding_100: "Founding 100",
+  full_set: "Full Set",
+  front_row: "Front Row",
+  packed_house: "Packed House",
+  cover_to_cover: "Cover to Cover",
+  open_door: "Open Door",
+  one_year: "Still Shooting",
+  patron: "Patron",
+  darkroom: "Darkroom",
+  first_in: "First In",
+  kept_one: "Kept One",
+  regular: "Regular",
+  full_roll: "Full Roll",
+  roll_maker: "Roll Maker",
+  brought_someone: "Plus One",
+  well_met: "Well Met",
+  full_house: "Full House",
+  spotter: "Spotter",
+  in_frame: "In Frame",
+  good_company: "Good Company",
+  first_light: "First Light",
+  shared: "Shared",
+  joined_in: "Joined In",
+  chipped_in: "Chipped In",
+  chimed_in: "Chimed In",
+  said_it: "Said It",
+  ten_frames: "Ten Frames",
+};
+
 interface FlimRoute {
   t: "reveal" | "post" | "profile" | "feed";
   id?: string;
@@ -1147,6 +1187,36 @@ Deno.serve(async () => {
       if (await sendPush(token, "User reported", body)) sent++;
     }
     await supabase.from("user_reports").update({ push_sent: true }).eq("id", r.id);
+  }
+
+  // --- Badges: you earned something. The only push in this function that is not
+  //     about another person, so it carries no `fromId` and skips notify()'s
+  //     block check entirely: there is nobody on the other end to be blocked by.
+  //     Routed to the profile, which is where the picker (and the reveal) lives.
+  //
+  //     earned_badges has no surrogate id; its primary key is (user_id, badge_id),
+  //     so the push_sent flip keys on both. Flipped whether or not a push actually
+  //     went out, matching every other block here: a device-less account must not
+  //     leave a row queued forever, waiting to fire the day they register one.
+  const { data: freshBadges } = await supabase
+    .from("earned_badges")
+    .select("user_id, badge_id")
+    .eq("push_sent", false);
+
+  for (const b of freshBadges ?? []) {
+    const label = BADGE_LABELS[b.badge_id];
+    // Unknown id: a badge shipped to the database ahead of this function. Still
+    // worth telling someone about, just without naming it, rather than staying
+    // silent or pushing a raw snake_case id at them.
+    const title = label ? `You earned ${label}` : "You earned a badge";
+    for (const token of await tokensFor(b.user_id)) {
+      if (await sendPush(token, title, "Open your profile to see it.", { t: "profile" })) sent++;
+    }
+    await supabase
+      .from("earned_badges")
+      .update({ push_sent: true })
+      .eq("user_id", b.user_id)
+      .eq("badge_id", b.badge_id);
   }
 
   return new Response(`sent ${sent} social push(es)`);
