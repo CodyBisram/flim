@@ -134,6 +134,56 @@ private struct UniformBadgePillWidths: ViewModifier {
     }
 }
 
+/// A single slow highlight travelling across a pill, once, shortly after it appears.
+///
+/// This exists for exactly one badge. `founder` has one possible holder in the entire history of
+/// the app, and the question was how to mark that without inventing a sixth rung for it. A
+/// platinum or diamond tier is the obvious answer and the wrong one: those are cool white-blues,
+/// silver is already a cool blue-grey (deliberately, because neutral grey against near-black reads
+/// as disabled), and at ten points a platinum pill lands in silver's neighbourhood and reads as
+/// LOWER than gold rather than higher. That spends the top of the ladder on a colour that looks
+/// like the middle of it.
+///
+/// Motion says "singular" without touching the colour system at all. Nothing else in FLIM moves
+/// like this, so one sweep is legible as "this is not like the others" while `founder` stays
+/// unmistakably on the founding rung.
+///
+/// Once, not looping: a pill that shimmers forever is a casino, and this has to sit on a
+/// photographer's profile without becoming the thing you look at. Skipped entirely under Reduce
+/// Motion, where the pill keeps its gradient and rim and simply does not animate.
+private struct SpecularSweep: View {
+    @State private var travelled = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        GeometryReader { geo in
+            let width = geo.size.width
+            let band = max(width * 0.42, 18)
+            Rectangle()
+                .fill(
+                    LinearGradient(
+                        colors: [.clear, .white.opacity(0.7), .clear],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .frame(width: band)
+                .rotationEffect(.degrees(18))
+                // Travels from fully clear of the leading edge to fully clear of the trailing one,
+                // so neither end of the sweep is ever parked visible on the pill.
+                .offset(x: travelled ? width + band : -band)
+                .onAppear {
+                    guard !reduceMotion else { return }
+                    // The delay lets the page settle first: a sweep that fires during the
+                    // navigation transition is just noise competing with the push animation.
+                    withAnimation(.easeInOut(duration: 1.15).delay(0.45)) { travelled = true }
+                }
+        }
+        .allowsHitTesting(false)
+        .blendMode(.plusLighter)
+    }
+}
+
 /// The bare pill visual: a badge's label on its tier-appropriate fill (see `ProfileBadgeTier`).
 /// Factored out of `ProfileBadgePill` so tier colour is decided in exactly one view, then reused,
 /// muted, for the locked catalog rows in `BadgePickerSheet`.
@@ -208,6 +258,13 @@ struct BadgePillLabel: View {
                                 endPoint: .bottom
                             )
                         )
+                        // Clipped to the capsule and sitting UNDER the rim, so the highlight
+                        // travels across the metal rather than over the pill's own edge.
+                        .overlay {
+                            if kind == .founder, !muted {
+                                SpecularSweep().clipShape(Capsule())
+                            }
+                        }
                         .overlay(
                             Capsule().strokeBorder(tier.rim(accent: accent), lineWidth: 0.75)
                         )

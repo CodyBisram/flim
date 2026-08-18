@@ -123,10 +123,10 @@ enum ProfileBadgeKind: String, CaseIterable {
         case .founder, .foundingCrew, .founding100:
             return .founding
         // The hardest things in the catalogue. Each one is many of something.
-        case .fullSet, .frontRow, .packedHouse, .coverToCover, .openDoor:
+        case .fullSet, .frontRow, .packedHouse, .coverToCover, .openDoor, .oneYear:
             return .gold
         // Real effort, but a single determined stretch rather than a campaign.
-        case .patron, .darkroom, .firstIn, .keptOne, .regular, .oneYear:
+        case .patron, .darkroom, .firstIn, .keptOne, .regular:
             return .silver
         // You did something that needed other people.
         case .fullRoll, .rollMaker, .broughtSomeone, .wellMet, .fullHouse, .spotter, .inFrame,
@@ -164,7 +164,7 @@ enum ProfileBadgeKind: String, CaseIterable {
         case .coverToCover: return "Cover to Cover"
         case .keptOne: return "Kept One"
         case .regular: return "Regular"
-        case .oneYear: return "One Year"
+        case .oneYear: return "Still Shooting"
         case .fullSet: return "Full Set"
         case .founder: return "Founder"
         case .openDoor: return "Open Door"
@@ -236,9 +236,9 @@ enum ProfileBadgeKind: String, CaseIterable {
         case .regular:
             return "Active on seven different days."
         case .oneYear:
-            return "A year since you joined \(AppInfo.appName)."
+            return "A year since you joined \(AppInfo.appName), and still shooting."
         case .fullSet:
-            return "Ten other badges, held at once."
+            return "Twenty other badges, held at once."
         case .founder:
             return "Built \(AppInfo.appName)."
         case .openDoor:
@@ -312,9 +312,9 @@ enum ProfileBadgeKind: String, CaseIterable {
         case .regular:
             return "Show up on seven different days."
         case .oneYear:
-            return "Keep your account for a year."
+            return "Keep your account for a year, then shoot another frame."
         case .fullSet:
-            return "Earn ten other badges."
+            return "Earn twenty other badges."
         case .founder:
             return "Given by hand to whoever built \(AppInfo.appName), not something you can earn."
         case .openDoor:
