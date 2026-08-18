@@ -1,4 +1,4 @@
-import Foundation
+import SwiftUI
 
 /// A profile's permanent identity: the signup number, earned badges, and film stats. This is
 /// the FLIM inversion of Lapse's profile chips ("Star sign", "0 friends 😢"): the number is
@@ -34,23 +34,32 @@ struct ProfileBadge: Identifiable, Equatable {
     let earnedAt: Date
 }
 
-/// The catalog of stamps a profile can carry, exactly the fourteen `badge_id`s `profile_badges`
-/// can return; raw values match those strings so a row decodes straight into a case. A case
-/// existing here does NOT mean it renders anywhere for an account that hasn't earned it — every
-/// call site only ever iterates a profile's own `badges` array, never this `allCases`.
+/// The catalog of stamps a profile can carry, exactly the twenty-two `badge_id`s
+/// `profile_badges` can return; raw values match those strings so a row decodes straight into a
+/// case. A case existing here does NOT mean it renders anywhere for an account that hasn't earned
+/// it — every profile-facing call site only ever iterates a profile's own `badges` array, never
+/// this `allCases`. `BadgePickerSheet` is the one deliberate exception: it iterates `allCases` to
+/// show the locked rest of the catalog, see its own module comment for why that's the opposite
+/// rule on purpose.
 ///
-/// Twelve of these are earned automatically. The last two, `foundingCrew` and `testRoll`, are
-/// granted by hand and never computed, so they arrive as a surprise rather than something you can
-/// see coming.
+/// Most of these are earned automatically. `founder` and `foundingCrew` are granted by hand and
+/// never computed, so they arrive as a surprise rather than something you can see coming; `tier`
+/// below is what actually encodes that distinction visually, see its own comment.
+///
+/// There was a third hand-granted case, `testRoll` ("Tester"), retired in
+/// `2026-08-18_nine_more_badges.sql`. It said the same thing `foundingCrew` says, more thinly —
+/// being here during testing IS being part of the crew that got this off the ground — and split
+/// one honour across two pills. Its six holders were migrated onto `foundingCrew`, keeping their
+/// original `earned_at`, so nobody lost a stamp or had its date rewritten.
 ///
 /// No explanation below may name another person or say which roll a badge came from: badges are
 /// permanent, so a handle or a roll reference baked into one would sit on a profile forever. This
 /// is why `broughtSomeone` in particular never says who was invited, the backend deliberately
-/// stores no such reference to begin with. `fullHouse` in particular must never read as personal
-/// to the reader either: its `earned_at` is the moment a roll's fifth distinct contributor first
-/// shot into it, which is the same timestamp for every contributor of that roll, including
-/// someone who arrived sixth, seventh, or later — see `fullHouse`'s cases below for how that
-/// shapes the copy.
+/// stores no such reference to begin with. `fullHouse` and `packedHouse` in particular must never
+/// read as personal to the reader either: each one's `earned_at` is the moment a roll crossed its
+/// contributor threshold, the same timestamp for every contributor of that roll, including
+/// someone who arrived after the threshold was already crossed — see their cases below for how
+/// that shapes the copy.
 enum ProfileBadgeKind: String, CaseIterable {
     case firstLight = "first_light"
     case fullRoll = "full_roll"
@@ -65,7 +74,32 @@ enum ProfileBadgeKind: String, CaseIterable {
     case wellMet = "well_met"
     case fullHouse = "full_house"
     case foundingCrew = "founding_crew"
-    case testRoll = "test_roll"
+    case frontRow = "front_row"
+    case packedHouse = "packed_house"
+    case patron = "patron"
+    case coverToCover = "cover_to_cover"
+    case keptOne = "kept_one"
+    case regular = "regular"
+    case oneYear = "one_year"
+    case fullSet = "full_set"
+    case founder = "founder"
+
+    /// Which of the three ways this badge is obtained, and therefore how its pill renders. See
+    /// `ProfileBadgeTier`'s own comment for why this is keyed on HOW rather than how rare a badge
+    /// currently is.
+    var tier: ProfileBadgeTier {
+        switch self {
+        case .founder, .foundingCrew:
+            return .handGranted
+        case .founding100:
+            return .era
+        case .frontRow, .packedHouse, .patron, .coverToCover, .fullSet, .darkroom, .firstIn:
+            return .hardEarned
+        case .firstLight, .fullRoll, .rollMaker, .broughtSomeone, .joinedIn, .chippedIn, .shared,
+             .wellMet, .fullHouse, .keptOne, .regular, .oneYear:
+            return .common
+        }
+    }
 
     /// Uppercased with generous tracking at the call site; stored here in title case so it also
     /// reads correctly wherever it's used sentence-style (e.g. inside `explanation`).
@@ -86,7 +120,15 @@ enum ProfileBadgeKind: String, CaseIterable {
         case .wellMet: return "Well Met"
         case .fullHouse: return "Full House"
         case .foundingCrew: return "Founding Crew"
-        case .testRoll: return "Test Roll"
+        case .frontRow: return "Front Row"
+        case .packedHouse: return "Packed House"
+        case .patron: return "Patron"
+        case .coverToCover: return "Cover to Cover"
+        case .keptOne: return "Kept One"
+        case .regular: return "Regular"
+        case .oneYear: return "One Year"
+        case .fullSet: return "Full Set"
+        case .founder: return "Founder"
         }
     }
 
@@ -134,19 +176,38 @@ enum ProfileBadgeKind: String, CaseIterable {
             return "A roll you shot into filled up with five or more photographers."
         case .foundingCrew:
             return "Part of the crew that got this off the ground."
-        case .testRoll:
-            return "You were here while we were still testing."
+        case .frontRow:
+            return "First to open the reveal, on five different rolls."
+        case .packedHouse:
+            // Same rule as `fullHouse` above: describes the roll crossing ten contributors, not
+            // the reader's own arrival, since everyone in that roll shares this exact timestamp.
+            return "A roll you shot into grew to ten or more photographers."
+        case .patron:
+            return "Five people you invited joined."
+        case .coverToCover:
+            return "You shot into every roll you were ever part of, before it developed."
+        case .keptOne:
+            return "Ten of your frames developed, and you kept every one to yourself."
+        case .regular:
+            return "Active on seven different days."
+        case .oneYear:
+            return "A year since you joined \(AppInfo.appName)."
+        case .fullSet:
+            return "Ten other badges, held at once."
+        case .founder:
+            return "Built \(AppInfo.appName)."
         }
     }
 
-    /// Shown alongside `explanation`, but only to someone looking at another profile's pill for
-    /// a badge they don't hold themselves; see `ProfileBadgePill`. Never shown for a badge the
-    /// viewer already has, at that point "how to earn this" is pointless.
+    /// Shown alongside `explanation`, both to someone looking at another profile's pill for a
+    /// badge they don't hold themselves (see `ProfileBadgePill`), and to every locked row in
+    /// `BadgePickerSheet`'s own catalog. Never shown for a badge the viewer already has, at that
+    /// point "how to earn this" is pointless.
     ///
-    /// Eleven of these describe real, repeatable product behaviour, written as an instruction. The
-    /// other three are NOT earnable by ordinary action, and this deliberately does not pretend
-    /// otherwise: `founding100` is a closed window (say what it was, not how to get it),
-    /// `foundingCrew` and `testRoll` are handed out by hand (say so plainly, never phrase either
+    /// Most of these describe real, repeatable product behaviour, written as an instruction. Four
+    /// are NOT earnable by ordinary action, and this deliberately does not pretend otherwise:
+    /// `founding100` is a closed window (say what it was, not how to get it); `foundingCrew`,
+    /// `testRoll`, and `founder` are handed out by hand (say so plainly, never phrase any of them
     /// as something to go do). A fake instruction here would send people chasing something that
     /// doesn't exist.
     var howToEarn: String {
@@ -179,10 +240,79 @@ enum ProfileBadgeKind: String, CaseIterable {
             return "Shoot into a roll that grows to five or more photographers."
         case .foundingCrew:
             return "Given by hand to the crew that got this off the ground, not something you can earn."
-        case .testRoll:
-            return "Given by hand to early testers, not something you can earn."
+        case .frontRow:
+            return "Be first to open the reveal, on five different rolls."
+        case .packedHouse:
+            return "Shoot into a roll that grows to ten or more photographers."
+        case .patron:
+            return "Invite people until five of them join."
+        case .coverToCover:
+            return "Shoot into every roll you join, before it develops."
+        case .keptOne:
+            return "Let ten frames develop without sharing any of them."
+        case .regular:
+            return "Show up on seven different days."
+        case .oneYear:
+            return "Keep your account for a year."
+        case .fullSet:
+            return "Earn ten other badges."
+        case .founder:
+            return "Given by hand to whoever built \(AppInfo.appName), not something you can earn."
         }
     }
+}
+
+/// Which of the three ways a badge is obtained, and therefore how its pill renders: gold vs the
+/// viewer's chosen accent, solid fill vs a tinted wash. Deliberately keyed on HOW a badge was
+/// granted, never on how rare it currently is — a dynamic "rarest four" style tier would silently
+/// recolor a badge as the app grows, and a permanent stamp shouldn't drift.
+///
+///                    solid fill            tinted wash
+///   gold             `.handGranted`        `.era`
+///   accent           `.hardEarned`         `.common`
+///
+/// This is the one place tier-to-colour logic lives; see `ProfileBadgeKind.tier` for the
+/// assignment and `BadgePillLabel` (in `ProfileIdentityView.swift`) for the only view that reads
+/// `hue`/`foreground`/`background` below.
+enum ProfileBadgeTier {
+    /// Granted by hand, never computed: `founder`, `foundingCrew`.
+    case handGranted
+    /// An era, not an action: `founding100`. Everyone who could ever hold it already does — the
+    /// window itself is what's gold, not an achievement inside it, so it stays a tinted wash
+    /// rather than the same solid weight as something someone actually did.
+    case era
+    /// Automatically earned, but the hard ones: sustained or effortful behaviour rather than one
+    /// ordinary action.
+    case hardEarned
+    /// Everything else: automatically earned, ordinary product use.
+    case common
+
+    var isGold: Bool {
+        switch self {
+        case .handGranted, .era: return true
+        case .hardEarned, .common: return false
+        }
+    }
+
+    var isSolidFill: Bool {
+        switch self {
+        case .handGranted, .hardEarned: return true
+        case .era, .common: return false
+        }
+    }
+
+    /// The pill's own hue: gold for the two tiers that could only ever have happened once, on a
+    /// fixed guest list; otherwise the viewer's own chosen accent, so an ordinary badge never
+    /// fights whatever colour they picked for the rest of the app.
+    func hue(accent: Color) -> Color { isGold ? FlimTheme.badgeGold : accent }
+
+    /// Text colour: black on a solid fill, matching every other solid-accent control in the app
+    /// (e.g. the follow button, `positionIndicator`); the hue itself on a tinted wash.
+    func foreground(accent: Color) -> Color { isSolidFill ? .black : hue(accent: accent) }
+
+    /// Fill colour: the hue at full strength for a solid tier, the same faint wash every pill
+    /// used before tiering existed otherwise.
+    func background(accent: Color) -> Color { isSolidFill ? hue(accent: accent) : hue(accent: accent).opacity(0.15) }
 }
 
 /// Decodes the single row `profile_film_stats(uuid)` returns. See

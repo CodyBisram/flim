@@ -16,6 +16,19 @@ enum FlimTheme {
     /// A soft accent wash for backgrounds/gradients that want warmth without shouting.
     static var accentSoft: Color { accent.opacity(0.16) }
 
+    /// The fixed gold used for a badge's hand-granted/era tiers (see `ProfileBadgeTier`), never
+    /// the user's chosen accent: those two tiers mark something that could only ever have
+    /// happened once, on a fixed guest list, so they stay gold regardless of what accent someone
+    /// picked, the same way a real medal doesn't recolor to match its owner's shirt.
+    ///
+    /// Chosen as a warm, slightly desaturated "old gold" (`#CDAF53`-ish) rather than a bright
+    /// `#FFD700` yellow-gold: bright gold reads as a warning/caution colour against `bg`'s near
+    /// black, and a hue this close to yellow (~48°) still sits far enough from every pickable
+    /// accent's hue to read as its own colour even when someone has amber selected (~33°, the
+    /// closest of the six) — amber is a saturated orange, this is a muted yellow-brass, so the
+    /// two don't collide even when a gold pill and an amber-tinted one sit side by side.
+    static let badgeGold = Color(red: 0.80, green: 0.69, blue: 0.32)
+
     static let textPrimary = Color.white
     static let textSecondary = Color(white: 0.62)   // 7.4:1 on bg, passes AA and AAA
 

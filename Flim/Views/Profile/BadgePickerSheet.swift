@@ -7,6 +7,15 @@ import SwiftUI
 /// opening, not a settings toggle: every row carries what the badge actually means, not just its
 /// name.
 ///
+/// Below the earned/selectable rows, this also lists the rest of the catalog, locked, with what
+/// each one means and how to earn it (see `BadgePickerContent.lockedSection`). That's the exact
+/// opposite of the profile's own rule, deliberately: a locked badge never appears on a profile,
+/// stranger's or owner's, because turning someone's profile into a public to-do list is grim.
+/// This screen earns the opposite treatment because it's private and deliberately opened, so
+/// showing the rest of the catalog reads as a collection screen rather than an imposed checklist,
+/// and every badge here rewards a ritual rather than raw volume, so "how to earn this" is really
+/// just "how to use FLIM well".
+///
 /// Reached from `EditProfileView`'s "Badges" row, and from the profile page's own "New badge to
 /// see" pill when there's something unseen to reveal (see `UserPageView`). That pill is also
 /// where the badge reveal now lives: `UserPageView` used to press an unseen badge onto the page
@@ -168,11 +177,15 @@ private struct BadgePickerContent: View {
         NavigationStack {
             ZStack {
                 FlimTheme.bg.ignoresSafeArea()
-                if badges.isEmpty {
-                    emptyState
-                } else {
-                    ScrollView(showsIndicators: false) {
-                        VStack(spacing: 20) {
+                // Both the earned-selection half and the locked catalog below it now share one
+                // scroll view regardless of whether anything's been earned yet: the catalog is a
+                // collection screen, not conditioned on having something to choose, see
+                // `lockedSection`'s own comment.
+                ScrollView(showsIndicators: false) {
+                    VStack(spacing: 20) {
+                        if badges.isEmpty {
+                            emptyState
+                        } else {
                             modePicker
                             explanation
                             if mode == .custom {
@@ -186,10 +199,11 @@ private struct BadgePickerContent: View {
                                     .padding(.horizontal, 20)
                             }
                         }
-                        .padding(.horizontal, 20)
-                        .padding(.top, 16)
-                        .padding(.bottom, 20)
+                        lockedSection
                     }
+                    .padding(.horizontal, 20)
+                    .padding(.top, 16)
+                    .padding(.bottom, 20)
                 }
             }
             .navigationBarTitleDisplayMode(.inline)
@@ -304,9 +318,12 @@ private struct BadgePickerContent: View {
         } label: {
             HStack(spacing: 14) {
                 positionIndicator(position)
-                VStack(alignment: .leading, spacing: 3) {
+                VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 6) {
-                        Text(badge.kind.label).flimFont(15, relativeTo: .body).foregroundStyle(.white)
+                        // The pill itself, in its real tier colour, so this reads as "here is
+                        // what you're choosing" rather than a name you have to already know the
+                        // meaning of; see `BadgePillLabel` and `ProfileBadgeTier`.
+                        BadgePillLabel(kind: badge.kind)
                         if isNew {
                             Text("NEW")
                                 .flimFont(9, weight: .bold, relativeTo: .caption2)
@@ -361,6 +378,74 @@ private struct BadgePickerContent: View {
                 .flimFont(13, relativeTo: .subheadline).foregroundStyle(FlimTheme.textTertiary)
                 .multilineTextAlignment(.center).padding(.horizontal, 40)
         }
+    }
+
+    // MARK: - Locked catalog
+
+    /// Every catalog case not already earned. This is deliberately the ONE place in the app that
+    /// iterates `ProfileBadgeKind.allCases` rather than a profile's own `badges` — see the
+    /// module comment on why a profile itself must never do this.
+    private var lockedKinds: [ProfileBadgeKind] {
+        let earnedIds = Set(badges.map(\.id))
+        return ProfileBadgeKind.allCases.filter { !earnedIds.contains($0.rawValue) }
+    }
+
+    /// The rest of the catalog, shown locked below whatever's earned/selectable above. This is
+    /// deliberately the mirror image of the profile's own rule (`ProfileIdentity.badges`'s own
+    /// comment): a stranger's profile never shows a badge you haven't earned, because turning a
+    /// profile into a to-do list is grim and just advertises what to farm. This screen is
+    /// different on both counts — it's private (nobody but the account owner ever opens it) and
+    /// deliberately opened (nobody stumbles into it), so showing what's still out there reads as
+    /// a collection screen, not an imposed checklist. It's safe specifically because every badge
+    /// here rewards a ritual, not raw volume, so saying how to earn one is saying how to use FLIM
+    /// well, not handing out a grind list. Shown regardless of `mode` or whether anything's been
+    /// earned yet, since it isn't about selection at all.
+    @ViewBuilder
+    private var lockedSection: some View {
+        if !lockedKinds.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("NOT YET EARNED")
+                    .flimFont(11, weight: .medium, relativeTo: .caption).tracking(2)
+                    .foregroundStyle(FlimTheme.textTertiary)
+                    .padding(.leading, 4)
+                VStack(spacing: 0) {
+                    ForEach(Array(lockedKinds.enumerated()), id: \.element) { index, kind in
+                        lockedRow(kind)
+                        if index < lockedKinds.count - 1 {
+                            Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1).padding(.leading, 20)
+                        }
+                    }
+                }
+                .background(FlimTheme.bgElevated.opacity(0.6), in: RoundedRectangle(cornerRadius: 14))
+            }
+        }
+    }
+
+    /// A locked row: the pill in its real tier colour but muted (see `BadgePillLabel`), the same
+    /// `explanation` an earned pill's popover would show, and `howToEarn` printed plainly rather
+    /// than behind a tap — there is no popover here to hide it in, and this row is the one place
+    /// that's actually meant to be read as instruction. Not a `Button`: nothing here is
+    /// selectable, so it renders as a plain row rather than something that looks tappable and
+    /// does nothing.
+    private func lockedRow(_ kind: ProfileBadgeKind) -> some View {
+        HStack(alignment: .top, spacing: 14) {
+            Image(systemName: "lock.fill")
+                .font(.system(size: 11))
+                .foregroundStyle(FlimTheme.textTertiary)
+                .frame(width: 44, height: 44)
+            VStack(alignment: .leading, spacing: 6) {
+                BadgePillLabel(kind: kind, muted: true)
+                Text(kind.explanation)
+                    .flimFont(12, relativeTo: .caption).foregroundStyle(FlimTheme.textTertiary)
+                Text(kind.howToEarn)
+                    .flimFont(11, relativeTo: .caption2).foregroundStyle(FlimTheme.textTertiary.opacity(0.75))
+            }
+            Spacer()
+        }
+        .padding(.horizontal, 20).padding(.vertical, 13)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(kind.label) badge, not yet earned")
+        .accessibilityHint("\(kind.explanation) \(kind.howToEarn)")
     }
 
     // MARK: - Actions
@@ -456,6 +541,32 @@ private struct BadgePickerContent: View {
         initialSelection: nil,
         unseenIds: ["roll_maker"]
     )
+}
+
+#Preview("Locked catalog: earned above, the rest locked below") {
+    // `badgePickerPreviewBadges` holds 12 of the 22 catalog cases, so the remaining 10 (both
+    // hand-granted kinds plus the eight newest cases) render locked underneath: a real mix of
+    // selectable and not, exactly what this screen looks like for most accounts.
+    BadgePickerContentPreview(badges: badgePickerPreviewBadges, initialSelection: nil)
+}
+
+#Preview("Locked catalog: hand-granted and the closed founding_100 window") {
+    // Exercises the two "honest, not an instruction" cases together: `founder`/`foundingCrew`
+    // read as given by hand, and `founding100` (earned here, so absent from the list below) is
+    // never itself shown locked for an account that could still be first hundred — this preview
+    // instead confirms the OTHER hand-granted rows read right when nothing overshadows them: no
+    // `founder` or `founding_crew` in the earned set, so both sit in the locked list with their
+    // "given by hand" copy, never phrased as something to go do.
+    BadgePickerContentPreview(
+        badges: [ProfileBadge(id: "founding_100", kind: .founding100, earnedAt: .now)],
+        initialSelection: nil
+    )
+}
+
+#Preview("Locked catalog alone: nothing earned yet") {
+    // Zero earned badges still shows the full locked catalog below `emptyState`: the catalog is
+    // a collection screen, not conditioned on having anything to choose from yet.
+    BadgePickerContentPreview(badges: [], initialSelection: nil)
 }
 
 /// Wraps `BadgePickerContent` (private to this file) with a harmless no-op save, purely so the

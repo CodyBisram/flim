@@ -79,20 +79,73 @@ struct ProfileBadgeColumn: View {
     }
 }
 
-/// One earned badge, printed as a small capsule pill in the same visual family as the "friend"
-/// tag in `FollowingList` (accent text on a faint accent wash), not the dated stamp this replaced.
-/// No earned date anywhere on it: eleven dated stamps were the bulk of what made the old grid read
-/// as busy, and with the count now capped at four, the pill can just be a name.
+/// The bare pill visual: a badge's label on its tier-appropriate fill (see `ProfileBadgeTier`).
+/// Factored out of `ProfileBadgePill` so tier colour is decided in exactly one view, then reused,
+/// muted, for the locked catalog rows in `BadgePickerSheet`.
 ///
-/// Locked badges never appear anywhere in the app, so someone seeing a pill has no other way to
+/// Every pill renders at the same fixed width, not a per-label max: an earlier version capped at
+/// 84pt as a ceiling, so most labels sized to their own (shorter) content and only "Founding 100"
+/// ever actually hit 84 — the two flanking columns on a profile read visibly uneven as a result.
+/// A fixed width makes every pill identical regardless of label length; `lineLimit` +
+/// `minimumScaleFactor` stay on as the safety net for whatever the next long label turns out to
+/// be, same as before.
+///
+/// That width is 96, and the tracking 0.6, because 84 at tracking 1.0 was quietly too small for
+/// four labels. Measured with CoreText at this exact font: COVER TO COVER wanted 104.7pt,
+/// FOUNDING CREW 101.7, PACKED HOUSE 92.5, FOUNDING 100 88.6. None of them truncated — the 0.7
+/// `minimumScaleFactor` floor caught them all — but they rendered at 80-95% of everything else
+/// and filled their pill edge to edge, which is what "almost extends out of the pill" looks like.
+/// At 96/0.6 every one of the twenty-two labels lands at 97% or better, so they all read as the
+/// same size. The width is a ceiling as well as a floor: two pills plus their 10pt padding, the
+/// 14pt gaps, and the 88pt avatar make a 348pt row, which still clears the narrowest iPhone in
+/// service (375pt) by 13pt a side. Anything wider starts crowding that edge, which is why this
+/// stops at 96 rather than the 100 it would take to fit COVER TO COVER outright.
+struct BadgePillLabel: View {
+    let kind: ProfileBadgeKind
+    /// Locked/not-yet-earned rows in `BadgePickerSheet`'s catalog render the same tier hue in a
+    /// washed-out, outlined form: full strength would read as already earned, and no colour at
+    /// all would lose the gold-vs-accent, solid-vs-tinted signal the tier exists to carry.
+    var muted: Bool = false
+    @Environment(\.flimAccent) private var accent
+
+    private var tier: ProfileBadgeTier { kind.tier }
+    private var hue: Color { tier.hue(accent: accent) }
+
+    var body: some View {
+        Text(kind.label.uppercased())
+            .flimFont(10, weight: .semibold, relativeTo: .caption2)
+            .tracking(0.6)
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
+            .foregroundStyle(muted ? hue.opacity(tier.isSolidFill ? 0.85 : 0.55) : tier.foreground(accent: accent))
+            .frame(width: 96)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background {
+                if muted {
+                    Capsule()
+                        .fill(hue.opacity(0.08))
+                        .overlay(Capsule().strokeBorder(hue.opacity(0.35), lineWidth: 1))
+                } else {
+                    Capsule().fill(tier.background(accent: accent))
+                }
+            }
+    }
+}
+
+/// One earned badge, printed as a small capsule pill whose fill/hue reads its tier at a glance
+/// (see `ProfileBadgeTier`), not the dated stamp this replaced. No earned date anywhere on it:
+/// eleven dated stamps were the bulk of what made the old grid read as busy, and with the count
+/// now capped at four, the pill can just be a name.
+///
+/// Locked badges never appear anywhere on a profile, so someone seeing a pill has no other way to
 /// learn what it means beyond tapping it; that popover is now the ONLY place any explanation of a
-/// badge lives outside `BadgePickerSheet`'s own list, so it matters more than it used to, not
-/// less. The visible pill stays small on purpose, so the tap target is grown to Apple's 44pt
+/// badge lives outside `BadgePickerSheet`'s own catalog list, so it matters more than it used to,
+/// not less. The visible pill stays small on purpose, so the tap target is grown to Apple's 44pt
 /// minimum without changing what's on screen.
 struct ProfileBadgePill: View {
     let badge: ProfileBadge
     var viewerBadgeKindIds: Set<String> = []
-    @Environment(\.flimAccent) private var accent
     @State private var showExplanation = false
 
     /// "How to earn this" only makes sense for a badge the viewer doesn't already hold; showing
@@ -106,20 +159,7 @@ struct ProfileBadgePill: View {
             Haptics.tap()
             showExplanation = true
         } label: {
-            Text(badge.kind.label.uppercased())
-                .flimFont(10, weight: .semibold, relativeTo: .caption2)
-                .tracking(1.0)
-                // Every label in the catalog now fits, but this is the general fix rather than a
-                // per-label one: "Brought Someone" used to truncate to "BROUGHT SO…" at this same
-                // pill size before it was renamed to "Plus One", and a scale-down instead of an
-                // ellipsis is what stops the NEXT long label doing the same thing silently.
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-                .foregroundStyle(accent)
-                .frame(maxWidth: 84)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 7)
-                .background(accent.opacity(0.15), in: Capsule())
+            BadgePillLabel(kind: badge.kind)
         }
         .buttonStyle(.plain)
         .expandTapTarget(by: 9)   // visual pill is ~26pt tall, +9 either side = 44
@@ -287,13 +327,84 @@ private func previewBadge(_ id: String, _ kind: ProfileBadgeKind) -> ProfileBadg
 
 #Preview("Flanking: four badges, largest Dynamic Type, narrowest device") {
     FlankPreview(badges: [
-        previewBadge("founding_crew", .foundingCrew),   // the longest label in the catalog
+        previewBadge("cover_to_cover", .coverToCover),   // the longest label in the catalog
         previewBadge("shared", .shared),
         previewBadge("darkroom", .darkroom),
         previewBadge("chipped_in", .chippedIn),
     ])
     .frame(width: 375)   // iPhone SE width, the narrowest device FLIM still supports
     .dynamicTypeSize(FlimTypeScale.maximum)
+}
+
+#Preview("Flanking: uniform pill width at 1 through 4 badges") {
+    // The regression this guards: an earlier version capped each pill at `maxWidth: 84`, a
+    // ceiling rather than a fixed width, so only "Founding 100" (the widest label at the time)
+    // ever actually reached it — every shorter pill sized to its own content instead, and the
+    // two flanking columns read visibly uneven widths against each other. `BadgePillLabel` now
+    // renders every pill at the same fixed 84pt regardless of label length, so a short label like
+    // "Shared" and a long one like "Founding 100" produce identically sized pills, checked here
+    // at every count `ProfileBadgeFlank` can actually produce.
+    VStack(spacing: 24) {
+        FlankPreview(badges: [previewBadge("shared", .shared)])
+        FlankPreview(badges: [
+            previewBadge("shared", .shared),
+            previewBadge("founding_100", .founding100),
+        ])
+        FlankPreview(badges: [
+            previewBadge("shared", .shared),
+            previewBadge("founding_100", .founding100),
+            previewBadge("darkroom", .darkroom),
+        ])
+        FlankPreview(badges: [
+            previewBadge("shared", .shared),
+            previewBadge("founding_100", .founding100),
+            previewBadge("darkroom", .darkroom),
+            previewBadge("front_row", .frontRow),
+        ])
+    }
+    .padding(.vertical, 20)
+    .background(FlimTheme.bg)
+}
+
+#Preview("Badge tiers: all four side by side") {
+    // One representative badge per tier (see `ProfileBadgeTier`): gold solid (hand-granted),
+    // gold tinted (era), accent solid (hard-earned), accent tinted (common) — reading left to
+    // right should show hue (gold vs accent) and fill weight (solid vs tinted) as two
+    // independent, legible signals rather than four arbitrary colours.
+    VStack(spacing: 20) {
+        HStack(spacing: 14) {
+            VStack(spacing: 6) {
+                BadgePillLabel(kind: .founder)
+                Text("Gold · solid").flimFont(10, relativeTo: .caption2).foregroundStyle(FlimTheme.textTertiary)
+            }
+            VStack(spacing: 6) {
+                BadgePillLabel(kind: .founding100)
+                Text("Gold · tinted").flimFont(10, relativeTo: .caption2).foregroundStyle(FlimTheme.textTertiary)
+            }
+        }
+        HStack(spacing: 14) {
+            VStack(spacing: 6) {
+                BadgePillLabel(kind: .frontRow)
+                Text("Accent · solid").flimFont(10, relativeTo: .caption2).foregroundStyle(FlimTheme.textTertiary)
+            }
+            VStack(spacing: 6) {
+                BadgePillLabel(kind: .shared)
+                Text("Accent · tinted").flimFont(10, relativeTo: .caption2).foregroundStyle(FlimTheme.textTertiary)
+            }
+        }
+        HStack(spacing: 14) {
+            VStack(spacing: 6) {
+                BadgePillLabel(kind: .founder, muted: true)
+                Text("Locked, gold").flimFont(10, relativeTo: .caption2).foregroundStyle(FlimTheme.textTertiary)
+            }
+            VStack(spacing: 6) {
+                BadgePillLabel(kind: .frontRow, muted: true)
+                Text("Locked, accent").flimFont(10, relativeTo: .caption2).foregroundStyle(FlimTheme.textTertiary)
+            }
+        }
+    }
+    .padding(30)
+    .background(FlimTheme.bg)
 }
 
 #Preview("Badge explanation popover: longest copy, largest Dynamic Type, narrowest device") {
