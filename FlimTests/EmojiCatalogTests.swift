@@ -90,4 +90,102 @@ struct EmojiCatalogTests {
         let probe = RenderProbe()
         #expect(probe.renders(emoji), "\(emoji) should render on this OS but the probe rejected it")
     }
+
+    // MARK: - Search token extraction (pure functions, no font or catalog dependency)
+
+    @Test("a plain single-scalar emoji tokenizes to its Unicode name's words")
+    func plainEmojiTokenizes() {
+        let tokens = emojiSearchTokens(for: "😀")
+        #expect(tokens.contains("grinning"))
+        #expect(tokens.contains("face"))
+    }
+
+    @Test("a ZWJ sequence keeps every component's name, so it's findable under any of them")
+    func zwjSequenceKeepsEveryComponent() {
+        // 🧑‍🚀: ADULT (Unicode's own name for 🧑, not "person"), ZERO WIDTH JOINER (noise,
+        // dropped), ROCKET.
+        let tokens = emojiSearchTokens(for: "🧑‍🚀")
+        #expect(tokens.contains("adult"))
+        #expect(tokens.contains("rocket"))
+        #expect(!tokens.contains("zero"))
+        #expect(!tokens.contains("joiner"))
+    }
+
+    @Test("a keycap tokenizes to its own base character, since plain ASCII digits aren't wrapped in Unicode names")
+    func keycapTokenizesToBaseCharacter() {
+        // 3️⃣: the bare "3" gets no \N{...} name at all from CFStringTransform (only non-ASCII
+        // scalars are wrapped), so the base character has to be supplied directly; the variation
+        // selector and combining keycap mark are still filtered out as noise.
+        let tokens = keycapSearchTokens(base: "3", text: "3\u{FE0F}\u{20E3}")
+        #expect(tokens.contains("3"))
+        #expect(!tokens.contains("variation"))
+        #expect(!tokens.contains("selector"))
+        #expect(!tokens.contains("combining"))
+        #expect(!tokens.contains("keycap"))
+    }
+
+    @Test("a variation-selector emoji drops the selector and keeps only the meaningful name")
+    func variationSelectorEmojiDropsSelector() {
+        // ❤️: HEAVY BLACK HEART, VARIATION SELECTOR-16 (noise).
+        let tokens = emojiSearchTokens(for: "\u{2764}\u{FE0F}")
+        #expect(tokens.contains("heart"))
+        #expect(!tokens.contains("variation"))
+        #expect(!tokens.contains("selector"))
+    }
+
+    @Test("a flag decodes back to its ISO region code")
+    func flagDecodesToRegionCode() {
+        #expect(regionCode(forFlag: "🇺🇸") == "US")
+        #expect(regionCode(forFlag: "🇹🇹") == "TT")
+    }
+
+    @Test("a non-flag two-scalar string doesn't falsely decode as a region code")
+    func nonFlagDoesNotDecode() {
+        #expect(regionCode(forFlag: "3\u{FE0F}") == nil)
+        #expect(regionCode(forFlag: "😀") == nil)
+    }
+
+    @Test("word tokenization lowercases and splits on non-letters")
+    func wordTokenizationSplitsAndLowercases() {
+        #expect(wordTokens("GRINNING FACE") == ["grinning", "face"])
+        #expect(wordTokens("Côte d'Ivoire") == ["côte", "d", "ivoire"])
+    }
+
+    // MARK: - Matching and ranking
+
+    @Test("matching is whole-word by prefix, not substring")
+    func matchingIsWholeWordPrefix() {
+        #expect(emojiSearchRank(["dog", "face"], query: "dog") != nil)
+        #expect(emojiSearchRank(["dog", "face"], query: "og") == nil)
+    }
+
+    @Test("an exact whole-word match outranks a prefix-only match")
+    func exactMatchOutranksPrefix() {
+        let exact = emojiSearchRank(["fire"], query: "fire")
+        let prefix = emojiSearchRank(["fireworks"], query: "fire")
+        #expect(exact == 0)
+        #expect(prefix == 1)
+        #expect(exact! < prefix!)
+    }
+
+    @Test("an empty query never matches a specific token search")
+    func emptyQueryDoesNotRank() {
+        #expect(emojiSearchRank(["fire"], query: "") == nil)
+    }
+
+    @Test("search results are empty for an empty query, not the full palette")
+    func emptyQueryProducesNoSearchResults() {
+        let categories = [EmojiCategory(name: "Test", emojis: ["🔥"])]
+        let results = emojiSearchResults(categories: categories, tokens: ["🔥": ["fire"]], query: "")
+        #expect(results.isEmpty)
+    }
+
+    @Test("search ranks exact matches ahead of partial matches within results")
+    func searchResultsRankExactFirst() {
+        let categories = [EmojiCategory(name: "Test", emojis: ["🎆", "🔥"])]
+        let tokens: [String: [String]] = ["🎆": ["fireworks"], "🔥": ["fire"]]
+        let results = emojiSearchResults(categories: categories, tokens: tokens, query: "fire")
+        #expect(results.count == 1)
+        #expect(results[0].emojis.first == "🔥", "the exact match should sort ahead of the prefix-only match")
+    }
 }

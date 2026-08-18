@@ -49,8 +49,8 @@ import CoreGraphics
 actor EmojiCatalog {
     static let shared = EmojiCatalog()
 
-    private var cached: [EmojiCategory]?
-    private var task: Task<[EmojiCategory], Never>?
+    private var cached: EmojiCatalogData?
+    private var task: Task<EmojiCatalogData, Never>?
 
     /// Kicks off generation in the background if nothing has started yet. Fire-and-forget by
     /// design, like `EmojiSuggestion.suggest`: nothing here is awaited by the caller. Safe to call
@@ -65,6 +65,18 @@ actor EmojiCatalog {
     /// prior call to this) has finished; awaits the in-flight generation otherwise, which only
     /// happens if the picker is opened before any `ReactionBar` has had a chance to warm it.
     func sections() async -> [EmojiCategory] {
+        await data().sections
+    }
+
+    /// Every generated emoji's precomputed lowercase search tokens (Unicode component names for
+    /// most entries, region names for flags, the small curated synonym table layered on top), for
+    /// the picker's search field. Computed once alongside `sections()` in the same background
+    /// pass, not per keystroke: see `generate()`.
+    func searchTokens() async -> [String: [String]] {
+        await data().tokens
+    }
+
+    private func data() async -> EmojiCatalogData {
         if let cached { return cached }
         let result = await ensureStarted().value
         cached = result
@@ -72,7 +84,7 @@ actor EmojiCatalog {
     }
 
     @discardableResult
-    private func ensureStarted() -> Task<[EmojiCategory], Never> {
+    private func ensureStarted() -> Task<EmojiCatalogData, Never> {
         if let task { return task }
         // `.utility`: this is thousands of scalar checks, each now a real (if small) offscreen
         // render rather than a cheap cmap lookup. Real work, but never urgent, and must never
@@ -81,6 +93,14 @@ actor EmojiCatalog {
         task = newTask
         return newTask
     }
+}
+
+/// The result of one `generate()` pass: the browsable sections, and every entry's search tokens
+/// keyed by the emoji itself. Bundled together so both are produced (and cached) by the exact same
+/// background pass instead of a second one running later for search.
+struct EmojiCatalogData {
+    let sections: [EmojiCategory]
+    let tokens: [String: [String]]
 }
 
 /// Unicode blocks that contain `Emoji=Yes` code points as of Unicode 16 (2024). New emoji almost
@@ -139,16 +159,71 @@ private let zwjTemplates: [(text: String, category: String)] = [
     ("🍄‍🟫", "Food and Drink"),
 ]
 
+/// The one curated part of the search index: Unicode's own component names miss the words people
+/// actually type to search for an emoji ("pray" doesn't appear anywhere in FOLDED HANDS' name,
+/// "love" doesn't appear in HEAVY BLACK HEART's, "lol" and "100" aren't Unicode names at all).
+/// There is no way to derive these from scalar properties the way everything else in this file is,
+/// so this is unavoidably a hand-maintained list, like `zwjTemplates` above — but kept deliberately
+/// small: production reaction data across the app's whole history is 29 reactions using 8 distinct
+/// emoji, with ❤️, 🔥, and 😂 alone covering 79% of them. This covers the everyday vocabulary around
+/// the emoji people actually reach for, not a completionist keyword mapping. Keyed by emoji string
+/// rather than by concept, so an entry for an emoji THIS device can't draw is simply never
+/// reachable, exactly like every other part of the catalog degrading the same way.
+private let synonymTokens: [String: [String]] = [
+    "❤️": ["love"], "🧡": ["love"], "💛": ["love"], "💚": ["love"], "💙": ["love"], "💜": ["love"],
+    "🖤": ["love"], "🤍": ["love"], "🤎": ["love"], "💕": ["love"], "💞": ["love"], "💗": ["love"],
+    "😍": ["love", "crush"], "😘": ["love", "kiss"],
+    "🔥": ["lit", "hot", "flames"],
+    "😂": ["lol", "haha", "funny", "lmao"], "🤣": ["lol", "haha", "funny", "lmao"],
+    "😭": ["crying", "sobbing"], "😢": ["crying", "sad"],
+    "🙏": ["pray", "please", "thanks", "thank"],
+    "💯": ["100", "hundred"],
+    "👍": ["yes", "ok", "okay", "agree", "thumbsup"], "👎": ["no", "disagree", "thumbsdown"],
+    "😊": ["happy", "smile"], "😀": ["happy", "smile"], "😁": ["happy", "smile"],
+    "🙁": ["sad"], "☹️": ["sad"],
+    "😡": ["angry", "mad"], "😠": ["angry", "mad"],
+    "😮": ["wow", "shocked", "surprised"], "😲": ["wow", "shocked", "surprised"],
+    "🙌": ["yay", "celebrate", "hooray"], "🎉": ["yay", "celebrate", "party", "congrats"],
+    "🥳": ["celebrate", "party"],
+    "😴": ["tired", "sleepy", "sleep"], "🥱": ["tired", "sleepy", "bored"],
+    "🤔": ["thinking", "hmm"],
+    "😳": ["blushing", "embarrassed"],
+    "🤗": ["hug"],
+    "🙈": ["oops", "embarrassed"],
+    "😎": ["cool"],
+    "🤮": ["sick", "gross", "ill"], "🤢": ["sick", "gross"],
+    "💀": ["dead", "dying"], "😵": ["dead", "dizzy"],
+    "👀": ["eyes", "looking", "watching"],
+    "🫡": ["salute", "respect"],
+    "😏": ["smirk"],
+    "🥺": ["pleading", "cute"],
+    "🤷": ["shrug", "whatever", "idk"],
+    "💔": ["heartbroken", "breakup"],
+    "🍑": ["butt", "peach"],
+    "🍆": ["eggplant"],
+    "💩": ["poop", "shit", "crap"],
+    "🖕": ["middle finger"],
+    "✅": ["done", "check", "yes"], "❌": ["no", "wrong", "cancel"],
+    "⭐": ["star", "favorite"], "🌟": ["star", "favorite"],
+]
+
 /// Runs entirely off the actor: called from inside `Task.detached`, touches no actor state, so it
 /// never needs to hop onto `EmojiCatalog`'s executor just to compute.
-private func generate() -> [EmojiCategory] {
+private func generate() -> EmojiCatalogData {
     var byCategory: [String: [String]] = [:]
+    var tokensByEmoji: [String: [String]] = [:]
     var seen = Set<String>()
     let probe = RenderProbe()
 
-    func add(_ text: String, to category: String) {
+    func add(_ text: String, to category: String, tokens: [String]) {
         guard !text.isEmpty, seen.insert(text).inserted else { return }
         byCategory[category, default: []].append(text)
+        var deduped: [String] = []
+        var dedupedSeen = Set<String>()
+        for token in tokens + (synonymTokens[text] ?? []) where dedupedSeen.insert(token).inserted {
+            deduped.append(token)
+        }
+        tokensByEmoji[text] = deduped
     }
 
     for range in scanRanges {
@@ -156,7 +231,7 @@ private func generate() -> [EmojiCategory] {
             guard let scalar = Unicode.Scalar(value), isStandalonePictograph(scalar) else { continue }
             let text = scalar.properties.isEmojiPresentation ? String(scalar) : "\(scalar)\u{FE0F}"
             guard probe.renders(text) else { continue }
-            add(text, to: category(for: scalar))
+            add(text, to: category(for: scalar), tokens: emojiSearchTokens(for: text))
         }
     }
 
@@ -165,27 +240,28 @@ private func generate() -> [EmojiCategory] {
         for second in regionalIndicators {
             let text = "\(first)\(second)"
             guard probe.renders(text) else { continue }
-            add(text, to: "Flags")
+            add(text, to: "Flags", tokens: flagSearchTokens(for: text))
         }
     }
 
     for flag in subdivisionFlags where probe.renders(flag.text) {
-        add(flag.text, to: "Flags")
+        add(flag.text, to: "Flags", tokens: wordTokens(flag.name))
     }
 
     for base in keycapBases {
         let text = "\(base)\u{FE0F}\u{20E3}"
         guard probe.renders(text) else { continue }
-        add(text, to: "Symbols")
+        add(text, to: "Symbols", tokens: keycapSearchTokens(base: base, text: text))
     }
 
     for template in zwjTemplates where probe.renders(template.text) {
-        add(template.text, to: template.category)
+        add(template.text, to: template.category, tokens: emojiSearchTokens(for: template.text))
     }
 
-    return categoryOrder.compactMap { name in
+    let sections = categoryOrder.compactMap { name in
         byCategory[name].map { EmojiCategory(name: name, emojis: $0) }
     }
+    return EmojiCatalogData(sections: sections, tokens: tokensByEmoji)
 }
 
 /// `isEmoji` alone still lets through a handful of scalars that are components, never meant to
@@ -200,6 +276,103 @@ private func isStandalonePictograph(_ scalar: Unicode.Scalar) -> Bool {
     default:
         return true
     }
+}
+
+/// Lowercase search words extracted from `text`'s Unicode character name(s), via
+/// `CFStringTransform(_, _, kCFStringTransformToUnicodeName, _)`. Free, device-derived, and
+/// self-updating from the OS's own Unicode tables, unlike a bundled keyword file. Works
+/// identically for a plain scalar ("😀" → "grinning", "face") and a ZWJ sequence ("🧑‍🚀" →
+/// "astronaut", from ASTRONAUT's own name, joined with "person" from 🧑's), because the transform
+/// names every scalar in `text` and this just walks all of them. Not `private`: exercised directly
+/// by `EmojiCatalogTests` as a pure function, and used for both single scalars and ZWJ sequences.
+func emojiSearchTokens(for text: String) -> [String] {
+    let mutable = NSMutableString(string: text)
+    guard CFStringTransform(mutable, nil, kCFStringTransformToUnicodeName, false) else { return [] }
+    let named = mutable as String
+
+    var tokens: [String] = []
+    var seen = Set<String>()
+    var index = named.startIndex
+    while let open = named.range(of: "\\N{", range: index..<named.endIndex),
+          let close = named.range(of: "}", range: open.upperBound..<named.endIndex) {
+        let componentName = named[open.upperBound..<close.lowerBound]
+        index = close.upperBound
+        guard !isNoiseComponentName(componentName) else { continue }
+        for token in wordTokens(String(componentName)) where seen.insert(token).inserted {
+            tokens.append(token)
+        }
+    }
+    return tokens
+}
+
+/// Component names that are Unicode machinery, not anything a person would type: the variation
+/// selectors that pick text vs. emoji presentation, the zero-width joiner that stitches a ZWJ
+/// sequence together, the combining mark that turns a digit into a keycap, and the bare
+/// regional-indicator letters that make up a flag pair (flags get real names from
+/// `flagSearchTokens` instead, since "REGIONAL INDICATOR SYMBOL LETTER U" means nothing to search).
+private func isNoiseComponentName<S: StringProtocol>(_ name: S) -> Bool {
+    let upper = name.uppercased()
+    return upper.hasPrefix("VARIATION SELECTOR")
+        || upper == "ZERO WIDTH JOINER"
+        || upper == "COMBINING ENCLOSING KEYCAP"
+        || upper.hasPrefix("REGIONAL INDICATOR SYMBOL LETTER")
+}
+
+/// A country flag's search tokens: its ISO 3166-1 alpha-2 region code, and the words of its
+/// localized region name, e.g. 🇺🇸 → "us", "united", "states". Unicode's own name for a flag pair is
+/// useless for search ("REGIONAL INDICATOR SYMBOL LETTER U, LETTER S"), but a flag IS its region
+/// code, so this decodes the pair back to the two letters and asks `Locale` instead. Falls back to
+/// the region code alone if `Locale` doesn't recognize it (a real regional-indicator pair the font
+/// renders but that isn't a currently assigned ISO region, which does happen).
+func flagSearchTokens(for text: String) -> [String] {
+    guard let code = regionCode(forFlag: text) else { return [] }
+    var tokens = [code.lowercased()]
+    if let name = Locale.current.localizedString(forRegionCode: code) {
+        tokens += wordTokens(name)
+    }
+    return tokens
+}
+
+/// Decodes a two-scalar regional-indicator flag back to its ISO 3166-1 alpha-2 region code, e.g.
+/// 🇺🇸 → "US". Each regional-indicator scalar encodes a Latin letter as an offset from
+/// `U+1F1E6` (which stands for "A"), so subtracting that base and re-adding `"A"`'s own value
+/// recovers the letter. Returns `nil` for anything that isn't exactly a two-scalar
+/// regional-indicator pair, which covers the subdivision and ZWJ flags; those get their tokens from
+/// their own listed name instead. Not `private`: exercised directly by `EmojiCatalogTests`.
+func regionCode(forFlag text: String) -> String? {
+    let scalars = Array(text.unicodeScalars)
+    guard scalars.count == 2 else { return nil }
+    var letters = ""
+    for scalar in scalars {
+        guard (0x1F1E6...0x1F1FF).contains(scalar.value),
+              let letter = Unicode.Scalar(scalar.value - 0x1F1E6 + Unicode.Scalar("A").value) else {
+            return nil
+        }
+        letters.append(Character(letter))
+    }
+    return letters
+}
+
+/// A keycap's search tokens: whatever `emojiSearchTokens` pulls from its Unicode component names,
+/// plus the base character itself. In practice that first part contributes nothing useful, because
+/// `CFStringTransform`'s Unicode-name transform only wraps scalars in `\N{...}` when they don't
+/// already print as themselves; plain ASCII digits, `#`, and `*` are left bare, so
+/// `emojiSearchTokens(for: "3\u{FE0F}\u{20E3}")` sees only the (filtered-out) variation selector
+/// and combining keycap mark and finds no name for the "3" at all. Appending the base character
+/// directly is what makes typing "3" actually find 3️⃣. Not `private`: exercised directly by
+/// `EmojiCatalogTests` as a pure function.
+func keycapSearchTokens(base: Character, text: String) -> [String] {
+    emojiSearchTokens(for: text) + [String(base).lowercased()]
+}
+
+/// Splits any string into lowercase word tokens, breaking on anything that isn't a letter or digit
+/// (spaces, hyphens, apostrophes, commas), e.g. "Côte d'Ivoire" → "côte", "d", "ivoire". Shared by
+/// every token source in this file (Unicode component names, locale region names, the subdivision
+/// flag names, keycap bases) so they all tokenize identically.
+func wordTokens(_ text: String) -> [String] {
+    text.lowercased()
+        .split(whereSeparator: { !$0.isLetter && !$0.isNumber })
+        .map(String.init)
 }
 
 /// Resolves and shapes candidate text with zero dependence on any font's NAME, and only counts it
