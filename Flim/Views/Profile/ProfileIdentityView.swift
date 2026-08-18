@@ -21,21 +21,30 @@ struct FrameNumberLabel: View {
 /// there is no longer a wider "everything you've earned" set to choose from at this call site,
 /// that full collection only ever lives in `BadgePickerSheet` now.
 ///
-/// The odd-count cases matter more than the even one: `UserPageView` already caps this at four,
-/// so 0 through 4 are the only counts that ever reach this, and the risk called out explicitly is
-/// a single pill stranded on one side with nothing opposite reading like a layout bug rather than
-/// a deliberate choice. Alternating right-then-left as badges are added avoids that: the very
-/// first (and, for a one-badge profile, only) pill always lands on the right, alone, which reads
-/// as a small decoration beside the avatar — the same place a verified checkmark sits in other
-/// apps — rather than a stray fragment with an empty gap on the other side. From a second badge
-/// on, both sides always carry at least one pill, so an odd total (three) still splits 2-and-1
-/// rather than ever leaving one side bare.
+/// `UserPageView` caps this at four, so 0 through 4 are the only counts that ever reach here, and
+/// the four slots read like text: top left, top right, bottom left, bottom right.
+///
+///     [0]  (avatar)  [1]
+///     [2]            [3]
+///
+/// So the left column takes the even indices and the right column the odd ones, and a lone badge
+/// sits top LEFT where the eye starts rather than opposite it.
+///
+/// An earlier version filled right-first and alternated, on the theory that a single pill alone on
+/// the right reads as a deliberate mark beside a photo (where a verified checkmark usually sits).
+/// Cody wanted plain reading order instead, which is also the rule that needs no explaining: the
+/// display order the picker saves is the order they appear in, scanned the way everything else on
+/// the page is scanned.
+///
+/// Which side a badge lands on cannot move the avatar. See `AvatarBadgeFlanking`, where the avatar
+/// holds its own fixed frame and the columns are overlaid beside it, and
+/// `AvatarBadgeCenteringTests`, which asserts that across every count.
 enum ProfileBadgeFlank {
     static func split(_ badges: [ProfileBadge]) -> (left: [ProfileBadge], right: [ProfileBadge]) {
         var left: [ProfileBadge] = []
         var right: [ProfileBadge] = []
         for (index, badge) in badges.enumerated() {
-            if index.isMultiple(of: 2) { right.append(badge) } else { left.append(badge) }
+            if index.isMultiple(of: 2) { left.append(badge) } else { right.append(badge) }
         }
         return (left, right)
     }
