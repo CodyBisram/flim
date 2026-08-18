@@ -83,28 +83,30 @@ struct ProfileBadgeColumn: View {
 /// Factored out of `ProfileBadgePill` so tier colour is decided in exactly one view, then reused,
 /// muted, for the locked catalog rows in `BadgePickerSheet`.
 ///
-/// Every pill renders at the same fixed width, not a per-label max: an earlier version capped at
-/// 84pt as a ceiling, so most labels sized to their own (shorter) content and only "Founding 100"
-/// ever actually hit 84 — the two flanking columns on a profile read visibly uneven as a result.
-/// A fixed width makes every pill identical regardless of label length; `lineLimit` +
-/// `minimumScaleFactor` stay on as the safety net for whatever the next long label turns out to
-/// be, same as before.
+/// Pills size to their own label rather than to a shared fixed width. That was tried both ways:
+/// a fixed 84pt frame, then 96pt when four labels turned out to overflow it. Both were wrong for
+/// the same reason. A row of identical capsules reads as a set of form fields, and these are
+/// meant to read as things a person was given. An object earned is not the same width as every
+/// other object earned. The flanking columns were built for ragged widths from the start (see
+/// `ProfileBadgeColumn`: each side aligns on its inner edge so the ragged edge falls outward), so
+/// nothing about the layout needed the fixed frame in the first place, and hugging also retires
+/// the overflow problem permanently: a pill that sizes to its text can never clip it.
 ///
-/// That width is 96, and the tracking 0.6, because 84 at tracking 1.0 was quietly too small for
-/// four labels. Measured with CoreText at this exact font: COVER TO COVER wanted 104.7pt,
-/// FOUNDING CREW 101.7, PACKED HOUSE 92.5, FOUNDING 100 88.6. None of them truncated — the 0.7
-/// `minimumScaleFactor` floor caught them all — but they rendered at 80-95% of everything else
-/// and filled their pill edge to edge, which is what "almost extends out of the pill" looks like.
-/// At 96/0.6 every one of the twenty-two labels lands at 97% or better, so they all read as the
-/// same size. The width is a ceiling as well as a floor: two pills plus their 10pt padding, the
-/// 14pt gaps, and the 88pt avatar make a 348pt row, which still clears the narrowest iPhone in
-/// service (375pt) by 13pt a side. Anything wider starts crowding that edge, which is why this
-/// stops at 96 rather than the 100 it would take to fit COVER TO COVER outright.
+/// What makes it read as struck rather than printed, in the order the eye picks them up:
+///  - a vertical gradient, lighter above darker, so the surface looks lit from above;
+///  - a bright hairline rim, which is the single detail doing most of the work;
+///  - dark ink on metal, the same treatment every solid-accent control in the app already uses;
+///  - and, on the founding rung only, a soft coloured glow beneath. Reserved to the top rung on
+///    purpose: if every metal tier glowed, the founding pills would stop being what your eye
+///    lands on first.
+///
+/// `accent` is deliberately none of that. It keeps the tinted wash it always had, because it is
+/// the rung for ordinary use and should not be dressed as a medal.
 struct BadgePillLabel: View {
     let kind: ProfileBadgeKind
-    /// Locked/not-yet-earned rows in `BadgePickerSheet`'s catalog render the same tier hue in a
+    /// Locked/not-yet-earned rows in `BadgePickerSheet`'s catalogue render the same rung in a
     /// washed-out, outlined form: full strength would read as already earned, and no colour at
-    /// all would lose the gold-vs-accent, solid-vs-tinted signal the tier exists to carry.
+    /// all would lose the rung signal the tier exists to carry.
     var muted: Bool = false
     @Environment(\.flimAccent) private var accent
 
@@ -116,20 +118,33 @@ struct BadgePillLabel: View {
             .flimFont(10, weight: .semibold, relativeTo: .caption2)
             .tracking(0.6)
             .lineLimit(1)
-            .minimumScaleFactor(0.7)
-            .foregroundStyle(muted ? hue.opacity(tier.isSolidFill ? 0.85 : 0.55) : tier.foreground(accent: accent))
-            .frame(width: 96)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
+            .minimumScaleFactor(0.75)
+            .foregroundStyle(muted ? hue.opacity(0.75) : tier.foreground(accent: accent))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
             .background {
                 if muted {
                     Capsule()
                         .fill(hue.opacity(0.08))
                         .overlay(Capsule().strokeBorder(hue.opacity(0.35), lineWidth: 1))
                 } else {
-                    Capsule().fill(tier.background(accent: accent))
+                    Capsule()
+                        .fill(
+                            LinearGradient(
+                                colors: tier.gradient(accent: accent),
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                        .overlay(
+                            Capsule().strokeBorder(tier.rim(accent: accent), lineWidth: 0.75)
+                        )
+                        .shadow(color: tier.glow(accent: accent), radius: 5, y: 1)
                 }
             }
+            // A struck pill is a small object with a lot of contrast, so it needs a beat of space
+            // around it that a flat chip did not; the flanking columns already space vertically.
+            .fixedSize()
     }
 }
 

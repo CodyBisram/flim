@@ -382,12 +382,19 @@ private struct BadgePickerContent: View {
 
     // MARK: - Locked catalog
 
-    /// Every catalog case not already earned. This is deliberately the ONE place in the app that
-    /// iterates `ProfileBadgeKind.allCases` rather than a profile's own `badges` — see the
-    /// module comment on why a profile itself must never do this.
+    /// Every catalog case not already earned AND still reachable. This is deliberately the ONE
+    /// place in the app that iterates `ProfileBadgeKind.allCases` rather than a profile's own
+    /// `badges` — see the module comment on why a profile itself must never do this.
+    ///
+    /// `isEarnable` is what keeps the three unreachable ones out: `founder` and `foundingCrew`
+    /// are given by hand, and `founding100`'s window is shut for anyone not already holding it.
+    /// Listing them as locked rows told most people, at length, about three things they can never
+    /// have. A collection screen should show what is still out there for YOU.
     private var lockedKinds: [ProfileBadgeKind] {
         let earnedIds = Set(badges.map(\.id))
-        return ProfileBadgeKind.allCases.filter { !earnedIds.contains($0.rawValue) }
+        return ProfileBadgeKind.allCases.filter {
+            !earnedIds.contains($0.rawValue) && $0.isEarnable
+        }
     }
 
     /// The rest of the catalog, shown locked below whatever's earned/selectable above. This is

@@ -29,6 +29,25 @@ enum FlimTheme {
     /// two don't collide even when a gold pill and an amber-tinted one sit side by side.
     static let badgeGold = Color(red: 0.80, green: 0.69, blue: 0.32)
 
+    /// The rest of the medal ladder (see `ProfileBadgeTier`). Each rung is a pair: the lighter
+    /// stop sits above the darker one in the pill's gradient, which is what makes a flat capsule
+    /// read as a struck surface catching light from above rather than a swatch of colour.
+    ///
+    /// Silver is deliberately cool and slightly blue rather than neutral grey: a true grey next
+    /// to `bg`'s near black reads as "disabled", which is the one thing a medal must never look
+    /// like. Bronze is pulled warm and a little red, away from gold's yellow, so the two are
+    /// still separable at pill size in a dim room, where a plain darker gold would not be.
+    static let badgeGoldLight = Color(red: 0.93, green: 0.83, blue: 0.47)
+    static let badgeGoldDeep = Color(red: 0.66, green: 0.55, blue: 0.22)
+    static let badgeSilver = Color(red: 0.72, green: 0.75, blue: 0.80)
+    static let badgeSilverLight = Color(red: 0.88, green: 0.90, blue: 0.94)
+    static let badgeBronze = Color(red: 0.68, green: 0.44, blue: 0.28)
+    static let badgeBronzeLight = Color(red: 0.83, green: 0.58, blue: 0.39)
+
+    /// Text on a struck pill. Not pure black: against a bright gold the full-black edge buzzes at
+    /// 10pt, and a hair of lift settles it without reading as grey.
+    static let badgeInk = Color(red: 0.08, green: 0.07, blue: 0.05)
+
     static let textPrimary = Color.white
     static let textSecondary = Color(white: 0.62)   // 7.4:1 on bg, passes AA and AAA
 

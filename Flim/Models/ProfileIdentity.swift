@@ -83,21 +83,59 @@ enum ProfileBadgeKind: String, CaseIterable {
     case oneYear = "one_year"
     case fullSet = "full_set"
     case founder = "founder"
+    case openDoor = "open_door"
+    // The small, frequent ones. A catalogue whose cheapest badge is "shoot your first frame" has
+    // nothing to offer on day three, so these mark the ordinary things a person does in their
+    // first fortnight and keeps doing: reacting, tagging, being tagged, captioning, being
+    // followed, and simply shooting a few more frames.
+    case chimedIn = "chimed_in"
+    case inFrame = "in_frame"
+    case spotter = "spotter"
+    case saidIt = "said_it"
+    case tenFrames = "ten_frames"
+    case goodCompany = "good_company"
+
+    /// Whether an account that doesn't already hold this could ever go and get it.
+    ///
+    /// False for exactly three: `founder` and `foundingCrew` are handed out by a person and have
+    /// no predicate at all, and `founding100`'s window shut at the hundredth signup — if you do
+    /// not already hold it, your ordinal is past 100 and nothing you do changes that. Everything
+    /// else is reachable by ordinary use.
+    ///
+    /// `BadgePickerSheet`'s locked catalog filters on this, so the collection screen only ever
+    /// lists things you can actually go and earn. Showing a stranger a gold pill captioned "given
+    /// by hand, not something you can earn" is worse than showing nothing: it advertises a closed
+    /// door. Deliberately keyed on the case rather than on `tier`, so re-tiering the catalogue for
+    /// colour reasons can never silently change which badges are advertised as reachable.
+    var isEarnable: Bool {
+        switch self {
+        case .founder, .foundingCrew, .founding100: return false
+        default: return true
+        }
+    }
 
     /// Which of the three ways this badge is obtained, and therefore how its pill renders. See
     /// `ProfileBadgeTier`'s own comment for why this is keyed on HOW rather than how rare a badge
     /// currently is.
     var tier: ProfileBadgeTier {
         switch self {
-        case .founder, .foundingCrew:
-            return .handGranted
-        case .founding100:
-            return .era
-        case .frontRow, .packedHouse, .patron, .coverToCover, .fullSet, .darkroom, .firstIn:
-            return .hardEarned
-        case .firstLight, .fullRoll, .rollMaker, .broughtSomeone, .joinedIn, .chippedIn, .shared,
-             .wellMet, .fullHouse, .keptOne, .regular, .oneYear:
-            return .common
+        // The closed set. Nothing new can ever enter this rung.
+        case .founder, .foundingCrew, .founding100:
+            return .founding
+        // The hardest things in the catalogue. Each one is many of something.
+        case .fullSet, .frontRow, .packedHouse, .coverToCover, .openDoor:
+            return .gold
+        // Real effort, but a single determined stretch rather than a campaign.
+        case .patron, .darkroom, .firstIn, .keptOne, .regular, .oneYear:
+            return .silver
+        // You did something that needed other people.
+        case .fullRoll, .rollMaker, .broughtSomeone, .wellMet, .fullHouse, .spotter, .inFrame,
+             .goodCompany:
+            return .bronze
+        // You used FLIM. Deliberately not metal: these are the steady drumbeat, and casting them
+        // in bronze would make bronze mean nothing.
+        case .firstLight, .shared, .joinedIn, .chippedIn, .chimedIn, .saidIt, .tenFrames:
+            return .accent
         }
     }
 
@@ -129,6 +167,13 @@ enum ProfileBadgeKind: String, CaseIterable {
         case .oneYear: return "One Year"
         case .fullSet: return "Full Set"
         case .founder: return "Founder"
+        case .openDoor: return "Open Door"
+        case .chimedIn: return "Chimed In"
+        case .inFrame: return "In Frame"
+        case .spotter: return "Spotter"
+        case .saidIt: return "Said It"
+        case .tenFrames: return "Ten Frames"
+        case .goodCompany: return "Good Company"
         }
     }
 
@@ -185,7 +230,7 @@ enum ProfileBadgeKind: String, CaseIterable {
         case .patron:
             return "Five people you invited joined."
         case .coverToCover:
-            return "You shot into every roll you were ever part of, before it developed."
+            return "You shot into ten rolls before they developed."
         case .keptOne:
             return "Ten of your frames developed, and you kept every one to yourself."
         case .regular:
@@ -196,6 +241,20 @@ enum ProfileBadgeKind: String, CaseIterable {
             return "Ten other badges, held at once."
         case .founder:
             return "Built \(AppInfo.appName)."
+        case .openDoor:
+            return "Ten people you invited joined."
+        case .chimedIn:
+            return "You reacted to someone else's photo."
+        case .inFrame:
+            return "Someone tagged you in a photo."
+        case .spotter:
+            return "You tagged someone in one of yours."
+        case .saidIt:
+            return "You wrote a caption."
+        case .tenFrames:
+            return "Ten frames shot."
+        case .goodCompany:
+            return "Someone followed you."
         }
     }
 
@@ -247,7 +306,7 @@ enum ProfileBadgeKind: String, CaseIterable {
         case .patron:
             return "Invite people until five of them join."
         case .coverToCover:
-            return "Shoot into every roll you join, before it develops."
+            return "Shoot into ten different rolls before they develop."
         case .keptOne:
             return "Let ten frames develop without sharing any of them."
         case .regular:
@@ -258,61 +317,105 @@ enum ProfileBadgeKind: String, CaseIterable {
             return "Earn ten other badges."
         case .founder:
             return "Given by hand to whoever built \(AppInfo.appName), not something you can earn."
+        case .openDoor:
+            return "Invite people until ten of them join."
+        case .chimedIn:
+            return "React to someone else's photo."
+        case .inFrame:
+            return "Get tagged in someone's photo."
+        case .spotter:
+            return "Tag someone in one of your photos."
+        case .saidIt:
+            return "Write a caption on a frame."
+        case .tenFrames:
+            return "Shoot ten frames."
+        case .goodCompany:
+            return "Have someone follow you."
         }
     }
 }
 
-/// Which of the three ways a badge is obtained, and therefore how its pill renders: gold vs the
-/// viewer's chosen accent, solid fill vs a tinted wash. Deliberately keyed on HOW a badge was
-/// granted, never on how rare it currently is — a dynamic "rarest four" style tier would silently
-/// recolor a badge as the app grows, and a permanent stamp shouldn't drift.
+/// How a badge ranks, and therefore how its pill is struck. Five rungs, in descending order:
+/// `founding`, `gold`, `silver`, `bronze`, `accent`.
 ///
-///                    solid fill            tinted wash
-///   gold             `.handGranted`        `.era`
-///   accent           `.hardEarned`         `.common`
+/// THE ONE RULE: a badge's rung is assigned by hand, in `ProfileBadgeKind.tier`, and is never
+/// computed from live holder counts. A rarity-driven ladder would silently restrike a stamp as
+/// the app grows, and a permanent record must not drift. `founding_100` is the clearest case for
+/// this: it sits on the top rung while every account still holds it, because it is the one badge
+/// that gets rarer with time rather than commoner, and it should not be demoted today only to be
+/// promoted at ten thousand users.
 ///
-/// This is the one place tier-to-colour logic lives; see `ProfileBadgeKind.tier` for the
-/// assignment and `BadgePillLabel` (in `ProfileIdentityView.swift`) for the only view that reads
-/// `hue`/`foreground`/`background` below.
+/// The bottom rung is deliberately not metal. If every badge were a medal, none would read as
+/// one; `accent` is the steady drumbeat of ordinary use, and casting it in bronze would leave
+/// bronze meaning nothing. It also keeps the viewer's chosen accent colour present on profiles,
+/// which a pure medal ladder loses entirely.
 enum ProfileBadgeTier {
-    /// Granted by hand, never computed: `founder`, `foundingCrew`.
-    case handGranted
-    /// An era, not an action: `founding100`. Everyone who could ever hold it already does — the
-    /// window itself is what's gold, not an achievement inside it, so it stays a tinted wash
-    /// rather than the same solid weight as something someone actually did.
-    case era
-    /// Automatically earned, but the hard ones: sustained or effortful behaviour rather than one
-    /// ordinary action.
-    case hardEarned
-    /// Everything else: automatically earned, ordinary product use.
-    case common
+    /// The closed set: `founder`, `foundingCrew`, `founding100`. Nothing new can ever enter.
+    case founding
+    /// Many of something: five reveals won, ten invitees, ten rolls, ten badges.
+    case gold
+    /// One determined stretch rather than a campaign.
+    case silver
+    /// You did something that needed other people.
+    case bronze
+    /// You used FLIM. Not metal, on purpose.
+    case accent
 
-    var isGold: Bool {
+    /// True for every rung that is struck from metal, i.e. everything but `accent`. Metal pills
+    /// carry dark text on a bright gradient; `accent` keeps the tinted wash it always had.
+    var isMetal: Bool { self != .accent }
+
+    /// The two stops of the pill's fill, lighter above darker, which is what reads as a struck
+    /// surface catching light from above rather than a flat swatch of colour. For `accent` both
+    /// stops are the same faint wash: it is not pretending to be metal.
+    func gradient(accent: Color) -> [Color] {
         switch self {
-        case .handGranted, .era: return true
-        case .hardEarned, .common: return false
+        case .founding: return [FlimTheme.badgeGoldLight, FlimTheme.badgeGold]
+        case .gold:     return [FlimTheme.badgeGold, FlimTheme.badgeGoldDeep]
+        case .silver:   return [FlimTheme.badgeSilverLight, FlimTheme.badgeSilver]
+        case .bronze:   return [FlimTheme.badgeBronzeLight, FlimTheme.badgeBronze]
+        case .accent:   return [accent.opacity(0.18), accent.opacity(0.13)]
         }
     }
 
-    var isSolidFill: Bool {
+    /// Text colour: near-black on metal, which is what every solid-accent control in the app
+    /// already does; the accent itself on the tinted wash.
+    func foreground(accent: Color) -> Color {
+        isMetal ? FlimTheme.badgeInk : accent
+    }
+
+    /// The hairline along the pill's edge. On metal this is a bright rim, the single detail that
+    /// does most of the work of making a flat capsule read as a struck object.
+    func rim(accent: Color) -> Color {
         switch self {
-        case .handGranted, .hardEarned: return true
-        case .era, .common: return false
+        case .founding: return .white.opacity(0.55)
+        case .gold:     return .white.opacity(0.38)
+        case .silver:   return .white.opacity(0.45)
+        case .bronze:   return .white.opacity(0.28)
+        case .accent:   return accent.opacity(0.45)
         }
     }
 
-    /// The pill's own hue: gold for the two tiers that could only ever have happened once, on a
-    /// fixed guest list; otherwise the viewer's own chosen accent, so an ordinary badge never
-    /// fights whatever colour they picked for the rest of the app.
-    func hue(accent: Color) -> Color { isGold ? FlimTheme.badgeGold : accent }
+    /// A soft coloured glow beneath the pill, and only on the top rung. Reserved rather than
+    /// spread across every metal tier: if gold, silver and bronze all glowed, the founding pills
+    /// would stop being the thing your eye lands on first.
+    func glow(accent: Color) -> Color {
+        self == .founding ? FlimTheme.badgeGold.opacity(0.5) : .clear
+    }
 
-    /// Text colour: black on a solid fill, matching every other solid-accent control in the app
-    /// (e.g. the follow button, `positionIndicator`); the hue itself on a tinted wash.
-    func foreground(accent: Color) -> Color { isSolidFill ? .black : hue(accent: accent) }
+    /// Kept for the one place that still asks whether a pill is filled or washed: see
+    /// `BadgePillLabel`'s muted (locked catalogue) branch.
+    var isSolidFill: Bool { isMetal }
 
-    /// Fill colour: the hue at full strength for a solid tier, the same faint wash every pill
-    /// used before tiering existed otherwise.
-    func background(accent: Color) -> Color { isSolidFill ? hue(accent: accent) : hue(accent: accent).opacity(0.15) }
+    /// The rung's own hue, for anything that needs one flat colour rather than the gradient.
+    func hue(accent: Color) -> Color {
+        switch self {
+        case .founding, .gold: return FlimTheme.badgeGold
+        case .silver:          return FlimTheme.badgeSilver
+        case .bronze:          return FlimTheme.badgeBronze
+        case .accent:          return accent
+        }
+    }
 }
 
 /// Decodes the single row `profile_film_stats(uuid)` returns. See
