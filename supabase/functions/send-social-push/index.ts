@@ -1210,7 +1210,12 @@ Deno.serve(async () => {
     // silent or pushing a raw snake_case id at them.
     const title = label ? `You earned ${label}` : "You earned a badge";
     for (const token of await tokensFor(b.user_id)) {
-      if (await sendPush(token, title, "Open your profile to see it.", { t: "profile" })) sent++;
+      // The recipient's OWN id, not an omitted one: PushDestination.parse rejects a
+      // "profile" route with no id outright (`guard let id = uuid(...) else { return nil }`),
+      // so a bare { t: "profile" } taps into nothing at all and just opens the app
+      // wherever it was. Routed to their own page because that is where the badge is
+      // shown and where the picker, and the reveal, live.
+      if (await sendPush(token, title, "Open your profile to see it.", { t: "profile", id: b.user_id })) sent++;
     }
     await supabase
       .from("earned_badges")
