@@ -313,6 +313,7 @@ private struct BadgePickerContent: View {
             }
         }
         .background(FlimTheme.bgElevated, in: RoundedRectangle(cornerRadius: 14))
+        .uniformBadgePillWidths()
     }
 
     private func badgeRow(_ badge: ProfileBadge) -> some View {
@@ -338,6 +339,13 @@ private struct BadgePickerContent: View {
                         // what you're choosing" rather than a name you have to already know the
                         // meaning of; see `BadgePillLabel` and `ProfileBadgeTier`.
                         BadgePillLabel(kind: badge.kind)
+                        // The rung, in words. Colour alone carries the rank once you know the
+                        // ladder, but nothing on screen teaches it, and gold against bronze is not
+                        // a distinction everyone can see.
+                        Text(badge.kind.tier.name.uppercased())
+                            .flimFont(9, weight: .medium, relativeTo: .caption2)
+                            .tracking(1.2)
+                            .foregroundStyle(badge.kind.tier.hue(accent: accent).opacity(0.85))
                         if isNew {
                             Text("NEW")
                                 .flimFont(9, weight: .bold, relativeTo: .caption2)
@@ -442,6 +450,7 @@ private struct BadgePickerContent: View {
                     }
                 }
                 .background(FlimTheme.bgElevated.opacity(0.6), in: RoundedRectangle(cornerRadius: 14))
+                .uniformBadgePillWidths()
             }
         }
     }
@@ -459,7 +468,13 @@ private struct BadgePickerContent: View {
                 .foregroundStyle(FlimTheme.textTertiary)
                 .frame(width: 44, height: 44)
             VStack(alignment: .leading, spacing: 6) {
-                BadgePillLabel(kind: kind, muted: true)
+                HStack(spacing: 8) {
+                    BadgePillLabel(kind: kind, muted: true)
+                    Text(kind.tier.name.uppercased())
+                        .flimFont(9, weight: .medium, relativeTo: .caption2)
+                        .tracking(1.2)
+                        .foregroundStyle(kind.tier.hue(accent: accent).opacity(0.55))
+                }
                 Text(kind.explanation)
                     .flimFont(12, relativeTo: .caption).foregroundStyle(FlimTheme.textTertiary)
                 Text(kind.howToEarn)

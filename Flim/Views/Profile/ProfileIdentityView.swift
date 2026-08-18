@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// The permanent signup number, set like an edge number on film stock: small, monospaced,
 /// tabular figures, low contrast. It must never read as tappable or editable, unlike Lapse's
@@ -79,6 +80,60 @@ struct ProfileBadgeColumn: View {
     }
 }
 
+/// The width every pill in one group should render at: the widest natural label among them.
+///
+/// Pills used to size to their own text, which read as objects rather than form fields but left
+/// four medals of four different widths flanking an avatar, and that reads as untidy rather than
+/// characterful. Neither a global constant nor per-label hugging is right: a constant has to be
+/// wide enough for the longest label in the whole catalogue, so most pills carry dead space for a
+/// word they will never show, and hugging gives up on alignment entirely.
+///
+/// This is the third answer. Each pill reports its own natural width, the enclosing group keeps
+/// the maximum, and every pill in that group renders at it. So a profile showing FOUNDER,
+/// FOUNDING 100, OPEN DOOR and PATRON sizes all four to FOUNDING 100 and no wider, and a profile
+/// showing four short labels gets four compact pills. Uniform where it shows, never padded for a
+/// label that is not on screen.
+struct BadgePillWidthKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
+private struct UniformBadgePillWidth: EnvironmentKey {
+    static let defaultValue: CGFloat? = nil
+}
+
+extension EnvironmentValues {
+    /// Set by a group that has measured its pills; `nil` means "size to your own label", which is
+    /// what any lone pill outside such a group does.
+    var uniformBadgePillWidth: CGFloat? {
+        get { self[UniformBadgePillWidth.self] }
+        set { self[UniformBadgePillWidth.self] = newValue }
+    }
+}
+
+extension View {
+    /// Collects the widest pill inside this view and feeds it back down so they all match.
+    func uniformBadgePillWidths() -> some View {
+        modifier(UniformBadgePillWidths())
+    }
+}
+
+private struct UniformBadgePillWidths: ViewModifier {
+    @State private var width: CGFloat = 0
+
+    func body(content: Content) -> some View {
+        content
+            .environment(\.uniformBadgePillWidth, width > 0 ? width : nil)
+            .onPreferenceChange(BadgePillWidthKey.self) { measured in
+                // Only ever grows within a group's lifetime. Letting it shrink as rows appear and
+                // disappear during a sheet's load would make every pill twitch.
+                if measured > width { width = measured }
+            }
+    }
+}
+
 /// The bare pill visual: a badge's label on its tier-appropriate fill (see `ProfileBadgeTier`).
 /// Factored out of `ProfileBadgePill` so tier colour is decided in exactly one view, then reused,
 /// muted, for the locked catalog rows in `BadgePickerSheet`.
@@ -112,6 +167,7 @@ struct BadgePillLabel: View {
 
     private var tier: ProfileBadgeTier { kind.tier }
     private var hue: Color { tier.hue(accent: accent) }
+    @Environment(\.uniformBadgePillWidth) private var uniformWidth
 
     var body: some View {
         Text(kind.label.uppercased())
@@ -122,6 +178,22 @@ struct BadgePillLabel: View {
             .foregroundStyle(muted ? hue.opacity(0.75) : tier.foreground(accent: accent))
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
+            // Report this label's natural width, then take the group's. A hidden copy at natural
+            // size is what gets measured, so applying the group width below can never feed back
+            // into the measurement and oscillate.
+            .background(alignment: .center) {
+                Text(kind.label.uppercased())
+                    .flimFont(10, weight: .semibold, relativeTo: .caption2)
+                    .tracking(0.6)
+                    .lineLimit(1)
+                    .fixedSize()
+                    .padding(.horizontal, 12)
+                    .background(GeometryReader { geo in
+                        Color.clear.preference(key: BadgePillWidthKey.self, value: geo.size.width)
+                    })
+                    .hidden()
+            }
+            .frame(width: uniformWidth)
             .background {
                 if muted {
                     Capsule()
@@ -142,9 +214,6 @@ struct BadgePillLabel: View {
                         .shadow(color: tier.glow(accent: accent), radius: 5, y: 1)
                 }
             }
-            // A struck pill is a small object with a lot of contrast, so it needs a beat of space
-            // around it that a flat chip did not; the flanking columns already space vertically.
-            .fixedSize()
     }
 }
 
@@ -162,6 +231,7 @@ struct ProfileBadgePill: View {
     let badge: ProfileBadge
     var viewerBadgeKindIds: Set<String> = []
     @State private var showExplanation = false
+    @Environment(\.flimAccent) private var accent
 
     /// "How to earn this" only makes sense for a badge the viewer doesn't already hold; showing
     /// it under a badge they have too would just be noise under their own pill.
@@ -185,7 +255,16 @@ struct ProfileBadgePill: View {
         .popover(isPresented: $showExplanation, arrowEdge: .top) {
             BadgeExplanationPopover(explanation: badge.kind.explanation, howToEarn: howToEarn)
                 .presentationCompactAdaptation(.popover)
-                .presentationBackground(FlimTheme.bgElevated)
+                // Lifted off the page and tinted by the badge's own rung. `bgElevated` alone is
+                // barely a shade above the profile behind it, so a short explanation read as a
+                // dark smear with no edge; the lighter base plus a whisper of the rung's hue is
+                // what gives it a boundary without dressing it up as a second badge.
+                .presentationBackground {
+                    ZStack {
+                        Color(white: 0.16)
+                        badge.kind.tier.hue(accent: accent).opacity(0.10)
+                    }
+                }
         }
         .accessibilityLabel("\(badge.kind.label) badge")
         .accessibilityHint("Double tap to hear what this badge means")
@@ -208,6 +287,19 @@ struct BadgeExplanationPopover: View {
     let explanation: String
     let howToEarn: String?
 
+    /// A concrete width is still required (see the type comment: a flexible max lets the popover
+    /// collapse to a single-line ideal and clip), but 220 for everything made "Built FLIM." sit in
+    /// a box built for a sentence three times its length. This measures the longest string at the
+    /// size it will actually render and clamps the result, so a short explanation gets a short
+    /// box and a long one still wraps at a readable measure.
+    private var width: CGFloat {
+        let font = UIFont.systemFont(ofSize: 13)
+        let widest = ([explanation] + [howToEarn].compactMap { $0 })
+            .map { ($0 as NSString).size(withAttributes: [.font: font]).width }
+            .max() ?? 0
+        return min(max(widest.rounded(.up), 120), 220)
+    }
+
     var body: some View {
         VStack(spacing: 10) {
             Text(explanation)
@@ -221,7 +313,7 @@ struct BadgeExplanationPopover: View {
                     .multilineTextAlignment(.center)
             }
         }
-        .frame(width: 220)
+        .frame(width: width)
         .fixedSize(horizontal: false, vertical: true)
         .padding(16)
     }
@@ -248,7 +340,10 @@ struct AvatarBadgeFlanking<Avatar: View>: View {
     @ViewBuilder let avatar: () -> Avatar
 
     var body: some View {
+        // Both columns are measured as ONE group, so the left pair and the right pair match each
+        // other rather than only matching within their own column.
         avatar()
+            .uniformBadgePillWidths()
             .overlay(alignment: .leading) {
                 ProfileBadgeColumn(badges: leftBadges, alignment: .trailing, viewerBadgeKindIds: viewerBadgeKindIds)
                     .alignmentGuide(.leading) { d in d[.trailing] + gap }

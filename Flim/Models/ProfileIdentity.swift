@@ -361,6 +361,20 @@ enum ProfileBadgeTier {
     /// You used FLIM. Not metal, on purpose.
     case accent
 
+    /// The rung's name, shown as plain text beside the pill in `BadgePickerSheet`. The colour
+    /// alone carries the rank once you know the ladder, but nothing on screen ever teaches it,
+    /// and gold against bronze is not a distinction everyone can see. The word is the version
+    /// that works for everybody.
+    var name: String {
+        switch self {
+        case .founding: return "Founding"
+        case .gold:     return "Gold"
+        case .silver:   return "Silver"
+        case .bronze:   return "Bronze"
+        case .accent:   return "Accent"
+        }
+    }
+
     /// Where this rung sits on the ladder, highest first, for anything that lists badges in
     /// rank order rather than in the order they were earned. `BadgePickerSheet` sorts both its
     /// lists on this: a collection screen that opens on whatever you happened to earn first
