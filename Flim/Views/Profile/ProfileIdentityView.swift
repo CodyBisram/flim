@@ -207,10 +207,14 @@ private struct SpecularSweep: View {
                     while !Task.isCancelled {
                         withAnimation(.easeInOut(duration: Self.sweepDuration)) { travelled = true }
                         try? await Task.sleep(for: .seconds(Self.sweepDuration))
-                        // Snapped back, deliberately unanimated: at this point the band is parked
-                        // beyond the trailing edge, so resetting it is invisible. Animating the
-                        // return would drag a second highlight backwards across the pill.
-                        travelled = false
+                        // Snapped back, and the transaction is what GUARANTEES that. A bare
+                        // assignment is only unanimated if nothing ambient is in flight, and a
+                        // profile has plenty in flight: any `withAnimation` running on a parent
+                        // when this fires would adopt the change and drag the highlight backwards
+                        // across the pill, so each cycle would read as two sweeps rather than one.
+                        var reset = Transaction()
+                        reset.disablesAnimations = true
+                        withTransaction(reset) { travelled = false }
                         try? await Task.sleep(for: .seconds(Self.restDuration))
                     }
                 }
@@ -293,6 +297,11 @@ struct BadgePillLabel: View {
                         .shadow(color: tier.glow(accent: accent), radius: 5, y: 1)
                 }
             }
+            // A pill states its own size and refuses to be compressed into whatever its container
+            // proposes. Belt and braces next to the group width above: if that width is ever nil
+            // again, for any reason, the worst case is a ragged row of correct pills rather than a
+            // truncated label. Horizontal only, so Dynamic Type can still grow the height.
+            .fixedSize(horizontal: true, vertical: false)
     }
 }
 
@@ -419,11 +428,7 @@ struct AvatarBadgeFlanking<Avatar: View>: View {
     @ViewBuilder let avatar: () -> Avatar
 
     var body: some View {
-        // Both columns are measured as ONE group, so the left pair matches the right rather than
-        // each column only matching itself. Computed from the kinds directly, so it does not
-        // matter that the columns are overlays attached after this.
         avatar()
-            .uniformBadgePillWidths(for: (leftBadges + rightBadges).map(\.kind))
             .overlay(alignment: .leading) {
                 ProfileBadgeColumn(badges: leftBadges, alignment: .trailing, viewerBadgeKindIds: viewerBadgeKindIds)
                     .alignmentGuide(.leading) { d in d[.trailing] + gap }
@@ -432,6 +437,17 @@ struct AvatarBadgeFlanking<Avatar: View>: View {
                 ProfileBadgeColumn(badges: rightBadges, alignment: .leading, viewerBadgeKindIds: viewerBadgeKindIds)
                     .alignmentGuide(.trailing) { d in d[.leading] - gap }
             }
+            // AFTER both overlays, not before. Attached to `avatar()` alone, the environment
+            // value never reaches the pills: overlay content is not a child of the view the
+            // overlay is attached to, so it inherits from out here instead. That was the second
+            // time this exact ordering broke the pill width, the first through a PreferenceKey
+            // that collected nothing and this time through an environment value that arrived nil,
+            // and a pill with no imposed width takes the overlay's proposal, which is the avatar's
+            // 88 points. FOUNDING 100 truncated inside it.
+            //
+            // Both columns are one group on purpose, so the left pair matches the right rather
+            // than each column only matching itself.
+            .uniformBadgePillWidths(for: (leftBadges + rightBadges).map(\.kind))
     }
 }
 
