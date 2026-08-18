@@ -254,7 +254,7 @@ enum ProfileBadgeKind: String, CaseIterable {
         case .tenFrames:
             return "Ten frames shot."
         case .goodCompany:
-            return "Five people follow you."
+            return "Ten people follow you."
         }
     }
 
@@ -330,7 +330,7 @@ enum ProfileBadgeKind: String, CaseIterable {
         case .tenFrames:
             return "Shoot ten frames."
         case .goodCompany:
-            return "Get five people to follow you."
+            return "Get ten people to follow you."
         }
     }
 }
@@ -360,6 +360,20 @@ enum ProfileBadgeTier {
     case bronze
     /// You used FLIM. Not metal, on purpose.
     case accent
+
+    /// Where this rung sits on the ladder, highest first, for anything that lists badges in
+    /// rank order rather than in the order they were earned. `BadgePickerSheet` sorts both its
+    /// lists on this: a collection screen that opens on whatever you happened to earn first
+    /// buries the good stuff halfway down.
+    var sortRank: Int {
+        switch self {
+        case .founding: return 0
+        case .gold:     return 1
+        case .silver:   return 2
+        case .bronze:   return 3
+        case .accent:   return 4
+        }
+    }
 
     /// True for every rung that is struck from metal, i.e. everything but `accent`. Metal pills
     /// carry dark text on a bright gradient; `accent` keeps the tinted wash it always had.

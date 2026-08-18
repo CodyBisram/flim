@@ -285,15 +285,29 @@ private struct BadgePickerContent: View {
         }
     }
 
+    /// The earned badges in ladder order: founding first, then gold, silver, bronze, accent, and
+    /// oldest-earned first inside each rung. The RPC returns them oldest-first overall, which put
+    /// whatever you happened to earn in week one at the top and buried a founding pill halfway
+    /// down a list of ordinary ones. Sorting on the rung is what makes this read as a collection
+    /// rather than a log. Display order only: the saved selection is still the order you tapped
+    /// in, see `toggle(_:)`.
+    private var rankedBadges: [ProfileBadge] {
+        badges.sorted {
+            $0.kind.tier.sortRank != $1.kind.tier.sortRank
+                ? $0.kind.tier.sortRank < $1.kind.tier.sortRank
+                : $0.earnedAt < $1.earnedAt
+        }
+    }
+
     /// Custom mode only: in Automatic there is nothing to choose, `explanation` above already
     /// says the four are picked automatically and can be changed, and a list of rows the person
     /// can't meaningfully act on yet would just be noise under that copy. Selecting a badge only
     /// does anything in Custom mode too, see `toggle(_:)`.
     private var badgeList: some View {
         VStack(spacing: 0) {
-            ForEach(Array(badges.enumerated()), id: \.element.id) { index, badge in
+            ForEach(Array(rankedBadges.enumerated()), id: \.element.id) { index, badge in
                 badgeRow(badge)
-                if index < badges.count - 1 {
+                if index < rankedBadges.count - 1 {
                     Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1).padding(.leading, 20)
                 }
             }
@@ -392,9 +406,13 @@ private struct BadgePickerContent: View {
     /// have. A collection screen should show what is still out there for YOU.
     private var lockedKinds: [ProfileBadgeKind] {
         let earnedIds = Set(badges.map(\.id))
-        return ProfileBadgeKind.allCases.filter {
-            !earnedIds.contains($0.rawValue) && $0.isEarnable
-        }
+        return ProfileBadgeKind.allCases
+            .filter { !earnedIds.contains($0.rawValue) && $0.isEarnable }
+            .sorted {
+                $0.tier.sortRank != $1.tier.sortRank
+                    ? $0.tier.sortRank < $1.tier.sortRank
+                    : $0.label < $1.label
+            }
     }
 
     /// The rest of the catalog, shown locked below whatever's earned/selectable above. This is
