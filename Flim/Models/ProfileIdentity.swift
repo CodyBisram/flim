@@ -254,7 +254,7 @@ enum ProfileBadgeKind: String, CaseIterable {
         case .tenFrames:
             return "Ten frames shot."
         case .goodCompany:
-            return "Someone followed you."
+            return "Five people follow you."
         }
     }
 
@@ -330,7 +330,7 @@ enum ProfileBadgeKind: String, CaseIterable {
         case .tenFrames:
             return "Shoot ten frames."
         case .goodCompany:
-            return "Have someone follow you."
+            return "Get five people to follow you."
         }
     }
 }
