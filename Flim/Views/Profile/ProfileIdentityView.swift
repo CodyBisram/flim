@@ -148,26 +148,39 @@ extension View {
     }
 }
 
-/// A single slow highlight travelling across a pill, once, shortly after it appears.
+/// A slow highlight travelling across a pill, on a long loop, for the founding rung.
 ///
-/// This exists for exactly one badge. `founder` has one possible holder in the entire history of
-/// the app, and the question was how to mark that without inventing a sixth rung for it. A
-/// platinum or diamond tier is the obvious answer and the wrong one: those are cool white-blues,
-/// silver is already a cool blue-grey (deliberately, because neutral grey against near-black reads
-/// as disabled), and at ten points a platinum pill lands in silver's neighbourhood and reads as
-/// LOWER than gold rather than higher. That spends the top of the ladder on a colour that looks
-/// like the middle of it.
+/// It exists because that rung is closed: `founder`, `foundingCrew` and `founding100` are the only
+/// badges nothing new can ever join, and the question was how to mark that without inventing a
+/// sixth tier. A platinum or diamond rung was the obvious answer and the wrong one: those are cool
+/// white-blues, silver is already a cool blue-grey (deliberately, because neutral grey against
+/// near-black reads as disabled), and at ten points a platinum pill lands in silver's neighbourhood
+/// and reads as LOWER than gold rather than higher. That spends the top of the ladder on a colour
+/// that looks like the middle of it. Motion says "singular" without touching the colour system.
 ///
-/// Motion says "singular" without touching the colour system at all. Nothing else in FLIM moves
-/// like this, so one sweep is legible as "this is not like the others" while `founder` stays
-/// unmistakably on the founding rung.
+/// It started as one sweep on appear, on `founder` alone, on the reasoning that a pill which
+/// shimmers forever is a casino. Widened to the whole rung and put on a loop at the owner's
+/// request, with two things kept from the original argument: the resting gap is far longer than
+/// the sweep (roughly eight seconds against one), so the pill is still and unremarkable almost all
+/// of the time; and each pill carries its own offset, so two founding badges on one profile never
+/// fire together. Simultaneous sweeps read as a screen effect washing over the page, which is
+/// exactly the casino version; staggered ones read as two separate objects catching the light.
 ///
-/// Once, not looping: a pill that shimmers forever is a casino, and this has to sit on a
-/// photographer's profile without becoming the thing you look at. Skipped entirely under Reduce
-/// Motion, where the pill keeps its gradient and rim and simply does not animate.
+/// Skipped entirely under Reduce Motion, where the pill keeps its gradient and rim and never
+/// animates. The loop lives in `.task`, so it is cancelled the moment the pill leaves the screen
+/// rather than ticking on behind a pushed view.
 private struct SpecularSweep: View {
+    /// Seconds this pill waits before its first sweep, so a profile's founding pills stagger
+    /// instead of flashing in unison. Derived from the badge, so it is stable across redraws.
+    let phaseOffset: Double
+
     @State private var travelled = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// One pass across the pill.
+    private static let sweepDuration: Double = 1.15
+    /// Still time between passes. Long on purpose: this is chrome, not a progress indicator.
+    private static let restDuration: Double = 8
 
     var body: some View {
         GeometryReader { geo in
@@ -186,11 +199,20 @@ private struct SpecularSweep: View {
                 // Travels from fully clear of the leading edge to fully clear of the trailing one,
                 // so neither end of the sweep is ever parked visible on the pill.
                 .offset(x: travelled ? width + band : -band)
-                .onAppear {
+                .task {
                     guard !reduceMotion else { return }
-                    // The delay lets the page settle first: a sweep that fires during the
-                    // navigation transition is just noise competing with the push animation.
-                    withAnimation(.easeInOut(duration: 1.15).delay(0.45)) { travelled = true }
+                    // Lets the page settle before the first pass: a sweep firing during the
+                    // navigation transition is noise competing with the push animation.
+                    try? await Task.sleep(for: .seconds(0.45 + phaseOffset))
+                    while !Task.isCancelled {
+                        withAnimation(.easeInOut(duration: Self.sweepDuration)) { travelled = true }
+                        try? await Task.sleep(for: .seconds(Self.sweepDuration))
+                        // Snapped back, deliberately unanimated: at this point the band is parked
+                        // beyond the trailing edge, so resetting it is invisible. Animating the
+                        // return would drag a second highlight backwards across the pill.
+                        travelled = false
+                        try? await Task.sleep(for: .seconds(Self.restDuration))
+                    }
                 }
         }
         .allowsHitTesting(false)
@@ -260,8 +282,9 @@ struct BadgePillLabel: View {
                         // Clipped to the capsule and sitting UNDER the rim, so the highlight
                         // travels across the metal rather than over the pill's own edge.
                         .overlay {
-                            if kind == .founder, !muted {
-                                SpecularSweep().clipShape(Capsule())
+                            if tier == .founding, !muted {
+                                SpecularSweep(phaseOffset: kind.sweepPhaseOffset)
+                                    .clipShape(Capsule())
                             }
                         }
                         .overlay(

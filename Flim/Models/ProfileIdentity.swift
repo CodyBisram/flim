@@ -95,6 +95,21 @@ enum ProfileBadgeKind: String, CaseIterable {
     case tenFrames = "ten_frames"
     case goodCompany = "good_company"
 
+    /// A per-badge delay, in seconds, before this pill's highlight sweep starts. Only the
+    /// founding rung animates, so only those three values matter; they are spread across the
+    /// resting interval so two founding pills on one profile never sweep together. Simultaneous
+    /// sweeps read as a screen effect washing over the page rather than as two separate objects
+    /// catching the light. Fixed per badge rather than random, so a pill does not re-stagger every
+    /// time the view redraws.
+    var sweepPhaseOffset: Double {
+        switch self {
+        case .founder:      return 0
+        case .foundingCrew: return 2.6
+        case .founding100:  return 5.2
+        default:            return 0
+        }
+    }
+
     /// Whether an account that doesn't already hold this could ever go and get it.
     ///
     /// False for exactly three: `founder` and `foundingCrew` are handed out by a person and have

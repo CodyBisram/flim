@@ -144,6 +144,8 @@ private struct BadgePickerContent: View {
     /// Briefly shown when a tap is rejected for being past the cap, so hitting it reads as a
     /// real rule rather than a tap that silently did nothing.
     @State private var showCapNotice = false
+    /// Raised instead of committing when Custom is showing with nothing picked. See `save()`.
+    @State private var showEmptyConfirm = false
 
     init(
         badges: [ProfileBadge],
@@ -221,11 +223,17 @@ private struct BadgePickerContent: View {
                         if isSaving {
                             ProgressView().tint(accent)
                         } else {
-                            Text("Save").foregroundStyle(accent)
+                            Text("Save").foregroundStyle(nothingToSave ? FlimTheme.textTertiary : accent)
                         }
                     }
-                    .disabled(isSaving)
+                    .disabled(isSaving || nothingToSave)
                 }
+            }
+            .alert("Show no badges?", isPresented: $showEmptyConfirm) {
+                Button("Cancel", role: .cancel) { }
+                Button("Show none", role: .destructive) { Task { await commit() } }
+            } message: {
+                Text("Your profile will show no badges at all until you pick some. Your earned badges are kept either way.")
             }
             .overlay(alignment: .top) {
                 if showCapNotice {
@@ -520,7 +528,30 @@ private struct BadgePickerContent: View {
         }
     }
 
+    /// True when saving right now would write something destructive that the person may not have
+    /// meant: Custom showing, nothing picked, which commits `[]` and takes every badge off the
+    /// profile. The explanatory line above the list already says so in words, and that turned out
+    /// not to be enough — it is a sentence you scroll past on the way to a button, and every other
+    /// irreversible action in FLIM asks first.
+    private var wouldClearProfile: Bool { mode == .custom && order.isEmpty }
+
+    /// Nothing to save against. `fetchProfileBadges` returns `[]` for a failed round trip exactly
+    /// as it does for an account with no badges, and `BadgePickerSheet.load()` sets `loaded = true`
+    /// either way, so a dropped connection renders a working picker whose Save button writes an
+    /// empty selection over a real one. Destructive-on-failure is backwards, and there is nothing
+    /// a person with no badges could usefully save anyway, so the button is simply unavailable.
+    private var nothingToSave: Bool { badges.isEmpty }
+
     private func save() async {
+        guard !nothingToSave else { return }
+        if wouldClearProfile {
+            showEmptyConfirm = true
+            return
+        }
+        await commit()
+    }
+
+    private func commit() async {
         isSaving = true
         saveError = nil
         let payload: [String]? = mode == .automatic ? nil : order
