@@ -1,12 +1,22 @@
 import SwiftUI
 
 /// Lets the signed-in account choose which of their earned badges lead on their profile, in
-/// what order, capped at four. Reached from `EditProfileView`'s "Badges" row, and directly from
-/// the profile page itself via `OwnBadgeVisibility`'s manage link (see `UserPageView`).
+/// what order, capped at four. This is now the ONLY place the owner's full badge collection is
+/// shown anywhere in the app — the profile page itself shows just the same four a stranger sees,
+/// for the owner too, see `UserPageView.displayedBadges` — so it has to read as a place worth
+/// opening, not a settings toggle: every row carries what the badge actually means, not just its
+/// name.
+///
+/// Reached from `EditProfileView`'s "Badges" row, and from the profile page's own "New badge to
+/// see" pill when there's something unseen to reveal (see `UserPageView`). That pill is also
+/// where the badge reveal now lives: `UserPageView` used to press an unseen badge onto the page
+/// itself, but a newly earned badge may not even be among the four shown there anymore, so the
+/// reveal moved to wherever the full collection actually is. See `BadgePickerContent`'s own
+/// `unseenIds`/`onRevealed` for how that plays out and where `markOwnBadgesSeen()` actually fires.
 ///
 /// SELECTION METHOD: tap-to-append with a visible position number, not drag-to-reorder. FLIM has
-/// no drag-reorder primitive anywhere else in the app (`ProfileStampFlowLayout` wraps a row, it
-/// doesn't reorder one), and a cap of four makes tap-order genuinely competitive with drag:
+/// no drag-reorder primitive anywhere else in the app, and a cap of four makes tap-order
+/// genuinely competitive with drag:
 /// building 1-2-3-4 by tapping in the order you want is about as many gestures either way, this
 /// needs no new component, and it comes with ordinary VoiceOver semantics for free — a drag
 /// handle needs its own accessibility actions to be usable at all, tapping doesn't.
@@ -29,12 +39,26 @@ struct BadgePickerSheet: View {
 
     @State private var badges: [ProfileBadge] = []
     @State private var initialSelection: [String]?
+    /// The server's own resolved "what a stranger sees right now" ids, fetched alongside
+    /// `badges` below. `nil` on any failure, in which case the picker just doesn't know which (if
+    /// any) selected badge is being dropped by the covered-post gate and shows no note for it,
+    /// same degrade-quietly posture as everywhere else this round trip is used.
+    @State private var effectiveIds: [String]?
+    /// Ids earned but never shown to their owner yet; see `BadgePickerContent`'s own `unseenIds`.
+    @State private var unseenIds: Set<String> = []
     @State private var loaded = false
 
     var body: some View {
         if loaded {
-            BadgePickerContent(badges: badges, initialSelection: initialSelection) { payload in
+            BadgePickerContent(
+                badges: badges,
+                initialSelection: initialSelection,
+                effectiveIds: effectiveIds,
+                unseenIds: unseenIds
+            ) { payload in
                 try await auth.setDisplayedBadges(payload)
+            } onRevealed: {
+                await feed.markOwnBadgesSeen()
             }
         } else {
             NavigationStack {
@@ -62,7 +86,12 @@ struct BadgePickerSheet: View {
         // The owner branch of `profile_badges` returns EVERY earned badge regardless of who
         // asks, so this is the same call `UserPageView` already makes for a self-view — no new
         // RPC needed to populate the picker's source list.
-        badges = await feed.fetchProfileBadges(uid)
+        async let b = feed.fetchProfileBadges(uid)
+        async let e = feed.fetchOwnEffectiveDisplayedBadgeIds()
+        async let u = feed.fetchOwnUnseenBadgeIds()
+        badges = await b
+        effectiveIds = await e
+        unseenIds = await u
         initialSelection = auth.currentUser?.displayedBadges
         loaded = true
     }
@@ -75,7 +104,24 @@ private struct BadgePickerContent: View {
     @Environment(\.dismiss) private var dismiss
 
     let badges: [ProfileBadge]
+    /// Ids that were in the saved selection at load time but are absent from the server's
+    /// resolved "what a stranger sees right now" list (see `BadgePickerSheet`'s `effectiveIds`):
+    /// chosen, but the covered-post gate is dropping them anyway. Computed once at init from
+    /// whatever was actually saved, not from the live `order` being edited in this sheet — see
+    /// `badgeRow(_:)`'s own comment for why that's still the right thing to check against mid-edit.
+    private let droppedIds: Set<String>
+    /// Ids earned but never shown to their owner yet, own-profile only (see `BadgePickerSheet`).
+    /// Marked "NEW" in `badgeList` regardless of `mode` or selection state — a badge just earned
+    /// is worth flagging whether or not it happens to be chosen yet — and this is what actually
+    /// closes the reveal loop the profile page's "New badge to see" pill starts: see `onRevealed`.
+    let unseenIds: Set<String>
     let onSave: ([String]?) async throws -> Void
+    /// Fired once, after the sheet has been on screen long enough for every "NEW" row to have
+    /// actually been seen, never on load: a sheet that gets dismissed or backgrounded before this
+    /// fires must not be able to burn the ceremony, matching the reveal this replaced on
+    /// `UserPageView`. Calls `FeedService.markOwnBadgesSeen()`, the same call that also clears the
+    /// tab-avatar dot (`FeedService.unseenBadgeCount`), so both close together.
+    let onRevealed: () async -> Void
 
     private enum Mode: Equatable { case automatic, custom }
 
@@ -90,15 +136,32 @@ private struct BadgePickerContent: View {
     /// real rule rather than a tap that silently did nothing.
     @State private var showCapNotice = false
 
-    init(badges: [ProfileBadge], initialSelection: [String]?, onSave: @escaping ([String]?) async throws -> Void) {
+    init(
+        badges: [ProfileBadge],
+        initialSelection: [String]?,
+        effectiveIds: [String]? = nil,
+        unseenIds: Set<String> = [],
+        onSave: @escaping ([String]?) async throws -> Void,
+        onRevealed: @escaping () async -> Void = {}
+    ) {
         self.badges = badges
+        self.unseenIds = unseenIds
         self.onSave = onSave
+        self.onRevealed = onRevealed
         let earnedIds = Set(badges.map(\.id))
         // Defensive filter, not load-bearing: `earned_badges` never un-earns (see the migration),
         // so a validly-written selection can't actually drift from `badges` — this just keeps a
         // stray id from ever showing a phantom position number.
         _order = State(initialValue: (initialSelection ?? []).filter { earnedIds.contains($0) })
         _mode = State(initialValue: initialSelection == nil ? .automatic : .custom)
+        // `nil` effectiveIds (round trip failed, or nothing was ever explicitly selected) means
+        // "unknown", not "nothing dropped" — degrades quietly to no note at all rather than a
+        // guess, matching every other caller of this RPC.
+        if let effectiveIds, let initialSelection {
+            droppedIds = Set(initialSelection).subtracting(effectiveIds)
+        } else {
+            droppedIds = []
+        }
     }
 
     var body: some View {
@@ -112,9 +175,7 @@ private struct BadgePickerContent: View {
                         VStack(spacing: 20) {
                             modePicker
                             explanation
-                            if mode == .custom {
-                                badgeList
-                            }
+                            badgeList
                             if let saveError {
                                 Text(saveError)
                                     .flimFont(13, relativeTo: .subheadline)
@@ -163,6 +224,18 @@ private struct BadgePickerContent: View {
         }
         .presentationBackground(FlimTheme.bg)
         .presentationDetents([.large])
+        // Fires once per sheet presentation (this view's identity is stable for the sheet's whole
+        // lifetime, `BadgePickerSheet` only ever constructs it once `loaded` flips true and never
+        // flips back), so this can't double-fire on a recomposition the way a plain state flag
+        // would need guarding against. The delay is the moment the "NEW" tag has actually been on
+        // screen long enough to register, not an arbitrary wait — roughly the same beat the old
+        // stamp-press reveal gave each badge before calling this.
+        .task {
+            guard !unseenIds.isEmpty else { return }
+            try? await Task.sleep(for: .seconds(1.4))
+            Haptics.reveal()
+            await onRevealed()
+        }
     }
 
     // MARK: - Sections
@@ -196,6 +269,10 @@ private struct BadgePickerContent: View {
         }
     }
 
+    /// Always visible regardless of `mode`, unlike before: this is the owner's only view of their
+    /// full collection anywhere in the app now, so browsing it (what each badge means) can't
+    /// depend on first switching into Custom. Selecting a badge still only does anything in
+    /// Custom mode, see `toggle(_:)`.
     private var badgeList: some View {
         VStack(spacing: 0) {
             ForEach(Array(badges.enumerated()), id: \.element.id) { index, badge in
@@ -209,16 +286,43 @@ private struct BadgePickerContent: View {
     }
 
     private func badgeRow(_ badge: ProfileBadge) -> some View {
-        let position = order.firstIndex(of: badge.id).map { $0 + 1 }
+        // Selection state is meaningless outside Custom mode (`order` persists across a mode
+        // toggle, see its own comment, but nothing is actually chosen while Automatic is active),
+        // so the row shows a plain unfilled circle rather than a stale number in that mode.
+        let position = mode == .custom ? order.firstIndex(of: badge.id).map { $0 + 1 } : nil
+        // Only ever shown for a badge that's still selected in THIS sheet visit and was already
+        // known to be dropped when the sheet opened; see `droppedIds`'s own comment for why it
+        // isn't recomputed from `order` as the user edits. Deliberately vague about the cause
+        // (the covered-post gate isn't something a user-facing string can explain without
+        // exposing why their posts are covered) — quiet, not alarming.
+        let showsDroppedNotice = position != nil && droppedIds.contains(badge.id)
+        let isNew = unseenIds.contains(badge.id)
         return Button {
             toggle(badge.id)
         } label: {
             HStack(spacing: 14) {
                 positionIndicator(position)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(badge.kind.label).flimFont(15, relativeTo: .body).foregroundStyle(.white)
-                    Text(badge.earnedAt.formatted(.dateTime.month(.abbreviated).year()))
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        Text(badge.kind.label).flimFont(15, relativeTo: .body).foregroundStyle(.white)
+                        if isNew {
+                            Text("NEW")
+                                .flimFont(9, weight: .bold, relativeTo: .caption2)
+                                .tracking(1)
+                                .foregroundStyle(.black)
+                                .padding(.horizontal, 6).padding(.vertical, 2)
+                                .background(accent, in: Capsule())
+                        }
+                    }
+                    // The date is gone here too, matching the profile: it was never load-bearing,
+                    // what a badge MEANS matters more than when it landed, and this is the one
+                    // place that meaning was previously missing entirely.
+                    Text(badge.kind.explanation)
                         .flimFont(12, relativeTo: .caption).foregroundStyle(FlimTheme.textTertiary)
+                    if showsDroppedNotice {
+                        Text("Chosen, but not currently visible on your profile")
+                            .flimFont(11, relativeTo: .caption2).foregroundStyle(FlimTheme.textTertiary)
+                    }
                 }
                 Spacer()
             }
@@ -226,8 +330,8 @@ private struct BadgePickerContent: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(accessibilityLabel(for: badge, position: position))
-        .accessibilityHint(position != nil ? "Double tap to remove it" : "Double tap to add it")
+        .accessibilityLabel(accessibilityLabel(for: badge, position: position, dropped: showsDroppedNotice, isNew: isNew))
+        .accessibilityHint(mode == .custom ? (position != nil ? "Double tap to remove it" : "Double tap to add it") : "")
     }
 
     private func positionIndicator(_ position: Int?) -> some View {
@@ -259,12 +363,16 @@ private struct BadgePickerContent: View {
 
     // MARK: - Actions
 
-    private func accessibilityLabel(for badge: ProfileBadge, position: Int?) -> String {
-        let month = badge.earnedAt.formatted(.dateTime.month(.wide).year())
+    private func accessibilityLabel(for badge: ProfileBadge, position: Int?, dropped: Bool, isNew: Bool) -> String {
+        let base: String
         if let position {
-            return "\(badge.kind.label), earned \(month), shown at position \(position)"
+            base = dropped
+                ? "\(badge.kind.label), shown at position \(position), chosen but not currently visible on your profile"
+                : "\(badge.kind.label), shown at position \(position)"
+        } else {
+            base = "\(badge.kind.label), not shown"
         }
-        return "\(badge.kind.label), earned \(month), not shown"
+        return isNew ? "\(base), newly earned" : base
     }
 
     private func toggle(_ id: String) {
@@ -305,7 +413,10 @@ private struct BadgePickerContent: View {
 
 // MARK: - Previews
 
-#Preview("Twelve badges, no choice made (automatic)") {
+#Preview("Twelve badges, no choice made (automatic, full list still visible)") {
+    // Automatic mode, the default state: the list is visible here too, not just in Custom, since
+    // this is the only place the full collection is ever shown. Every row now carries what the
+    // badge means (`explanation`), none carries when it was earned.
     BadgePickerContentPreview(badges: badgePickerPreviewBadges, initialSelection: nil)
 }
 
@@ -323,14 +434,39 @@ private struct BadgePickerContent: View {
     )
 }
 
+#Preview("Chosen badge covered-dropped (quiet note)") {
+    // `shared` is selected (position 3) but the resolved effective list doesn't include it, the
+    // covered-post gate is dropping it right now: shows the quiet, cause-vague note under that
+    // row only, none of the others.
+    BadgePickerContentPreview(
+        badges: badgePickerPreviewBadges,
+        initialSelection: ["darkroom", "first_in", "shared", "founding_100"],
+        effectiveIds: ["darkroom", "first_in", "founding_100"]
+    )
+}
+
+#Preview("Newly earned badge (reveal)") {
+    // Mirrors what `BadgePickerSheet` passes when the profile's "New badge to see" pill sent you
+    // here: `roll_maker` is tagged NEW and, after this sheet has been open a beat, `onRevealed`
+    // fires (visible in the console via the no-op below in a real run this calls
+    // `FeedService.markOwnBadgesSeen()` instead).
+    BadgePickerContentPreview(
+        badges: badgePickerPreviewBadges,
+        initialSelection: nil,
+        unseenIds: ["roll_maker"]
+    )
+}
+
 /// Wraps `BadgePickerContent` (private to this file) with a harmless no-op save, purely so the
-/// three `#Preview`s above have something concrete to construct.
+/// previews above have something concrete to construct.
 private struct BadgePickerContentPreview: View {
     let badges: [ProfileBadge]
     let initialSelection: [String]?
+    var effectiveIds: [String]? = nil
+    var unseenIds: Set<String> = []
 
     var body: some View {
-        BadgePickerContent(badges: badges, initialSelection: initialSelection) { _ in }
+        BadgePickerContent(badges: badges, initialSelection: initialSelection, effectiveIds: effectiveIds, unseenIds: unseenIds) { _ in }
     }
 }
 

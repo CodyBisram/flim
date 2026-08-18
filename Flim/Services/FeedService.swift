@@ -262,7 +262,7 @@ final class FeedService {
     /// The signed-in account's own earned badge kind ids (raw `badge_id` strings), fetched once
     /// per account and cached rather than re-fetched on every profile visit. Backs "how to earn
     /// this" in a stranger's badge popover (see `ProfileBadgeKind.howToEarn` and
-    /// `ProfileStampView`): knowing what the viewer already holds is what lets that line show
+    /// `ProfileBadgePill`): knowing what the viewer already holds is what lets that line show
     /// only for badges they don't have yet. `nil` means "not fetched yet", distinct from an
     /// empty (but fetched) set. Cleared in `resetForAccountChange()`.
     var viewerBadgeKindIds: Set<String>?
@@ -278,6 +278,24 @@ final class FeedService {
         let ids = Set(await fetchProfileBadges(viewerId).map { $0.kind.rawValue })
         viewerBadgeKindIds = ids
         return ids
+    }
+
+    /// The signed-in account's own resolved "what a stranger sees on my profile right now" badge
+    /// ids, in display order, own profile only, zero params (see
+    /// `2026-08-17_own_effective_displayed_badges.sql`). This mirrors the stranger's view
+    /// precisely, including the covered-post gate, so callers must render it in the order given
+    /// rather than re-sorting or re-filtering it.
+    ///
+    /// `nil` means "unknown" (offline, or the RPC not deployed yet), distinct from an empty array
+    /// (a real, resolved "nothing currently shows" answer, e.g. a deliberate empty selection).
+    /// Callers must fall back to the old vaguer copy on `nil`, never treat it as an empty result.
+    func fetchOwnEffectiveDisplayedBadgeIds() async -> [String]? {
+        struct Row: Decodable { let badge_id: String }
+        guard let rows: [Row] = try? await supabase
+            .rpc("own_effective_displayed_badges")
+            .execute().value
+        else { return nil }
+        return rows.map(\.badge_id)
     }
 
     /// Frames shot, rolls developed, and the date of the first frame ever, for any profile. `nil`

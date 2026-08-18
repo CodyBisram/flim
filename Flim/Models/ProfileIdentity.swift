@@ -77,7 +77,9 @@ enum ProfileBadgeKind: String, CaseIterable {
         case .founding100: return "Founding 100"
         case .firstIn: return "First In"
         case .rollMaker: return "Roll Maker"
-        case .broughtSomeone: return "Brought Someone"
+        // Not "Brought Someone": that truncates to "BROUGHT SO…" at pill size on device. "Plus
+        // One" is short enough to never truncate and still reads as "you brought someone in".
+        case .broughtSomeone: return "Plus One"
         case .joinedIn: return "Joined In"
         case .chippedIn: return "Chipped In"
         case .shared: return "Shared"
@@ -111,8 +113,9 @@ enum ProfileBadgeKind: String, CaseIterable {
             return "You started a roll, and people actually shot into it."
         case .broughtSomeone:
             // Not "and they stuck around": the predicate only proves they signed up, and nothing
-            // measures whether they stayed. Copy must not claim more than the data does.
-            return "You invited someone, and they joined."
+            // measures whether they stayed. Copy must not claim more than the data does. Phrased
+            // to match the "Plus One" label rather than the old "Brought Someone" one.
+            return "You brought someone along, and they joined."
         case .joinedIn:
             return "You joined a roll someone else started."
         case .chippedIn:
@@ -136,8 +139,8 @@ enum ProfileBadgeKind: String, CaseIterable {
         }
     }
 
-    /// Shown alongside `explanation`, but only to someone looking at another profile's stamp for
-    /// a badge they don't hold themselves; see `ProfileStampView`. Never shown for a badge the
+    /// Shown alongside `explanation`, but only to someone looking at another profile's pill for
+    /// a badge they don't hold themselves; see `ProfileBadgePill`. Never shown for a badge the
     /// viewer already has, at that point "how to earn this" is pointless.
     ///
     /// Eleven of these describe real, repeatable product behaviour, written as an instruction. The

@@ -9,24 +9,24 @@ struct UserPageView: View {
 
     @State private var profile: UserProfile?
     @State private var identity: ProfileIdentity?
-    /// Badge ids earned but never shown to their owner, only ever fetched for `isSelf`. See
-    /// `ProfileIdentityStrip` for how this drives the press-onto-the-page reveal, and
-    /// `badgeRevealArmed` for why this is fetched at most once per time this view is on screen.
-    @State private var unseenBadgeIds: Set<String> = []
-    /// Set the first time `load()` successfully fetches `unseenBadgeIds` for your own profile,
-    /// and never fetched again after that for the rest of this view's lifetime.
-    ///
-    /// Without this, a pull-to-refresh or the settings/edit-profile sheet's `onDismiss` (both of
-    /// which call `load()` again) would re-ask the server every time, and since the server only
-    /// clears an id once `markOwnBadgesSeen()` has actually landed, a refresh that lands BEFORE
-    /// that write completes would refetch the same still-unseen id and replay the whole reveal a
-    /// second time on the same visit.
-    @State private var badgeRevealArmed = false
+    /// Whether the signed-in account has any earned badge it hasn't seen revealed yet, only ever
+    /// fetched for `isSelf`. Drives the small "new badge" pill below the bio (see `pageHeader`),
+    /// which is now the only place this reveal is announced: the profile itself shows just the
+    /// four badges a stranger sees (`displayedBadges` below), so a newly earned badge outside
+    /// that four would never appear here even if this view tried to animate it in directly. The
+    /// actual reveal — and the `markOwnBadgesSeen()` call that clears both this and the tab dot —
+    /// happens in `BadgePickerSheet`, the one place the owner's full collection is ever shown.
+    @State private var hasUnseenBadges = false
     /// The signed-in account's own earned badge kind ids, for "how to earn this" in the popover
-    /// on someone else's stamp; see `ProfileIdentityStrip` and `ProfileBadgeKind.howToEarn`. On
-    /// your own profile this is just this profile's own badges, no extra fetch needed since every
+    /// on someone else's pill; see `ProfileBadgeColumn` and `ProfileBadgeKind.howToEarn`. On your
+    /// own profile this is just this profile's own badges, no extra fetch needed since every
     /// badge shown here is already one you hold.
     @State private var viewerBadgeKindIds: Set<String> = []
+    /// The signed-in account's own resolved "what a stranger sees right now" badge ids, own
+    /// profile only, in display order. `nil` until fetched or on any failure, in which case
+    /// `displayedBadges` below shows nothing rather than falling back to the full earned set. See
+    /// `FeedService.fetchOwnEffectiveDisplayedBadgeIds`.
+    @State private var effectiveDisplayedBadgeIds: [String]?
     @State private var posts: [Post] = []
     @State private var avatarURL: URL?
     @State private var coverURL: URL?
@@ -50,6 +50,29 @@ struct UserPageView: View {
     private var isFollowing: Bool { feed.isFollowing(userId) }
     private var isBlocked: Bool { feed.isBlocked(userId) }
     private var followsMe: Bool { feed.followsMe(userId) }
+
+    /// Exactly what a stranger sees on this profile right now, at most four, oldest-fetched
+    /// order preserved. `identity.badges` for a stranger's own row is already this list
+    /// (`profile_badges`'s non-owner branch resolves it server-side), but for `isSelf` that same
+    /// row returns EVERY earned badge — the picker's own source list, not this page's — so this
+    /// re-derives the profile's four from `effectiveDisplayedBadgeIds` instead. A failed round
+    /// trip there degrades to showing nothing, never to falling back to the full earned set: this
+    /// page must never show the owner more than a stranger would see.
+    private var displayedBadges: [ProfileBadge] {
+        // Matches the old strip's own `!isBlocked` check: a blocked account's page shows the
+        // dedicated `blockedState` panel below instead of the post grid, badges shouldn't linger
+        // above it either.
+        guard !isBlocked, let identity else { return [] }
+        guard isSelf else { return identity.badges }
+        guard let effectiveDisplayedBadgeIds else { return [] }
+        let byId = Dictionary(uniqueKeysWithValues: identity.badges.map { ($0.id, $0) })
+        return effectiveDisplayedBadgeIds.compactMap { byId[$0] }
+    }
+
+    /// `displayedBadges` split into the two columns that flank the avatar; see `ProfileBadgeFlank`.
+    private var badgeFlanks: (left: [ProfileBadge], right: [ProfileBadge]) {
+        ProfileBadgeFlank.split(displayedBadges)
+    }
 
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 3), count: 3)
 
@@ -212,10 +235,19 @@ struct UserPageView: View {
                         ],
                         startPoint: .top, endPoint: .bottom))
                     .clipped()
-                Button { if avatarURL != nil { showAvatarViewer = true } } label: {
-                    avatarCircle
+                // Earned badges flank the avatar, two per side at most: see `ProfileBadgeFlank`
+                // for how an odd count is split so neither side ever reads as a stray, empty gap.
+                // Both `isSelf` and a stranger's profile pass the exact same `displayedBadges`
+                // list here, there is no wider "everything you've earned" view left on this page,
+                // that now lives only in `BadgePickerSheet`.
+                HStack(alignment: .center, spacing: 14) {
+                    ProfileBadgeColumn(badges: badgeFlanks.left, alignment: .trailing, viewerBadgeKindIds: viewerBadgeKindIds)
+                    Button { if avatarURL != nil { showAvatarViewer = true } } label: {
+                        avatarCircle
+                    }
+                    .buttonStyle(.plain)
+                    ProfileBadgeColumn(badges: badgeFlanks.right, alignment: .leading, viewerBadgeKindIds: viewerBadgeKindIds)
                 }
-                .buttonStyle(.plain)
                 .offset(y: 44)
             }
             .padding(.bottom, 44)
@@ -256,28 +288,24 @@ struct UserPageView: View {
                     .multilineTextAlignment(.center).padding(.horizontal, 40)
             }
 
-            // Earned stamps + film stats, FLIM's replacement for social-proof chips. Renders
-            // nothing at all for a brand-new account; see ProfileIdentityStrip.
-            //
-            // `unseenBadgeIds` (and the reveal it drives) is only ever non-empty on `isSelf`:
-            // `load()` never fetches it for anyone else's profile, so this can pass it
-            // unconditionally without a second `isSelf` check here.
-            if let identity, !isBlocked {
-                ProfileIdentityStrip(
-                    identity: identity,
-                    unseenBadgeIds: unseenBadgeIds,
-                    onUnseenBadgesRevealed: {
-                        Task { await feed.markOwnBadgesSeen() }
-                    },
-                    viewerBadgeKindIds: viewerBadgeKindIds,
-                    // Only ever set for the signed-in account's own profile: `identity.badges`
-                    // for `isSelf` is EVERY earned badge (see `profile_badges`'s owner branch),
-                    // which is invisible to a stranger without this. See `OwnBadgeVisibility`.
-                    ownVisibility: isSelf ? OwnBadgeVisibility(
-                        selection: auth.currentUser?.displayedBadges,
-                        onManage: { showBadgePicker = true }
-                    ) : nil
-                )
+            // The only place left on the profile that announces a new badge: the badges
+            // themselves no longer animate in here (this page shows just the four a stranger
+            // sees, and a newly earned badge may not even be among them). Tapping through opens
+            // the picker, the one place the full collection — and the actual reveal — lives; see
+            // `BadgePickerSheet`.
+            if isSelf, hasUnseenBadges {
+                Button {
+                    Haptics.tap()
+                    showBadgePicker = true
+                } label: {
+                    Label("New badge to see", systemImage: "sparkles")
+                        .flimFont(12, weight: .semibold, relativeTo: .caption)
+                        .foregroundStyle(accent)
+                        .padding(.horizontal, 12).padding(.vertical, 6)
+                        .background(accent.opacity(0.12), in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .expandTapTarget(by: 8)   // visual pill is ~28pt tall, +8 either side = 44
             }
 
             HStack(spacing: 26) {
@@ -439,20 +467,29 @@ struct UserPageView: View {
     }
 
     private func load() async {
+        // Captured before any `await` below so the one write it guards (`effectiveDisplayedBadgeIds`,
+        // see below) can't land after an account switch mid-flight: this is a pure read with
+        // nothing else in this function to protect for correctness, so nothing else here needs it.
+        let epoch = AccountEpoch.current
         async let p = feed.fetchProfile(id: userId)
         async let ps = feed.fetchUserPosts(userId: userId)
         async let fr = feed.followerCount(userId)
         async let fg = feed.followingCount(userId)
         async let bd = feed.fetchProfileBadges(userId)
-        // Resolved alongside the others, not awaited inline below, specifically so `identity`
-        // and `unseenBadgeIds` can be WRITTEN back to back with no `await` between them (see
-        // below). An `await` between those two writes would let SwiftUI render the badge strip
-        // once with badges present but `unseenBadgeIds` still empty, and a `ProfileStampView`'s
-        // `pressed` starting state and its one-shot `.task` are both decided at that first
-        // render, off the `isUnseen` value it saw THEN. A later render that flips `isUnseen` to
-        // true would find the animation permanently already-skipped for that stamp.
-        let shouldFetchUnseen = isSelf && !badgeRevealArmed
-        async let ub: Set<String> = shouldFetchUnseen ? await feed.fetchOwnUnseenBadgeIds() : []
+        // Own profile only, one more round trip alongside everything else here rather than a
+        // serial follow-up; see `displayedBadges` for how it turns into the actual four shown.
+        async let eb: [String]? = {
+            guard isSelf else { return nil }
+            return await feed.fetchOwnEffectiveDisplayedBadgeIds()
+        }()
+        // Own profile only, backs the small "new badge" pill; see `hasUnseenBadges`. Cheap and
+        // idempotent to re-check on every load (pull-to-refresh, a sheet's `onDismiss`), unlike
+        // the old per-stamp reveal this replaced, there's no animation-timing state here to
+        // protect from being refetched mid-flight.
+        async let ub: Bool = {
+            guard isSelf else { return false }
+            return await !feed.fetchOwnUnseenBadgeIds().isEmpty
+        }()
         // Only fetched (and cached) for someone else's profile; on your own, every badge shown
         // is already one you hold, see `viewerBadgeKindIds`'s own comment above.
         async let vb: Set<String> = {
@@ -464,8 +501,16 @@ struct UserPageView: View {
         followers = await fr
         following = await fg
         let badges = await bd
-        let unseen = await ub
+        hasUnseenBadges = await ub
         let viewerHeld = await vb
+        let effectiveIds = await eb
+        // Guarded on its own, unlike the writes below it: an account switch mid-flight must not
+        // let a stale account's resolved badge order land on the new account's profile. Nothing
+        // else in this function reads `effectiveDisplayedBadgeIds` afterward, so skipping the
+        // write here (rather than returning early) is enough, the rest of `load()` still runs.
+        if AccountEpoch.isCurrent(epoch) {
+            effectiveDisplayedBadgeIds = effectiveIds
+        }
         // The signup number lives on the profile row itself and never depends on
         // `profile_badges`, so a profile still shows a clean number (and nothing else) if that
         // RPC fails, e.g. offline, or before this migration is deployed. Nothing renders at all
@@ -476,12 +521,6 @@ struct UserPageView: View {
                 signupNumber: signupNumber,
                 badges: badges
             )
-            // Set together with `identity` above, per the comment on `ub`. Own profile only, and
-            // at most once per visit to this view, see `badgeRevealArmed`.
-            if shouldFetchUnseen {
-                badgeRevealArmed = true
-                unseenBadgeIds = unseen
-            }
             viewerBadgeKindIds = isSelf ? Set(badges.map { $0.kind.rawValue }) : viewerHeld
         } else {
             identity = nil
