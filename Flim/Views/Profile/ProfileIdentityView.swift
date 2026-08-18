@@ -47,6 +47,13 @@ struct ProfileIdentityStrip: View {
     /// `UserPageView` passes this profile's own badge kinds right back in that case and the line
     /// never shows.
     var viewerBadgeKindIds: Set<String> = []
+    /// Non-nil ONLY when this strip is rendering the SIGNED-IN account's own profile. Its own
+    /// row always returns every earned badge (see `identity.badges`), which is exactly the
+    /// asymmetry this exists to make legible: without it, an owner with a dozen badges has no
+    /// way to learn that a stranger's copy of this same profile only ever shows four of them.
+    /// `UserPageView` is the only call site that ever sets this, and only for `isSelf`.
+    var ownVisibility: OwnBadgeVisibility? = nil
+    @Environment(\.flimAccent) private var accent
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// Stagger between one stamp pressing in and the next, and how long a single press animates.
@@ -58,19 +65,11 @@ struct ProfileIdentityStrip: View {
     var body: some View {
         VStack(spacing: 14) {
             if !identity.badges.isEmpty {
-                // A wrapping layout, not an `HStack`: see `ProfileStampFlowLayout` for why an
-                // unconstrained row here used to widen every ancestor up to the `ScrollView`.
-                ProfileStampFlowLayout {
-                    ForEach(unseenOrderedBadges, id: \.badge.id) { entry in
-                        ProfileStampView(
-                            badge: entry.badge,
-                            isUnseen: entry.unseenIndex != nil,
-                            revealDelay: Double(entry.unseenIndex ?? 0) * Self.stampStagger,
-                            viewerBadgeKindIds: viewerBadgeKindIds
-                        )
-                    }
+                if let ownVisibility {
+                    ownContent(entries: unseenOrderedBadges, visibility: ownVisibility)
+                } else {
+                    stampRow(unseenOrderedBadges)
                 }
-                .padding(.horizontal, 24)
             }
         }
         // Keyed on the unseen set itself: it's set once, together with `identity`, when
@@ -97,6 +96,122 @@ struct ProfileIdentityStrip: View {
             nextUnseenIndex += 1
             return (badge, index)
         }
+    }
+
+    /// The plain wrapping row of stamps, unchanged from before `ownVisibility` existed. Used
+    /// as-is for a stranger's profile, and reused (on subsets) for the owner's own split below.
+    private func stampRow(_ entries: [(badge: ProfileBadge, unseenIndex: Int?)]) -> some View {
+        // A wrapping layout, not an `HStack`: see `ProfileStampFlowLayout` for why an
+        // unconstrained row here used to widen every ancestor up to the `ScrollView`.
+        ProfileStampFlowLayout {
+            ForEach(entries, id: \.badge.id) { entry in
+                ProfileStampView(
+                    badge: entry.badge,
+                    isUnseen: entry.unseenIndex != nil,
+                    revealDelay: Double(entry.unseenIndex ?? 0) * Self.stampStagger,
+                    viewerBadgeKindIds: viewerBadgeKindIds
+                )
+            }
+        }
+        .padding(.horizontal, 24)
+    }
+
+    /// The owner's own view of their badges: split into what a stranger actually sees and
+    /// everything else, or an honest "we can't say exactly which" banner when nobody has chosen
+    /// yet. See `OwnBadgeVisibility.split(entries:)` for what each branch means and why the
+    /// automatic case can't be split the same way the explicit one can.
+    @ViewBuilder
+    private func ownContent(entries: [(badge: ProfileBadge, unseenIndex: Int?)], visibility: OwnBadgeVisibility) -> some View {
+        if let split = OwnBadgeVisibility.split(entries: entries, selection: visibility.selection) {
+            VStack(spacing: 14) {
+                if split.shown.isEmpty {
+                    // Deliberately chosen to show none (`displayed_badges = '{}'`), not the
+                    // absence of a choice — see `OwnBadgeVisibility.split` for how this is told
+                    // apart from the automatic case below.
+                    Text("You’ve chosen not to show any of these. Only you can see the \(split.hidden.count) you’ve earned.")
+                        .flimFont(12, relativeTo: .caption)
+                        .foregroundStyle(FlimTheme.textTertiary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 40)
+                } else {
+                    stampRow(split.shown)
+                }
+                if !split.hidden.isEmpty {
+                    VStack(spacing: 10) {
+                        sectionHeading("Also earned")
+                        stampRow(split.hidden)
+                    }
+                }
+                manageLink(visibility.onManage, title: split.shown.isEmpty ? "Choose some to show" : "Change what shows here")
+            }
+        } else {
+            // No choice made: the server leads with the four rarest automatically, and there is
+            // no path for the owner's own row to learn WHICH four that resolves to (see
+            // `profile_badges`'s owner branch, which always returns everything regardless of who
+            // asks) — so this deliberately does not try to split the row, only says so plainly.
+            // Skipped entirely once there's nothing to hide (4 or fewer badges total means the
+            // automatic default already shows every one of them).
+            VStack(spacing: 10) {
+                if entries.count > 4 {
+                    Text("You’ve earned \(entries.count). Only 4 show here for everyone else, picked automatically for now.")
+                        .flimFont(12, relativeTo: .caption)
+                        .foregroundStyle(FlimTheme.textTertiary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 40)
+                    manageLink(visibility.onManage, title: "Choose which ones show")
+                }
+                stampRow(entries)
+            }
+        }
+    }
+
+    private func sectionHeading(_ text: String) -> some View {
+        Text(text.uppercased())
+            .flimFont(11, weight: .medium, relativeTo: .caption)
+            .tracking(2.5)
+            .foregroundStyle(FlimTheme.textTertiary)
+    }
+
+    private func manageLink(_ action: @escaping () -> Void, title: String) -> some View {
+        Button(action: action) {
+            Text(title)
+                .flimFont(12, weight: .semibold, relativeTo: .caption)
+                .foregroundStyle(accent)
+                .frame(minHeight: 44)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+/// What the signed-in account's own profile knows about the split between what a stranger sees
+/// and everything else, passed down from `UserPageView` (the only place that reads
+/// `AuthService.currentUser?.displayedBadges`, which only ever arrives for the signed-in account
+/// itself).
+struct OwnBadgeVisibility {
+    /// The raw `displayed_badges` value: `nil` (no choice made), `[]` (chosen to show none), or
+    /// an explicit ordered list. See `AppUser.displayedBadges` for why these three are kept
+    /// distinct rather than collapsed.
+    let selection: [String]?
+    /// Opens `BadgePickerSheet`.
+    let onManage: () -> Void
+
+    /// Splits `entries` into what a stranger sees (`shown`, in the caller's own chosen order)
+    /// and everything else (`hidden`, in whatever order `entries` already carries), or `nil` when
+    /// `selection` is `nil` — there is no such split to compute client-side for the automatic
+    /// default: it depends on how many OTHER accounts hold each badge, data this profile's own
+    /// row has no access to (`profile_badges`'s rarity ranking is computed entirely server-side,
+    /// see that migration's PART 2). Defensive against a `selection` id that doesn't match
+    /// anything in `entries` (shouldn't happen, `earned_badges` never un-earns, but this is a
+    /// read path, not the write path that already enforces that).
+    static func split(
+        entries: [(badge: ProfileBadge, unseenIndex: Int?)],
+        selection: [String]?
+    ) -> (shown: [(badge: ProfileBadge, unseenIndex: Int?)], hidden: [(badge: ProfileBadge, unseenIndex: Int?)])? {
+        guard let selection else { return nil }
+        let selectedIds = Set(selection)
+        let shown = selection.compactMap { id in entries.first { $0.badge.id == id } }
+        let hidden = entries.filter { !selectedIds.contains($0.badge.id) }
+        return (shown, hidden)
     }
 }
 
@@ -548,4 +663,87 @@ private let allCatalogStampBadges: [ProfileBadge] = ProfileBadgeKind.allCases
     }
     .frame(width: 375)
     .dynamicTypeSize(FlimTypeScale.maximum)
+}
+
+// MARK: - Owner's own-profile visibility split
+//
+// `ownVisibility` only ever appears on the signed-in account's own profile (see `UserPageView`).
+// These cover the three states `displayed_badges` can actually be, plus the two edges called out
+// explicitly in the brief: nothing to hide (<=4 badges under the automatic default), and a
+// deliberate "show none" with a non-empty explicit hidden group.
+//
+// `id` here is set to the KIND's raw value, matching real production rows
+// (`FeedService.fetchProfileBadges` sets `id: row.badge_id`, and `badge_id` IS the raw value) —
+// unlike `allCatalogStampBadges` above (index-as-id, fine for THAT preview, which never compares
+// ids against a selection), `OwnBadgeVisibility.split` matches on `id`, so these fixtures need
+// the real string or every preview below would show an empty "shown" group.
+private let ownVisibilityPreviewBadges: [ProfileBadge] = ProfileBadgeKind.allCases
+    .filter { $0 != .foundingCrew && $0 != .testRoll }   // hand-granted, not earnable, kept out
+    .enumerated()
+    .map { index, kind in
+        ProfileBadge(
+            id: kind.rawValue,
+            kind: kind,
+            earnedAt: DateComponents(calendar: .current, year: 2026, month: 1 + (index % 12), day: 1).date ?? .now
+        )
+    }
+
+#Preview("Own profile: automatic default, twelve badges (asymmetry banner)") {
+    ZStack {
+        FlimTheme.bg.ignoresSafeArea()
+        ProfileIdentityStrip(
+            identity: ProfileIdentity(signupNumber: 37, badges: ownVisibilityPreviewBadges),
+            viewerBadgeKindIds: Set(ProfileBadgeKind.allCases.map(\.rawValue)),
+            ownVisibility: OwnBadgeVisibility(selection: nil, onManage: {})
+        )
+        .padding(.vertical, 40)
+    }
+}
+
+#Preview("Own profile: automatic default, three badges (no asymmetry, no banner)") {
+    // Fewer than the cap: the automatic default already shows every badge, so there is nothing
+    // to disclose and the banner must not appear.
+    ZStack {
+        FlimTheme.bg.ignoresSafeArea()
+        ProfileIdentityStrip(
+            identity: ProfileIdentity(signupNumber: 4108, badges: [
+                ProfileBadge(id: "first_light", kind: .firstLight, earnedAt: DateComponents(calendar: .current, year: 2026, month: 6, day: 2).date ?? .now),
+                ProfileBadge(id: "shared", kind: .shared, earnedAt: DateComponents(calendar: .current, year: 2026, month: 6, day: 20).date ?? .now),
+                ProfileBadge(id: "well_met", kind: .wellMet, earnedAt: DateComponents(calendar: .current, year: 2026, month: 7, day: 1).date ?? .now),
+            ]),
+            viewerBadgeKindIds: Set(ProfileBadgeKind.allCases.map(\.rawValue)),
+            ownVisibility: OwnBadgeVisibility(selection: nil, onManage: {})
+        )
+        .padding(.vertical, 40)
+    }
+}
+
+#Preview("Own profile: explicit selection, four shown, rest grouped") {
+    ZStack {
+        FlimTheme.bg.ignoresSafeArea()
+        ProfileIdentityStrip(
+            identity: ProfileIdentity(signupNumber: 37, badges: ownVisibilityPreviewBadges),
+            viewerBadgeKindIds: Set(ProfileBadgeKind.allCases.map(\.rawValue)),
+            ownVisibility: OwnBadgeVisibility(
+                selection: ["darkroom", "founding_100", "first_in", "full_house"],
+                onManage: {}
+            )
+        )
+        .padding(.vertical, 40)
+    }
+}
+
+#Preview("Own profile: chosen to show none") {
+    ZStack {
+        FlimTheme.bg.ignoresSafeArea()
+        ProfileIdentityStrip(
+            identity: ProfileIdentity(signupNumber: 37, badges: [
+                ProfileBadge(id: "first_light", kind: .firstLight, earnedAt: DateComponents(calendar: .current, year: 2026, month: 6, day: 2).date ?? .now),
+                ProfileBadge(id: "shared", kind: .shared, earnedAt: DateComponents(calendar: .current, year: 2026, month: 6, day: 20).date ?? .now),
+            ]),
+            viewerBadgeKindIds: Set(ProfileBadgeKind.allCases.map(\.rawValue)),
+            ownVisibility: OwnBadgeVisibility(selection: [], onManage: {})
+        )
+        .padding(.vertical, 40)
+    }
 }

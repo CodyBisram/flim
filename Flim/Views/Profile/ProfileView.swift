@@ -319,6 +319,7 @@ struct EditProfileView: View {
     @State private var showEditBio = false
     @State private var showAvatarPicker = false
     @State private var showCoverPicker = false
+    @State private var showBadgePicker = false
 
     private var displayName: String? {
         let n = auth.currentUser?.displayName
@@ -327,6 +328,16 @@ struct EditProfileView: View {
     private var bio: String? {
         let b = auth.currentUser?.bio
         return (b?.isEmpty == false) ? b : nil
+    }
+
+    /// Honest current-state copy for the badges row, mirroring the three states
+    /// `displayed_badges` can actually be: see `AppUser.displayedBadges`.
+    private var badgesSummary: String {
+        switch auth.currentUser?.displayedBadges {
+        case nil: return "Automatic"
+        case .some(let ids) where ids.isEmpty: return "None shown"
+        case .some(let ids): return "\(ids.count) chosen"
+        }
     }
 
     var body: some View {
@@ -349,6 +360,9 @@ struct EditProfileView: View {
                                     isPlaceholder: bio == nil) { showEditBio = true }
                             divider
                             editRow("Cover photo", value: "Change", isPlaceholder: true) { showCoverPicker = true }
+                            divider
+                            editRow("Badges", value: badgesSummary,
+                                    isPlaceholder: auth.currentUser?.displayedBadges == nil) { showBadgePicker = true }
                         }
                         .background(FlimTheme.bgElevated, in: RoundedRectangle(cornerRadius: 14))
                         .padding(.horizontal, 20)
@@ -388,6 +402,9 @@ struct EditProfileView: View {
                         }
                     }
                 }
+            }
+            .sheet(isPresented: $showBadgePicker) {
+                BadgePickerSheet()
             }
             .sheet(isPresented: $showCoverPicker) {
                 PhotoPickerSheet(title: "Cover Photo") { path in

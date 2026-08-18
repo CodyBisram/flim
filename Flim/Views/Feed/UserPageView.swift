@@ -36,6 +36,7 @@ struct UserPageView: View {
     @State private var followList: FollowList?
     @State private var showSettings = false
     @State private var showEditProfile = false
+    @State private var showBadgePicker = false
     @State private var showInvite = false
     @State private var showBlockConfirm = false
     @State private var showReportConfirm = false
@@ -168,6 +169,9 @@ struct UserPageView: View {
         .sheet(isPresented: $showEditProfile, onDismiss: { Task { await load() } }) {
             EditProfileView()
         }
+        .sheet(isPresented: $showBadgePicker, onDismiss: { Task { await load() } }) {
+            BadgePickerSheet()
+        }
         .sheet(isPresented: $showInvite) {
             InviteSheet()
         }
@@ -265,7 +269,14 @@ struct UserPageView: View {
                     onUnseenBadgesRevealed: {
                         Task { await feed.markOwnBadgesSeen() }
                     },
-                    viewerBadgeKindIds: viewerBadgeKindIds
+                    viewerBadgeKindIds: viewerBadgeKindIds,
+                    // Only ever set for the signed-in account's own profile: `identity.badges`
+                    // for `isSelf` is EVERY earned badge (see `profile_badges`'s owner branch),
+                    // which is invisible to a stranger without this. See `OwnBadgeVisibility`.
+                    ownVisibility: isSelf ? OwnBadgeVisibility(
+                        selection: auth.currentUser?.displayedBadges,
+                        onManage: { showBadgePicker = true }
+                    ) : nil
                 )
             }
 

@@ -386,6 +386,40 @@ final class AuthService {
         await refreshCurrentUser(id: session.user.id)
     }
 
+    /// Sets (or clears) the signed-in account's chosen badge selection, via the zero-trust
+    /// `set_displayed_badges` RPC (own row only, no user-id argument exists). Passing `nil`
+    /// reverts to the server's rarest-four default; passing `[]` stores the deliberate
+    /// "show none" state; passing a non-empty ordered list stores that exact order.
+    ///
+    /// The RPC itself enforces the cap, rejects duplicates and unearned ids, so a rejection here
+    /// is always a real refusal, not this client's own bug — the caller (`BadgePickerSheet`)
+    /// surfaces the thrown error and leaves the sheet open so the pick is retryable, mirroring
+    /// `setBio`/`setDisplayName`'s dismiss-only-on-success shape.
+    func setDisplayedBadges(_ badgeIds: [String]?) async throws {
+        let session = try await supabase.auth.session
+        // NOT a plain `struct Params: Encodable { let p_badge_ids: [String]? }`: Codable
+        // synthesis encodes an Optional property with `encodeIfPresent`, which DROPS the key
+        // entirely when the value is nil rather than writing JSON `null`. The RPC has no default
+        // for `p_badge_ids` (see the migration), so a dropped key is a missing argument, not
+        // "pass null" — Postgrest would 404 with "function ... does not exist" instead of
+        // reaching the SQL function's own `IF p_badge_ids IS NULL` branch. This writes the key
+        // unconditionally, `null` or the array, so "revert to automatic" actually reaches SQL.
+        struct Params: Encodable {
+            let p_badge_ids: [String]?
+            func encode(to encoder: Encoder) throws {
+                var container = encoder.container(keyedBy: CodingKeys.self)
+                if let p_badge_ids {
+                    try container.encode(p_badge_ids, forKey: .p_badge_ids)
+                } else {
+                    try container.encodeNil(forKey: .p_badge_ids)
+                }
+            }
+            enum CodingKeys: String, CodingKey { case p_badge_ids }
+        }
+        _ = try await supabase.rpc("set_displayed_badges", params: Params(p_badge_ids: badgeIds)).execute()
+        await refreshCurrentUser(id: session.user.id)
+    }
+
     /// Sets the profile avatar from one of the user's photos. Copies the image into its own
     /// Storage object so the avatar survives the source photo being deleted.
     /// Returns whether it landed, like its `fromImageData` sibling. Returning Void here meant a
