@@ -483,17 +483,27 @@ private struct BadgePickerContent: View {
                         .tracking(1.2)
                         .foregroundStyle(kind.tier.hue(accent: accent).opacity(0.55))
                 }
-                Text(kind.explanation)
-                    .flimFont(12, relativeTo: .caption).foregroundStyle(FlimTheme.textTertiary)
+                // `howToEarn` ONLY, not both. These rows carried the explanation above the
+                // instruction, and for most of the catalogue those are the same sentence written
+                // twice, once in past tense and once as an imperative: "First to open the reveal,
+                // on five different rolls." sat directly above "Be first to open the reveal, on
+                // five different rolls." Reading the same thing twice makes a list feel padded and
+                // makes the section twice as long to scan for the one badge you were looking for.
+                //
+                // The instruction is the half that belongs here. `explanation` is written for
+                // somebody who HOLDS the badge, which is why it opens in the past tense, and it
+                // reads oddly on a row for something you have not done: a locked Darkroom row
+                // telling you "You opened every reveal" is describing a thing that did not happen.
+                // The earned rows above keep the explanation for the same reason, inverted.
                 Text(kind.howToEarn)
-                    .flimFont(11, relativeTo: .caption2).foregroundStyle(FlimTheme.textTertiary.opacity(0.75))
+                    .flimFont(12, relativeTo: .caption).foregroundStyle(FlimTheme.textTertiary)
             }
             Spacer()
         }
         .padding(.horizontal, 20).padding(.vertical, 13)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(kind.label) badge, not yet earned")
-        .accessibilityHint("\(kind.explanation) \(kind.howToEarn)")
+        .accessibilityHint(kind.howToEarn)
     }
 
     // MARK: - Actions

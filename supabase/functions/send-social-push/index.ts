@@ -105,44 +105,61 @@ async function importPrivateKey(pem: string): Promise<CryptoKey> {
 // omitted for destinations that need none (the daily digest, elsewhere). `comments` is set only
 // on "post" pushes that are specifically about a comment, so the client can open with the
 // comment thread already showing.
-// Badge display names, for the "you earned X" push below.
+// Badge push copy: the rung's medal, the badge's name, and what it actually means.
 //
-// ⚠️ DUPLICATED FROM ProfileBadgeKind.label (Flim/Models/ProfileIdentity.swift).
-// There is no shared source between Swift and this function, and the alternative
-// (pushing the raw badge_id, or storing UI copy in the database) is worse than a
-// table that has to be kept in step. An id missing from here does NOT break the
-// push: it falls back to "You earned a badge", so adding a badge and forgetting
-// this map degrades the wording rather than the notification.
-const BADGE_LABELS: Record<string, string> = {
-  founder: "Founder",
-  founding_crew: "Founding Crew",
-  founding_100: "Founding 100",
-  full_set: "Full Set",
-  front_row: "Front Row",
-  packed_house: "Packed House",
-  cover_to_cover: "Cover to Cover",
-  open_door: "Open Door",
-  one_year: "Still Shooting",
-  patron: "Patron",
-  darkroom: "Darkroom",
-  first_in: "First In",
-  kept_one: "Kept One",
-  regular: "Regular",
-  full_roll: "Full Roll",
-  roll_maker: "Roll Maker",
-  brought_someone: "Plus One",
-  well_met: "Well Met",
-  full_house: "Full House",
-  spotter: "Spotter",
-  in_frame: "In Frame",
-  good_company: "Good Company",
-  first_light: "First Light",
-  shared: "Shared",
-  joined_in: "Joined In",
-  chipped_in: "Chipped In",
-  chimed_in: "Chimed In",
-  said_it: "Said It",
-  ten_frames: "Ten Frames",
+// The name alone does not survive a lock screen. "You earned Kept One" reads as a
+// riddle to anyone who has not already opened the picker and read the catalogue,
+// which is most people most of the time, and a notification that has to be
+// decoded is a notification that gets dismissed. The badge's own explanation is
+// the sentence that makes the name land, so it goes in the body, and the rung's
+// medal goes in front of the title so the rank is legible before a single word
+// is read. Crown rather than a fourth medal for the founding rung: it sits above
+// gold, and there is no medal above gold.
+//
+// ⚠️ GENERATED FROM ProfileBadgeKind (Flim/Models/ProfileIdentity.swift), by
+// scripts/gen_badge_push_copy.py. Do not hand-edit: re-run that script after
+// adding a badge or changing a label, tier, or explanation. There is no shared
+// source between Swift and Deno, and generating beats transcribing because the
+// failure mode of transcribing is a notification that quietly contradicts what
+// the app shows. An id missing from here does NOT break the push: it falls back
+// to a generic title with no body, so a forgotten regeneration degrades the
+// wording rather than the notification.
+interface BadgeCopy {
+  emoji: string;
+  label: string;
+  meaning: string;
+}
+
+const BADGE_COPY: Record<string, BadgeCopy> = {
+  first_light: { emoji: "🎞️", label: "First Light", meaning: "Your very first frame." },
+  full_roll: { emoji: "🥉", label: "Full Roll", meaning: "You shot into a roll before its midpoint and again after, instead of dumping it all at once and moving on." },
+  darkroom: { emoji: "🥈", label: "Darkroom", meaning: "You opened every reveal, for every roll you were ever part of." },
+  founding_100: { emoji: "👑", label: "Founding 100", meaning: "One of the first hundred people here." },
+  first_in: { emoji: "🥈", label: "First In", meaning: "First to open the reveal on a roll." },
+  roll_maker: { emoji: "🥉", label: "Roll Maker", meaning: "You started a roll, and people actually shot into it." },
+  brought_someone: { emoji: "🥉", label: "Plus One", meaning: "You brought someone along, and they joined." },
+  joined_in: { emoji: "🎞️", label: "Joined In", meaning: "You joined a roll someone else started." },
+  chipped_in: { emoji: "🎞️", label: "Chipped In", meaning: "You shot into a roll you didn't start." },
+  shared: { emoji: "🎞️", label: "Shared", meaning: "You posted a frame to the feed." },
+  well_met: { emoji: "🥉", label: "Well Met", meaning: "Someone else reacted to one of your photos." },
+  full_house: { emoji: "🥉", label: "Full House", meaning: "A roll you shot into filled up with five or more photographers." },
+  founding_crew: { emoji: "👑", label: "Founding Crew", meaning: "Part of the crew that got this off the ground." },
+  front_row: { emoji: "🥇", label: "Front Row", meaning: "First to open the reveal, on five different rolls." },
+  packed_house: { emoji: "🥇", label: "Packed House", meaning: "A roll you shot into grew to ten or more photographers." },
+  patron: { emoji: "🥈", label: "Patron", meaning: "Five people you invited joined." },
+  cover_to_cover: { emoji: "🥇", label: "Cover to Cover", meaning: "You shot into ten rolls before they developed." },
+  kept_one: { emoji: "🥈", label: "Kept One", meaning: "Ten of your frames developed, and you kept every one to yourself." },
+  regular: { emoji: "🥈", label: "Regular", meaning: "Active on seven different days." },
+  one_year: { emoji: "🥇", label: "Still Shooting", meaning: "A year since you joined FLIM, and still shooting." },
+  full_set: { emoji: "🥇", label: "Full Set", meaning: "Twenty other badges, held at once." },
+  founder: { emoji: "👑", label: "Founder", meaning: "Built FLIM." },
+  open_door: { emoji: "🥇", label: "Open Door", meaning: "Ten people you invited joined." },
+  chimed_in: { emoji: "🎞️", label: "Chimed In", meaning: "You reacted to someone else's photo." },
+  in_frame: { emoji: "🥉", label: "In Frame", meaning: "Someone tagged you in a photo." },
+  spotter: { emoji: "🥉", label: "Spotter", meaning: "You tagged someone in one of yours." },
+  said_it: { emoji: "🎞️", label: "Said It", meaning: "You wrote a caption." },
+  ten_frames: { emoji: "🎞️", label: "Ten Frames", meaning: "Ten frames shot." },
+  good_company: { emoji: "🥉", label: "Good Company", meaning: "Ten people follow you." },
 };
 
 interface FlimRoute {
@@ -1204,18 +1221,19 @@ Deno.serve(async () => {
     .eq("push_sent", false);
 
   for (const b of freshBadges ?? []) {
-    const label = BADGE_LABELS[b.badge_id];
+    const copy = BADGE_COPY[b.badge_id];
     // Unknown id: a badge shipped to the database ahead of this function. Still
     // worth telling someone about, just without naming it, rather than staying
     // silent or pushing a raw snake_case id at them.
-    const title = label ? `You earned ${label}` : "You earned a badge";
+    const title = copy ? `${copy.emoji} New badge: ${copy.label}` : "You earned a badge";
+    const body = copy?.meaning;
     for (const token of await tokensFor(b.user_id)) {
       // The recipient's OWN id, not an omitted one: PushDestination.parse rejects a
       // "profile" route with no id outright (`guard let id = uuid(...) else { return nil }`),
       // so a bare { t: "profile" } taps into nothing at all and just opens the app
       // wherever it was. Routed to their own page because that is where the badge is
       // shown and where the picker, and the reveal, live.
-      if (await sendPush(token, title, "Open your profile to see it.", { t: "profile", id: b.user_id })) sent++;
+      if (await sendPush(token, title, body, { t: "profile", id: b.user_id })) sent++;
     }
     await supabase
       .from("earned_badges")
