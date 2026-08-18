@@ -275,7 +275,13 @@ struct FeedView: View {
                                 }
                             }
                     }
-                    .accessibilityLabel(feed.unseenBadgeCount > 0 ? "Your page, new badge earned" : "Your page")
+                    // Same plural rule as the profile's own pill (see `UserPageView`): VoiceOver
+                    // should not announce "new badge earned" when eleven are waiting.
+                    .accessibilityLabel(
+                        feed.unseenBadgeCount == 0 ? "Your page"
+                        : feed.unseenBadgeCount == 1 ? "Your page, new badge earned"
+                        : "Your page, \(feed.unseenBadgeCount) new badges earned"
+                    )
                 }
             }
 

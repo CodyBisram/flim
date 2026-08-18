@@ -16,7 +16,10 @@ struct UserPageView: View {
     /// that four would never appear here even if this view tried to animate it in directly. The
     /// actual reveal — and the `markOwnBadgesSeen()` call that clears both this and the tab dot —
     /// happens in `BadgePickerSheet`, the one place the owner's full collection is ever shown.
-    @State private var hasUnseenBadges = false
+    /// How many badges this account has earned but never been shown. A count rather than a flag
+    /// because the pill has to say "New badge" or "3 new badges", and a Bool throws away the one
+    /// fact the copy needs before the view ever sees it.
+    @State private var unseenBadgeCount = 0
     /// The signed-in account's own earned badge kind ids, for "how to earn this" in the popover
     /// on someone else's pill; see `ProfileBadgeColumn` and `ProfileBadgeKind.howToEarn`. On your
     /// own profile this is just this profile's own badges, no extra fetch needed since every
@@ -297,12 +300,19 @@ struct UserPageView: View {
             // sees, and a newly earned badge may not even be among them). Tapping through opens
             // the picker, the one place the full collection — and the actual reveal — lives; see
             // `BadgePickerSheet`.
-            if isSelf, hasUnseenBadges {
+            if isSelf, unseenBadgeCount > 0 {
                 Button {
                     Haptics.tap()
                     showBadgePicker = true
                 } label: {
-                    Label("New badge to see", systemImage: "sparkles")
+                    // Singular stays wordless rather than "1 new badge to see": a leading "1"
+                    // reads as a counter on something that is really an invitation. Past one, the
+                    // number is worth saying, because how many are waiting changes whether you
+                    // open it now or later.
+                    Label(unseenBadgeCount == 1
+                          ? "New badge to see"
+                          : "\(unseenBadgeCount) new badges to see",
+                          systemImage: "sparkles")
                         .flimFont(12, weight: .semibold, relativeTo: .caption)
                         .foregroundStyle(accent)
                         .padding(.horizontal, 12).padding(.vertical, 6)
@@ -486,13 +496,13 @@ struct UserPageView: View {
             guard isSelf else { return nil }
             return await feed.fetchOwnEffectiveDisplayedBadgeIds()
         }()
-        // Own profile only, backs the small "new badge" pill; see `hasUnseenBadges`. Cheap and
+        // Own profile only, backs the small "new badge" pill; see `unseenBadgeCount`. Cheap and
         // idempotent to re-check on every load (pull-to-refresh, a sheet's `onDismiss`), unlike
         // the old per-stamp reveal this replaced, there's no animation-timing state here to
         // protect from being refetched mid-flight.
-        async let ub: Bool = {
-            guard isSelf else { return false }
-            return await !feed.fetchOwnUnseenBadgeIds().isEmpty
+        async let ub: Int = {
+            guard isSelf else { return 0 }
+            return await feed.fetchOwnUnseenBadgeIds().count
         }()
         // Only fetched (and cached) for someone else's profile; on your own, every badge shown
         // is already one you hold, see `viewerBadgeKindIds`'s own comment above.
@@ -505,7 +515,7 @@ struct UserPageView: View {
         followers = await fr
         following = await fg
         let badges = await bd
-        hasUnseenBadges = await ub
+        unseenBadgeCount = await ub
         let viewerHeld = await vb
         let effectiveIds = await eb
         // Guarded on its own, unlike the writes below it: an account switch mid-flight must not
