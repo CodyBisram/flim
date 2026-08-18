@@ -163,11 +163,46 @@ struct BadgeExplanationPopover: View {
     }
 }
 
+/// Centres arbitrary avatar content on the page with up to two flanking badge columns. Used by
+/// `UserPageView.pageHeader` for the real, tappable avatar, and by this file's own `FlankPreview`
+/// (and `AvatarBadgeCenteringTests`) for a stand-in one, so the fix and everything that checks it
+/// can never structurally drift apart.
+///
+/// Each column is an OVERLAY on `avatar`'s own frame, not a sibling in a shared HStack: a shared
+/// HStack centres the whole row as a group, so a single badge on one side (nothing opposite it)
+/// visibly shoves the avatar off-centre, worse the wider that one label is. An overlay's content
+/// never contributes to the base view's reported size, so the avatar's centre is fixed by
+/// `avatar`'s own frame alone regardless of badge count or label width; the `alignmentGuide`
+/// overrides below just push each column's near edge out past the avatar's edge by `gap`, so a
+/// column only ever grows outward, never inward toward the avatar's centre.
+struct AvatarBadgeFlanking<Avatar: View>: View {
+    let leftBadges: [ProfileBadge]
+    let rightBadges: [ProfileBadge]
+    var viewerBadgeKindIds: Set<String> = []
+    /// Matches the old HStack's `spacing: 14` this replaced.
+    var gap: CGFloat = 14
+    @ViewBuilder let avatar: () -> Avatar
+
+    var body: some View {
+        avatar()
+            .overlay(alignment: .leading) {
+                ProfileBadgeColumn(badges: leftBadges, alignment: .trailing, viewerBadgeKindIds: viewerBadgeKindIds)
+                    .alignmentGuide(.leading) { d in d[.trailing] + gap }
+            }
+            .overlay(alignment: .trailing) {
+                ProfileBadgeColumn(badges: rightBadges, alignment: .leading, viewerBadgeKindIds: viewerBadgeKindIds)
+                    .alignmentGuide(.trailing) { d in d[.leading] - gap }
+            }
+    }
+}
+
 // MARK: - Previews
 
-/// Mirrors the exact composition `UserPageView.pageHeader` builds: left column, avatar, right
-/// column, all vertically centred in one row. A stand-in avatar circle since these previews live
-/// outside `UserPageView` and have no real photo to load.
+/// Mirrors the exact composition `UserPageView.pageHeader` builds via `AvatarBadgeFlanking`: a
+/// vertical guide line is drawn through the avatar's centre so a shifted avatar is visible at a
+/// glance rather than requiring a ruler; see `AvatarBadgeCenteringTests` for the actual
+/// pixel-identical assertion this preview can only eyeball. A stand-in avatar circle since these
+/// previews live outside `UserPageView` and have no real photo to load.
 private struct FlankPreview: View {
     let badges: [ProfileBadge]
     var viewerBadgeKindIds: Set<String> = []
@@ -177,15 +212,19 @@ private struct FlankPreview: View {
         let split = ProfileBadgeFlank.split(badges)
         ZStack {
             FlimTheme.bg.ignoresSafeArea()
-            HStack(alignment: .center, spacing: 14) {
-                ProfileBadgeColumn(badges: split.left, alignment: .trailing, viewerBadgeKindIds: viewerBadgeKindIds)
+            AvatarBadgeFlanking(leftBadges: split.left, rightBadges: split.right, viewerBadgeKindIds: viewerBadgeKindIds) {
                 Circle()
                     .fill(accent.opacity(0.18))
                     .frame(width: 88, height: 88)
                     .overlay(Text("C").flimFont(32, weight: .thin, relativeTo: .title3).foregroundStyle(accent))
                     .overlay(Circle().stroke(FlimTheme.bg, lineWidth: 4))
                     .overlay(Circle().stroke(accent.opacity(0.5), lineWidth: 1))
-                ProfileBadgeColumn(badges: split.right, alignment: .leading, viewerBadgeKindIds: viewerBadgeKindIds)
+                    .overlay {
+                        // 1pt centre guide: the avatar's frame is exactly what this preview should
+                        // never move, so this line must sit on it at every badge count.
+                        Rectangle().fill(Color.red.opacity(0.6)).frame(width: 1)
+                            .frame(width: 88, alignment: .center)
+                    }
             }
             .padding(.vertical, 50)
         }

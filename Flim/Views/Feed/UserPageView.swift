@@ -240,13 +240,17 @@ struct UserPageView: View {
                 // Both `isSelf` and a stranger's profile pass the exact same `displayedBadges`
                 // list here, there is no wider "everything you've earned" view left on this page,
                 // that now lives only in `BadgePickerSheet`.
-                HStack(alignment: .center, spacing: 14) {
-                    ProfileBadgeColumn(badges: badgeFlanks.left, alignment: .trailing, viewerBadgeKindIds: viewerBadgeKindIds)
+                //
+                // Each column is an OVERLAY on the avatar's own frame, not a sibling in a shared
+                // HStack: a shared HStack centres the whole row as a group, so a single badge on
+                // one side (nothing opposite it) visibly shoves the avatar off-centre, worse the
+                // wider that one label is. See `AvatarBadgeFlanking` for why an overlay keeps the
+                // avatar's centre fixed regardless of badge count or label width.
+                AvatarBadgeFlanking(leftBadges: badgeFlanks.left, rightBadges: badgeFlanks.right, viewerBadgeKindIds: viewerBadgeKindIds) {
                     Button { if avatarURL != nil { showAvatarViewer = true } } label: {
                         avatarCircle
                     }
                     .buttonStyle(.plain)
-                    ProfileBadgeColumn(badges: badgeFlanks.right, alignment: .leading, viewerBadgeKindIds: viewerBadgeKindIds)
                 }
                 .offset(y: 44)
             }

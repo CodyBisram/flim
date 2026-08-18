@@ -175,7 +175,9 @@ private struct BadgePickerContent: View {
                         VStack(spacing: 20) {
                             modePicker
                             explanation
-                            badgeList
+                            if mode == .custom {
+                                badgeList
+                            }
                             if let saveError {
                                 Text(saveError)
                                     .flimFont(13, relativeTo: .subheadline)
@@ -269,10 +271,10 @@ private struct BadgePickerContent: View {
         }
     }
 
-    /// Always visible regardless of `mode`, unlike before: this is the owner's only view of their
-    /// full collection anywhere in the app now, so browsing it (what each badge means) can't
-    /// depend on first switching into Custom. Selecting a badge still only does anything in
-    /// Custom mode, see `toggle(_:)`.
+    /// Custom mode only: in Automatic there is nothing to choose, `explanation` above already
+    /// says the four are picked automatically and can be changed, and a list of rows the person
+    /// can't meaningfully act on yet would just be noise under that copy. Selecting a badge only
+    /// does anything in Custom mode too, see `toggle(_:)`.
     private var badgeList: some View {
         VStack(spacing: 0) {
             ForEach(Array(badges.enumerated()), id: \.element.id) { index, badge in
@@ -413,10 +415,9 @@ private struct BadgePickerContent: View {
 
 // MARK: - Previews
 
-#Preview("Twelve badges, no choice made (automatic, full list still visible)") {
-    // Automatic mode, the default state: the list is visible here too, not just in Custom, since
-    // this is the only place the full collection is ever shown. Every row now carries what the
-    // badge means (`explanation`), none carries when it was earned.
+#Preview("Twelve badges, no choice made (automatic, list hidden)") {
+    // Automatic mode, the default state: nothing to choose, so the list stays hidden and
+    // `explanation` alone says the four are picked automatically and can be changed.
     BadgePickerContentPreview(badges: badgePickerPreviewBadges, initialSelection: nil)
 }
 
