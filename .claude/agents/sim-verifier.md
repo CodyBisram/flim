@@ -104,6 +104,11 @@ Use after a completed user-facing feature:
 
 Use before a push, TestFlight batch, or App Store preparation:
 - independent clean build even if another agent supplied one;
+- an independent Release-configuration build
+  (`-configuration Release -destination "generic/platform=iOS" CODE_SIGNING_ALLOWED=NO`).
+  Everything else in this file is Debug, and so is CI's test job; only the TestFlight
+  archive compiles Release. A caller of a `#if DEBUG` symbol passes every other check
+  here and kills the deploy. One did, after a fully green pass;
 - full FlimTests;
 - all primary launch routes relevant to the release;
 - screenshot inspection;

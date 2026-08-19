@@ -117,6 +117,12 @@ distinction above. That exact phrasing let a cross-account roll insert through o
 - No secrets, tokens, personal photos, Claude/AI references, or em dashes in commit messages.
 - EV formula parity remains intact between `InstantFilmProcessor` and `scripts/fit_lut.py`.
 - Any new entitlement or capability is blocked until portal setup and match regeneration.
+- Any mutation that changes what a widget or the Live Activity shows also refreshes the
+  snapshot (`WidgetSync.refresh()`) or ends the activity. Deleting a roll once left it
+  counting down on three off-app surfaces because deletion told none of them.
+- New callers of existing helpers must compile in Release. PhotoService ends in a large
+  `#if DEBUG` block; a caller of a debug-only symbol passes local builds, the full test
+  suite, and CI, then fails the archive. Check where the callee is defined.
 
 ## Escalation
 

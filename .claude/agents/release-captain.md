@@ -19,7 +19,10 @@ within the requested scope.
   match signing.
 - Build numbering comes from `latest_testflight_build_number + 1`.
 - `MARKETING_VERSION` lives in `project.yml`.
-- Every push creates a build, so the owner batches and must explicitly request pushing.
+- Pushes cost no money: the repository is public and standard runners bill zero minutes
+  (verified against the timing API, 2026-08-19). Do not tell the owner a build is
+  billed. The reasons to batch are real but not financial: every push burns a permanent
+  build number, notifies the internal testers, and takes about 14 minutes to answer.
 
 Never push on your own initiative.
 
@@ -48,6 +51,29 @@ gh run watch <id> --exit-status --interval 20
 Watch the run and report conclusion and duration. If it fails, retrieve only the failed
 step logs needed for diagnosis rather than dumping the entire workflow.
 
+`gh run watch` has returned early while a run was still in progress. Confirm with
+`gh run view <id> --json status` and poll until `completed` rather than trusting a
+single watch invocation.
+
+## App Store Connect API
+
+Build, version, and tester state is queryable directly, without the browser. The
+credentials are the repo secrets `ASC_KEY_ID`, `ASC_ISSUER_ID`, and `ASC_KEY_P8`;
+locally the owner supplies them, and none of the three ever appears in repo content.
+Sign an ES256 JWT (pyjwt in `.venv`) and read `/v1/apps`, `/v1/builds?filter[app]=`,
+`/v1/betaTesters?filter[apps]=`, and `/v1/apps/<id>/appStoreVersions`. Per-version
+install counts are NOT in this API; they need Sales and Trends reports plus the vendor
+number, which only the owner can fetch.
+
+## The update nudge
+
+`app_release_gate` (`minimum_version`, `latest_version`) is read by VersionGateService
+on launch and foreground, and ships dormant at `0.0.0`/`0.0.0`: the nudge has never
+fired for anyone. When a version goes live on the App Store, set `latest_version` to
+that string so existing installs see the nudge. NEVER raise `minimum_version` above a
+build already approved and released; it hard-blocks those installs with no client-side
+recovery.
+
 ## Signing constraints
 
 - Match owns certificates and profiles.
@@ -61,11 +87,15 @@ step logs needed for diagnosis rather than dumping the entire workflow.
 The static site is under `web/` and deploys manually:
 
 ```bash
-cd web && vercel deploy --prod --yes --scope codybisrams-projects
+cd web && vercel --prod --yes
 ```
 
-Verify through the stable alias `web-lilac-nine-70.vercel.app`. Preserve clean URL
-behavior and JSON content type for AASA.
+The directory is linked (`web/.vercel/project.json`), so no scope flag is needed.
+"Ready" only means the build finished, not that the alias moved: verify by fetching the
+changed page through `flim-app.com` and diffing the served bytes against the committed
+file. If `flim-app.com` is unreachable from this machine (a local TLS reset was
+observed once, and not since), verify from an external vantage instead of concluding
+the site is down. Preserve clean URL behavior and JSON content type for AASA.
 
 ## App Store readiness
 

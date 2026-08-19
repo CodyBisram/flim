@@ -15,7 +15,8 @@ Swift 5.9, and Observation.
 ## Scope
 
 You own Swift views, services, models, navigation, haptics, image loading, and tests in
-the iOS target. You do not edit:
+the iOS target, plus the RollActivityWidget extension target and the app-side plumbing
+that feeds it (WidgetSync, WidgetSnapshot, PushDestination routing). You do not edit:
 - `supabase/`;
 - `fastlane/` or `.github/`;
 - signing or capability settings in `project.yml`;
@@ -42,6 +43,37 @@ and deployment order. Stop if that contract is missing or ambiguous.
   zoom, or share uses `storagePath`.
 - TestFlight-only surfaces use `!AppInfo.isAppStore`; DEBUG-only behavior uses
   `#if DEBUG`.
+- PhotoService pages at 30 rows. Never treat `loadedPhotos` or `developedPhotos` as the
+  whole library: count server-side with `count: .exact`, and fetch by id for anything
+  that may be older than one page. This trap has produced three wrong totals and one
+  deep link that silently opened the wrong photo.
+
+## Off-app surfaces (widgets and the Live Activity)
+
+The extension is a second target with different physics. Five device-found bugs in one
+week established these rules, and the simulator catches none of them.
+
+- A file both targets use must be listed as a source on BOTH in `project.yml`
+  (WidgetSnapshot, WidgetTheme, FlimAccentPalette, RollRevealAttributes, RollRevealCard).
+- The extension cannot read the app's UserDefaults. State crosses in the App Group
+  snapshot (widgets) or the ActivityKit ContentState (Live Activity). The accent travels
+  with the data; read it any other way and every tile renders amber.
+- Full-bleed backgrounds belong in `containerBackground`. Widget content is laid out
+  inside system margins, so a gradient or photograph drawn in the view stops short of
+  the corners and reads as an inset square.
+- `.accessoryCircular` is composited as a luminance mask on the Lock Screen; hue is
+  never consulted. States must differ by shape, not color, and badges must sit inside
+  the inscribed circle, never at the bounding box corner.
+- The extension's memory budget is a small fraction of the app's. Decode images through
+  `WidgetImage` (ImageIO, size-capped), never `UIImage(data:)` on a stored file. The
+  app shrinks to 600px before writing to the container; keep both sides.
+- `Text(timerInterval:)` renders H:MM:SS only. A compact "4h 12m" cannot stay live.
+- Every mutation that changes what a widget or the Live Activity shows must say so:
+  `WidgetSync.refresh()` (it coalesces) and `RollLiveActivity` end or sync. A deleted
+  roll once kept counting down on three surfaces because deletion told none of them.
+- `WidgetLink` builds tap URLs and `PushDestination.parse(url:)` reads them across a
+  target boundary. `WidgetLinkRoutingTests` pins them together; extend both sides and
+  the test as a unit. The scheme is `com.lapse.app`, never `flim://`.
 
 ## Workflow
 
@@ -64,7 +96,19 @@ xcodebuild -project Flim.xcodeproj -scheme Flim \
 
 7. Run focused tests when the changed logic has existing test coverage. Leave broader
    simulator and release verification to `sim-verifier`.
-8. Never commit or push.
+8. Before handoff, if the change calls any API you did not write in this task
+   (especially anything in PhotoService, whose trailing `#if DEBUG` block is large),
+   also build Release. Local builds and CI's test job are both Debug; only the
+   TestFlight archive compiles Release, so a debug-only symbol passes every green
+   check and then kills the deploy. It happened; the check is cheap:
+
+```bash
+xcodebuild -project Flim.xcodeproj -scheme Flim -configuration Release \
+  -destination "generic/platform=iOS" -skipPackagePluginValidation \
+  CODE_SIGNING_ALLOWED=NO build 2>&1 | grep -E "error:|BUILD (SUCCEEDED|FAILED)"
+```
+
+9. Never commit or push.
 
 If implementation requires a new table, column, policy, grant, edge-function contract,
 or backend authorization change, stop and hand off to `supabase-guardian`.

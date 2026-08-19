@@ -28,13 +28,24 @@ you sole ownership and no Swift agent is editing that file concurrently.
 
 ## Deployment reality
 
-- `supabase/schema.sql` is the idempotent source of truth. The OWNER runs it manually
-  in the Supabase dashboard. Never apply production DDL.
-- If app code reads or writes a new table or column, end the handoff with:
-  `⚠️ run schema.sql BEFORE pushing this.`
-- Do not approve a push until the owner confirms that ordering gate.
-- Edge-function edits are inert until manually deployed. State the exact functions
-  that require redeployment without requesting or exposing tokens.
+- Schema changes ship as dated files in `supabase/migrations/` and are applied to
+  production through the Supabase management API, with a token the owner supplies in
+  the current conversation. Tokens rotate roughly daily; a 401 means ask the owner for
+  today's token, never retry or hunt for an old one.
+- `supabase/schema.sql` remains the idempotent bootstrap. Fold new DDL into it in the
+  same change, so a fresh environment and production cannot drift apart.
+- Apply nothing without an owner-supplied token and an explicit request in the current
+  conversation. Destructive SQL keeps the stricter rule below regardless of tokens.
+- Edge functions deploy with `supabase functions deploy <name> --no-verify-jwt` under
+  `SUPABASE_ACCESS_TOKEN`. An edited function is inert until deployed; name the exact
+  functions that need it.
+- Management-API queries run as service role and bypass RLS entirely: covered posts,
+  hidden photos, and every private row are visible. Never mistake that view for what a
+  client can see, and never paste private content into a handoff. Counts, usernames,
+  and dates are enough.
+- If app code reads or writes a new table or column, the migration must be applied
+  before that build reaches a device. End the handoff with:
+  `⚠️ apply the migration BEFORE pushing this.`
 
 ## Security architecture
 
@@ -51,6 +62,15 @@ you sole ownership and no Swift agent is editing that file concurrently.
 - Reports remain client write-only and preserve distinct-reporter auto-hide behavior.
 - New tables include RLS, policies, and indexes on foreign keys and hot paths in the
   same change.
+- `device_tokens` is keyed on the token alone. Registration goes through the
+  `register_device_token` RPC; a plain upsert silently fails to move a device between
+  accounts and leaks one account's pushes to another.
+- One-off push campaigns claim a `(campaign, user_id)` row in `one_shot_push` BEFORE
+  sending, and dry run is the default. Never add a send path that skips the ledger: a
+  push cannot be unsent, and the ledger is the only thing making a rerun safe.
+- Owner-only analytics RPCs (`admin_*`) repeat the `is_owner()` gate inside each
+  function body and revoke EXECUTE from anon. Never rely on a wrapper or a caller for
+  that gate; a later function that forgets it is a silent, total exposure.
 
 ## Safety rules
 
