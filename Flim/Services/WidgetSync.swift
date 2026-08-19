@@ -18,10 +18,22 @@ import Supabase
 enum WidgetSync {
     /// Recomputes and writes. Fire-and-forget, like `Usage.log`: a stale widget is never worth
     /// interrupting a capture or delaying a launch for.
+    ///
+    /// Coalesced, because the call sites come in bursts. Sorting a deck marks each photo in turn,
+    /// and one refresh per card would be three queries per swipe to compute a count that is only
+    /// read once the swiping stops. The last call in a burst wins and runs shortly after it.
+    @MainActor
     static func refresh() {
         guard WidgetStore.container != nil else { return }
-        Task.detached(priority: .utility) { await run() }
+        pending?.cancel()
+        pending = Task.detached(priority: .utility) {
+            try? await Task.sleep(for: .milliseconds(700))
+            guard !Task.isCancelled else { return }
+            await run()
+        }
     }
+
+    @MainActor private static var pending: Task<Void, Never>?
 
     /// Every kind this extension publishes that reads the snapshot. Reloading by kind rather than
     /// reloading everything keeps the Live Activity, which is driven by ActivityKit and not by

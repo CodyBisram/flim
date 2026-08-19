@@ -13,6 +13,14 @@ import SwiftUI
 /// and not in the color the person had chosen for the app. All three are in the content state now.
 struct RollRevealLiveActivity: Widget {
 
+    /// The roll this card is about, as a link the app can parse. Falls back to the Rolls-adjacent
+    /// darkroom link if the id is somehow not a UUID, so a tap always lands somewhere real.
+    private func rollURL(_ rollId: String) -> URL? {
+        guard let id = UUID(uuidString: rollId) else { return URL(string: WidgetLink.darkroom) }
+        return URL(string: WidgetLink.reveal(id))
+    }
+
+
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: RollRevealAttributes.self) { context in
             RollRevealCard(rollName: context.attributes.rollName,
@@ -20,6 +28,13 @@ struct RollRevealLiveActivity: Widget {
                            state: context.state)
                 .activityBackgroundTint(.black)
                 .activitySystemActionForegroundColor(.white)
+                // Tapping the card had no destination at all, so it opened the app to whichever
+                // tab was last used — a card about one specific roll that went anywhere but that
+                // roll. `reveal` is the right route rather than a plain rolls list: it opens the
+                // roll itself, and RollDetailView already decides on its own whether a reveal is
+                // owed (once per roll, `rollRevealSeen.<id>`), so a still-developing roll simply
+                // opens.
+                .widgetURL(rollURL(context.attributes.rollId))
         } dynamicIsland: { context in
             let accent = FlimAccentPalette.color(context.state.accent)
             let revealed = RollRevealAttributes.hasRevealed(context.state.revealAt)

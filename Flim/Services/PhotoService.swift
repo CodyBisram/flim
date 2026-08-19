@@ -383,6 +383,11 @@ final class PhotoService {
             // A new frame is the other thing that changes the tile. Fires on every capture, not
             // just the first: `Activation.log` dedupes server-side, this deliberately does not.
             WidgetSync.refresh()
+            // And the lock-screen card, which carries its own shot count. It was only ever
+            // re-synced from the Rolls list, so shooting into a roll left the card reading "no
+            // shots yet" until that tab was next visited — the card is on screen precisely when
+            // the app is not, which is when it is most wrong.
+            if let rollId { await syncRollActivity(rollId: rollId) }
             Usage.log(.photoCaptured)
 
             // The photo is still returned and its renditions still upload: it exists server-side
@@ -1076,7 +1081,11 @@ final class PhotoService {
                 .delete()
                 .eq("id", value: photo.id.uuidString)
                 .execute()
-            await MainActor.run { loadedPhotos.removeAll { $0.id == photo.id } }
+            await MainActor.run {
+                loadedPhotos.removeAll { $0.id == photo.id }
+                // Trashing from the sort deck lowers the tile's count exactly as sorting does.
+                WidgetSync.refresh()
+            }
             return true
         } catch {
             await reportDeleteFailure(error, context: "row delete")
@@ -1111,7 +1120,10 @@ final class PhotoService {
         }
         do {
             try await supabase.from("photos").delete().in("id", values: ids).execute()
-            await MainActor.run { loadedPhotos.removeAll { ids.contains($0.id.uuidString) } }
+            await MainActor.run {
+                loadedPhotos.removeAll { ids.contains($0.id.uuidString) }
+                WidgetSync.refresh()
+            }
             return true
         } catch {
             await reportDeleteFailure(error, context: "batch row delete")
@@ -1372,6 +1384,27 @@ final class PhotoService {
             .execute().count) ?? 0
     }
 
+    /// Pushes a roll's current shot count to its Live Activity, if one is running.
+    ///
+    /// Guarded on a card actually being live, because the count is a round trip and there is no
+    /// reason to pay for it when there is nothing to update. `sync` is itself a no-op when the
+    /// state has not changed, so a burst of captures costs one update, not one per frame.
+    private func syncRollActivity(rollId: UUID) async {
+        guard RollLiveActivity.isRunning(rollId) else { return }
+        struct Row: Decodable { let name: String; let created_at: Date }
+        // Read here rather than taken from RollService: this is reached from a capture, which
+        // does not hold a roll list, and the two fields needed are one narrow row.
+        let rows: [Row] = (try? await supabase
+            .from("rolls").select("name, created_at")
+            .eq("id", value: rollId.uuidString).limit(1)
+            .execute().value) ?? []
+        guard let roll = rows.first else { return }
+        let shots = await rollTotalShotCount(rollId: rollId)
+        RollLiveActivity.sync(rollId: rollId, rollName: roll.name,
+                              revealAt: roll.created_at.addingTimeInterval(Roll.developDelay),
+                              shotCount: shots, developFrom: roll.created_at)
+    }
+
     /// How many shots this user has put into a roll, counted on the SERVER.
     ///
     /// Exists because counting `loadedPhotos` cannot answer this. That array holds one page of
@@ -1451,6 +1484,11 @@ final class PhotoService {
         struct U: Encodable { let is_sorted: Bool }
         _ = try? await supabase.from("photos").update(U(is_sorted: true))
             .eq("id", value: photoId.uuidString).execute()
+        // Sorting is the ONLY thing that lowers the Darkroom tile's count, and it was the one
+        // mutation that never told the widget. The tile kept reporting prints that had already
+        // been dealt with until the app was next opened. `refresh` coalesces, so a whole deck
+        // sorted in a row costs one recompute rather than one per swipe.
+        WidgetSync.refresh()
     }
 
     /// `blockedIds` is the signed-in user's own block list (owned by FeedService, passed in by
