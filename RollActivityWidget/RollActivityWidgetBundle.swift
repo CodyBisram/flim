@@ -1,29 +1,20 @@
 import WidgetKit
 import SwiftUI
 
-/// ⚠️ `LatestFrameWidget` and `ShutterWidget` are built, but deliberately NOT listed here yet.
+/// The extension's widgets: the Live Activity that counts a roll down to its reveal, the
+/// home-screen tile showing your last frame and what it has collected, and the Lock Screen
+/// shutter.
 ///
-/// Both are finished and both compile into this extension. What they need is the App Group
-/// `group.com.flim.app`, created in the developer account and added to the entitlements of BOTH
-/// `com.flim.app` and `com.flim.app.RollActivityWidget`, with both AppStore profiles regenerated
-/// through match. Until that exists, `WidgetStore.container` is nil, every snapshot read returns
-/// nothing, and `LatestFrameWidget` can only ever render "your first frame goes here" — on every
-/// phone, forever. A widget that is permanently empty in the gallery is worse than one that is
-/// not there, and it is the kind of thing people add once and never trust again.
-///
-/// The entitlement is also deliberately not in `project.yml` yet: adding an App Group the match
-/// profiles do not carry would fail signing on the very next Release build, which is a broken
-/// TestFlight for a feature nobody can use.
-///
-/// So when the App Group lands, it is two changes:
-///   1. add the group to both targets' entitlements in project.yml
-///   2. add `LatestFrameWidget()` and `ShutterWidget()` to the body below
-///
-/// Everything else — the tiles, the shared store, the snapshot writer and its call sites, the
-/// `flim://camera` route the shutter taps into — is already in place and already runs.
+/// The two additions here need the App Group `group.com.flim.app` on BOTH `com.flim.app` and
+/// `com.flim.app.RollActivityWidget`, which is declared in project.yml for each. If a build ever
+/// ships without it, `WidgetStore.container` is nil, every snapshot read comes back empty, and
+/// `LatestFrameWidget` renders "your first frame goes here" on every phone regardless of what its
+/// owner has shot. That failure is silent, so it is worth knowing the shape of it.
 @main
 struct RollActivityWidgetBundle: WidgetBundle {
     var body: some Widget {
         RollRevealLiveActivity()
+        LatestFrameWidget()
+        ShutterWidget()
     }
 }

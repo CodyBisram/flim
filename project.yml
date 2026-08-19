@@ -25,6 +25,11 @@ targets:
         # Resolved per build config: development (Debug) / production (Release).
         # Distribution/TestFlight builds require production, so this must vary.
         aps-environment: $(APS_ENVIRONMENT)
+        # Shared container for the home-screen widget. The extension cannot read the app's
+        # sandbox, so the snapshot the widget renders crosses through this group; it must be
+        # present on BOTH targets and must match `WidgetStore.appGroup` exactly.
+        com.apple.security.application-groups:
+          - group.com.flim.app
         # Makes https://flim-app.com/join/CODE open the app directly instead of dead-ending on
         # the web landing page. The AASA at /.well-known/apple-app-site-association is already
         # live and correct (DCU7GHRVUQ.com.flim.app, /join/*), so this entitlement is the last
@@ -106,6 +111,14 @@ targets:
       # What the home-screen widget shows, and the App Group container both sides read it from.
       # Same second-source-entry pattern as the three above.
       - path: Flim/Models/WidgetSnapshot.swift
+    entitlements:
+      path: RollActivityWidget/RollActivityWidget.entitlements
+      properties:
+        # The other half of the shared container. Same group as the app target above; without it
+        # here the extension's own container lookup returns nil and the widget can only ever
+        # render its empty state.
+        com.apple.security.application-groups:
+          - group.com.flim.app
     info:
       path: RollActivityWidget/Info.plist
       properties:
