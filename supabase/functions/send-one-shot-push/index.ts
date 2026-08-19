@@ -42,16 +42,17 @@ const supabase = createClient(
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
 );
 
-/// Accounts younger than this are left alone. Somebody who signed up an hour ago and has not
-/// shot yet is not disengaged, they are mid-onboarding, and a nudge reads as nagging.
-const MIN_ACCOUNT_AGE_HOURS = 24;
-
 /// The campaigns this function knows how to send, by name. A campaign has to be added here to be
 /// sendable, so a typo in the query string cannot invent one and bypass the claim ledger.
 const CAMPAIGNS: Record<string, { title: string; body: string; route: unknown }> = {
   "first-shot": {
-    title: "Your camera is still empty",
-    body: "Take one shot. It develops the moment you do, and nobody sees it until you say so.",
+    title: "Shoot now. See it later.",
+    body: "Take your first frame, and add a few friends so there is someone to show.",
+    // The camera, not the feed. The shot is the ask; the friends line is the reason for it, and
+    // sending someone to a follower list to fix an empty camera is answering a question they did
+    // not ask. Reaching the camera is measurably not the barrier either: of the accounts that
+    // signed up on or after 2026-08-12, twenty of twenty-one reached a camera the app confirmed
+    // was authorized, and eleven shot. Deciding to is the barrier, so land on the decision.
     route: { t: "camera" },
   },
 };
@@ -59,11 +60,14 @@ const CAMPAIGNS: Record<string, { title: string; body: string; route: unknown }>
 // ------------------------------------------------------------
 // Cohort
 
-/// Everyone who has never taken a single photograph, can actually be reached, and has been around
-/// long enough for that to mean something.
+/// Everyone who has never taken a single photograph and can actually be reached.
 ///
 /// "Never shot" is zero rows in `photos`, not zero POSTS: someone with frames sitting unsorted in
 /// their darkroom has taken a photograph and is a different problem entirely.
+///
+/// No minimum account age. Considered and rejected: a brand new account that has not shot yet is
+/// arguably mid-onboarding rather than disengaged, but the userbase is small enough that leaving
+/// people out costs more than the risk of nudging someone early.
 async function cohort(campaign: string): Promise<string[]> {
   // Everyone with a registered device. Registering a token is the opt-in: there is no separate
   // preference column, so nobody else is reachable and nobody else should be considered.
@@ -76,14 +80,7 @@ async function cohort(campaign: string): Promise<string[]> {
     .from("photos").select("user_id").in("user_id", reachable);
   const hasShot = new Set(((shooters ?? []) as { user_id: string }[]).map((r) => r.user_id));
 
-  const cutoff = new Date(Date.now() - MIN_ACCOUNT_AGE_HOURS * 3600_000).toISOString();
-  const { data: profiles } = await supabase
-    .from("profiles").select("id, created_at")
-    .in("id", reachable).lte("created_at", cutoff);
-
-  const eligible = ((profiles ?? []) as { id: string }[])
-    .map((p) => p.id)
-    .filter((id) => !hasShot.has(id));
+  const eligible = reachable.filter((id) => !hasShot.has(id));
 
   // Anyone already claimed by this campaign is out, on every run including the dry one, so the
   // dry run's count is the number that would ACTUALLY be sent rather than the cohort size.
