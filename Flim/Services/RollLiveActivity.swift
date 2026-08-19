@@ -65,6 +65,23 @@ enum RollLiveActivity {
         }
     }
 
+    /// Ends any card whose roll is no longer one of yours.
+    ///
+    /// The safety net for a roll that disappears. `end(rollId:)` is called at the point of a
+    /// delete or a leave, which covers the device that did it — but not a member whose roll was
+    /// deleted by its creator, or a device that was asleep at the time, or a delete that failed
+    /// partway. There is no push lifecycle here to tell them, so the card would count down to a
+    /// reveal that is never coming, on a roll that no longer exists to open.
+    ///
+    /// Called from the Rolls list, which already re-syncs the activities for the rolls that DO
+    /// exist; this is the other half of the same pass, and it costs one set lookup per card.
+    static func reconcile(activeRollIds: [UUID]) {
+        let live = Set(activeRollIds.map(\.uuidString))
+        for activity in Activity<RollRevealAttributes>.activities where !live.contains(activity.attributes.rollId) {
+            Task { await activity.end(nil, dismissalPolicy: .immediate) }
+        }
+    }
+
     /// Whether a card is currently live for this roll. Callers use it to avoid paying for a shot
     /// count they only need when they are about to (re)start one.
     static func isRunning(_ rollId: UUID) -> Bool { running(rollId) != nil }

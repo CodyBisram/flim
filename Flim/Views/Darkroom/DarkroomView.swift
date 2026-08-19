@@ -220,15 +220,7 @@ struct DarkroomView: View {
         // The 60s develop poll only needs to run while this screen is on it.
         .onDisappear { vm.stopRefreshing() }
         .fullScreenCover(item: $selectedPhoto, onDismiss: { openForTagging = false }) { photo in
-            PhotoPagerView(
-                photos: vm.developedPhotos,
-                startIndex: vm.developedPhotos.firstIndex(where: { $0.id == photo.id }) ?? 0,
-                signedURLs: vm.signedURLCache,
-                rollName: { rollName(for: $0) },
-                onDelete: { Task { await reload() } },
-                startTagging: openForTagging
-            )
-            .navigationTransition(.zoom(sourceID: photo.id, in: photoNS))
+            pager(for: photo)
         }
         .fullScreenCover(isPresented: $showSortDeck, onDismiss: { Task { await reload() } }) {
             SortDeckView(onFinish: {})
@@ -557,32 +549,60 @@ struct DarkroomView: View {
         }
     }
 
-    /// Opens a frame a widget asked for, if this Darkroom can see it yet.
+    /// The full-screen pager for a tapped frame.
     ///
-    /// Deliberately does NOT clear the request when the frame is simply not loaded. That was the
-    /// bug: a widget tap sets the id, the Darkroom's `.onChange` fires immediately with an empty
-    /// `developedPhotos` (the first `reload()` is still in flight, and on a cold launch this view
-    /// did not even exist when the id was set), the lookup misses, and clearing there threw the
-    /// request away before the data it needed had arrived. The tap did nothing, every time.
-    ///
-    /// So it is consumed on three triggers — the change, this view appearing, and the end of
-    /// every reload — and only cleared once the library is actually loaded, which is the first
-    /// moment a miss means the frame is genuinely gone rather than merely late.
-    private func openRequestedPhoto() {
-        guard let id = openPhotoId.wrappedValue else { return }
-        if let photo = vm.developedPhotos.first(where: { $0.id == id }) {
-            openPhotoId.wrappedValue = nil
-            selectedPhoto = photo
-            return
-        }
-        // Loaded and still not found: deleted, moderated, or belonging to an account that is no
-        // longer signed in. Leaves a real, populated Darkroom on screen, the same graceful no-op
-        // every other deep link here takes.
-        if !vm.isLoading {
-            openPhotoId.wrappedValue = nil
+    /// Its own function because the body could no longer be type-checked with it inline, and
+    /// because there are two genuinely different cases. A frame opened from the grid pages
+    /// through the whole grid and zooms out of its own cell. A frame opened from a widget need
+    /// not be in the loaded page at all (see `openRequestedPhoto`) — `firstIndex ?? 0` would then
+    /// silently open whatever happens to be newest instead, which is the wrong photograph with
+    /// nothing to indicate it. That one is paged alone and gets no zoom, because there is no cell
+    /// on screen for it to zoom out of.
+    @ViewBuilder
+    private func pager(for photo: Photo) -> some View {
+        let index = vm.developedPhotos.firstIndex(where: { $0.id == photo.id })
+        if let index {
+            PhotoPagerView(photos: vm.developedPhotos,
+                           startIndex: index,
+                           signedURLs: vm.signedURLCache,
+                           rollName: { rollName(for: $0) },
+                           onDelete: { Task { await reload() } },
+                           startTagging: openForTagging)
+                .navigationTransition(.zoom(sourceID: photo.id, in: photoNS))
+        } else {
+            PhotoPagerView(photos: [photo],
+                           startIndex: 0,
+                           signedURLs: vm.signedURLCache,
+                           rollName: { rollName(for: $0) },
+                           onDelete: { Task { await reload() } },
+                           startTagging: openForTagging)
         }
     }
 
+    /// Opens a frame a widget asked for.
+    ///
+    /// Fetches it BY ID rather than looking in `vm.developedPhotos`, and that is the fix rather
+    /// than a refinement. That array is one page of `is_sorted = true` photos, thirty at a time,
+    /// newest first — so a frame from a month ago is essentially never in it, which is exactly
+    /// the horizon the look-back tile is built to surface. Every tap on an older memory searched
+    /// a list that could not contain it and quietly did nothing.
+    ///
+    /// The pager takes a single photo here, the same way the widget-less deep links in `FlimApp`
+    /// present one. A frame that is gone (deleted, moderated, or belonging to an account no
+    /// longer signed in) comes back nil and leaves a real, populated Darkroom on screen, which is
+    /// the graceful no-op every other deep link here takes.
+    private func openRequestedPhoto() {
+        guard let id = openPhotoId.wrappedValue else { return }
+        openPhotoId.wrappedValue = nil
+        if let loaded = vm.developedPhotos.first(where: { $0.id == id }) {
+            selectedPhoto = loaded          // already on screen: no round trip, keeps the zoom transition
+            return
+        }
+        Task {
+            guard let photo = await photoService.fetchPhoto(id: id) else { return }
+            await MainActor.run { selectedPhoto = photo }
+        }
+    }
 
     private func reload() async {
         guard let userId = auth.currentUser?.id else { return }

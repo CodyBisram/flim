@@ -58,6 +58,9 @@ final class RollService {
         // want to navigate to it. Only the shared list is left alone.
         guard AccountEpoch.isCurrent(epoch) else { return roll }
         rolls.insert(roll, at: 0)
+        // A brand new roll is developing from this second, and the widget and shutter are the two
+        // surfaces most likely to be looked at before the app is opened again.
+        WidgetSync.refresh()
         return roll
     }
 
@@ -79,6 +82,8 @@ final class RollService {
             if !rolls.contains(where: { $0.id == roll.id }) {
                 rolls.append(roll)
             }
+            // Same reason as createRoll: joining is the other way a countdown starts existing.
+            WidgetSync.refresh()
             return roll
         } catch {
             // Map the function's RAISE EXCEPTION messages to friendly errors.
@@ -296,17 +301,28 @@ final class RollService {
             .delete()
             .eq("id", value: rollId.uuidString)
             .execute()
-        rolls.removeAll { $0.id == rollId }
-        memberCounts[rollId] = nil
-        coverPaths[rollId] = nil
+        forget(rollId)
     }
 
     /// The current user leaves a roll, drops their membership and removes it locally.
     func leaveRoll(rollId: UUID, userId: UUID) async throws {
         try await removeMember(rollId: rollId, userId: userId)
+        forget(rollId)
+    }
+
+    /// Drops every trace of a roll this account no longer has, including the ones OUTSIDE the app.
+    ///
+    /// The off-app surfaces are the part that used to be missed. A roll's lock-screen card and
+    /// its countdown on the home-screen tile and the shutter all outlive the roll itself unless
+    /// something ends them: the widget snapshot is only rewritten on app open, a capture, or a
+    /// post, and none of those is "you deleted a roll". So a deleted roll kept counting down on
+    /// three surfaces at once until the app happened to be relaunched.
+    private func forget(_ rollId: UUID) {
         rolls.removeAll { $0.id == rollId }
         memberCounts[rollId] = nil
         coverPaths[rollId] = nil
+        RollLiveActivity.end(rollId: rollId)
+        WidgetSync.refresh()
     }
 
     /// Removes a member from a roll. RLS allows this only for the member themselves

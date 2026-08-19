@@ -125,6 +125,11 @@ struct RollsView: View {
     /// that already makes several round trips, and `sync` itself is a no-op when the state is
     /// unchanged.
     private func refreshLiveActivities(userId: UUID) async {
+        // First the other half of the pass: end cards for rolls that are no longer ours. A roll
+        // deleted by its creator, or left on another device, leaves a card counting down to a
+        // reveal that is never coming — and this list is the one place that reliably knows the
+        // current set.
+        RollLiveActivity.reconcile(activeRollIds: rolls.rolls.map(\.id))
         let candidates = RollLiveActivity.rollsNeedingActivity(rolls.rolls, revealAt: \.revealAt)
         for roll in candidates {
             let shots = await photos.rollTotalShotCount(rollId: roll.id)

@@ -160,3 +160,36 @@ struct WidgetSnapshotTests {
         #expect(snapshot(memories: memories).imageNames == ["frame-0.jpg", "frame-1.jpg", "frame-2.jpg"])
     }
 }
+
+
+/// The lock-screen card's copy, which is the part of it that can be tested at all: a Live Activity
+/// needs a real roll on a real device with the phone locked, so its layout was historically
+/// written blind and checked in production.
+struct RollRevealCardCopyTests {
+
+    private func state(shots: Int, revealsIn: TimeInterval) -> RollRevealAttributes.ContentState {
+        RollRevealAttributes.ContentState(shotCount: shots,
+                                          revealAt: Date().addingTimeInterval(revealsIn),
+                                          developFrom: Date().addingTimeInterval(revealsIn - 12 * 3600),
+                                          accent: "violet")
+    }
+
+    @Test("a developing roll says so, and says what is in it")
+    func developingSubtitle() {
+        let line = RollRevealCard.subtitle(state: state(shots: 0, revealsIn: 6 * 3600), revealed: false)
+        #expect(line == "Developing \u{00B7} no shots yet")
+    }
+
+    @Test("the shot count survives the prefix and keeps its own capitalisation")
+    func shotCountSubtitle() {
+        let line = RollRevealCard.subtitle(state: state(shots: 9, revealsIn: 6 * 3600), revealed: false)
+        #expect(line == "Developing \u{00B7} 9 shots so far")
+    }
+
+    @Test("a revealed roll drops the prefix, because it is not developing any more")
+    func revealedSubtitle() {
+        let line = RollRevealCard.subtitle(state: state(shots: 4, revealsIn: -60), revealed: true)
+        #expect(!line.contains("Developing"))
+        #expect(line == "Tap to reveal")
+    }
+}

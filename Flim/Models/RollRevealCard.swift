@@ -28,26 +28,25 @@ struct RollRevealCard: View {
         HStack(spacing: 11) {
             cover
             VStack(alignment: .leading, spacing: 1) {
-                // Two Texts, not one interpolated string. "Summer road trip is developing" does
-                // not fit, and as a single Text the tail is what gets cut — so the card said
-                // "Summer road trip is develo…" and dropped the only word carrying the state.
-                // Split, the NAME truncates and the state always survives.
-                HStack(spacing: 0) {
-                    Text(rollName)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                        .layoutPriority(0)
-                    Text(revealed ? " is ready" : " is developing")
-                        .fixedSize()
-                        .layoutPriority(1)
-                }
+                // The name gets the whole line, and the state moves down to the second one.
+                //
+                // The mock reads "Roommates 🏠 is developing" on one line, which works for a
+                // short name and does not survive a real one: between a 38pt cover and a
+                // countdown, "Summer road trip is developing" had room for "Summer…". Splitting
+                // the Text kept the state visible but spent the name to do it. Given the two
+                // lines already there, the fix is to use them — the name is the thing being
+                // identified, so it gets the line, and "Developing" joins the shot count below,
+                // where there is room for both.
+                Text(rollName)
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(.white)
-                Text(RollRevealAttributes.statusLabel(shotCount: state.shotCount,
-                                                      revealAt: state.revealAt, now: now))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+                Text(RollRevealCard.subtitle(state: state, revealed: revealed, now: now))
                     .font(.system(size: 11.5))
                     .foregroundStyle(WidgetTheme.textSecondary)
                     .lineLimit(1)
+                    .minimumScaleFactor(0.85)
             }
 
             Spacer(minLength: 6)
@@ -110,6 +109,18 @@ struct RollRevealCard: View {
                                                        to: state.revealAt, now: now))
     }
 
+    /// The second line: what is happening, and how much is in it.
+    ///
+    /// `statusLabel` alone said "No shots yet", which is true and does not say the roll is
+    /// developing — the word the mock puts on the first line. Prefixed here it costs nothing,
+    /// because this line had room and the first line did not.
+    static func subtitle(state: RollRevealAttributes.ContentState,
+                         revealed: Bool, now: Date = .now) -> String {
+        let status = RollRevealAttributes.statusLabel(shotCount: state.shotCount,
+                                                      revealAt: state.revealAt, now: now)
+        return revealed ? status : "Developing \u{00B7} " + status.lowercasedFirst
+    }
+
     // MARK: - Pieces, shared with the Dynamic Island presentations
 
     /// Filmic rather than a kitchen timer, and it changes at the moment the roll is ready, so the
@@ -154,5 +165,15 @@ struct RollRevealCard: View {
             .tint(accent)
             .frame(height: 3)
         }
+    }
+}
+
+
+private extension String {
+    /// Lowercases only the first character, so "No shots yet" reads correctly after a separator
+    /// while "12 shots so far" and any name inside it are left alone.
+    var lowercasedFirst: String {
+        guard let first else { return self }
+        return first.lowercased() + dropFirst()
     }
 }
