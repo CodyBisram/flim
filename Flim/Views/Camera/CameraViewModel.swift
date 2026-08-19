@@ -85,6 +85,11 @@ final class CameraViewModel: NSObject {
     /// mode the other activation events avoid by leaning on server-side dedupe in the first
     /// place.
     private var hasLoggedCameraAuthorized = false
+    /// Same once-per-process guards as `hasLoggedCameraAuthorized`. The server dedupes these
+    /// anyway (activation_events is uniquely indexed on user and event), so these only exist to
+    /// keep a tab cycle or a burst of shots from making a round trip each time.
+    private var hasLoggedCameraReady = false
+    private var hasLoggedShutterTapped = false
 
     /// Which camera is active. Front has no hardware LED, but `isFlashSupported` below still
     /// shows the flash toggle for it: `output.supportedFlashModes` includes `.on` for the front
@@ -558,6 +563,17 @@ final class CameraViewModel: NSObject {
         guard !session.isRunning else { return }
         Task.detached(priority: .userInitiated) { [weak self] in
             self?.session.startRunning()
+            // Logged after the call returns and only if the session really is running, which is
+            // the closest honest signal available for "there are frames on screen" without adding
+            // a video data output purely to observe one. Authorization is not this: the funnel
+            // shows 20 of 21 recent accounts authorized and only 11 shooting, and a camera that
+            // never actually started is one of the three explanations for that gap.
+            guard let self, self.session.isRunning else { return }
+            await MainActor.run {
+                guard !self.hasLoggedCameraReady else { return }
+                self.hasLoggedCameraReady = true
+                Activation.log(.cameraReady)
+            }
         }
     }
 
@@ -576,6 +592,13 @@ final class CameraViewModel: NSObject {
     @MainActor
     func capturePhoto() {
         guard !isCapturing else { return }
+        // Before anything can fail. The whole point is to count the ATTEMPT: if this lands near
+        // the number of people with a ready camera while `firstShot` stays far below it, captures
+        // are breaking, which is a different bug from anybody deciding not to shoot.
+        if !hasLoggedShutterTapped {
+            hasLoggedShutterTapped = true
+            Activation.log(.shutterTapped)
+        }
         isCapturing = true
         captureGeneration += 1
         let generation = captureGeneration

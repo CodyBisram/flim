@@ -29,6 +29,15 @@ enum ActivationEvent: String {
     /// `firstShot`, distinguishing a permission denial from someone who reached a working camera
     /// and simply never shot.
     case cameraAuthorized = "camera_authorized"
+    /// Fires when the capture session is actually RUNNING, which is not the same as being
+    /// authorized. A black viewfinder on an authorized camera is a bug this app has genuinely
+    /// shipped before, and `cameraAuthorized` cannot tell that apart from a working camera
+    /// somebody walked away from.
+    case cameraReady = "camera_ready"
+    /// Fires the first time someone actually presses the shutter, whatever happens next. Sitting
+    /// between `cameraReady` and `firstShot`, it separates "never tried" from "tried and the
+    /// capture failed", which look identical from the funnel today and want opposite fixes.
+    case shutterTapped = "shutter_tapped"
 }
 
 /// Fire-and-forget activation instrumentation. `log_activation_event` is safe to call this
