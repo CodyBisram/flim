@@ -1665,6 +1665,28 @@ final class PhotoService {
 
 // MARK: - Failed upload record
 
+/// Fetches a single photo by id.
+///
+/// Was DEBUG-only, for a screenshot launch argument. The look-back widget needs it in every
+/// build: a widget tap names a photo that is very often outside the Darkroom's loaded page, so
+/// there is nothing to look it up in and it has to be fetched.
+///
+/// RLS on `photos` already gates this to owner / roll-member / shared-to-feed, so an id from
+/// anywhere cannot widen what an account can see. Returns nil — a graceful no-op — when the photo
+/// does not exist or is not visible to this session.
+extension PhotoService {
+    func fetchPhoto(id: UUID) async -> Photo? {
+        let rows: [Photo] = (try? await supabase
+            .from("photos")
+            .select()
+            .eq("id", value: id.uuidString)
+            .limit(1)
+            .execute()
+            .value) ?? []
+        return rows.first
+    }
+}
+
 #if DEBUG
 import UIKit
 
@@ -1701,20 +1723,6 @@ extension PhotoService {
             }
         }
         print("[seed] done, userId=\(userId)")
-    }
-
-    /// DEBUG-only: fetches a single photo by id for the `-openPhotoFullscreen` launch-arg
-    /// screenshot flow. RLS on `photos` already gates this to owner/roll-member/shared-to-feed, 
-    /// returns nil (graceful no-op) if the photo doesn't exist or isn't visible to this account.
-    func fetchPhoto(id: UUID) async -> Photo? {
-        let rows: [Photo] = (try? await supabase
-            .from("photos")
-            .select()
-            .eq("id", value: id.uuidString)
-            .limit(1)
-            .execute()
-            .value) ?? []
-        return rows.first
     }
 
     private static func makeDemoImage(seed: Int) -> Data? {
