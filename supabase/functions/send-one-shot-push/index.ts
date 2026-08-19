@@ -46,13 +46,30 @@ const supabase = createClient(
 /// sendable, so a typo in the query string cannot invent one and bypass the claim ledger.
 const CAMPAIGNS: Record<string, { title: string; body: string; route: unknown }> = {
   "first-shot": {
-    title: "Shoot now. See it later.",
-    body: "Take your first frame, and add a few friends so there is someone to show.",
-    // The camera, not the feed. The shot is the ask; the friends line is the reason for it, and
-    // sending someone to a follower list to fix an empty camera is answering a question they did
-    // not ask. Reaching the camera is measurably not the barrier either: of the accounts that
-    // signed up on or after 2026-08-12, twenty of twenty-one reached a camera the app confirmed
-    // was authorized, and eleven shot. Deciding to is the barrier, so land on the decision.
+    title: "Take a shot.",
+    body: "One frame, right now. It develops the moment you take it, and nobody sees it until you say so.",
+    // One ask, and it is the one the cohort has never done.
+    //
+    // Two other angles were measured and dropped. "Add some friends" is wrong for most of them:
+    // four of the six follow between five and thirteen people and have seventeen to two hundred
+    // and fifty posts from those follows in the last fortnight, so they are neither isolated nor
+    // short of things to look at. "Start a roll" tracks the sharpest correlation in the funnel
+    // (fifteen of fifteen roll members have shot, against nineteen of thirty-three outside one)
+    // but thirty-three accounts have no roll and only six are being contacted, so it would be
+    // saying something about them that is true of most of the userbase.
+    //
+    // Direct, and not shouted. All caps was the ask and is the wrong instrument here: these are
+    // by definition the least engaged people on the platform, so they are the likeliest to answer
+    // a notification that reads as spam by turning notifications off, which costs the reveal
+    // alerts that are the whole point.
+    //
+    // The body removes the objection that is left once neither of those applies: effort, and
+    // exposure. A personal frame develops instantly and sits in the sort deck until its owner
+    // publishes it, so both halves of that sentence are literally true.
+    //
+    // Lands on the camera. Reaching it is measurably not the barrier: of the accounts that signed
+    // up on or after 2026-08-12, twenty of twenty-one reached a camera the app confirmed was
+    // authorized and eleven shot. Deciding to is the barrier, so land on the decision.
     route: { t: "camera" },
   },
 };
