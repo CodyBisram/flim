@@ -427,4 +427,58 @@ struct LookEncoderSweep {
             }
         }
     }
+
+    /// JPEG qualities to try, for the question the HEIC sweep above does not answer: how far the
+    /// quality dial itself can be turned down before the look moves. Spaced tightly from 0.70 to
+    /// the shipping numbers, because that is the range where a real saving is still plausible,
+    /// and taken down to 0.55 so the far end of the curve is on the record rather than assumed.
+    static let jpegQualities: [CGFloat] = [0.55, 0.60, 0.65, 0.70, 0.72, 0.75, 0.78, 0.80, 0.85, 0.90]
+
+    /// The encoder sweep's other half: what a change of QUALITY costs the look, and what it buys.
+    ///
+    /// Egress is the gate on opening the invite list, the feed card is the most-fetched object in
+    /// the app, and the card cannot be made smaller in PIXELS: it is full-bleed and 3:4, so a
+    /// 440pt phone at 3x needs a 1760px long edge and is already being served 1400. Dimensions are
+    /// spent. Quality is the only dial left, and this measures it the same way the codec question
+    /// was measured, against the pin rather than against an opinion.
+    ///
+    /// Same method as `sweep`: grade once, feed identical pixels to every candidate, and judge
+    /// each tier against what ships today (the committed baseline at `full`, the shipping-JPEG
+    /// row measured in this same run at `feed` and `thumb`).
+    @Test("encoder sweep: JPEG quality against the shipping look",
+          .enabled(if: isSweeping), arguments: scenes)
+    func jpegQualitySweep(_ scene: String) throws {
+        let data = try #require(Self.sourceData(scene))
+        let graded = try #require(InstantFilmProcessor.gradedPixels(data, stock: .original))
+        let masterSpec = InstantFilmProcessor.EncodeSpec(format: .jpeg, quality: 0.85)
+        let master = try #require(InstantFilmProcessor.encodeImage(graded, masterSpec))
+
+        for tier in Self.tiers {
+            let shippingSpec = InstantFilmProcessor.EncodeSpec(format: .jpeg,
+                                                              quality: tier.shippingQuality)
+            let reference: InstantFilmProcessor.EncodedImage
+            if let edge = tier.longEdge {
+                reference = try #require(InstantFilmProcessor.rendition(
+                    from: master.data, longEdge: edge, encoding: shippingSpec))
+            } else {
+                reference = try #require(InstantFilmProcessor.encodeImage(graded, shippingSpec))
+            }
+            let referenceStats = try #require(LookMeasure.stats(ofJPEG: reference.data))
+
+            for quality in Self.jpegQualities {
+                let spec = InstantFilmProcessor.EncodeSpec(format: .jpeg, quality: quality)
+                let encoded: InstantFilmProcessor.EncodedImage
+                if let edge = tier.longEdge {
+                    encoded = try #require(InstantFilmProcessor.rendition(
+                        from: master.data, longEdge: edge, encoding: spec))
+                } else {
+                    encoded = try #require(InstantFilmProcessor.encodeImage(graded, spec))
+                }
+                let stats = try #require(LookMeasure.stats(ofJPEG: encoded.data))
+                let against = (tier.name == "full" ? Self.baseline(scene) : nil) ?? referenceStats
+                Self.report(scene, tier.name, "jpegq", quality,
+                            bytes: encoded.data.count, stats: stats, reference: against)
+            }
+        }
+    }
 }

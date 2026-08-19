@@ -84,7 +84,28 @@ enum InstantFilmProcessor {
     /// The feed card (1400px), the rendition users actually look at, so its grain matters most
     /// perceptually. HEIC's best showing here was 9/11 scenes, and only at qualities 23% to 139%
     /// LARGER than this.
-    static let feedEncoding = EncodeSpec(format: .jpeg, quality: 0.82)
+    ///
+    /// 0.79, down from 0.82, and it is a floor found by TWO measurements that disagreed.
+    ///
+    /// `LookEncoderSweep`'s JPEG pass walks every pinned scene down the dial and says 0.78: the
+    /// last quality where all eleven scenes land inside tolerance, with real margin (worst scene
+    /// at 0.55 of the allowance), where 0.75 breaks one outright at 1.34.
+    ///
+    /// But `PhotoServiceGradedRenditionTests` fails at 0.78, and it is measuring something the
+    /// sweep cannot see. Renditions are encoded from the GRADED pixels rather than re-encoded from
+    /// the already-lossy master, specifically because one JPEG generation keeps more grain than
+    /// two; that test pins the advantage by checking the single-generation card drifts less from a
+    /// near-lossless reference than the two-generation one. At 0.78 it inverts. The compression is
+    /// then smoothing enough grain on its own that the architecture's own reason for existing
+    /// stops being measurable, which is a bad place to ship from even though the look pin passes.
+    ///
+    /// 0.79 satisfies both, and is worth about 4% of the most-fetched object in the app.
+    ///
+    /// Note what this is NOT: the card cannot be made smaller in PIXELS. It is full-bleed and 3:4,
+    /// so a 440pt phone at 3x needs a 1760px long edge and is already served 1400, and every phone
+    /// above the SE is in the same position. Shrinking the long edge would soften every portrait
+    /// in the feed. The dial was the only thing left, and this is the end of it.
+    static let feedEncoding = EncodeSpec(format: .jpeg, quality: 0.79)
 
     /// The grid thumbnail (500px). Grain is barely resolvable at a 128pt grid cell, so this was
     /// the tier most likely to tolerate HEIC, and it is the one that tolerated it least: 0/11

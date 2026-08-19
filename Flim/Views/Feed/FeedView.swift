@@ -10,6 +10,10 @@ struct FeedView: View {
     @Environment(\.displayScale) private var displayScale
     @Environment(\.scenePhase) private var scenePhase
 
+    /// How far into `feed.feed` the prefetch window currently reaches. Reset with the feed
+    /// itself: a pull-to-refresh replaces the list, so a cursor into the old one would skip
+    /// warming the new top.
+    @State private var prefetchedThrough = 0
     @State private var showDiscover = false
     @State private var showActivity = false
     @State private var myAvatarURL: URL?
@@ -60,6 +64,7 @@ struct FeedView: View {
                                 Color.clear.frame(height: 0).id("top")
                                 ForEach(feed.feed) { item in
                                     FeedPostCard(item: item)
+                                        .onAppear { advancePrefetch(reaching: item.id) }
                                         .scrollTransition { content, phase in
                                             content
                                                 .opacity(phase.isIdentity ? 1 : 0.55)
@@ -374,6 +379,10 @@ struct FeedView: View {
         // only ever earned server-side (a roll developing, an invite landing), so "every time you
         // come back to Feed" is as often as it's worth asking.
         await feed.refreshUnseenBadgeCount()
+        // Reset before warming: a refresh can replace the list, and a cursor left pointing into
+        // the old one would sit past the end of the new feed and stop `advancePrefetch` from ever
+        // extending the window again.
+        prefetchedThrough = 0
         await prefetchFeedImages()
     }
 
@@ -388,17 +397,43 @@ struct FeedView: View {
     ///
     /// This used to prefetch `feed.feed` entire on every page load, so five pages queued 15 then
     /// 30 then 45 then 60 then 75 items: 225 lookups to warm 75 cards. It was never re-downloading
-    /// (both the image fetch and the signed URLs are cache-backed), so this is redundant work
-    /// rather than redundant bytes — but it grows quadratically with how far someone scrolls, and
-    /// it is the one place in the feed that does.
+    /// (both the image fetch and the signed URLs are cache-backed), so that was redundant work
+    /// rather than redundant bytes — but it grew quadratically with how far someone scrolled.
+    ///
+    /// It is now WINDOWED, and that part is about real bytes. A page is 15 cards and a card
+    /// averages 383 kB, so warming a whole page spent 5.7 MB before anyone had scrolled past the
+    /// first post. Measured against the egress allowance that gates opening the invite list, that
+    /// is roughly 875 cold feed opens a month for the entire user base. Six ahead costs 2.3 MB and
+    /// is still more than a screen of runway, since a full-bleed 3:4 card means barely more than
+    /// one is ever visible at once.
+    ///
+    /// Nothing is lost when someone scrolls past the window: `CachedImage` fetches its own URL on
+    /// appear regardless, so the prefetch only ever bought a head start. `advancePrefetch` extends
+    /// the window as they go, so a fast scroller keeps the same runway without a cold feed open
+    /// paying for cards nobody reaches.
     private func prefetchFeedImages(from startIndex: Int = 0) async {
-        let paths = feed.feed.dropFirst(startIndex).map(\.post.cardPath)
+        let paths = feed.feed.dropFirst(startIndex).prefix(Self.prefetchWindow).map(\.post.cardPath)
         guard !paths.isEmpty else { return }
+        prefetchedThrough = max(prefetchedThrough, startIndex + paths.count)
         let urls = await feed.signedURLs(for: Array(Set(paths)))
         let items = paths.compactMap { path -> (url: URL, cacheKey: String?)? in
             urls[path].map { ($0, path) }
         }
         ImageLoader.prefetch(items, maxPixel: 1400, scale: displayScale)
+    }
+
+    /// How many cards ahead to warm. Six rather than a page: only about one full-bleed card is
+    /// on screen at a time, so this is five screens of runway, and every one beyond it that goes
+    /// unread is 383 kB bought for nothing.
+    private static let prefetchWindow = 6
+
+    /// Extends the warm window as someone scrolls, so the runway follows them instead of being
+    /// bought all at once up front. Fires two cards before the edge, which is far enough ahead
+    /// that the fetch has landed by the time the card is on screen.
+    private func advancePrefetch(reaching id: FeedItem.ID) {
+        guard let index = feed.feed.firstIndex(where: { $0.id == id }) else { return }
+        guard index >= prefetchedThrough - 2, prefetchedThrough < feed.feed.count else { return }
+        Task { await prefetchFeedImages(from: prefetchedThrough) }
     }
 
     private func checkNewPosts() async {
