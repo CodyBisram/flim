@@ -53,14 +53,19 @@ struct LatestFrameProvider: TimelineProvider {
     /// if the app has not run in a while. A developing roll asks for a tighter one, because its
     /// countdown is the only thing on screen that has to be right to the minute.
     func getTimeline(in context: Context, completion: @escaping (Timeline<LatestFrameEntry>) -> Void) {
-        let entry = entry()
-        let next: Date
-        if case .developing(_, let revealAt) = entry.snapshot.state {
-            next = min(revealAt, Date().addingTimeInterval(15 * 60))
-        } else {
-            next = Date().addingTimeInterval(60 * 60)
+        let now = Date()
+        let snapshot = WidgetStore.read() ?? .empty
+        // A developing roll does not rotate: it has a deadline, and cycling away from a countdown
+        // to show a photograph is losing the one thing on screen that is time-critical.
+        if case .developing(_, let revealAt) = snapshot.state {
+            let next = min(revealAt, now.addingTimeInterval(15 * 60))
+            completion(Timeline(entries: [entry()], policy: .after(next)))
+            return
         }
-        completion(Timeline(entries: [entry], policy: .after(next)))
+        let entries = rotating(snapshot, from: now)
+        let next = entries.last.map { $0.date.addingTimeInterval(Self.rotation) }
+            ?? now.addingTimeInterval(60 * 60)
+        completion(Timeline(entries: entries, policy: .after(next)))
     }
 
     private func entry() -> LatestFrameEntry {
@@ -68,6 +73,24 @@ struct LatestFrameProvider: TimelineProvider {
         let image = snapshot.imageName.flatMap { WidgetStore.image(named: $0) }
         return LatestFrameEntry(date: .now, snapshot: snapshot, image: image)
     }
+
+    /// One entry per stored frame, spaced apart, so the tile cycles through recent work instead of
+    /// showing one photograph until its owner next shoots. WidgetKit renders these ahead of time
+    /// from a single wake, so a rotation costs no more refresh budget than a static tile: the
+    /// entries are prepared once and swapped by the system on schedule.
+    private func rotating(_ snapshot: WidgetSnapshot, from start: Date) -> [LatestFrameEntry] {
+        let names = snapshot.imageNames
+        guard names.count > 1 else { return [entry()] }
+        return names.enumerated().map { index, name in
+            LatestFrameEntry(date: start.addingTimeInterval(Double(index) * Self.rotation),
+                             snapshot: snapshot,
+                             image: WidgetStore.image(named: name))
+        }
+    }
+
+    /// Twenty minutes a frame. Long enough that the tile is not busy, short enough that five
+    /// frames are a couple of hours of variety rather than a day of it.
+    private static let rotation: TimeInterval = 20 * 60
 }
 
 // MARK: - The tile
@@ -76,10 +99,11 @@ struct LatestFrameView: View {
     let entry: LatestFrameEntry
     @Environment(\.widgetFamily) private var family
 
-    private var accent: Color {
-        FlimAccentPalette.color(UserDefaults(suiteName: WidgetStore.appGroup)?
-            .string(forKey: "accentColor") ?? FlimAccentPalette.fallback)
-    }
+    /// From the snapshot, not from any UserDefaults. The extension cannot see the app's standard
+    /// defaults, and the App Group suite this used to read is written by nothing, so every tile
+    /// rendered in the fallback amber no matter what its owner had chosen. Same fix the Live
+    /// Activity already had: the accent travels with the data.
+    private var accent: Color { FlimAccentPalette.color(entry.snapshot.accent) }
 
     var body: some View {
         switch entry.snapshot.state {
@@ -108,11 +132,48 @@ struct LatestFrameView: View {
     }
 }
 
-/// The photograph, bled to every edge, with a scrim only under the text.
+/// FLIM's grain, rebuilt small enough to live in a widget.
 ///
-/// The scrim is a two-stop gradient over the bottom third rather than a flat overlay across the
-/// whole tile: a uniform scrim dims the picture to make room for six characters, which is the
-/// wrong trade when the picture is the product.
+/// The app's own `GrainOverlay` sits in `PhotoGridCell.swift`, which drags half the Darkroom in
+/// with it, so this is a local twin rather than a shared file: one pre-rendered noise tile,
+/// screen-blended, generated once per process. Grain is the single cheapest thing that makes a
+/// rectangle read as FLIM rather than as any photo app's widget.
+private struct WidgetGrain: View {
+    var body: some View {
+        Image(uiImage: Self.tile)
+            .resizable(resizingMode: .tile)
+            .blendMode(.screen)
+            .opacity(0.5)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
+
+    private static let tile: UIImage = {
+        let side: CGFloat = 120
+        let format = UIGraphicsImageRendererFormat()
+        format.opaque = false
+        return UIGraphicsImageRenderer(size: CGSize(width: side, height: side), format: format).image { ctx in
+            for _ in 0..<Int(side * side / 90) {
+                let alpha = CGFloat.random(in: 0.02...0.10)
+                ctx.cgContext.setFillColor(UIColor(white: 1, alpha: alpha).cgColor)
+                ctx.cgContext.fill(CGRect(x: .random(in: 0..<side), y: .random(in: 0..<side),
+                                          width: 1, height: 1))
+            }
+        }
+    }()
+}
+
+/// The photograph.
+///
+/// SMALL bleeds to every edge with a scrim only under the text: a uniform scrim dims the picture
+/// to make room for six characters, which is the wrong trade when the picture is the product.
+///
+/// MEDIUM does NOT bleed, and that is the fix for what it looked like first. Every FLIM frame is
+/// 3:4 portrait and the medium family is roughly 2:1 landscape, so filling it threw away about
+/// three quarters of the image height and left a letterboxed strip that read as a bug. It is a
+/// print on a shelf instead: the frame at its true aspect on the left, in a paper-white border,
+/// with what happened to it set beside it. The wasted space stops being wasted once it is holding
+/// something.
 private struct FrameTile: View {
     let image: Data?
     let accent: Color
@@ -121,73 +182,140 @@ private struct FrameTile: View {
     let family: WidgetFamily
 
     var body: some View {
-        ZStack(alignment: .bottomLeading) {
-            if let image, let ui = UIImage(data: image) {
-                Image(uiImage: ui)
-                    .resizable()
-                    .scaledToFill()
-            } else {
-                // A frame whose bytes did not survive, which is not the same as having no frames.
-                // Kept quiet rather than apologetic: the tile still reads as a print.
-                Rectangle().fill(Color(white: 0.10))
-            }
-
-            LinearGradient(colors: [.clear, .black.opacity(0.75)],
-                           startPoint: .center, endPoint: .bottom)
-
-            HStack(alignment: .bottom, spacing: 6) {
-                ForEach(reactions.prefix(family == .systemSmall ? 2 : 4), id: \.emoji) { r in
-                    HStack(spacing: 3) {
-                        Text(r.emoji).font(.system(size: 12))
-                        Text("\(r.count)")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(.white)
-                            .monospacedDigit()
-                    }
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 3)
-                    .background(.black.opacity(0.35), in: Capsule())
-                }
+        if family == .systemMedium {
+            HStack(spacing: 14) {
+                print
+                    .aspectRatio(3.0 / 4.0, contentMode: .fit)
+                details
                 Spacer(minLength: 0)
-                Text(caption)
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.75))
             }
-            .padding(10)
+            .padding(14)
+        } else {
+            ZStack(alignment: .bottomLeading) {
+                photograph.scaledToFill()
+                WidgetGrain()
+                LinearGradient(colors: [.clear, .black.opacity(0.75)],
+                               startPoint: .center, endPoint: .bottom)
+                HStack(alignment: .bottom, spacing: 6) {
+                    ForEach(reactions.prefix(2), id: \.emoji) { chip($0) }
+                    Spacer(minLength: 0)
+                    Text(caption)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.75))
+                }
+                .padding(10)
+            }
+            .clipped()
         }
-        .clipped()
+    }
+
+    /// The frame as a print: a hairline paper border, which is what separates "a photograph" from
+    /// "an image filling a box" at this size.
+    private var print: some View {
+        photograph
+            .scaledToFill()
+            .overlay { WidgetGrain() }
+            .clipShape(RoundedRectangle(cornerRadius: 3))
+            .overlay {
+                RoundedRectangle(cornerRadius: 3)
+                    .strokeBorder(.white.opacity(0.18), lineWidth: 0.5)
+            }
+    }
+
+    private var details: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(caption.uppercased())
+                .font(.system(size: 9, weight: .semibold))
+                .tracking(1.4)
+                .foregroundStyle(accent)
+                .lineLimit(1)
+            if reactions.isEmpty {
+                Text("No reactions yet")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.white.opacity(0.45))
+            } else {
+                VStack(alignment: .leading, spacing: 5) {
+                    ForEach(reactions.prefix(4), id: \.emoji) { chip($0) }
+                }
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    @ViewBuilder
+    private func chip(_ r: WidgetSnapshot.ReactionCount) -> some View {
+        HStack(spacing: 3) {
+            Text(r.emoji).font(.system(size: 12))
+            Text("\(r.count)")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.white)
+                .monospacedDigit()
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 3)
+        .background(.black.opacity(0.35), in: Capsule())
+    }
+
+    @ViewBuilder
+    private var photograph: some View {
+        if let image, let ui = UIImage(data: image) {
+            Image(uiImage: ui).resizable()
+        } else {
+            // A frame whose bytes did not survive, which is not the same as having no frames.
+            // Kept quiet rather than apologetic: the tile still reads as a print.
+            Rectangle().fill(Color(white: 0.10))
+        }
     }
 }
 
 /// The countdown, for the rare and good day when something is developing.
+///
+/// The hourglass is the one piece of iconography the product has that is not a photograph, and
+/// waiting is the thing FLIM asks of people, so it belongs here. It is tinted with the owner's own
+/// accent, like every other piece of chrome in the app.
+///
+/// Not animated, because a widget cannot animate: WidgetKit renders each entry archived and out of
+/// process, so anything moving would be a flipbook of scheduled redraws paid for out of a refresh
+/// budget. The one thing that genuinely moves is the countdown itself, and it moves for free.
 private struct DevelopingTile: View {
     let rollName: String
     let revealAt: Date
     let accent: Color
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(rollName.uppercased())
-                .font(.system(size: 10, weight: .semibold))
-                .tracking(1.2)
-                .foregroundStyle(accent)
-                .lineLimit(1)
-            // `Text(timerInterval:)` ticks on device from a fixed date, so the countdown stays
-            // right between timeline entries without the extension being woken to update it. Same
-            // mechanism the Live Activity already relies on.
-            Text(timerInterval: Date()...revealAt, countsDown: true)
-                .font(.system(size: 30, weight: .thin, design: .rounded))
-                .monospacedDigit()
-                .foregroundStyle(.white)
-                .lineLimit(1)
-                .minimumScaleFactor(0.6)
-            Text("until it develops")
-                .font(.system(size: 11))
-                .foregroundStyle(.white.opacity(0.55))
-            Spacer(minLength: 0)
+        ZStack {
+            // A faint wash of the accent behind everything, so a developing roll is recognisable
+            // across the room as "the FLIM one", the way the Live Activity's card is.
+            LinearGradient(colors: [accent.opacity(0.20), .clear],
+                           startPoint: .topLeading, endPoint: .bottomTrailing)
+            WidgetGrain()
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 5) {
+                    Image(systemName: "hourglass")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(accent)
+                    Text(rollName.uppercased())
+                        .font(.system(size: 10, weight: .semibold))
+                        .tracking(1.2)
+                        .foregroundStyle(accent)
+                        .lineLimit(1)
+                }
+                // Ticks on device from a fixed date, so the countdown stays right between timeline
+                // entries without waking the extension. Same mechanism the Live Activity uses.
+                Text(timerInterval: Date()...revealAt, countsDown: true)
+                    .font(.system(size: 30, weight: .thin, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+                Text("until it develops")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.white.opacity(0.55))
+                Spacer(minLength: 0)
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
-        .padding(14)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }
 
@@ -200,6 +328,8 @@ private struct EmptyPlateTile: View {
     let accent: Color
 
     var body: some View {
+        ZStack {
+        WidgetGrain()
         VStack(spacing: 8) {
             RoundedRectangle(cornerRadius: 4)
                 .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
@@ -211,5 +341,6 @@ private struct EmptyPlateTile: View {
                 .foregroundStyle(.white.opacity(0.6))
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
     }
 }

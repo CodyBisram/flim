@@ -40,15 +40,27 @@ struct WidgetSnapshot: Codable, Equatable {
     }
 
     let state: State
-    /// Filename of the frame's thumbnail inside the shared container, or nil for `.empty` and
-    /// `.developing`. A name rather than the bytes: JSON with a base64 image inside it is a bad
-    /// trade when both sides can see the same directory.
-    let imageName: String?
+    /// Filenames of recent frames inside the shared container, newest first, or empty for
+    /// `.empty` and `.developing`. Plural so the tile can rotate rather than showing one
+    /// photograph until its owner next shoots: a widget that never changes is one people stop
+    /// seeing. Names rather than bytes, because both sides can see the same directory and JSON
+    /// with base64 images in it is a bad trade.
+    let imageNames: [String]
+    /// The accent its owner picked, by name (see `FlimAccentPalette`). Carried in the snapshot for
+    /// the same reason the Live Activity carries it in `ContentState`: the extension cannot read
+    /// the app's `UserDefaults`, and reading the App Group suite instead only works if something
+    /// writes it there. Nothing did, so every tile rendered in the fallback amber regardless of
+    /// what its owner had chosen.
+    let accent: String
     /// When the app last wrote this. Shown nowhere; used to decide whether a snapshot is stale
     /// enough to be worth ignoring if the app has not run in a long time.
     let writtenAt: Date
 
-    static let empty = WidgetSnapshot(state: .empty, imageName: nil, writtenAt: .distantPast)
+    /// The first image, which is what a single-entry timeline shows.
+    var imageName: String? { imageNames.first }
+
+    static let empty = WidgetSnapshot(state: .empty, imageNames: [], accent: FlimAccentPalette.fallback,
+                                      writtenAt: .distantPast)
 }
 
 /// The shared container, and the only place either side names it.
@@ -75,10 +87,10 @@ enum WidgetStore {
     /// Writes a snapshot, and the image beside it when one is given. Silent on failure: this
     /// rides along with a capture or a feed load, and a widget that did not update is never worth
     /// interrupting either.
-    static func write(_ snapshot: WidgetSnapshot, image: Data? = nil) {
+    static func write(_ snapshot: WidgetSnapshot, images: [String: Data] = [:]) {
         guard let container else { return }
-        if let image, let name = snapshot.imageName {
-            try? image.write(to: container.appendingPathComponent(name), options: .atomic)
+        for (name, bytes) in images {
+            try? bytes.write(to: container.appendingPathComponent(name), options: .atomic)
         }
         guard let data = try? JSONEncoder().encode(snapshot) else { return }
         try? data.write(to: container.appendingPathComponent(snapshotFile), options: .atomic)
@@ -93,11 +105,12 @@ enum WidgetStore {
     /// Removes any image that is not the one the current snapshot points at. The container is
     /// counted against the app's own storage, so a year of daily frames left behind would be a
     /// slow leak in exchange for nothing: only ever one image is displayable.
-    static func prune(keeping name: String?) {
+    static func prune(keeping names: [String]) {
         guard let container,
               let files = try? FileManager.default.contentsOfDirectory(atPath: container.path)
         else { return }
-        for file in files where file.hasSuffix(".jpg") && file != name {
+        let keep = Set(names)
+        for file in files where file.hasSuffix(".jpg") && !keep.contains(file) {
             try? FileManager.default.removeItem(at: container.appendingPathComponent(file))
         }
     }

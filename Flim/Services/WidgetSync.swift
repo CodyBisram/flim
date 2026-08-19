@@ -29,12 +29,14 @@ enum WidgetSync {
         // to redraw an identical tile is spending it on nothing.
         guard snapshot != existing else { return }
 
-        var imageData: Data?
-        if let name = snapshot.imageName, name != existing?.imageName {
-            imageData = await thumbnailData(for: name)
+        // Only fetch frames the container does not already hold. Rotating through five costs
+        // five thumbnails ONCE; after that a new capture adds one and drops the oldest.
+        var images: [String: Data] = [:]
+        for name in snapshot.imageNames where WidgetStore.image(named: name) == nil {
+            if let bytes = await thumbnailData(for: name) { images[name] = bytes }
         }
-        WidgetStore.write(snapshot, image: imageData)
-        WidgetStore.prune(keeping: snapshot.imageName)
+        WidgetStore.write(snapshot, images: images)
+        WidgetStore.prune(keeping: snapshot.imageNames)
         WidgetCenter.shared.reloadTimelines(ofKind: "LatestFrame")
     }
 
@@ -44,22 +46,29 @@ enum WidgetSync {
     private static func compose() async -> WidgetSnapshot? {
         guard let userId = try? await supabase.auth.session.user.id else { return nil }
 
+        // Read from standard UserDefaults, where @AppStorage actually puts it, and carried in the
+        // snapshot. Reading the App Group suite from the extension instead looked reasonable and
+        // was silently wrong: nothing writes the accent there, so every tile rendered amber.
+        let accent = UserDefaults.standard.string(forKey: "accentColor") ?? FlimAccentPalette.fallback
+
         if let roll = await developingRoll(userId: userId) {
             return WidgetSnapshot(state: .developing(rollName: roll.name, revealAt: roll.revealAt),
-                                  imageName: nil, writtenAt: .now)
+                                  imageNames: [], accent: accent, writtenAt: .now)
         }
-        guard let frame = await latestFrame(userId: userId) else {
-            return WidgetSnapshot(state: .empty, imageName: nil, writtenAt: .now)
+        let frames = await recentFrames(userId: userId)
+        guard let newest = frames.first else {
+            return WidgetSnapshot(state: .empty, imageNames: [], accent: accent, writtenAt: .now)
         }
         // Named for the frame, so an unchanged photograph never rewrites its own bytes and the
-        // pruner can tell the current image from every one before it.
-        let name = "frame-\(frame.id.uuidString).jpg"
-        if let post = frame.post {
+        // pruner can tell current images from every one before them.
+        let names = frames.map { "frame-\($0.id.uuidString).jpg" }
+        if let post = newest.post {
             let reactions = await reactionCounts(postId: post.id)
             return WidgetSnapshot(state: .posted(reactions: reactions, postedAt: post.createdAt),
-                                  imageName: name, writtenAt: .now)
+                                  imageNames: names, accent: accent, writtenAt: .now)
         }
-        return WidgetSnapshot(state: .shot(takenAt: frame.takenAt), imageName: name, writtenAt: .now)
+        return WidgetSnapshot(state: .shot(takenAt: newest.takenAt),
+                              imageNames: names, accent: accent, writtenAt: .now)
     }
 
     // MARK: - Queries
@@ -82,23 +91,31 @@ enum WidgetSync {
             .min { $0.revealAt < $1.revealAt }
     }
 
-    private static func latestFrame(userId: UUID) async -> Frame? {
+    /// The five most recent developed frames, newest first. Five because the tile rotates through
+    /// them and five is about a day of shooting for an active account (98 frames a day across 30
+    /// shooters), so a glance in the evening rarely shows the same picture it showed at lunch.
+    private static func recentFrames(userId: UUID) async -> [Frame] {
         struct PhotoRow: Decodable { let id: UUID; let taken_at: Date; let thumb_path: String? }
         let photos: [PhotoRow] = (try? await supabase
             .from("photos").select("id, taken_at, thumb_path")
             .eq("user_id", value: userId.uuidString)
             .lte("develops_at", value: Date().ISO8601Format())
-            .order("taken_at", ascending: false).limit(1)
+            .order("taken_at", ascending: false).limit(5)
             .execute().value) ?? []
-        guard let photo = photos.first else { return nil }
+        guard let newest = photos.first else { return [] }
 
+        // Only the newest frame's post is looked up: it is the only one whose reactions the tile
+        // ever shows, and asking for five would be four round trips spent on nothing.
         struct PostRow: Decodable { let id: UUID; let created_at: Date }
         let posts: [PostRow] = (try? await supabase
             .from("posts").select("id, created_at")
-            .eq("photo_id", value: photo.id.uuidString).limit(1)
+            .eq("photo_id", value: newest.id.uuidString).limit(1)
             .execute().value) ?? []
-        return Frame(id: photo.id, takenAt: photo.taken_at, thumbPath: photo.thumb_path,
-                     post: posts.first.map { ($0.id, $0.created_at) })
+        let post = posts.first.map { ($0.id, $0.created_at) }
+        return photos.enumerated().map { index, photo in
+            Frame(id: photo.id, takenAt: photo.taken_at, thumbPath: photo.thumb_path,
+                  post: index == 0 ? post : nil)
+        }
     }
 
     /// Grouped client-side rather than by a new RPC: this is at most a few dozen rows for one
