@@ -42,69 +42,119 @@ const supabase = createClient(
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
 );
 
-/// The campaigns this function knows how to send, by name. A campaign has to be added here to be
+/// A person to contact, and the exact words for them. Copy is resolved PER RECIPIENT because
+/// some of it is about their own state ("4 frames waiting"), and a campaign that rounded that to
+/// a generic sentence would be the daily digest with extra steps.
+type Recipient = { userId: string; title: string; body: string; route: unknown };
+
+/// The campaigns this function knows how to send, by name. A campaign has to be listed here to be
 /// sendable, so a typo in the query string cannot invent one and bypass the claim ledger.
-const CAMPAIGNS: Record<string, { title: string; body: string; route: unknown }> = {
-  "first-shot": {
-    title: "Take a shot.",
-    body: "One frame, right now. It develops the moment you take it, and nobody sees it until you say so.",
-    // One ask, and it is the one the cohort has never done.
-    //
-    // Two other angles were measured and dropped. "Add some friends" is wrong for most of them:
-    // four of the six follow between five and thirteen people and have seventeen to two hundred
-    // and fifty posts from those follows in the last fortnight, so they are neither isolated nor
-    // short of things to look at. "Start a roll" tracks the sharpest correlation in the funnel
-    // (fifteen of fifteen roll members have shot, against nineteen of thirty-three outside one)
-    // but thirty-three accounts have no roll and only six are being contacted, so it would be
-    // saying something about them that is true of most of the userbase.
-    //
-    // Direct, and not shouted. All caps was the ask and is the wrong instrument here: these are
-    // by definition the least engaged people on the platform, so they are the likeliest to answer
-    // a notification that reads as spam by turning notifications off, which costs the reveal
-    // alerts that are the whole point.
-    //
-    // The body removes the objection that is left once neither of those applies: effort, and
-    // exposure. A personal frame develops instantly and sits in the sort deck until its owner
-    // publishes it, so both halves of that sentence are literally true.
-    //
-    // Lands on the camera. Reaching it is measurably not the barrier: of the accounts that signed
-    // up on or after 2026-08-12, twenty of twenty-one reached a camera the app confirmed was
-    // authorized and eleven shot. Deciding to is the barrier, so land on the decision.
-    route: { t: "camera" },
-  },
+const CAMPAIGNS: Record<string, () => Promise<Recipient[]>> = {
+  "first-shot": firstShotCohort,
+  "waiting-to-sort": waitingToSortCohort,
 };
 
-// ------------------------------------------------------------
-// Cohort
-
-/// Everyone who has never taken a single photograph and can actually be reached.
+/// Everyone reachable who has never taken a single photograph.
 ///
 /// "Never shot" is zero rows in `photos`, not zero POSTS: someone with frames sitting unsorted in
-/// their darkroom has taken a photograph and is a different problem entirely.
+/// their darkroom has taken a photograph and is a different problem, addressed by the campaign
+/// below.
 ///
 /// No minimum account age. Considered and rejected: a brand new account that has not shot yet is
 /// arguably mid-onboarding rather than disengaged, but the userbase is small enough that leaving
 /// people out costs more than the risk of nudging someone early.
-async function cohort(campaign: string): Promise<string[]> {
-  // Everyone with a registered device. Registering a token is the opt-in: there is no separate
-  // preference column, so nobody else is reachable and nobody else should be considered.
-  const { data: tokenRows } = await supabase.from("device_tokens").select("user_id");
-  const reachable = [...new Set(((tokenRows ?? []) as { user_id: string }[]).map((r) => r.user_id))];
+async function firstShotCohort(): Promise<Recipient[]> {
+  const reachable = await reachableUsers();
   if (reachable.length === 0) return [];
 
-  // Who among them has ever taken a frame. One query, not one per person.
   const { data: shooters } = await supabase
     .from("photos").select("user_id").in("user_id", reachable);
   const hasShot = new Set(((shooters ?? []) as { user_id: string }[]).map((r) => r.user_id));
 
-  const eligible = reachable.filter((id) => !hasShot.has(id));
+  return reachable.filter((id) => !hasShot.has(id)).map((userId) => ({
+    userId,
+    title: "Take a shot.",
+    // Names the thing, on purpose. Saying "you haven't taken one yet" to somebody who has not is
+    // the whole point of a campaign aimed at exactly that.
+    //
+    // Direct, and not shouted. All caps was the ask and is the wrong instrument: these are by
+    // definition the least engaged people on the platform and so the likeliest to answer a
+    // notification that reads as spam by turning notifications off, which would cost the reveal
+    // alerts that are the whole point.
+    //
+    // The body removes the two objections that are left: effort, and exposure. A personal frame
+    // develops instantly and sits in the sort deck until its owner publishes it, so both halves
+    // of that sentence are literally true.
+    //
+    // Lands on the camera. Reaching it is measurably not the barrier: of the accounts that signed
+    // up on or after 2026-08-12, twenty of twenty-one reached a camera the app confirmed was
+    // authorized and eleven shot. Deciding to is the barrier, so land on the decision.
+    body: "You haven't taken one yet. It develops the instant you do, and nobody sees it until you say so.",
+    route: { t: "camera" },
+  }));
+}
 
-  // Anyone already claimed by this campaign is out, on every run including the dry one, so the
-  // dry run's count is the number that would ACTUALLY be sent rather than the cohort size.
-  const { data: claimed } = await supabase
+/// How long a deck has to have been sitting before it is worth mentioning.
+///
+/// The point of the floor is the person it excludes. The heaviest poster on the platform had four
+/// unsorted frames from the SAME DAY when this was written: telling somebody who is actively
+/// shooting that they have frames waiting is describing their afternoon back to them.
+const STALE_DECK_HOURS = 48;
+
+/// Everyone reachable whose sort deck has been sitting for a while.
+///
+/// Deliberately about SORTING rather than posting, which is what it looks like from the outside.
+/// Of the four accounts that have shot and never posted, two have every frame still unsorted, so
+/// "post to your feed" names a step they have not reached: in the sort deck, swipe-right IS
+/// posting. Naming the wrong step is how a nudge gets ignored by someone who would have acted.
+async function waitingToSortCohort(): Promise<Recipient[]> {
+  const reachable = await reachableUsers();
+  if (reachable.length === 0) return [];
+
+  const { data: rows } = await supabase
+    .from("photos").select("user_id, taken_at")
+    .in("user_id", reachable).eq("is_sorted", false);
+
+  const cutoff = Date.now() - STALE_DECK_HOURS * 3600_000;
+  const decks = new Map<string, { count: number; oldest: number }>();
+  for (const r of (rows ?? []) as { user_id: string; taken_at: string }[]) {
+    const at = new Date(r.taken_at).getTime();
+    const d = decks.get(r.user_id) ?? { count: 0, oldest: at };
+    d.count++;
+    d.oldest = Math.min(d.oldest, at);
+    decks.set(r.user_id, d);
+  }
+
+  const out: Recipient[] = [];
+  for (const [userId, deck] of decks) {
+    if (deck.oldest > cutoff) continue;                 // still actively shooting, leave alone
+    const frames = deck.count === 1 ? "1 frame" : `${deck.count} frames`;
+    out.push({
+      userId,
+      title: `${frames} waiting to sort`,
+      // Says what sorting IS, because the count alone assumes they remember. Keep or post is the
+      // whole decision, and naming it is what makes this different from a badge count.
+      body: "They developed while you were out. Keep them, or post the ones worth sharing.",
+      route: { t: "sortdeck" },
+    });
+  }
+  return out;
+}
+
+/// Everyone with a registered device. Registering a token is the opt-in: there is no separate
+/// preference column, so nobody else is reachable and nobody else should be considered.
+async function reachableUsers(): Promise<string[]> {
+  const { data } = await supabase.from("device_tokens").select("user_id");
+  return [...new Set(((data ?? []) as { user_id: string }[]).map((r) => r.user_id))];
+}
+
+/// Drops anyone this campaign has already claimed, on every run including the dry one, so the dry
+/// run's count is the number that would ACTUALLY be sent rather than the cohort size.
+async function unclaimed(campaign: string, people: Recipient[]): Promise<Recipient[]> {
+  const { data } = await supabase
     .from("one_shot_push").select("user_id").eq("campaign", campaign);
-  const already = new Set(((claimed ?? []) as { user_id: string }[]).map((r) => r.user_id));
-  return eligible.filter((id) => !already.has(id));
+  const already = new Set(((data ?? []) as { user_id: string }[]).map((r) => r.user_id));
+  return people.filter((p) => !already.has(p.userId));
 }
 
 // ------------------------------------------------------------
@@ -164,44 +214,44 @@ Deno.serve(async (req) => {
   const url = new URL(req.url);
   const name = url.searchParams.get("campaign") ?? "";
   const send = url.searchParams.get("send") === "true";
-  const copy = CAMPAIGNS[name];
+  const resolve = CAMPAIGNS[name];
 
-  if (!copy) {
+  if (!resolve) {
     return Response.json(
       { error: "unknown campaign", known: Object.keys(CAMPAIGNS) }, { status: 400 },
     );
   }
 
-  const recipients = await cohort(name);
+  const recipients = await unclaimed(name, await resolve());
   if (!send) {
     return Response.json({
       dryRun: true, campaign: name, wouldSend: recipients.length,
-      copy, sample: recipients.slice(0, 5),
+      preview: recipients.map((r) => ({ userId: r.userId, title: r.title, body: r.body })),
       note: "Nothing was sent. Re-invoke with &send=true to actually send.",
     });
   }
 
   let sent = 0;
   let failed = 0;
-  for (const userId of recipients) {
+  for (const person of recipients) {
     // Claim first. A duplicate key here means another run already has this person.
     const { error: claimErr } = await supabase
-      .from("one_shot_push").insert({ campaign: name, user_id: userId });
+      .from("one_shot_push").insert({ campaign: name, user_id: person.userId });
     if (claimErr) continue;
 
     const { data: tokens } = await supabase
-      .from("device_tokens").select("token").eq("user_id", userId);
+      .from("device_tokens").select("token").eq("user_id", person.userId);
     let delivered = false;
     for (const row of (tokens ?? []) as { token: string }[]) {
-      const status = await push(row.token, copy.title, copy.body, copy.route);
+      const status = await push(row.token, person.title, person.body, person.route);
       if (status === 200) delivered = true;
-      else console.warn(JSON.stringify({ at: "push_failed", userId, status }));
+      else console.warn(JSON.stringify({ at: "push_failed", userId: person.userId, status }));
     }
     if (delivered) {
       sent++;
       await supabase.from("one_shot_push")
         .update({ sent_at: new Date().toISOString() })
-        .eq("campaign", name).eq("user_id", userId);
+        .eq("campaign", name).eq("user_id", person.userId);
     } else {
       failed++;
     }
