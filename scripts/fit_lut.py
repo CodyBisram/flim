@@ -51,10 +51,29 @@ def normalize_exposure(px: np.ndarray) -> np.ndarray:
     return np.clip(np.power(np.clip(lin, 0, 1), 1 / 2.2), 0, 1)
 
 
-def gather(pairs_dir: Path):
+# Pairs that must never train the fit, with the measurement that condemned each. They stay on
+# disk because they are still evidence; they are excluded because a pair only teaches something
+# if Lapse's frame is a RENDERING of the scene rather than of something else.
+#
+#   corner-dark      Lapse rendered it 0.9 stop DARKER than the neutral at near-identical
+#                    framing. Nothing in the look does that, so the pair teaches a shift that
+#                    is not in the look.
+#   hallway-noflash  A completely dark scene with nothing to focus on. Lapse's frame is ~95%
+#                    sensor noise: its contrast falls to 38% at 4x downsample and 5% at 64x,
+#                    where a real photograph keeps 99% and 93% (measured on hallway-flash, same
+#                    room, same minute). Structure correlation with the neutral is 0.38 against
+#                    0.71 for the flash frame. Training on it maps near-black onto lifted, tinted
+#                    grey, which is the exact opposite of the black-point deficit being chased.
+DEFAULT_EXCLUDE = ("corner-dark", "hallway-noflash")
+
+
+def gather(pairs_dir: Path, exclude=()):
     neutrals, graded = [], []
     for n in sorted(pairs_dir.glob("*_neutral.*")):
         stem = n.name.rsplit("_neutral", 1)[0]
+        if stem in exclude:
+            print(f"   skipping {stem} (excluded)")
+            continue
         g = next((p for p in pairs_dir.glob(f"{stem}_lapse.*")), None)
         if g is None:
             print(f"!! no lapse partner for {n.name}, skipping", file=sys.stderr)
@@ -108,10 +127,14 @@ def main():
     ap.add_argument("--out", type=Path, default=Path("flim.cube"))
     ap.add_argument("--strength", type=float, default=1.0,
                     help="blend toward the fitted look (0..1), 1 = full Lapse match")
+    ap.add_argument("--exclude", nargs="*", default=list(DEFAULT_EXCLUDE),
+                    help="pair stems to leave out of the fit; see DEFAULT_EXCLUDE for why "
+                         "each default is there. Pass --exclude with no names to fit on "
+                         "everything, which is only ever a diagnostic.")
     args = ap.parse_args()
 
     print("== loading pairs")
-    src, dst = gather(args.pairs)
+    src, dst = gather(args.pairs, exclude=set(args.exclude))
     print(f"== fitting on {len(src):,} / {len(dst):,} pixels")
 
     T, b = mkl_transform(src, dst)
