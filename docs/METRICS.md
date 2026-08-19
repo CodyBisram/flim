@@ -1,5 +1,16 @@
 # FLIM metrics
 
+> **Most of this is now a page.** The owner dashboard (`web/admin.html`) has an Analytics section
+> backed by `admin_funnel`, `admin_reach`, `admin_stuck`, `admin_pulse`, `admin_retention`,
+> `admin_storage` and `admin_campaigns` (see
+> `supabase/migrations/2026-08-19_admin_analytics.sql`). Reach for these queries when you want
+> something the dashboard does not cover, or want to check its arithmetic.
+>
+> The funnel's cohort trap is handled there rather than documented: the RPC picks the newest event
+> that has been live a week, and marks any step whose logging began after the cohort as not
+> comparable. The hardcoded date below still has to be moved by hand.
+
+
 Paste-ready SQL for the Supabase dashboard. Every query here was run against production on
 2026-08-14 and returned sensible numbers; none of them write anything.
 

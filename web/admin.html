@@ -250,6 +250,88 @@
     .field::placeholder { color: var(--faint); }
     .gate .btn { width: 100%; justify-content: center; padding: 10px; }
 
+    /* ---- Analytics ------------------------------------------------------
+       Numbers, not queues. The moderation panels are lists of things to act on
+       one at a time; these are a shape you read at a glance, so they get their
+       own vocabulary rather than being forced into .card. */
+
+    .side__label {
+      padding: 14px 16px 6px;
+      font-size: 10px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #78716c;
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+    .stat {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 14px;
+    }
+    .stat__n {
+      font-family: var(--mono);
+      font-size: 22px;
+      font-weight: 500;
+      letter-spacing: -0.02em;
+      font-variant-numeric: tabular-nums;
+    }
+    .stat__l { font-size: 12px; color: var(--muted); margin-top: 2px; }
+    .stat__sub { font-size: 11px; color: var(--faint); margin-top: 3px; }
+    .stat--warn .stat__n { color: var(--accent); }
+
+    .sect { margin: 22px 0 10px; font-size: 13px; font-weight: 600; }
+    .sect__note { font-weight: 400; color: var(--muted); font-size: 12px; margin-left: 6px; }
+
+    /* A bar per row, sized by share of the largest value. Deliberately not a
+       chart library: this page is a single self-contained file served as a
+       static asset, and one <div> with a width is the whole requirement. */
+    .bars { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; }
+    .bar { display: flex; align-items: center; gap: 10px; padding: 5px 0; }
+    .bar__l { flex: 0 0 168px; font-size: 12.5px; overflow-wrap: anywhere; }
+    .bar__track { flex: 1; height: 8px; background: var(--border-soft); border-radius: 4px; overflow: hidden; min-width: 40px; }
+    .bar__fill { height: 100%; background: var(--accent); border-radius: 4px; }
+    .bar__n {
+      /* Measured, not guessed: "50 shots \u00b7 10 people" needs 144px at this size, and at 78px
+         and again at 132px it wrapped, turning a ten-row chart into twenty ragged ones. nowrap
+         so a longer string overflows visibly rather than silently going two-line again. */
+      flex: 0 0 176px;
+      white-space: nowrap;
+      text-align: right;
+      font-family: var(--mono);
+      font-size: 12px;
+      font-variant-numeric: tabular-nums;
+      color: var(--muted);
+    }
+    /* A step whose logging began after the cohort did. Its number is a floor,
+       not a measurement, and dimming it says so without hiding it. */
+    .bar--dim .bar__l, .bar--dim .bar__n { color: var(--faint); }
+    .bar--dim .bar__fill { background: var(--faint); }
+
+    .tbl { width: 100%; border-collapse: collapse; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+    .tbl th, .tbl td { padding: 8px 12px; text-align: left; font-size: 12.5px; border-bottom: 1px solid var(--border); }
+    .tbl th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); font-weight: 500; }
+    .tbl tr:last-child td { border-bottom: 0; }
+    .tbl td.num, .tbl th.num { font-variant-numeric: tabular-nums; text-align: right; }
+    .tbl td.num { font-family: var(--mono); }
+    /* A trailing spacer column absorbs the slack, so the real columns stay next to each other.
+       Without it a table spreads its columns across the full width and the eye travels half a
+       screen from a name to its number. Doing this by widening the LAST real column instead was
+       tried and is wrong the moment that column is numeric: it pushed Day 14 to the far edge and
+       squeezed the week into three lines. */
+    .tbl th.spacer, .tbl td.spacer { width: 100%; padding: 0; }
+    .tbl th, .tbl td { white-space: nowrap; }
+    .tbl td.wrap { white-space: normal; }
+    .tbl td.who { font-family: var(--mono); }
+    /* Wide tables scroll inside their own box; the page body never does. */
+    .tblwrap { overflow-x: auto; margin-bottom: 4px; }
+
     .hide { display: none !important; }
 
     @media (max-width: 720px) {
@@ -296,6 +378,12 @@
       <li><button class="navitem" data-panel="photos">Reported photos <span class="navitem__count" id="c-photos">0</span></button></li>
       <li><button class="navitem" data-panel="users">Reported people <span class="navitem__count" id="c-users">0</span></button></li>
       <li><button class="navitem" data-panel="feedback">Feedback <span class="navitem__count" id="c-feedback">0</span></button></li>
+      <li class="side__label">Analytics</li>
+      <li><button class="navitem" data-panel="pulse">Pulse</button></li>
+      <li><button class="navitem" data-panel="funnel">Funnel</button></li>
+      <li><button class="navitem" data-panel="reach">Reach</button></li>
+      <li><button class="navitem" data-panel="stuck">Who is stuck</button></li>
+      <li><button class="navitem" data-panel="retention">Retention</button></li>
     </ul>
     <div class="side__foot">
       <div class="side__who" id="who"></div>
@@ -328,12 +416,23 @@
     try { token = sessionStorage.getItem(TOKEN_KEY); } catch (e) {}
 
     var data = { invites: [], photos: [], users: [], feedback: [] };
+    /* Analytics live beside the queues rather than in them: a queue is a list of
+       rows to act on, and every one of these is a different shape. Null until
+       loaded, so a panel can tell "still fetching" from "the answer is nothing". */
+    var stats = { funnel: null, reach: null, stuck: null, pulse: null,
+                  retention: null, storage: null, campaigns: null };
+    var ANALYTICS = ["pulse", "funnel", "reach", "stuck", "retention"];
     var panel = "invites";
     var TITLES = {
       invites: "Invites",
       photos: "Reported photos",
       users: "Reported people",
       feedback: "Feedback",
+      pulse: "Pulse",
+      funnel: "Funnel",
+      reach: "Reach",
+      stuck: "Who is stuck",
+      retention: "Retention",
     };
 
     function $(id) { return document.getElementById(id); }
@@ -469,6 +568,7 @@
       $("page-title").textContent = TITLES[panel];
       var host = $("list");
       host.textContent = "";
+      if (ANALYTICS.indexOf(panel) !== -1) { renderStats(host); return; }
       var rows = data[panel];
       $("page-sub").textContent = rows.length
         ? plural(rows.length, panel === "invites" ? "person waiting"
@@ -533,6 +633,235 @@
       });
     }
 
+    // ---- Analytics rendering -----------------------------------------------
+
+    function statCard(n, label, sub, warn) {
+      var c = el("div", "stat" + (warn ? " stat--warn" : ""));
+      c.appendChild(el("div", "stat__n", n === null || n === undefined ? "\u2013" : String(n)));
+      c.appendChild(el("div", "stat__l", label));
+      if (sub) c.appendChild(el("div", "stat__sub", sub));
+      return c;
+    }
+
+    function statRow(cards) {
+      var g = el("div", "stats");
+      cards.forEach(function (c) { g.appendChild(c); });
+      return g;
+    }
+
+    function section(host, title, note) {
+      var h = el("div", "sect", title);
+      if (note) h.appendChild(el("span", "sect__note", note));
+      host.appendChild(h);
+    }
+
+    /* Bars are sized against the largest value present, not against a cohort
+       total. A funnel whose first step is 20 of 21 would otherwise render as
+       twenty near-identical full bars, which is exactly the comparison the
+       chart exists to make visible. */
+    function bars(host, rows) {
+      var max = rows.reduce(function (m, r) { return Math.max(m, r.value); }, 0) || 1;
+      var box = el("div", "bars");
+      rows.forEach(function (r) {
+        var b = el("div", "bar" + (r.dim ? " bar--dim" : ""));
+        b.appendChild(el("div", "bar__l", r.label));
+        var track = el("div", "bar__track");
+        var fill = el("div", "bar__fill");
+        fill.style.width = Math.round((r.value / max) * 100) + "%";
+        track.appendChild(fill);
+        b.appendChild(track);
+        b.appendChild(el("div", "bar__n", r.note || String(r.value)));
+        box.appendChild(b);
+      });
+      host.appendChild(box);
+    }
+
+    function table(host, headers, rows) {
+      var wrap = el("div", "tblwrap");
+      var t = el("table", "tbl");
+      var thead = document.createElement("thead");
+      var hr = document.createElement("tr");
+      headers.forEach(function (h) {
+        var th = document.createElement("th");
+        /* An object header carries its alignment, so a right-aligned column's label sits over its
+           numbers instead of stranded at the far left of the column. */
+        if (h && typeof h === "object") { th.textContent = h.text; th.className = h.cls || ""; }
+        else { th.textContent = String(h); }
+        hr.appendChild(th);
+      });
+      hr.appendChild(el("th", "spacer", ""));
+      thead.appendChild(hr);
+      t.appendChild(thead);
+      var tb = document.createElement("tbody");
+      rows.forEach(function (cells) {
+        var tr = document.createElement("tr");
+        cells.forEach(function (cell) {
+          var td = document.createElement("td");
+          if (cell && typeof cell === "object") {
+            td.textContent = cell.text;
+            if (cell.cls) td.className = cell.cls;
+          } else {
+            td.textContent = String(cell);
+          }
+          tr.appendChild(td);
+        });
+        tr.appendChild(el("td", "spacer", ""));
+        tb.appendChild(tr);
+      });
+      t.appendChild(tb);
+      wrap.appendChild(t);
+      host.appendChild(wrap);
+    }
+
+    function pct(a, b) { return b ? Math.round((a / b) * 100) + "%" : "\u2013"; }
+
+    function renderStats(host) {
+      var d = stats[panel];
+      if (d === null) {
+        host.appendChild(el("div", "empty", "Still loading."));
+        return;
+      }
+      $("page-sub").textContent = "";
+
+      if (panel === "pulse") {
+        var st = stats.storage || {};
+        var days = d || [];
+        var recent = days.slice(-7);
+        var shots7 = recent.reduce(function (n, r) { return n + r.shots; }, 0);
+        var posts7 = recent.reduce(function (n, r) { return n + r.posts; }, 0);
+        host.appendChild(statRow([
+          statCard(shots7, "shots, last 7 days"),
+          statCard(posts7, "posts, last 7 days"),
+          statCard(st.photos, "photos, all time"),
+          statCard(st.rolls_developing, "rolls developing now")
+        ]));
+        section(host, "Daily", "shots per day, newest last");
+        bars(host, days.map(function (r) {
+          return { label: r.day, value: r.shots,
+                   note: r.shots + " shots \u00b7 " + r.shooters + " people" };
+        }));
+        section(host, "Renditions missing",
+                "each one falls back to the full master everywhere it appears, forever");
+        host.appendChild(statRow([
+          statCard(st.missing_thumb, "no thumbnail",
+                   st.photos ? pct(st.missing_thumb, st.photos) + " of the library" : "",
+                   st.missing_thumb > 0),
+          statCard(st.missing_feed, "no feed rendition",
+                   st.photos ? pct(st.missing_feed, st.photos) + " of the library" : "",
+                   st.missing_feed > 0),
+          statCard(st.reactions, "reactions"),
+          statCard(st.comments, "comments")
+        ]));
+        return;
+      }
+
+      if (panel === "funnel") {
+        var since = String(d.since || "").slice(0, 10);
+        section(host, "Activation",
+                "signups since " + since + (d.derived ? ", chosen automatically" : ""));
+        host.appendChild(statRow([statCard(d.cohort_size, "in this cohort")]));
+        bars(host, (d.steps || []).map(function (st2) {
+          return {
+            label: st2.step.replace(/_/g, " "),
+            value: st2.reached,
+            dim: !st2.comparable,
+            note: st2.comparable
+              ? st2.reached + "  " + pct(st2.reached, d.cohort_size)
+              : "not comparable"
+          };
+        }));
+        var dim = (d.steps || []).filter(function (x) { return !x.comparable; });
+        if (dim.length) {
+          host.appendChild(el("div", "card__note",
+            "Dimmed steps began logging after this cohort started, so their counts are a floor "
+            + "rather than a measurement. They stop being dimmed a week after they ship."));
+        }
+        return;
+      }
+
+      if (panel === "reach") {
+        host.appendChild(statRow([
+          statCard(d.accounts, "accounts"),
+          statCard(d.with_token, "can be pushed", pct(d.with_token, d.accounts) + " of accounts"),
+          statCard(d.authorized, "said yes"),
+          statCard(d.denied, "said no"),
+          statCard(d.never_asked, "never asked",
+                   "reachable, if the prompt found them", d.never_asked > 0)
+        ]));
+        host.appendChild(el("div", "card__note",
+          "Never asked is the absence of both permission events, not a state anyone records. "
+          + "It counts people the prompt has not reached, which is a different problem from a "
+          + "refusal and the only one of the two worth acting on. It stays high until everyone "
+          + "has opened a build that logs the decision."));
+        section(host, "Campaigns sent");
+        var camps = stats.campaigns || [];
+        if (!camps.length) {
+          host.appendChild(el("div", "empty", "None yet."));
+        } else {
+          table(host, ["Campaign", { text: "Delivered", cls: "num" },
+                       { text: "Shot since", cls: "num" }, "First sent"],
+            camps.map(function (c) {
+              return [{ text: c.campaign, cls: "who" },
+                      { text: c.delivered + " of " + c.claimed, cls: "num" },
+                      { text: String(c.shot_after), cls: "num" },
+                      String(c.first_sent || "").slice(0, 16).replace("T", " ")];
+            }));
+        }
+        return;
+      }
+
+      if (panel === "stuck") {
+        var groups = [
+          ["never_shot", "Never taken a frame", "zero rows in photos, not zero posts"],
+          ["shot_never_posted", "Shot, never posted", "has frames, none of them public"],
+          ["deck_sitting", "Deck sitting two days or more",
+           "actively shooting today is excluded, that deck is just their afternoon"]
+        ];
+        groups.forEach(function (g) {
+          var rows = d[g[0]] || [];
+          section(host, g[1] + " (" + rows.length + ")", g[2]);
+          if (!rows.length) { host.appendChild(el("div", "empty", "Nobody.")); return; }
+          var reachable = rows.filter(function (r) { return r.reachable; }).length;
+          host.appendChild(el("div", "stat__sub",
+            reachable + " of " + rows.length + " can be reached by push"));
+          table(host,
+            g[0] === "never_shot" ? ["Who", "Joined", "Reachable"]
+              : g[0] === "shot_never_posted"
+                ? ["Who", { text: "Photos", cls: "num" }, { text: "To sort", cls: "num" }, "Reachable"]
+                : ["Who", { text: "To sort", cls: "num" }, "Oldest", "Reachable"],
+            rows.map(function (r) {
+              if (g[0] === "never_shot") {
+                return [{ text: r.username, cls: "who" }, r.joined, r.reachable ? "yes" : "no"];
+              }
+              if (g[0] === "shot_never_posted") {
+                return [{ text: r.username, cls: "who" }, { text: String(r.photos), cls: "num" },
+                        { text: String(r.to_sort), cls: "num" }, r.reachable ? "yes" : "no"];
+              }
+              return [{ text: r.username, cls: "who" }, { text: String(r.to_sort), cls: "num" },
+                      r.oldest, r.reachable ? "yes" : "no"];
+            }));
+        });
+        return;
+      }
+
+      if (panel === "retention") {
+        section(host, "By signup week",
+                "a return is a shot, a post or a reaction on that day, not an app launch");
+        table(host, ["Week", { text: "Size", cls: "num" }, { text: "Day 1", cls: "num" },
+                     { text: "Day 7", cls: "num" }, { text: "Day 14", cls: "num" }],
+          (d || []).map(function (r) {
+            return [r.week, { text: String(r.size), cls: "num" },
+                    { text: r.d1 + " (" + pct(r.d1, r.size) + ")", cls: "num" },
+                    { text: r.d7 + " (" + pct(r.d7, r.size) + ")", cls: "num" },
+                    { text: r.d14 + " (" + pct(r.d14, r.size) + ")", cls: "num" }];
+          }));
+        host.appendChild(el("div", "card__note",
+          "The newest weeks cannot have a day 7 or day 14 yet, so a zero there is the calendar, "
+          + "not a verdict."));
+        return;
+      }
+    }
+
     function counts() {
       [["invites", "c-invites"], ["photos", "c-photos"],
        ["users", "c-users"], ["feedback", "c-feedback"]].forEach(function (p) {
@@ -566,16 +895,32 @@
     async function load() {
       var names = ["list_invite_requests", "list_photo_reports", "list_user_reports", "list_feedback"];
       var keys = ["invites", "photos", "users", "feedback"];
-      var settled = await Promise.allSettled(names.map(function (n) { return rpc(n); }));
+      /* Analytics ride the same allSettled pass. They are separate RPCs so one
+         heavy or not-yet-deployed query cannot take the queues down with it,
+         which is the whole reason this was allSettled to begin with. */
+      var statNames = ["admin_pulse", "admin_funnel", "admin_reach", "admin_stuck",
+                       "admin_retention", "admin_storage", "admin_campaigns"];
+      var statKeys = ["pulse", "funnel", "reach", "stuck", "retention", "storage", "campaigns"];
+
+      var settled = await Promise.allSettled(
+        names.map(function (n) { return rpc(n); })
+          .concat(statNames.map(function (n) { return rpc(n); })));
 
       var broken = [];
-      settled.forEach(function (result, i) {
+      settled.slice(0, names.length).forEach(function (result, i) {
         if (result.status === "fulfilled") {
           data[keys[i]] = result.value || [];
         } else {
           data[keys[i]] = [];
           broken.push(TITLES[keys[i]]);
         }
+      });
+      settled.slice(names.length).forEach(function (result, i) {
+        /* A null here is the owner gate saying no, not an empty dataset. Left as
+           null so the panel says "still loading" rather than drawing a confident
+           page of zeroes at somebody who is not allowed to see it. */
+        stats[statKeys[i]] = result.status === "fulfilled" ? result.value : null;
+        if (result.status !== "fulfilled") broken.push(statKeys[i]);
       });
 
       say($("panel-status"),
