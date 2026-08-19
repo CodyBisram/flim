@@ -147,6 +147,8 @@ struct PendingPushDestinationTests {
             .profile(userId: UUID()),
             .camera,
             .darkroom,
+            .sortDeck,
+            .photo(photoId: UUID()),
             .feed
         ]
         for destination in cases {
@@ -168,11 +170,14 @@ struct WidgetLinkRoutingTests {
     func linksRoundTrip() {
         let rollId = UUID()
         let postId = UUID()
+        let photoId = UUID()
         let pairs: [(String, PushDestination)] = [
             (WidgetLink.camera, .camera),
             (WidgetLink.darkroom, .darkroom),
+            (WidgetLink.sortDeck, .sortDeck),
             (WidgetLink.reveal(rollId), .reveal(rollId: rollId)),
-            (WidgetLink.post(postId), .post(postId: postId, comments: false))
+            (WidgetLink.post(postId), .post(postId: postId, comments: false)),
+            (WidgetLink.photo(photoId), .photo(photoId: photoId))
         ]
         for (link, expected) in pairs {
             let url = URL(string: link)
@@ -192,6 +197,7 @@ struct WidgetLinkRoutingTests {
             "com.lapse.app://login-callback",
             "com.lapse.app://i/ABC123",
             "com.lapse.app://reveal/not-a-uuid",
+            "com.lapse.app://photo/not-a-uuid",
             "com.lapse.app://reveal",
             "com.lapse.app://somewhere-new",
             "flim://camera"

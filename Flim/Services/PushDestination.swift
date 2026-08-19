@@ -28,6 +28,11 @@ enum PushDestination: Codable, Equatable {
     /// The Darkroom, where frames sit before they are posted. Like `camera`, a widget-only
     /// destination: nothing sends a push that means "look at your unposted work".
     case darkroom
+    /// The sort deck, open, on top of the Darkroom. Also widget-only.
+    case sortDeck
+    /// A single photo in the Darkroom's pager. Distinct from `post`: a frame can be worth
+    /// opening long before, or without ever, being posted.
+    case photo(photoId: UUID)
     case feed
 
     static func parse(userInfo: [AnyHashable: Any]) -> PushDestination? {
@@ -68,9 +73,11 @@ enum PushDestination: Codable, Equatable {
         switch url.host {
         case "camera":   return .camera
         case "darkroom": return .darkroom
+        case "sortdeck": return .sortDeck
         case "feed":     return .feed
         case "reveal":   return id().map { .reveal(rollId: $0) }
         case "post":     return id().map { .post(postId: $0, comments: false) }
+        case "photo":    return id().map { .photo(photoId: $0) }
         default:         return nil
         }
     }
@@ -97,6 +104,10 @@ enum PushDestination: Codable, Equatable {
             return ["t": "camera"]
         case .darkroom:
             return ["t": "darkroom"]
+        case .sortDeck:
+            return ["t": "sortdeck"]
+        case .photo(let photoId):
+            return ["t": "photo", "id": photoId.uuidString]
         case .feed:
             return ["t": "feed"]
         }

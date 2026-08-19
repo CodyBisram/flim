@@ -16,6 +16,13 @@ func rollDeleteConfirmationMessage(forRollNames names: [String?]) -> String {
 struct DarkroomView: View {
     @Environment(\.flimAccent) private var accent
     var scrollToTop: Int = 0
+    /// A counter the tab bumps to open the sort deck from outside — a widget tap, today. A signal
+    /// rather than a Bool for the same reason `scrollToTop` is one: the deck can be asked for
+    /// twice in a row, and an already-true Bool is not a second request.
+    var openSortDeckSignal: Int = 0
+    /// A frame a widget tap asked to open. A binding so it can be cleared once consumed, which is
+    /// what stops the same frame reopening every time the Darkroom reappears.
+    var openPhotoId: Binding<UUID?> = .constant(nil)
     @Environment(AuthService.self) private var auth
     @Environment(PhotoService.self) private var photoService
     @Environment(RollService.self) private var rolls
@@ -226,6 +233,14 @@ struct DarkroomView: View {
         .fullScreenCover(isPresented: $showSortDeck, onDismiss: { Task { await reload() } }) {
             SortDeckView(onFinish: {})
         }
+        // On the outer chain, not on the grid's ScrollView: the grid does not exist in the empty
+        // and loading states, and a widget tap that lands then would be silently dropped.
+        .onChange(of: openSortDeckSignal) { _, _ in
+            // Guarded on there being something to sort: a tap can land a moment after the deck
+            // was emptied on another device, and an empty full-screen deck is a dead end.
+            if unsortedCount > 0 { showSortDeck = true }
+        }
+        .onChange(of: openPhotoId.wrappedValue) { _, id in openRequestedPhoto(id) }
         .sheet(item: $shareItem) { SharePreviewSheet(photo: $0.image) }
         .confirmationDialog("Delete this photo?", isPresented: $showRollDeleteConfirm, titleVisibility: .visible) {
             Button("Delete", role: .destructive) {
@@ -541,6 +556,18 @@ struct DarkroomView: View {
             .padding(.top, 4)
         }
     }
+
+    /// Opens a frame a widget asked for, if this Darkroom can see it.
+    ///
+    /// Cleared either way. A frame that is gone (deleted, or belonging to an account that is no
+    /// longer signed in) leaves a real, populated Darkroom on screen, which is the same graceful
+    /// no-op every other deep link here takes; leaving the id set would retry it forever.
+    private func openRequestedPhoto(_ id: UUID?) {
+        guard let id else { return }
+        defer { openPhotoId.wrappedValue = nil }
+        selectedPhoto = vm.developedPhotos.first { $0.id == id }
+    }
+
 
     private func reload() async {
         guard let userId = auth.currentUser?.id else { return }

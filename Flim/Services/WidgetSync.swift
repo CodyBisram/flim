@@ -2,18 +2,19 @@ import Foundation
 import WidgetKit
 import Supabase
 
-/// Keeps the home-screen widget's snapshot current.
+/// Keeps the off-app surfaces' snapshot current.
 ///
-/// The widget cannot query anything: it has no session and no business holding one. So the app
-/// answers the question on its behalf and leaves the answer in the shared container. This is that
-/// writer, and it is deliberately the only place that decides what the tile says.
+/// The widgets cannot query anything: they have no session and no business holding one. So the
+/// app answers the questions on their behalf and leaves the answers in the shared container. This
+/// is that writer, and it is deliberately the only place that decides what any tile says.
 ///
 /// Called on app open, after a capture, and after a post. NOT on a timer and not on every feed
-/// load: the tile shows one photograph and its reactions, and re-deriving that during a scroll
-/// would spend a round trip and 80 kB to usually write the same bytes back.
+/// load: re-deriving this during a scroll would spend round trips to usually write the same bytes
+/// back.
 ///
-/// ⚠️ Every call here is a no-op until the App Group exists (see `WidgetStore`). It costs one
-/// early return, which is why it is safe to wire the call sites up now.
+/// Every call here is a no-op when the App Group is unreachable (see `WidgetStore`). That costs
+/// one early return — but it is also exactly the failure that is invisible from the outside, so
+/// the tiles render it as its own state rather than as an empty darkroom.
 enum WidgetSync {
     /// Recomputes and writes. Fire-and-forget, like `Usage.log`: a stale widget is never worth
     /// interrupting a capture or delaying a launch for.
@@ -22,6 +23,11 @@ enum WidgetSync {
         Task.detached(priority: .utility) { await run() }
     }
 
+    /// Every kind this extension publishes that reads the snapshot. Reloading by kind rather than
+    /// reloading everything keeps the Live Activity, which is driven by ActivityKit and not by
+    /// this file at all, out of it.
+    private static let widgetKinds = ["Darkroom", "Memory", "Shutter"]
+
     private static func run() async {
         guard let snapshot = await compose() else { return }
         let existing = WidgetStore.read()
@@ -29,19 +35,17 @@ enum WidgetSync {
         // to redraw an identical tile is spending it on nothing.
         guard snapshot != existing else { return }
 
-        // Only fetch frames the container does not already hold. Rotating through five costs
-        // five thumbnails ONCE; after that a new capture adds one and drops the oldest.
+        // Only fetch frames the container does not already hold. Rotating through the ladder costs
+        // its thumbnails ONCE; after that a new capture adds one and drops whatever fell off.
         var images: [String: Data] = [:]
         for name in snapshot.imageNames where WidgetStore.image(named: name) == nil {
             if let bytes = await thumbnailData(for: name) { images[name] = bytes }
         }
         WidgetStore.write(snapshot, images: images)
         WidgetStore.prune(keeping: snapshot.imageNames)
-        WidgetCenter.shared.reloadTimelines(ofKind: "LatestFrame")
+        for kind in widgetKinds { WidgetCenter.shared.reloadTimelines(ofKind: kind) }
     }
 
-    /// The precedence is the product decision, not an implementation detail: a developing roll
-    /// outranks recent frames, which outrank nothing at all. See `WidgetSnapshot.State`.
     private static func compose() async -> WidgetSnapshot? {
         guard let userId = try? await supabase.auth.session.user.id else { return nil }
 
@@ -50,103 +54,133 @@ enum WidgetSync {
         // was silently wrong: nothing writes the accent there, so every tile rendered amber.
         let accent = UserDefaults.standard.string(forKey: "accentColor") ?? FlimAccentPalette.fallback
 
-        if let roll = await developingRoll(userId: userId) {
-            return WidgetSnapshot(state: .developing(rollName: roll.name, revealAt: roll.revealAt,
-                                                     rollId: roll.id),
-                                  accent: accent, writtenAt: .now)
-        }
-        let frames = await recentFrames(userId: userId)
-        guard !frames.isEmpty else {
-            return WidgetSnapshot(state: .empty, accent: accent, writtenAt: .now)
-        }
-        return WidgetSnapshot(state: .frames(frames), accent: accent, writtenAt: .now)
+        async let unsorted = unsortedCount(userId: userId)
+        async let rolls = rollState(userId: userId)
+        async let memories = memoryLadder(userId: userId)
+
+        let (count, roll, ladder) = await (unsorted, rolls, memories)
+        return WidgetSnapshot(unsortedCount: count,
+                              developingRoll: roll.developing,
+                              readyToReveal: roll.ready,
+                              memories: ladder,
+                              accent: accent,
+                              writtenAt: .now)
     }
 
     // MARK: - Queries
 
-    private static func developingRoll(userId: UUID) async -> (id: UUID, name: String, revealAt: Date)? {
+    /// A COUNT, not a fetch. `PhotoService.fetchUnsorted` returns rows and is subject to
+    /// PostgREST's default page size, which has already produced two wrong totals in this
+    /// codebase; asking the database to count avoids inheriting that a third time.
+    private static func unsortedCount(userId: UUID) async -> Int {
+        (try? await supabase
+            .from("photos").select("id", head: true, count: .exact)
+            .eq("user_id", value: userId.uuidString)
+            .eq("is_sorted", value: false)
+            .execute().count) ?? 0
+    }
+
+    /// The soonest roll still developing, and whether any roll is sitting finished and unwatched.
+    ///
+    /// One query for both: they read the same rows and differ only in which side of `now` the
+    /// reveal falls on.
+    private static func rollState(userId: UUID) async -> (developing: WidgetSnapshot.DevelopingRoll?, ready: Bool) {
         struct Row: Decodable { let id: UUID; let name: String; let created_at: Date }
         let rows: [Row] = (try? await supabase
             .from("rolls").select("id, name, created_at, roll_members!inner(user_id)")
             .eq("roll_members.user_id", value: userId.uuidString)
-            .order("created_at", ascending: false).limit(5)
+            .order("created_at", ascending: false).limit(12)
             .execute().value) ?? []
-        // The soonest reveal still ahead of us. `rollDevelopDelay` is not reachable from here, so
-        // this uses the same twelve hours the roll itself was created with.
-        return rows
-            .map { (id: $0.id, name: $0.name, revealAt: $0.created_at.addingTimeInterval(12 * 3600)) }
-            .filter { $0.revealAt > .now }
-            .min { $0.revealAt < $1.revealAt }
+
+        // `rollDevelopDelay` is not reachable from here, so this uses the same twelve hours the
+        // roll itself was created with. Same literal, same reason, as
+        // `RollRevealAttributes.assumedDevelopWindow`.
+        let window: TimeInterval = 12 * 3600
+        let now = Date()
+        let timed = rows.map { (id: $0.id, name: $0.name, start: $0.created_at,
+                                reveal: $0.created_at.addingTimeInterval(window)) }
+
+        let developing = timed
+            .filter { $0.reveal > now }
+            .min { $0.reveal < $1.reveal }
+            .map { WidgetSnapshot.DevelopingRoll(id: $0.id, name: $0.name,
+                                                 revealAt: $0.reveal, startedAt: $0.start) }
+
+        // "Ready" means developed and not yet watched. The seen flag is per-device local state
+        // (`rollRevealSeen.<id>`), which is exactly the right place for it — a reveal is a thing
+        // you watch, not a thing the server owns — and it is readable from here.
+        let ready = timed.contains { roll in
+            roll.reveal <= now
+                && !UserDefaults.standard.bool(forKey: "rollRevealSeen.\(roll.id.uuidString)")
+        }
+        return (developing, ready)
     }
 
-    /// The five most recent developed frames, newest first, each complete: its own timestamp, its
-    /// own post if it has one, its own reactions, its own destination.
+    /// One frame per horizon that actually has one, oldest first.
     ///
-    /// Complete per frame because the tile ROTATES through them. Looking up only the newest
-    /// frame's post was one round trip cheaper and showed frame three under frame one's reaction
-    /// count and frame one's timestamp, with a tap that opened frame one. Three queries total
-    /// regardless of how many frames come back, so the fix costs one request, not five.
+    /// The ladder exists because a single one-year-ago query would return nothing for every
+    /// account until mid-2027 (FLIM 1.0 shipped 2026-06-30) and the tile would print a label its
+    /// data could not support. Walking outward from a year means the strongest available memory
+    /// leads and the tile is never lying about what it is showing.
     ///
-    /// Five because the tile cycles and five is about a day of shooting for an active account (98
-    /// frames a day across 30 shooters), so a glance in the evening rarely shows the same picture
-    /// it showed at lunch.
-    private static func recentFrames(userId: UUID) async -> [WidgetSnapshot.Frame] {
-        struct PhotoRow: Decodable { let id: UUID; let taken_at: Date }
-        let photos: [PhotoRow] = (try? await supabase
-            .from("photos").select("id, taken_at")
+    /// One query, not five. Pulling the candidate window once and bucketing client-side costs a
+    /// single round trip; five range queries would cost five to return at most five rows.
+    private static func memoryLadder(userId: UUID) async -> [WidgetSnapshot.Memory] {
+        struct Row: Decodable { let id: UUID; let taken_at: Date; let roll_id: UUID? }
+        let rows: [Row] = (try? await supabase
+            .from("photos").select("id, taken_at, roll_id")
             .eq("user_id", value: userId.uuidString)
             .lte("develops_at", value: Date().ISO8601Format())
-            .order("taken_at", ascending: false).limit(5)
+            .order("taken_at", ascending: false).limit(400)
             .execute().value) ?? []
-        guard !photos.isEmpty else { return [] }
+        guard !rows.isEmpty else { return [] }
 
-        struct PostRow: Decodable { let id: UUID; let photo_id: UUID; let created_at: Date }
-        let posts: [PostRow] = (try? await supabase
-            .from("posts").select("id, photo_id, created_at")
-            .in("photo_id", values: photos.map(\.id.uuidString))
-            .execute().value) ?? []
-        let postByPhoto = Dictionary(posts.map { ($0.photo_id, $0) }, uniquingKeysWith: { first, _ in first })
-        let reactions = await reactionCounts(postIds: posts.map(\.id))
+        let rollNames = await rollNames(for: Set(rows.compactMap(\.roll_id)))
+        let now = Date()
+        var used = Set<UUID>()
+        var out: [WidgetSnapshot.Memory] = []
 
-        return photos.map { photo in
-            let post = postByPhoto[photo.id]
-            return WidgetSnapshot.Frame(
+        for horizon in WidgetSnapshot.Memory.Horizon.allCases {
+            let pick: Row?
+            if let look = horizon.lookback {
+                let target = now.addingTimeInterval(-look.offset)
+                // Nearest to the target inside its window, rather than merely inside it: for a
+                // horizon a week wide, "closest to a year ago" is a better anniversary than
+                // "whatever the query happened to return first".
+                pick = rows
+                    .filter { abs($0.taken_at.timeIntervalSince(target)) <= look.window
+                              && !used.contains($0.id) }
+                    .min { abs($0.taken_at.timeIntervalSince(target)) < abs($1.taken_at.timeIntervalSince(target)) }
+            } else {
+                pick = rows.first { !used.contains($0.id) }
+            }
+            guard let photo = pick else { continue }
+            used.insert(photo.id)
+            out.append(WidgetSnapshot.Memory(
+                horizon: horizon,
                 imageName: "frame-\(photo.id.uuidString).jpg",
                 takenAt: photo.taken_at,
-                postedAt: post?.created_at,
-                reactions: post.flatMap { reactions[$0.id] } ?? [],
-                // An unposted frame has no page of its own, so it opens the Darkroom it is
-                // sitting in rather than a post that does not exist.
-                link: post.map { WidgetLink.post($0.id) } ?? WidgetLink.darkroom)
+                subtitle: subtitle(for: photo.taken_at, rollName: photo.roll_id.flatMap { rollNames[$0] }),
+                link: WidgetLink.photo(photo.id)))
         }
+        return out
     }
 
-    /// Grouped client-side rather than by a new RPC: this is at most a few dozen rows for five
-    /// posts, and it avoids adding a function to the schema for a widget.
-    private static func reactionCounts(postIds: [UUID]) async -> [UUID: [WidgetSnapshot.ReactionCount]] {
-        guard !postIds.isEmpty else { return [:] }
-        struct Row: Decodable { let post_id: UUID; let emoji: String }
+    private static func rollNames(for ids: Set<UUID>) async -> [UUID: String] {
+        guard !ids.isEmpty else { return [:] }
+        struct Row: Decodable { let id: UUID; let name: String }
         let rows: [Row] = (try? await supabase
-            .from("post_reactions").select("post_id, emoji")
-            .in("post_id", values: postIds.map(\.uuidString))
+            .from("rolls").select("id, name")
+            .in("id", values: ids.map(\.uuidString))
             .execute().value) ?? []
+        return Dictionary(rows.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
+    }
 
-        // Split into steps rather than one chain: the fused version defeated the type checker
-        // outright ("unable to type-check this expression in reasonable time"), which is a
-        // compile-time cost paid on every build for no readability gain.
-        var grouped: [UUID: [String: Int]] = [:]
-        for row in rows {
-            grouped[row.post_id, default: [:]][row.emoji, default: 0] += 1
-        }
-        var result: [UUID: [WidgetSnapshot.ReactionCount]] = [:]
-        for (postId, counts) in grouped {
-            var list = counts.map { WidgetSnapshot.ReactionCount(emoji: $0.key, count: $0.value) }
-            list.sort { left, right in
-                left.count == right.count ? left.emoji < right.emoji : left.count > right.count
-            }
-            result[postId] = Array(list.prefix(4))
-        }
-        return result
+    /// The roll it came from when it came from one, and the date otherwise. A shared frame's roll
+    /// is the thing worth naming; a personal one has only when it was taken.
+    private static func subtitle(for date: Date, rollName: String?) -> String {
+        if let rollName { return rollName }
+        return date.formatted(.dateTime.weekday(.wide).month(.abbreviated).day())
     }
 
     /// The 80 kB thumbnail, not the 383 kB card: this renders at most 170 points square, and the

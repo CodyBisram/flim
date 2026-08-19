@@ -15,7 +15,9 @@ struct RollRevealLiveActivity: Widget {
 
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: RollRevealAttributes.self) { context in
-            RollRevealCard(rollName: context.attributes.rollName, state: context.state)
+            RollRevealCard(rollName: context.attributes.rollName,
+                           rollId: context.attributes.rollId,
+                           state: context.state)
                 .activityBackgroundTint(.black)
                 .activitySystemActionForegroundColor(.white)
         } dynamicIsland: { context in

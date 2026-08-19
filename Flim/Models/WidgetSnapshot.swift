@@ -1,6 +1,6 @@
 import Foundation
 
-/// What the home-screen widget shows, written by the app and read by the extension.
+/// What FLIM's off-app surfaces show, written by the app and read by the extension.
 ///
 /// A widget cannot read the app's sandbox, so this crosses through an App Group container: the
 /// app writes a snapshot whenever the answer changes, the extension reads it on every timeline
@@ -8,94 +8,146 @@ import Foundation
 /// Supabase session, no network budget worth spending on a glance, and no business holding
 /// credentials.
 ///
-/// The extension also does no routing. Each frame carries the link to open when it is tapped,
-/// written by the app, which is the side that knows what a post id is. That keeps destinations in
-/// one vocabulary (`PushDestination`) and means a new one never needs an extension change.
+/// One snapshot feeds three surfaces (the Darkroom tile, the memory tile, and the Lock Screen
+/// shutter) rather than one each, because all three answer questions about the same few facts and
+/// deriving them separately would be three sets of queries to say the same thing.
+///
+/// The extension does no routing either. Each card carries the link to open when it is tapped,
+/// written by the app, which is the side that knows what a photo id is. See `WidgetLink`.
 struct WidgetSnapshot: Codable, Equatable {
-    /// What the tile should say. Ordered by precedence, not by frequency: a developing roll
-    /// outranks everything, because it is the only state with a deadline.
-    enum State: Codable, Equatable {
-        /// A roll is developing. The one state with a clock, and the rare one: measured across
-        /// production, zero of 48 accounts had a roll developing at a randomly chosen moment.
-        case developing(rollName: String, revealAt: Date, rollId: UUID)
-        /// Recent frames, newest first, each with its own story and its own destination. The
-        /// default, and the one that earns the widget: a poster receives about 32 reactions a
-        /// week, so this is the only state that changes several times a day without them doing
-        /// anything.
-        case frames([Frame])
-        /// No frames at all. Reaches the 14 of 48 accounts that have never shot anything, which
-        /// is the only surface in the product that does.
-        case empty
-    }
-
-    /// One frame the tile can show, and everything the tile says while showing it.
-    ///
-    /// Whole, rather than one image plus a separate description of the newest frame's post: the
-    /// tile rotates through these, and the split version showed frame three under frame one's
-    /// reaction count and frame one's timestamp. A frame owns its own caption.
-    struct Frame: Codable, Equatable {
-        /// Filename inside the shared container. Names rather than bytes, because both sides can
-        /// see the same directory and JSON with base64 images in it is a bad trade.
-        let imageName: String
-        let takenAt: Date
-        /// When it was posted, or nil for a frame still in the darkroom.
-        let postedAt: Date?
-        /// What this frame collected. Empty for an unposted one, which has nothing to report yet.
-        let reactions: [ReactionCount]
-        /// Where a tap goes, as an absolute URL string. See `WidgetLink`.
-        let link: String
-    }
-
-    /// One emoji and how many times it landed.
-    struct ReactionCount: Codable, Equatable {
-        let emoji: String
-        let count: Int
-    }
-
-    let state: State
+    /// Personal instants waiting in the sort deck. They develop instantly, so this is a count
+    /// with no clock attached, and it is the Darkroom tile's headline.
+    let unsortedCount: Int
+    /// The shared roll developing soonest, if any. The only thing here with a deadline.
+    let developingRoll: DevelopingRoll?
+    /// A shared roll has finished developing and its reveal has not been watched. Outranks
+    /// everything on the shutter: it is the one state that is asking for something.
+    let readyToReveal: Bool
+    /// Frames to look back at, strongest first. See `Memory.Horizon` for what "strongest" means.
+    let memories: [Memory]
     /// The accent its owner picked, by name (see `FlimAccentPalette`). Carried in the snapshot for
     /// the same reason the Live Activity carries it in `ContentState`: the extension cannot read
     /// the app's `UserDefaults`, and reading the App Group suite instead only works if something
     /// writes it there. Nothing did, so every tile rendered in the fallback amber regardless of
     /// what its owner had chosen.
     let accent: String
-    /// When the app last wrote this. Shown nowhere; used to decide whether a snapshot is stale
-    /// enough to be worth ignoring if the app has not run in a long time.
+    /// When the app last wrote this. Shown nowhere; used to tell a real empty state from one the
+    /// app has never filled in. See `neverWritten`.
     let writtenAt: Date
 
-    var frames: [Frame] {
-        if case .frames(let frames) = state { return frames }
-        return []
+    struct DevelopingRoll: Codable, Equatable {
+        let id: UUID
+        let name: String
+        let revealAt: Date
+        /// When it started developing, so a ring can show how far along it is rather than only
+        /// how long is left.
+        let startedAt: Date
+    }
+
+    /// One frame worth looking back at.
+    struct Memory: Codable, Equatable {
+        /// How far back this frame is: the label the tile prints, and the sort order.
+        ///
+        /// Deliberately a ladder rather than a single one-year-ago query. FLIM 1.0 shipped
+        /// 2026-06-30, so no account can have a genuine one-year-ago frame until mid-2027; a
+        /// widget that only knew that horizon would show its fallback to every user for ten
+        /// months, which is the same mistake as a roll countdown that is blank for everybody.
+        ///
+        /// The ladder is walked oldest-first and every horizon that HAS a frame contributes one
+        /// card, so the strongest memory leads and the tile still changes through the day.
+        enum Horizon: String, Codable, Equatable, CaseIterable {
+            case yearAgo, monthAgo, lastWeek, yesterday, latest
+
+            /// Printed on the tile. Says what the frame actually is, so the label is never a
+            /// claim the data cannot support.
+            var label: String {
+                switch self {
+                case .yearAgo:   return "ONE YEAR AGO"
+                case .monthAgo:  return "ONE MONTH AGO"
+                case .lastWeek:  return "LAST WEEK"
+                case .yesterday: return "YESTERDAY"
+                case .latest:    return "LATEST FRAME"
+                }
+            }
+
+            /// How far back this horizon looks, and how wide a window counts as "about then".
+            /// A week either side of a year keeps an anniversary from missing by a day.
+            var lookback: (offset: TimeInterval, window: TimeInterval)? {
+                let day: TimeInterval = 86_400
+                switch self {
+                case .yearAgo:   return (365 * day, 7 * day)
+                case .monthAgo:  return (30 * day, 3 * day)
+                case .lastWeek:  return (7 * day, 2 * day)
+                case .yesterday: return (1 * day, 1 * day)
+                case .latest:    return nil          // no lookback: whatever is newest
+                }
+            }
+        }
+
+        let horizon: Horizon
+        /// Filename inside the shared container. Names rather than bytes, because both sides can
+        /// see the same directory and JSON with base64 images in it is a bad trade.
+        let imageName: String
+        let takenAt: Date
+        /// The line under the label: the roll it came from, or the date it was shot.
+        let subtitle: String
+        /// Where a tap goes, as an absolute URL string.
+        let link: String
     }
 
     /// Every image this snapshot can display, which is what the writer fetches and the pruner keeps.
-    var imageNames: [String] { frames.map(\.imageName) }
+    var imageNames: [String] { memories.map(\.imageName) }
 
-    /// Where a tap goes for a state that has no frame of its own to carry a link.
-    var link: String {
-        switch state {
-        case .developing(_, _, let rollId): return WidgetLink.reveal(rollId)
-        case .frames(let frames):           return frames.first?.link ?? WidgetLink.camera
-        case .empty:                        return WidgetLink.camera
-        }
+    /// What the shutter should show. The priority is the product decision: the only state asking
+    /// for something outranks the only state with a deadline, which outranks a standing count.
+    enum ShutterState: Equatable {
+        case readyToReveal
+        case developing(progress: Double)
+        case unsorted(count: Int)
+        case idle
     }
 
-    static let empty = WidgetSnapshot(state: .empty, accent: FlimAccentPalette.fallback,
+    func shutterState(now: Date = .now) -> ShutterState {
+        if readyToReveal { return .readyToReveal }
+        if let roll = developingRoll, roll.revealAt > now {
+            let total = roll.revealAt.timeIntervalSince(roll.startedAt)
+            let done = total > 0 ? now.timeIntervalSince(roll.startedAt) / total : 1
+            return .developing(progress: min(1, max(0, done)))
+        }
+        if unsortedCount > 0 { return .unsorted(count: unsortedCount) }
+        return .idle
+    }
+
+    /// True when the app has never written here.
+    ///
+    /// Distinct from "nothing to show", and the distinction is the point: a snapshot saying zero
+    /// is an answer, while no snapshot at all means the shared container never worked — an App
+    /// Group missing from a provisioning profile, which is silent, survives a reinstall, and used
+    /// to be indistinguishable from an empty darkroom on screen.
+    var neverWritten: Bool { writtenAt == .distantPast }
+
+    static let empty = WidgetSnapshot(unsortedCount: 0, developingRoll: nil, readyToReveal: false,
+                                      memories: [], accent: FlimAccentPalette.fallback,
                                       writtenAt: .distantPast)
 }
 
 /// The links a widget can hand back to the app.
 ///
 /// Built here, in the file both targets already share, so the strings the extension opens and the
-/// strings `PushDestination.parse(url:)` recognises cannot drift apart. The scheme is the one in
-/// `Info.plist`, which is still the original bundle id.
+/// strings `PushDestination.parse(url:)` recognises cannot drift apart.
+///
+/// The scheme is `com.lapse.app`, from Info.plist — the original bundle id, kept because a
+/// registered scheme cannot be changed without breaking every link already in the wild. The
+/// design handoff wrote these as `flim://…`, which is not registered; iOS drops those taps.
 enum WidgetLink {
     static let scheme = "com.lapse.app"
 
     static var camera: String { "\(scheme)://camera" }
     static var darkroom: String { "\(scheme)://darkroom" }
+    static var sortDeck: String { "\(scheme)://sortdeck" }
     static func reveal(_ rollId: UUID) -> String { "\(scheme)://reveal/\(rollId.uuidString)" }
     static func post(_ postId: UUID) -> String { "\(scheme)://post/\(postId.uuidString)" }
+    static func photo(_ photoId: UUID) -> String { "\(scheme)://photo/\(photoId.uuidString)" }
 }
 
 /// The shared container, and the only place either side names it.
@@ -110,9 +162,9 @@ enum WidgetStore {
 
     /// Reads the current snapshot, or nil if there is none, the container does not exist, or the
     /// stored JSON no longer decodes (a snapshot written by an older build after an upgrade).
-    /// Every failure is the same answer on purpose: the widget renders its empty state rather
-    /// than an error, because there is no useful error to show on a home screen. The app rewrites
-    /// the snapshot on its next launch, so a shape change costs one empty tile, not a broken one.
+    ///
+    /// Callers turn nil into `.empty`, whose `neverWritten` is true, so a container that does not
+    /// work arrives at the tile as a state it can render honestly.
     static func read() -> WidgetSnapshot? {
         guard let url = container?.appendingPathComponent(snapshotFile),
               let data = try? Data(contentsOf: url) else { return nil }

@@ -13,6 +13,9 @@ import SwiftUI
 /// BOTH targets (see project.yml), so there is no second copy to drift.
 struct RollRevealCard: View {
     let rollName: String
+    /// Only used to pick the cover's hue, so a roll looks the same colour here as in the app.
+    /// Defaulted so existing previews and tests that only care about copy keep compiling.
+    var rollId: String = ""
     let state: RollRevealAttributes.ContentState
     /// Injectable so a preview can show the card at any point in a roll's life, and so the tests
     /// covering the copy are not racing the wall clock.
@@ -22,47 +25,70 @@ struct RollRevealCard: View {
     private var revealed: Bool { RollRevealAttributes.hasRevealed(state.revealAt, now: now) }
 
     var body: some View {
-        VStack(spacing: 11) {
-            HStack(spacing: 12) {
-                RollRevealCard.icon(revealed: revealed)
-                    .font(.system(size: 19, weight: .light))
-                    .foregroundStyle(accent)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(rollName)
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .lineLimit(1)
-                    Text(RollRevealAttributes.statusLabel(shotCount: state.shotCount,
-                                                          revealAt: state.revealAt, now: now))
-                        .font(.system(size: 12))
-                        .foregroundStyle(.white.opacity(0.62))
-                        .lineLimit(1)
-                }
-
-                Spacer(minLength: 8)
-
-                RollRevealCard.countdown(revealAt: state.revealAt, now: now)
-                    .font(.system(size: 17, weight: .semibold, design: .rounded))
-                    .foregroundStyle(revealed ? .black : accent)
-                    .multilineTextAlignment(.trailing)
+        HStack(spacing: 11) {
+            cover
+            VStack(alignment: .leading, spacing: 1) {
+                Text(revealed ? "\(rollName) is ready" : "\(rollName) is developing")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.white)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-                    .frame(minWidth: 58)
-                    // Once it is ready the countdown slot stops being a number and becomes the
-                    // thing to act on, so it is filled rather than tinted. This is the only card
-                    // state that is asking for something.
-                    .padding(.horizontal, revealed ? 11 : 0)
-                    .padding(.vertical, revealed ? 5 : 0)
-                    .background { if revealed { Capsule().fill(accent) } }
+                    .minimumScaleFactor(0.8)
+                Text(RollRevealAttributes.statusLabel(shotCount: state.shotCount,
+                                                      revealAt: state.revealAt, now: now))
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(WidgetTheme.textSecondary)
+                    .lineLimit(1)
             }
 
-            // The bar is the actual upgrade. "4h 12m" does not say whether that is nearly there
-            // or barely started; a bar answers it at a glance, without being read.
-            RollRevealCard.progress(state: state, revealed: revealed, accent: accent)
+            Spacer(minLength: 6)
+
+            RollRevealCard.countdown(revealAt: state.revealAt, now: now)
+                .font(.system(size: 17, weight: .medium, design: .monospaced))
+                .foregroundStyle(revealed ? .black : accent)
+                .multilineTextAlignment(.trailing)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                .frame(minWidth: 58)
+                // Once it is ready the countdown slot stops being a number and becomes the thing
+                // to act on, so it is filled rather than tinted. This is the only card state that
+                // is asking for something.
+                .padding(.horizontal, revealed ? 11 : 0)
+                .padding(.vertical, revealed ? 5 : 0)
+                .background { if revealed { Capsule().fill(accent) } }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 14)
+        .padding(.horizontal, 15)
+        .padding(.vertical, 13)
+    }
+
+    /// The roll's cover, with its develop progress drawn AROUND it rather than as a bar beneath
+    /// the row.
+    ///
+    /// The bar it replaces answered the same question ("nearly there, or barely started?") and
+    /// cost a whole row to do it, on a surface where vertical space is the scarcest thing there
+    /// is. Wrapped around the cover it costs nothing and reads faster, because the thing filling
+    /// up is visibly the thing being waited on.
+    ///
+    /// The cover is a generated gradient, not a photograph: a Live Activity has no App Group, so
+    /// the extension cannot reach a thumbnail even in principle. The hue comes from the roll's id
+    /// with the same formula `AvatarView` uses, so a roll is the same colour here as it is in the
+    /// Rolls list.
+    private var cover: some View {
+        RollHueTile(seed: rollId, corner: 10)
+            .frame(width: 38, height: 38)
+            .overlay {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .trim(from: 0, to: revealed ? 1 : progressValue)
+                    .stroke(accent, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                    .padding(-3)
+            }
+    }
+
+    private var progressValue: Double {
+        // Floored so a roll that has only just started still shows a mark rather than nothing at
+        // all, which would be indistinguishable from a ring that failed to draw.
+        max(0.02, RollRevealAttributes.developProgress(from: state.developFrom,
+                                                       to: state.revealAt, now: now))
     }
 
     // MARK: - Pieces, shared with the Dynamic Island presentations

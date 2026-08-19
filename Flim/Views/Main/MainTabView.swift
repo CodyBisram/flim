@@ -52,6 +52,10 @@ struct MainTabView: View {
     @State private var selected = 0
     /// Per-tab counter, bumped when you re-tap the tab you're already on, so that tab scrolls to top.
     @State private var scrollSignal: [Int: Int] = [:]
+    /// Bumped to open the sort deck from a widget tap. See `DarkroomView.openSortDeckSignal`.
+    @State private var sortDeckSignal = 0
+    /// A frame a widget tap asked for, handed to the Darkroom to open in its pager.
+    @State private var openPhotoId: UUID?
     @AppStorage("hasOnboarded") private var hasOnboarded = false
     @AppStorage("accentColor") private var accentColor = "amber"   // re-tints on change
     /// True only once the person has genuinely decided (tapped "Turn on notifications" or "Not
@@ -119,7 +123,9 @@ struct MainTabView: View {
             }
             Tab("Darkroom", systemImage: "photo.stack", value: 1) {
                 NavigationStack {
-                    DarkroomView(scrollToTop: scrollSignal[1, default: 0])
+                    DarkroomView(scrollToTop: scrollSignal[1, default: 0],
+                                 openSortDeckSignal: sortDeckSignal,
+                                 openPhotoId: $openPhotoId)
                 }
             }
             Tab("Rolls", systemImage: "film.stack", value: 2) {
@@ -315,6 +321,16 @@ struct MainTabView: View {
 
         case .darkroom:
             selected = 1
+
+        case .sortDeck:
+            selected = 1
+            sortDeckSignal += 1
+
+        case .photo(let photoId):
+            // The Darkroom owns the pager, and it loads its own frames; handing it an id it
+            // cannot find leaves a real, populated Darkroom on screen rather than a blank sheet.
+            selected = 1
+            openPhotoId = photoId
 
         case .feed:
             selected = 3

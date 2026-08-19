@@ -111,6 +111,10 @@ targets:
       # What the home-screen widget shows, and the App Group container both sides read it from.
       # Same second-source-entry pattern as the three above.
       - path: Flim/Models/WidgetSnapshot.swift
+      # The tokens all three off-app surfaces are drawn from. Shared because the Live Activity
+      # card lives in Flim/Models and the home tiles live in the extension, so a hex value
+      # defined in either would need a second copy in the other.
+      - path: Flim/Models/WidgetTheme.swift
     entitlements:
       path: RollActivityWidget/RollActivityWidget.entitlements
       properties:
