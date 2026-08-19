@@ -21,7 +21,7 @@ struct ShutterWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: "Shutter", provider: ShutterProvider()) { _ in
             ShutterView()
-                .widgetURL(URL(string: "com.lapse.app://camera"))
+                .widgetURL(URL(string: WidgetLink.camera))
                 .containerBackground(for: .widget) { Color.clear }
         }
         .configurationDisplayName("Shoot")

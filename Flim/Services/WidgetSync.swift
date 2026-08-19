@@ -41,8 +41,7 @@ enum WidgetSync {
     }
 
     /// The precedence is the product decision, not an implementation detail: a developing roll
-    /// outranks a posted frame, which outranks an unposted one, which outranks nothing at all.
-    /// See `WidgetSnapshot.State` for why each one exists.
+    /// outranks recent frames, which outrank nothing at all. See `WidgetSnapshot.State`.
     private static func compose() async -> WidgetSnapshot? {
         guard let userId = try? await supabase.auth.session.user.id else { return nil }
 
@@ -52,91 +51,102 @@ enum WidgetSync {
         let accent = UserDefaults.standard.string(forKey: "accentColor") ?? FlimAccentPalette.fallback
 
         if let roll = await developingRoll(userId: userId) {
-            return WidgetSnapshot(state: .developing(rollName: roll.name, revealAt: roll.revealAt),
-                                  imageNames: [], accent: accent, writtenAt: .now)
+            return WidgetSnapshot(state: .developing(rollName: roll.name, revealAt: roll.revealAt,
+                                                     rollId: roll.id),
+                                  accent: accent, writtenAt: .now)
         }
         let frames = await recentFrames(userId: userId)
-        guard let newest = frames.first else {
-            return WidgetSnapshot(state: .empty, imageNames: [], accent: accent, writtenAt: .now)
+        guard !frames.isEmpty else {
+            return WidgetSnapshot(state: .empty, accent: accent, writtenAt: .now)
         }
-        // Named for the frame, so an unchanged photograph never rewrites its own bytes and the
-        // pruner can tell current images from every one before them.
-        let names = frames.map { "frame-\($0.id.uuidString).jpg" }
-        if let post = newest.post {
-            let reactions = await reactionCounts(postId: post.id)
-            return WidgetSnapshot(state: .posted(reactions: reactions, postedAt: post.createdAt),
-                                  imageNames: names, accent: accent, writtenAt: .now)
-        }
-        return WidgetSnapshot(state: .shot(takenAt: newest.takenAt),
-                              imageNames: names, accent: accent, writtenAt: .now)
+        return WidgetSnapshot(state: .frames(frames), accent: accent, writtenAt: .now)
     }
 
     // MARK: - Queries
 
-    private struct Frame { let id: UUID; let takenAt: Date; let thumbPath: String?
-                          let post: (id: UUID, createdAt: Date)? }
-
-    private static func developingRoll(userId: UUID) async -> (name: String, revealAt: Date)? {
-        struct Row: Decodable { let name: String; let created_at: Date }
+    private static func developingRoll(userId: UUID) async -> (id: UUID, name: String, revealAt: Date)? {
+        struct Row: Decodable { let id: UUID; let name: String; let created_at: Date }
         let rows: [Row] = (try? await supabase
-            .from("rolls").select("name, created_at, roll_members!inner(user_id)")
+            .from("rolls").select("id, name, created_at, roll_members!inner(user_id)")
             .eq("roll_members.user_id", value: userId.uuidString)
             .order("created_at", ascending: false).limit(5)
             .execute().value) ?? []
         // The soonest reveal still ahead of us. `rollDevelopDelay` is not reachable from here, so
         // this uses the same twelve hours the roll itself was created with.
         return rows
-            .map { (name: $0.name, revealAt: $0.created_at.addingTimeInterval(12 * 3600)) }
+            .map { (id: $0.id, name: $0.name, revealAt: $0.created_at.addingTimeInterval(12 * 3600)) }
             .filter { $0.revealAt > .now }
             .min { $0.revealAt < $1.revealAt }
     }
 
-    /// The five most recent developed frames, newest first. Five because the tile rotates through
-    /// them and five is about a day of shooting for an active account (98 frames a day across 30
-    /// shooters), so a glance in the evening rarely shows the same picture it showed at lunch.
-    private static func recentFrames(userId: UUID) async -> [Frame] {
-        struct PhotoRow: Decodable { let id: UUID; let taken_at: Date; let thumb_path: String? }
+    /// The five most recent developed frames, newest first, each complete: its own timestamp, its
+    /// own post if it has one, its own reactions, its own destination.
+    ///
+    /// Complete per frame because the tile ROTATES through them. Looking up only the newest
+    /// frame's post was one round trip cheaper and showed frame three under frame one's reaction
+    /// count and frame one's timestamp, with a tap that opened frame one. Three queries total
+    /// regardless of how many frames come back, so the fix costs one request, not five.
+    ///
+    /// Five because the tile cycles and five is about a day of shooting for an active account (98
+    /// frames a day across 30 shooters), so a glance in the evening rarely shows the same picture
+    /// it showed at lunch.
+    private static func recentFrames(userId: UUID) async -> [WidgetSnapshot.Frame] {
+        struct PhotoRow: Decodable { let id: UUID; let taken_at: Date }
         let photos: [PhotoRow] = (try? await supabase
-            .from("photos").select("id, taken_at, thumb_path")
+            .from("photos").select("id, taken_at")
             .eq("user_id", value: userId.uuidString)
             .lte("develops_at", value: Date().ISO8601Format())
             .order("taken_at", ascending: false).limit(5)
             .execute().value) ?? []
-        guard let newest = photos.first else { return [] }
+        guard !photos.isEmpty else { return [] }
 
-        // Only the newest frame's post is looked up: it is the only one whose reactions the tile
-        // ever shows, and asking for five would be four round trips spent on nothing.
-        struct PostRow: Decodable { let id: UUID; let created_at: Date }
+        struct PostRow: Decodable { let id: UUID; let photo_id: UUID; let created_at: Date }
         let posts: [PostRow] = (try? await supabase
-            .from("posts").select("id, created_at")
-            .eq("photo_id", value: newest.id.uuidString).limit(1)
+            .from("posts").select("id, photo_id, created_at")
+            .in("photo_id", values: photos.map(\.id.uuidString))
             .execute().value) ?? []
-        let post = posts.first.map { ($0.id, $0.created_at) }
-        return photos.enumerated().map { index, photo in
-            Frame(id: photo.id, takenAt: photo.taken_at, thumbPath: photo.thumb_path,
-                  post: index == 0 ? post : nil)
+        let postByPhoto = Dictionary(posts.map { ($0.photo_id, $0) }, uniquingKeysWith: { first, _ in first })
+        let reactions = await reactionCounts(postIds: posts.map(\.id))
+
+        return photos.map { photo in
+            let post = postByPhoto[photo.id]
+            return WidgetSnapshot.Frame(
+                imageName: "frame-\(photo.id.uuidString).jpg",
+                takenAt: photo.taken_at,
+                postedAt: post?.created_at,
+                reactions: post.flatMap { reactions[$0.id] } ?? [],
+                // An unposted frame has no page of its own, so it opens the Darkroom it is
+                // sitting in rather than a post that does not exist.
+                link: post.map { WidgetLink.post($0.id) } ?? WidgetLink.darkroom)
         }
     }
 
-    /// Grouped client-side rather than by a new RPC: this is at most a few dozen rows for one
-    /// post, and it avoids adding a function to the schema for a widget.
-    private static func reactionCounts(postId: UUID) async -> [WidgetSnapshot.ReactionCount] {
-        struct Row: Decodable { let emoji: String }
+    /// Grouped client-side rather than by a new RPC: this is at most a few dozen rows for five
+    /// posts, and it avoids adding a function to the schema for a widget.
+    private static func reactionCounts(postIds: [UUID]) async -> [UUID: [WidgetSnapshot.ReactionCount]] {
+        guard !postIds.isEmpty else { return [:] }
+        struct Row: Decodable { let post_id: UUID; let emoji: String }
         let rows: [Row] = (try? await supabase
-            .from("post_reactions").select("emoji")
-            .eq("post_id", value: postId.uuidString)
+            .from("post_reactions").select("post_id, emoji")
+            .in("post_id", values: postIds.map(\.uuidString))
             .execute().value) ?? []
+
         // Split into steps rather than one chain: the fused version defeated the type checker
         // outright ("unable to type-check this expression in reasonable time"), which is a
         // compile-time cost paid on every build for no readability gain.
-        let grouped: [String: Int] = rows.reduce(into: [:]) { counts, row in
-            counts[row.emoji, default: 0] += 1
+        var grouped: [UUID: [String: Int]] = [:]
+        for row in rows {
+            grouped[row.post_id, default: [:]][row.emoji, default: 0] += 1
         }
-        var counts = grouped.map { WidgetSnapshot.ReactionCount(emoji: $0.key, count: $0.value) }
-        counts.sort { left, right in
-            left.count == right.count ? left.emoji < right.emoji : left.count > right.count
+        var result: [UUID: [WidgetSnapshot.ReactionCount]] = [:]
+        for (postId, counts) in grouped {
+            var list = counts.map { WidgetSnapshot.ReactionCount(emoji: $0.key, count: $0.value) }
+            list.sort { left, right in
+                left.count == right.count ? left.emoji < right.emoji : left.count > right.count
+            }
+            result[postId] = Array(list.prefix(4))
         }
-        return Array(counts.prefix(4))
+        return result
     }
 
     /// The 80 kB thumbnail, not the 383 kB card: this renders at most 170 points square, and the

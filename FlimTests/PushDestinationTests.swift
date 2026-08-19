@@ -145,11 +145,60 @@ struct PendingPushDestinationTests {
             .post(postId: UUID(), comments: true),
             .post(postId: UUID(), comments: false),
             .profile(userId: UUID()),
+            .camera,
+            .darkroom,
             .feed
         ]
         for destination in cases {
             PendingPushDestination.store(destination)
             #expect(PendingPushDestination.take() == destination, "\(destination)")
+        }
+    }
+}
+
+/// The widget link vocabulary.
+///
+/// `WidgetLink` builds the strings and `PushDestination.parse(url:)` reads them, and they live in
+/// different targets: the extension can emit a link this app cannot understand and nothing about
+/// that fails loudly. The tap just opens the app to whatever tab it was on, which is exactly what
+/// a broken widget looks like. These pin the two together.
+struct WidgetLinkRoutingTests {
+
+    @Test("every link the widget can emit parses back to the destination it names")
+    func linksRoundTrip() {
+        let rollId = UUID()
+        let postId = UUID()
+        let pairs: [(String, PushDestination)] = [
+            (WidgetLink.camera, .camera),
+            (WidgetLink.darkroom, .darkroom),
+            (WidgetLink.reveal(rollId), .reveal(rollId: rollId)),
+            (WidgetLink.post(postId), .post(postId: postId, comments: false))
+        ]
+        for (link, expected) in pairs {
+            let url = URL(string: link)
+            #expect(url != nil, "\(link) is not a URL")
+            #expect(url.flatMap(PushDestination.parse(url:)) == expected, "\(link)")
+        }
+    }
+
+    /// The reason `parse(url:)` is scoped to our own scheme. Invite links arrive as https
+    /// universal links and are checked AFTER the widget routes in `FlimApp.onOpenURL`, so a
+    /// parser that answered for them would swallow every invite in the product.
+    @Test("it declines anything that is not a widget link")
+    func declinesEverythingElse() {
+        let declined = [
+            "https://flim-app.com/i/ABC123",
+            "https://flim-app.com/join/ABC123",
+            "com.lapse.app://login-callback",
+            "com.lapse.app://i/ABC123",
+            "com.lapse.app://reveal/not-a-uuid",
+            "com.lapse.app://reveal",
+            "com.lapse.app://somewhere-new",
+            "flim://camera"
+        ]
+        for raw in declined {
+            let parsed = URL(string: raw).flatMap(PushDestination.parse(url:))
+            #expect(parsed == nil, "\(raw) parsed as \(String(describing: parsed))")
         }
     }
 }

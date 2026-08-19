@@ -313,6 +313,9 @@ struct MainTabView: View {
         case .camera:
             selected = 0
 
+        case .darkroom:
+            selected = 1
+
         case .feed:
             selected = 3
 

@@ -23,8 +23,11 @@ enum PushDestination: Codable, Equatable {
     case post(postId: UUID, comments: Bool)
     case profile(userId: UUID)
     /// The Lock Screen shutter widget. Carries no id: there is only one camera. Never arrives
-    /// over APNs, only from `flim://camera`, so it has no wire representation to parse.
+    /// over APNs, only from a widget link, so it has no wire representation to parse.
     case camera
+    /// The Darkroom, where frames sit before they are posted. Like `camera`, a widget-only
+    /// destination: nothing sends a push that means "look at your unposted work".
+    case darkroom
     case feed
 
     static func parse(userInfo: [AnyHashable: Any]) -> PushDestination? {
@@ -50,6 +53,28 @@ enum PushDestination: Codable, Equatable {
         }
     }
 
+    /// Where a widget tap means to send you.
+    ///
+    /// Scoped hard to our own scheme so it can never shadow the invite routes, which arrive as
+    /// https universal links and are checked after this one. Anything it does not recognise
+    /// returns nil and falls through to the existing handling rather than being swallowed.
+    ///
+    /// The strings are built by `WidgetLink`, in the file both targets share. If you add a case
+    /// here, add its constructor there; a link the extension can emit and this cannot read opens
+    /// the app to nowhere in particular, which looks exactly like the widget being broken.
+    static func parse(url: URL) -> PushDestination? {
+        guard url.scheme == WidgetLink.scheme else { return nil }
+        let id = { UUID(uuidString: url.pathComponents.first { $0 != "/" } ?? "") }
+        switch url.host {
+        case "camera":   return .camera
+        case "darkroom": return .darkroom
+        case "feed":     return .feed
+        case "reveal":   return id().map { .reveal(rollId: $0) }
+        case "post":     return id().map { .post(postId: $0, comments: false) }
+        default:         return nil
+        }
+    }
+
     private static func uuid(_ raw: Any?) -> UUID? {
         guard let string = raw as? String else { return nil }
         return UUID(uuidString: string)
@@ -70,6 +95,8 @@ enum PushDestination: Codable, Equatable {
             return ["t": "profile", "id": userId.uuidString]
         case .camera:
             return ["t": "camera"]
+        case .darkroom:
+            return ["t": "darkroom"]
         case .feed:
             return ["t": "feed"]
         }

@@ -35,31 +35,38 @@ struct LatestFrameWidget: Widget {
 struct LatestFrameEntry: TimelineEntry {
     let date: Date
     let snapshot: WidgetSnapshot
+    /// The frame this entry shows, or nil for the developing and empty states, which have none.
+    let frame: WidgetSnapshot.Frame?
     let image: Data?
+
+    /// Where tapping this entry goes. Per ENTRY, not per snapshot: the tile rotates through
+    /// frames, so a single link would open whatever was newest no matter which photograph was
+    /// actually on screen when the tap landed.
+    var link: URL? { URL(string: frame?.link ?? snapshot.link) }
 }
 
 struct LatestFrameProvider: TimelineProvider {
     func placeholder(in context: Context) -> LatestFrameEntry {
-        LatestFrameEntry(date: .now, snapshot: .empty, image: nil)
+        LatestFrameEntry(date: .now, snapshot: .empty, frame: nil, image: nil)
     }
 
     func getSnapshot(in context: Context, completion: @escaping (LatestFrameEntry) -> Void) {
-        completion(entry())
+        completion(first())
     }
 
-    /// One entry now, and a refresh an hour out. The app is what pushes real change here (it
-    /// rewrites the snapshot and calls `WidgetCenter.reloadTimelines` when a frame is shot or
-    /// reactions land), so this schedule exists only to keep relative times honest and to recover
-    /// if the app has not run in a while. A developing roll asks for a tighter one, because its
-    /// countdown is the only thing on screen that has to be right to the minute.
+    /// One entry per frame, and a refresh after the last of them. The app is what pushes real
+    /// change here (it rewrites the snapshot and calls `WidgetCenter.reloadTimelines` when a frame
+    /// is shot or reactions land), so this schedule exists only to keep relative times honest and
+    /// to recover if the app has not run in a while. A developing roll asks for a tighter one,
+    /// because its countdown is the only thing on screen that has to be right to the minute.
     func getTimeline(in context: Context, completion: @escaping (Timeline<LatestFrameEntry>) -> Void) {
         let now = Date()
         let snapshot = WidgetStore.read() ?? .empty
         // A developing roll does not rotate: it has a deadline, and cycling away from a countdown
         // to show a photograph is losing the one thing on screen that is time-critical.
-        if case .developing(_, let revealAt) = snapshot.state {
+        if case .developing(_, let revealAt, _) = snapshot.state {
             let next = min(revealAt, now.addingTimeInterval(15 * 60))
-            completion(Timeline(entries: [entry()], policy: .after(next)))
+            completion(Timeline(entries: [first()], policy: .after(next)))
             return
         }
         let entries = rotating(snapshot, from: now)
@@ -68,10 +75,11 @@ struct LatestFrameProvider: TimelineProvider {
         completion(Timeline(entries: entries, policy: .after(next)))
     }
 
-    private func entry() -> LatestFrameEntry {
+    private func first() -> LatestFrameEntry {
         let snapshot = WidgetStore.read() ?? .empty
-        let image = snapshot.imageName.flatMap { WidgetStore.image(named: $0) }
-        return LatestFrameEntry(date: .now, snapshot: snapshot, image: image)
+        let frame = snapshot.frames.first
+        return LatestFrameEntry(date: .now, snapshot: snapshot, frame: frame,
+                                image: frame.flatMap { WidgetStore.image(named: $0.imageName) })
     }
 
     /// One entry per stored frame, spaced apart, so the tile cycles through recent work instead of
@@ -79,12 +87,13 @@ struct LatestFrameProvider: TimelineProvider {
     /// from a single wake, so a rotation costs no more refresh budget than a static tile: the
     /// entries are prepared once and swapped by the system on schedule.
     private func rotating(_ snapshot: WidgetSnapshot, from start: Date) -> [LatestFrameEntry] {
-        let names = snapshot.imageNames
-        guard names.count > 1 else { return [entry()] }
-        return names.enumerated().map { index, name in
+        let frames = snapshot.frames
+        guard frames.count > 1 else { return [first()] }
+        return frames.enumerated().map { index, frame in
             LatestFrameEntry(date: start.addingTimeInterval(Double(index) * Self.rotation),
                              snapshot: snapshot,
-                             image: WidgetStore.image(named: name))
+                             frame: frame,
+                             image: WidgetStore.image(named: frame.imageName))
         }
     }
 
@@ -106,18 +115,39 @@ struct LatestFrameView: View {
     private var accent: Color { FlimAccentPalette.color(entry.snapshot.accent) }
 
     var body: some View {
+        tile
+            // The whole tile is the tap target, and the link is the ENTRY's, so it matches the
+            // photograph actually on screen. `PushDestination.parse(url:)` reads these; a link
+            // it does not recognise opens the app to nowhere in particular, which is
+            // indistinguishable from the widget being broken. Keep the two in step.
+            .widgetURL(entry.link)
+    }
+
+    @ViewBuilder
+    private var tile: some View {
         switch entry.snapshot.state {
-        case .developing(let name, let revealAt):
+        case .developing(let name, let revealAt, _):
             DevelopingTile(rollName: name, revealAt: revealAt, accent: accent)
-        case .posted(let reactions, let postedAt):
-            FrameTile(image: entry.image, accent: accent, reactions: reactions,
-                      caption: Self.relative(postedAt), family: family)
-        case .shot(let takenAt):
-            FrameTile(image: entry.image, accent: accent, reactions: [],
-                      caption: "In your darkroom \u{00B7} " + Self.relative(takenAt), family: family)
+        case .frames:
+            if let frame = entry.frame {
+                FrameTile(image: entry.image, accent: accent, reactions: frame.reactions,
+                          caption: Self.caption(for: frame), family: family)
+            } else {
+                EmptyPlateTile(accent: accent)
+            }
         case .empty:
             EmptyPlateTile(accent: accent)
         }
+    }
+
+    /// A posted frame is dated by its post, an unposted one says where it is sitting: the two
+    /// carry different information, and "3h" under a frame nobody has seen would be answering a
+    /// question its owner did not ask.
+    private static func caption(for frame: WidgetSnapshot.Frame) -> String {
+        guard let postedAt = frame.postedAt else {
+            return "In your darkroom \u{00B7} " + relative(frame.takenAt)
+        }
+        return relative(postedAt)
     }
 
     /// "2h" rather than "2 hours ago": at widget size the unit is what carries the meaning and
