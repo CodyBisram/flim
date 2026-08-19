@@ -94,10 +94,19 @@ struct ShutterProvider: TimelineProvider {
 /// concentric rings and a solid centre survive the size, read instantly as a shutter release, and
 /// match the camera control the app already draws.
 ///
-/// On the Lock Screen the system renders accessory widgets in its own tinted or monochrome style,
-/// so the accent survives as brightness rather than as hue there; it shows in full on the Home
-/// Screen's small-circle placement and in StandBy. `.widgetAccentable()` marks the parts that
-/// should take the system tint, which is why the shutter itself is marked and the ring is not.
+/// ## The Lock Screen does not render your colours, and cannot be made to
+///
+/// `.accessoryCircular` is composited by the system as a vibrancy mask: what survives is
+/// LUMINANCE and ALPHA, not hue. A widget cannot opt out, and there is no API that lets it —
+/// setting an accent here is not overridden so much as never consulted. So the accent is real on
+/// the Home Screen's small-circle placement and in StandBy, and on the Lock Screen it is not.
+///
+/// That is designed around rather than fought: every state below is distinguishable by SHAPE
+/// alone — a bare shutter, a shutter with an arc around it, a shutter with a filled badge, a
+/// shutter with a sparkle. Drop the colour out of any of them and they are still four different
+/// tiles. `AccessoryWidgetBackground` supplies the same translucent disc the system's own
+/// accessory widgets sit on, which is what makes this look native there rather than like a dark
+/// circle pasted onto the wallpaper.
 struct ShutterView: View {
     let state: WidgetSnapshot.ShutterState
     var accent: String = FlimAccentPalette.fallback
@@ -105,56 +114,75 @@ struct ShutterView: View {
     private var accentColor: Color { FlimAccentPalette.color(accent) }
 
     var body: some View {
-        ZStack {
-            switch state {
-            case .readyToReveal:
-                Circle().fill(WidgetTheme.soft(accentColor))
-                shutter(ring: accentColor, fill: nil)
-                Image(systemName: "sparkles")
-                    .font(.system(size: 15, weight: .light))
-                    .foregroundStyle(accentColor)
-                    .widgetAccentable()
+        GeometryReader { geo in
+            let side = min(geo.size.width, geo.size.height)
+            ZStack {
+                AccessoryWidgetBackground()
 
-            case .developing(let progress):
-                shutter(ring: .white.opacity(0.55), fill: .white)
-                // The ring lives OUTSIDE the shutter rather than replacing it, so the tile never
-                // stops being a shutter while a roll happens to be developing.
-                Circle()
-                    .strokeBorder(.white.opacity(0.18), lineWidth: 2.5)
-                Circle()
-                    .trim(from: 0, to: max(0.02, progress))
-                    .stroke(accentColor, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
-                    .rotationEffect(.degrees(-90))
-                    .padding(1.25)
+                switch state {
+                case .readyToReveal:
+                    shutter(ring: accentColor, filled: false, side: side)
+                    Image(systemName: "sparkles")
+                        .font(.system(size: side * 0.30, weight: .light))
+                        .foregroundStyle(accentColor)
 
-            case .unsorted(let count):
-                shutter(ring: .white.opacity(0.55), fill: .white)
-                badge(count)
+                case .developing(let progress):
+                    shutter(ring: .white.opacity(0.9), filled: true, side: side)
+                    // strokeBorder, and inset: a plain `stroke` centres the line ON the path, so
+                    // half of it lands outside the circular mask and gets shaved off.
+                    Circle()
+                        .strokeBorder(.white.opacity(0.25), lineWidth: side * 0.055)
+                    Circle()
+                        .inset(by: side * 0.0275)
+                        .trim(from: 0, to: max(0.02, progress))
+                        .stroke(accentColor, style: StrokeStyle(lineWidth: side * 0.055, lineCap: .round))
+                        .rotationEffect(.degrees(-90))
 
-            case .idle:
-                shutter(ring: .white.opacity(0.55), fill: .white)
+                case .unsorted(let count):
+                    shutter(ring: .white.opacity(0.9), filled: true, side: side)
+                    badge(count, side: side)
+
+                case .idle:
+                    shutter(ring: .white.opacity(0.9), filled: true, side: side)
+                }
             }
-        }
-    }
-
-    private func shutter(ring: Color, fill: Color?) -> some View {
-        ZStack {
-            Circle().strokeBorder(ring, lineWidth: 2).padding(4)
-            if let fill { Circle().fill(fill).padding(10) }
+            .frame(width: geo.size.width, height: geo.size.height)
         }
         .widgetAccentable()
     }
 
-    /// Top-trailing, overlapping the ring, the way a notification badge sits on an app icon. The
-    /// count is capped so a big pile cannot push the digits down to an unreadable size.
-    private func badge(_ count: Int) -> some View {
-        Text(count > 9 ? "9+" : "\(count)")
-            .font(.system(size: 10, weight: .bold))
+    /// Sized from the tile rather than in points. An accessory circle is not one fixed size across
+    /// devices, and the previous fixed paddings put the ring in a different place on a mini than
+    /// on a Pro Max.
+    private func shutter(ring: Color, filled: Bool, side: CGFloat) -> some View {
+        ZStack {
+            Circle()
+                .strokeBorder(ring, lineWidth: side * 0.05)
+                .padding(side * 0.16)
+            if filled {
+                Circle().fill(.white).padding(side * 0.30)
+            }
+        }
+    }
+
+    /// Inside the circle, not at the bounding box's corner.
+    ///
+    /// This is the clipping bug: `.frame(alignment: .topTrailing)` puts a badge in the corner of
+    /// the SQUARE, and an accessory widget is masked to the inscribed CIRCLE, so the corner is
+    /// exactly the part that is thrown away — the badge came out sliced in half. Placing it on
+    /// the 45° diagonal at 0.30 of the side keeps the whole badge inside the mask at every size.
+    private func badge(_ count: Int, side: CGFloat) -> some View {
+        let radius = side * 0.30
+        let offset = radius * 0.7071            // cos/sin of 45°
+        return Text(count > 9 ? "9+" : "\(count)")
+            .font(.system(size: side * 0.22, weight: .bold))
             .foregroundStyle(.black)
-            .padding(.horizontal, 4)
-            .frame(minWidth: 16, minHeight: 16)
+            .padding(.horizontal, side * 0.055)
+            .frame(minWidth: side * 0.30, minHeight: side * 0.30)
             .background(Capsule().fill(accentColor))
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-            .offset(x: 2, y: -2)
+            // A hairline of the tile's own backdrop around the badge, so it reads as sitting ON
+            // the shutter rather than merging into the ring it overlaps.
+            .overlay(Capsule().strokeBorder(.black.opacity(0.35), lineWidth: side * 0.02))
+            .offset(x: offset, y: -offset)
     }
 }

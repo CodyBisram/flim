@@ -240,7 +240,7 @@ struct DarkroomView: View {
             // was emptied on another device, and an empty full-screen deck is a dead end.
             if unsortedCount > 0 { showSortDeck = true }
         }
-        .onChange(of: openPhotoId.wrappedValue) { _, id in openRequestedPhoto(id) }
+        .onChange(of: openPhotoId.wrappedValue) { _, _ in openRequestedPhoto() }
         .sheet(item: $shareItem) { SharePreviewSheet(photo: $0.image) }
         .confirmationDialog("Delete this photo?", isPresented: $showRollDeleteConfirm, titleVisibility: .visible) {
             Button("Delete", role: .destructive) {
@@ -557,15 +557,30 @@ struct DarkroomView: View {
         }
     }
 
-    /// Opens a frame a widget asked for, if this Darkroom can see it.
+    /// Opens a frame a widget asked for, if this Darkroom can see it yet.
     ///
-    /// Cleared either way. A frame that is gone (deleted, or belonging to an account that is no
-    /// longer signed in) leaves a real, populated Darkroom on screen, which is the same graceful
-    /// no-op every other deep link here takes; leaving the id set would retry it forever.
-    private func openRequestedPhoto(_ id: UUID?) {
-        guard let id else { return }
-        defer { openPhotoId.wrappedValue = nil }
-        selectedPhoto = vm.developedPhotos.first { $0.id == id }
+    /// Deliberately does NOT clear the request when the frame is simply not loaded. That was the
+    /// bug: a widget tap sets the id, the Darkroom's `.onChange` fires immediately with an empty
+    /// `developedPhotos` (the first `reload()` is still in flight, and on a cold launch this view
+    /// did not even exist when the id was set), the lookup misses, and clearing there threw the
+    /// request away before the data it needed had arrived. The tap did nothing, every time.
+    ///
+    /// So it is consumed on three triggers — the change, this view appearing, and the end of
+    /// every reload — and only cleared once the library is actually loaded, which is the first
+    /// moment a miss means the frame is genuinely gone rather than merely late.
+    private func openRequestedPhoto() {
+        guard let id = openPhotoId.wrappedValue else { return }
+        if let photo = vm.developedPhotos.first(where: { $0.id == id }) {
+            openPhotoId.wrappedValue = nil
+            selectedPhoto = photo
+            return
+        }
+        // Loaded and still not found: deleted, moderated, or belonging to an account that is no
+        // longer signed in. Leaves a real, populated Darkroom on screen, the same graceful no-op
+        // every other deep link here takes.
+        if !vm.isLoading {
+            openPhotoId.wrappedValue = nil
+        }
     }
 
 
@@ -583,6 +598,9 @@ struct DarkroomView: View {
         // round trip per tile.
         await feed.loadMyPostedPhotoIds(userId: userId)
         checkForReveal()
+        // The library is loaded now, so a pending widget tap can finally be answered — or
+        // recognised as pointing at something that is gone.
+        openRequestedPhoto()
     }
 
     /// Celebrate shots that have finished developing since the last time the Darkroom was open.

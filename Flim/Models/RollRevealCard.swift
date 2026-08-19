@@ -28,11 +28,21 @@ struct RollRevealCard: View {
         HStack(spacing: 11) {
             cover
             VStack(alignment: .leading, spacing: 1) {
-                Text(revealed ? "\(rollName) is ready" : "\(rollName) is developing")
+                // Two Texts, not one interpolated string. "Summer road trip is developing" does
+                // not fit, and as a single Text the tail is what gets cut — so the card said
+                // "Summer road trip is develo…" and dropped the only word carrying the state.
+                // Split, the NAME truncates and the state always survives.
+                HStack(spacing: 0) {
+                    Text(rollName)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .layoutPriority(0)
+                    Text(revealed ? " is ready" : " is developing")
+                        .fixedSize()
+                        .layoutPriority(1)
+                }
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(.white)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
                 Text(RollRevealAttributes.statusLabel(shotCount: state.shotCount,
                                                       revealAt: state.revealAt, now: now))
                     .font(.system(size: 11.5))
@@ -73,14 +83,23 @@ struct RollRevealCard: View {
     /// with the same formula `AvatarView` uses, so a roll is the same colour here as it is in the
     /// Rolls list.
     private var cover: some View {
-        RollHueTile(seed: rollId, corner: 10)
+        RollHueTile(seed: rollId, corner: 10, initial: RollHueTile.initial(of: rollName))
             .frame(width: 38, height: 38)
             .overlay {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .trim(from: 0, to: revealed ? 1 : progressValue)
-                    .stroke(accent, style: StrokeStyle(lineWidth: 2, lineCap: .round))
-                    .rotationEffect(.degrees(-90))
-                    .padding(-3)
+                ZStack {
+                    // The TRACK. Without it a roll that has barely started draws a two-percent
+                    // arc floating in space, which does not read as a progress ring at all — it
+                    // reads as a rendering artifact, and that is how it looked on device an hour
+                    // into a twelve-hour develop. The Rolls list already specifies a track at
+                    // white 10%; this is the same ring, so it is the same track.
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(.white.opacity(0.10), lineWidth: 2)
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .trim(from: 0, to: revealed ? 1 : progressValue)
+                        .stroke(accent, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                        .rotationEffect(.degrees(-90))
+                }
+                .padding(-3)
             }
     }
 

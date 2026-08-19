@@ -132,6 +132,25 @@ struct WidgetSnapshotTests {
         #expect(try JSONDecoder().decode(WidgetSnapshot.self, from: data) == original)
     }
 
+    @Test("a roll's cover initial skips emoji and punctuation")
+    func coverInitial() {
+        // Roll names in this product routinely lead with an emoji, and drawing that as the cover
+        // letter is drawing a picture on top of a picture.
+        #expect(RollHueTile.initial(of: "🏠 Roommates") == "R")
+        #expect(RollHueTile.initial(of: "Summer road trip") == "S")
+        #expect(RollHueTile.initial(of: "  lake weekend") == "L")
+        #expect(RollHueTile.initial(of: "24 hours") == "2")
+        #expect(RollHueTile.initial(of: "🎞️") == nil)
+        #expect(RollHueTile.initial(of: "") == nil)
+    }
+
+    @Test("the cover hue is stable for an id and spreads across different ones")
+    func coverHue() {
+        let id = UUID().uuidString
+        #expect(RollHueTile.hue(id) == RollHueTile.hue(id))
+        #expect((0...1).contains(RollHueTile.hue(id)))
+    }
+
     @Test("imageNames lists exactly what the pruner must keep")
     func imageNamesTracksMemories() {
         let memories = (0..<3).map { i in

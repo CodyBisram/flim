@@ -185,6 +185,17 @@ enum WidgetSync {
 
     /// The 80 kB thumbnail, not the 383 kB card: this renders at most 170 points square, and the
     /// bytes cross the network on a schedule nobody asked for.
+    ///
+    /// Re-encoded before it is stored, and that is not an optimisation. `thumb_path` is null for
+    /// about 9% of the library (see `Photo.needsRenditionRepair`) and the fallback is
+    /// `storage_path`, the full 2048px master. Handing that to a widget extension to decode
+    /// allocates roughly 22 MB of bitmap against a budget far smaller than the app's: the
+    /// extension gets killed mid-render and the system shows a redacted placeholder wearing the
+    /// default accent, which is precisely how the look-back tile failed on device.
+    ///
+    /// So the app pays the decode, where there is headroom, and only small bytes ever reach the
+    /// container. `WidgetImage.decode` caps it on the read side too, because a container outlives
+    /// the build that filled it.
     private static func thumbnailData(for name: String) async -> Data? {
         let id = name.replacingOccurrences(of: "frame-", with: "")
                      .replacingOccurrences(of: ".jpg", with: "")
@@ -193,7 +204,17 @@ enum WidgetSync {
             .from("photos").select("thumb_path, storage_path")
             .eq("id", value: id).limit(1)
             .execute().value) ?? []
-        guard let path = rows.first.map({ $0.thumb_path ?? $0.storage_path }) else { return nil }
-        return try? await supabase.storage.from("photos").download(path: path)
+        guard let path = rows.first.map({ $0.thumb_path ?? $0.storage_path }),
+              let data = try? await supabase.storage.from("photos").download(path: path)
+        else { return nil }
+        return shrink(data) ?? data
+    }
+
+    /// Down to 600px on the long edge, which is still well above the 170pt the tile renders at
+    /// even on a 3x screen. Returns nil if the bytes will not decode, and the caller then stores
+    /// the original rather than storing nothing.
+    private static func shrink(_ data: Data, maxPixel: CGFloat = 600) -> Data? {
+        guard let image = WidgetImage.decode(data, maxPixel: maxPixel) else { return nil }
+        return image.jpegData(compressionQuality: 0.8)
     }
 }

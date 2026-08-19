@@ -23,7 +23,22 @@ struct DarkroomWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: "Darkroom", provider: DarkroomProvider()) { entry in
             DarkroomTile(snapshot: entry.snapshot)
-                .containerBackground(for: .widget) { WidgetTheme.card }
+                // The wash and the grain belong to the CONTAINER, not to the content.
+                //
+                // Widget content is laid out inside the system's content margins, so anything
+                // drawn in the view's own background stops at that inset while
+                // `containerBackground` runs edge to edge. Putting the gradient in the content
+                // produced a visibly smaller dark square floating inside the tile's rounded
+                // rectangle, which is exactly what it looked like on device.
+                .containerBackground(for: .widget) {
+                    ZStack {
+                        WidgetTheme.card
+                        RadialGradient(colors: [WidgetTheme.soft(FlimAccentPalette.color(entry.snapshot.accent)), .clear],
+                                       center: UnitPoint(x: 0.85, y: 1.0),
+                                       startRadius: 0, endRadius: 190)
+                        WidgetGrain(opacity: 0.35)
+                    }
+                }
         }
         .configurationDisplayName("Darkroom")
         .description("Prints waiting to be sorted, and the roll that's developing.")
@@ -73,22 +88,14 @@ struct DarkroomTile: View {
     private var accent: Color { FlimAccentPalette.color(snapshot.accent) }
 
     var body: some View {
-        ZStack(alignment: .topLeading) {
-            // A wash from the bottom-right corner rather than a flat fill, so the tile has a
-            // direction to it and the accent is present without being a block of colour.
-            RadialGradient(colors: [WidgetTheme.soft(accent), .clear],
-                           center: UnitPoint(x: 0.8, y: 1.0), startRadius: 0, endRadius: 150)
-            WidgetGrain(opacity: 0.35)
-
-            VStack(alignment: .leading, spacing: 0) {
-                WidgetTheme.eyebrow("Darkroom", accent: accent)
-                Spacer(minLength: 4)
-                headline
-                Spacer(minLength: 0)
-                footer
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        VStack(alignment: .leading, spacing: 0) {
+            WidgetTheme.eyebrow("Darkroom", accent: accent)
+            Spacer(minLength: 4)
+            headline
+            Spacer(minLength: 0)
+            footer
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .widgetURL(URL(string: link))
     }
 

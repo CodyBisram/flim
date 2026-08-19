@@ -17,9 +17,13 @@ import SwiftUI
 struct MemoryWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: "Memory", provider: MemoryProvider()) { entry in
-            MemoryTile(memory: entry.memory, image: entry.image, accent: entry.accent,
-                       neverWritten: entry.neverWritten)
-                .containerBackground(for: .widget) { WidgetTheme.card }
+            MemoryTile(memory: entry.memory, accent: entry.accent, neverWritten: entry.neverWritten)
+                // The photograph is the CONTAINER background, not a layer inside the content.
+                // Content sits inside the system's margins, so a photo drawn there is inset on
+                // every side and reads as a screenshot of a tile rather than as a print.
+                .containerBackground(for: .widget) {
+                    MemoryBackdrop(memory: entry.memory, image: entry.image)
+                }
         }
         .configurationDisplayName("Look back")
         .description("A frame from a year, a month, or a week ago.")
@@ -80,37 +84,15 @@ struct MemoryProvider: TimelineProvider {
 
 struct MemoryTile: View {
     let memory: WidgetSnapshot.Memory?
-    let image: Data?
     let accent: String
     let neverWritten: Bool
 
     private var accentColor: Color { FlimAccentPalette.color(accent) }
 
     var body: some View {
-        ZStack(alignment: .bottomLeading) {
-            photograph
-            WidgetGrain()
-            // Only where the text sits. A uniform scrim dims the picture to make room for two
-            // lines, which is the wrong trade when the picture is the product.
-            LinearGradient(colors: [.clear, .black.opacity(0.72)],
-                           startPoint: UnitPoint(x: 0.5, y: 0.4), endPoint: .bottom)
-            caption
-        }
-        .widgetURL(URL(string: memory?.link ?? WidgetLink.camera))
-    }
-
-    @ViewBuilder
-    private var photograph: some View {
-        if let image, let ui = UIImage(data: image) {
-            Image(uiImage: ui)
-                .resizable()
-                .scaledToFill()
-        } else {
-            // The image is missing but the memory is not: the snapshot names a frame whose bytes
-            // never arrived. A hue derived from the frame's own name keeps it looking deliberate
-            // and keeps two different missing frames from looking identical.
-            RollHueTile(seed: memory?.imageName ?? "flim", corner: 0)
-        }
+        caption
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+            .widgetURL(URL(string: memory?.link ?? WidgetLink.camera))
     }
 
     @ViewBuilder
@@ -124,8 +106,7 @@ struct MemoryTile: View {
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            .shadow(color: .black.opacity(0.55), radius: 3, y: 1)
-            .padding(14)
+            .shadow(color: .black.opacity(0.6), radius: 3, y: 1)
         } else {
             VStack(alignment: .leading, spacing: 3) {
                 WidgetTheme.eyebrow(neverWritten ? "Not set up" : "Nothing yet", accent: accentColor)
@@ -135,7 +116,38 @@ struct MemoryTile: View {
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(14)
+        }
+    }
+}
+
+/// The photograph behind the caption, edge to edge.
+///
+/// Decoded through `WidgetImage`, which caps the decode size. A widget extension has a small
+/// memory budget and about 9% of the library has no thumbnail rendition, so the fallback path
+/// used to hand this a full 2048px master; decoding that killed the extension and the system
+/// showed a redacted placeholder instead. That is what "the widget just doesn't work" was.
+private struct MemoryBackdrop: View {
+    let memory: WidgetSnapshot.Memory?
+    let image: Data?
+
+    var body: some View {
+        ZStack {
+            if let image, let ui = WidgetImage.decode(image) {
+                Image(uiImage: ui)
+                    .resizable()
+                    .scaledToFill()
+                WidgetGrain()
+            } else {
+                // The bytes never arrived, or the memory is absent entirely. A hue derived from
+                // the frame's own name keeps it looking deliberate and keeps two different
+                // missing frames from looking identical.
+                RollHueTile(seed: memory?.imageName ?? "flim", corner: 0)
+                WidgetGrain(opacity: 0.3)
+            }
+            // Only where the text sits. A uniform scrim dims the picture to make room for two
+            // lines, which is the wrong trade when the picture is the product.
+            LinearGradient(colors: [.clear, .black.opacity(0.75)],
+                           startPoint: UnitPoint(x: 0.5, y: 0.35), endPoint: .bottom)
         }
     }
 }

@@ -1,4 +1,6 @@
 import SwiftUI
+import ImageIO
+import UniformTypeIdentifiers
 
 /// The palette and type the off-app surfaces are drawn from.
 ///
@@ -110,6 +112,10 @@ struct WidgetGrain: View {
 struct RollHueTile: View {
     let seed: String
     var corner: CGFloat = 10
+    /// The letter drawn on the tile, matching the Rolls list's cover. Optional because the
+    /// look-back tile uses this shape as a plain colour field when a frame's bytes are missing,
+    /// and a letter there would be claiming to be something it isn't.
+    var initial: String? = nil
 
     var body: some View {
         let hue = Self.hue(seed)
@@ -118,6 +124,20 @@ struct RollHueTile: View {
                 colors: [Color(hue: hue, saturation: 0.30, brightness: 0.46),
                          Color(hue: hue, saturation: 0.42, brightness: 0.17)],
                 startPoint: .topLeading, endPoint: .bottomTrailing))
+            .overlay {
+                if let initial {
+                    Text(initial)
+                        .font(.system(size: 17, weight: .light))
+                        .foregroundStyle(.white.opacity(0.9))
+                }
+            }
+    }
+
+    /// The first letter of a roll's name, uppercased. Skips emoji and punctuation so a roll
+    /// called "🏠 Roommates" shows R rather than a house that is already the tile's whole shape.
+    static func initial(of name: String) -> String? {
+        guard let letter = name.first(where: { $0.isLetter || $0.isNumber }) else { return nil }
+        return String(letter).uppercased()
     }
 
     /// (charSum × 137) % 360, matching `AvatarView`. 137 is close to the golden angle, so
@@ -126,5 +146,38 @@ struct RollHueTile: View {
     static func hue(_ seed: String) -> Double {
         let sum = seed.unicodeScalars.reduce(0) { $0 + Int($1.value) }
         return Double((sum * 137) % 360) / 360
+    }
+}
+
+
+/// Decoding an image inside a widget extension, which has far less memory than the app does.
+///
+/// This is the fix for the look-back tile rendering as a redacted placeholder on device. A
+/// photo's `thumb_path` is null for about 9% of the library, and the fallback is `storage_path`
+/// — the full 2048px master. `UIImage(data:)` on that allocates roughly 22 MB of bitmap, and a
+/// widget extension's budget is a small fraction of the app's, so the extension was being killed
+/// mid-render and the system fell back to showing `placeholder(in:)`. The tile looked broken and
+/// wore the DEFAULT accent, because a placeholder has no snapshot to read the real one from.
+///
+/// `CGImageSourceCreateThumbnailAtIndex` decodes straight to the size asked for and never
+/// allocates the full bitmap, so a stale oversized file in the container can no longer take the
+/// extension down. The writer also shrinks images before storing them (see `WidgetSync`); this is
+/// the second line of defence, because containers outlive the build that filled them.
+enum WidgetImage {
+    static func decode(_ data: Data, maxPixel: CGFloat = 600) -> UIImage? {
+        let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
+        guard let source = CGImageSourceCreateWithData(data as CFData, sourceOptions) else {
+            return nil
+        }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixel
+        ]
+        guard let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
+            return nil
+        }
+        return UIImage(cgImage: cg)
     }
 }
