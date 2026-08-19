@@ -218,7 +218,7 @@ struct SortDeckView: View {
                 // 1600 rather than the old 2048: that budget existed to cover the extra
                 // magnification scaledToFill applied. Fitting a 3:4 photo into a 3:4 card is 1:1,
                 // so it now matches the full-screen viewer's budget.
-                CachedImage(url: urls[photo.id], maxPixel: 1600) { $0.resizable().scaledToFit() }
+                CachedImage(url: urls[photo.id], maxPixel: 1400) { $0.resizable().scaledToFit() }
                     placeholder: { ShimmerPlaceholder(cornerRadius: 22) }
             }
             // No decorative GrainOverlay here, unlike the feed and the grid. Those screens are
@@ -450,15 +450,22 @@ struct SortDeckView: View {
         // deck could be shown. Sorting is what you do right after shooting a batch, so this was
         // slowest exactly when there was most to sort. Same fix RollsView already carries for
         // roll covers.
+        // `viewPath`, not `storagePath`: the 1400px card rather than the 2048px master. This deck
+        // shows one photo full-screen and does not pinch-zoom, which is precisely the case
+        // `Photo.viewPath` exists for -- "pixel-identical to the full 2048px image here for
+        // roughly a third of the bytes". Measured, those bytes are 383 kB against 1008 kB, and
+        // sorting is what you do immediately after shooting a batch, so this was the app's hottest
+        // path fetching its largest object. Falls back to the master on its own for a photo whose
+        // rendition has not landed yet (1 of 10 unsorted in production today).
         let head = Array(cards.prefix(5))
-        let headURLs = await photoService.signedURLs(for: head.map(\.storagePath))
-        for photo in head { urls[photo.id] = headURLs[photo.storagePath] }
+        let headURLs = await photoService.signedURLs(for: head.map(\.viewPath))
+        for photo in head { urls[photo.id] = headURLs[photo.viewPath] }
         loaded = true
 
         // The rest can arrive after the deck is interactive.
         let tail = Array(cards.dropFirst(5))
         guard !tail.isEmpty else { return }
-        let tailURLs = await photoService.signedURLs(for: tail.map(\.storagePath))
-        for photo in tail { urls[photo.id] = tailURLs[photo.storagePath] }
+        let tailURLs = await photoService.signedURLs(for: tail.map(\.viewPath))
+        for photo in tail { urls[photo.id] = tailURLs[photo.viewPath] }
     }
 }
