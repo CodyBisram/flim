@@ -48,7 +48,13 @@ struct FlimApp: App {
                     // Personal invites are checked FIRST. They and roll invites are different
                     // things — one gets you into the app, the other into a roll — and they live
                     // on different paths so a link can never mean both.
-                    if let code = FlimApp.routePersonalInviteCode(from: url) {
+                    // The Lock Screen shutter. Checked before the invite routes because it is
+                    // the one link with no code in it at all, so it can be recognised outright
+                    // rather than by failing to parse as something else.
+                    if url.host == "camera" {
+                        NotificationCenter.default.post(name: .openPushDestination,
+                                                        object: PushDestination.camera)
+                    } else if let code = FlimApp.routePersonalInviteCode(from: url) {
                         PendingInvite.store(code)
                         NotificationCenter.default.post(name: .openPersonalInvite, object: code)
                     } else if let code = FlimApp.routeInviteCode(from: url) {

@@ -224,6 +224,9 @@ struct MainTabView: View {
             // that lights the tab dot for a badge earned since the last launch, see
             // `FeedService.refreshOwnBadges`.
             Task { await feed.refreshOwnBadges() }
+            // Same once-per-launch slot, same reasoning: the widget's answer changes when a frame
+            // is shot or reacted to, neither of which is urgent enough to re-derive more often.
+            WidgetSync.refresh()
             // A roll link that opened the app from cold arrives before this view exists, so the
             // notification finds nobody. The code is on disk; collect it here.
             if let held = PendingRollInvite.take() {
@@ -307,6 +310,9 @@ struct MainTabView: View {
     /// real, populated screen rather than a blank one.
     private func route(to destination: PushDestination) {
         switch destination {
+        case .camera:
+            selected = 0
+
         case .feed:
             selected = 3
 

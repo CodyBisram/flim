@@ -1131,6 +1131,9 @@ final class FeedService {
         )).select("id").single().execute().value
         Activation.log(.postShared)
         Usage.log(.postShared)
+        // The tile's headline state is "your last frame and what happened to it", and this is the
+        // moment a frame becomes one that can have things happen to it.
+        WidgetSync.refresh()
         // Sharing is the other moment a badge most plausibly just became true (`shared` itself,
         // first time; `well_met` can only start accruing once something exists to react to).
         // Fire-and-forget: this must never gate the post the user just watched succeed.

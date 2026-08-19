@@ -380,6 +380,9 @@ final class PhotoService {
             // Every successful capture, not just the first ever: the server dedupes by
             // (user, event), so this is what makes "first shot" correct without a local flag.
             Activation.log(.firstShot)
+            // A new frame is the other thing that changes the tile. Fires on every capture, not
+            // just the first: `Activation.log` dedupes server-side, this deliberately does not.
+            WidgetSync.refresh()
             Usage.log(.photoCaptured)
 
             // The photo is still returned and its renditions still upload: it exists server-side

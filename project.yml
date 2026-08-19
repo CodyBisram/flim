@@ -103,6 +103,9 @@ targets:
       # The lock-screen card's layout, shared so it can be previewed and screenshotted from the
       # app instead of only ever being seen on a locked device.
       - path: Flim/Models/RollRevealCard.swift
+      # What the home-screen widget shows, and the App Group container both sides read it from.
+      # Same second-source-entry pattern as the three above.
+      - path: Flim/Models/WidgetSnapshot.swift
     info:
       path: RollActivityWidget/Info.plist
       properties:

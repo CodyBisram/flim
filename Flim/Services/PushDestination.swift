@@ -22,6 +22,9 @@ enum PushDestination: Codable, Equatable {
     case reveal(rollId: UUID)
     case post(postId: UUID, comments: Bool)
     case profile(userId: UUID)
+    /// The Lock Screen shutter widget. Carries no id: there is only one camera. Never arrives
+    /// over APNs, only from `flim://camera`, so it has no wire representation to parse.
+    case camera
     case feed
 
     static func parse(userInfo: [AnyHashable: Any]) -> PushDestination? {
@@ -65,6 +68,8 @@ enum PushDestination: Codable, Equatable {
             return payload
         case .profile(let userId):
             return ["t": "profile", "id": userId.uuidString]
+        case .camera:
+            return ["t": "camera"]
         case .feed:
             return ["t": "feed"]
         }
