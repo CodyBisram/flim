@@ -86,6 +86,10 @@ final class NotificationService {
     /// capture or open an undeveloped roll on this device keeps it instead.
     func registerForRemoteIfAlreadyAuthorized() async {
         let status = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
+        // BEFORE the guard, so a denial is recorded too. Below it only the grants would be, and
+        // "denied" and "never asked" would stay the same shape in the data, which is the exact
+        // ambiguity these events exist to remove.
+        Self.logAuthorizationOutcome(Self.authorizationState(for: status))
         guard Self.shouldRegisterForRemote(given: status) else { return }
         isAuthorized = true
         authorizationState = .authorized
@@ -107,8 +111,30 @@ final class NotificationService {
             isAuthorized = false
             authorizationState = .denied
         }
+        // The RESOLVED state, not `settings.authorizationStatus`. That was read before the prompt,
+        // so on the branch that actually asks it still says `notDetermined` and the fresh decision
+        // — the one case this exists to capture — would log nothing at all.
+        Self.logAuthorizationOutcome(authorizationState)
         if isAuthorized {
             RemotePush.register()
+        }
+    }
+
+    /// Records what the OS actually answered, so the funnel can tell a refusal from a prompt that
+    /// never fired.
+    ///
+    /// Logged from two places on purpose. Here, where a fresh decision resolves, and from
+    /// `registerForRemoteIfAlreadyAuthorized()`, which runs on every launch without prompting and
+    /// is therefore what backfills everybody who decided before this shipped. Both dedupe
+    /// server-side on (user, event), so calling it on every launch costs one no-op RPC.
+    ///
+    /// `notDetermined` logs NOTHING. The absence of both events is what identifies someone who was
+    /// never asked, which is the state worth finding: they are reachable, and a refusal is not.
+    private static func logAuthorizationOutcome(_ state: NotificationAuthorizationState) {
+        switch state {
+        case .notDetermined: return
+        case .authorized:    Activation.log(.notificationsAuthorized)
+        case .denied:        Activation.log(.notificationsDenied)
         }
     }
 

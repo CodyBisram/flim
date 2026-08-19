@@ -7,7 +7,7 @@ import Supabase
 /// something the client has to locally remember not to repeat. See
 /// `supabase/migrations/2026-08-08_activation_events.sql` for the full server-side contract.
 ///
-/// Raw values are exactly the ten strings the server's CHECK constraint allows. Nothing
+/// Raw values are exactly the strings the server's CHECK constraint allows. Nothing
 /// outside `Activation.log(_:)` should ever hand the RPC a bare string: a typo there is a loud
 /// server-side rejection, not a silently poisoned row, and routing every call through this enum
 /// is what keeps a typo from ever reaching that call in the first place.
@@ -38,6 +38,17 @@ enum ActivationEvent: String {
     /// between `cameraReady` and `firstShot`, it separates "never tried" from "tried and the
     /// capture failed", which look identical from the funnel today and want opposite fixes.
     case shutterTapped = "shutter_tapped"
+    /// The notification permission decision, as the OS reports it.
+    ///
+    /// Neither event is logged for `notDetermined`, and that is the whole design: the ABSENCE of
+    /// both is what identifies somebody who was never asked. The prompt only fires from four
+    /// places (post-capture, an undeveloped roll, the settings toggle, the primer), so a path that
+    /// misses all four never asks, and until now that was indistinguishable from a refusal.
+    ///
+    /// Measured 2026-08-19: 42 accounts had `cameraAuthorized` and 25 held a device token. Those
+    /// 17 are either a lost cause or 17 people one prompt away, and nothing could say which.
+    case notificationsAuthorized = "notifications_authorized"
+    case notificationsDenied = "notifications_denied"
 }
 
 /// Fire-and-forget activation instrumentation. `log_activation_event` is safe to call this
