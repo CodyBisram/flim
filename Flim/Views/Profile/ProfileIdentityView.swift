@@ -63,9 +63,12 @@ enum ProfileBadgeFlank {
 struct ProfileBadgeColumn: View {
     let badges: [ProfileBadge]
     let alignment: HorizontalAlignment
-    /// The signed-in account's own earned badge kind ids, so a pill for a badge the viewer
-    /// doesn't hold can add "how to earn this" to its popover; see `ProfileBadgePill`.
-    var viewerBadgeKindIds: Set<String> = []
+    /// The badge whose explanation currently owns the page's handle line, if any. The matching
+    /// pill lifts; every other pill steps back. See `UserPageView`'s swap-in.
+    var liftedBadgeId: String? = nil
+    /// The page's swap-in handler. Optional so previews and layout tests can render pills
+    /// without wiring the whole interaction.
+    var onBadgeTap: ((ProfileBadge) -> Void)? = nil
 
     var body: some View {
         // 18pt between two stacked pills on the same side matches each pill's own 9pt tap-target
@@ -74,7 +77,12 @@ struct ProfileBadgeColumn: View {
         // `expandTapTarget`'s own doc comment gives for any two tappable neighbours this close.
         VStack(alignment: alignment, spacing: 18) {
             ForEach(badges) { badge in
-                ProfileBadgePill(badge: badge, viewerBadgeKindIds: viewerBadgeKindIds)
+                ProfileBadgePill(
+                    badge: badge,
+                    lifted: liftedBadgeId == badge.id,
+                    dimmed: liftedBadgeId != nil && liftedBadgeId != badge.id,
+                    onTap: onBadgeTap
+                )
             }
         }
     }
@@ -173,6 +181,10 @@ private struct SpecularSweep: View {
     /// Seconds this pill waits before its first sweep, so a profile's founding pills stagger
     /// instead of flashing in unison. Derived from the badge, so it is stable across redraws.
     let phaseOffset: Double
+    /// True while this pill is lifted by the swap-in: a highlight travelling across a pill that
+    /// is also scaled up and glowing is two effects fighting over one object. Pausing restarts
+    /// the loop from its phase offset on resume, which is indistinguishable from any other rest.
+    var paused: Bool = false
 
     @State private var travelled = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -199,8 +211,14 @@ private struct SpecularSweep: View {
                 // Travels from fully clear of the leading edge to fully clear of the trailing one,
                 // so neither end of the sweep is ever parked visible on the pill.
                 .offset(x: travelled ? width + band : -band)
-                .task {
-                    guard !reduceMotion else { return }
+                .task(id: paused) {
+                    // Restarted whenever `paused` flips. On pause the band snaps home FIRST, so a
+                    // pass that was mid-flight when the lift landed is not left frozen across the
+                    // pill; on resume the loop starts over from its phase offset.
+                    var reset = Transaction()
+                    reset.disablesAnimations = true
+                    withTransaction(reset) { travelled = false }
+                    guard !reduceMotion, !paused else { return }
                     // Lets the page settle before the first pass: a sweep firing during the
                     // navigation transition is noise competing with the push animation.
                     try? await Task.sleep(for: .seconds(0.45 + phaseOffset))
@@ -253,6 +271,8 @@ struct BadgePillLabel: View {
     /// washed-out, outlined form: full strength would read as already earned, and no colour at
     /// all would lose the rung signal the tier exists to carry.
     var muted: Bool = false
+    /// Freezes the founding sweep while this pill is lifted by the swap-in; see `SpecularSweep`.
+    var sweepPaused: Bool = false
     @Environment(\.flimAccent) private var accent
 
     private var tier: ProfileBadgeTier { kind.tier }
@@ -287,7 +307,7 @@ struct BadgePillLabel: View {
                         // travels across the metal rather than over the pill's own edge.
                         .overlay {
                             if tier == .founding, !muted {
-                                SpecularSweep(phaseOffset: kind.sweepPhaseOffset)
+                                SpecularSweep(phaseOffset: kind.sweepPhaseOffset, paused: sweepPaused)
                                     .clipShape(Capsule())
                             }
                         }
@@ -310,100 +330,50 @@ struct BadgePillLabel: View {
 /// eleven dated stamps were the bulk of what made the old grid read as busy, and with the count
 /// now capped at four, the pill can just be a name.
 ///
-/// Locked badges never appear anywhere on a profile, so someone seeing a pill has no other way to
-/// learn what it means beyond tapping it; that popover is now the ONLY place any explanation of a
-/// badge lives outside `BadgePickerSheet`'s own catalog list, so it matters more than it used to,
-/// not less. The visible pill stays small on purpose, so the tap target is grown to Apple's 44pt
-/// minimum without changing what's on screen.
+/// Tapping no longer opens a popover. The old bubble anchored to the pill and sat straight over
+/// the name and handle it was supposed to be annotating; the explanation now swaps INTO the
+/// page's own handle line instead, owned by `UserPageView`. This view only reports the tap
+/// upward and renders the two states the swap-in gives a pill: LIFTED (this pill's explanation
+/// owns the line) and DIMMED (some other pill's does). The visible pill stays small on purpose,
+/// so the tap target is grown to Apple's 44pt minimum without changing what's on screen.
+///
+/// Under VoiceOver the swap-in is skipped entirely upstream (a timed visual swap is hostile to
+/// a screen reader); the pill carries the explanation as its hint so nothing is lost.
 struct ProfileBadgePill: View {
     let badge: ProfileBadge
-    var viewerBadgeKindIds: Set<String> = []
-    @State private var showExplanation = false
-    @Environment(\.flimAccent) private var accent
+    /// This pill's explanation currently owns the handle line: lift it off the page a touch.
+    var lifted: Bool = false
+    /// Another pill's explanation owns the line: step back so the lifted one reads as chosen.
+    var dimmed: Bool = false
+    /// The page's swap-in handler. Optional so previews and layout tests can render pills
+    /// without wiring the whole interaction; with no handler a tap does nothing visible.
+    var onTap: ((ProfileBadge) -> Void)? = nil
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    /// "How to earn this" only makes sense for a badge the viewer doesn't already hold; showing
-    /// it under a badge they have too would just be noise under their own pill.
-    private var howToEarn: String? {
-        viewerBadgeKindIds.contains(badge.kind.rawValue) ? nil : badge.kind.howToEarn
-    }
+    /// The one spring the whole swap-in shares: the lift, the sibling dim, and the drop on
+    /// revert all trade on it, so the pills read as one system settling rather than three
+    /// effects firing.
+    static let spring: Animation = .spring(response: 0.32, dampingFraction: 0.78)
 
     var body: some View {
         Button {
             Haptics.tap()
-            showExplanation = true
+            onTap?(badge)
         } label: {
-            BadgePillLabel(kind: badge.kind)
+            BadgePillLabel(kind: badge.kind, sweepPaused: lifted)
         }
         .buttonStyle(.plain)
         .expandTapTarget(by: 9)   // visual pill is ~26pt tall, +9 either side = 44
-        // `arrowEdge: .top` is explicit here for the same reason it was on the old stamp: a pill
-        // that's actually on screen (never off past a clipped edge, see the module comment above)
-        // has real room above/below it, so the system keeps the vertical arrow instead of
-        // flipping sideways into the avatar or the opposite column.
-        .popover(isPresented: $showExplanation, arrowEdge: .top) {
-            BadgeExplanationPopover(explanation: badge.kind.explanation, howToEarn: howToEarn)
-                .presentationCompactAdaptation(.popover)
-                // Lifted off the page and tinted by the badge's own rung. `bgElevated` alone is
-                // barely a shade above the profile behind it, so a short explanation read as a
-                // dark smear with no edge; the lighter base plus a whisper of the rung's hue is
-                // what gives it a boundary without dressing it up as a second badge.
-                .presentationBackground {
-                    ZStack {
-                        Color(white: 0.16)
-                        badge.kind.tier.hue(accent: accent).opacity(0.10)
-                    }
-                }
-        }
-        .accessibilityLabel("\(badge.kind.label) badge")
-        .accessibilityHint("Double tap to hear what this badge means")
-    }
-}
-
-/// The badge popover's content, factored out so it can be sized correctly and previewed on its
-/// own without a live tap.
-///
-/// Two things were wrong before this existed: the text truncated with an ellipsis, and the box
-/// could point sideways into a neighbouring stamp (fixed at each `.popover` call site via
-/// `arrowEdge: .top`). The truncation was purely a sizing bug, not a text-length one — `Text` had
-/// no `lineLimit` set, but a `maxWidth` alone leaves the popover free to first collapse toward a
-/// single-line ideal size and clip whatever didn't fit, rather than actually measuring the wrapped
-/// height. Giving it a concrete, fixed width instead of a flexible max is what makes the `Text`s
-/// below wrap in the first place, and `.fixedSize(horizontal: false, vertical: true)` then forces
-/// this view to report ITS true wrapped height back to the popover container instead of an
-/// ambiguous guess.
-struct BadgeExplanationPopover: View {
-    let explanation: String
-    let howToEarn: String?
-
-    /// A concrete width is still required (see the type comment: a flexible max lets the popover
-    /// collapse to a single-line ideal and clip), but 220 for everything made "Built FLIM." sit in
-    /// a box built for a sentence three times its length. This measures the longest string at the
-    /// size it will actually render and clamps the result, so a short explanation gets a short
-    /// box and a long one still wraps at a readable measure.
-    private var width: CGFloat {
-        let font = UIFont.systemFont(ofSize: 13)
-        let widest = ([explanation] + [howToEarn].compactMap { $0 })
-            .map { ($0 as NSString).size(withAttributes: [.font: font]).width }
-            .max() ?? 0
-        return min(max(widest.rounded(.up), 120), 220)
-    }
-
-    var body: some View {
-        VStack(spacing: 10) {
-            Text(explanation)
-                .flimFont(13, relativeTo: .subheadline)
-                .foregroundStyle(.white)
-                .multilineTextAlignment(.center)
-            if let howToEarn {
-                Text(howToEarn)
-                    .flimFont(12, relativeTo: .footnote)
-                    .foregroundStyle(FlimTheme.textTertiary)
-                    .multilineTextAlignment(.center)
-            }
-        }
-        .frame(width: width)
-        .fixedSize(horizontal: false, vertical: true)
-        .padding(16)
+        // Reduce Motion keeps the shadow and the dim (static emphasis) and drops the lift
+        // (movement). The spec's own rule: no translate, no pill lift, sibling dim stays.
+        .scaleEffect(lifted && !reduceMotion ? 1.06 : 1)
+        .offset(y: lifted && !reduceMotion ? -2 : 0)
+        .shadow(color: lifted ? FlimTheme.badgeGold.opacity(0.5) : .clear, radius: 5, y: 1)
+        .opacity(dimmed ? 0.4 : 1)
+        .animation(Self.spring, value: lifted)
+        .animation(Self.spring, value: dimmed)
+        .accessibilityLabel("badge, \(badge.kind.label)")
+        .accessibilityHint(badge.kind.explanation)
     }
 }
 
@@ -422,7 +392,10 @@ struct BadgeExplanationPopover: View {
 struct AvatarBadgeFlanking<Avatar: View>: View {
     let leftBadges: [ProfileBadge]
     let rightBadges: [ProfileBadge]
-    var viewerBadgeKindIds: Set<String> = []
+    /// See `ProfileBadgeColumn`: which pill is lifted by the swap-in, and the tap handler.
+    /// Defaulted so previews and `AvatarBadgeCenteringTests` construct layout without behavior.
+    var liftedBadgeId: String? = nil
+    var onBadgeTap: ((ProfileBadge) -> Void)? = nil
     /// Matches the old HStack's `spacing: 14` this replaced.
     var gap: CGFloat = 14
     @ViewBuilder let avatar: () -> Avatar
@@ -430,11 +403,13 @@ struct AvatarBadgeFlanking<Avatar: View>: View {
     var body: some View {
         avatar()
             .overlay(alignment: .leading) {
-                ProfileBadgeColumn(badges: leftBadges, alignment: .trailing, viewerBadgeKindIds: viewerBadgeKindIds)
+                ProfileBadgeColumn(badges: leftBadges, alignment: .trailing,
+                                   liftedBadgeId: liftedBadgeId, onBadgeTap: onBadgeTap)
                     .alignmentGuide(.leading) { d in d[.trailing] + gap }
             }
             .overlay(alignment: .trailing) {
-                ProfileBadgeColumn(badges: rightBadges, alignment: .leading, viewerBadgeKindIds: viewerBadgeKindIds)
+                ProfileBadgeColumn(badges: rightBadges, alignment: .leading,
+                                   liftedBadgeId: liftedBadgeId, onBadgeTap: onBadgeTap)
                     .alignmentGuide(.trailing) { d in d[.leading] - gap }
             }
             // AFTER both overlays, not before. Attached to `avatar()` alone, the environment
@@ -460,14 +435,13 @@ struct AvatarBadgeFlanking<Avatar: View>: View {
 /// previews live outside `UserPageView` and have no real photo to load.
 private struct FlankPreview: View {
     let badges: [ProfileBadge]
-    var viewerBadgeKindIds: Set<String> = []
     @Environment(\.flimAccent) private var accent
 
     var body: some View {
         let split = ProfileBadgeFlank.split(badges)
         ZStack {
             FlimTheme.bg.ignoresSafeArea()
-            AvatarBadgeFlanking(leftBadges: split.left, rightBadges: split.right, viewerBadgeKindIds: viewerBadgeKindIds) {
+            AvatarBadgeFlanking(leftBadges: split.left, rightBadges: split.right) {
                 Circle()
                     .fill(accent.opacity(0.18))
                     .frame(width: 88, height: 88)
@@ -522,9 +496,8 @@ private func previewBadge(_ id: String, _ kind: ProfileBadgeKind) -> ProfileBadg
     ])
 }
 
-#Preview("Flanking: renamed 'Plus One' pill, plus how-to-earn state") {
-    // `broughtSomeone` used to truncate to "BROUGHT SO…" at this size under its old label; also
-    // exercises the how-to-earn line, since `viewerBadgeKindIds` here is empty.
+#Preview("Flanking: renamed 'Plus One' pill") {
+    // `broughtSomeone` used to truncate to "BROUGHT SO…" at this size under its old label.
     FlankPreview(badges: [
         previewBadge("brought_someone", .broughtSomeone),
         previewBadge("founding_100", .founding100),
@@ -613,19 +586,3 @@ private func previewBadge(_ id: String, _ kind: ProfileBadgeKind) -> ProfileBadg
     .background(FlimTheme.bg)
 }
 
-#Preview("Badge explanation popover: longest copy, largest Dynamic Type, narrowest device") {
-    // `fullRoll` carries both the longest explanation AND the longest how-to line in the
-    // catalog, the worst case for the popover's height, checked on the narrowest device FLIM
-    // still supports at the largest type size the app allows.
-    ZStack {
-        FlimTheme.bg.ignoresSafeArea()
-        BadgeExplanationPopover(
-            explanation: ProfileBadgeKind.fullRoll.explanation,
-            howToEarn: ProfileBadgeKind.fullRoll.howToEarn
-        )
-        .background(FlimTheme.bgElevated, in: RoundedRectangle(cornerRadius: 14))
-        .padding(20)
-    }
-    .frame(width: 375)
-    .dynamicTypeSize(FlimTypeScale.maximum)
-}

@@ -156,6 +156,48 @@ enum ProfileBadgeKind: String, CaseIterable {
         }
     }
 
+    /// One emoji per badge. Appears in exactly two places: prefixing the swapped-in explanation
+    /// line on a profile (see `UserPageView`'s swap-in) and prefixing the label in
+    /// `BadgePickerSheet` rows. Pills themselves stay text-only, so the stamps keep reading as
+    /// struck metal rather than stickers.
+    ///
+    /// Glyphs that default to TEXT presentation (the key, the ticket, the frame, the writing
+    /// hand, the heart) carry an explicit variation selector, otherwise they render as monochrome
+    /// outlines on some type styles and the line reads as broken.
+    var emoji: String {
+        switch self {
+        case .firstLight: return "\u{1F305}"                    // sunrise
+        case .fullRoll: return "\u{1F501}"                      // repeat arrows
+        case .darkroom: return "\u{1F9EA}"                      // test tube
+        case .founding100: return "\u{1F4AF}"                   // hundred points
+        case .firstIn: return "\u{26A1}"                        // high voltage
+        case .rollMaker: return "\u{1F3AC}"                     // clapper board
+        case .broughtSomeone: return "\u{1F91D}"                // handshake
+        case .joinedIn: return "\u{1F64B}"                      // person raising hand
+        case .chippedIn: return "\u{1F919}"                     // call-me hand
+        case .shared: return "\u{1F4E4}"                        // outbox tray
+        case .wellMet: return "\u{1F44B}"                       // waving hand
+        case .fullHouse: return "\u{1F3E0}"                     // house
+        case .foundingCrew: return "\u{1F9F1}"                  // brick
+        case .frontRow: return "\u{1F39F}\u{FE0F}"             // admission ticket
+        case .packedHouse: return "\u{1F3AA}"                   // circus tent
+        case .patron: return "\u{1F381}"                        // wrapped gift
+        case .coverToCover: return "\u{1F4D6}"                  // open book
+        case .keptOne: return "\u{1F92B}"                       // shushing face
+        case .regular: return "\u{2615}"                        // hot beverage
+        case .oneYear: return "\u{1F382}"                       // birthday cake
+        case .fullSet: return "\u{1F3C6}"                       // trophy
+        case .founder: return "\u{1F5DD}\u{FE0F}"              // old key
+        case .openDoor: return "\u{1F6AA}"                      // door
+        case .chimedIn: return "\u{2764}\u{FE0F}"              // red heart
+        case .inFrame: return "\u{1F5BC}\u{FE0F}"              // framed picture
+        case .spotter: return "\u{1F52D}"                       // telescope
+        case .saidIt: return "\u{270D}\u{FE0F}"                // writing hand
+        case .tenFrames: return "\u{1F51F}"                     // keycap ten
+        case .goodCompany: return "\u{1FAC2}"                   // people hugging
+        }
+    }
+
     /// Uppercased with generous tracking at the call site; stored here in title case so it also
     /// reads correctly wherever it's used sentence-style (e.g. inside `explanation`).
     var label: String {
@@ -275,9 +317,9 @@ enum ProfileBadgeKind: String, CaseIterable {
         }
     }
 
-    /// Shown alongside `explanation`, both to someone looking at another profile's pill for a
-    /// badge they don't hold themselves (see `ProfileBadgePill`), and to every locked row in
-    /// `BadgePickerSheet`'s own catalog. Never shown for a badge the viewer already has, at that
+    /// Shown alongside `explanation`, both as the second beat of the profile swap-in for a badge
+    /// the viewer doesn't hold themselves (see `UserPageView`'s swap-in), and on every locked row
+    /// in `BadgePickerSheet`'s own catalog. Never shown for a badge the viewer already has, at that
     /// point "how to earn this" is pointless.
     ///
     /// Most of these describe real, repeatable product behaviour, written as an instruction. Four

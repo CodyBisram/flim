@@ -3,6 +3,7 @@ import SwiftUI
 /// A user's public page, profile header + their shared photos grouped into monthly chapters.
 struct UserPageView: View {
     @Environment(\.flimAccent) private var accent
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let userId: UUID
     @Environment(AuthService.self) private var auth
     @Environment(FeedService.self) private var feed
@@ -40,6 +41,27 @@ struct UserPageView: View {
     @State private var showSettings = false
     @State private var showEditProfile = false
     @State private var showBadgePicker = false
+
+    // MARK: Badge swap-in
+
+    /// The badge whose explanation currently owns the handle line; nil whenever the handle is
+    /// (or is returning to being) the thing shown. Driving the pill lift/dim from this and the
+    /// text from `lastShown` below is what lets the two part ways during a fade-out.
+    @State private var shownBadge: ProfileBadge?
+    /// The badge whose text is actually rendered, kept through the fade-out. Without it, a
+    /// revert would clear the model and the line would fall back to a DIFFERENT badge's copy
+    /// (or nothing) while still visible mid-fade, which reads as a flicker of the wrong words.
+    @State private var lastShown: ProfileBadge?
+    /// The second beat on someone else's badge the viewer doesn't hold: after the explanation's
+    /// hold, the line crossfades to how to earn it. Never set for a badge the viewer holds.
+    @State private var showsHowToEarn = false
+    /// Layer visibility, separate per side because each direction has its own curve: the spec's
+    /// OUT/IN pair on show, and the deliberately slower pair on revert.
+    @State private var handleLineVisible = true
+    @State private var badgeLineVisible = false
+    /// The hold-then-revert clock. Cancelled and replaced on every interrupt: same pill (early
+    /// dismiss), other pill (crossfade and restart), scroll, or leaving the screen.
+    @State private var swapRevertTask: Task<Void, Never>?
     @State private var showInvite = false
     @State private var showBlockConfirm = false
     @State private var showReportConfirm = false
@@ -105,6 +127,14 @@ struct UserPageView: View {
                 }
                 .ignoresSafeArea(edges: .top)   // cover bleeds up under the back/gear buttons
                 .refreshable { await load() }
+                // A finger on the page ends the swap-in at once: an explanation that rides the
+                // scroll pins attention to a line the person has already moved past.
+                .onScrollPhaseChange { _, newPhase in
+                    // `.tracking` is the finger landing, `.interacting` is it moving; either one
+                    // means attention left the header.
+                    if newPhase == .tracking || newPhase == .interacting { dismissSwapInstantly() }
+                }
+                .onDisappear { dismissSwapInstantly() }
             }
         }
         .navigationBarTitleDisplayMode(.inline)
@@ -249,7 +279,9 @@ struct UserPageView: View {
                 // one side (nothing opposite it) visibly shoves the avatar off-centre, worse the
                 // wider that one label is. See `AvatarBadgeFlanking` for why an overlay keeps the
                 // avatar's centre fixed regardless of badge count or label width.
-                AvatarBadgeFlanking(leftBadges: badgeFlanks.left, rightBadges: badgeFlanks.right, viewerBadgeKindIds: viewerBadgeKindIds) {
+                AvatarBadgeFlanking(leftBadges: badgeFlanks.left, rightBadges: badgeFlanks.right,
+                                    liftedBadgeId: shownBadge?.id,
+                                    onBadgeTap: { badgeTapped($0) }) {
                     Button { if avatarURL != nil { showAvatarViewer = true } } label: {
                         avatarCircle
                     }
@@ -265,15 +297,27 @@ struct UserPageView: View {
                 // The handle stays visually centered; the signup number is pinned to the
                 // trailing edge of the same row instead of its own line, quiet enough that it
                 // reads like an edge number on film stock rather than a second headline.
+                //
+                // This row is also the badge swap-in's target: tap a pill and the whole line
+                // (handle AND number together) gives way to that badge's explanation, then
+                // returns. Both layers are permanently in the tree at the same single-line text
+                // size, so the ZStack's height is identical whichever is visible and the page
+                // below never shifts. The old design was a popover anchored to the pill, which
+                // sat exactly on top of the name it was annotating.
                 ZStack {
-                    Text(profile?.handle ?? "@…")
-                        .flimFont(13, relativeTo: .subheadline).foregroundStyle(FlimTheme.textTertiary)
-                    if let identity {
-                        HStack {
-                            Spacer()
-                            FrameNumberLabel(number: identity.signupNumber)
+                    ZStack {
+                        Text(profile?.handle ?? "@…")
+                            .flimFont(13, relativeTo: .subheadline).foregroundStyle(FlimTheme.textTertiary)
+                        if let identity {
+                            HStack {
+                                Spacer()
+                                FrameNumberLabel(number: identity.signupNumber)
+                            }
                         }
                     }
+                    .opacity(handleLineVisible ? 1 : 0)
+                    .offset(y: handleLineVisible || reduceMotion ? 0 : 4)
+                    badgeSwapLine
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.horizontal, 28)
@@ -382,6 +426,135 @@ struct UserPageView: View {
             .clipShape(Circle())
             .overlay(Circle().stroke(FlimTheme.bg, lineWidth: 4))
             .overlay(Circle().stroke(accent.opacity(0.5), lineWidth: 1))
+    }
+
+    // MARK: - Badge swap-in
+
+    /// The line that takes the handle's place while a badge is explaining itself.
+    ///
+    /// Renders from `lastShown`, never from `shownBadge`: during a revert the model is already
+    /// nil (that is what drops the pill and undims its siblings) while this text is still fading
+    /// out, and it must keep fading out as the SAME words. Present in the tree even before any
+    /// tap, at zero opacity, so showing it never inserts a view mid-animation.
+    private var badgeSwapLine: some View {
+        let kind = lastShown?.kind
+        let text = kind.map { showsHowToEarn ? $0.howToEarn : "\($0.emoji) \($0.explanation)" } ?? ""
+        return Text(text)
+            .flimFont(BadgeSwapMetrics.pointSize, relativeTo: .footnote)
+            .lineLimit(1)
+            .minimumScaleFactor(BadgeSwapMetrics.minimumScale)
+            .foregroundStyle(kind.map { badgeSwapColor(for: $0) } ?? .clear)
+            // The 250ms in-place crossfade for tap-another-pill and for the second beat: the
+            // words and colour trade without the layer itself moving.
+            .contentTransition(.opacity)
+            .opacity(badgeLineVisible ? 1 : 0)
+            .offset(y: badgeLineVisible || reduceMotion ? 0 : -3)
+            // Sharpening in from a slight blur is the film-develop cue, deliberate, and dropped
+            // wholesale under Reduce Motion.
+            .blur(radius: badgeLineVisible || reduceMotion ? 0 : 2)
+            .allowsHitTesting(false)
+    }
+
+    /// The swapped line's colour: the metal the badge is struck from, or the viewer's accent for
+    /// the accent rung. Founding and gold share the LIGHT gold, not the mid gold the pill
+    /// gradient uses, because 13pt text against the near-black page needs the brighter cut of
+    /// the same metal to stay legible. The second beat is plain tertiary: instruction, not medal.
+    private func badgeSwapColor(for kind: ProfileBadgeKind) -> Color {
+        if showsHowToEarn { return FlimTheme.textTertiary }
+        switch kind.tier {
+        case .founding, .gold: return FlimTheme.badgeGoldLight
+        case .silver:          return FlimTheme.badgeSilver
+        case .bronze:          return FlimTheme.badgeBronze
+        case .accent:          return accent
+        }
+    }
+
+    private func badgeTapped(_ badge: ProfileBadge) {
+        // VoiceOver gets the words and none of the theatre: a timed visual swap a screen-reader
+        // user cannot see would just be state churn under their focus. The pill's own hint
+        // already carries the explanation; activating announces it and nothing else happens.
+        if UIAccessibility.isVoiceOverRunning {
+            UIAccessibility.post(notification: .announcement, argument: badge.kind.explanation)
+            return
+        }
+        if let current = shownBadge {
+            if current.id == badge.id {
+                // Same pill: dismiss early. Revert now, clock cancelled.
+                swapRevertTask?.cancel()
+                revertSwap()
+            } else {
+                // Other pill: trade the words and colour in place, no bounce back to the handle
+                // in between. The lift and dim move to the new pill on the shared spring via
+                // `shownBadge`; the clock starts over for the new badge.
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    shownBadge = badge
+                    lastShown = badge
+                    showsHowToEarn = false
+                }
+                scheduleSwapBeats(for: badge)
+            }
+            return
+        }
+        shownBadge = badge
+        lastShown = badge
+        showsHowToEarn = false
+        if reduceMotion {
+            withAnimation(.easeInOut(duration: 0.3)) {
+                handleLineVisible = false
+                badgeLineVisible = true
+            }
+        } else {
+            withAnimation(.easeInOut(duration: 0.3)) { handleLineVisible = false }
+            withAnimation(.easeOut(duration: 0.45).delay(0.1)) { badgeLineVisible = true }
+        }
+        scheduleSwapBeats(for: badge)
+    }
+
+    /// The clock. 2.75s from the tap covers the show (the IN beat lands at 0.55s) plus the 2.2s
+    /// hold, then the revert runs; a badge the viewer doesn't hold gets the second beat first:
+    /// a 250ms crossfade to how to earn it, its own 2.2s hold, then the same revert.
+    private func scheduleSwapBeats(for badge: ProfileBadge) {
+        swapRevertTask?.cancel()
+        let twoBeat = !viewerBadgeKindIds.contains(badge.kind.rawValue)
+        swapRevertTask = Task {
+            try? await Task.sleep(for: .seconds(2.75))
+            guard !Task.isCancelled else { return }
+            if twoBeat {
+                withAnimation(.easeInOut(duration: 0.25)) { showsHowToEarn = true }
+                try? await Task.sleep(for: .seconds(2.45))
+                guard !Task.isCancelled else { return }
+            }
+            revertSwap()
+        }
+    }
+
+    /// The full revert, deliberately the slowest beat: the page settling back matters more than
+    /// it snapping back. `shownBadge` clears on the pills' own shared spring so the lift and the
+    /// sibling dim let go together; `lastShown` is left alone so the departing words stay THESE
+    /// words all the way out.
+    private func revertSwap() {
+        withAnimation(ProfileBadgePill.spring) { shownBadge = nil }
+        if reduceMotion {
+            withAnimation(.easeInOut(duration: 0.3)) {
+                badgeLineVisible = false
+                handleLineVisible = true
+            }
+        } else {
+            withAnimation(.easeInOut(duration: 0.6)) { badgeLineVisible = false }
+            withAnimation(.easeInOut(duration: 0.55).delay(0.12)) { handleLineVisible = true }
+        }
+    }
+
+    /// Scroll or navigation: the explanation must not ride down the page or linger behind a
+    /// pushed view, so everything settles in one plain fade with no travel.
+    private func dismissSwapInstantly() {
+        guard shownBadge != nil || badgeLineVisible else { return }
+        swapRevertTask?.cancel()
+        withAnimation(.easeInOut(duration: 0.2)) {
+            shownBadge = nil
+            badgeLineVisible = false
+            handleLineVisible = true
+        }
     }
 
     private func stat(_ value: String, _ label: String) -> some View {
@@ -795,4 +968,26 @@ struct FollowButton: View {
                 .background(following ? Color.white.opacity(0.12) : accent, in: Capsule())
         }
     }
+}
+
+/// The swapped-in line's type metrics, named so the fit test measures exactly what ships.
+///
+/// The acceptance is that the longest copy in the catalog (`fullRoll`, 106 characters) fits ONE
+/// line on a 393pt device. `BadgeSwapLineFitTests` measures every badge's line with CoreText at
+/// these numbers against that width; if a new badge's copy ever breaks the fit, the test names
+/// it rather than letting the line silently truncate on device.
+enum BadgeSwapMetrics {
+    /// Matches `.footnote`'s base size; the Text uses `relativeTo: .footnote` so Dynamic Type
+    /// still scales it.
+    static let pointSize: CGFloat = 13
+    /// The design called for 0.75 and 0.75 is not enough, measured, not estimated: `fullRoll`'s
+    /// line is 643pt at full size, and 337pt of row divided by 643 is 0.52. At 0.75 the longest
+    /// three lines in the catalog truncate mid-sentence with an ellipsis, and an explanation
+    /// that stops at "instead of dumping it all…" has amputated its own point. Rendering the
+    /// rare long line smaller but complete is the lesser cost, and `minimumScaleFactor` is a
+    /// floor, so every line short enough to fit at full size still renders at full size; only
+    /// the overflowing few shrink, and only as far as they must.
+    static let minimumScale: CGFloat = 0.52
+    /// The handle row's own horizontal padding in `pageHeader`.
+    static let horizontalPadding: CGFloat = 28
 }

@@ -146,6 +146,11 @@ private struct BadgePickerContent: View {
     @State private var showCapNotice = false
     /// Raised instead of committing when Custom is showing with nothing picked. See `save()`.
     @State private var showEmptyConfirm = false
+    /// Unseen rows whose develop-in has run. A row starts undeveloped (blurred, washed out,
+    /// its words held back) and joins this set on its beat; rows that were never unseen are
+    /// developed by definition. See `developChoreography()`.
+    @State private var developedIds: Set<String> = []
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(
         badges: [ProfileBadge],
@@ -183,6 +188,7 @@ private struct BadgePickerContent: View {
                 // scroll view regardless of whether anything's been earned yet: the catalog is a
                 // collection screen, not conditioned on having something to choose, see
                 // `lockedSection`'s own comment.
+                ScrollViewReader { proxy in
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: 20) {
                         if badges.isEmpty {
@@ -190,7 +196,12 @@ private struct BadgePickerContent: View {
                         } else {
                             modePicker
                             explanation
-                            if mode == .custom {
+                            // Custom mode as before, PLUS whenever something unseen needs its
+                            // reveal: the develop-in happens on these rows, and in Automatic
+                            // mode they simply are not on screen otherwise, which would reduce
+                            // the whole ceremony to nothing for anyone who never picked badges
+                            // by hand. Rows stay inert outside Custom (`toggle` guards on mode).
+                            if mode == .custom || !unseenIds.isEmpty {
                                 badgeList
                             }
                             if let saveError {
@@ -206,6 +217,8 @@ private struct BadgePickerContent: View {
                     .padding(.horizontal, 20)
                     .padding(.top, 16)
                     .padding(.bottom, 20)
+                }
+                .task { await developChoreography(proxy) }
                 }
             }
             .navigationBarTitleDisplayMode(.inline)
@@ -248,17 +261,15 @@ private struct BadgePickerContent: View {
         }
         .presentationBackground(FlimTheme.bg)
         .presentationDetents([.large])
-        // Fires once per sheet presentation (this view's identity is stable for the sheet's whole
-        // lifetime, `BadgePickerSheet` only ever constructs it once `loaded` flips true and never
-        // flips back), so this can't double-fire on a recomposition the way a plain state flag
-        // would need guarding against. The delay is the moment the "NEW" tag has actually been on
-        // screen long enough to register, not an arbitrary wait — roughly the same beat the old
-        // stamp-press reveal gave each badge before calling this.
-        .task {
+        // Seen-marking happens when the sheet actually goes away, never on a timer and never on
+        // scroll-past: dismissing is the one act that says the person is done looking, so it is
+        // the one act allowed to burn the ceremony. `onDisappear` covers both the Cancel path
+        // and the Save path's own dismiss, and fires once because this view's identity is stable
+        // for the sheet's whole lifetime (`BadgePickerSheet` constructs it once `loaded` flips
+        // true and never flips back).
+        .onDisappear {
             guard !unseenIds.isEmpty else { return }
-            try? await Task.sleep(for: .seconds(1.4))
-            Haptics.reveal()
-            await onRevealed()
+            Task { await onRevealed() }
         }
     }
 
@@ -336,6 +347,11 @@ private struct BadgePickerContent: View {
         // exposing why their posts are covered) — quiet, not alarming.
         let showsDroppedNotice = position != nil && droppedIds.contains(badge.id)
         let isNew = unseenIds.contains(badge.id)
+        // A newly earned badge arrives UNDEVELOPED and develops in place: the pill sharpens out
+        // of a blur while its gradient comes up, the emoji stamps in, and only then do the words
+        // arrive. Rows that were never unseen are developed from the first frame. Under Reduce
+        // Motion `developChoreography` develops everything before this ever renders undeveloped.
+        let developed = !isNew || developedIds.contains(badge.id)
         return Button {
             toggle(badge.id)
         } label: {
@@ -343,10 +359,20 @@ private struct BadgePickerContent: View {
                 positionIndicator(position)
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 6) {
+                        Text(badge.kind.emoji)
+                            .flimFont(13, relativeTo: .caption)
+                            .opacity(developed ? 1 : 0)
+                            .scaleEffect(developed || reduceMotion ? 1 : 1.4)
+                            .animation(reduceMotion ? .easeInOut(duration: 0.3)
+                                                    : ProfileBadgePill.spring,
+                                       value: developed)
                         // The pill itself, in its real tier colour, so this reads as "here is
                         // what you're choosing" rather than a name you have to already know the
                         // meaning of; see `BadgePillLabel` and `ProfileBadgeTier`.
                         BadgePillLabel(kind: badge.kind)
+                            .opacity(developed ? 1 : 0.4)
+                            .blur(radius: developed ? 0 : 6)
+                            .animation(.easeOut(duration: 0.7), value: developed)
                         // The rung, in words. Colour alone carries the rank once you know the
                         // ladder, but nothing on screen teaches it, and gold against bronze is not
                         // a distinction everyone can see.
@@ -354,6 +380,8 @@ private struct BadgePickerContent: View {
                             .flimFont(9, weight: .medium, relativeTo: .caption2)
                             .tracking(1.2)
                             .foregroundStyle(badge.kind.tier.hue(accent: accent).opacity(0.85))
+                            .opacity(developed ? 1 : 0)
+                            .animation(.easeInOut(duration: 0.4).delay(0.55), value: developed)
                         if isNew {
                             Text("NEW")
                                 .flimFont(9, weight: .bold, relativeTo: .caption2)
@@ -361,6 +389,8 @@ private struct BadgePickerContent: View {
                                 .foregroundStyle(.black)
                                 .padding(.horizontal, 6).padding(.vertical, 2)
                                 .background(accent, in: Capsule())
+                                .opacity(developed ? 1 : 0)
+                                .animation(.easeInOut(duration: 0.4).delay(0.55), value: developed)
                         }
                     }
                     // The date is gone here too, matching the profile: it was never load-bearing,
@@ -368,6 +398,8 @@ private struct BadgePickerContent: View {
                     // place that meaning was previously missing entirely.
                     Text(badge.kind.explanation)
                         .flimFont(12, relativeTo: .caption).foregroundStyle(FlimTheme.textTertiary)
+                        .opacity(developed ? 1 : 0)
+                        .animation(.easeInOut(duration: 0.4).delay(0.55), value: developed)
                     if showsDroppedNotice {
                         Text("Chosen, but not currently visible on your profile")
                             .flimFont(11, relativeTo: .caption2).foregroundStyle(FlimTheme.textTertiary)
@@ -379,6 +411,7 @@ private struct BadgePickerContent: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .id(badge.id)
         .accessibilityLabel(accessibilityLabel(for: badge, position: position, dropped: showsDroppedNotice, isNew: isNew))
         .accessibilityHint(mode == .custom ? (position != nil ? "Double tap to remove it" : "Double tap to add it") : "")
     }
@@ -477,6 +510,8 @@ private struct BadgePickerContent: View {
                 .frame(width: 44, height: 44)
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 8) {
+                    Text(kind.emoji)
+                        .flimFont(13, relativeTo: .caption)
                     BadgePillLabel(kind: kind, muted: true)
                     Text(kind.tier.name.uppercased())
                         .flimFont(9, weight: .medium, relativeTo: .caption2)
@@ -504,6 +539,46 @@ private struct BadgePickerContent: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(kind.label) badge, not yet earned")
         .accessibilityHint(kind.howToEarn)
+    }
+
+    // MARK: - The reveal
+
+    /// The unseen badges in the order they sit on screen, top to bottom, which is `rankedBadges`
+    /// order, not earn order: the develop-in must sweep DOWN the list the person is looking at.
+    private var unseenInScreenOrder: [ProfileBadge] {
+        rankedBadges.filter { unseenIds.contains($0.id) }
+    }
+
+    /// Develops each unseen row in place, top to bottom.
+    ///
+    /// The sheet first lands on the newest unseen badge, then the first row develops after a
+    /// 350ms beat (blur clears over 700ms while the tier gradient comes up, the emoji stamps in
+    /// on the shared spring, then the words crossfade in under it, all owned by the row's own
+    /// per-layer animations), and each further row follows 450ms behind the one above. One
+    /// `.success` haptic on the first develop only: a haptic per row would read as the phone
+    /// stuttering, not as three arrivals.
+    ///
+    /// Under Reduce Motion the rows appear already developed and the emoji's spring becomes a
+    /// plain fade (see `badgeRow`); the scroll-to still happens, because finding the new badge
+    /// is function, not decoration.
+    private func developChoreography(_ proxy: ScrollViewProxy) async {
+        let unseen = unseenInScreenOrder
+        guard !unseen.isEmpty else { return }
+        if let newest = unseen.max(by: { $0.earnedAt < $1.earnedAt }) {
+            proxy.scrollTo(newest.id, anchor: .center)
+        }
+        if reduceMotion {
+            developedIds = unseenIds
+            Haptics.success()
+            return
+        }
+        try? await Task.sleep(for: .seconds(0.35))
+        for (index, badge) in unseen.enumerated() {
+            guard !Task.isCancelled else { return }
+            if index > 0 { try? await Task.sleep(for: .seconds(0.45)) }
+            if index == 0 { Haptics.success() }
+            developedIds.insert(badge.id)
+        }
     }
 
     // MARK: - Actions
