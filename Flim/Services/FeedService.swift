@@ -332,6 +332,7 @@ final class FeedService {
     /// this will NOT surface something newly true until something else (`refreshOwnBadges()`, or
     /// someone else opening this account's profile) has ratcheted it into `earned_badges` first.
     func refreshUnseenBadgeCount() async {
+        guard !badgesLocallySeen else { unseenBadgeCount = 0; return }
         let epoch = AccountEpoch.current
         let count: Int = (try? await supabase.rpc("unseen_badge_count").execute().value) ?? 0
         guard AccountEpoch.isCurrent(epoch) else { return }
@@ -353,13 +354,18 @@ final class FeedService {
         let epoch = AccountEpoch.current
         let count: Int = (try? await supabase.rpc("refresh_own_badges").execute().value) ?? 0
         guard AccountEpoch.isCurrent(epoch) else { return }
-        unseenBadgeCount = count
+        // Ratcheting still ran server-side (that is this function's real job); only the count
+        // write defers to local knowledge inside the window.
+        unseenBadgeCount = badgesLocallySeen ? 0 : count
     }
 
     /// Ids of badges earned but never shown to their owner, always the signed-in account's own.
     /// Empty on any failure, which degrades to "nothing to reveal" rather than an error, matching
     /// `fetchProfileBadges`.
     func fetchOwnUnseenBadgeIds() async -> Set<String> {
+        // Inside the window these badges ARE seen, whatever a stale read says; without this, a
+        // picker reopened seconds after closing could replay the reveal it just performed.
+        guard !badgesLocallySeen else { return [] }
         struct Row: Decodable { let badge_id: String }
         let rows: [Row] = (try? await supabase.rpc("own_unseen_badges").execute().value) ?? []
         return Set(rows.map(\.badge_id))
@@ -373,7 +379,27 @@ final class FeedService {
     /// on fetch: marking at fetch time would let a load that gets backgrounded, or a view that
     /// never finishes appearing, silently burn the moment, the badge would just exist next time
     /// with no ceremony.
+    /// Until this instant, every unseen-badge read in this service answers zero.
+    ///
+    /// The seen-marking write and the various refreshes are independent round trips, and any
+    /// refresh whose read predates the mark's commit carries the old count. The profile pill
+    /// grew its own clamp for this and the tab dot then had the SAME race through another door:
+    /// FeedView refreshes the count every time the Feed tab appears, so dismissing the reveal
+    /// and tabbing straight to Feed could write a stale count back here, and if that write
+    /// landed after the mark's zero, the dot stuck lit until the next visit. One window in the
+    /// service covers every consumer, present and future, instead of one clamp per surface.
+    private var badgesSeenLocallyUntil: Date?
+
+    private var badgesLocallySeen: Bool {
+        if let until = badgesSeenLocallyUntil, Date() < until { return true }
+        return false
+    }
+
     func markOwnBadgesSeen() async {
+        // Local truth FIRST, round trip second: the moment the app decides everything is seen,
+        // the count is zero everywhere, regardless of how long the server takes to agree.
+        unseenBadgeCount = 0
+        badgesSeenLocallyUntil = Date().addingTimeInterval(15)
         let epoch = AccountEpoch.current
         _ = try? await supabase.rpc("mark_own_badges_seen").execute()
         guard AccountEpoch.isCurrent(epoch) else { return }
