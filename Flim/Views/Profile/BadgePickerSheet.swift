@@ -42,6 +42,11 @@ import SwiftUI
 /// live `AuthService`/`FeedService` — this file has no other way to preview real data, there is
 /// no fixture/mock convention for either service anywhere else in the app.
 struct BadgePickerSheet: View {
+    /// Fired the moment a save COMMITS, before the sheet starts dismissing, so the presenter can
+    /// refresh the profile behind the sheet's cover. Refreshing on dismiss instead meant the new
+    /// pills and the vanished "new badges" pill landed a beat after the profile was already back
+    /// on screen, a visible pop and reflow right where the eye was resting.
+    var onSaved: (() -> Void)? = nil
     @Environment(AuthService.self) private var auth
     @Environment(FeedService.self) private var feed
     @Environment(\.dismiss) private var dismiss
@@ -66,6 +71,7 @@ struct BadgePickerSheet: View {
                 unseenIds: unseenIds
             ) { payload in
                 try await auth.setDisplayedBadges(payload)
+                onSaved?()
             } onRevealed: {
                 await feed.markOwnBadgesSeen()
             }
@@ -317,22 +323,14 @@ private struct BadgePickerContent: View {
         }
     }
 
-    /// What the list actually shows: in Custom mode the CHOSEN badges float to the front, in tap
-    /// order, with everything unchosen in ladder order below them.
+    /// What the list shows: always the ladder, selected or not.
     ///
-    /// This is feedback, not decoration. A tap used to change nothing but a small number in a
-    /// circle, the row stayed wherever the ladder had filed it, and the only place the new order
-    /// was ever visible was the profile after a save and a reload, which read as the pick not
-    /// having taken. The list now rearranges the moment you tap, top four first, exactly the
-    /// order the profile will lead with, so the screen answers "what did that do" immediately.
-    /// The saved selection is still the tap order itself, see `toggle(_:)`.
-    private var rankedBadges: [ProfileBadge] {
-        let ladder = ladderBadges
-        guard mode == .custom, !order.isEmpty else { return ladder }
-        let byId = Dictionary(uniqueKeysWithValues: ladder.map { ($0.id, $0) })
-        let chosen = order.compactMap { byId[$0] }
-        return chosen + ladder.filter { !order.contains($0.id) }
-    }
+    /// A float-to-front variant (chosen badges jumping to the top in tap order) was built and
+    /// reverted the same day, 2026-08-20. On device the owner found rows leaping around the list
+    /// worse than the problem it solved: a badge you tap should stay where its rank filed it,
+    /// and the position number in the circle is the feedback. Display order only: the saved
+    /// selection is still the order you tapped in, see `toggle(_:)`.
+    private var rankedBadges: [ProfileBadge] { ladderBadges }
 
     /// Custom mode only: in Automatic there is nothing to choose, `explanation` above already
     /// says the four are picked automatically and can be changed, and a list of rows the person
@@ -349,10 +347,6 @@ private struct BadgePickerContent: View {
         }
         .background(FlimTheme.bgElevated, in: RoundedRectangle(cornerRadius: 14))
         .uniformBadgePillWidths(for: rankedBadges.map(\.kind))
-        // The float-to-front above is worthless if rows teleport: the move is the feedback, so
-        // it has to be seen happening. Keyed on `order`, not on the derived array, so the mode
-        // toggle (which also reorders) still swaps instantly rather than shuffling.
-        .animation(ProfileBadgePill.spring, value: order)
     }
 
     private func badgeRow(_ badge: ProfileBadge) -> some View {

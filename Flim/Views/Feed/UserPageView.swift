@@ -225,8 +225,24 @@ struct UserPageView: View {
         .sheet(isPresented: $showEditProfile, onDismiss: { Task { await load() } }) {
             EditProfileView()
         }
+        // The reload starts at SAVE (behind the sheet's cover), not at dismissal: refreshed on
+        // dismiss, the new pill set and the vanished "new badges" pill landed a beat after the
+        // profile was already back on screen, a pop and reflow right where the eye was resting.
+        // The onDismiss reload stays as the Cancel path's refresh and as the catch-all.
         .sheet(isPresented: $showBadgePicker, onDismiss: { Task { await load() } }) {
-            BadgePickerSheet()
+            BadgePickerSheet(onSaved: { Task { await load() } })
+        }
+        .onChange(of: showBadgePicker) { _, showing in
+            // Once the sheet fully covers the page, retire the "new badges to see" pill where
+            // nobody can watch it vanish. Dismissing the picker marks everything seen no matter
+            // how it closes, so this is early knowledge, not a guess; if the app dies mid-sheet
+            // the server was never told and the pill honestly returns next launch.
+            guard showing, unseenBadgeCount > 0 else { return }
+            Task {
+                try? await Task.sleep(for: .seconds(0.6))
+                guard showBadgePicker else { return }   // already closed: let load() decide
+                withAnimation(.easeInOut(duration: 0.25)) { unseenBadgeCount = 0 }
+            }
         }
         .sheet(isPresented: $showInvite) {
             InviteSheet()
@@ -688,15 +704,19 @@ struct UserPageView: View {
         followers = await fr
         following = await fg
         let badges = await bd
-        unseenBadgeCount = await ub
+        let unseen = await ub
         let viewerHeld = await vb
         let effectiveIds = await eb
         // Guarded on its own, unlike the writes below it: an account switch mid-flight must not
         // let a stale account's resolved badge order land on the new account's profile. Nothing
         // else in this function reads `effectiveDisplayedBadgeIds` afterward, so skipping the
         // write here (rather than returning early) is enough, the rest of `load()` still runs.
+        // Animated because these writes reflow the header (pills swap, the "new badges" pill
+        // comes or goes). They usually land while a sheet still covers the page, where animation
+        // is moot; when one lands late, after the sheet is gone, easing beats popping.
+        withAnimation(.easeInOut(duration: 0.25)) { unseenBadgeCount = unseen }
         if AccountEpoch.isCurrent(epoch) {
-            effectiveDisplayedBadgeIds = effectiveIds
+            withAnimation(.easeInOut(duration: 0.25)) { effectiveDisplayedBadgeIds = effectiveIds }
         }
         // The signup number lives on the profile row itself and never depends on
         // `profile_badges`, so a profile still shows a clean number (and nothing else) if that

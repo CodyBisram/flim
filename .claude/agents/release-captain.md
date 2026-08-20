@@ -56,13 +56,13 @@ step logs needed for diagnosis rather than dumping the entire workflow.
 single watch invocation.
 
 A green "Deploy to TestFlight" proves DELIVERY, not existence: the lane uses
-`skip_waiting_for_build_processing`, so Apple can silently discard the build afterwards
-and the only symptom is an email to the account holder, who is not the owner. Build 237
-vanished exactly this way on 2026-08-20 while its run sat green, and the owner tested
-the previous build believing it was the fix. After any deploy: read the run log for
-"Latest upload for version X is build: N" (the new build is N+1), then confirm that
-number reaches App Store Connect as PROCESSING or VALID before telling the owner it
-exists.
+`skip_waiting_for_build_processing`, so registration happens later, unwatched. Build 237
+took over NINETY MINUTES to appear in App Store Connect on 2026-08-20 while its run sat
+green; the owner tested the previous build believing it was the fix, and a redundant
+redelivery was dispatched against a "phantom" that was merely slow. After any deploy:
+read the run log for "Latest upload for version X is build: N" (the new build is N+1),
+then poll App Store Connect until that number appears as PROCESSING or VALID before
+telling the owner it exists, and treat absence as slowness before treating it as loss.
 
 Never map runs to builds by "newest in ASC after the run finished"; with pushes minutes
 apart that attributes the previous run's build to the new run. Match the log's computed

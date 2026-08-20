@@ -9,9 +9,11 @@ struct FrameNumberLabel: View {
     let number: Int
 
     var body: some View {
-        // The numero sign, not a letter o: the design writes the frame number as film-edge
-        // marking, and "No 12" reads as the word no beside a digit.
-        Text("\u{2116} \(number)")
+        // Plain letters, and the numero sign U+2116 was tried and reverted (2026-08-20): the
+        // glyph draws its o as a superscript far below cap height, and at 11pt on device it was
+        // unreadably small. The owner chose legible letters over the typographically correct
+        // mark, so do not swap this back without putting it on a screen first.
+        Text("No \(number)")
             .flimFont(11, design: .monospaced, relativeTo: .caption)
             .tracking(0.5)
             .foregroundStyle(FlimTheme.textTertiary)
