@@ -67,7 +67,7 @@ struct PhotoPickerSheet: View {
                                     Color.clear
                                         .aspectRatio(1, contentMode: .fit)
                                         .overlay {
-                                            CachedImage(url: urls[photo.id], maxPixel: 400) { $0.resizable().scaledToFill() }
+                                            CachedImage(url: urls[photo.id], maxPixel: 400, cacheKey: photo.displayPath) { $0.resizable().scaledToFill() }
                                                 placeholder: { ShimmerPlaceholder(cornerRadius: 4) }
                                         }
                                         .clipShape(RoundedRectangle(cornerRadius: 4))
@@ -168,6 +168,9 @@ struct PhotoPickerSheet: View {
 /// A full-screen image viewer with pinch + double-tap zoom and pan.
 struct ImageViewer: View {
     let url: URL?
+    /// Stable storage path for the path-keyed cache; without it a full-screen open re-fetches
+    /// bytes the thumbnail grid already downloaded under another signed URL.
+    var cacheKey: String? = nil
     @Environment(\.dismiss) private var dismiss
     @State private var scale: CGFloat = 1
     @State private var offset: CGSize = .zero
@@ -182,7 +185,7 @@ struct ImageViewer: View {
         ZStack {
             Color.black.ignoresSafeArea()
             if let url {
-                CachedImage(url: url, maxPixel: 1600) { image in
+                CachedImage(url: url, maxPixel: 1600, cacheKey: cacheKey) { image in
                     image.resizable().scaledToFit()
                         .scaleEffect(scale, anchor: zoomAnchor).offset(offset)
                         .gesture(dragGesture).gesture(pinch)

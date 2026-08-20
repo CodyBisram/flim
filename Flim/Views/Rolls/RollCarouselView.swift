@@ -65,7 +65,7 @@ struct RollCarouselView: View {
                 ZStack {
                     Group {
                         if let photo = current, let url = urls[photo.id] {
-                            CachedImage(url: url, maxPixel: 1600) { $0.resizable().scaledToFit() }
+                            CachedImage(url: url, maxPixel: 1600, cacheKey: photo.viewPath) { $0.resizable().scaledToFit() }
                                 placeholder: { ProgressView().tint(.white) }
                         } else {
                             ProgressView().tint(.white)

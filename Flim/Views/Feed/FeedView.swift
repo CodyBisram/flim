@@ -263,7 +263,7 @@ struct FeedView: View {
                             .frame(width: 34, height: 34)
                             .overlay {
                                 if let myAvatarURL {
-                                    CachedImage(url: myAvatarURL, maxPixel: 100) { $0.resizable().scaledToFill() } placeholder: { Color.clear }
+                                    CachedImage(url: myAvatarURL, maxPixel: 100, cacheKey: auth.currentUser?.avatarPath) { $0.resizable().scaledToFill() } placeholder: { Color.clear }
                                 } else {
                                     Text(String((auth.currentUser?.username ?? "?").prefix(1)).uppercased())
                                         .flimFont(14, weight: .thin, relativeTo: .subheadline).foregroundStyle(accent)
@@ -883,7 +883,7 @@ struct FeedPostCard: View {
             .frame(width: 34, height: 34)
             .overlay {
                 if let avatarURL {
-                    CachedImage(url: avatarURL, maxPixel: 100) { $0.resizable().scaledToFill() } placeholder: { Color.clear }
+                    CachedImage(url: avatarURL, maxPixel: 100, cacheKey: item.author.avatarPath) { $0.resizable().scaledToFill() } placeholder: { Color.clear }
                 } else {
                     Text(String(item.author.handle.dropFirst().prefix(1)).uppercased())
                         .flimFont(14, weight: .thin, relativeTo: .subheadline)

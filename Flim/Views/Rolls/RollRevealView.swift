@@ -84,10 +84,10 @@ struct RollRevealView: View {
                         // spinner is the one thing that cannot develop into anything.
                         ZStack {
                             if let thumbPath = photo.thumbPath, let thumbURL = viewModel.urls[thumbPath] {
-                                CachedImage(url: thumbURL, maxPixel: 400) { $0.resizable().scaledToFit() }
+                                CachedImage(url: thumbURL, maxPixel: 400, cacheKey: thumbPath) { $0.resizable().scaledToFit() }
                                     placeholder: { Color.clear }
                             }
-                            CachedImage(url: url, maxPixel: 1600,
+                            CachedImage(url: url, maxPixel: 1600, cacheKey: photo.viewPath,
                                        onFailure: { viewModel.skipDeadFrame(photo.id) }) { image in
                                 image.resizable().scaledToFit()
                             } placeholder: {

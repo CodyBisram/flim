@@ -439,7 +439,7 @@ struct EditProfileView: View {
                 .frame(width: 96, height: 96)
                 .overlay {
                     if let avatarURL {
-                        CachedImage(url: avatarURL, maxPixel: 220) { image in
+                        CachedImage(url: avatarURL, maxPixel: 220, cacheKey: auth.currentUser?.avatarPath) { image in
                             image.resizable().scaledToFill()
                         } placeholder: {
                             Color.clear

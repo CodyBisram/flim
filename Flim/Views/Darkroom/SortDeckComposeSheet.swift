@@ -82,14 +82,14 @@ struct SortDeckComposeSheet: View {
         }
         .presentationBackground(FlimTheme.bg)
         .sheet(isPresented: $showTagSheet) {
-            TagPhotoSheet(url: url, tags: $tags, rollId: photo.rollId)
+            TagPhotoSheet(url: url, cacheKey: photo.viewPath, tags: $tags, rollId: photo.rollId)
         }
     }
 
     private var photoPreview: some View {
         Group {
             if let url {
-                CachedImage(url: url, maxPixel: 900) { $0.resizable().scaledToFit() }
+                CachedImage(url: url, maxPixel: 900, cacheKey: photo.viewPath) { $0.resizable().scaledToFit() }
                     placeholder: { ShimmerPlaceholder(cornerRadius: 16) }
             } else {
                 ShimmerPlaceholder(cornerRadius: 16)

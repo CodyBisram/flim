@@ -106,7 +106,7 @@ struct PostDetailView: View {
 
                     Group {
                         if let url {
-                            CachedImage(url: url, maxPixel: 1400) { $0.resizable().scaledToFit() } placeholder: { ShimmerPlaceholder(cornerRadius: 14).aspectRatio(3.0 / 4.0, contentMode: .fit) }
+                            CachedImage(url: url, maxPixel: 1400, cacheKey: post.storagePath) { $0.resizable().scaledToFit() } placeholder: { ShimmerPlaceholder(cornerRadius: 14).aspectRatio(3.0 / 4.0, contentMode: .fit) }
                         } else { ShimmerPlaceholder(cornerRadius: 14).aspectRatio(3.0 / 4.0, contentMode: .fit) }
                     }
                         .frame(maxWidth: .infinity)

@@ -204,7 +204,8 @@ struct PhotoPagerView: View {
                                memberNames: memberNames) { pendingProfile = ProfileRoute(id: $0) }
         }
         .sheet(isPresented: $showTagSheet) {
-            TagPhotoSheet(url: composerPhoto.flatMap { resolvedURLs[$0.id] }, tags: $pendingTags,
+            TagPhotoSheet(url: composerPhoto.flatMap { resolvedURLs[$0.id] },
+                          cacheKey: composerPhoto?.viewPath, tags: $pendingTags,
                           rollId: composerPhoto?.rollId)
         }
         .overlay(alignment: .top) {

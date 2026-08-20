@@ -664,7 +664,16 @@ final class FeedService {
     ///
     /// Every one of these is keyed by post or user id, not by account, so none of it is
     /// self-invalidating when someone else signs in. Called on `flimAccountDidChange`.
+    /// What a profile's header counted last time this session looked: shared, followers,
+    /// following. Session-lifetime, no TTL, stale-while-revalidate: a profile page seeds its
+    /// header from here so the numbers are on screen in the first frame instead of flashing
+    /// zero, then the real fetch quietly corrects anything that moved. Counts only, never the
+    /// posts array: caching content would double memory per visited profile for a grid that has
+    /// to be fetched fresh anyway.
+    var profileStatsCache: [UUID: (shared: Int, followers: Int, following: Int)] = [:]
+
     func resetForAccountChange() {
+        profileStatsCache = [:]
         feed = []
         followingIds = []
         followerIds = []

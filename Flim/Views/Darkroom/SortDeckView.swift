@@ -218,7 +218,7 @@ struct SortDeckView: View {
                 // 1600 rather than the old 2048: that budget existed to cover the extra
                 // magnification scaledToFill applied. Fitting a 3:4 photo into a 3:4 card is 1:1,
                 // so it now matches the full-screen viewer's budget.
-                CachedImage(url: urls[photo.id], maxPixel: 1400) { $0.resizable().scaledToFit() }
+                CachedImage(url: urls[photo.id], maxPixel: 1400, cacheKey: photo.viewPath) { $0.resizable().scaledToFit() }
                     placeholder: { ShimmerPlaceholder(cornerRadius: 22) }
             }
             // No decorative GrainOverlay here, unlike the feed and the grid. Those screens are

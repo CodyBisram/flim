@@ -26,6 +26,9 @@ func tagSummary(handles: [String]) -> String {
 struct TagPhotoSheet: View {
     @Environment(\.flimAccent) private var accent
     let url: URL?
+    /// The photo's stable storage path, so the header thumbnail hits the path-keyed cache the
+    /// photo already populated elsewhere instead of waiting on this sheet's own signed URL.
+    var cacheKey: String? = nil
     @Binding var tags: [PendingTag]
     /// The roll this photo belongs to, when known: drives the quick-tag row toward that roll's
     /// OTHER members instead of the personal-photo fallback. Nil for a personal photo, or for a
@@ -167,7 +170,7 @@ struct TagPhotoSheet: View {
         HStack(spacing: 12) {
             Group {
                 if let url {
-                    CachedImage(url: url, maxPixel: 200) { $0.resizable().scaledToFill() }
+                    CachedImage(url: url, maxPixel: 200, cacheKey: cacheKey) { $0.resizable().scaledToFill() }
                         placeholder: { ShimmerPlaceholder(cornerRadius: 8) }
                 } else {
                     ShimmerPlaceholder(cornerRadius: 8)

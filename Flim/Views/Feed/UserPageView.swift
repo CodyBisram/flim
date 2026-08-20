@@ -36,11 +36,17 @@ struct UserPageView: View {
     @State private var coverURL: URL?
     @State private var followers = 0
     @State private var following = 0
+    /// The "shared" stat. Distinct from `posts.count`, which is zero until the grid's own fetch
+    /// lands and made the whole stats row flash 0 on every open; this seeds from the session
+    /// cache (see `FeedService.profileStatsCache`) and settles to the real count when posts do.
+    @State private var sharedCount = 0
     @State private var loaded = false
     @State private var followList: FollowList?
     @State private var showSettings = false
     @State private var showEditProfile = false
     @State private var showBadgePicker = false
+    /// The storage path behind `coverURL`, whichever of its three sources produced it. See load().
+    @State private var coverPath: String?
 
     // MARK: Badge swap-in
 
@@ -267,7 +273,7 @@ struct UserPageView: View {
             InviteSheet()
         }
         .fullScreenCover(isPresented: $showAvatarViewer) {
-            ImageViewer(url: avatarURL)
+            ImageViewer(url: avatarURL, cacheKey: profile?.avatarPath)
         }
     }
 
@@ -280,7 +286,7 @@ struct UserPageView: View {
                     .frame(height: 150 + topInset)
                     .overlay {
                         if let coverURL {
-                            CachedImage(url: coverURL, maxPixel: 1000) { $0.resizable().scaledToFill() } placeholder: { Color.clear }
+                            CachedImage(url: coverURL, maxPixel: 1000, cacheKey: coverPath) { $0.resizable().scaledToFill() } placeholder: { Color.clear }
                         }
                     }
                     // Darken the top (under the status bar) + fade into the page at the bottom,
@@ -402,7 +408,7 @@ struct UserPageView: View {
             }
 
             HStack(spacing: 26) {
-                stat("\(posts.count)", "shared")
+                stat("\(sharedCount)", "shared")
                 Button { followList = .followers } label: { stat("\(followers)", "followers") }
                 Button { followList = .following } label: { stat("\(following)", "following") }
             }
@@ -452,7 +458,7 @@ struct UserPageView: View {
             .frame(width: 88, height: 88)
             .overlay {
                 if let avatarURL {
-                    CachedImage(url: avatarURL, maxPixel: 220) { $0.resizable().scaledToFill() } placeholder: { Color.clear }
+                    CachedImage(url: avatarURL, maxPixel: 220, cacheKey: profile?.avatarPath) { $0.resizable().scaledToFill() } placeholder: { Color.clear }
                 } else {
                     Text(String((profile?.username ?? "?").prefix(1)).uppercased())
                         .flimFont(32, weight: .thin, relativeTo: .title3).foregroundStyle(accent)
@@ -702,6 +708,14 @@ struct UserPageView: View {
     }
 
     private func load() async {
+        // Stale-while-revalidate for the stats row: the last counts this session saw go on
+        // screen in the FIRST frame, before a single round trip, and the fetches below quietly
+        // correct anything that moved. Without this, every visit flashed 0 / 0 / 0 while four
+        // requests raced back, which read as the page forgetting who you are.
+        if sharedCount == 0, followers == 0, following == 0,
+           let cached = feed.profileStatsCache[userId] {
+            (sharedCount, followers, following) = cached
+        }
         // Captured before any `await` below so the one write it guards (`effectiveDisplayedBadgeIds`,
         // see below) can't land after an account switch mid-flight: this is a pure read with
         // nothing else in this function to protect for correctness, so nothing else here needs it.
@@ -735,6 +749,8 @@ struct UserPageView: View {
         posts = await ps
         followers = await fr
         following = await fg
+        sharedCount = posts.count
+        feed.profileStatsCache[userId] = (sharedCount, followers, following)
         let badges = await bd
         let unseen = await ub
         let viewerHeld = await vb
@@ -768,13 +784,15 @@ struct UserPageView: View {
         if feed.followerIds.isEmpty, let uid = auth.currentUser?.id { await feed.loadFollowers(userId: uid) }
         if let uid = auth.currentUser?.id { await feed.loadBlocked(userId: uid) }
         if let path = profile?.avatarPath { avatarURL = await feed.signedURL(for: path) }
+        // Recorded beside the URL because the cover has three possible sources; a cache key that
+        // guessed wrong would file one source's bytes under another's name.
         // Cover = chosen cover, else the newest shared shot, else the avatar. The newest-shot
         // fallback uses cardPath (the ~1400px feed rendition), not storagePath (the full ~2048px
         // stored image): the cover renders at maxPixel 1000, so downloading the full file for it
         // is ~3x the bytes for no visible gain.
-        if let cover = profile?.coverPath { coverURL = await feed.signedURL(for: cover) }
-        else if let newest = posts.first?.cardPath { coverURL = await feed.signedURL(for: newest) }
-        else { coverURL = avatarURL }
+        if let cover = profile?.coverPath { coverURL = await feed.signedURL(for: cover); coverPath = cover }
+        else if let newest = posts.first?.cardPath { coverURL = await feed.signedURL(for: newest); coverPath = newest }
+        else { coverURL = avatarURL; coverPath = profile?.avatarPath }
         loaded = true
     }
 
@@ -805,7 +823,7 @@ struct PostThumb: View {
             .aspectRatio(1, contentMode: .fit)
             .overlay {
                 if let url {
-                    CachedImage(url: url, maxPixel: 400) { $0.resizable().scaledToFill() } placeholder: { ShimmerPlaceholder(cornerRadius: 3) }
+                    CachedImage(url: url, maxPixel: 400, cacheKey: path) { $0.resizable().scaledToFill() } placeholder: { ShimmerPlaceholder(cornerRadius: 3) }
                 } else { ShimmerPlaceholder(cornerRadius: 3) }
             }
             .clipShape(RoundedRectangle(cornerRadius: 3))
