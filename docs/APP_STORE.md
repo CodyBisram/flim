@@ -134,7 +134,7 @@ not add plurals of words already present. Apple handles both.
 
     Widgets. A Darkroom widget counts the prints waiting on you and shows the roll developing right now. Look Back resurfaces a frame from a year, a month, or a week ago. A shutter on your Lock Screen opens the camera in one tap and quietly shows when a roll is ready. The developing countdown on your Lock Screen got restruck to match.
 
-    Finding an emoji now works the way you think: search "laugh" and get everything that laughs.
+    Reactions got smarter. The quick row under a photo now offers six emoji, and up to three are guessed on your phone from what is actually in the photograph. Searching the full picker works the way you type: "laugh", "lol" and "bday" all find what you meant. And a reaction you pick lands at the front of the row, where you can see it arrive.
 
     And the usual sweep underneath: the feed loads lighter, the sort deck opens faster, and a deleted roll no longer counts down anywhere.
 
@@ -154,6 +154,16 @@ that install with no client-side recovery; the nudge from `latest_version` is th
 
 Name change ships with this submission: `FLIM: Disposable Camera` (see Name & subtitle above).
 Keywords and subtitle unchanged, both already assume the new name's deduplication.
+
+Check the App Privacy section while in there: it must list Crash Data (Diagnostics) and Product
+Interaction (Usage Data), both linked to identity, to match what the privacy page now discloses
+(crash reports since late July, the firsts and day counts). Review cross-checks the policy URL
+against the labels, and the page was updated 2026-08-20.
+
+Release option: choose it AT submission, on the version page, before Apple ever sees it.
+"Automatically release this version" ships the moment review approves. "Manually release" holds
+an approved build until the owner presses Release, which is the right choice here: it makes the
+release moment predictable, so the update nudge can be armed the same hour.
 
 ## What's New (version 1.4.1)
 
