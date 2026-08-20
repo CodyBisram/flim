@@ -308,14 +308,30 @@ private struct BadgePickerContent: View {
     /// oldest-earned first inside each rung. The RPC returns them oldest-first overall, which put
     /// whatever you happened to earn in week one at the top and buried a founding pill halfway
     /// down a list of ordinary ones. Sorting on the rung is what makes this read as a collection
-    /// rather than a log. Display order only: the saved selection is still the order you tapped
-    /// in, see `toggle(_:)`.
-    private var rankedBadges: [ProfileBadge] {
+    /// rather than a log.
+    private var ladderBadges: [ProfileBadge] {
         badges.sorted {
             $0.kind.tier.sortRank != $1.kind.tier.sortRank
                 ? $0.kind.tier.sortRank < $1.kind.tier.sortRank
                 : $0.earnedAt < $1.earnedAt
         }
+    }
+
+    /// What the list actually shows: in Custom mode the CHOSEN badges float to the front, in tap
+    /// order, with everything unchosen in ladder order below them.
+    ///
+    /// This is feedback, not decoration. A tap used to change nothing but a small number in a
+    /// circle, the row stayed wherever the ladder had filed it, and the only place the new order
+    /// was ever visible was the profile after a save and a reload, which read as the pick not
+    /// having taken. The list now rearranges the moment you tap, top four first, exactly the
+    /// order the profile will lead with, so the screen answers "what did that do" immediately.
+    /// The saved selection is still the tap order itself, see `toggle(_:)`.
+    private var rankedBadges: [ProfileBadge] {
+        let ladder = ladderBadges
+        guard mode == .custom, !order.isEmpty else { return ladder }
+        let byId = Dictionary(uniqueKeysWithValues: ladder.map { ($0.id, $0) })
+        let chosen = order.compactMap { byId[$0] }
+        return chosen + ladder.filter { !order.contains($0.id) }
     }
 
     /// Custom mode only: in Automatic there is nothing to choose, `explanation` above already
@@ -333,6 +349,10 @@ private struct BadgePickerContent: View {
         }
         .background(FlimTheme.bgElevated, in: RoundedRectangle(cornerRadius: 14))
         .uniformBadgePillWidths(for: rankedBadges.map(\.kind))
+        // The float-to-front above is worthless if rows teleport: the move is the feedback, so
+        // it has to be seen happening. Keyed on `order`, not on the derived array, so the mode
+        // toggle (which also reorders) still swaps instantly rather than shuffling.
+        .animation(ProfileBadgePill.spring, value: order)
     }
 
     private func badgeRow(_ badge: ProfileBadge) -> some View {
@@ -551,12 +571,18 @@ private struct BadgePickerContent: View {
 
     /// Develops each unseen row in place, top to bottom.
     ///
-    /// The sheet first lands on the newest unseen badge, then the first row develops after a
-    /// 350ms beat (blur clears over 700ms while the tier gradient comes up, the emoji stamps in
-    /// on the shared spring, then the words crossfade in under it, all owned by the row's own
-    /// per-layer animations), and each further row follows 450ms behind the one above. One
-    /// `.success` haptic on the first develop only: a haptic per row would read as the phone
-    /// stuttering, not as three arrivals.
+    /// The sheet first lands on the TOPMOST unseen row in screen order, not the newest by date,
+    /// and that distinction was learned the hard way: with a whole collection unseen, "newest"
+    /// landed partway down a list whose develop sweep starts at the top, so the reveal played
+    /// out above the fold while the person sat under it. Landing where the sweep starts makes
+    /// the two coincide at every unseen count, and with exactly one unseen badge, the common
+    /// case, the topmost unseen IS the newest one.
+    ///
+    /// Then the first row develops after a 350ms beat (blur clears over 700ms while the tier
+    /// gradient comes up, the emoji stamps in on the shared spring, then the words crossfade in
+    /// under it, all owned by the row's own per-layer animations), and each further row follows
+    /// 450ms behind the one above. One `.success` haptic on the first develop only: a haptic per
+    /// row would read as the phone stuttering, not as three arrivals.
     ///
     /// Under Reduce Motion the rows appear already developed and the emoji's spring becomes a
     /// plain fade (see `badgeRow`); the scroll-to still happens, because finding the new badge
@@ -564,8 +590,11 @@ private struct BadgePickerContent: View {
     private func developChoreography(_ proxy: ScrollViewProxy) async {
         let unseen = unseenInScreenOrder
         guard !unseen.isEmpty else { return }
-        if let newest = unseen.max(by: { $0.earnedAt < $1.earnedAt }) {
-            proxy.scrollTo(newest.id, anchor: .center)
+        // One beat for the sheet's presentation to settle: a scroll issued mid-presentation
+        // measures a half-laid-out list and lands somewhere arbitrary.
+        try? await Task.sleep(for: .seconds(0.2))
+        if let first = unseen.first {
+            proxy.scrollTo(first.id, anchor: .center)
         }
         if reduceMotion {
             developedIds = unseenIds

@@ -9,7 +9,9 @@ struct FrameNumberLabel: View {
     let number: Int
 
     var body: some View {
-        Text("No \(number)")
+        // The numero sign, not a letter o: the design writes the frame number as film-edge
+        // marking, and "No 12" reads as the word no beside a digit.
+        Text("\u{2116} \(number)")
             .flimFont(11, design: .monospaced, relativeTo: .caption)
             .tracking(0.5)
             .foregroundStyle(FlimTheme.textTertiary)
