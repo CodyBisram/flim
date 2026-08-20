@@ -105,63 +105,6 @@ async function importPrivateKey(pem: string): Promise<CryptoKey> {
 // omitted for destinations that need none (the daily digest, elsewhere). `comments` is set only
 // on "post" pushes that are specifically about a comment, so the client can open with the
 // comment thread already showing.
-// Badge push copy: the rung's medal, the badge's name, and what it actually means.
-//
-// The name alone does not survive a lock screen. "You earned Kept One" reads as a
-// riddle to anyone who has not already opened the picker and read the catalogue,
-// which is most people most of the time, and a notification that has to be
-// decoded is a notification that gets dismissed. The badge's own explanation is
-// the sentence that makes the name land, so it goes in the body, and the rung's
-// medal goes in front of the title so the rank is legible before a single word
-// is read. Crown rather than a fourth medal for the founding rung: it sits above
-// gold, and there is no medal above gold.
-//
-// ⚠️ GENERATED FROM ProfileBadgeKind (Flim/Models/ProfileIdentity.swift), by
-// scripts/gen_badge_push_copy.py. Do not hand-edit: re-run that script after
-// adding a badge or changing a label, tier, or explanation. There is no shared
-// source between Swift and Deno, and generating beats transcribing because the
-// failure mode of transcribing is a notification that quietly contradicts what
-// the app shows. An id missing from here does NOT break the push: it falls back
-// to a generic title with no body, so a forgotten regeneration degrades the
-// wording rather than the notification.
-interface BadgeCopy {
-  emoji: string;
-  label: string;
-  meaning: string;
-}
-
-const BADGE_COPY: Record<string, BadgeCopy> = {
-  first_light: { emoji: "🎞️", label: "First Light", meaning: "Your very first frame." },
-  full_roll: { emoji: "🥉", label: "Full Roll", meaning: "You shot into a roll before its midpoint and again after, instead of dumping it all at once and moving on." },
-  darkroom: { emoji: "🥈", label: "Darkroom", meaning: "You opened every reveal, for every roll you were ever part of." },
-  founding_100: { emoji: "👑", label: "Founding 100", meaning: "One of the first hundred people here." },
-  first_in: { emoji: "🥈", label: "First In", meaning: "First to open the reveal on a roll." },
-  roll_maker: { emoji: "🥉", label: "Roll Maker", meaning: "You started a roll, and people actually shot into it." },
-  brought_someone: { emoji: "🥉", label: "Plus One", meaning: "You brought someone along, and they joined." },
-  joined_in: { emoji: "🎞️", label: "Joined In", meaning: "You joined a roll someone else started." },
-  chipped_in: { emoji: "🎞️", label: "Chipped In", meaning: "You shot into a roll you didn't start." },
-  shared: { emoji: "🎞️", label: "Shared", meaning: "You posted a frame to the feed." },
-  well_met: { emoji: "🥉", label: "Well Met", meaning: "Someone else reacted to one of your photos." },
-  full_house: { emoji: "🥉", label: "Full House", meaning: "A roll you shot into filled up with five or more photographers." },
-  founding_crew: { emoji: "👑", label: "Founding Crew", meaning: "Part of the crew that got this off the ground." },
-  front_row: { emoji: "🥇", label: "Front Row", meaning: "First to open the reveal, on five different rolls." },
-  packed_house: { emoji: "🥇", label: "Packed House", meaning: "A roll you shot into grew to ten or more photographers." },
-  patron: { emoji: "🥈", label: "Patron", meaning: "Five people you invited joined." },
-  cover_to_cover: { emoji: "🥇", label: "Cover to Cover", meaning: "You shot into ten rolls before they developed." },
-  kept_one: { emoji: "🥈", label: "Kept One", meaning: "Ten of your frames developed, and you kept every one to yourself." },
-  regular: { emoji: "🥈", label: "Regular", meaning: "Active on seven different days." },
-  one_year: { emoji: "🥇", label: "Still Shooting", meaning: "A year since you joined FLIM, and still shooting." },
-  full_set: { emoji: "🥇", label: "Full Set", meaning: "Twenty other badges, held at once." },
-  founder: { emoji: "👑", label: "Founder", meaning: "Built FLIM." },
-  open_door: { emoji: "🥇", label: "Open Door", meaning: "Ten people you invited joined." },
-  chimed_in: { emoji: "🎞️", label: "Chimed In", meaning: "You reacted to someone else's photo." },
-  in_frame: { emoji: "🥉", label: "In Frame", meaning: "Someone tagged you in a photo." },
-  spotter: { emoji: "🥉", label: "Spotter", meaning: "You tagged someone in one of yours." },
-  said_it: { emoji: "🎞️", label: "Said It", meaning: "You wrote a caption." },
-  ten_frames: { emoji: "🎞️", label: "Ten Frames", meaning: "Ten frames shot." },
-  good_company: { emoji: "🥉", label: "Good Company", meaning: "Ten people follow you." },
-};
-
 interface FlimRoute {
   t: "reveal" | "post" | "profile" | "feed";
   id?: string;
@@ -836,8 +779,8 @@ Deno.serve(async () => {
       postId: r.post_id,
       ownerId: (r as { posts?: { user_id?: string } }).posts?.user_id,
       reactorId: r.user_id,
-      emojis: [],
-      ids: [],
+      emojis: [] as string[],
+      ids: [] as string[],
     };
     g.emojis.push(r.emoji);
     g.ids.push(r.id);
@@ -1032,7 +975,8 @@ Deno.serve(async () => {
     const meta = (r as { photos?: { user_id?: string; roll_id?: string } }).photos;
     const key = `${r.photo_id}|${r.user_id}`;
     const g = rxByKey.get(key) ??
-      { ownerId: meta?.user_id, rollId: meta?.roll_id, reactorId: r.user_id, emojis: [], ids: [] };
+      { ownerId: meta?.user_id, rollId: meta?.roll_id, reactorId: r.user_id,
+        emojis: [] as string[], ids: [] as string[] };
     g.emojis.push(r.emoji);
     g.ids.push(r.id);
     rxByKey.set(key, g);
@@ -1206,41 +1150,12 @@ Deno.serve(async () => {
     await supabase.from("user_reports").update({ push_sent: true }).eq("id", r.id);
   }
 
-  // --- Badges: you earned something. The only push in this function that is not
-  //     about another person, so it carries no `fromId` and skips notify()'s
-  //     block check entirely: there is nobody on the other end to be blocked by.
-  //     Routed to the profile, which is where the picker (and the reveal) lives.
-  //
-  //     earned_badges has no surrogate id; its primary key is (user_id, badge_id),
-  //     so the push_sent flip keys on both. Flipped whether or not a push actually
-  //     went out, matching every other block here: a device-less account must not
-  //     leave a row queued forever, waiting to fire the day they register one.
-  const { data: freshBadges } = await supabase
-    .from("earned_badges")
-    .select("user_id, badge_id")
-    .eq("push_sent", false);
-
-  for (const b of freshBadges ?? []) {
-    const copy = BADGE_COPY[b.badge_id];
-    // Unknown id: a badge shipped to the database ahead of this function. Still
-    // worth telling someone about, just without naming it, rather than staying
-    // silent or pushing a raw snake_case id at them.
-    const title = copy ? `${copy.emoji} New badge: ${copy.label}` : "You earned a badge";
-    const body = copy?.meaning;
-    for (const token of await tokensFor(b.user_id)) {
-      // The recipient's OWN id, not an omitted one: PushDestination.parse rejects a
-      // "profile" route with no id outright (`guard let id = uuid(...) else { return nil }`),
-      // so a bare { t: "profile" } taps into nothing at all and just opens the app
-      // wherever it was. Routed to their own page because that is where the badge is
-      // shown and where the picker, and the reveal, live.
-      if (await sendPush(token, title, body, { t: "profile", id: b.user_id })) sent++;
-    }
-    await supabase
-      .from("earned_badges")
-      .update({ push_sent: true })
-      .eq("user_id", b.user_id)
-      .eq("badge_id", b.badge_id);
-  }
+  // --- Badges deliberately send NOTHING. They are discovered, not announced: earning is
+  //     silent, the Home avatar's dot and the profile's "New badge to see" pill do the telling,
+  //     and the reveal happens in the picker when the person chooses to look. A push per badge
+  //     shipped here on 2026-08-18 and was removed a day later when the design settled; if the
+  //     idea comes back, know that `earned_badges.push_sent` still exists but is no longer
+  //     flipped, so "false" means "earned since 2026-08-19", not "queued".
 
   return new Response(`sent ${sent} social push(es)`);
 });
