@@ -9,7 +9,7 @@ import XCTest
 /// however many times you came back to that photo.
 final class ReactionBarTests: XCTestCase {
 
-    private let defaults = PostEmoji.all   // ["❤️", "🔥", "😂", "😮", "🙌"]
+    private let defaults = PostEmoji.all   // ["❤️", "🔥", "😂", "😮", "🙌", "👏"]
 
     func testSingleReactionIsPromotedToFirst() {
         let order = reactionDisplayOrder(counts: ["😂": 1], defaults: defaults)
@@ -37,7 +37,7 @@ final class ReactionBarTests: XCTestCase {
 
     func testUnreactedDefaultsFollowInTheirOriginalOrder() {
         let order = reactionDisplayOrder(counts: ["🙌": 1], defaults: defaults)
-        XCTAssertEqual(order, ["🙌", "❤️", "🔥", "😂", "😮"])
+        XCTAssertEqual(order, ["🙌", "❤️", "🔥", "😂", "😮", "👏"])
     }
 
     func testEmojiOutsideTheDefaultsStillLeads() {
