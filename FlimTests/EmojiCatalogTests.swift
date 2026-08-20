@@ -72,8 +72,8 @@ struct EmojiCatalogTests {
     @Test("the fixed reaction slots are untouched by any of this")
     func fixedAndFallbackAreUnchanged() {
         #expect(PostEmoji.fixed == ["❤️", "🔥", "😂"])
-        #expect(PostEmoji.fallback == ["😮", "🙌"])
-        #expect(PostEmoji.all == ["❤️", "🔥", "😂", "😮", "🙌"])
+        #expect(PostEmoji.fallback == ["😮", "🙌", "👏"])
+        #expect(PostEmoji.all == ["❤️", "🔥", "😂", "😮", "🙌", "👏"])
     }
 
     /// Pins the exact regression that shipped from a device: `RenderProbe.renders` used to demand

@@ -79,7 +79,7 @@ enum EmojiSuggestion {
         }
     }
 
-    /// Up to two emoji for one image, most-confident first, never more than one per emoji.
+    /// Up to three emoji for one image, most-confident first, never more than one per emoji.
     ///
     /// Vision returns all ~1,300 labels for every request, sorted by descending confidence,
     /// hierarchy and all (a lizard photo carries `lizard`, `reptile`, and `animal` as separate
@@ -105,7 +105,7 @@ enum EmojiSuggestion {
         return pick(fromQualifyingIdentifiers: qualifying)
     }
 
-    /// The pure dedup/cap-at-2 picking rule, over identifiers that already cleared the
+    /// The pure dedup/cap-at-3 picking rule, over identifiers that already cleared the
     /// precision/recall floor (most-confident first). Kept apart from `classify` so it's unit
     /// testable with plain strings: `VNClassificationObservation` has no public initializer, so
     /// nothing upstream of this point can be constructed in a test.
@@ -113,7 +113,7 @@ enum EmojiSuggestion {
         var picked: [String] = []
         var usedEmoji = Set<String>()
         for identifier in identifiers {
-            guard picked.count < 2 else { break }
+            guard picked.count < 3 else { break }
             guard let emoji = EmojiLabelMap.emoji(forLabel: identifier) else { continue }
             guard usedEmoji.insert(emoji).inserted else { continue }
             picked.append(emoji)

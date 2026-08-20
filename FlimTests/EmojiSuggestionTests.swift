@@ -64,29 +64,30 @@ struct EmojiLabelMapTests {
 /// `PostEmoji.defaults(suggested:)`, the rule that turns a suggestion (or the lack of one) into
 /// the reaction bar's five default slots.
 struct PostEmojiDefaultsTests {
-    @Test("no suggestion renders exactly today's five emoji")
-    func noSuggestionIsTodaysFive() {
+    @Test("no suggestion renders exactly the six defaults")
+    func noSuggestionIsTheSixDefaults() {
         #expect(PostEmoji.defaults(suggested: []) == PostEmoji.all)
-        #expect(PostEmoji.defaults(suggested: []) == ["❤️", "🔥", "😂", "😮", "🙌"])
+        #expect(PostEmoji.defaults(suggested: []) == ["❤️", "🔥", "😂", "😮", "🙌", "👏"])
     }
 
-    @Test("a full suggestion fills both contextual slots")
-    func fullSuggestionFillsBothSlots() {
-        let result = PostEmoji.defaults(suggested: ["🦎", "🐾"])
-        #expect(result == ["❤️", "🔥", "😂", "🦎", "🐾"])
+    @Test("a full suggestion fills all three contextual slots")
+    func fullSuggestionFillsAllSlots() {
+        let result = PostEmoji.defaults(suggested: ["🦎", "🐾", "🐸"])
+        #expect(result == ["❤️", "🔥", "😂", "🦎", "🐾", "🐸"])
     }
 
-    @Test("a single suggestion is backfilled with one fallback emoji")
+    @Test("a partial suggestion is backfilled from the fallback set")
     func partialSuggestionIsBackfilled() {
-        let result = PostEmoji.defaults(suggested: ["🦎"])
-        #expect(result == ["❤️", "🔥", "😂", "🦎", "😮"])
+        #expect(PostEmoji.defaults(suggested: ["🦎"]) == ["❤️", "🔥", "😂", "🦎", "😮", "🙌"])
+        #expect(PostEmoji.defaults(suggested: ["🦎", "🐾"]) == ["❤️", "🔥", "😂", "🦎", "🐾", "😮"])
     }
 
-    @Test("the bar never renders fewer than five slots")
-    func alwaysFiveSlots() {
-        #expect(PostEmoji.defaults(suggested: []).count == 5)
-        #expect(PostEmoji.defaults(suggested: ["🦎"]).count == 5)
-        #expect(PostEmoji.defaults(suggested: ["🦎", "🐾"]).count == 5)
+    @Test("the bar never renders fewer than six slots")
+    func alwaysSixSlots() {
+        #expect(PostEmoji.defaults(suggested: []).count == 6)
+        #expect(PostEmoji.defaults(suggested: ["🦎"]).count == 6)
+        #expect(PostEmoji.defaults(suggested: ["🦎", "🐾"]).count == 6)
+        #expect(PostEmoji.defaults(suggested: ["🦎", "🐾", "🐸"]).count == 6)
     }
 
     @Test("a suggestion that collides with a fixed reaction doesn't duplicate it")
@@ -95,14 +96,14 @@ struct PostEmojiDefaultsTests {
         // of them are the three fixed reactions, but this is cheap insurance against that ever
         // changing (or a hand-written RPC call from somewhere else).
         let result = PostEmoji.defaults(suggested: ["❤️", "🦎"])
-        #expect(result == ["❤️", "🔥", "😂", "🦎", "😮"])
+        #expect(result == ["❤️", "🔥", "😂", "🦎", "😮", "🙌"])
     }
 
-    @Test("more than two suggested emoji still yields five slots, not seven")
+    @Test("more than three suggested emoji still yields six slots, not eight")
     func overlongSuggestionIsCapped() {
-        let result = PostEmoji.defaults(suggested: ["🦎", "🐾", "🐸"])
-        #expect(result.count == 5)
-        #expect(result == ["❤️", "🔥", "😂", "🦎", "🐾"])
+        let result = PostEmoji.defaults(suggested: ["🦎", "🐾", "🐸", "🐟"])
+        #expect(result.count == 6)
+        #expect(result == ["❤️", "🔥", "😂", "🦎", "🐾", "🐸"])
     }
 }
 
@@ -111,7 +112,7 @@ struct PostEmojiDefaultsTests {
 // scalar properties + on-device font/glyph checks, so a fixed count no longer makes sense to pin
 // (it's deliberately different per iOS version). See `EmojiCatalogTests.swift`.
 
-/// `EmojiSuggestion.pick(fromQualifyingIdentifiers:)`, the pure dedup/cap-at-2 rule over
+/// `EmojiSuggestion.pick(fromQualifyingIdentifiers:)`, the pure dedup/cap-at-3 rule over
 /// already-floor-passing labels. Separated from Vision entirely (`VNClassificationObservation`
 /// has no public initializer, so nothing upstream of this point can be built in a test).
 struct EmojiSuggestionPickTests {
@@ -120,11 +121,11 @@ struct EmojiSuggestionPickTests {
         #expect(EmojiSuggestion.pick(fromQualifyingIdentifiers: ["lizard", "reptile"]) == ["🦎", "🐾"])
     }
 
-    @Test("never more than two, even with many qualifying labels")
-    func neverMoreThanTwo() {
+    @Test("never more than three, even with many qualifying labels")
+    func neverMoreThanThree() {
         let picked = EmojiSuggestion.pick(fromQualifyingIdentifiers: ["dog", "cat", "lizard", "bee"])
-        #expect(picked.count == 2)
-        #expect(picked == ["🐶", "🐱"])
+        #expect(picked.count == 3)
+        #expect(picked == ["🐶", "🐱", "🦎"])
     }
 
     @Test("the same emoji is never picked twice")

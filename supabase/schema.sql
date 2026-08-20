@@ -2754,7 +2754,7 @@ CREATE TABLE IF NOT EXISTS public.photo_suggested_emoji (
     -- for. cardinality is bounded by the CHECK below, not by array length limits.
     suggested_emoji TEXT[] NOT NULL,
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT photo_suggested_emoji_count CHECK (cardinality(suggested_emoji) BETWEEN 1 AND 2)
+    CONSTRAINT photo_suggested_emoji_count CHECK (cardinality(suggested_emoji) BETWEEN 1 AND 3)
 );
 -- No row at all is how "classification failed" or "below the confidence floor"
 -- is represented, not a NULL array, this table is an optional 1:1 extension of
@@ -2803,8 +2803,8 @@ BEGIN
         RETURN TRUE;
     END IF;
 
-    IF cardinality(p_emoji) > 2 THEN
-        RAISE EXCEPTION 'at most two suggested emoji' USING ERRCODE = 'P0004';
+    IF cardinality(p_emoji) > 3 THEN
+        RAISE EXCEPTION 'at most three suggested emoji' USING ERRCODE = 'P0004';
     END IF;
 
     IF EXISTS (
