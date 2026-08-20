@@ -210,6 +210,7 @@
 		F745F000026F745A673ECF41 /* AvatarBadgeCenteringTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C79CEA8F4E41B389C1CFB5C /* AvatarBadgeCenteringTests.swift */; };
 		F7DB8CBEBE8B5B6A7FA4EEA9 /* CubeLUT.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EF884AA4C8711AA4738DA8C /* CubeLUT.swift */; };
 		F8B7B0BD9EA2812E69282C03 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8118D8FA0343F18F835415D3 /* Theme.swift */; };
+		F90FE14B90858D0A429671BF /* emoji-keywords.txt in Resources */ = {isa = PBXBuildFile; fileRef = 11A829D912030FA62BCF3EDD /* emoji-keywords.txt */; };
 		F9AF437E9C7DF86D420B135F /* RollImminenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 288EFB3EE814BE8D46A1669B /* RollImminenceTests.swift */; };
 		FA0835F7D7364268088D32F2 /* AccountChange.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF9D945EEDA73B65E2E4119C /* AccountChange.swift */; };
 		FAAE2D3846A6C1C529177847 /* FeedServiceCommentLikeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD20709164F76B4BAC61F144 /* FeedServiceCommentLikeTests.swift */; };
@@ -271,6 +272,7 @@
 		0F61787FFCEE49A74368FF8C /* DevelopTimingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevelopTimingTests.swift; sourceTree = "<group>"; };
 		0FA5444D3CDCB4379BF00F72 /* Social.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Social.swift; sourceTree = "<group>"; };
 		1023C54C67509092736FA8F3 /* SortDeckComposeSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SortDeckComposeSheet.swift; sourceTree = "<group>"; };
+		11A829D912030FA62BCF3EDD /* emoji-keywords.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "emoji-keywords.txt"; sourceTree = "<group>"; };
 		121F65D393ABD1CC13DA0186 /* SplashView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplashView.swift; sourceTree = "<group>"; };
 		12F1117E64BF0C3FA394F98A /* BadgeSwapLineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BadgeSwapLineTests.swift; sourceTree = "<group>"; };
 		1313F8629CEC5AD2CF03660B /* FailedUploadStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FailedUploadStore.swift; sourceTree = "<group>"; };
@@ -510,6 +512,7 @@
 		0F359B41E466E7FE95F45F63 /* Resources */ = {
 			isa = PBXGroup;
 			children = (
+				11A829D912030FA62BCF3EDD /* emoji-keywords.txt */,
 				17436C2A3F9564EB8D028D07 /* flim.cube */,
 			);
 			path = Resources;
@@ -955,6 +958,7 @@
 			files = (
 				24C89EABBAFF98261AEB3ABB /* Assets.xcassets in Resources */,
 				4480B3972FE7723102195B87 /* PrivacyInfo.xcprivacy in Resources */,
+				F90FE14B90858D0A429671BF /* emoji-keywords.txt in Resources */,
 				5EBAABA4E963AA61971DCCFC /* flim.cube in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
