@@ -62,6 +62,9 @@ struct UserPageView: View {
     /// The hold-then-revert clock. Cancelled and replaced on every interrupt: same pill (early
     /// dismiss), other pill (crossfade and restart), scroll, or leaving the screen.
     @State private var swapRevertTask: Task<Void, Never>?
+    /// One-shot: the badge picker just closed, so everything is about to be marked seen
+    /// server-side. Consumed by the next `load()`. See `unseenBadgeCount(from:)`.
+    @State private var badgePickerJustClosed = false
     @State private var showInvite = false
     @State private var showBlockConfirm = false
     @State private var showReportConfirm = false
@@ -229,7 +232,10 @@ struct UserPageView: View {
         // dismiss, the new pill set and the vanished "new badges" pill landed a beat after the
         // profile was already back on screen, a pop and reflow right where the eye was resting.
         // The onDismiss reload stays as the Cancel path's refresh and as the catch-all.
-        .sheet(isPresented: $showBadgePicker, onDismiss: { Task { await load() } }) {
+        .sheet(isPresented: $showBadgePicker, onDismiss: {
+            badgePickerJustClosed = true
+            Task { await load() }
+        }) {
             BadgePickerSheet(onSaved: { Task { await load() } })
         }
         .onChange(of: showBadgePicker) { _, showing in
@@ -444,7 +450,26 @@ struct UserPageView: View {
             .overlay(Circle().stroke(accent.opacity(0.5), lineWidth: 1))
     }
 
-    // MARK: - Badge swap-in
+    /// What the "new badges to see" pill may show, given what the page knows locally.
+    ///
+    /// The server's count races the picker. Dismissing the picker marks every badge seen, but
+    /// that write and this page's reloads are separate round trips: the save-time reload reads
+    /// the server BEFORE the mark lands and gets the old count back, and the dismiss-time reload
+    /// can too. Both raced a pill that had already been retired behind the sheet's cover back
+    /// onto the page for a blink. So while the picker is up, and on the first load after it
+    /// closes, the count is clamped to zero: the page knows those badges are seen or about to
+    /// be, and local knowledge outranks a stale read. Every later load trusts the server again,
+    /// which is what lets newly earned badges raise the pill next time.
+    private func unseenBadgeCount(from fetched: Int) -> Int {
+        if showBadgePicker { return 0 }
+        if badgePickerJustClosed {
+            badgePickerJustClosed = false
+            return 0
+        }
+        return fetched
+    }
+
+    // MARK: - Badge swap-in    // MARK: - Badge swap-in
 
     /// The line that takes the handle's place while a badge is explaining itself.
     ///
@@ -714,7 +739,7 @@ struct UserPageView: View {
         // Animated because these writes reflow the header (pills swap, the "new badges" pill
         // comes or goes). They usually land while a sheet still covers the page, where animation
         // is moot; when one lands late, after the sheet is gone, easing beats popping.
-        withAnimation(.easeInOut(duration: 0.25)) { unseenBadgeCount = unseen }
+        withAnimation(.easeInOut(duration: 0.25)) { unseenBadgeCount = unseenBadgeCount(from: unseen) }
         if AccountEpoch.isCurrent(epoch) {
             withAnimation(.easeInOut(duration: 0.25)) { effectiveDisplayedBadgeIds = effectiveIds }
         }
