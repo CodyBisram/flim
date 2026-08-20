@@ -1,0 +1,12 @@
+name = "flim-photos"
+main = "worker.js"
+compatibility_date = "2026-08-01"
+
+[[r2_buckets]]
+binding = "PHOTOS"
+bucket_name = "flim-photos"
+
+[vars]
+SUPABASE_URL = "https://wxvwamwrjlrvqmuaafjv.supabase.co"
+# SUPABASE_ANON_KEY: set with `wrangler secret put` or here (it is public anyway)
+# SUPABASE_JWT_SECRET: ALWAYS `wrangler secret put SUPABASE_JWT_SECRET`, never in this file
