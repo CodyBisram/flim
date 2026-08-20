@@ -946,6 +946,32 @@
 
       counts();
       render();
+      r2Banner();
+    }
+
+    /* The R2 tripwire's passive face: a banner above every panel when a migration trigger has
+       fired, computed from the same numbers the weekly workflow checks. Quiet means absent. */
+    function r2Banner() {
+      var st = stats.storage;
+      var old = document.getElementById("r2-banner");
+      if (old) old.remove();
+      if (!st) return;
+      var gb = (st.storage_bytes || 0) / 1073741824;
+      var paceWk = ((st.storage_bytes_14d || 0) / 1073741824) / 2;
+      var weeks = paceWk > 0 ? (100 - gb) / paceWk : 9999;
+      var egress = ((st.app_opens_7d || 0) / 7) * 30 * 9 / 1024;
+      var fired = [];
+      if (weeks < 26) fired.push("storage ceiling about " + Math.round(weeks) + " weeks away");
+      if (egress > 100) fired.push("modelled egress " + egress.toFixed(0) + " GB/mo");
+      if ((st.app_opens_7d || 0) > 2000) fired.push(st.app_opens_7d + " opens this week");
+      if (!fired.length) return;
+      var b = el("div", "card__note", "Time to migrate photos to R2: " + fired.join("; ")
+        + ". The runbook is docs/R2_MIGRATION.md; the owner step is about 20 minutes.");
+      b.id = "r2-banner";
+      b.style.borderLeft = "3px solid #b45309";
+      b.style.margin = "0 0 16px";
+      b.style.fontWeight = "600";
+      document.querySelector(".content").prepend(b);
     }
 
     async function enter() {
