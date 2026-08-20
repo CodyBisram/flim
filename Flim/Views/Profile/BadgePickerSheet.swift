@@ -781,3 +781,47 @@ private let badgePickerPreviewBadges: [ProfileBadge] = [
     ProfileBadge(id: "well_met", kind: .wellMet, earnedAt: DateComponents(calendar: .current, year: 2026, month: 6, day: 22).date ?? .now),
     ProfileBadge(id: "full_house", kind: .fullHouse, earnedAt: DateComponents(calendar: .current, year: 2026, month: 7, day: 9).date ?? .now),
 ]
+
+#if DEBUG
+/// Launch-arg harness (`-badgePickerDemo`): the picker exactly as a 22-badge account with every
+/// badge unseen sees it, no signed-in account required.
+///
+/// Exists because the reveal was otherwise unwatchable anywhere but production: it needs a real
+/// account whose earned_badges all have null seen_at, which meant every choreography bug shipped
+/// to TestFlight before anyone could see it. The fixture mirrors the founder account's real
+/// collection (both founding pills plus twenty earned), since that is the worst case the sheet
+/// has actually met.
+struct BadgePickerDemoHost: View {
+    @State private var showSheet = true
+
+    /// Every catalog case the founder actually holds, ladder-spread, earned dates staggered so
+    /// "newest" is meaningful.
+    private static let demoBadges: [ProfileBadge] = {
+        let kinds: [ProfileBadgeKind] = [
+            .founder, .founding100, .fullSet, .openDoor, .firstIn, .fullRoll, .keptOne,
+            .patron, .rollMaker, .broughtSomeone, .wellMet, .fullHouse, .spotter, .inFrame,
+            .goodCompany, .firstLight, .shared, .joinedIn, .chippedIn, .chimedIn, .saidIt,
+            .tenFrames,
+        ]
+        return kinds.enumerated().map { index, kind in
+            ProfileBadge(id: kind.rawValue, kind: kind,
+                         earnedAt: Date(timeIntervalSinceNow: Double(index - 22) * 86_400))
+        }
+    }()
+
+    var body: some View {
+        ZStack {
+            FlimTheme.bg.ignoresSafeArea()
+            Button("Reopen") { showSheet = true }
+                .foregroundStyle(.white)
+        }
+        .sheet(isPresented: $showSheet) {
+            BadgePickerContent(
+                badges: Self.demoBadges,
+                initialSelection: nil,
+                unseenIds: Set(Self.demoBadges.map(\.id))
+            ) { _ in }
+        }
+    }
+}
+#endif

@@ -22,6 +22,23 @@ struct ContentView: View {
 
     var body: some View {
         Group {
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("-badgePickerDemo") {
+                // Simulator-only harness for the badge reveal, which is otherwise unwatchable
+                // without a signed-in account holding unseen badges: the sheet as a 22-badge
+                // account with everything unseen sees it. See BadgePickerDemoHost.
+                BadgePickerDemoHost()
+            } else {
+                authGate
+            }
+            #else
+            authGate
+            #endif
+        }
+    }
+
+    private var authGate: some View {
+        Group {
             if auth.isLoading {
                 SplashView()
             } else if !auth.isAuthenticated {

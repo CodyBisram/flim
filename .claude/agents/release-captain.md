@@ -55,6 +55,20 @@ step logs needed for diagnosis rather than dumping the entire workflow.
 `gh run view <id> --json status` and poll until `completed` rather than trusting a
 single watch invocation.
 
+A green "Deploy to TestFlight" proves DELIVERY, not existence: the lane uses
+`skip_waiting_for_build_processing`, so Apple can silently discard the build afterwards
+and the only symptom is an email to the account holder, who is not the owner. Build 237
+vanished exactly this way on 2026-08-20 while its run sat green, and the owner tested
+the previous build believing it was the fix. After any deploy: read the run log for
+"Latest upload for version X is build: N" (the new build is N+1), then confirm that
+number reaches App Store Connect as PROCESSING or VALID before telling the owner it
+exists.
+
+Never map runs to builds by "newest in ASC after the run finished"; with pushes minutes
+apart that attributes the previous run's build to the new run. Match the log's computed
+number, and parse ASC timestamps with their UTC offsets (`uploadedDate` carries -07:00;
+truncating it cost an hour of debugging against impossible timelines).
+
 ## App Store Connect API
 
 Build, version, and tester state is queryable directly, without the browser. The
