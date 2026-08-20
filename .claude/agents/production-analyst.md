@@ -62,6 +62,10 @@ this agent exists to support.
 - The notification permission has three states read from two events: authorized,
   denied, and NEITHER, which means never asked. Never-asked is the actionable bucket
   and it is computed from absence, not recorded.
+- `roll_reveal_views` begins 2026-08-03. Rolls revealed before then hold fake races:
+  whoever re-opened one after that date is recorded as its first viewer, weeks late.
+  Owner reviewed and accepted this on 2026-08-21; do not treat rank 1 on a pre-Aug-3
+  roll as the person who actually watched first, and do not propose fixing it again.
 
 ## Output
 
