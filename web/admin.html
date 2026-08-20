@@ -740,6 +740,23 @@
           return { label: r.day, value: r.shots,
                    note: r.shots + " shots \u00b7 " + r.shooters + " people" };
         }));
+        section(host, "Ceilings", "the two numbers that end the current plan's free ride");
+        var storGB = (st.storage_bytes || 0) / 1073741824;
+        var paceGBwk = ((st.storage_bytes_14d || 0) / 1073741824) / 2;
+        var weeksTo100 = paceGBwk > 0 ? Math.round((100 - storGB) / paceGBwk) : null;
+        /* Egress is MODELLED: sessions times an assumed 9 MB payload (measured card and thumb
+           sizes for a typical feed pass). Real egress lives in Supabase's logs and no API
+           exposes it, so this is a pace indicator, not a bill. */
+        var egressGBmo = ((st.app_opens_7d || 0) / 7) * 30 * 9 / 1024;
+        host.appendChild(statRow([
+          statCard(storGB.toFixed(2) + " GB", "photo storage, measured",
+                   "of 100 GB included", false),
+          statCard(paceGBwk.toFixed(2) + " GB/wk", "growth pace, last 14 days",
+                   weeksTo100 !== null ? "about " + weeksTo100 + " weeks to the ceiling at this pace" : "",
+                   weeksTo100 !== null && weeksTo100 < 26),
+          statCard(egressGBmo.toFixed(1) + " GB/mo", "egress pace, modelled",
+                   "of 250 GB included; 9 MB per session assumed", egressGBmo > 100)
+        ]));
         section(host, "Renditions missing",
                 "each one falls back to the full master everywhere it appears, forever");
         host.appendChild(statRow([
