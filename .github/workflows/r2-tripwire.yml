@@ -1,0 +1,26 @@
+name: R2 tripwire
+
+# The R2 migration's watchman. Runs weekly; stays green and silent while the gauges are quiet,
+# and FAILS the moment a migration trigger fires, which makes GitHub email the owner. The
+# thresholds and their reasoning live in scripts/r2_trigger_check.sh and docs/R2_MIGRATION.md.
+on:
+  schedule:
+    - cron: "7 13 * * 1"   # Mondays 13:07 UTC, morning US Eastern
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check the migration triggers
+        env:
+          FLIM_SERVICE_KEY: ${{ secrets.FLIM_SERVICE_KEY }}
+        run: |
+          OUT=$(bash scripts/r2_trigger_check.sh)
+          echo "$OUT"
+          case "$OUT" in
+            TRIGGER*) echo "::error::$OUT — time to run docs/R2_MIGRATION.md"; exit 1;;
+            QUIET*) exit 0;;
+            *) echo "::error::tripwire produced no verdict"; exit 1;;
+          esac
