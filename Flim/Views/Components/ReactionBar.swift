@@ -329,7 +329,17 @@ struct ReactionBar: View {
     /// existing chips, the reacted-to-front re-sort only happens on the next appear.
     private func react(_ emoji: String, fromPicker: Bool = false) {
         orderSeeded = true   // your own tap must never trigger the one-shot re-sort above
-        if !displayOrder.contains(emoji) { displayOrder.append(emoji) }
+        // A NEW chip enters at the LEFT, animated. Appended, it landed at the end of a
+        // horizontally scrolling row, which for any post with a few chips means off-screen:
+        // you picked an emoji, the sheet closed, and visibly nothing happened. The leading
+        // edge is the one place always in view. Existing chips slide one slot and otherwise
+        // hold still (the row never re-sorts under your finger); count order applies on the
+        // next appear, in `rebuildOrder()`, as it always has.
+        if !displayOrder.contains(emoji) {
+            withAnimation(.spring(response: 0.32, dampingFraction: 0.78)) {
+                displayOrder.insert(emoji, at: 0)
+            }
+        }
         // Bounce feedback, pop the chip, then settle.
         pressed = emoji
         Haptics.tap()
