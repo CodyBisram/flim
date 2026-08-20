@@ -239,18 +239,24 @@ struct UserPageView: View {
         // dismiss, the new pill set and the vanished "new badges" pill landed a beat after the
         // profile was already back on screen, a pop and reflow right where the eye was resting.
         // The onDismiss reload stays as the Cancel path's refresh and as the catch-all.
-        .sheet(isPresented: $showBadgePicker, onDismiss: {
-            badgesLocallySeenUntil = Date().addingTimeInterval(15)
-            Task { await load() }
-        }) {
+        .sheet(isPresented: $showBadgePicker, onDismiss: { Task { await load() } }) {
             BadgePickerSheet(onSaved: { Task { await load() } })
         }
         .onChange(of: showBadgePicker) { _, showing in
+            guard showing else {
+                // Arm the clamp window at dismissal START, not in onDismiss. dismiss() flips
+                // this flag immediately and then the slide-down plays for ~0.4s before onDismiss
+                // fires; the save-time reload lands inside exactly that crack, and with the
+                // window armed only at the end, it trusted a stale server count and flashed the
+                // pill one more time. The flag flipping false IS the moment of knowledge.
+                badgesLocallySeenUntil = Date().addingTimeInterval(15)
+                return
+            }
             // Once the sheet fully covers the page, retire the "new badges to see" pill where
             // nobody can watch it vanish. Dismissing the picker marks everything seen no matter
             // how it closes, so this is early knowledge, not a guess; if the app dies mid-sheet
             // the server was never told and the pill honestly returns next launch.
-            guard showing, unseenBadgeCount > 0 else { return }
+            guard unseenBadgeCount > 0 else { return }
             Task {
                 try? await Task.sleep(for: .seconds(0.6))
                 guard showBadgePicker else { return }   // already closed: let load() decide
