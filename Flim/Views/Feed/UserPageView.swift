@@ -62,9 +62,16 @@ struct UserPageView: View {
     /// The hold-then-revert clock. Cancelled and replaced on every interrupt: same pill (early
     /// dismiss), other pill (crossfade and restart), scroll, or leaving the screen.
     @State private var swapRevertTask: Task<Void, Never>?
-    /// One-shot: the badge picker just closed, so everything is about to be marked seen
-    /// server-side. Consumed by the next `load()`. See `unseenBadgeCount(from:)`.
-    @State private var badgePickerJustClosed = false
+    /// Until this instant, the page refuses to believe the server about unseen badges.
+    ///
+    /// Set when the picker closes, because closing marks everything seen. A one-shot flag was
+    /// tried first and only covered the FIRST reload after closing; the save-time reload, the
+    /// dismiss-time reload, and any refresh the page does can all be in flight at once, land in
+    /// any order, and each can carry a count read before the server-side mark committed. A time
+    /// window covers every one of them regardless of order or number. Fifteen seconds is far
+    /// beyond any plausible propagation, and when it expires the server is trusted again, which
+    /// is what lets a genuinely new badge raise the pill next time.
+    @State private var badgesLocallySeenUntil: Date?
     @State private var showInvite = false
     @State private var showBlockConfirm = false
     @State private var showReportConfirm = false
@@ -233,7 +240,7 @@ struct UserPageView: View {
         // profile was already back on screen, a pop and reflow right where the eye was resting.
         // The onDismiss reload stays as the Cancel path's refresh and as the catch-all.
         .sheet(isPresented: $showBadgePicker, onDismiss: {
-            badgePickerJustClosed = true
+            badgesLocallySeenUntil = Date().addingTimeInterval(15)
             Task { await load() }
         }) {
             BadgePickerSheet(onSaved: { Task { await load() } })
@@ -453,19 +460,13 @@ struct UserPageView: View {
     /// What the "new badges to see" pill may show, given what the page knows locally.
     ///
     /// The server's count races the picker. Dismissing the picker marks every badge seen, but
-    /// that write and this page's reloads are separate round trips: the save-time reload reads
-    /// the server BEFORE the mark lands and gets the old count back, and the dismiss-time reload
-    /// can too. Both raced a pill that had already been retired behind the sheet's cover back
-    /// onto the page for a blink. So while the picker is up, and on the first load after it
-    /// closes, the count is clamped to zero: the page knows those badges are seen or about to
-    /// be, and local knowledge outranks a stale read. Every later load trusts the server again,
-    /// which is what lets newly earned badges raise the pill next time.
+    /// that write and this page's reloads are separate round trips, and any reload whose read
+    /// predates the mark carries the old count. While the picker is up, and for the window after
+    /// it closes (`badgesLocallySeenUntil`), the count is clamped to zero: the page KNOWS those
+    /// badges are seen or about to be, and local knowledge outranks a stale read.
     private func unseenBadgeCount(from fetched: Int) -> Int {
         if showBadgePicker { return 0 }
-        if badgePickerJustClosed {
-            badgePickerJustClosed = false
-            return 0
-        }
+        if let until = badgesLocallySeenUntil, Date() < until { return 0 }
         return fetched
     }
 
