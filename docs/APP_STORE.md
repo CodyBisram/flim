@@ -6,12 +6,21 @@ Copy-paste-ready metadata + a screenshot plan + reviewer notes. Tweak the voice 
 
 ## Name & subtitle
 
-Shipped with 1.3:
+Decided for 1.3 and NEVER APPLIED: App Store Connect still carried
+`FLIM: Disposable Film Camera` on 2026-08-20 (verified against the live listing via the API),
+because the rename is an owner-only ASC step and it slipped. Apply it with the 1.4.2 submission;
+name and subtitle only ship with a version, so this is the moment.
 
 | Field | Value | Chars |
 |---|---|---|
 | App name | `FLIM: Disposable Camera` | 23 / 30 |
 | Subtitle | `Shoot film with your friends` | 28 / 30 |
+
+Why dropping `Film` from the name is right, restated from the 1.3 decision below: FLIM and Film
+two words apart reads as a typo, Apple does not fuzzy-match the pun, `film` stays fully indexed
+from the subtitle, and the keyword field was already deduplicated assuming this name. FLIM also
+now ranks first for the query `FLIM` regardless, so the brand token is doing its work without
+help.
 
 The App Store name is not the home screen name. `CFBundleDisplayName` is `FLIM` on both the app
 and the widget target, so the icon stays four characters no matter how long this field gets.
@@ -41,7 +50,9 @@ When the invite list opens, the pair below is worth revisiting. Its real gain is
 Both fields are metadata, editable on any submission, so this costs nothing to defer.
 
 ## Promotional text (170 char max, editable anytime without review)
-> Shoot together, wait together, see them together. FLIM is a disposable camera for your group. No filters to pick, no likes to chase, no feed to fall into.
+> New: badges for how you shoot, a Darkroom widget, a widget that resurfaces last month's frames, and a one-tap shutter on your Lock Screen. (135 chars, for the 1.4.2 window)
+>
+> Evergreen, switch back anytime: Shoot together, wait together, see them together. FLIM is a disposable camera for your group. No filters to pick, no likes to chase, no feed to fall into.
 >
 > Previous (also fine, evergreen): Shoot on film, wait for it to develop, and share the moment with the people who actually matter. No likes to chase. No feed to doomscroll. Just your people.
 
@@ -114,6 +125,35 @@ without either word appearing here.
 
 Two rules if this is edited again: never repeat a word across name, subtitle and keywords, and do
 not add plurals of words already present. Apple handles both.
+
+## What's New (version 1.4.2)
+
+> **PASTE ONLY THE INDENTED BLOCK BELOW.** Everything under "Ship notes" is internal.
+
+    Badges. FLIM now keeps a record of how you shoot: your first light, the rolls you filled, the reveals you opened first, the people you brought in. Stamps come in founding, gold, silver, bronze and accent, struck like medals, and they only ever show what actually happened. Tap one on any profile and the page itself tells you what it means, and how to earn it if you have not. You pick which four lead on your page, or let your rarest four speak for themselves. New ones develop in when you come look. They never interrupt you.
+
+    Widgets. A Darkroom widget counts the prints waiting on you and shows the roll developing right now. Look Back resurfaces a frame from a year, a month, or a week ago. A shutter on your Lock Screen opens the camera in one tap and quietly shows when a roll is ready. The developing countdown on your Lock Screen got restruck to match.
+
+    Finding an emoji now works the way you think: search "laugh" and get everything that laughs.
+
+    And the usual sweep underneath: the feed loads lighter, the sort deck opens faster, and a deleted roll no longer counts down anywhere.
+
+### Ship notes (internal, do NOT paste)
+
+The badge push was built, shipped, and removed inside this train: badges are discovered, not
+announced. The dot on the Home avatar and the "new badges to see" pill are the whole announcement
+path, and `send-social-push` no longer flips `earned_badges.push_sent`.
+
+After the release goes READY_FOR_SALE, arm the update nudge (this is the "minimum version" step,
+and the field to touch is `latest_version`, NOT `minimum_version`):
+
+    update app_release_gate set latest_version = '1.4.2';
+
+`minimum_version` stays 0.0.0. Raising it above any build someone is still running hard-blocks
+that install with no client-side recovery; the nudge from `latest_version` is the whole intent.
+
+Name change ships with this submission: `FLIM: Disposable Camera` (see Name & subtitle above).
+Keywords and subtitle unchanged, both already assume the new name's deduplication.
 
 ## What's New (version 1.4.1)
 
