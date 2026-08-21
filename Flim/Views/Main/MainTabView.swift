@@ -225,6 +225,7 @@ struct MainTabView: View {
             // (rather than in FlimApp's init) is the whole point: init runs before sign-in.
             Activation.log(.firstLaunch)
             Usage.log(.appOpen)
+            Usage.reportClientVersion()
             // Once per launch, not on every feed reload: this ratchets twelve predicates
             // server-side, and badges are not time critical. This is also the only reliable path
             // that lights the tab dot for a badge earned since the last launch, see

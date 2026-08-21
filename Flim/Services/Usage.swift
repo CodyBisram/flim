@@ -45,4 +45,19 @@ enum Usage {
                 .execute()
         }
     }
+
+    /// Stamps this account's current app version server-side (`client_versions`, one row per
+    /// user, latest wins), so "how many users are on 1.4.2" is a census query instead of App
+    /// Store Connect's opt-in sample. Fired once per launch beside `log(.appOpen)`; every
+    /// launch rather than only on version change, because `updated_at` doubling as "last seen
+    /// running this version" is what makes the dashboard's number trustworthy. Same contract
+    /// as `log`: fire-and-forget, never throws, safe before its migration ships.
+    static func reportClientVersion() {
+        Task {
+            _ = try? await supabase
+                .rpc("report_client_version",
+                     params: ["p_version": AppInfo.shortVersion, "p_build": AppInfo.buildNumber])
+                .execute()
+        }
+    }
 }

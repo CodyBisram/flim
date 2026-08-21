@@ -384,6 +384,7 @@
       <li><button class="navitem" data-panel="reach">Reach</button></li>
       <li><button class="navitem" data-panel="stuck">Who is stuck</button></li>
       <li><button class="navitem" data-panel="retention">Retention</button></li>
+      <li><button class="navitem" data-panel="versions">Versions</button></li>
     </ul>
     <div class="side__foot">
       <div class="side__who" id="who"></div>
@@ -420,8 +421,8 @@
        rows to act on, and every one of these is a different shape. Null until
        loaded, so a panel can tell "still fetching" from "the answer is nothing". */
     var stats = { funnel: null, reach: null, stuck: null, pulse: null,
-                  retention: null, storage: null, campaigns: null };
-    var ANALYTICS = ["pulse", "funnel", "reach", "stuck", "retention"];
+                  retention: null, storage: null, campaigns: null, versions: null };
+    var ANALYTICS = ["pulse", "funnel", "reach", "stuck", "retention", "versions"];
     var panel = "invites";
     var TITLES = {
       invites: "Invites",
@@ -433,6 +434,7 @@
       reach: "Reach",
       stuck: "Who is stuck",
       retention: "Retention",
+      versions: "Versions",
     };
 
     function $(id) { return document.getElementById(id); }
@@ -827,6 +829,38 @@
         return;
       }
 
+      if (panel === "versions") {
+        var latest = (d.versions || []).length ? d.versions[0] : null;
+        host.appendChild(statRow([
+          statCard(d.accounts, "accounts"),
+          statCard(d.reported, "reporting a version",
+                   pct(d.reported, d.accounts) + " of accounts"),
+          statCard(latest ? latest.users : 0,
+                   latest ? "on " + latest.version : "on the top version"),
+          statCard(d.unreported, "not yet reported",
+                   "no launch since reporting shipped", d.unreported > 0)
+        ]));
+        section(host, "By version", "every launch stamps the row, so last seen is honest");
+        var vs = d.versions || [];
+        if (!vs.length) {
+          host.appendChild(el("div", "empty", "Nobody has reported yet."));
+        } else {
+          table(host, ["Version", { text: "Users", cls: "num" }, "Builds", "Last seen"],
+            vs.map(function (v) {
+              return [{ text: v.version, cls: "who" },
+                      { text: String(v.users), cls: "num" },
+                      String(v.builds || ""),
+                      String(v.last_seen || "").slice(0, 16).replace("T", " ")];
+            }));
+        }
+        host.appendChild(el("div", "card__note",
+          "This is a census of accounts that opened a reporting build (1.4.3+), not App Store "
+          + "Connect's opt-in sample. Not yet reported mixes people on older versions with "
+          + "people who simply have not opened the app; it drains as they launch, and only "
+          + "what remains after a week or two is really behind."));
+        return;
+      }
+
       if (panel === "stuck") {
         var groups = [
           ["never_shot", "Never taken a frame", "zero rows in photos, not zero posts"],
@@ -916,8 +950,9 @@
          heavy or not-yet-deployed query cannot take the queues down with it,
          which is the whole reason this was allSettled to begin with. */
       var statNames = ["admin_pulse", "admin_funnel", "admin_reach", "admin_stuck",
-                       "admin_retention", "admin_storage", "admin_campaigns"];
-      var statKeys = ["pulse", "funnel", "reach", "stuck", "retention", "storage", "campaigns"];
+                       "admin_retention", "admin_storage", "admin_campaigns", "admin_versions"];
+      var statKeys = ["pulse", "funnel", "reach", "stuck", "retention", "storage", "campaigns",
+                      "versions"];
 
       var settled = await Promise.allSettled(
         names.map(function (n) { return rpc(n); })
