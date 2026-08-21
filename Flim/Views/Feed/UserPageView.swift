@@ -716,6 +716,13 @@ struct UserPageView: View {
            let cached = feed.profileStatsCache[userId] {
             (sharedCount, followers, following) = cached
         }
+        // Same contract for the grid itself: paint the posts this session last saw here in the
+        // first frame (their images are already in DiskImageCache, so the whole page appears at
+        // once), then let the fetch below quietly reconcile. Deliberately NOT a skip-if-cached:
+        // the fetch still runs every visit, because visibility can change with no new post.
+        if posts.isEmpty, let cachedPosts = feed.profilePostsCache[userId] {
+            posts = cachedPosts
+        }
         // Captured before any `await` below so the one write it guards (`effectiveDisplayedBadgeIds`,
         // see below) can't land after an account switch mid-flight: this is a pure read with
         // nothing else in this function to protect for correctness, so nothing else here needs it.
@@ -746,7 +753,15 @@ struct UserPageView: View {
             return await feed.fetchViewerBadgeKindIds(uid)
         }()
         profile = await p
-        posts = await ps
+        // nil is a FAILED fetch (see `fetchUserPosts`): keep whatever the grid is showing,
+        // cached or empty, rather than collapsing it into "no posts yet". Mirrors loadFeed's
+        // leave-in-place rule for a failed refresh.
+        if let fetchedPosts = await ps {
+            posts = fetchedPosts
+            // Epoch-guarded because this cache is on the shared service and outlives this view:
+            // a fetch that lands after an account switch must not seed the next account's pages.
+            if AccountEpoch.isCurrent(epoch) { feed.profilePostsCache[userId] = fetchedPosts }
+        }
         followers = await fr
         following = await fg
         sharedCount = posts.count

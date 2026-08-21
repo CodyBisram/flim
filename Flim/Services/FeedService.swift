@@ -667,13 +667,21 @@ final class FeedService {
     /// What a profile's header counted last time this session looked: shared, followers,
     /// following. Session-lifetime, no TTL, stale-while-revalidate: a profile page seeds its
     /// header from here so the numbers are on screen in the first frame instead of flashing
-    /// zero, then the real fetch quietly corrects anything that moved. Counts only, never the
-    /// posts array: caching content would double memory per visited profile for a grid that has
-    /// to be fetched fresh anyway.
+    /// zero, then the real fetch quietly corrects anything that moved.
     var profileStatsCache: [UUID: (shared: Int, followers: Int, following: Int)] = [:]
+
+    /// The posts array a profile's grid rendered last time this session looked, same
+    /// stale-while-revalidate contract as `profileStatsCache`: the grid paints from here in the
+    /// first frame, and the visit's normal fetch (never an extra probe) reconciles behind it.
+    /// Session-lifetime and in-memory only, NOT persisted: visibility can change server-side
+    /// with no new post (blocks, unfollows, hides, deletions), so every visit must still
+    /// revalidate, and a cache that outlived the session would stretch that staleness window
+    /// across days. Metadata structs only, image bytes live in `DiskImageCache`.
+    var profilePostsCache: [UUID: [Post]] = [:]
 
     func resetForAccountChange() {
         profileStatsCache = [:]
+        profilePostsCache = [:]
         feed = []
         followingIds = []
         followerIds = []
@@ -1302,13 +1310,17 @@ final class FeedService {
         return Set(rows.map(\.photo_id))
     }
 
-    func fetchUserPosts(userId: UUID) async -> [Post] {
-        (try? await supabase
+    /// `nil` means the fetch FAILED (offline, server error); `[]` means it succeeded and the
+    /// user genuinely has no visible posts. The two must stay distinguishable: the profile grid
+    /// seeds from `profilePostsCache`, and folding failure into an empty array would let one
+    /// dropped request wipe a cached grid into the "no posts yet" state.
+    func fetchUserPosts(userId: UUID) async -> [Post]? {
+        try? await supabase
             .from("posts").select()
             .eq("user_id", value: userId.uuidString)
             .eq("hidden", value: false)
             .order("taken_at", ascending: false)
-            .execute().value) ?? []
+            .execute().value
     }
 
     /// Batch-fetches posts by id, mirrors `fetchProfiles(ids:)`. Used to attach a post (for a
@@ -1479,7 +1491,7 @@ final class FeedService {
         let sinceStr = since.ISO8601Format()
         var total = 0
 
-        let postIds = await fetchUserPosts(userId: userId).map(\.id.uuidString)
+        let postIds = (await fetchUserPosts(userId: userId) ?? []).map(\.id.uuidString)
         if !postIds.isEmpty {
             let reactions: [Row] = (try? await supabase.from("post_reactions").select("created_at")
                 .in("post_id", values: postIds).neq("user_id", value: userId.uuidString)
@@ -1595,7 +1607,7 @@ final class FeedService {
     /// Reactions + comments on the caller's own posts. The two pulls both key off the same post
     /// id set, so they run concurrently once that set is known.
     private func activityOnOwnPosts(userId: UUID) async throws -> [ActivityRaw] {
-        let postIds = await fetchUserPosts(userId: userId).map(\.id.uuidString)
+        let postIds = (await fetchUserPosts(userId: userId) ?? []).map(\.id.uuidString)
         guard !postIds.isEmpty else { return [] }
 
         async let reactions: [ActivityRaw] = {
@@ -1781,7 +1793,7 @@ final class FeedService {
         }
 
         // Populate reactions + a comment on the newest post so those UIs show data.
-        let mine = await fetchUserPosts(userId: userId)
+        let mine = await fetchUserPosts(userId: userId) ?? []
         if let newest = mine.first {
             for emoji in ["❤️", "🔥", "😍"] {
                 await addReaction(postId: newest.id, emoji: emoji, userId: userId)
