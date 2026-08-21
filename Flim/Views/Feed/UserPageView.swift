@@ -1085,10 +1085,13 @@ enum BadgeSwapMetrics {
     static let minimumScale: CGFloat = 0.85
     /// The handle row's own horizontal padding in `pageHeader`.
     static let horizontalPadding: CGFloat = 28
-    /// The swap box's fixed height: two lines of `pointSize` system text with a little slack.
-    /// Fixed (well, `@ScaledMetric`-scaled) so the page below never shifts as the copy wraps,
-    /// and so even a one-line handle keeps this much air between it and the "Follows you"
-    /// capsule, which the one-line design crowded. The fit test checks two wrapped lines at
-    /// `minimumScale` actually fit inside it.
-    static let reservedHeight: CGFloat = 34
+    /// The swap box's fixed height: two lines of `pointSize` system text plus real clearance.
+    /// Fixed (well, `@ScaledMetric`-scaled) so the page below never shifts as the copy wraps.
+    /// Two lines of 13pt system text measure ~31pt, so the slack here is what separates a
+    /// two-line explanation from the "Follows you" capsule below it; at 34 the two-line case
+    /// filled the box edge-to-edge and sat ~5pt off the capsule while one-line copy floated
+    /// with 9pt a side, which read as two different layouts (owner screenshots, 2026-08-21).
+    /// 40 keeps the worst case ~4.5pt inside the box on each side, on top of the header
+    /// stack's own spacing. The fit test checks two wrapped lines at `minimumScale` fit.
+    static let reservedHeight: CGFloat = 40
 }
