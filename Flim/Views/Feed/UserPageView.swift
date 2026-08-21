@@ -351,7 +351,14 @@ struct UserPageView: View {
                 // name it was annotating; the one before this reserved a single line and scaled
                 // the longest copy down to 0.52, which on device read as an illegible squint
                 // crammed against the "Follows you" capsule.
-                ZStack {
+                //
+                // Top-aligned, not centered: centering split the box's slack above AND below,
+                // which pushed the resting handle away from the name it belongs to (owner
+                // screenshot, 2026-08-21). Pinned to the top, the handle sits right under the
+                // name exactly as it did before the box existed, and ALL the slack lands below,
+                // which is the side that needs it: it is what keeps a two-line explanation off
+                // the "Follows you" capsule.
+                ZStack(alignment: .top) {
                     ZStack {
                         Text(profile?.handle ?? "@…")
                             .flimFont(13, relativeTo: .subheadline).foregroundStyle(FlimTheme.textTertiary)
@@ -367,7 +374,7 @@ struct UserPageView: View {
                     badgeSwapLine
                 }
                 .frame(maxWidth: .infinity)
-                .frame(height: badgeSwapReservedHeight)
+                .frame(height: badgeSwapReservedHeight, alignment: .top)
                 .padding(.horizontal, 28)
                 // A transparency disclosure, not a vanity badge: FLIM's feed is private and
                 // follow-gated, so this literally means "this person can see what you post".
@@ -1086,12 +1093,13 @@ enum BadgeSwapMetrics {
     /// The handle row's own horizontal padding in `pageHeader`.
     static let horizontalPadding: CGFloat = 28
     /// The swap box's fixed height: two lines of `pointSize` system text plus real clearance.
-    /// Fixed (well, `@ScaledMetric`-scaled) so the page below never shifts as the copy wraps.
-    /// Two lines of 13pt system text measure ~31pt, so the slack here is what separates a
-    /// two-line explanation from the "Follows you" capsule below it; at 34 the two-line case
-    /// filled the box edge-to-edge and sat ~5pt off the capsule while one-line copy floated
-    /// with 9pt a side, which read as two different layouts (owner screenshots, 2026-08-21).
-    /// 40 keeps the worst case ~4.5pt inside the box on each side, on top of the header
-    /// stack's own spacing. The fit test checks two wrapped lines at `minimumScale` fit.
+    /// Fixed (well, `@ScaledMetric`-scaled) so the page below never shifts as the copy wraps,
+    /// and TOP-aligned, so the resting handle hugs the name above it and every point of slack
+    /// falls below, where it is doing the actual job: keeping a two-line explanation off the
+    /// "Follows you" capsule. Two lines of 13pt system text measure ~31pt, so 40 leaves ~9pt
+    /// under the worst case before the header stack's own spacing even starts. The two owner
+    /// screenshots of 2026-08-21 are the guardrails here: at 34, two-line copy crowded the
+    /// capsule; centered at 40, the handle drifted from the name. The fit test checks two
+    /// wrapped lines at `minimumScale` fit inside this height.
     static let reservedHeight: CGFloat = 40
 }
