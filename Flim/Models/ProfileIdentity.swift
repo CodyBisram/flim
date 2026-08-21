@@ -245,12 +245,12 @@ enum ProfileBadgeKind: String, CaseIterable {
         case .fullRoll:
             // "a roll", never "this roll": the stamp is not attached to any particular roll, and
             // the backend deliberately stores no reference to one.
-            return "You shot into a roll before its midpoint and again after, instead of dumping it all at once and moving on."
+            return "You shot into a roll early, then came back to it."
         case .darkroom:
             // Frozen permanently by the ratchet once earned, so this reads as a thing that
             // happened, not an ongoing streak that could still slip. See profile_badges' own
             // comment in the migration for the ratchet.
-            return "You opened every reveal, for every roll you were ever part of."
+            return "You opened the reveal on every roll you joined."
         case .founding100:
             return "One of the first hundred people here."
         case .firstIn:
@@ -277,7 +277,7 @@ enum ProfileBadgeKind: String, CaseIterable {
             // is the moment the roll's FIFTH contributor's first photo landed, one shared instant
             // for every contributor of that roll, including someone who arrived sixth or later.
             // This describes the roll filling up, not the reader's own arrival.
-            return "A roll you shot into filled up with five or more photographers."
+            return "A roll you shot into reached five photographers."
         case .foundingCrew:
             return "Part of the crew that got this off the ground."
         case .frontRow:
@@ -285,13 +285,13 @@ enum ProfileBadgeKind: String, CaseIterable {
         case .packedHouse:
             // Same rule as `fullHouse` above: describes the roll crossing ten contributors, not
             // the reader's own arrival, since everyone in that roll shares this exact timestamp.
-            return "A roll you shot into grew to ten or more photographers."
+            return "A roll you shot into reached ten photographers."
         case .patron:
             return "Five people you invited joined."
         case .coverToCover:
             return "You shot into ten rolls before they developed."
         case .keptOne:
-            return "Ten of your frames developed, and you kept every one to yourself."
+            return "Ten frames developed, all kept to yourself."
         case .regular:
             return "Active on seven different days."
         case .oneYear:

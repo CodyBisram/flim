@@ -270,27 +270,6 @@ final class FeedService {
             .sorted { $0.earnedAt < $1.earnedAt }
     }
 
-    /// The signed-in account's own earned badge kind ids (raw `badge_id` strings), fetched once
-    /// per account and cached rather than re-fetched on every profile visit. Backs "how to earn
-    /// this" in a stranger's badge popover (see `ProfileBadgeKind.howToEarn` and
-    /// `ProfileBadgePill`): knowing what the viewer already holds is what lets that line show
-    /// only for badges they don't have yet. `nil` means "not fetched yet", distinct from an
-    /// empty (but fetched) set. Cleared in `resetForAccountChange()`.
-    var viewerBadgeKindIds: Set<String>?
-
-    /// Returns `viewerBadgeKindIds`, fetching and caching it first if this is the first call this
-    /// account. `profile_badges` is callable about any profile including your own, so this reuses
-    /// it for the signed-in account; the ratchet write it performs as a side effect is harmless
-    /// here, this account already knows its own set. Degrades to an empty (but now cached) set on
-    /// failure, matching `fetchProfileBadges`, so a stranger's popover just omits the how-to line
-    /// rather than erroring.
-    func fetchViewerBadgeKindIds(_ viewerId: UUID) async -> Set<String> {
-        if let cached = viewerBadgeKindIds { return cached }
-        let ids = Set(await fetchProfileBadges(viewerId).map { $0.kind.rawValue })
-        viewerBadgeKindIds = ids
-        return ids
-    }
-
     /// The signed-in account's own resolved "what a stranger sees on my profile right now" badge
     /// ids, in display order, own profile only, zero params (see
     /// `2026-08-17_own_effective_displayed_badges.sql`). This mirrors the stranger's view
@@ -709,7 +688,6 @@ final class FeedService {
         isLoadingMoreFeed = false
         isLoadingFeed = false
         unseenBadgeCount = 0
-        viewerBadgeKindIds = nil
     }
 
     // MARK: - Feed pagination (pure)

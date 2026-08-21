@@ -21,11 +21,6 @@ struct UserPageView: View {
     /// because the pill has to say "New badge" or "3 new badges", and a Bool throws away the one
     /// fact the copy needs before the view ever sees it.
     @State private var unseenBadgeCount = 0
-    /// The signed-in account's own earned badge kind ids, for "how to earn this" in the popover
-    /// on someone else's pill; see `ProfileBadgeColumn` and `ProfileBadgeKind.howToEarn`. On your
-    /// own profile this is just this profile's own badges, no extra fetch needed since every
-    /// badge shown here is already one you hold.
-    @State private var viewerBadgeKindIds: Set<String> = []
     /// The signed-in account's own resolved "what a stranger sees right now" badge ids, own
     /// profile only, in display order. `nil` until fetched or on any failure, in which case
     /// `displayedBadges` below shows nothing rather than falling back to the full earned set. See
@@ -58,16 +53,10 @@ struct UserPageView: View {
     /// revert would clear the model and the line would fall back to a DIFFERENT badge's copy
     /// (or nothing) while still visible mid-fade, which reads as a flicker of the wrong words.
     @State private var lastShown: ProfileBadge?
-    /// The second beat on someone else's badge the viewer doesn't hold: after the explanation's
-    /// hold, the line crossfades to how to earn it. Never set for a badge the viewer holds.
-    @State private var showsHowToEarn = false
     /// Layer visibility, separate per side because each direction has its own curve: the spec's
     /// OUT/IN pair on show, and the deliberately slower pair on revert.
     @State private var handleLineVisible = true
     @State private var badgeLineVisible = false
-    /// The handle/badge swap box's fixed height, scaled on the same curve as the swap line's
-    /// font so Dynamic Type can't clip the two lines the box exists to hold.
-    @ScaledMetric(relativeTo: .footnote) private var badgeSwapReservedHeight = BadgeSwapMetrics.reservedHeight
     /// The hold-then-revert clock. Cancelled and replaced on every interrupt: same pill (early
     /// dismiss), other pill (crossfade and restart), scroll, or leaving the screen.
     @State private var swapRevertTask: Task<Void, Never>?
@@ -344,21 +333,18 @@ struct UserPageView: View {
                 //
                 // This row is also the badge swap-in's target: tap a pill and the whole line
                 // (handle AND number together) gives way to that badge's explanation, then
-                // returns. Both layers are permanently in the tree inside one FIXED-height box
-                // (`badgeSwapReservedHeight`, two lines of the swap font), so the page below
-                // never shifts whichever layer is visible or however the copy wraps. The old
-                // design was a popover anchored to the pill, which sat exactly on top of the
-                // name it was annotating; the one before this reserved a single line and scaled
-                // the longest copy down to 0.52, which on device read as an illegible squint
-                // crammed against the "Follows you" capsule.
+                // returns. Both layers are permanently in the tree at the same single-line text
+                // size, so the ZStack's height is identical whichever is visible and the page
+                // below never shifts. The old design was a popover anchored to the pill, which
+                // sat exactly on top of the name it was annotating.
                 //
-                // Top-aligned, not centered: centering split the box's slack above AND below,
-                // which pushed the resting handle away from the name it belongs to (owner
-                // screenshot, 2026-08-21). Pinned to the top, the handle sits right under the
-                // name exactly as it did before the box existed, and ALL the slack lands below,
-                // which is the side that needs it: it is what keeps a two-line explanation off
-                // the "Follows you" capsule.
-                ZStack(alignment: .top) {
+                // ONE line is a copy constraint, not a layout accident: `BadgeSwapLineTests`
+                // fails the build if any badge's explanation cannot fit here at full size, so
+                // new copy gets shortened rather than the layout getting taller. Two earlier
+                // attempts to solve it in layout instead (scaling the longest copy to 0.52, then
+                // reserving a two-line box) each produced their own bug on device, an illegible
+                // squint and then a handle drifting away from its name.
+                ZStack {
                     ZStack {
                         Text(profile?.handle ?? "@…")
                             .flimFont(13, relativeTo: .subheadline).foregroundStyle(FlimTheme.textTertiary)
@@ -374,7 +360,6 @@ struct UserPageView: View {
                     badgeSwapLine
                 }
                 .frame(maxWidth: .infinity)
-                .frame(height: badgeSwapReservedHeight, alignment: .top)
                 .padding(.horizontal, 28)
                 // A transparency disclosure, not a vanity badge: FLIM's feed is private and
                 // follow-gated, so this literally means "this person can see what you post".
@@ -506,11 +491,10 @@ struct UserPageView: View {
     /// tap, at zero opacity, so showing it never inserts a view mid-animation.
     private var badgeSwapLine: some View {
         let kind = lastShown?.kind
-        let text = kind.map { showsHowToEarn ? $0.howToEarn : "\($0.emoji) \($0.explanation)" } ?? ""
+        let text = kind.map { "\($0.emoji) \($0.explanation)" } ?? ""
         return Text(text)
             .flimFont(BadgeSwapMetrics.pointSize, relativeTo: .footnote)
-            .lineLimit(2)
-            .multilineTextAlignment(.center)
+            .lineLimit(1)
             .minimumScaleFactor(BadgeSwapMetrics.minimumScale)
             .foregroundStyle(kind.map { badgeSwapColor(for: $0) } ?? .clear)
             // The 250ms in-place crossfade for tap-another-pill and for the second beat: the
@@ -527,9 +511,8 @@ struct UserPageView: View {
     /// The swapped line's colour: the metal the badge is struck from, or the viewer's accent for
     /// the accent rung. Founding and gold share the LIGHT gold, not the mid gold the pill
     /// gradient uses, because 13pt text against the near-black page needs the brighter cut of
-    /// the same metal to stay legible. The second beat is plain tertiary: instruction, not medal.
+    /// the same metal to stay legible.
     private func badgeSwapColor(for kind: ProfileBadgeKind) -> Color {
-        if showsHowToEarn { return FlimTheme.textTertiary }
         switch kind.tier {
         case .founding, .gold: return FlimTheme.badgeGoldLight
         case .silver:          return FlimTheme.badgeSilver
@@ -558,15 +541,13 @@ struct UserPageView: View {
                 withAnimation(.easeInOut(duration: 0.25)) {
                     shownBadge = badge
                     lastShown = badge
-                    showsHowToEarn = false
                 }
-                scheduleSwapBeats(for: badge)
+                scheduleSwapRevert()
             }
             return
         }
         shownBadge = badge
         lastShown = badge
-        showsHowToEarn = false
         if reduceMotion {
             withAnimation(.easeInOut(duration: 0.3)) {
                 handleLineVisible = false
@@ -576,23 +557,22 @@ struct UserPageView: View {
             withAnimation(.easeInOut(duration: 0.3)) { handleLineVisible = false }
             withAnimation(.easeOut(duration: 0.45).delay(0.1)) { badgeLineVisible = true }
         }
-        scheduleSwapBeats(for: badge)
+        scheduleSwapRevert()
     }
 
     /// The clock. 2.75s from the tap covers the show (the IN beat lands at 0.55s) plus the 2.2s
-    /// hold, then the revert runs; a badge the viewer doesn't hold gets the second beat first:
-    /// a 250ms crossfade to how to earn it, its own 2.2s hold, then the same revert.
-    private func scheduleSwapBeats(for badge: ProfileBadge) {
+    /// hold, then the revert runs.
+    ///
+    /// One beat, deliberately. A second beat used to follow for a badge the viewer did not hold:
+    /// the line crossfaded from the explanation to `howToEarn`. It was cut on 2026-08-21 because
+    /// it turned one clear sentence about the person whose profile you are on into two, and the
+    /// second one was about YOU. The place to learn how to earn a badge is the picker, which
+    /// prints `howToEarn` plainly and is still the only surface that does.
+    private func scheduleSwapRevert() {
         swapRevertTask?.cancel()
-        let twoBeat = !viewerBadgeKindIds.contains(badge.kind.rawValue)
         swapRevertTask = Task {
             try? await Task.sleep(for: .seconds(2.75))
             guard !Task.isCancelled else { return }
-            if twoBeat {
-                withAnimation(.easeInOut(duration: 0.25)) { showsHowToEarn = true }
-                try? await Task.sleep(for: .seconds(2.45))
-                guard !Task.isCancelled else { return }
-            }
             revertSwap()
         }
     }
@@ -761,12 +741,6 @@ struct UserPageView: View {
             guard isSelf else { return 0 }
             return await feed.fetchOwnUnseenBadgeIds().count
         }()
-        // Only fetched (and cached) for someone else's profile; on your own, every badge shown
-        // is already one you hold, see `viewerBadgeKindIds`'s own comment above.
-        async let vb: Set<String> = {
-            guard !isSelf, let uid = auth.currentUser?.id else { return [] }
-            return await feed.fetchViewerBadgeKindIds(uid)
-        }()
         profile = await p
         // nil is a FAILED fetch (see `fetchUserPosts`): keep whatever the grid is showing,
         // cached or empty, rather than collapsing it into "no posts yet". Mirrors loadFeed's
@@ -783,7 +757,6 @@ struct UserPageView: View {
         feed.profileStatsCache[userId] = (sharedCount, followers, following)
         let badges = await bd
         let unseen = await ub
-        let viewerHeld = await vb
         let effectiveIds = await eb
         // Guarded on its own, unlike the writes below it: an account switch mid-flight must not
         // let a stale account's resolved badge order land on the new account's profile. Nothing
@@ -806,7 +779,6 @@ struct UserPageView: View {
                 signupNumber: signupNumber,
                 badges: badges
             )
-            viewerBadgeKindIds = isSelf ? Set(badges.map { $0.kind.rawValue }) : viewerHeld
         } else {
             identity = nil
         }
@@ -1073,33 +1045,21 @@ struct FollowButton: View {
 
 /// The swapped-in line's type metrics, named so the fit test measures exactly what ships.
 ///
-/// The acceptance is that EVERY badge's copy fits TWO lines on a 393pt device at no smaller
-/// than `minimumScale`. `BadgeSwapLineTests` measures each badge's wrapped height with CoreText
-/// at these numbers against that width; if a new badge's copy ever breaks the fit, the test
-/// names it rather than letting the line silently truncate on device.
+/// The acceptance is that EVERY badge's explanation fits ONE line at FULL size on a 393pt
+/// device. `BadgeSwapLineTests` measures each with CoreText at these numbers; a new badge whose
+/// copy does not fit fails the build, and the fix is to shorten the copy, never to grow the
+/// line. That rule is the conclusion of three attempts, two of which shipped and were rejected
+/// on device: scaling the longest copy to 0.52 made it an illegible squint, and reserving a
+/// two-line box left a hole under one-line copy and pushed the handle off its name.
 enum BadgeSwapMetrics {
     /// Matches `.footnote`'s base size; the Text uses `relativeTo: .footnote` so Dynamic Type
     /// still scales it.
     static let pointSize: CGFloat = 13
-    /// The floor under `minimumScaleFactor`, and the scale the fit test verifies at.
-    ///
-    /// The first ship of this line reserved ONE line and floored at 0.52, which the arithmetic
-    /// blessed and the owner's eyes rejected: 13pt × 0.52 is a ~7pt squint on device (the
-    /// `fullRoll` screenshot, 2026-08-20). Wrapping to two lines carries the longest copy in
-    /// the catalog at or near full size; 0.85 (~11pt worst case, still comfortably legible)
-    /// is cushion for word-wrap waste, not a size any current line actually renders at. A
-    /// floor means every line short enough to fit at full size still renders at full size.
+    /// The floor under `minimumScaleFactor`. A safety net for Dynamic Type and for narrower
+    /// hardware than the 393pt the test measures, NOT a design allowance: every shipped
+    /// explanation is expected to render at full size, and the fit test is what keeps that true.
+    /// 0.85 is roughly 11pt, the smallest this line stays comfortably legible at.
     static let minimumScale: CGFloat = 0.85
     /// The handle row's own horizontal padding in `pageHeader`.
     static let horizontalPadding: CGFloat = 28
-    /// The swap box's fixed height: two lines of `pointSize` system text plus real clearance.
-    /// Fixed (well, `@ScaledMetric`-scaled) so the page below never shifts as the copy wraps,
-    /// and TOP-aligned, so the resting handle hugs the name above it and every point of slack
-    /// falls below, where it is doing the actual job: keeping a two-line explanation off the
-    /// "Follows you" capsule. Two lines of 13pt system text measure ~31pt, so 40 leaves ~9pt
-    /// under the worst case before the header stack's own spacing even starts. The two owner
-    /// screenshots of 2026-08-21 are the guardrails here: at 34, two-line copy crowded the
-    /// capsule; centered at 40, the handle drifted from the name. The fit test checks two
-    /// wrapped lines at `minimumScale` fit inside this height.
-    static let reservedHeight: CGFloat = 40
 }
