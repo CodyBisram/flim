@@ -188,6 +188,7 @@
 		E593751C4C8AE813D0BD6368 /* RenditionRepairTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76B80C9D40244DBAC934AF30 /* RenditionRepairTests.swift */; };
 		E5B151EFEC27FA9D3CB5233A /* RevealPacingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A923FA718B31337070352717 /* RevealPacingTests.swift */; };
 		E924D1944FA4475B4E383A61 /* PhotoReadinessTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BAF7FE72763EB709B93E5BA4 /* PhotoReadinessTests.swift */; };
+		EAFDE97A4A6BC0FBFBFD2672 /* EmojiSemanticFallback.swift in Sources */ = {isa = PBXBuildFile; fileRef = 715E1B30BA75E68C7CE63812 /* EmojiSemanticFallback.swift */; };
 		EB68FF079329A5B42211E166 /* RevealCover.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8C2F70774B76385A97528D7 /* RevealCover.swift */; };
 		ECB291D20750FCD7921496FF /* SortDeckComposeSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1023C54C67509092736FA8F3 /* SortDeckComposeSheet.swift */; };
 		ECCE9AA4B362458687B4C9B1 /* SignedURLStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85C6F9C983DFB1E2ECF57092 /* SignedURLStore.swift */; };
@@ -361,6 +362,7 @@
 		6F68633DB99EF94E78C8EB57 /* RenditionBudgetTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RenditionBudgetTests.swift; sourceTree = "<group>"; };
 		70A90D72A092EB706FDA25E4 /* PhotoPagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoPagerTests.swift; sourceTree = "<group>"; };
 		7148B48A915D24BFBDEB23E0 /* NotificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationService.swift; sourceTree = "<group>"; };
+		715E1B30BA75E68C7CE63812 /* EmojiSemanticFallback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmojiSemanticFallback.swift; sourceTree = "<group>"; };
 		72E2656C67C01EC10074B7D1 /* PostOwnershipTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PostOwnershipTests.swift; sourceTree = "<group>"; };
 		73A9AEBBBFB814304ABC8715 /* FeedbackService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedbackService.swift; sourceTree = "<group>"; };
 		76A0A3EA09696EA2921DCA7C /* SharePreviewSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharePreviewSheet.swift; sourceTree = "<group>"; };
@@ -683,6 +685,7 @@
 				498109790A8BAE9899A4F515 /* CrashReporter.swift */,
 				4EF884AA4C8711AA4738DA8C /* CubeLUT.swift */,
 				8DE1B2753CA393C95C0FDD50 /* EmojiLabelMap.swift */,
+				715E1B30BA75E68C7CE63812 /* EmojiSemanticFallback.swift */,
 				FFB805EB8E7D0A5F32D77193 /* EmojiSuggestion.swift */,
 				1313F8629CEC5AD2CF03660B /* FailedUploadStore.swift */,
 				73A9AEBBBFB814304ABC8715 /* FeedbackService.swift */,
@@ -1103,6 +1106,7 @@
 				82713C7A22ABB87EBA8F0211 /* EditCaptionSheet.swift in Sources */,
 				E53D957844CA00D2B88C5608 /* EmojiCatalog.swift in Sources */,
 				FFA795C3A7AAFED96AD9CE93 /* EmojiLabelMap.swift in Sources */,
+				EAFDE97A4A6BC0FBFBFD2672 /* EmojiSemanticFallback.swift in Sources */,
 				BEE3CFD14011AAB9DB96199A /* EmojiSuggestion.swift in Sources */,
 				5C355323689421EE1900B2FC /* FailedUploadStore.swift in Sources */,
 				C8709C9620D5940B8626F149 /* FeedService.swift in Sources */,
@@ -1228,7 +1232,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.4.2;
+				MARKETING_VERSION = 1.4.3;
 				PRODUCT_BUNDLE_IDENTIFIER = com.flim.app.RollActivityWidget;
 				PROVISIONING_PROFILE_SPECIFIER = "match AppStore com.flim.app.RollActivityWidget";
 				SDKROOT = iphoneos;
@@ -1309,7 +1313,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.4.2;
+				MARKETING_VERSION = 1.4.3;
 				PRODUCT_BUNDLE_IDENTIFIER = com.flim.app.RollActivityWidget;
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -1417,7 +1421,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.4.2;
+				MARKETING_VERSION = 1.4.3;
 				PRODUCT_BUNDLE_IDENTIFIER = com.flim.app;
 				SDKROOT = iphoneos;
 				SWIFT_VERSION = 5.9;
@@ -1461,7 +1465,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.4.2;
+				MARKETING_VERSION = 1.4.3;
 				PRODUCT_BUNDLE_IDENTIFIER = com.flim.app;
 				PROVISIONING_PROFILE_SPECIFIER = "match AppStore com.flim.app";
 				SDKROOT = iphoneos;

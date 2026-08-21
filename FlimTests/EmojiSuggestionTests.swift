@@ -1,5 +1,6 @@
 import Testing
 import Foundation
+import NaturalLanguage
 import Vision
 @testable import Flim
 
@@ -148,6 +149,143 @@ struct EmojiSuggestionPickTests {
     }
 }
 
+/// `EmojiSemanticFallback`, the CLDR + `NLEmbedding` resolver that answers for labels
+/// `EmojiLabelMap` never learned. Pure over plain strings, same as `pick(fromQualifyingIdentifiers:)`.
+///
+/// `NLEmbedding.wordEmbedding(for: .english)` is an on-demand asset and can legitimately be nil, so
+/// the one test below that depends on the embedding asserts the specific emoji only when the asset
+/// is actually present, and asserts the contract (no crash, nothing excluded, capped, stable)
+/// unconditionally. Everything else here runs off the bundled corpus and is deterministic anywhere.
+struct EmojiSemanticFallbackTests {
+    /// Vision's own taxonomy, the same source `EmojiLabelMapTests` checks the hand table against.
+    private static let knownIdentifiers: [String] = {
+        (try? VNClassifyImageRequest().supportedIdentifiers()) ?? []
+    }()
+
+    @Test("the curated table still answers for every label it maps, unchanged")
+    func handTableStillWins() {
+        // Regression, not coverage: these all resolved this way before the fallback existed and
+        // must resolve identically now, whatever the corpus would have said about them.
+        for label in ["lizard", "reptile", "animal", "dog", "corgi", "cat", "pizza", "coffee",
+                      "book", "laptop", "beach", "sunflower", "guitar", "camera", "bed"] {
+            let curated = EmojiLabelMap.emoji(forLabel: label)
+            #expect(curated != nil, "\(label) should still be hand-mapped")
+            #expect(EmojiSuggestion.pick(fromQualifyingIdentifiers: [label]) == [curated].compactMap { $0 })
+        }
+    }
+
+    @Test("a guess never displaces or outranks a hand-mapped answer")
+    func curatedFillsSlotsFirst() {
+        // `abacus` is unmapped and first, i.e. the more confident label. The curated 🦎 still
+        // takes the first slot, because the whole curated pass runs before any guessing.
+        #expect(EmojiSuggestion.pick(fromQualifyingIdentifiers: ["abacus", "lizard"]) == ["🦎", "🧮"])
+    }
+
+    @Test("labels the hand table never learned resolve straight out of the CLDR corpus")
+    func exactCorpusMatchesResolve() {
+        // Real Vision identifiers, none of them in `EmojiLabelMap`, each spelled by the corpus.
+        let expected = ["abacus": "🧮", "cupcake": "🧁", "elevator": "🛗", "telescope": "🔭",
+                        "parachute": "🪂", "screwdriver": "🪛", "jigsaw": "🧩", "mailbox": "📪"]
+        for (label, emoji) in expected {
+            #expect(EmojiLabelMap.emoji(forLabel: label) == nil, "\(label) is hand-mapped now; pick another case")
+            #expect(EmojiSemanticFallback.emoji(forLabel: label) == emoji)
+            #expect(EmojiSuggestion.pick(fromQualifyingIdentifiers: [label]) == [emoji])
+        }
+    }
+
+    @Test("a compound label resolves through its head noun, not its qualifier")
+    func compoundLabelsUseTheHeadNoun() {
+        // "high_chair" is a chair, not ⚡, which is what looking up "high" used to produce.
+        #expect(EmojiSemanticFallback.emoji(forLabel: "high_chair") == "🪑")
+        #expect(EmojiSemanticFallback.emoji(forLabel: "swivel_chair") == "🪑")
+        // Vision's catch-all leaves carry an `_other` suffix that is noise, not a noun.
+        #expect(EmojiSemanticFallback.emoji(forLabel: "chair_other") == "🪑")
+    }
+
+    @Test("the embedding reaches a label the corpus never spells")
+    func semanticPathReachesUnspelledLabels() {
+        // The owner's motivating case. "concert" is a real Vision identifier, is not hand-mapped,
+        // and is not a CLDR keyword for anything: only the word vectors can get from it to music.
+        #expect(EmojiLabelMap.emoji(forLabel: "concert") == nil)
+        let picked = EmojiSuggestion.pick(fromQualifyingIdentifiers: ["concert"])
+        // Holds with or without the embedding asset installed.
+        #expect(picked.count <= 3)
+        #expect(!picked.contains(where: EmojiSemanticFallback.isExcluded))
+        #expect(picked == EmojiSuggestion.pick(fromQualifyingIdentifiers: ["concert"]))
+        // The actual behaviour, asserted only where the asset the behaviour needs exists. On a
+        // machine without the English word vectors this degrades to "no suggestion" by design.
+        if NLEmbedding.wordEmbedding(for: .english) != nil {
+            #expect(picked == ["🎵"], "concert should reach music through its neighbours")
+        }
+    }
+
+    @Test("every excluded category is refused, whatever the corpus says")
+    func excludedCategoriesAreRefused() {
+        // One representative per required category, plus the two structural cases (skin tone and
+        // ZWJ sequence) that the corpus carries thousands of.
+        for emoji in ["🇺🇸", "🏳️", "🏴", "🚩",           // flags
+                      "👥", "🧑", "👍", "👂", "🙏", "💃",   // people and body parts
+                      "👍🏽", "👨‍👩‍👧",                        // skin tone, joined family
+                      "🔫", "🔪", "⚔️", "💣",              // weapons
+                      "💉", "💊", "🩹", "🩺", "😷",        // medical and injury
+                      "✝️", "☪️", "✡️", "🕉️", "⛪", "📿",   // religious
+                      "♒", "☠️", "⚰️", "🚬"] {             // identity-adjacent and sensitive
+            #expect(EmojiSemanticFallback.isExcluded(emoji), "\(emoji) should be excluded")
+        }
+        // And the labels that would otherwise reach them.
+        for label in ["people", "adult", "baby", "child", "crowd", "flag", "knife", "sword",
+                      "medicine", "wheelchair"] {
+            #expect(EmojiSemanticFallback.emoji(forLabel: label) == nil, "\(label) should stay unanswered")
+            #expect(EmojiSuggestion.pick(fromQualifyingIdentifiers: [label]).isEmpty)
+        }
+    }
+
+    @Test("no label in Vision's entire taxonomy can produce an excluded emoji")
+    func noIdentifierEverReachesAnExcludedEmoji() throws {
+        // The deny policy is applied when the reverse index is built, so this is the assertion
+        // that it was applied to every entry and not just the ones anyone thought to check.
+        try #require(!Self.knownIdentifiers.isEmpty, "couldn't load Vision's own identifier list")
+        for identifier in Self.knownIdentifiers {
+            guard let emoji = EmojiSemanticFallback.emoji(forLabel: identifier) else { continue }
+            #expect(!EmojiSemanticFallback.isExcluded(emoji), "\(identifier) reached excluded \(emoji)")
+        }
+    }
+
+    @Test("the cap and the dedup still hold once guesses are in play")
+    func capAndDedupHoldAcrossBothPasses() {
+        // Two curated, three unmapped: three slots, curated first, guesses filling the rest.
+        let picked = EmojiSuggestion.pick(
+            fromQualifyingIdentifiers: ["abacus", "lizard", "cupcake", "dog", "telescope"])
+        #expect(picked.count == 3)
+        #expect(picked == ["🦎", "🐶", "🧮"])
+        // `oak_tree` and `eucalyptus_tree` both resolve to 🌲 through their head noun, and 🌲 is
+        // also what the curated table gives `evergreen`: one slot, not three.
+        let deduped = EmojiSuggestion.pick(
+            fromQualifyingIdentifiers: ["evergreen", "oak_tree", "eucalyptus_tree"])
+        #expect(deduped == ["🌲"])
+    }
+
+    @Test("an unknown or empty label yields nothing rather than a default")
+    func unknownLabelsYieldNothing() {
+        #expect(EmojiSemanticFallback.emoji(forLabel: "") == nil)
+        #expect(EmojiSemanticFallback.emoji(forLabel: "not_a_real_vision_label_xyzzy") == nil)
+    }
+
+    @Test("the same labels twice give the same answer")
+    func resolutionIsDeterministic() {
+        // Covers all three resolution paths at once: curated, corpus, and (asset permitting)
+        // embedding. The reverse index picks a winner per keyword from an unordered dictionary
+        // walk, so this is the guard against that winner drifting between calls.
+        let labels = ["lizard", "abacus", "concert", "high_chair", "people", "cupcake", "cliff"]
+        let first = EmojiSuggestion.pick(fromQualifyingIdentifiers: labels)
+        #expect(first == EmojiSuggestion.pick(fromQualifyingIdentifiers: labels))
+        for label in labels {
+            #expect(EmojiSemanticFallback.emoji(forLabel: label)
+                    == EmojiSemanticFallback.emoji(forLabel: label))
+        }
+    }
+}
+
 /// Runs the real classifier against the owner's own photographs, exactly like the look regression
 /// pin's `pairLookIsPinned`: local-only (`pairs/` is gitignored), skipped rather than failing on a
 /// fresh clone or in CI. This is deliberately NOT a pass/fail assertion on which labels come back —
@@ -170,7 +308,9 @@ struct EmojiSuggestionRealPhotoTests {
             let emoji = EmojiSuggestion.classify(data)
             // No assertion on WHICH emoji: see the type doc. Printed so the report can quote it.
             print("EmojiSuggestion[\(file)] → \(emoji.isEmpty ? "(none)" : emoji.joined(separator: " "))")
-            #expect(emoji.count <= 2)
+            // 3, the documented cap, not the 2 that happened to be the most the curated table
+            // alone ever produced on these scenes. `EmojiSemanticFallback` can now fill the third.
+            #expect(emoji.count <= 3)
         }
     }
 }

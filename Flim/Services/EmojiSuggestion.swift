@@ -109,14 +109,29 @@ enum EmojiSuggestion {
     /// precision/recall floor (most-confident first). Kept apart from `classify` so it's unit
     /// testable with plain strings: `VNClassificationObservation` has no public initializer, so
     /// nothing upstream of this point can be constructed in a test.
+    ///
+    /// Two passes, and the order between them is the point. The whole label list goes through the
+    /// curated `EmojiLabelMap` first; only if that leaves a slot empty do the labels it had nothing
+    /// for get offered to `EmojiSemanticFallback`. So the fallback fills blanks and can never
+    /// displace, reorder, or outrank a hand-checked answer, however confident Vision was about the
+    /// label the guess came from. Within each pass the order is still Vision's own, most confident
+    /// first.
     static func pick(fromQualifyingIdentifiers identifiers: [String]) -> [String] {
         var picked: [String] = []
         var usedEmoji = Set<String>()
-        for identifier in identifiers {
-            guard picked.count < 3 else { break }
-            guard let emoji = EmojiLabelMap.emoji(forLabel: identifier) else { continue }
-            guard usedEmoji.insert(emoji).inserted else { continue }
+        func take(_ emoji: String) {
+            guard usedEmoji.insert(emoji).inserted else { return }
             picked.append(emoji)
+        }
+        for identifier in identifiers {
+            guard picked.count < 3 else { return picked }
+            guard let emoji = EmojiLabelMap.emoji(forLabel: identifier) else { continue }
+            take(emoji)
+        }
+        for identifier in identifiers where EmojiLabelMap.emoji(forLabel: identifier) == nil {
+            guard picked.count < 3 else { break }
+            guard let emoji = EmojiSemanticFallback.emoji(forLabel: identifier) else { continue }
+            take(emoji)
         }
         return picked
     }
