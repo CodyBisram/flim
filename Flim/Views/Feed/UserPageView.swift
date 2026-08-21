@@ -65,6 +65,9 @@ struct UserPageView: View {
     /// OUT/IN pair on show, and the deliberately slower pair on revert.
     @State private var handleLineVisible = true
     @State private var badgeLineVisible = false
+    /// The handle/badge swap box's fixed height, scaled on the same curve as the swap line's
+    /// font so Dynamic Type can't clip the two lines the box exists to hold.
+    @ScaledMetric(relativeTo: .footnote) private var badgeSwapReservedHeight = BadgeSwapMetrics.reservedHeight
     /// The hold-then-revert clock. Cancelled and replaced on every interrupt: same pill (early
     /// dismiss), other pill (crossfade and restart), scroll, or leaving the screen.
     @State private var swapRevertTask: Task<Void, Never>?
@@ -341,10 +344,13 @@ struct UserPageView: View {
                 //
                 // This row is also the badge swap-in's target: tap a pill and the whole line
                 // (handle AND number together) gives way to that badge's explanation, then
-                // returns. Both layers are permanently in the tree at the same single-line text
-                // size, so the ZStack's height is identical whichever is visible and the page
-                // below never shifts. The old design was a popover anchored to the pill, which
-                // sat exactly on top of the name it was annotating.
+                // returns. Both layers are permanently in the tree inside one FIXED-height box
+                // (`badgeSwapReservedHeight`, two lines of the swap font), so the page below
+                // never shifts whichever layer is visible or however the copy wraps. The old
+                // design was a popover anchored to the pill, which sat exactly on top of the
+                // name it was annotating; the one before this reserved a single line and scaled
+                // the longest copy down to 0.52, which on device read as an illegible squint
+                // crammed against the "Follows you" capsule.
                 ZStack {
                     ZStack {
                         Text(profile?.handle ?? "@…")
@@ -361,6 +367,7 @@ struct UserPageView: View {
                     badgeSwapLine
                 }
                 .frame(maxWidth: .infinity)
+                .frame(height: badgeSwapReservedHeight)
                 .padding(.horizontal, 28)
                 // A transparency disclosure, not a vanity badge: FLIM's feed is private and
                 // follow-gated, so this literally means "this person can see what you post".
@@ -495,7 +502,8 @@ struct UserPageView: View {
         let text = kind.map { showsHowToEarn ? $0.howToEarn : "\($0.emoji) \($0.explanation)" } ?? ""
         return Text(text)
             .flimFont(BadgeSwapMetrics.pointSize, relativeTo: .footnote)
-            .lineLimit(1)
+            .lineLimit(2)
+            .multilineTextAlignment(.center)
             .minimumScaleFactor(BadgeSwapMetrics.minimumScale)
             .foregroundStyle(kind.map { badgeSwapColor(for: $0) } ?? .clear)
             // The 250ms in-place crossfade for tap-another-pill and for the second beat: the
@@ -1057,22 +1065,29 @@ struct FollowButton: View {
 
 /// The swapped-in line's type metrics, named so the fit test measures exactly what ships.
 ///
-/// The acceptance is that the longest copy in the catalog (`fullRoll`, 106 characters) fits ONE
-/// line on a 393pt device. `BadgeSwapLineFitTests` measures every badge's line with CoreText at
-/// these numbers against that width; if a new badge's copy ever breaks the fit, the test names
-/// it rather than letting the line silently truncate on device.
+/// The acceptance is that EVERY badge's copy fits TWO lines on a 393pt device at no smaller
+/// than `minimumScale`. `BadgeSwapLineTests` measures each badge's wrapped height with CoreText
+/// at these numbers against that width; if a new badge's copy ever breaks the fit, the test
+/// names it rather than letting the line silently truncate on device.
 enum BadgeSwapMetrics {
     /// Matches `.footnote`'s base size; the Text uses `relativeTo: .footnote` so Dynamic Type
     /// still scales it.
     static let pointSize: CGFloat = 13
-    /// The design called for 0.75 and 0.75 is not enough, measured, not estimated: `fullRoll`'s
-    /// line is 643pt at full size, and 337pt of row divided by 643 is 0.52. At 0.75 the longest
-    /// three lines in the catalog truncate mid-sentence with an ellipsis, and an explanation
-    /// that stops at "instead of dumping it all…" has amputated its own point. Rendering the
-    /// rare long line smaller but complete is the lesser cost, and `minimumScaleFactor` is a
-    /// floor, so every line short enough to fit at full size still renders at full size; only
-    /// the overflowing few shrink, and only as far as they must.
-    static let minimumScale: CGFloat = 0.52
+    /// The floor under `minimumScaleFactor`, and the scale the fit test verifies at.
+    ///
+    /// The first ship of this line reserved ONE line and floored at 0.52, which the arithmetic
+    /// blessed and the owner's eyes rejected: 13pt × 0.52 is a ~7pt squint on device (the
+    /// `fullRoll` screenshot, 2026-08-20). Wrapping to two lines carries the longest copy in
+    /// the catalog at or near full size; 0.85 (~11pt worst case, still comfortably legible)
+    /// is cushion for word-wrap waste, not a size any current line actually renders at. A
+    /// floor means every line short enough to fit at full size still renders at full size.
+    static let minimumScale: CGFloat = 0.85
     /// The handle row's own horizontal padding in `pageHeader`.
     static let horizontalPadding: CGFloat = 28
+    /// The swap box's fixed height: two lines of `pointSize` system text with a little slack.
+    /// Fixed (well, `@ScaledMetric`-scaled) so the page below never shifts as the copy wraps,
+    /// and so even a one-line handle keeps this much air between it and the "Follows you"
+    /// capsule, which the one-line design crowded. The fit test checks two wrapped lines at
+    /// `minimumScale` actually fit inside it.
+    static let reservedHeight: CGFloat = 34
 }
