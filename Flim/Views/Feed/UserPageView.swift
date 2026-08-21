@@ -823,12 +823,13 @@ struct UserPageView: View {
         guard let uid = auth.currentUser?.id else { return }
         Haptics.tap()
         Task {
+            // The count only moves if the write landed: the service already reverts the BUTTON
+            // on failure (via followingIds), and a count bumped unconditionally here drifted one
+            // off from that reverted button until the next full load.
             if isFollowing {
-                await feed.unfollow(userId, from: uid)
-                followers = max(0, followers - 1)
+                if await feed.unfollow(userId, from: uid) { followers = max(0, followers - 1) }
             } else {
-                await feed.follow(userId, from: uid)
-                followers += 1
+                if await feed.follow(userId, from: uid) { followers += 1 }
             }
         }
     }

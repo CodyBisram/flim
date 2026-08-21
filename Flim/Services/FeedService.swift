@@ -148,34 +148,45 @@ final class FeedService {
         static func showsFollowsYouBadge(followsMe: Bool) -> Bool { followsMe }
     }
 
-    func follow(_ targetId: UUID, from userId: UUID) async {
+    /// Returns whether the follow actually holds server-side, so a caller keeping its own
+    /// derived state (the profile header's follower count) can skip updating it on failure
+    /// instead of drifting from the button, which reverts via `followingIds`.
+    @discardableResult
+    func follow(_ targetId: UUID, from userId: UUID) async -> Bool {
         struct F: Encodable { let follower_id: UUID; let following_id: UUID }
         followingIds.insert(targetId)   // optimistic
         do {
             try await supabase.from("follows")
                 .insert(F(follower_id: userId, following_id: targetId)).execute()
+            return true
         } catch let error as PostgrestError where error.code == "23505" {
             // follows' PK is (follower_id, following_id): a duplicate insert means the row
             // already exists server-side (e.g. a stale followingIds read racing this call), so
             // the desired end state already holds, leave the optimistic insert in place rather
             // than rolling back a follow that's actually there.
+            return true
         } catch {
             // The insert never landed (offline, RLS), without this the button was stuck
             // reading "Following" forever even though the server never recorded it.
             followingIds.remove(targetId)
+            return false
         }
     }
 
-    func unfollow(_ targetId: UUID, from userId: UUID) async {
+    /// Same contract as `follow`: whether the unfollow holds server-side.
+    @discardableResult
+    func unfollow(_ targetId: UUID, from userId: UUID) async -> Bool {
         followingIds.remove(targetId)   // optimistic
         do {
             try await supabase.from("follows").delete()
                 .eq("follower_id", value: userId.uuidString)
                 .eq("following_id", value: targetId.uuidString)
                 .execute()
+            return true
         } catch {
             // Same as above, mirrored: the delete never landed, so put the follow back.
             followingIds.insert(targetId)
+            return false
         }
     }
 
