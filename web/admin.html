@@ -795,6 +795,12 @@
 
         if (d.daily) {
           section(host, "Daily", "people per day, newest last");
+        }
+        if (d.daily && !series.length) {
+          /* An empty series drew an empty bordered box, which reads as a chart
+             that failed to paint rather than as a quiet month. */
+          host.appendChild(el("div", "empty", "No visits in this window yet."));
+        } else if (d.daily) {
           bars(host, series.map(function (r) {
             return { label: String(r.timestamp).slice(0, 10), value: r.visitors,
                      note: r.visitors + " people · " + views(r) + " views" };

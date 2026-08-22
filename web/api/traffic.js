@@ -47,8 +47,14 @@ const ANALYTICS_BASE = "https://api.vercel.com/v1/query/web-analytics/visits";
    the daily series rather than fetched again, so the two can never disagree. */
 const WINDOW_DAYS = 30;
 
-function isoDay(date) {
-  return date.toISOString().slice(0, 10);
+/* Milliseconds, not "YYYY-MM-DD". The API accepts either, but a date-only `until`
+   is read as MIDNIGHT AT THE START of that day, so passing today's date excludes
+   everything that happened today. That silently emptied every breakdown while the
+   unranged total kept returning a number, which reads like a broken panel rather
+   than a bad window. A timestamp has no such edge. */
+function msRange() {
+  const now = Date.now();
+  return { since: now - WINDOW_DAYS * 86400000, until: now };
 }
 
 async function isOwner(userToken) {
@@ -113,14 +119,14 @@ module.exports = async (req, res) => {
     return;
   }
 
-  const until = new Date();
-  const since = new Date(until.getTime() - WINDOW_DAYS * 86400000);
-  const range = { since: isoDay(since), until: isoDay(until) };
+  const range = msRange();
 
   /* One entry per number the panel draws. `by` is a repeated query parameter,
      which is why the values are arrays even when there is only one dimension. */
   const QUERIES = {
-    total: ["/count", {}],
+    /* Ranged like everything else. Left unranged it answered ALL TIME while every
+       chart beside it answered 30 days, and the card still said "last 30 days". */
+    total: ["/count", { ...range }],
     daily: ["/aggregate", { ...range, by: ["day"], limit: 100 }],
     referrers: ["/aggregate", { ...range, by: ["referrerHostname"], limit: 15 }],
     pages: ["/aggregate", { ...range, by: ["requestPath"], limit: 15 }],
@@ -144,7 +150,13 @@ module.exports = async (req, res) => {
     names.map((n) => query(QUERIES[n][0], QUERIES[n][1], token))
   );
 
-  const out = { since: range.since, until: range.until, failed: [] };
+  /* Echoed back as ISO strings rather than the raw epoch numbers sent upstream:
+     the only reader is a human checking what window produced these numbers. */
+  const out = {
+    since: new Date(range.since).toISOString(),
+    until: new Date(range.until).toISOString(),
+    failed: [],
+  };
   settled.forEach((result, i) => {
     if (result.status === "fulfilled") {
       out[names[i]] = result.value;
