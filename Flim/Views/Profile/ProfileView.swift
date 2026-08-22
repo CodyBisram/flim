@@ -156,11 +156,20 @@ struct ProfileView: View {
                     }
                     .disabled(isDeleting)
                 } footer: {
-                    Text("\(AppInfo.appName) \(AppInfo.versionString)")
-                        .flimFont(11, relativeTo: .caption)
-                        .foregroundStyle(FlimTheme.textTertiary.opacity(0.7))
-                        .frame(maxWidth: .infinity, alignment: .center)
-                        .padding(.top, 8)
+                    // The build, then the signature under it. Smaller and fainter than the
+                    // version on purpose: the version is the line you come here to read when
+                    // something is wrong, and the signature is the one you find by accident.
+                    VStack(spacing: 4) {
+                        Text("\(AppInfo.appName) \(AppInfo.versionString)")
+                            .flimFont(11, relativeTo: .caption)
+                            .foregroundStyle(FlimTheme.textTertiary.opacity(0.7))
+                        Text(AppInfo.colophon)
+                            .flimFont(9.5, relativeTo: .caption2)
+                            .foregroundStyle(FlimTheme.textTertiary.opacity(0.5))
+                            .multilineTextAlignment(.center)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.top, 8)
                 }
                 .listRowBackground(FlimTheme.bgElevated)
                 // Sign Out and Delete Account are centered, different-weight actions. The

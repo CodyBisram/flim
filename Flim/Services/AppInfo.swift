@@ -84,6 +84,11 @@ enum AppInfo {
     /// e.g. "1.0 (42)"
     static var versionString: String { "\(shortVersion) (\(buildNumber))" }
 
+    /// The signature under the version in the Profile footer, and in the website footer.
+    /// Kept here rather than inline in the view so the app and flim-app.com can be checked
+    /// against one string when it changes; the site's copy lives in each page's <footer>.
+    static let colophon = "Developed during late nights in NYC, for you."
+
     /// True ONLY for a public App Store build (production receipt). DEBUG and TestFlight are false,
     /// so TestFlight-only surfaces stay available while testing but auto-disappear on public release.
     static var isAppStore: Bool {
