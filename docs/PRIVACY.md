@@ -38,8 +38,26 @@ control you have. We keep it short because we collect very little.
   it. These contain no photos and no message content, and are tied to your account only so a
   repeated problem can be traced to one device rather than assumed to be widespread.
 
-We do **not** collect your contacts, location, or advertising identifiers, and we do **not** sell
-your data or use third-party ad tracking.
+In the app we do **not** collect your contacts, location, or advertising identifiers, and we do
+**not** sell your data or use third-party ad tracking. This website is measured separately and is
+described below.
+
+## This website
+
+Everything above is about the FLIM app. The site you are reading is measured much more thinly, with
+**Vercel Web Analytics**, run by the company that hosts the site for us.
+
+- **No cookies and no identifiers.** Nothing is stored on your device, and you are not followed
+  from one visit to the next, or from this site to any other.
+- **What is recorded** for a page view: which page, the site that linked you here, any campaign tag
+  in the link, your country, whether you are on a phone, tablet or desktop, and your browser and
+  operating system.
+- **Country is the most precise location we ever see.** It is worked out at our host's edge
+  network. We are never shown your city, your region, or your IP address.
+- **Invite codes are removed before anything is sent.** If you arrived on a personal invite link,
+  we record that an invite link was opened, never which one.
+- **None of it is joined to your account.** Site measurement and app data are kept apart, and we
+  cannot tell that a visitor here and a user in the app are the same person.
 
 ## Where your data lives
 
@@ -60,8 +78,9 @@ community safe.
 - **Photos you publish to your feed** are visible to your followers.
 
 We don't share your data with anyone else except our infrastructure providers: **Supabase**
-(backend/storage) and **Apple Push Notification service** (notifications, only if enabled), as
-needed to operate the app.
+(backend/storage), **Apple Push Notification service** (notifications, only if enabled), and
+**Vercel** (website hosting and the site measurement described above, which never touches your
+account or your photos), as needed to operate the app.
 
 ## Your controls
 

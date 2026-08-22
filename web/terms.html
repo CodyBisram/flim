@@ -104,7 +104,13 @@
         <a href="mailto:support@flim-app.com">Contact</a>
       </div>
     </div>
+    <p class="wrap colophon">Developed during late nights in NYC, for you.</p>
   </footer>
   <script src="/theme.js"></script>
+  <!-- Web Analytics. analytics.js is NOT deferred and must stay above the
+       insights script: it registers the beforeSend hook that strips invite
+       codes out of /i/ and /join/ paths before anything is sent. -->
+  <script src="/analytics.js"></script>
+  <script defer src="/_vercel/insights/script.js"></script>
 </body>
 </html>

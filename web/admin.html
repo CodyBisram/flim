@@ -379,6 +379,7 @@
       <li><button class="navitem" data-panel="users">Reported people <span class="navitem__count" id="c-users">0</span></button></li>
       <li><button class="navitem" data-panel="feedback">Feedback <span class="navitem__count" id="c-feedback">0</span></button></li>
       <li class="side__label">Analytics</li>
+      <li><button class="navitem" data-panel="traffic">Traffic</button></li>
       <li><button class="navitem" data-panel="pulse">Pulse</button></li>
       <li><button class="navitem" data-panel="funnel">Funnel</button></li>
       <li><button class="navitem" data-panel="reach">Reach</button></li>
@@ -421,14 +422,16 @@
        rows to act on, and every one of these is a different shape. Null until
        loaded, so a panel can tell "still fetching" from "the answer is nothing". */
     var stats = { funnel: null, reach: null, stuck: null, pulse: null,
-                  retention: null, storage: null, campaigns: null, versions: null };
-    var ANALYTICS = ["pulse", "funnel", "reach", "stuck", "retention", "versions"];
+                  retention: null, storage: null, campaigns: null, versions: null,
+                  traffic: null };
+    var ANALYTICS = ["traffic", "pulse", "funnel", "reach", "stuck", "retention", "versions"];
     var panel = "invites";
     var TITLES = {
       invites: "Invites",
       photos: "Reported photos",
       users: "Reported people",
       feedback: "Feedback",
+      traffic: "Traffic",
       pulse: "Pulse",
       funnel: "Funnel",
       reach: "Reach",
@@ -475,6 +478,20 @@
       });
       if (res.status === 401) { signOut(); throw new Error("Session expired. Sign in again."); }
       if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    }
+
+    /* Traffic is the one panel whose numbers are not in our database. Vercel Web
+       Analytics holds them, and reading them needs an account token that cannot
+       live in this file, so /api/traffic proxies the call. It is handed the same
+       session token as every RPC above and re-checks is_owner() server side
+       before it spends the Vercel one, so this is not a second way in. */
+    async function traffic() {
+      var res = await fetch("/api/traffic", {
+        headers: { "Authorization": "Bearer " + token },
+      });
+      if (res.status === 401) { signOut(); throw new Error("Session expired. Sign in again."); }
+      if (!res.ok) throw new Error((await res.text()).slice(0, 200));
       return res.json();
     }
 
@@ -725,6 +742,101 @@
       }
       $("page-sub").textContent = "";
 
+      if (panel === "traffic") {
+        /* Every breakdown comes back the same shape, keyed by its own dimension:
+           an aggregate by country returns { country: "US", count, visitors }, by
+           deviceType returns { deviceType: "mobile", ... }. Reading whichever key
+           is not count/visitors/timestamp lets one renderer draw all eight. */
+        function labelOf(row) {
+          for (var k in row) {
+            if (k !== "count" && k !== "pageviews" && k !== "visitors" && k !== "timestamp") {
+              return row[k];
+            }
+          }
+          return "";
+        }
+        /* The visits dataset names this column `pageviews`; the events dataset names
+           the same idea `count`. Reading only one of them put the string "undefined"
+           in every row of every chart, and reading it as a LABEL (before pageviews
+           was excluded above) could put a raw number where the country should be. */
+        function views(row) {
+          return row.pageviews !== undefined ? row.pageviews : row.count;
+        }
+        /* A null dimension is one that did not load, and it is already named in
+           the note at the foot of the panel. Drawing an empty chart for it would
+           claim the answer is zero. */
+        function breakdown(title, note, rows, blank) {
+          if (!rows) return;
+          section(host, title, note);
+          if (!rows.length) { host.appendChild(el("div", "empty", "Nothing yet.")); return; }
+          bars(host, rows.map(function (r) {
+            return { label: String(labelOf(r) || blank || "unknown"),
+                     value: r.visitors,
+                     note: r.visitors + " people · " + views(r) + " views" };
+          }));
+        }
+
+        var tot = d.total || {};
+        /* Sorted before slicing rather than trusted: the last seven rows are only
+           the last seven days if the series came back in date order. */
+        var series = (d.daily || []).slice().sort(function (a, b) {
+          return String(a.timestamp) < String(b.timestamp) ? -1 : 1;
+        });
+        var week = series.slice(-7);
+        var wV = week.reduce(function (n, r) { return n + r.visitors; }, 0);
+        var wP = week.reduce(function (n, r) { return n + views(r); }, 0);
+
+        host.appendChild(statRow([
+          statCard(tot.visitors, "people, last 30 days"),
+          statCard(tot.pageviews, "pageviews, last 30 days"),
+          statCard(wV, "people, last 7 days"),
+          statCard(wP, "pageviews, last 7 days")
+        ]));
+
+        if (d.daily) {
+          section(host, "Daily", "people per day, newest last");
+          bars(host, series.map(function (r) {
+            return { label: String(r.timestamp).slice(0, 10), value: r.visitors,
+                     note: r.visitors + " people · " + views(r) + " views" };
+          }));
+        }
+
+        /* Referrers first: it is the question this panel was built to answer, and
+           the empty hostname is the large and interesting bucket rather than a
+           gap, so it is named instead of dropped. */
+        breakdown("Where they came from", "referring hostname over 30 days",
+                  d.referrers, "direct or unknown");
+        breakdown("Campaign source", "utm_source", d.utmSource, "no tag");
+        breakdown("Campaign", "utm_campaign", d.utmCampaign, "no tag");
+        breakdown("Pages", "invite codes are stripped before anything is sent", d.pages);
+        breakdown("Country", "the finest location Vercel reports", d.countries);
+        breakdown("Device", null, d.devices);
+        breakdown("Operating system", null, d.systems);
+        breakdown("Browser", null, d.browsers);
+
+        host.appendChild(el("div", "card__note",
+          "Country is as precise as this gets. Vercel Web Analytics derives it at the edge and "
+          + "never exposes a city, a region or an IP to us, which is also why the site needs no "
+          + "cookie banner: nothing is stored on the visitor's device and nobody is followed "
+          + "between visits. \"People\" is Vercel's own visitor estimate, not a count of "
+          + "accounts, and it cannot be joined to anything in the app. This page is not itself "
+          + "tracked, so your own admin visits never appear above."));
+
+        if ((d.failed || []).length) {
+          var utmOnly = d.failed.every(function (n) { return n.indexOf("utm") === 0; });
+          var f = el("div", "card__note",
+            utmOnly
+              ? "Campaign source and campaign are empty because UTM breakdowns need Vercel's paid "
+                + "Web Analytics Plus, which this project is not on. Nothing is wrong with the "
+                + "tags themselves: put utm_source on a link and \"Where they came from\" still "
+                + "shows the referring host. Everything else above is unaffected."
+              : "Did not load: " + d.failed.join(", ") + ". The rest of the panel is unaffected.");
+          f.style.borderLeft = "3px solid #b45309";
+          host.appendChild(f);
+        }
+        return;
+      }
+
       if (panel === "pulse") {
         var st = stats.storage || {};
         var days = d || [];
@@ -951,12 +1063,17 @@
          which is the whole reason this was allSettled to begin with. */
       var statNames = ["admin_pulse", "admin_funnel", "admin_reach", "admin_stuck",
                        "admin_retention", "admin_storage", "admin_campaigns", "admin_versions"];
+      /* One key longer than statNames: traffic is the trailing entry, because it
+         is a plain fetch rather than an RPC and is appended to the promise list
+         below. The two must stay aligned, so anything new goes in BOTH arrays,
+         above traffic, and never between them. */
       var statKeys = ["pulse", "funnel", "reach", "stuck", "retention", "storage", "campaigns",
-                      "versions"];
+                      "versions", "traffic"];
 
       var settled = await Promise.allSettled(
         names.map(function (n) { return rpc(n); })
-          .concat(statNames.map(function (n) { return rpc(n); })));
+          .concat(statNames.map(function (n) { return rpc(n); }))
+          .concat([traffic()]));
 
       var broken = [];
       settled.slice(0, names.length).forEach(function (result, i) {

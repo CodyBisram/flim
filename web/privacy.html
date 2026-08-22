@@ -69,7 +69,17 @@
       <li><strong>A short list of firsts</strong>, meaning the first time you launch the app, finish onboarding, allow camera access, reach a working camera, press the shutter, take a shot, create or join a roll, send or redeem an invite, share a post, watch a reveal, and whether you allowed or declined notifications when asked. One record per person per event, tied to your account, kept in our own database. It exists so we can tell which parts of FLIM people actually reach, rather than guessing.</li>
       <li><strong>Day counts of a few actions</strong>, meaning that on a given day you opened the app, took some number of photos, or shared some number of posts. A count per day, nothing more: never the time of day, never which photos, and never what was in them. Together with the firsts above, this is the whole of our analytics. No analytics company is involved and nothing is shared with one.</li>
     </ul>
-    <p>We do <strong>not</strong> collect your contacts, location, or advertising identifiers, and we do <strong>not</strong> sell your data or use third-party ad tracking.</p>
+    <p>In the app we do <strong>not</strong> collect your contacts, location, or advertising identifiers, and we do <strong>not</strong> sell your data or use third-party ad tracking. This website is measured separately and is described below.</p>
+
+    <h2>This website</h2>
+    <p>Everything above is about the FLIM app. The site you are reading is measured much more thinly, with <strong>Vercel Web Analytics</strong>, run by the company that hosts the site for us.</p>
+    <ul>
+      <li><strong>No cookies and no identifiers.</strong> Nothing is stored on your device, and you are not followed from one visit to the next, or from this site to any other.</li>
+      <li><strong>What is recorded</strong> for a page view: which page, the site that linked you here, any campaign tag in the link, your country, whether you are on a phone, tablet or desktop, and your browser and operating system.</li>
+      <li><strong>Country is the most precise location we ever see.</strong> It is worked out at our host's edge network. We are never shown your city, your region, or your IP address.</li>
+      <li><strong>Invite codes are removed before anything is sent.</strong> If you arrived on a personal invite link, we record that an invite link was opened, never which one.</li>
+      <li><strong>None of it is joined to your account.</strong> Site measurement and app data are kept apart, and we cannot tell that a visitor here and a user in the app are the same person.</li>
+    </ul>
 
     <h2>Where your data lives</h2>
     <p>Your account data and photos are stored on <strong>Supabase</strong> (our backend and storage provider) on your behalf. Photos are kept in a private storage bucket, access-controlled by row-level security, and served via time-limited signed links.</p>
@@ -83,7 +93,7 @@
       <li><strong>Photos in a shared roll</strong> are visible to that roll's members (a roll holds up to 50 people).</li>
       <li><strong>Photos you publish to your feed</strong> are visible to your followers.</li>
     </ul>
-    <p>We don't share your data with anyone else except our infrastructure providers, <strong>Supabase</strong> (backend and storage) and <strong>Apple Push Notification service</strong> (notifications, only if enabled), as needed to operate the app.</p>
+    <p>We don't share your data with anyone else except our infrastructure providers, <strong>Supabase</strong> (backend and storage), <strong>Apple Push Notification service</strong> (notifications, only if enabled), and <strong>Vercel</strong> (website hosting and the site measurement described above, which never touches your account or your photos), as needed to operate the app.</p>
 
     <h2>Your controls</h2>
     <ul>
@@ -113,7 +123,13 @@
         <a href="mailto:support@flim-app.com">Contact</a>
       </div>
     </div>
+    <p class="wrap colophon">Developed during late nights in NYC, for you.</p>
   </footer>
   <script src="/theme.js"></script>
+  <!-- Web Analytics. analytics.js is NOT deferred and must stay above the
+       insights script: it registers the beforeSend hook that strips invite
+       codes out of /i/ and /join/ paths before anything is sent. -->
+  <script src="/analytics.js"></script>
+  <script defer src="/_vercel/insights/script.js"></script>
 </body>
 </html>

@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#0c0908" media="(prefers-color-scheme: dark)" />
   <meta name="theme-color" content="#e7e3da" media="(prefers-color-scheme: light)" />
   <title>FLIM, the disposable camera for your closest friends</title>
-  <meta name="description" content="FLIM is a disposable camera app. Shoot on film, wait for it to develop, and share the moment with the people who matter." />
+  <meta name="description" content="FLIM is a disposable camera app. One film look and no filters to pick, a feed of only the people you follow, and shared rolls that develop for everyone at once. Invite only, on iPhone." />
   <meta property="og:site_name" content="FLIM" />
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://flim-app.com/" />
@@ -56,10 +56,15 @@
         <div>
           <p class="eyebrow">Invite only, iPhone</p>
           <h1>A disposable camera for your closest friends.</h1>
+          <!-- Both halves of the mechanic, in the order people meet them. The page
+               used to promise everyone a twelve hour wait, which is only true of a
+               shared roll: a personal shot has been ready immediately since 1.4
+               (personalDevelopDelay is 0), and it is the thing people do daily. -->
           <p class="lede">
-            Shoot now, and the photograph comes back later, developed, wearing one
-            film look you never had to choose. Then it is yours to share with the
-            people who were <strong>actually there</strong>.
+            Point and shoot, and the frame comes back wearing one film look you never
+            had to choose. Your own shots land in your darkroom <strong>right
+            away</strong>. Shoot into a shared roll instead and nobody sees a thing,
+            not even you, until the whole roll develops twelve hours later.
           </p>
           <div class="actions">
             <a class="cta" href="https://apps.apple.com/us/app/flim-disposable-camera/id6786079629">Download on the App Store</a>
@@ -79,8 +84,10 @@
             <div class="print__grain"></div>
             <div class="print__vignette"></div>
           </div>
+          <!-- Labelled as a roll, because that is the only thing that counts down.
+               Unlabelled, the countdown read as what happens to every photo. -->
           <figcaption class="print__caption">
-            <span class="status" id="status">Developing</span>
+            <span class="status" id="status">Roll developing</span>
             <span class="print__timer" id="timer">12:00:00</span>
           </figcaption>
         </figure>
@@ -98,10 +105,13 @@
             and FLIM develops the shot the way the film would have.
           </p>
         </div>
+        <!-- Two develop rows, not one. A single "Develop, 12 hours" row was the
+             most quotable wrong fact on the site. -->
         <dl class="specs">
           <div class="spec"><dt>Film</dt><dd>One stock</dd></div>
           <div class="spec"><dt>Frame</dt><dd>3:4</dd></div>
-          <div class="spec"><dt>Develop</dt><dd>12 hours</dd></div>
+          <div class="spec"><dt>Your shots</dt><dd>Ready now</dd></div>
+          <div class="spec"><dt>Shared roll</dt><dd>12 hours</dd></div>
           <div class="spec"><dt>Filters</dt><dd>None</dd></div>
         </dl>
       </div>
@@ -135,7 +145,33 @@
       </div>
     </section>
 
+    <!-- The feed had never appeared on this site at all. Follow, react, comment and
+         @mention are half the App Store description and the thing people open daily,
+         and the section below it ("no discover tab, no algorithm") was answering a
+         question the page had not yet let anyone ask. -->
     <section class="frame reveal" data-frame="04">
+      <div class="split">
+        <div>
+          <p class="eyebrow">Your feed</p>
+          <h2>The people you follow, and nobody else.</h2>
+          <p class="body">
+            Post the frames you want seen and they go to your page. Follow your
+            friends, react with any emoji, leave a comment, pull someone into it
+            with an @mention. Nothing arrives from a stranger, and nothing is
+            ordered by anything cleverer than when it was taken.
+          </p>
+        </div>
+        <dl class="specs">
+          <div class="spec"><dt>Follow</dt><dd>Your friends</dd></div>
+          <div class="spec"><dt>React</dt><dd>Any emoji</dd></div>
+          <div class="spec"><dt>Comment</dt><dd>And @mention</dd></div>
+          <div class="spec"><dt>Order</dt><dd>Newest first</dd></div>
+          <div class="spec"><dt>Like counts</dt><dd>None</dd></div>
+        </dl>
+      </div>
+    </section>
+
+    <section class="frame reveal" data-frame="05">
       <p class="eyebrow">Who is here</p>
       <h2>Invite only, and only ever your friends.</h2>
       <p class="body">
@@ -145,7 +181,7 @@
       </p>
     </section>
 
-    <section class="frame reveal" id="request" data-frame="05">
+    <section class="frame reveal" id="request" data-frame="06">
       <div class="split">
         <div>
           <p class="eyebrow">Not invited yet</p>
@@ -172,7 +208,7 @@
       </div>
     </section>
 
-    <section class="frame reveal" data-frame="06">
+    <section class="frame reveal" data-frame="07">
       <div class="split">
         <div>
           <p class="eyebrow">Contact</p>
@@ -202,9 +238,15 @@
         <a href="mailto:support@flim-app.com">Contact</a>
       </div>
     </div>
+    <p class="wrap colophon">Developed during late nights in NYC, for you.</p>
   </footer>
 
   <script src="/theme.js"></script>
+  <!-- Web Analytics. analytics.js is NOT deferred and must stay above the
+       insights script: it registers the beforeSend hook that strips invite
+       codes out of /i/ and /join/ paths before anything is sent. -->
+  <script src="/analytics.js"></script>
+  <script defer src="/_vercel/insights/script.js"></script>
   <script>
     /* --- The print develops -------------------------------------------------
        The countdown and the emulsion resolve together, so the page performs the
@@ -228,7 +270,7 @@
 
       function finish() {
         timer.textContent = clock(0);
-        status.textContent = "Developed";
+        status.textContent = "Roll developed";
       }
 
       if (still) {

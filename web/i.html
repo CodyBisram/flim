@@ -71,6 +71,11 @@
   </main>
 
   <script src="/theme.js"></script>
+  <!-- Web Analytics. analytics.js is NOT deferred and must stay above the
+       insights script: it registers the beforeSend hook that strips invite
+       codes out of /i/ and /join/ paths before anything is sent. -->
+  <script src="/analytics.js"></script>
+  <script defer src="/_vercel/insights/script.js"></script>
   <script>
     // /i/CODE shows the code and deep links the Open button into the app.
     // Matches FlimApp.routePersonalInviteCode, which accepts com.lapse.app://i/CODE.
