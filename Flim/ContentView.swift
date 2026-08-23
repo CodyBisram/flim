@@ -28,6 +28,10 @@ struct ContentView: View {
                 // without a signed-in account holding unseen badges: the sheet as a 22-badge
                 // account with everything unseen sees it. See BadgePickerDemoHost.
                 BadgePickerDemoHost()
+            } else if ProcessInfo.processInfo.arguments.contains("-feedPreviewDemo") {
+                // Same idea for the per-author feed: sign-in is OTP-only, so the redesign is
+                // unwatchable without this. Fixture units + cache-planted images, no network.
+                FeedPreviewDemoHost()
             } else {
                 authGate
             }
