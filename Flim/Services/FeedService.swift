@@ -799,10 +799,20 @@ final class FeedService {
                 // under concurrent inserts/deletes into `posts` (see the property comment on
                 // `feedCursor`). Anchoring to the last-loaded row and asking for everything after it
                 // in the same `created_at DESC, id DESC` order is immune to both.
+                // Retention: the feed reaches back 7 days and no further (the ephemeral
+                // feed, decided 2026-08-23). Bounding the QUERY rather than filtering
+                // client-side means old days cost nothing at all: smaller pages, fewer
+                // straddle completions, and pagination ends at the window's edge instead of
+                // crawling into history. Older unseen shots stay reachable on profiles.
+                let horizonFormatter = ISO8601DateFormatter()
+                horizonFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+                let horizon = horizonFormatter.string(
+                    from: Date.now.addingTimeInterval(-FeedUnit.retentionWindow))
                 let filtered = supabase
                     .from("posts").select()
                     .in("user_id", values: authorIds.map(\.uuidString))
                     .eq("hidden", value: false)
+                    .gte("created_at", value: horizon)
                 let cursored = feedCursor.map { filtered.or(FeedService.keysetFilter(after: $0)) } ?? filtered
                 posts = try await cursored
                     .order("created_at", ascending: false)
@@ -884,6 +894,82 @@ final class FeedService {
             tagProfiles.merge(tagProf) { _, new in new }
             feed.append(contentsOf: items)
         }
+    }
+
+    /// Completes any author-day group that straddles the bottom of the fetched window.
+    ///
+    /// The feed pages by post (`feedPageSize` = 15, keyset on `created_at`), but the feed now
+    /// RENDERS author-days (`FeedUnit`), and a prolific day can straddle a page boundary: the
+    /// page holds mira's 11 PM shots while her 8 AM shots sit below the cursor. Grouped
+    /// naively, her unit would render incomplete and then GROW as later pages land, rewriting
+    /// its count and strip under the reader. This fetches the below-the-cursor remainder of
+    /// every group whose 04:00 day-window extends past the oldest fetched row, so a unit is
+    /// complete the first time it renders.
+    ///
+    /// The extra posts sit BELOW the keyset cursor on purpose, and the cursor is not moved:
+    /// the next ordinary page will re-return them and `dedupedItems` (which exists as exactly
+    /// this backstop) drops them. One query per straddling author-day; on any given page that
+    /// is the handful of authors active around the boundary, usually zero or one.
+    func completeStraddlingDays(currentUserId: UUID) async {
+        // No more pages means nothing sits below the window; every group is already whole.
+        guard hasMoreFeed, let oldest = feed.map(\.post.createdAt).min() else { return }
+        let epoch = AccountEpoch.current
+        let calendar = Calendar.current
+        let horizonDay = FeedUnit.dayKey(for: oldest, calendar: calendar)
+
+        // Only groups filed under the horizon's own day can have members below it: any
+        // earlier-day post in `feed` got there via a previous completion pass and its group
+        // was completed then.
+        let straddling = Set(
+            feed.filter { FeedUnit.dayKey(for: $0.post.createdAt, calendar: calendar) == horizonDay }
+                .map(\.post.userId))
+        guard !straddling.isEmpty else { return }
+
+        // Same explicit format `keysetFilter(after:)` uses, for the same ambiguity reason.
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let dayStart = formatter.string(from: horizonDay.addingTimeInterval(FeedUnit.dayBoundaryHour))
+        let horizon = formatter.string(from: oldest)
+
+        let existingIds = Set(feed.map(\.post.id))
+        var completions: [FeedItem] = []
+        for authorId in straddling where !blockedIds.contains(authorId) {
+            let extra: [Post]? = try? await supabase
+                .from("posts").select()
+                .eq("user_id", value: authorId.uuidString)
+                .eq("hidden", value: false)
+                .gte("created_at", value: dayStart)
+                .lt("created_at", value: horizon)
+                .order("created_at", ascending: false)
+                // A day cannot meaningfully exceed this; the strip caps at 20 and the
+                // contact sheet absorbs the rest, so a runaway day is bounded here too.
+                .limit(60)
+                .execute().value
+            guard let extra, !extra.isEmpty else { continue }
+            // The author is already on this page, so the profile is already in hand.
+            guard let profile = feed.first(where: { $0.author.id == authorId })?.author else { continue }
+            completions.append(contentsOf: extra.compactMap { post in
+                existingIds.contains(post.id) ? nil : FeedItem(post: post, author: profile)
+            })
+        }
+        guard !completions.isEmpty, AccountEpoch.isCurrent(epoch) else { return }
+
+        // Same batch pass a page gets, so a completed shot has its reactions the moment it
+        // can be swiped to.
+        let postIds = completions.map(\.post.id)
+        async let reactions = batchReactions(postIds: postIds)
+        async let comments = batchComments(postIds: postIds, currentUserId: currentUserId)
+        async let tags = batchTags(postIds: postIds)
+        let fetchedReactions = await reactions
+        let fetchedComments = await comments
+        let (tagMap, tagProf) = await tags
+        guard AccountEpoch.isCurrent(epoch) else { return }
+
+        reactionsByPost.merge(fetchedReactions) { _, new in new }
+        commentsByPost.merge(fetchedComments) { _, new in new }
+        tagsByPost.merge(tagMap) { _, new in new }
+        tagProfiles.merge(tagProf) { _, new in new }
+        feed.append(contentsOf: completions)
     }
 
     /// Loads tags for a single post (e.g. a detail view opened outside the feed) into the caches.
