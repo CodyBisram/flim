@@ -655,15 +655,26 @@ private struct FilmStrip: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             if unit.stripOverflow > 0 {
                 // Pinned OUTSIDE the scrolling row, reachable without scrolling to the end.
+                // When the selected shot lives PAST the strip's cap (picked in the contact
+                // sheet, or swiped beyond frame nineteen), the tile takes the selection ring:
+                // the index cannot point at a frame it does not draw, and a pager with no
+                // visible position reads as a lost place rather than an overflow.
                 Button(action: openOverflow) {
                     Text("+\(unit.stripOverflow)")
                         .flimFont(11, weight: .semibold, relativeTo: .caption)
                         .foregroundStyle(accent)
                         .frame(width: 34, height: 34 * 4 / 3)
-                        .background(accent.opacity(0.14))
+                        .background(accent.opacity(selection >= shown ? 0.28 : 0.14))
                         .overlay(Rectangle().strokeBorder(accent.opacity(0.5), lineWidth: 1))
+                        .overlay {
+                            if selection >= shown {
+                                Rectangle().stroke(accent, lineWidth: 1.5)
+                            }
+                        }
                 }
-                .accessibilityLabel("\(unit.stripOverflow) more shots, open as a grid")
+                .accessibilityLabel(selection >= shown
+                    ? "Shot \(selection + 1), in the \(unit.stripOverflow) beyond the strip"
+                    : "\(unit.stripOverflow) more shots, open as a grid")
             }
         }
     }

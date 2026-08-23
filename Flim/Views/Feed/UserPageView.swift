@@ -35,6 +35,10 @@ struct UserPageView: View {
     /// lands and made the whole stats row flash 0 on every open; this seeds from the session
     /// cache (see `FeedService.profileStatsCache`) and settles to the real count when posts do.
     @State private var sharedCount = 0
+    /// Whether the stats row has ANY real numbers to show (session cache or a completed
+    /// load). Until then the row shows placeholders rather than confident zeroes: 0 / 0 / 0
+    /// is a claim about a person, and for a first visit it was almost always false.
+    @State private var statsKnown = false
     @State private var loaded = false
     @State private var followList: FollowList?
     @State private var showSettings = false
@@ -407,9 +411,9 @@ struct UserPageView: View {
             }
 
             HStack(spacing: 26) {
-                stat("\(sharedCount)", "shared")
-                Button { followList = .followers } label: { stat("\(followers)", "followers") }
-                Button { followList = .following } label: { stat("\(following)", "following") }
+                stat(statsKnown ? "\(sharedCount)" : "–", "shared")
+                Button { followList = .followers } label: { stat(statsKnown ? "\(followers)" : "–", "followers") }
+                Button { followList = .following } label: { stat(statsKnown ? "\(following)" : "–", "following") }
             }
 
             // No follow affordance on a blocked account, the dedicated blocked-state panel
@@ -703,6 +707,15 @@ struct UserPageView: View {
     }
 
     private func load() async {
+        // The app usually already knows who this is: the feed unit or tag the tap came from
+        // carries the whole profile. Seeding it paints the real handle, name and avatar
+        // initial in the first frame, and the avatar's signed URL is almost always already
+        // in the session cache (the feed's little band avatar signed the same path), so the
+        // picture itself follows immediately rather than after four racing fetches.
+        if profile == nil, let known = feed.knownProfile(id: userId) {
+            profile = known
+            if let path = known.avatarPath { avatarURL = await feed.signedURL(for: path) }
+        }
         // Stale-while-revalidate for the stats row: the last counts this session saw go on
         // screen in the FIRST frame, before a single round trip, and the fetches below quietly
         // correct anything that moved. Without this, every visit flashed 0 / 0 / 0 while four
@@ -710,6 +723,7 @@ struct UserPageView: View {
         if sharedCount == 0, followers == 0, following == 0,
            let cached = feed.profileStatsCache[userId] {
             (sharedCount, followers, following) = cached
+            statsKnown = true
         }
         // Same contract for the grid itself: paint the posts this session last saw here in the
         // first frame (their images are already in DiskImageCache, so the whole page appears at
@@ -754,6 +768,7 @@ struct UserPageView: View {
         followers = await fr
         following = await fg
         sharedCount = posts.count
+        statsKnown = true
         feed.profileStatsCache[userId] = (sharedCount, followers, following)
         let badges = await bd
         let unseen = await ub

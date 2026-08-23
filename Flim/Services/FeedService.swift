@@ -227,6 +227,14 @@ final class FeedService {
 
     // MARK: - Profiles
 
+    /// The freshest profile this session already holds for `id`, if any: feed authors first
+    /// (they arrive with every page), then tagged-people profiles. Lets a pushed profile
+    /// page paint a real handle, name and avatar in its first frame instead of a "?" and
+    /// placeholder text while its own fetch is still in flight.
+    func knownProfile(id: UUID) -> UserProfile? {
+        feed.first(where: { $0.author.id == id })?.author ?? tagProfiles[id]
+    }
+
     func fetchProfile(id: UUID) async -> UserProfile? {
         let list: [UserProfile] = (try? await supabase
             .from("profiles").select().eq("id", value: id.uuidString).limit(1)
