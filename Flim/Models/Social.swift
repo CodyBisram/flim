@@ -54,6 +54,13 @@ struct Post: Codable, Identifiable, Hashable {
     var displayPath: String { thumbPath ?? storagePath }
     /// Path for the feed card, mid-size rendition if present, else the full image.
     var cardPath: String { feedPath ?? storagePath }
+    /// Path for tiny index frames (the film strip, the day contact sheet): thumbnail, else
+    /// the MID-SIZE rendition, else the master. `displayPath`'s thumb-or-master fallback is
+    /// wrong at this size: a post missing its thumb rendition pulled a multi-megabyte
+    /// original through a 30pt frame, and a day of such posts starved the whole strip on
+    /// cellular. The feed rendition is a fraction of the master and already what the pager
+    /// fetches, so the fallback often costs nothing at all.
+    var indexPath: String { thumbPath ?? feedPath ?? storagePath }
 
     /// Whether `userId` is the poster, i.e. whether owner-only actions (edit caption, tag,
     /// delete) should be offered. A client-side gate only, purely for which menu items to

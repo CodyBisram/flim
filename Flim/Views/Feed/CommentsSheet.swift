@@ -7,6 +7,10 @@ import UIKit
 struct CommentsSheet: View {
     @Environment(\.flimAccent) private var accent
     let post: Post
+    /// The author's handle, for prefixing the pinned caption the way the feed's thread rows
+    /// do. Optional because `post` alone doesn't carry it; without one the caption renders
+    /// unprefixed rather than not at all.
+    var authorHandle: String? = nil
 
     @Environment(AuthService.self) private var auth
     @Environment(FeedService.self) private var feed
@@ -51,8 +55,29 @@ struct CommentsSheet: View {
             ZStack {
                 FlimTheme.bg.ignoresSafeArea()
                 VStack(spacing: 0) {
-                    if loaded && comments.isEmpty {
-                        emptyState
+                    // The author's caption, pinned above the thread and paints instantly:
+                    // it is local data, so the sheet is never a black rectangle while the
+                    // network decides about comments. Named as what it is, quietly, and
+                    // separated from real comments by the feed's own fading hairline, so it
+                    // reads as the author's line about the shot rather than comment one.
+                    if let caption = post.caption, !caption.isEmpty {
+                        captionHeader(caption)
+                    }
+                    if comments.isEmpty {
+                        // The feed batch-loads comments per page, so a cache entry (even an
+                        // empty one) is an ANSWER and renders the verdict immediately. Only
+                        // a post with no cache entry at all waits, and says so instead of
+                        // showing a blank sheet that pops into "No comments" a beat later.
+                        if loaded || feed.commentsByPost[post.id] != nil {
+                            emptyState
+                        } else {
+                            VStack {
+                                Spacer()
+                                ProgressView().tint(FlimTheme.textTertiary)
+                                Spacer()
+                            }
+                            .frame(maxWidth: .infinity)
+                        }
                     } else {
                         ScrollView {
                             LazyVStack(alignment: .leading, spacing: 18) {
@@ -155,6 +180,43 @@ struct CommentsSheet: View {
                         focus: $focused) { send() }
             .padding(.horizontal, 16).padding(.vertical, 10)
             .background(.ultraThinMaterial)
+    }
+
+    /// The author's own line about their shot, above the thread it seeded: a whisper of a
+    /// label so nobody mistakes it for comment one, the caption handle-prefixed like the
+    /// feed's thread rows, then the same fading hairline that separates units in the feed.
+    /// "No comments yet" below stays honest; this is a caption, and it says so.
+    private func captionHeader(_ caption: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Caption")
+                .flimFont(10.5, weight: .medium, relativeTo: .caption2)
+                .tracking(1.2)
+                .textCase(.uppercase)
+                .foregroundStyle(FlimTheme.textTertiary)
+            MentionText(
+                text: caption,
+                color: FlimTheme.textSecondary,
+                handle: authorHandle,
+                onHandleTap: { openProfile(post.userId) }
+            ) { username in
+                openMention(username)
+            }
+            .fixedSize(horizontal: false, vertical: true)
+            LinearGradient(
+                stops: [
+                    .init(color: .clear, location: 0),
+                    .init(color: Color(red: 0.14, green: 0.14, blue: 0.14), location: 0.13),
+                    .init(color: Color(red: 0.14, green: 0.14, blue: 0.14), location: 0.87),
+                    .init(color: .clear, location: 1),
+                ],
+                startPoint: .leading, endPoint: .trailing
+            )
+            .frame(height: 1)
+            .padding(.top, 8)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 16)
+        .padding(.top, 12)
     }
 
     private var emptyState: some View {

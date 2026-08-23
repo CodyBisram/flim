@@ -42,7 +42,7 @@ struct DayContactSheet: View {
                             Haptics.tap()
                             onSelect(index)
                         } label: {
-                            CachedImage(url: urls[index], maxPixel: 400, cacheKey: item.post.displayPath) {
+                            CachedImage(url: urls[index], maxPixel: 400, cacheKey: item.post.indexPath) {
                                 $0.resizable().scaledToFill()
                             } placeholder: {
                                 Rectangle().fill(Color.white.opacity(0.06))
@@ -55,7 +55,6 @@ struct DayContactSheet: View {
                                     .foregroundStyle(Color(red: 0.96, green: 0.94, blue: 0.91).opacity(0.5))
                                     .padding(.leading, 6).padding(.bottom, 5)
                             }
-                            .task { if urls[index] == nil { urls[index] = await feed.signedURL(for: item.post.displayPath) } }
                         }
                         .accessibilityLabel("Shot \(index + 1) of \(unit.items.count)")
                     }
@@ -67,5 +66,14 @@ struct DayContactSheet: View {
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
         .presentationBackground(FlimTheme.bg)
+        // One batched resolution for the whole day, not one round trip per cell; same
+        // index-rendition preference as the strip, for the same reason.
+        .task {
+            let paths = unit.items.map(\.post.indexPath)
+            let resolved = await feed.signedURLs(for: Array(Set(paths)))
+            for (index, path) in paths.enumerated() where urls[index] == nil {
+                urls[index] = resolved[path]
+            }
+        }
     }
 }

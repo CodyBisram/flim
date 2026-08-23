@@ -116,7 +116,7 @@ struct FeedUnitCard: View {
                 FilmStrip(
                     unit: unit, selection: $selection, accent: accent,
                     isSeen: { seenStore.isSeen($0) }, failedFrames: failedFrames,
-                    resolveURL: { await feed.signedURL(for: $0) },
+                    resolveURLs: { await feed.signedURLs(for: $0) },
                     openOverflow: { showContactSheet = true }
                 )
                 .padding(.horizontal, 16)
@@ -164,7 +164,9 @@ struct FeedUnitCard: View {
         .sheet(isPresented: $showComments, onDismiss: {
             if let pending = pendingProfile { pendingProfile = nil; route = pending }
         }) {
-            CommentsSheet(post: post) { pendingProfile = ProfileRoute(id: $0) }
+            CommentsSheet(post: post, authorHandle: unit.author.handle) {
+                pendingProfile = ProfileRoute(id: $0)
+            }
         }
         .sheet(isPresented: $showContactSheet) {
             DayContactSheet(unit: unit) { picked in
@@ -630,7 +632,11 @@ private struct FilmStrip: View {
     let accent: Color
     let isSeen: (UUID) -> Bool
     let failedFrames: Set<Int>
-    let resolveURL: (String) async -> URL?
+    /// Batched on purpose: a cold cache resolves every miss in ONE `createSignedURLs` round
+    /// trip. The first cut of this strip awaited one `signedURL` per frame, and on a real
+    /// 18-shot day over cellular that was eighteen sequential round trips before the first
+    /// thumbnail byte arrived; frames past the first few simply sat black.
+    let resolveURLs: ([String]) async -> [String: URL]
     let openOverflow: () -> Void
 
     /// Fixed at every count: sizing frames to fill the strip makes fewer shots render
@@ -698,8 +704,10 @@ private struct FilmStrip: View {
         }
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .task(id: unit.id) {
+            let paths = (0..<shown).map { unit.items[$0].post.indexPath }
+            let resolved = await resolveURLs(Array(Set(paths)))
             for index in 0..<shown where thumbURLs[index] == nil {
-                thumbURLs[index] = await resolveURL(unit.items[index].post.displayPath)
+                thumbURLs[index] = resolved[paths[index]]
             }
         }
     }
@@ -730,7 +738,7 @@ private struct FilmStrip: View {
                     .fill(Color(red: 0.07, green: 0.07, blue: 0.07))
                     .overlay(Rectangle().strokeBorder(Color.white.opacity(0.19), lineWidth: 1))
             } else {
-                CachedImage(url: thumbURLs[index], maxPixel: 120, cacheKey: item.post.displayPath) {
+                CachedImage(url: thumbURLs[index], maxPixel: 120, cacheKey: item.post.indexPath) {
                     $0.resizable().scaledToFill()
                 } placeholder: {
                     Rectangle().fill(Color.black)
