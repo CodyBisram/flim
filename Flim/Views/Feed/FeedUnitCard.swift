@@ -289,48 +289,52 @@ struct FeedUnitCard: View {
 
     @ViewBuilder
     private func page(item: FeedItem, index: Int) -> some View {
-        // Only the selected page and its neighbours carry a live image; the rest are inert
-        // ground. A page-style TabView keeps every child in the tree, and fourteen live
-        // `CachedImage`s would fetch the whole day the moment the unit appeared, which is the
-        // egress the grouping exists to avoid.
-        if abs(index - selection) <= 1 {
-            if failedFrames.contains(index) {
-                brokenWell(index: index)
-            } else {
-                CachedImage(
-                    url: urls[index], maxPixel: 1400, cacheKey: item.post.cardPath,
-                    onFailure: { failedFrames.insert(index) }
-                ) { image in
-                    image.resizable().scaledToFill()
-                } placeholder: {
-                    Rectangle().fill(Color.white.opacity(0.06))
-                }
-                .id("page-\(item.post.id)-\(retryTokens[index] ?? 0)")
-                .frame(width: photoWidth, height: photoHeight)
-                .clipped()
-                .overlay { GrainOverlay().opacity(0.5) }
-                .overlay {
-                    Image(systemName: "heart.fill")
-                        .font(.system(size: 90))
-                        .foregroundStyle(.white)
-                        .shadow(radius: 8)
-                        .scaleEffect(heartBurst ? 1 : 0.4)
-                        .opacity(heartBurst ? 0.9 : 0)
-                        .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.55), value: heartBurst)
-                }
-                .overlay {
-                    PhotoTags(tags: feed.tagsByPost[item.post.id] ?? [], profiles: feed.tagProfiles) {
-                        route = ProfileRoute(id: $0)
-                    }
-                }
-                .pinchToZoom()
-                .contentShape(Rectangle())
-                .onTapGesture(count: 2) { doubleTapLike() }
-                // Long-pressing the photograph opens the same menu as the band's •••.
-                .contextMenu { postActions }
-            }
+        // STRUCTURALLY STABLE at every index, on purpose: an earlier cut rendered pages
+        // outside selection ±1 as inert filler, and the filler↔image swap on every commit
+        // churned the TabView's children while its scroll view was still settling, which is
+        // the documented way to corrupt page-style scroll state (see RollCarouselView's
+        // history). On device it showed as a full-width swipe jumping TWO photos, something
+        // native paging cannot otherwise do, and as the incoming page popping in at the
+        // halfway mark instead of sliding in pre-rendered.
+        //
+        // The egress cap moves into the URL instead: only selection ±1 ever gets a network
+        // URL, so an off-window page may paint free from the disk cache but can never fetch.
+        // A fourteen-shot day still costs one image until somebody swipes.
+        if failedFrames.contains(index) {
+            brokenWell(index: index)
         } else {
-            Color(red: 0.02, green: 0.02, blue: 0.02)
+            CachedImage(
+                url: abs(index - selection) <= 1 ? urls[index] : nil,
+                maxPixel: 1400, cacheKey: item.post.cardPath,
+                onFailure: { failedFrames.insert(index) }
+            ) { image in
+                image.resizable().scaledToFill()
+            } placeholder: {
+                Rectangle().fill(Color.white.opacity(0.06))
+            }
+            .id("page-\(item.post.id)-\(retryTokens[index] ?? 0)")
+            .frame(width: photoWidth, height: photoHeight)
+            .clipped()
+            .overlay { GrainOverlay().opacity(0.5) }
+            .overlay {
+                Image(systemName: "heart.fill")
+                    .font(.system(size: 90))
+                    .foregroundStyle(.white)
+                    .shadow(radius: 8)
+                    .scaleEffect(heartBurst ? 1 : 0.4)
+                    .opacity(heartBurst ? 0.9 : 0)
+                    .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.55), value: heartBurst)
+            }
+            .overlay {
+                PhotoTags(tags: feed.tagsByPost[item.post.id] ?? [], profiles: feed.tagProfiles) {
+                    route = ProfileRoute(id: $0)
+                }
+            }
+            .pinchToZoom()
+            .contentShape(Rectangle())
+            .onTapGesture(count: 2) { doubleTapLike() }
+            // Long-pressing the photograph opens the same menu as the band's •••.
+            .contextMenu { postActions }
         }
     }
 
