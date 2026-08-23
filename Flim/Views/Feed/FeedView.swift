@@ -1,6 +1,14 @@
 import SwiftUI
 import UIKit
 
+/// The feed: one unit per author per 04:00-bounded day (`FeedUnit`), rendered edge-to-edge
+/// on the ground with hairline seams, replacing the one-card-per-post list that let a
+/// 14-shot day fill every follower's catch-up before anyone else appeared.
+///
+/// What arrived sits in the header BESIDE the screen's name, as a notification rather than a
+/// title: it states what arrived, never ticks down as you read, and goes when the last mark
+/// clears. The caught-up block marks the end of what is NEW, not the end of the scroll: on
+/// this archive feed the days already seen continue below it.
 struct FeedView: View {
     @Environment(\.flimAccent) private var accent
     var scrollToTop: Int = 0
@@ -10,7 +18,9 @@ struct FeedView: View {
     @Environment(\.displayScale) private var displayScale
     @Environment(\.scenePhase) private var scenePhase
 
-    /// How far into `feed.feed` the prefetch window currently reaches. Reset with the feed
+    private let seenStore = FeedSeenStore.shared
+
+    /// How far into the UNITS the prefetch window currently reaches. Reset with the feed
     /// itself: a pull-to-refresh replaces the list, so a cursor into the old one would skip
     /// warming the new top.
     @State private var prefetchedThrough = 0
@@ -19,17 +29,51 @@ struct FeedView: View {
     @State private var myAvatarURL: URL?
     @State private var hasNewPosts = false
     @State private var didLoad = false
-    /// A pull-to-refresh that genuinely failed while the feed already had content on screen.
-    /// `loadFeed` deliberately leaves the existing posts in place on a failed refresh (see its
-    /// own comment), which is right for not blanking the screen, but a failure that touches
-    /// nothing on screen also needs to say SOMETHING, or a real outage looks like "nothing
-    /// happened" instead of "try again". `feed.feedError`'s own full-screen `ErrorState` only
-    /// ever shows for an empty feed, so a refresh of a populated one needs this instead.
+    /// A pull-to-refresh that genuinely failed while the feed already had content on screen;
+    /// see `reload()`. A failure that touches nothing on screen still needs to say something.
     @State private var refreshFailedToast = false
     @State private var unreadActivity = 0
     /// The previous `lastActivitySeen`, handed to Activity so it can show a "New" section.
     @State private var activitySeenBefore: Date?
     @AppStorage("lastActivitySeen") private var lastActivitySeen: Double = 0
+    /// The container width, which every unit needs up front: the pager's height is derived
+    /// from it before any image arrives, so nothing reflows when one does.
+    @State private var containerWidth: CGFloat = 0
+    /// The header ledger, SNAPSHOTTED at load rather than derived live: it counts what
+    /// arrived, not what is left, so reading a shot must not tick it down. It disappears
+    /// (rather than recomputing) when the last mark clears.
+    @State private var ledger: (shots: Int, friends: Int)?
+    /// Gates the cards' seen-marking until the ledger snapshot exists, so snapshot-then-mark
+    /// is an ordering guarantee rather than a race against the first visibility event.
+    @State private var ledgerSnapshotted = false
+    /// Where the caught-up block sits, SNAPSHOTTED at load like the ledger and for the same
+    /// reason: it marks the seam between new and old at the catch-up moment. Derived live,
+    /// reading a unit moved the "last unseen" boundary backwards and the block crawled UP
+    /// the feed as you scrolled, surfacing under the first unit whose deeper frames you had
+    /// not swiped to. A seam that moves while you read is not a seam.
+    private enum CaughtUpSeam: Equatable {
+        case pending          // nothing loaded yet, show no block
+        case top              // nothing anywhere was unseen at load: block above the archive
+        case after(String)    // below this unit id, above the already-seen days
+    }
+    @State private var caughtUp: CaughtUpSeam = .pending
+
+    /// Units that have cleared under retention (fully seen before the last 04:00 boundary),
+    /// SNAPSHOTTED at load like the ledger and the seam: a unit must not vanish mid-session
+    /// under the reader, so clearing applies at the catch-up moment, not per render.
+    @State private var clearedUnitIDs: Set<String> = []
+
+    private var units: [FeedUnit] {
+        FeedUnit.units(from: feed.feed).filter { !clearedUnitIDs.contains($0.id) }
+    }
+    private var anythingUnseen: Bool {
+        units.contains { $0.unseenCount(isSeen: { seenStore.isSeen($0) }) > 0 }
+    }
+    /// First run: nobody followed and nothing to show. Not "caught up", which describes a
+    /// feed that ran out rather than one that has not started.
+    private var followsNobody: Bool {
+        didLoad && feed.feed.isEmpty && feed.feedError == nil && feed.followingIds.isEmpty
+    }
 
     var body: some View {
         ZStack {
@@ -40,140 +84,56 @@ struct FeedView: View {
 
                 if feed.feed.isEmpty {
                     if feed.isLoadingFeed || !didLoad {
-                        // Show skeletons until the first load actually completes, never flash
-                        // the "quiet" empty state before we know whether the feed is empty.
-                        ScrollView {
-                            VStack(spacing: 20) {
-                                ForEach(0..<3, id: \.self) { _ in FeedCardSkeleton() }
-                            }
-                            .padding(.horizontal, 16).padding(.vertical, 16)
-                        }
-                        .disabled(true)
+                        loadingState
                     } else if let error = feed.feedError {
-                        // A failed load is not an empty feed, don't tell someone with no signal
-                        // that nobody they follow has posted.
+                        // A failed load is not an empty feed; don't tell someone with no
+                        // signal that nobody they follow has posted.
                         ErrorState(message: error) { await reload() }
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else if followsNobody {
+                        firstRunState
                     } else {
-                        emptyState
-                    }
-                } else {
-                    ScrollViewReader { proxy in
+                        // Followed people, none of whom have ever posted: the caught-up
+                        // block is the whole screen, since there is nothing older either.
                         ScrollView {
-                            LazyVStack(spacing: 20) {
-                                Color.clear.frame(height: 0).id("top")
-                                ForEach(feed.feed) { item in
-                                    FeedPostCard(item: item)
-                                        .onAppear { advancePrefetch(reaching: item.id) }
-                                        .scrollTransition { content, phase in
-                                            content
-                                                .opacity(phase.isIdentity ? 1 : 0.55)
-                                                .scaleEffect(phase.isIdentity ? 1 : 0.96)
-                                        }
-                                        .onAppear {
-                                            // Near the bottom → load the next page + warm its images.
-                                            if item.id == feed.feed.last?.id, let uid = auth.currentUser?.id {
-                                                Task {
-                                                    // Where the new page will start, captured
-                                                    // before loading so only its cards are warmed.
-                                                    let alreadyLoaded = feed.feed.count
-                                                    await feed.loadMoreFeed(currentUserId: uid)
-                                                    await prefetchFeedImages(from: alreadyLoaded)
-                                                }
-                                            }
-                                        }
-                                }
-                                if feed.isLoadingMoreFeed {
-                                    ProgressView().tint(FlimTheme.textTertiary).padding(.vertical, 8)
-                                }
-                            }
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 16)
+                            caughtUpBlock
+                                .padding(.top, 120)
                         }
                         .refreshable { await reload() }
-                        // Swiping the feed puts the keyboard away. Without this there was no way
-                        // out of a comment composer at all: nothing here dismissed the keyboard,
-                        // so tapping "Add a comment" or Reply and changing your mind left you
-                        // stuck with it up and only the send button reachable. Interactively
-                        // rather than immediately, so the keyboard tracks the drag and a small
-                        // scroll to read the rest of a card doesn't yank it away mid-sentence.
-                        .scrollDismissesKeyboard(.interactively)
-                        // This ScrollViewReader only mounts once feed.feed goes non-empty (the
-                        // sibling branch above is the skeleton/empty state), a fresh view
-                        // identity, so its very first layout pass. Reported: that first pass can
-                        // land scrolled slightly below "top" (LazyVStack items still settling
-                        // their real heights as async images load in changes the content's
-                        // effective size out from under the scroll view's initial offset), and
-                        // double-tapping the Feed tab, which calls this exact scrollTo, fixes
-                        // it instantly. Firing it once on appear applies that same proven fix
-                        // automatically instead of requiring the user to find it, with no
-                        // animation since this is a silent correction before anything settles,
-                        // not a visible user-triggered reset like the double-tap is.
-                        .task { proxy.scrollTo("top", anchor: .top) }
-                        .onChange(of: scrollToTop) {
-                            withAnimation(.snappy) { proxy.scrollTo("top", anchor: .top) }
-                        }
-                        .overlay(alignment: .top) {
-                            if hasNewPosts {
-                                Button {
-                                    hasNewPosts = false
-                                    Haptics.tap()
-                                    Task {
-                                        await reload()
-                                        withAnimation { proxy.scrollTo("top", anchor: .top) }
-                                    }
-                                } label: {
-                                    Label("New posts", systemImage: "arrow.up")
-                                        .flimFont(13, weight: .semibold)
-                                        .foregroundStyle(.black)
-                                        .padding(.horizontal, 16).padding(.vertical, 8)
-                                        .background(accent, in: Capsule())
-                                        .shadow(color: .black.opacity(0.3), radius: 6, y: 3)
-                                }
-                                .padding(.top, 8)
-                                .transition(.move(edge: .top).combined(with: .opacity))
-                            } else if refreshFailedToast {
-                                Label("Couldn't refresh", systemImage: "wifi.exclamationmark")
-                                    .flimFont(13, weight: .semibold)
-                                    .foregroundStyle(.white)
-                                    .padding(.horizontal, 16).padding(.vertical, 8)
-                                    .background(.ultraThinMaterial, in: Capsule())
-                                    .padding(.top, 8)
-                                    .transition(.move(edge: .top).combined(with: .opacity))
-                            }
-                        }
                     }
+                } else {
+                    feedList
                 }
             }
         }
+        .background(GeometryReader { proxy in
+            Color.clear.onChange(of: proxy.size.width, initial: true) { _, width in
+                containerWidth = width
+            }
+        })
         .navigationBarHidden(true)
         .task {
-            // `feed_viewed` semantics: once per time this view genuinely appears, i.e. the
-            // initial mount plus every later switch BACK to the Feed tab, since a `Tab`'s content
-            // view appears/disappears with the tab switch in this codebase (see
-            // `CameraViewModel.start()`'s own comment on why it needs a firing guard for exactly
-            // this reappearance). Riding on this same `.task`, not a new `.onAppear`, is what
-            // keeps it to that: `.task` runs once per appear regardless of how many times `body`
-            // re-evaluates from a `@State`/`@Observable` change, so this does not fire on every
-            // scroll or re-render. It also does not fire merely because the app returns to the
-            // foreground while the Feed tab stays selected in the background: SwiftUI does not
-            // tear this view down for a scene-phase change alone, only `onChange(of: scenePhase)`
-            // below reacts to that, and it does not log usage. Net effect: this counts distinct
-            // looks at the feed, not renders, scrolls, or idle-in-background time.
+            // `feed_viewed` semantics: once per time this view genuinely appears (initial
+            // mount plus every later switch back to the Feed tab); see the tab-content
+            // appearance note on `CameraViewModel.start()`. Riding `.task` keeps it from
+            // firing on re-renders or scene-phase changes.
             Usage.log(.feedViewed)
             if let path = auth.currentUser?.avatarPath { myAvatarURL = await feed.signedURL(for: path) }
-            if feed.feed.isEmpty { await reload() } else { didLoad = true; await checkNewPosts() }
+            if feed.feed.isEmpty {
+                await reload()
+            } else {
+                didLoad = true
+                if ledger == nil { snapshotLedger() }
+                await checkNewPosts()
+            }
         }
-        // Batched, and re-fires whenever the loaded set grows (first load, "New posts", or
-        // paging to the next page): `fetchSuggestedEmoji` itself skips anything already cached,
-        // so this only ever asks about the cards that just appeared.
+        // Batched, and re-fires whenever the loaded set grows; `fetchSuggestedEmoji` skips
+        // anything already cached, so this only ever asks about what just appeared.
         .task(id: feed.feed.count) {
             await photos.fetchSuggestedEmoji(photoIds: feed.feed.map(\.post.photoId))
         }
-        // The feed refreshes reactions on RETURN to the foreground rather than on a timer. The
-        // detail view polls because attention is on one photo there; here the same pacing would
-        // mean repeatedly refetching a screenful of posts the user is scrolling past, for the one
-        // in ten that changed. Coming back to the app is the moment stale counts are noticeable.
+        // Refresh reactions on RETURN to the foreground rather than on a timer; coming back
+        // to the app is the moment stale counts are noticeable.
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active, !feed.feed.isEmpty else { return }
             Task {
@@ -189,184 +149,377 @@ struct FeedView: View {
         }
     }
 
-    private var timeGreeting: String {
-        let hour = Calendar.current.component(.hour, from: Date())
-        return hour < 12 ? "Good morning" : (hour < 18 ? "Good afternoon" : "Good evening")
-    }
+    // MARK: - Header
 
+    /// The compact bar: the screen's own name, then what arrived BESIDE it after a small
+    /// dot, in the accent with a soft glow and no fill and no border. As a row in the flow
+    /// the count cost 90pt and pushed the first shot's reactions off the fold; as the title
+    /// it could never disappear. Beside the title it is a notification: true right now, gone
+    /// when the last mark clears, never a zero.
     private var header: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // Action icons on their own top row (right-aligned).
-            HStack(spacing: 12) {
-                Spacer()
-                #if DEBUG
-                Button {
-                    Task { if let uid = auth.currentUser?.id { await feed.seedFeedDemo(userId: uid, photoService: photos) } }
-                } label: {
-                    Image(systemName: "ladybug")
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundStyle(FlimTheme.textTertiary)
-                }
-                .accessibilityLabel("Seed demo feed")
-                #endif
-                Button {
-                    // Capture the PREVIOUS visit before stamping this one, so Activity can put
-                    // what you haven't looked at under "New". Stamping first (which this has
-                    // always done, to clear the badge immediately) would otherwise leave the
-                    // sheet with nothing to compare against.
-                    activitySeenBefore = lastActivitySeen > 0
-                        ? Date(timeIntervalSince1970: lastActivitySeen)
-                        : nil
-                    lastActivitySeen = Date().timeIntervalSince1970
-                    unreadActivity = 0
-                    showActivity = true
-                } label: {
-                    Image(systemName: unreadActivity > 0 ? "bell.badge" : "bell")
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundStyle(accent)
-                        .symbolEffect(.bounce, value: unreadActivity)   // bounces when new activity lands
-                        .frame(width: 38, height: 38)
-                        .glassCapsule(interactive: true)
-                        .overlay(alignment: .topTrailing) {
-                            if unreadActivity > 0 {
-                                Text(unreadActivity > 9 ? "9+" : "\(unreadActivity)")
-                                    .flimFont(10, weight: .bold, relativeTo: .caption)
-                                    .foregroundStyle(.white)
-                                    .padding(.horizontal, 5).padding(.vertical, 1)
-                                    .background(Color.red, in: Capsule())
-                                    .offset(x: 4, y: -2)
-                            }
-                        }
-                }
-                .accessibilityLabel(unreadActivity > 0 ? "Activity, \(unreadActivity) new" : "Activity")
-
-                Button { showDiscover = true } label: {
-                    Image(systemName: "person.badge.plus")
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundStyle(accent)
-                        .frame(width: 38, height: 38)
-                        .glassCapsule(interactive: true)
-                        .expandTapTarget(by: 3)   // 38 + 3 either side = 44
-                }
-                .accessibilityLabel("Find friends")
-
-                // Your avatar → your own page. There's no separate Profile tab in this app, this
-                // avatar is the one way in, so it's also where a newly earned, unseen badge gets
-                // flagged: same red-dot-on-topTrailing language as the bell above, just presence
-                // rather than a count, since "you have something new" is the whole message.
-                if let uid = auth.currentUser?.id {
-                    NavigationLink {
-                        UserPageView(userId: uid)
-                    } label: {
-                        Circle()
-                            .fill(accent.opacity(0.18))
-                            .frame(width: 34, height: 34)
-                            .overlay {
-                                if let myAvatarURL {
-                                    CachedImage(url: myAvatarURL, maxPixel: 100, cacheKey: auth.currentUser?.avatarPath) { $0.resizable().scaledToFill() } placeholder: { Color.clear }
-                                } else {
-                                    Text(String((auth.currentUser?.username ?? "?").prefix(1)).uppercased())
-                                        .flimFont(14, weight: .thin, relativeTo: .subheadline).foregroundStyle(accent)
-                                }
-                            }
-                            .clipShape(Circle())
-                            .overlay(Circle().stroke(accent.opacity(0.4), lineWidth: 1))
-                            .overlay(alignment: .topTrailing) {
-                                if feed.unseenBadgeCount > 0 {
-                                    Circle()
-                                        .fill(Color.red)
-                                        .frame(width: 11, height: 11)
-                                        .overlay(Circle().stroke(FlimTheme.bg, lineWidth: 1.5))
-                                }
-                            }
-                    }
-                    // Same plural rule as the profile's own pill (see `UserPageView`): VoiceOver
-                    // should not announce "new badge earned" when eleven are waiting.
-                    .accessibilityLabel(
-                        feed.unseenBadgeCount == 0 ? "Your page"
-                        : feed.unseenBadgeCount == 1 ? "Your page, new badge earned"
-                        : "Your page, \(feed.unseenBadgeCount) new badges earned"
-                    )
-                }
-            }
-
-            // Greeting on its own line, the name gets full width and shrinks if it's long.
-            VStack(alignment: .leading, spacing: 1) {
-                Text("\(timeGreeting),")
-                    .flimFont(14, weight: .medium, relativeTo: .subheadline)
+        HStack(spacing: 10) {
+            Text("Feed")
+                .flimFont(17, weight: .light, relativeTo: .body)
+                .tracking(0.5)
+                .foregroundStyle(FlimTheme.textPrimary)
+            if let ledger, anythingUnseen {
+                Text("·")
+                    .flimFont(12, relativeTo: .caption)
                     .foregroundStyle(FlimTheme.textTertiary)
-                Text(auth.currentUser?.friendlyName ?? "there")
-                    .flimFont(28, weight: .light, relativeTo: .title3)
-                    .tracking(0.5)
-                    .foregroundStyle(FlimTheme.textPrimary)
+                Text(ledgerLabel(ledger))
+                    .flimFont(12, relativeTo: .caption)
+                    .foregroundStyle(accent)
+                    .shadow(color: accent.opacity(0.55), radius: 6)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.6)
+                    .transition(.opacity)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .padding(.horizontal, 20)
-        .padding(.top, 6)
-        .padding(.bottom, 10)
-    }
+            Spacer(minLength: 8)
 
-    private var emptyState: some View {
-        VStack(spacing: 14) {
-            Spacer()
-            Image(systemName: "sparkles")
-                .font(.system(size: 30, weight: .ultraLight))
-                .foregroundStyle(accent)
-            Text("It's quiet in here")
-                .flimFont(19, weight: .thin, relativeTo: .body)
-                .foregroundStyle(.white)
-            Text("Follow friends to see what they share, or take the first shot yourself.")
-                .flimFont(13, relativeTo: .subheadline)
-                .foregroundStyle(FlimTheme.textTertiary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 50)
-            HStack(spacing: 10) {
-                Button { showDiscover = true } label: {
-                    Text("Find friends")
-                        .flimFont(14, weight: .semibold, relativeTo: .subheadline)
-                        .foregroundStyle(.black)
-                        .padding(.horizontal, 20).padding(.vertical, 11)
-                        .background(accent, in: Capsule())
-                }
-                Button { NotificationCenter.default.post(name: .openCamera, object: nil) } label: {
-                    Text("Take a shot")
-                        .flimFont(14, weight: .semibold, relativeTo: .subheadline)
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 20).padding(.vertical, 11)
-                        .background(Color.white.opacity(0.12), in: Capsule())
-                }
-            }
-            .padding(.top, 4)
             #if DEBUG
             Button {
                 Task { if let uid = auth.currentUser?.id { await feed.seedFeedDemo(userId: uid, photoService: photos) } }
             } label: {
-                Text(feed.isSeeding ? "Seeding…" : "Seed demo feed (DEBUG)")
-                    .flimFont(13, relativeTo: .subheadline)
+                Image(systemName: "ladybug")
+                    .font(.system(size: 16, weight: .medium))
                     .foregroundStyle(FlimTheme.textTertiary)
             }
-            .disabled(feed.isSeeding)
-            .padding(.top, 8)
+            .accessibilityLabel("Seed demo feed")
             #endif
+
+            Button {
+                // Capture the PREVIOUS visit before stamping this one, so Activity can put
+                // what you haven't looked at under "New".
+                activitySeenBefore = lastActivitySeen > 0
+                    ? Date(timeIntervalSince1970: lastActivitySeen)
+                    : nil
+                lastActivitySeen = Date().timeIntervalSince1970
+                unreadActivity = 0
+                showActivity = true
+            } label: {
+                Image(systemName: unreadActivity > 0 ? "bell.badge" : "bell")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(accent)
+                    .symbolEffect(.bounce, value: unreadActivity)
+                    .frame(width: 38, height: 38)
+                    .glassCapsule(interactive: true)
+                    .overlay(alignment: .topTrailing) {
+                        if unreadActivity > 0 {
+                            Text(unreadActivity > 9 ? "9+" : "\(unreadActivity)")
+                                .flimFont(10, weight: .bold, relativeTo: .caption)
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 5).padding(.vertical, 1)
+                                .background(Color.red, in: Capsule())
+                                .offset(x: 4, y: -2)
+                        }
+                    }
+            }
+            .accessibilityLabel(unreadActivity > 0 ? "Activity, \(unreadActivity) new" : "Activity")
+
+            Button { showDiscover = true } label: {
+                Image(systemName: "person.badge.plus")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(accent)
+                    // On first run this is THE follow affordance, so the empty state glows
+                    // it rather than duplicating it as a second control somewhere else; the
+                    // reader who comes back tomorrow already knows where the action lives.
+                    .shadow(color: followsNobody ? accent.opacity(0.62) : .clear, radius: 7)
+                    .frame(width: 38, height: 38)
+                    .glassCapsule(interactive: true)
+                    .expandTapTarget(by: 3)   // 38 + 3 either side = 44
+            }
+            .accessibilityLabel("Find friends")
+
+            // Your avatar → your own page; also where an unseen badge gets flagged.
+            if let uid = auth.currentUser?.id {
+                NavigationLink {
+                    UserPageView(userId: uid)
+                } label: {
+                    Circle()
+                        .fill(accent.opacity(0.18))
+                        .frame(width: 34, height: 34)
+                        .overlay {
+                            if let myAvatarURL {
+                                CachedImage(url: myAvatarURL, maxPixel: 100, cacheKey: auth.currentUser?.avatarPath) { $0.resizable().scaledToFill() } placeholder: { Color.clear }
+                            } else {
+                                Text(String((auth.currentUser?.username ?? "?").prefix(1)).uppercased())
+                                    .flimFont(14, weight: .thin, relativeTo: .subheadline).foregroundStyle(accent)
+                            }
+                        }
+                        .clipShape(Circle())
+                        .overlay(Circle().stroke(accent.opacity(0.4), lineWidth: 1))
+                        .overlay(alignment: .topTrailing) {
+                            if feed.unseenBadgeCount > 0 {
+                                Circle()
+                                    .fill(Color.red)
+                                    .frame(width: 11, height: 11)
+                                    .overlay(Circle().stroke(FlimTheme.bg, lineWidth: 1.5))
+                            }
+                        }
+                }
+                .accessibilityLabel(
+                    feed.unseenBadgeCount == 0 ? "Your page"
+                    : feed.unseenBadgeCount == 1 ? "Your page, new badge earned"
+                    : "Your page, \(feed.unseenBadgeCount) new badges earned"
+                )
+            }
+        }
+        .animation(.easeOut(duration: 0.4), value: anythingUnseen)
+        .padding(.horizontal, 16)
+        .padding(.top, 2)
+        .padding(.bottom, 6)
+    }
+
+    private func ledgerLabel(_ ledger: (shots: Int, friends: Int)) -> String {
+        let shots = "\(ledger.shots) shot\(ledger.shots == 1 ? "" : "s")"
+        let friends = "\(ledger.friends) friend\(ledger.friends == 1 ? "" : "s")"
+        return "\(shots) from \(friends)"
+    }
+
+    // MARK: - The feed
+
+    private var feedList: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    Color.clear.frame(height: 0).id("top")
+
+                    // Nothing anywhere was unseen at load: the block sits at the top of the
+                    // scroll with the days already seen below it.
+                    if caughtUp == .top {
+                        caughtUpBlock
+                    }
+
+                    ForEach(Array(units.enumerated()), id: \.element.id) { index, unit in
+                        FeedUnitCard(
+                            unit: unit,
+                            width: containerWidth,
+                            opening: unit.openingIndex(isSeen: { seenStore.isSeen($0) }),
+                            seenStore: seenStore,
+                            markingEnabled: ledgerSnapshotted
+                        )
+                        .onAppear { unitAppeared(index: index) }
+
+                        // The seam between new and old: the caught-up block below the last
+                        // unit that held anything unseen AT LOAD, unless more pages could
+                        // still bring new below it. Otherwise a hairline, ink not a card.
+                        if showsCaughtUpBlock(after: unit, at: index) {
+                            caughtUpBlock
+                        } else if index < units.count - 1 {
+                            seam
+                        }
+                    }
+
+                    if feed.isLoadingMoreFeed {
+                        ProgressView().tint(FlimTheme.textTertiary).padding(.vertical, 12)
+                    }
+                }
+                .padding(.bottom, 24)
+            }
+            .refreshable { await reload() }
+            // Swiping the feed puts the keyboard away (the comments sheet's composer can
+            // leave one up); interactively, so it tracks the drag.
+            .scrollDismissesKeyboard(.interactively)
+            // First layout can land slightly below "top" while heights settle; apply the
+            // proven double-tap fix automatically, without animation.
+            .task { proxy.scrollTo("top", anchor: .top) }
+            .onChange(of: scrollToTop) {
+                withAnimation(.snappy) { proxy.scrollTo("top", anchor: .top) }
+            }
+            .overlay(alignment: .top) {
+                if hasNewPosts {
+                    Button {
+                        hasNewPosts = false
+                        Haptics.tap()
+                        Task {
+                            await reload()
+                            withAnimation { proxy.scrollTo("top", anchor: .top) }
+                        }
+                    } label: {
+                        Label("New posts", systemImage: "arrow.up")
+                            .flimFont(13, weight: .semibold)
+                            .foregroundStyle(.black)
+                            .padding(.horizontal, 16).padding(.vertical, 8)
+                            .background(accent, in: Capsule())
+                            .shadow(color: .black.opacity(0.3), radius: 6, y: 3)
+                    }
+                    .padding(.top, 8)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                } else if refreshFailedToast {
+                    Label("Couldn't refresh", systemImage: "wifi.exclamationmark")
+                        .flimFont(13, weight: .semibold)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 16).padding(.vertical, 8)
+                        .background(.ultraThinMaterial, in: Capsule())
+                        .padding(.top, 8)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
+            }
+        }
+    }
+
+    /// The separator between two units: a hairline that fades out 48pt from each edge, 14pt
+    /// of air above, and the next author's title-weight handle below. A rule that stops
+    /// cleanly draws a box, and a box is the card this design removed to give the
+    /// photographs their width.
+    private var seam: some View {
+        LinearGradient(
+            stops: seamStops,
+            startPoint: .leading, endPoint: .trailing
+        )
+        .frame(height: 1)
+        // 24 above, 12 below (the next band brings its own 10): the original 14/0 read as
+        // two days shoulder-to-shoulder, per the owner on the first live scroll-through.
+        // A 1px line with air around it also reads quieter than the same line without.
+        .padding(.top, 24)
+        .padding(.bottom, 12)
+    }
+
+    private var seamStops: [Gradient.Stop] {
+        let fade = containerWidth > 0 ? min(0.45, 48 / containerWidth) : 0.12
+        let stroke = Color(red: 0.14, green: 0.14, blue: 0.14)
+        return [
+            .init(color: .clear, location: 0),
+            .init(color: stroke, location: fade),
+            .init(color: stroke, location: 1 - fade),
+            .init(color: .clear, location: 1),
+        ]
+    }
+
+    /// The end of what is NEW, not the end of the scroll: on this archive feed the days
+    /// already seen continue below it, and it never claims there is nothing under it.
+    private var caughtUpBlock: some View {
+        VStack(spacing: 9) {
+            RoundedRectangle(cornerRadius: 2)
+                .fill(accent)
+                .frame(width: 24, height: 2)
+            Text("You're caught up")
+                .flimFont(19, weight: .light, relativeTo: .body)
+                .tracking(0.4)
+                .foregroundStyle(FlimTheme.textPrimary)
+            Text(caughtLine)
+                .flimFont(12, relativeTo: .caption)
+                .foregroundStyle(FlimTheme.textTertiary)
+                .multilineTextAlignment(.center)
+                .lineSpacing(3)
+            Button {
+                NotificationCenter.default.post(name: .openCamera, object: nil)
+            } label: {
+                Label("Shoot something", systemImage: "camera.aperture")
+                    .flimFont(14, weight: .medium, relativeTo: .subheadline)
+                    .foregroundStyle(accent)
+                    .padding(.horizontal, 20)
+                    .frame(height: 38)
+                    .overlay(Capsule().strokeBorder(accent, lineWidth: 1))
+            }
+            .padding(.top, 4)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 38)
+        .padding(.horizontal, 40)
+    }
+
+    /// "All seen" is a live claim, never the snapshot's: the block's position is pinned at
+    /// load, but a reader can scroll to it with frames still unreached inside a group above
+    /// (their pills say so), and the copy must not contradict the ledger still lit in the
+    /// header.
+    private var caughtLine: String {
+        let closer = "Nothing new until someone shoots something."
+        guard let ledger else { return closer }
+        return anythingUnseen
+            ? "\(ledgerLabel(ledger)).\n\(closer)"
+            : "\(ledgerLabel(ledger)), all seen.\n\(closer)"
+    }
+
+    // MARK: - First run, loading
+
+    /// An account with no follows is not an account that is caught up, so none of the
+    /// caught-up block appears here: no accent mark, no "Shoot something". It states the
+    /// reason and offers the two things that exist. FLIM is invite-only, so there is no
+    /// suggested-strangers rail, no discovery surface, and no list of people you have not
+    /// followed yet: a guilt list ranks people, which this design refuses everywhere else.
+    private var firstRunState: some View {
+        VStack(spacing: 11) {
+            Spacer()
+            Text("You don't follow anyone yet")
+                .flimFont(19, weight: .light, relativeTo: .body)
+                .tracking(0.4)
+                .foregroundStyle(FlimTheme.textPrimary)
+            Text("Follow someone and their shots show up here, a day at a time.")
+                .flimFont(13, relativeTo: .subheadline)
+                .foregroundStyle(FlimTheme.textSecondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 46)
+            VStack(spacing: 9) {
+                // One destination with the header's person-plus, not two: the button
+                // teaches where that action lives afterwards.
+                Button { showDiscover = true } label: {
+                    Label("Find your friends", systemImage: "person.badge.plus")
+                        .flimFont(14, weight: .medium, relativeTo: .subheadline)
+                        .foregroundStyle(accent)
+                        .frame(width: 212, height: 38)
+                        .overlay(Capsule().strokeBorder(accent, lineWidth: 1))
+                }
+                // Not a screen: the system share sheet carrying an invite link, which keeps
+                // invites out of the app rather than growing a referrals surface.
+                if let code = auth.currentUser?.inviteCode {
+                    ShareLink(item: AppInfo.personalInviteMessage(code: code)) {
+                        Label("Invite someone", systemImage: "paperplane")
+                            .flimFont(14, weight: .medium, relativeTo: .subheadline)
+                            .foregroundStyle(FlimTheme.textPrimary)
+                            .frame(width: 212, height: 38)
+                            .overlay(Capsule().strokeBorder(Color.white.opacity(0.2), lineWidth: 1))
+                    }
+                }
+            }
+            .padding(.top, 9)
+            Text("\(AppInfo.appName) is invite only. Nobody is suggested to you, and nobody is ranked.")
+                .flimFont(11.5, relativeTo: .caption)
+                .foregroundStyle(FlimTheme.textTertiary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 46)
+                .padding(.top, 13)
             Spacer()
             Spacer()
+        }
+    }
+
+    /// The unit's own geometry at rest: band, the photograph's exact well, the reaction
+    /// slots, all at 6% white. Only the band's bars breathe; motion on a screen-filling
+    /// rectangle is a spinner by another name. The strip is NOT reserved: the shot count is
+    /// unknown until the page lands, and a placeholder strip would have to invent one, which
+    /// is the filler-slot problem arriving one step earlier.
+    private var loadingState: some View {
+        ScrollView {
+            FeedUnitSkeleton()
+        }
+        .disabled(true)
+    }
+
+    // MARK: - Loading & paging
+
+    private func unitAppeared(index: Int) {
+        advancePrefetch(reaching: index)
+        guard index == units.count - 1, let uid = auth.currentUser?.id else { return }
+        Task {
+            let alreadyLoaded = units.count
+            await feed.loadMoreFeed(currentUserId: uid)
+            await feed.completeStraddlingDays(currentUserId: uid)
+            snapshotLedger(growOnly: true)
+            await prefetchUnitHeroes(from: alreadyLoaded)
         }
     }
 
     private func reload() async {
         guard let uid = auth.currentUser?.id else { didLoad = true; return }
-        // Captured before the load: `loadFeed` leaves an already-populated `feed` untouched on a
-        // genuine failure (so a flaky refresh doesn't blank the screen), which means `feed.feed`
-        // staying non-empty afterward can't by itself say whether this refresh worked. Only a feed
-        // that already had something on screen needs the toast below; an empty one falls through
-        // to `feed.feedError`'s own full-screen `ErrorState` instead.
+        // Captured before the load: `loadFeed` leaves an already-populated `feed` untouched
+        // on a genuine failure, so `feed.feed` staying non-empty can't by itself say whether
+        // this refresh worked.
         let hadContent = !feed.feed.isEmpty
         await feed.loadFeed(currentUserId: uid)
+        await feed.completeStraddlingDays(currentUserId: uid)
         didLoad = true
         hasNewPosts = false
+        snapshotLedger()
         if hadContent, feed.feedError != nil {
             Haptics.error()
             withAnimation { refreshFailedToast = true }
@@ -375,46 +528,85 @@ struct FeedView: View {
         if let path = auth.currentUser?.avatarPath { myAvatarURL = await feed.signedURL(for: path) }
         unreadActivity = await feed.unreadActivityCount(
             userId: uid, since: Date(timeIntervalSince1970: lastActivitySeen))
-        // Whether it could have changed since the last time this tab was on screen: a badge is
-        // only ever earned server-side (a roll developing, an invite landing), so "every time you
-        // come back to Feed" is as often as it's worth asking.
         await feed.refreshUnseenBadgeCount()
-        // Reset before warming: a refresh can replace the list, and a cursor left pointing into
-        // the old one would sit past the end of the new feed and stop `advancePrefetch` from ever
-        // extending the window again.
         prefetchedThrough = 0
-        await prefetchFeedImages()
+        await prefetchUnitHeroes()
     }
 
-    /// Warm the image cache for the loaded posts so they appear instantly as you scroll.
+    /// Re-derived at each load, then held: the number states what arrived and must not
+    /// shrink as marks clear. Visibility is separate (`anythingUnseen`), which is what lets
+    /// it fade rather than count down.
     ///
-    /// Signs the whole page in ONE batched call. This used to loop `signedURL(for:)` one post at
-    /// a time, and each miss is a round-trip, so on a cold cache (first launch, or after the
-    /// signed-URL TTL lapses) a 15-post page spent fifteen sequential round-trips before the
-    /// first image byte was requested. `signedURLs(for:)` now mints every miss in a single
-    /// `createSignedURLs` request instead of one `createSignedURL` per photo.
-    /// Warms the cards that just arrived, not the whole feed again.
-    ///
-    /// This used to prefetch `feed.feed` entire on every page load, so five pages queued 15 then
-    /// 30 then 45 then 60 then 75 items: 225 lookups to warm 75 cards. It was never re-downloading
-    /// (both the image fetch and the signed URLs are cache-backed), so that was redundant work
-    /// rather than redundant bytes — but it grew quadratically with how far someone scrolled.
-    ///
-    /// It is now WINDOWED, and that part is about real bytes. A page is 15 cards and a card
-    /// averages 383 kB, so warming a whole page spent 5.7 MB before anyone had scrolled past the
-    /// first post. Measured against the egress allowance that gates opening the invite list, that
-    /// is roughly 875 cold feed opens a month for the entire user base. Six ahead costs 2.3 MB and
-    /// is still more than a screen of runway, since a full-bleed 3:4 card means barely more than
-    /// one is ever visible at once.
-    ///
-    /// Nothing is lost when someone scrolls past the window: `CachedImage` fetches its own URL on
-    /// appear regardless, so the prefetch only ever bought a head start. `advancePrefetch` extends
-    /// the window as they go, so a fast scroller keeps the same runway without a cold feed open
-    /// paying for cards nobody reaches.
-    private func prefetchFeedImages(from startIndex: Int = 0) async {
-        let paths = feed.feed.dropFirst(startIndex).prefix(Self.prefetchWindow).map(\.post.cardPath)
+    /// `growOnly` is the paging case: an older page can bring unseen units into the list
+    /// (they arrived, so the ledger should say so), but units read in the meantime must not
+    /// pull the number back down, so the held value only ever ratchets upward between
+    /// genuine reloads.
+    private func snapshotLedger(growOnly: Bool = false) {
+        // Clearing first, so the ledger and the seam are computed over the feed the reader
+        // will actually be shown. Cleared ids only ever accumulate between full reloads:
+        // paging can bring in a day read yesterday (still inside the 7-day fetch window),
+        // and it must not surface just because it arrived on page three.
+        let cleared = FeedUnit.units(from: feed.feed)
+            .filter { $0.hasCleared(seenAt: { seenStore.seenDate($0) }) }
+            .map(\.id)
+        if growOnly {
+            clearedUnitIDs.formUnion(cleared)
+        } else {
+            clearedUnitIDs = Set(cleared)
+        }
+
+        let fresh = FeedUnit.ledger(units: units, isSeen: { seenStore.isSeen($0) })
+        if growOnly, let old = ledger {
+            if let fresh {
+                ledger = (max(old.shots, fresh.shots), max(old.friends, fresh.friends))
+            }
+        } else {
+            ledger = fresh
+        }
+        ledgerSnapshotted = true
+        snapshotSeam(growOnly: growOnly)
+    }
+
+    private func showsCaughtUpBlock(after unit: FeedUnit, at index: Int) -> Bool {
+        guard case .after(let id) = caughtUp, id == unit.id else { return false }
+        // More pages could still bring new below this; the claim waits until they cannot.
+        return !(feed.hasMoreFeed && index == units.count - 1)
+    }
+
+    /// The seam only ever moves DOWN between reloads: paging can reveal an older unseen day
+    /// that belongs above the block, but reading must never pull the block back up the feed.
+    /// A pull-to-refresh is a new catch-up moment and re-places it outright.
+    private func snapshotSeam(growOnly: Bool) {
+        let freshIndex = FeedUnit.caughtUpIndex(units: units, isSeen: { seenStore.isSeen($0) })
+        if growOnly {
+            guard let freshIndex else { return }
+            switch caughtUp {
+            case .after(let currentID):
+                if let current = units.firstIndex(where: { $0.id == currentID }), freshIndex > current {
+                    caughtUp = .after(units[freshIndex].id)
+                }
+            case .top, .pending:
+                caughtUp = .after(units[freshIndex].id)
+            }
+        } else if let freshIndex {
+            caughtUp = .after(units[freshIndex].id)
+        } else {
+            caughtUp = units.isEmpty ? .pending : .top
+        }
+    }
+
+    /// Warms each unit's OPENING frame, not every post: the strip's thumbnails are tiny and
+    /// load on demand, and the pager only renders the selected page and its neighbours, so
+    /// the hero is the one image a unit needs the moment it scrolls in. This is the egress
+    /// shape the grouping buys: a page of units costs a handful of heroes, not a page of
+    /// full-size cards.
+    private func prefetchUnitHeroes(from startUnit: Int = 0) async {
+        let slice = units.dropFirst(startUnit).prefix(Self.prefetchWindow)
+        let paths = slice.map { unit in
+            unit.items[unit.openingIndex(isSeen: { seenStore.isSeen($0) })].post.cardPath
+        }
         guard !paths.isEmpty else { return }
-        prefetchedThrough = max(prefetchedThrough, startIndex + paths.count)
+        prefetchedThrough = max(prefetchedThrough, startUnit + paths.count)
         let urls = await feed.signedURLs(for: Array(Set(paths)))
         let items = paths.compactMap { path -> (url: URL, cacheKey: String?)? in
             urls[path].map { ($0, path) }
@@ -422,18 +614,13 @@ struct FeedView: View {
         ImageLoader.prefetch(items, maxPixel: 1400, scale: displayScale)
     }
 
-    /// How many cards ahead to warm. Six rather than a page: only about one full-bleed card is
-    /// on screen at a time, so this is five screens of runway, and every one beyond it that goes
-    /// unread is 383 kB bought for nothing.
+    /// How many units ahead to warm; roughly one hero is visible at a time, so this is
+    /// several screens of runway.
     private static let prefetchWindow = 6
 
-    /// Extends the warm window as someone scrolls, so the runway follows them instead of being
-    /// bought all at once up front. Fires two cards before the edge, which is far enough ahead
-    /// that the fetch has landed by the time the card is on screen.
-    private func advancePrefetch(reaching id: FeedItem.ID) {
-        guard let index = feed.feed.firstIndex(where: { $0.id == id }) else { return }
-        guard index >= prefetchedThrough - 2, prefetchedThrough < feed.feed.count else { return }
-        Task { await prefetchFeedImages(from: prefetchedThrough) }
+    private func advancePrefetch(reaching index: Int) {
+        guard index >= prefetchedThrough - 2, prefetchedThrough < units.count else { return }
+        Task { await prefetchUnitHeroes(from: prefetchedThrough) }
     }
 
     private func checkNewPosts() async {
@@ -445,514 +632,57 @@ struct FeedView: View {
     }
 }
 
-// MARK: - Post card
-
-/// Whether "View N comments" has anything to offer beyond what `commentPreview` already shows in
-/// full. `commentPreview` can equal every comment there is (one or two total, or a third for "your
-/// own latest" alongside them), and the row would just repeat what's already on screen.
+/// Whether "View N comments" has anything to offer beyond what the preview already shows in
+/// full; with every comment already visible it would just repeat what's on screen.
 func hasCommentsBeyondPreview(total: Int, shownInPreview: Int) -> Bool {
     total > shownInPreview
 }
 
-struct FeedPostCard: View {
-    @Environment(\.flimAccent) private var accent
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    let item: FeedItem
-    @Environment(AuthService.self) private var auth
-    @Environment(FeedService.self) private var feed
-    @Environment(PhotoService.self) private var photos
-
-    @State private var url: URL?
-    @State private var avatarURL: URL?
-    @State private var draft = ""
-    @State private var showComments = false
-    @State private var route: ProfileRoute?
-    /// A profile chosen inside the comment sheet, opened once that sheet has closed.
-    @State private var pendingProfile: ProfileRoute?
-    @State private var heartBurst = false
-    @State private var showDeleteConfirm = false
-    @State private var showReportConfirm = false
-    @State private var showBlockConfirm = false
-    @State private var showEditCaption = false
-    @State private var captionDraft = ""
-    /// What a caption edit didn't manage to save, so reopening "Edit caption" starts from the
-    /// attempted text rather than the unchanged server value it was never able to replace.
-    /// `nil` once there's nothing outstanding, either because nothing has been tried yet or the
-    /// last attempt saved.
-    @State private var pendingCaptionRetry: String?
-    @State private var captionFailedToast = false
-    /// A delete that didn't reach the server. The card stays in the feed either way, since only
-    /// a successful `deletePost` removes it from `feed`, so this just says why it's still here.
-    @State private var deleteFailedToast = false
-    @State private var showEditTags = false
-    @State private var editingTags: [PendingTag] = []
-    @State private var reportedToast = false
-    /// Separate from `reportedToast` rather than an enum: this file already tracks toasts as
-    /// plain flags, so a failure gets the same shape instead of a new vocabulary.
-    @State private var reportFailedToast = false
-    @State private var shareItem: ShareImage?
-    @FocusState private var commentFocused: Bool
-
-    private var post: Post { item.post }
-    private var isOwn: Bool { post.isOwned(by: auth.currentUser?.id) }
-    // Reactions + comments live in the batch-loaded FeedService cache (one fetch per page, not
-    // per card). Reading them here keeps every card in sync as it recycles.
-    // Filtered again here (on top of FeedService's own filtering) as defense-in-depth: cards can
-    // recycle against a cache that predates a block landing.
-    private var reactions: [PostReaction] {
-        (feed.reactionsByPost[post.id] ?? []).filter { !feed.blockedIds.contains($0.userId) }
-    }
-    private var comments: [CommentInfo] {
-        (feed.commentsByPost[post.id] ?? []).filter { !feed.blockedIds.contains($0.comment.userId) }
-    }
-    /// The top-ranked couple of comments, plus your own latest so it always shows after you post.
-    private var commentPreview: [CommentInfo] {
-        var shown = Array(comments.prefix(2))
-        if let uid = auth.currentUser?.id,
-           let mine = comments.last(where: { $0.comment.userId == uid }),
-           !shown.contains(where: { $0.id == mine.id }) {
-            shown.append(mine)
-        }
-        return shown
-    }
-    private var iLiked: Bool { reactions.contains { $0.emoji == "❤️" && $0.userId == auth.currentUser?.id } }
-    private var canSend: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // Author row, handle/time on the left, options ••• on the right.
-            HStack(spacing: 10) {
-                Button { route = ProfileRoute(id: item.author.id) } label: {
-                    HStack(spacing: 10) {
-                        avatar
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(item.author.handle)
-                                .flimFont(14, weight: .semibold, relativeTo: .subheadline)
-                                .foregroundStyle(.white)
-                            Text(post.createdAt.formatted(.relative(presentation: .named)))
-                                .flimFont(11, relativeTo: .caption)
-                                .foregroundStyle(FlimTheme.textTertiary)
-                        }
-                    }
-                }
-                Spacer()
-                Menu {
-                    postActions
-                } label: {
-                    Image(systemName: "ellipsis")
-                        .font(.system(size: 16, weight: .bold))
-                        .foregroundStyle(FlimTheme.textSecondary)
-                        .frame(width: 34, height: 34)
-                        .contentShape(Rectangle())
-                }
-                .accessibilityLabel("Post options")
-            }
-
-            // The print, shown at its native aspect (no square crop). Single tap opens it,
-            // double tap likes it (with a heart burst). A 3:4 default sizes the placeholder so
-            // there's no layout jump before the image resolves.
-            Group {
-                if let url {
-                    CachedImage(url: url, maxPixel: 1400, cacheKey: post.cardPath) { image in
-                        image.resizable().scaledToFit()
-                    } placeholder: {
-                        ShimmerPlaceholder(cornerRadius: 12).aspectRatio(3.0 / 4.0, contentMode: .fit)
-                    }
-                } else {
-                    ShimmerPlaceholder(cornerRadius: 12).aspectRatio(3.0 / 4.0, contentMode: .fit)
-                }
-            }
-                .frame(maxWidth: .infinity)
-                .overlay { GrainOverlay().opacity(0.5) }
-                .overlay {
-                    Image(systemName: "heart.fill")
-                        .font(.system(size: 90))
-                        .foregroundStyle(.white)
-                        .shadow(radius: 8)
-                        .scaleEffect(heartBurst ? 1 : 0.4)
-                        .opacity(heartBurst ? 0.9 : 0)
-                        .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.55), value: heartBurst)
-                }
-                .overlay {
-                    PhotoTags(tags: feed.tagsByPost[post.id] ?? [], profiles: feed.tagProfiles) { route = ProfileRoute(id: $0) }
-                }
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-                // Two fingers lift the print off the feed; one finger still likes it and opens
-                // it. Applied after the clip so the lifted snapshot has the card's own corners.
-                .pinchToZoom()
-                .contentShape(Rectangle())
-                .onTapGesture(count: 2) { doubleTapLike() }
-                // The same actions as the ••• button above, on the photo itself. Long-press is
-                // where people already reach for these, and it puts them on the thing being
-                // acted on instead of a 34pt target in the corner.
-                .contextMenu { postActions }
-                .accessibilityElement()
-                .accessibilityLabel("Photo by \(item.author.handle)")
-                .accessibilityHint("Double-tap to like, or react below")
-
-            if let caption = post.caption, !caption.isEmpty {
-                Text(caption).flimFont(14, relativeTo: .subheadline).foregroundStyle(FlimTheme.textSecondary)
-            }
-
-            // Emoji reactions (inline picker). Comment access lives in the preview + composer below.
-            ReactionBar(
-                defaults: photos.reactionDefaults(for: post.photoId),
-                counts: Dictionary(grouping: reactions, by: \.emoji).mapValues(\.count),
-                mine: Set(reactions.filter { $0.userId == auth.currentUser?.id }.map(\.emoji))
-            ) { toggleReaction($0) }
-
-            // Comment preview → @handle taps to their page, the body opens the comments sheet,
-            // and so does "View N comments" when there's more than the preview already shows.
-            if !commentPreview.isEmpty {
-                // Touch targets here are honest, not 44pt: every direction is boxed in by another
-                // tappable view (ReactionBar above, "View N comments" below it, the comment text
-                // across the Spacer from the like button), so a control can only grow into the
-                // dead space between it and a neighbour, never past the midpoint, or the
-                // later-declared view would silently steal the earlier one's taps. The insets
-                // below are half the MEASURED gap to each neighbour: 14pt row spacing halves to
-                // 7, the outer VStack's 12pt spacing to ReactionBar halves to 6, and the 8pt gap
-                // between the comment text and the like button halves to 4. If any of those
-                // spacings change, these insets must move with them.
-                VStack(alignment: .leading, spacing: 14) {
-                    // Only rendered when it actually offers something the preview below doesn't
-                    // already show in full; with every comment already visible (the common case
-                    // for one or two comments) it would just repeat what's on screen.
-                    if hasCommentsBeyondPreview(total: comments.count, shownInPreview: commentPreview.count) {
-                        Button { showComments = true } label: {
-                            Text("View all \(comments.count) comments")
-                                .flimFont(12, relativeTo: .caption).foregroundStyle(FlimTheme.textTertiary)
-                                .contentTransition(.numericText())
-                                .animation(.snappy(duration: 0.28), value: comments.count)
-                        }
-                        .expandTapTarget(top: 6, leading: 4, bottom: 7, trailing: 4)
-                    }
-                    ForEach(commentPreview) { info in
-                        // firstTextBaseline, not top. The comment is 14pt and the trailing
-                        // controls are 11 and 12, so aligning top EDGES parks the smaller cluster
-                        // against the top of the bigger text's line box and it reads as floating
-                        // high. Baseline alignment sits them on the same line as the words. It
-                        // still does the job .top was picked for, keeping the controls on the
-                        // FIRST line when the comment wraps to two, because the baseline in
-                        // question is the first line's.
-                        HStack(alignment: .firstTextBaseline, spacing: 8) {
-                            // Handle and body in one Text (handle bold, linked to the profile)
-                            // rather than a handle Button beside a separate MentionText: a wrapped
-                            // second line returns to the leading edge this way instead of
-                            // indenting under where the body happened to start. Tapping the body
-                            // itself opens the comments sheet, same destination as "View N
-                            // comments" above; mentions keep resolving to their own profile.
-                            MentionText(
-                                text: info.comment.body,
-                                handle: info.handle,
-                                onHandleTap: { route = ProfileRoute(id: info.comment.userId) },
-                                onBodyTap: { showComments = true }
-                            ) { username in
-                                Haptics.tap()
-                                Task {
-                                    if let profile = await feed.fetchProfile(username: username) {
-                                        route = ProfileRoute(id: profile.id)
-                                    }
-                                }
-                            }
-                            .lineLimit(2).multilineTextAlignment(.leading)
-                            Spacer(minLength: 8)
-                            // Reply lives in the comments sheet now, not here: this preview is
-                            // read-only apart from the like, matching Instagram's own inline
-                            // preview. The comment's own text already opens that sheet, where
-                            // Reply is one tap away.
-                            Button { likeComment(info) } label: {
-                                // Baseline here too, so the count and the heart sit on the row's
-                                // baseline rather than this pair centring on its own.
-                                HStack(alignment: .firstTextBaseline, spacing: 3) {
-                                    if info.likeCount > 0 {
-                                        Text("\(info.likeCount)").flimFont(11, relativeTo: .caption).foregroundStyle(FlimTheme.textTertiary)
-                                            .contentTransition(.numericText())
-                                    }
-                                    Image(systemName: info.likedByMe ? "heart.fill" : "heart")
-                                        .font(.system(size: 12))
-                                        .foregroundStyle(info.likedByMe ? accent : FlimTheme.textTertiary)
-                                        .symbolEffect(.bounce, value: info.likedByMe)
-                                        .frame(width: 16, alignment: .trailing)
-                                }
-                                // No fixed minWidth here anymore: that existed only so "Reply"
-                                // landed at the same x on every row regardless of the like
-                                // count's digit width. With Reply gone this is the only trailing
-                                // control, right-aligned by the Spacer above with nothing to its
-                                // right to stay level with, so a row with a two-digit count and
-                                // one without can differ in width without anything looking
-                                // misaligned.
-                            }
-                            // Leading neighbour is always the comment text across the Spacer now
-                            // (Reply used to sit between them); that Spacer enforces an 8pt
-                            // minimum gap, so 4 leading still holds. Trailing edge is the card's
-                            // own padding, genuinely dead space, so it takes the full gap to the
-                            // card edge.
-                            .expandTapTarget(top: 7, leading: 4, bottom: 7, trailing: 14)
-                        }
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-
-            // Inline comment composer. Reply lives in the comments sheet, not this card, so
-            // there's never a reply target to show here.
-            CommentComposer(draft: $draft, style: .inlineCard, replyTarget: .constant(nil),
-                            focus: $commentFocused) { sendComment() }
-        }
-        .padding(14)
-        .background(FlimTheme.bgElevated, in: RoundedRectangle(cornerRadius: 20))
-        .task {
-            url = await feed.signedURL(for: post.cardPath)   // 1400px rendition (falls back to full)
-            if let path = item.author.avatarPath { avatarURL = await feed.signedURL(for: path) }
-            // reactions + comments already loaded in the feed batch, no per-card query.
-        }
-        // onDismiss, not inline: pushing the profile while the comment sheet is still on screen
-        // is what put it inside the sheet. The id is parked here and acted on once the sheet is
-        // actually gone.
-        .sheet(isPresented: $showComments, onDismiss: {
-            if let pending = pendingProfile { pendingProfile = nil; route = pending }
-        }) {
-            CommentsSheet(post: post) { pendingProfile = ProfileRoute(id: $0) }
-        }
-        .navigationDestination(item: $route) { UserPageView(userId: $0.id) }
-        .sheet(item: $shareItem) { SharePreviewSheet(photo: $0.image) }
-        .sheet(isPresented: $showEditTags) {
-            TagPhotoSheet(url: url, tags: $editingTags) {
-                Task { await feed.setTags(editingTags, on: post.id) }
-            }
-        }
-        .sheet(isPresented: $showEditCaption) {
-            EditCaptionSheet(caption: $captionDraft) {
-                guard let uid = auth.currentUser?.id else { return }
-                let trimmed = captionDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-                let newCaption = trimmed.isEmpty ? nil : trimmed
-                Task {
-                    let saved = await feed.updatePostCaption(postId: post.id, caption: newCaption, userId: uid)
-                    if saved == true {
-                        pendingCaptionRetry = nil
-                    } else if saved == false {
-                        // Keep what was typed so reopening "Edit caption" starts from the
-                        // attempted text, not the caption that failed to change.
-                        pendingCaptionRetry = trimmed
-                        Haptics.error()
-                        withAnimation { captionFailedToast = true }
-                        try? await Task.sleep(for: .seconds(2)); withAnimation { captionFailedToast = false }
-                    }
-                    // saved == nil: cancelled, not a failure, nothing to say.
-                }
-            }
-        }
-        .overlay(alignment: .top) {
-            if reportedToast {
-                Label("Reported, thanks", systemImage: "checkmark.circle.fill")
-                    .flimFont(13, weight: .medium).foregroundStyle(.white)
-                    .padding(.horizontal, 16).padding(.vertical, 10)
-                    .background(.ultraThinMaterial, in: Capsule())
-                    .transition(.move(edge: .top).combined(with: .opacity))
-            } else if reportFailedToast {
-                Label("Couldn't report. Try again.", systemImage: "exclamationmark.triangle.fill")
-                    .flimFont(13, weight: .medium).foregroundStyle(.white)
-                    .padding(.horizontal, 16).padding(.vertical, 10)
-                    .background(.ultraThinMaterial, in: Capsule())
-                    .transition(.move(edge: .top).combined(with: .opacity))
-            } else if captionFailedToast {
-                Label("Couldn't save caption. Try again.", systemImage: "exclamationmark.triangle.fill")
-                    .flimFont(13, weight: .medium).foregroundStyle(.white)
-                    .padding(.horizontal, 16).padding(.vertical, 10)
-                    .background(.ultraThinMaterial, in: Capsule())
-                    .transition(.move(edge: .top).combined(with: .opacity))
-            } else if deleteFailedToast {
-                Label("Couldn't delete that. Check your connection and try again.", systemImage: "exclamationmark.triangle.fill")
-                    .flimFont(13, weight: .medium).foregroundStyle(.white)
-                    .padding(.horizontal, 16).padding(.vertical, 10)
-                    .background(.ultraThinMaterial, in: Capsule())
-                    .transition(.move(edge: .top).combined(with: .opacity))
-            }
-        }
-        .confirmationDialog("Delete this post?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
-            Button("Delete", role: .destructive) {
-                Haptics.warning()
-                Task {
-                    let deleted = await feed.deletePost(id: post.id)
-                    if deleted == false {
-                        // Still here (`deletePost` only removes it from `feed` on success), so
-                        // say why rather than leave the card looking untouched.
-                        Haptics.error()
-                        withAnimation { deleteFailedToast = true }
-                        try? await Task.sleep(for: .seconds(2)); withAnimation { deleteFailedToast = false }
-                    }
-                    // deleted == true: the card is already gone via `feed`. deleted == nil:
-                    // cancelled, not a failure, stay silent.
-                }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("It's removed from your page and feed. The photo stays in your Darkroom.")
-        }
-        .confirmationDialog("Report this photo?", isPresented: $showReportConfirm, titleVisibility: .visible) {
-            Button("Report", role: .destructive) {
-                guard let uid = auth.currentUser?.id else { return }
-                Task {
-                    if await feed.reportPost(post, from: uid) {
-                        Haptics.success()   // the report went through, matching the toast
-                        withAnimation { reportedToast = true }
-                        try? await Task.sleep(for: .seconds(2)); withAnimation { reportedToast = false }
-                    } else {
-                        Haptics.error()
-                        withAnimation { reportFailedToast = true }
-                        try? await Task.sleep(for: .seconds(2)); withAnimation { reportFailedToast = false }
-                    }
-                }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Flag this for review. Thanks for keeping \(AppInfo.appName) safe.")
-        }
-        .confirmationDialog("Block \(item.author.handle)?", isPresented: $showBlockConfirm, titleVisibility: .visible) {
-            Button("Block", role: .destructive) {
-                guard let uid = auth.currentUser?.id else { return }
-                Haptics.warning()
-                Task {
-                    await feed.block(post.userId, from: uid)
-                    // `feed.block` rolls its optimistic state back on a failed write, so this
-                    // reflects whether it actually landed rather than assuming it always does.
-                    // Stripping the card here regardless would leave it looking blocked on a
-                    // feed the person you tried to block can still see.
-                    if feed.isBlocked(post.userId) {
-                        withAnimation { feed.feed.removeAll { $0.author.id == post.userId } }
-                    }
-                }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("You won't see each other's posts, and they'll be unfollowed.")
-        }
-    }
-
-    /// Declared once and used by both the ••• menu and the photo's long-press menu, so the two
-    /// can't drift apart as actions are added.
-    @ViewBuilder
-    private var postActions: some View {
-        if isOwn {
-            Button { captionDraft = pendingCaptionRetry ?? post.caption ?? ""; showEditCaption = true } label: { Label("Edit caption", systemImage: "pencil") }
-            Button { beginEditingTags() } label: {
-                Label(tagCount == 0 ? "Tag people" : "Edit tags", systemImage: "person.crop.circle.badge.plus")
-            }
-            Button { saveToCameraRoll() } label: { Label("Save to Camera Roll", systemImage: "square.and.arrow.down") }
-            Button(role: .destructive) { showDeleteConfirm = true } label: { Label("Delete post", systemImage: "trash") }
-        } else {
-            // Only offered when you're actually in the photo. Withdrawing your own tag is allowed
-            // by RLS regardless of who posted it (2026-08-01_tag_self_removal.sql).
-            if let uid = auth.currentUser?.id, feed.isTagged(uid, in: post.id) {
-                Button { removeMyTag() } label: { Label("Remove me from this photo", systemImage: "person.crop.circle.badge.xmark") }
-            }
-            Button { showReportConfirm = true } label: { Label("Report", systemImage: "flag") }
-            Button(role: .destructive) { showBlockConfirm = true } label: { Label("Block \(item.author.handle)", systemImage: "hand.raised") }
-        }
-    }
-
-    private var tagCount: Int { (feed.tagsByPost[post.id] ?? []).count }
-
-    /// Seeds the tag editor from what's already on the post, so editing starts from the current
-    /// state rather than a blank slate that would wipe existing tags on save.
-    private func beginEditingTags() {
-        editingTags = (feed.tagsByPost[post.id] ?? []).compactMap { tag in
-            feed.tagProfiles[tag.taggedUserId].map { PendingTag(user: $0, x: tag.x, y: tag.y) }
-        }
-        showEditTags = true
-    }
-
-    private func removeMyTag() {
-        guard let uid = auth.currentUser?.id else { return }
-        Haptics.tap()
-        Task { await feed.removeMyTag(from: post.id, userId: uid) }
-    }
-
-    private func saveToCameraRoll() {
-        Task {
-            guard let full = await feed.signedURL(for: post.storagePath),
-                  let (data, _) = try? await URLSession.shared.data(from: full),
-                  let image = UIImage(data: data) else { return }
-            shareItem = ShareImage(image: image)
-        }
-    }
-
-    private var avatar: some View {
-        Circle()
-            .fill(accent.opacity(0.18))
-            .frame(width: 34, height: 34)
-            .overlay {
-                if let avatarURL {
-                    CachedImage(url: avatarURL, maxPixel: 100, cacheKey: item.author.avatarPath) { $0.resizable().scaledToFill() } placeholder: { Color.clear }
-                } else {
-                    Text(String(item.author.handle.dropFirst().prefix(1)).uppercased())
-                        .flimFont(14, weight: .thin, relativeTo: .subheadline)
-                        .foregroundStyle(accent)
-                }
-            }
-            .clipShape(Circle())
-    }
-
-    private func doubleTapLike() {
-        guard let uid = auth.currentUser?.id else { return }
-        Haptics.tap()
-        if !reduceMotion {
-            heartBurst = true
-            Task { try? await Task.sleep(for: .milliseconds(650)); heartBurst = false }
-        }
-        if !iLiked {
-            Task { await feed.reactToPost(post.id, emoji: "❤️", userId: uid) }
-        }
-    }
-
-    private func toggleReaction(_ emoji: String) {
-        guard let uid = auth.currentUser?.id else { return }
-        Haptics.tap()
-        Task { await feed.reactToPost(post.id, emoji: emoji, userId: uid) }
-    }
-
-    private func likeComment(_ info: CommentInfo) {
-        guard let uid = auth.currentUser?.id else { return }
-        Haptics.tap()
-        Task { await feed.toggleCommentLike(info, postId: post.id, userId: uid) }
-    }
-
-    private func sendComment() {
-        guard let uid = auth.currentUser?.id, canSend else { return }
-        let body = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        draft = ""
-        commentFocused = false
-        Haptics.tap()
-        Task {
-            let ok = await feed.commentOnPost(post.id, body: body, userId: uid)
-            if !ok {
-                draft = body   // restore instead of silently losing the comment
-                Haptics.error()
-            }
-        }
-    }
-}
-
 // MARK: - Skeleton
 
-/// Placeholder card shown while the feed is loading for the first time.
-struct FeedCardSkeleton: View {
+/// One unit's geometry at rest, shown while the first page loads. The bars breathe at 1.6s;
+/// the photograph's well deliberately does not.
+struct FeedUnitSkeleton: View {
+    @State private var breathing = false
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 10) {
-                Circle().fill(FlimTheme.bgElevated).frame(width: 34, height: 34).shimmering()
-                ShimmerPlaceholder(cornerRadius: 4).frame(width: 110, height: 12)
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 11) {
+                Circle().fill(Color.white.opacity(0.06)).frame(width: 32, height: 32)
+                VStack(alignment: .leading, spacing: 6) {
+                    bar(width: 84, height: 11)
+                    bar(width: 134, height: 8)
+                }
                 Spacer()
             }
-            ShimmerPlaceholder(cornerRadius: 12).aspectRatio(1, contentMode: .fit)
-            ShimmerPlaceholder(cornerRadius: 4).frame(width: 180, height: 12)
-            HStack(spacing: 18) {
-                ShimmerPlaceholder(cornerRadius: 4).frame(width: 22, height: 14)
-                ShimmerPlaceholder(cornerRadius: 4).frame(width: 22, height: 14)
+            .padding(.top, 10)
+            .padding(.leading, 16)
+            .padding(.bottom, 6)
+
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color.white.opacity(0.06))
+                .aspectRatio(3 / 4, contentMode: .fit)
+                .padding(.horizontal, 16)
+                .padding(.top, 6)
+
+            HStack(spacing: 4) {
+                ForEach(0..<6, id: \.self) { _ in
+                    Circle().fill(Color.white.opacity(0.06)).frame(width: 30, height: 30)
+                }
                 Spacer()
+                Circle().fill(Color.white.opacity(0.06)).frame(width: 30, height: 30)
             }
+            .padding(.horizontal, 16)
+            .padding(.top, 13)
         }
-        .padding(14)
-        .background(FlimTheme.bgElevated.opacity(0.5), in: RoundedRectangle(cornerRadius: 20))
+        .onAppear { breathing = true }
+    }
+
+    private func bar(width: CGFloat, height: CGFloat) -> some View {
+        RoundedRectangle(cornerRadius: 3)
+            .fill(Color.white.opacity(0.06))
+            .frame(width: width, height: height)
+            .opacity(breathing ? 1 : 0.5)
+            .animation(.easeInOut(duration: 1.6).repeatForever(autoreverses: true), value: breathing)
     }
 }
