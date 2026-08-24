@@ -61,6 +61,8 @@ struct FeedUnitCard: View {
     @State private var clampedCaptionHeight: CGFloat = 0
     @State private var fullCaptionHeight: CGFloat = 0
     @State private var showComments = false
+    /// Set by a preview row's Reply, read by the sheet to arm the composer on open.
+    @State private var replyToHandle: String?
     @State private var showContactSheet = false
     @State private var route: ProfileRoute?
     @State private var pendingProfile: ProfileRoute?
@@ -201,8 +203,10 @@ struct FeedUnitCard: View {
         }
         .sheet(isPresented: $showComments, onDismiss: {
             if let pending = pendingProfile { pendingProfile = nil; route = pending }
+            replyToHandle = nil
         }) {
-            CommentsSheet(post: post, authorHandle: unit.author.handle) {
+            CommentsSheet(post: post, authorHandle: unit.author.handle,
+                          initialReplyHandle: replyToHandle) {
                 pendingProfile = ProfileRoute(id: $0)
             }
         }
@@ -459,22 +463,63 @@ struct FeedUnitCard: View {
                     }
                 }
             }
+            // Reacting is the loved behaviour, and the first cut of this thread made liking
+            // a comment a two-tap trip through the sheet. The heart is back on the row, one
+            // tap from the feed, as the old card had it. Reply stays OUT of the row's
+            // composer sense (the design's rule holds: the pager can swipe an inline
+            // draft's target away) but the word is here, and it opens the sheet with the
+            // reply already armed, composer focused and @handle prefilled.
             ForEach(previewComments) { info in
-                MentionText(
-                    text: info.comment.body,
-                    handle: info.handle,
-                    onHandleTap: { route = ProfileRoute(id: info.comment.userId) },
-                    onBodyTap: { showComments = true }
-                ) { username in
-                    Haptics.tap()
-                    Task {
-                        if let profile = await feed.fetchProfile(username: username) {
-                            route = ProfileRoute(id: profile.id)
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    MentionText(
+                        text: info.comment.body,
+                        handle: info.handle,
+                        onHandleTap: { route = ProfileRoute(id: info.comment.userId) },
+                        onBodyTap: { showComments = true }
+                    ) { username in
+                        Haptics.tap()
+                        Task {
+                            if let profile = await feed.fetchProfile(username: username) {
+                                route = ProfileRoute(id: profile.id)
+                            }
                         }
                     }
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                    Spacer(minLength: 8)
+                    // Not on your own comment: replying to yourself would just mention
+                    // yourself, the same rule the sheet applies.
+                    if info.comment.userId != auth.currentUser?.id {
+                        Button {
+                            Haptics.tap()
+                            replyToHandle = info.handle
+                            showComments = true
+                        } label: {
+                            Text("Reply")
+                                .flimFont(12, relativeTo: .caption)
+                                .foregroundStyle(FlimTheme.textTertiary)
+                        }
+                        .expandTapTarget(top: 7, leading: 4, bottom: 7, trailing: 4)
+                        .accessibilityLabel("Reply to \(info.handle)")
+                    }
+                    Button { likeComment(info) } label: {
+                        HStack(alignment: .firstTextBaseline, spacing: 3) {
+                            if info.likeCount > 0 {
+                                Text("\(info.likeCount)")
+                                    .flimFont(11, relativeTo: .caption)
+                                    .foregroundStyle(FlimTheme.textTertiary)
+                                    .contentTransition(.numericText())
+                            }
+                            Image(systemName: info.likedByMe ? "heart.fill" : "heart")
+                                .font(.system(size: 12))
+                                .foregroundStyle(info.likedByMe ? accent : FlimTheme.textTertiary)
+                                .symbolEffect(.bounce, value: info.likedByMe)
+                                .frame(width: 16, alignment: .trailing)
+                        }
+                    }
+                    .expandTapTarget(top: 7, leading: 4, bottom: 7, trailing: 4)
+                    .accessibilityLabel(info.likedByMe ? "Unlike comment" : "Like comment")
                 }
-                .lineLimit(2)
-                .multilineTextAlignment(.leading)
             }
             // ONE line, always present, always the same destination, so a frame with no
             // thread is never a dead end.
@@ -640,6 +685,12 @@ struct FeedUnitCard: View {
         if !iLiked {
             Task { await feed.reactToPost(post.id, emoji: "❤️", userId: uid) }
         }
+    }
+
+    private func likeComment(_ info: CommentInfo) {
+        guard let uid = auth.currentUser?.id else { return }
+        Haptics.tap()
+        Task { await feed.toggleCommentLike(info, postId: post.id, userId: uid) }
     }
 
     private func toggleReaction(_ emoji: String) {

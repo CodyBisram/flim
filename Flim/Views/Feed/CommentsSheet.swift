@@ -11,6 +11,12 @@ struct CommentsSheet: View {
     /// do. Optional because `post` alone doesn't carry it; without one the caption renders
     /// unprefixed rather than not at all.
     var authorHandle: String? = nil
+    /// A reply already armed when the sheet opens: tapping Reply on a feed preview row lands
+    /// here with the composer focused and the @handle prefilled, so replying from the feed
+    /// is one gesture rather than a navigation chore. The composer itself stays sheet-only
+    /// (the design's rule: the pager can swipe an inline draft's target away); this is the
+    /// sheet doing the reaching instead.
+    var initialReplyHandle: String? = nil
 
     @Environment(AuthService.self) private var auth
     @Environment(FeedService.self) private var feed
@@ -101,7 +107,16 @@ struct CommentsSheet: View {
         // Not full-screen, opens at ~3/4 (like IG) with the feed peeking above; draggable to full.
         .presentationDetents([.fraction(0.75), .large])
         .presentationDragIndicator(.visible)
-        .task { await reload() }
+        .task {
+            // Armed BEFORE the reload's round trip, so the composer is focused and
+            // prefilled the moment the sheet is up rather than after comments land.
+            if let handle = initialReplyHandle, draft.isEmpty {
+                draft = prefillingReply(to: handle, in: draft)
+                replyTarget = handle
+                focused = true
+            }
+            await reload()
+        }
     }
 
     private func commentRow(_ info: CommentInfo) -> some View {
