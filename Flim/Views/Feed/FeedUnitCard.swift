@@ -195,7 +195,9 @@ struct FeedUnitCard: View {
             // A swipe or a strip tap is an explicit reach; it cannot happen off screen.
             seenStore.markSeen(current.post.id)
             captionExpanded = false
-            Task { await resolveURLs(around: selection) }
+            // Radius 2 HERE and only here: a selection change is a real swipe, the intent
+            // signal that pays for staying two photographs ahead of the finger.
+            Task { await resolveURLs(around: selection, radius: 2) }
         }
         .sheet(isPresented: $showComments, onDismiss: {
             if let pending = pendingProfile { pendingProfile = nil; route = pending }
@@ -659,9 +661,9 @@ struct FeedUnitCard: View {
     ///
     /// The RENDER window stays selection ±1 (that is the TabView-stability and egress
     /// gate); this only warms the caches those pages will hit.
-    private func resolveURLs(around index: Int) async {
-        let lo = max(0, index - 2)
-        let hi = min(unit.items.count - 1, index + 2)
+    private func resolveURLs(around index: Int, radius: Int = 1) async {
+        let lo = max(0, index - radius)
+        let hi = min(unit.items.count - 1, index + radius)
         guard lo <= hi else { return }
         let window = (lo...hi).map { unit.items[$0] }
 
@@ -673,8 +675,12 @@ struct FeedUnitCard: View {
             }
         }
 
-        // Bytes, not just URLs: prefetch is cache-first, so anything already on disk or in
-        // memory costs nothing, and only genuinely new photographs download.
+        // Bytes, not just URLs, but only past the render window's own radius: pages at ±1
+        // download themselves by rendering, so prefetching them buys nothing, and a merely
+        // BUILT unit (LazyVStack constructs ahead of the viewport) must not spend bytes on
+        // shots nobody is reading. Prefetch is cache-first, so anything already held costs
+        // nothing and only genuinely new photographs download.
+        guard radius > 1 else { return }
         let warm = window.compactMap { item -> (url: URL, cacheKey: String?)? in
             urls[item.post.id].map { ($0, item.post.cardPath) }
         }
