@@ -174,7 +174,7 @@ extension DarkroomDayUnit {
 
 // MARK: - The contact sheet (strip cutting)
 
-/// One slot in a film strip: a real photo, or an unexposed pad slot that holds its 36x50 space
+/// One slot in a film strip: a real photo, or an unexposed pad slot that holds its 36x44 space
 /// and draws nothing.
 enum DarkroomFrameSlot: Identifiable {
     case photo(Photo)

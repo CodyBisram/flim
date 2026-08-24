@@ -104,7 +104,7 @@ struct DarkroomDayUnitView: View {
         case .empty:
             // An unexposed slot: holds its space, draws nothing, no hit target.
             Color.clear
-                .frame(width: DarkroomDayUnit.framePitch - DarkroomDayUnit.frameGap, height: 50)
+                .frame(width: DarkroomDayUnit.framePitch - DarkroomDayUnit.frameGap, height: 44)
                 .accessibilityHidden(true)
         }
     }
@@ -145,12 +145,8 @@ struct DarkroomFrameView: View {
     @ViewBuilder var menu: () -> AnyView
 
     var body: some View {
-        VStack(alignment: .center, spacing: 0) {
-            imageArea
-            Spacer().frame(height: 3)
-            sharedBarSlot
-        }
-        .frame(width: 36, height: 50, alignment: .top)
+        imageArea
+        .frame(width: 36, height: 44)
         .contentShape(Rectangle())
         .onTapGesture {
             if isSelecting {
@@ -185,6 +181,19 @@ struct DarkroomFrameView: View {
             }
         }
         .frame(width: 30, height: 40)
+        // The shared mark rides INSIDE the photograph's bottom edge (owner's call, on device,
+        // 2026-08-24: the reserved under-frame slot left every strip floating loose inside its
+        // perforations, and a 14x2 bar at the very bottom of the image costs about 1% of it).
+        // The faint shadow keeps it legible over a bright bottom edge without scrimming anything.
+        .overlay(alignment: .bottom) {
+            if photo.isReady, isShared {
+                Capsule()
+                    .fill(accent)
+                    .frame(width: 14, height: 2)
+                    .shadow(color: .black.opacity(0.55), radius: 1)
+                    .padding(.bottom, 2)
+            }
+        }
     }
 
     private var developingWell: some View {
@@ -212,19 +221,6 @@ struct DarkroomFrameView: View {
                 .shadow(radius: 1)
         }
         .allowsHitTesting(false)
-    }
-
-    @ViewBuilder
-    private var sharedBarSlot: some View {
-        Group {
-            if photo.isReady, isShared {
-                Capsule().fill(accent).frame(width: 14, height: 2)
-            } else {
-                Color.clear.frame(width: 14, height: 2)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .center)
-        .frame(height: 7)
     }
 
     /// Parity with what `PhotoGridCell` announces today: date, roll membership if any, shared
@@ -261,34 +257,54 @@ struct DarkroomUnitSeparator: View {
 
 // MARK: - Month band
 
-/// A sticky section header naming the month. Solid background so frames scroll under it, never
-/// a shot count (that is a server aggregate arriving in Phase B) and never tappable (the jump
-/// sheet is Phase B too).
+/// A sticky section header naming the month, with its server-counted shot total when one is
+/// known, and a caret. Solid background so frames scroll under it. The whole band is the tap
+/// target for the jump sheet, one object rather than a label plus a separate filter chip.
 struct DarkroomMonthBandView: View {
     let group: DarkroomMonthGroup
+    /// The server's photo count for this month, `nil` when the RPC hasn't answered (the count
+    /// segment is then omitted entirely, never a page-derived guess and never "0 shots").
+    let shotCount: Int?
+    let onTap: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(group.title().uppercased())
-                .flimFont(12, weight: .semibold)
-                .tracking(1.1)
-                .foregroundStyle(FlimTheme.textSecondary)
-            LinearGradient(
-                stops: [
-                    .init(color: FlimTheme.stroke, location: 0),
-                    .init(color: .clear, location: 0.6),
-                    .init(color: .clear, location: 1)
-                ],
-                startPoint: .leading, endPoint: .trailing)
-                .frame(height: 1)
+        Button(action: onTap) {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(group.title().uppercased())
+                        .flimFont(12, weight: .semibold)
+                        .tracking(1.1)
+                        .foregroundStyle(FlimTheme.textSecondary)
+                    if let shotCount {
+                        Text("· \(shotCount) shot\(shotCount == 1 ? "" : "s")")
+                            .flimFont(11.5)
+                            .foregroundStyle(FlimTheme.textTertiary)
+                    }
+                    Spacer(minLength: 8)
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(FlimTheme.textTertiary)
+                }
+                LinearGradient(
+                    stops: [
+                        .init(color: FlimTheme.stroke, location: 0),
+                        .init(color: .clear, location: 0.6),
+                        .init(color: .clear, location: 1)
+                    ],
+                    startPoint: .leading, endPoint: .trailing)
+                    .frame(height: 1)
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 14)
+            .padding(.bottom, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(FlimTheme.bg)
+            .contentShape(Rectangle())
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 14)
-        .padding(.bottom, 8)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(FlimTheme.bg)
+        .buttonStyle(.plain)
         .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(.isHeader)
+        .accessibilityAddTraits([.isHeader, .isButton])
+        .accessibilityHint("Jump to month")
     }
 }
 
@@ -368,7 +384,7 @@ struct DarkroomLoadingSkeleton: View {
                             RoundedRectangle(cornerRadius: 2)
                                 .fill(Color.white.opacity(0.06))
                                 .frame(width: 30, height: 40)
-                                .frame(width: 36, height: 50, alignment: .top)
+                                .frame(width: 36, height: 44)
                         }
                     }
                     .padding(.vertical, 2)
