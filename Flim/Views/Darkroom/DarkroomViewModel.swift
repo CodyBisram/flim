@@ -84,11 +84,17 @@ final class DarkroomViewModel {
         // nothing extra to run concurrently and resolves before pagination would ever matter.
         async let count = photoService.personalPhotoCount(userId: userId)
         do {
-            try await photoService.fetchPersonalPhotos(userId: userId)
-            let fetched = photoService.loadedPhotos
-            await MainActor.run { photos = fetched }
-            await markReadyPhotos(photoService: photoService)
-            await prefetchURLs(photoService: photoService)
+            // `applied == false` means a newer fetch (another screen's reset) superseded this
+            // one while it was in flight: `loadedPhotos` is then the OTHER surface's list, and
+            // reading it here would put the wrong photographs in this grid until the next
+            // reload. Skip the assignment; whoever superseded us owns the shared state now.
+            let applied = try await photoService.fetchPersonalPhotos(userId: userId)
+            if applied {
+                let fetched = photoService.loadedPhotos
+                await MainActor.run { photos = fetched }
+                await markReadyPhotos(photoService: photoService)
+                await prefetchURLs(photoService: photoService)
+            }
         } catch {
             await MainActor.run { self.error = error.localizedDescription }
         }
@@ -100,11 +106,14 @@ final class DarkroomViewModel {
     func loadRoll(photoService: PhotoService, rollId: UUID, blockedIds: Set<UUID> = []) async {
         await MainActor.run { isLoading = true; error = nil }
         do {
-            try await photoService.fetchRollPhotos(rollId: rollId, blockedIds: blockedIds)
-            let fetched = photoService.loadedPhotos
-            await MainActor.run { photos = fetched }
-            await markReadyPhotos(photoService: photoService)
-            await prefetchURLs(photoService: photoService)
+            // Same applied-or-superseded contract as `load()` above.
+            let applied = try await photoService.fetchRollPhotos(rollId: rollId, blockedIds: blockedIds)
+            if applied {
+                let fetched = photoService.loadedPhotos
+                await MainActor.run { photos = fetched }
+                await markReadyPhotos(photoService: photoService)
+                await prefetchURLs(photoService: photoService)
+            }
         } catch {
             await MainActor.run { self.error = error.localizedDescription }
         }
@@ -115,7 +124,9 @@ final class DarkroomViewModel {
 
     func loadMore(photoService: PhotoService, userId: UUID) async {
         guard photoService.hasMore, !photoService.isLoading else { return }
-        try? await photoService.fetchPersonalPhotos(userId: userId, reset: false)
+        // `== true` and not `!= false`: a thrown fetch (`try?` nil) and a superseded fetch both
+        // mean `loadedPhotos` is not this call's result; see `load()`.
+        guard (try? await photoService.fetchPersonalPhotos(userId: userId, reset: false)) == true else { return }
         let fetched = photoService.loadedPhotos
         await MainActor.run { photos = fetched }
         await markReadyPhotos(photoService: photoService)
@@ -123,7 +134,7 @@ final class DarkroomViewModel {
 
     func loadMoreRoll(photoService: PhotoService, rollId: UUID, blockedIds: Set<UUID> = []) async {
         guard photoService.hasMore, !photoService.isLoading else { return }
-        try? await photoService.fetchRollPhotos(rollId: rollId, reset: false, blockedIds: blockedIds)
+        guard (try? await photoService.fetchRollPhotos(rollId: rollId, reset: false, blockedIds: blockedIds)) == true else { return }
         let fetched = photoService.loadedPhotos
         await MainActor.run { photos = fetched }
         await markReadyPhotos(photoService: photoService)

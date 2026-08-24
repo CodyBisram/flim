@@ -52,6 +52,21 @@ struct DarkroomView: View {
     /// alongside `reload()`, never per cell.
     @State private var unsortedURLCache: [UUID: URL] = [:]
     @State private var showSortDeck = false
+    /// The month jump sheet's own flag, deliberately not shared with any other sheet on this
+    /// screen (`showSortDeck`, the roll-delete confirm): two surfaces sharing one flag once broke
+    /// each other when one dismissed and the other's `onDismiss` fired for it.
+    @State private var showJumpSheet = false
+    /// `darkroom_month_counts`' rows, `nil` until `reload()`'s dedicated fetch resolves or the
+    /// RPC isn't reachable yet (see `PhotoService.darkroomMonthCounts`'s own doc). Every reader
+    /// treats `nil` as "no server counts yet", never as zero.
+    @State private var monthCounts: [DarkroomMonthCount]?
+    /// Set once the scroll view exists, so a month-jump can call `scrollTo` from outside the
+    /// `ScrollViewReader` closure that owns it.
+    @State private var scrollProxy: ScrollViewProxy?
+    /// Guards `jumpToMonth`'s page-until-anchor loop so a second tap on an unloaded month can't
+    /// start a second one racing the first.
+    @State private var jumpPagingInFlight = false
+    @State private var jumpPagingTask: Task<Void, Never>?
     @State private var showRollDeleteConfirm = false
     @State private var pendingRollDeleteBatch: [Photo] = []
     @State private var shareItem: ShareImage?
@@ -93,6 +108,19 @@ struct DarkroomView: View {
         DarkroomDayUnit.pickPreview(from: unsortedPhotos)
     }
 
+    /// Every month currently rendered on screen, for the jump sheet's pre-migration fallback
+    /// (see `DarkroomJumpSheetLogic`'s own doc) and for `jumpToMonth`'s "already loaded" check.
+    private var loadedMonthKeys: Set<DarkroomYearMonth> {
+        Set(monthGroups.map { DarkroomYearMonth(date: $0.monthKey) })
+    }
+
+    /// This month band's server-counted total, `nil` while `darkroom_month_counts` hasn't
+    /// answered (or the month isn't in its rows, which the RPC's own contract makes equivalent
+    /// to "unknown" here, since a month with zero photos wouldn't be rendering a band at all).
+    private func shotCount(for group: DarkroomMonthGroup) -> Int? {
+        monthCounts?.photoCount(for: DarkroomYearMonth(date: group.monthKey))
+    }
+
     var body: some View {
         ZStack {
             FlimTheme.bg.ignoresSafeArea()
@@ -119,6 +147,7 @@ struct DarkroomView: View {
                             .onChange(of: scrollToTop) {
                                 withAnimation(.snappy) { proxy.scrollTo("top", anchor: .top) }
                             }
+                            .onAppear { scrollProxy = proxy }
                         }
                     }
                 }
@@ -222,13 +251,19 @@ struct DarkroomView: View {
                 #endif
             }
         }
-        // The 60s develop poll only needs to run while this screen is on it.
-        .onDisappear { vm.stopRefreshing() }
+        // The 60s develop poll only needs to run while this screen is on it, and a page-until-
+        // anchor jump has no reason to keep paging once nobody's watching for it to land.
+        .onDisappear { vm.stopRefreshing(); jumpPagingTask?.cancel() }
         .fullScreenCover(item: $selectedPhoto, onDismiss: { openForTagging = false }) { photo in
             pager(for: photo)
         }
         .fullScreenCover(isPresented: $showSortDeck, onDismiss: { Task { await reload() } }) {
             SortDeckView(onFinish: {})
+        }
+        .sheet(isPresented: $showJumpSheet) {
+            DarkroomJumpSheet(monthCounts: monthCounts, loadedMonths: loadedMonthKeys) { year, month in
+                jumpToMonth(year: year, month: month)
+            }
         }
         // On the outer chain, not on the grid's ScrollView: the grid does not exist in the empty
         // and loading states, and a widget tap that lands then would be silently dropped.
@@ -296,7 +331,12 @@ struct DarkroomView: View {
                         }
                     }
                 } header: {
-                    if showsMonthBands { DarkroomMonthBandView(group: group) }
+                    if showsMonthBands {
+                        DarkroomMonthBandView(group: group, shotCount: shotCount(for: group)) {
+                            Haptics.tap()
+                            showJumpSheet = true
+                        }
+                    }
                 }
             }
         }
@@ -482,7 +522,11 @@ struct DarkroomView: View {
         let restored = batch.filter { !existingIds.contains($0.id) }
         guard !restored.isEmpty else { return }
         vm.photos.append(contentsOf: restored)
-        vm.photos.sort { $0.developsAt > $1.developsAt }
+        // The personal Darkroom now pages (and renders) in `taken_at` order, not `develops_at`,
+        // see `PhotoService.PhotoOrderColumn`'s own doc; restoring here has to land these frames
+        // back where that order would have put them, or a restored photo can appear under the
+        // wrong night.
+        vm.photos.sort { $0.takenAt > $1.takenAt }
         Haptics.error()
         flashError(restored.count == 1
             ? "Couldn't delete that photo. Check your connection and try again."
@@ -586,9 +630,42 @@ struct DarkroomView: View {
         }
     }
 
+    /// Dismisses the jump sheet, then lands `year`/`month`'s band at the top of the scroller.
+    ///
+    /// A month already loaded scrolls immediately. A month the sheet promised has photos but
+    /// isn't loaded yet is reached by paging forward (anchored paging proper is deferred, see
+    /// the design brief) until a unit of it appears or `photoService.hasMore` runs out, guarded
+    /// by `jumpPagingInFlight` so a second tap on an unloaded month can't race the first, and
+    /// cancelled from `.onDisappear` if the screen goes away mid-loop. If pagination exhausts
+    /// without ever finding the month (the RPC and the page boundary disagreeing, e.g. a
+    /// timezone edge), this no-ops silently rather than crash or show a real photo as a bogus one.
+    private func jumpToMonth(year: Int, month: Int) {
+        showJumpSheet = false
+        guard let targetId = Calendar.current.date(from: DateComponents(year: year, month: month, day: 1))
+        else { return }
+
+        if monthGroups.contains(where: { $0.id == targetId }) {
+            withAnimation(.snappy) { scrollProxy?.scrollTo(targetId, anchor: .top) }
+            return
+        }
+
+        guard !jumpPagingInFlight, let uid = auth.currentUser?.id else { return }
+        jumpPagingInFlight = true
+        jumpPagingTask = Task {
+            defer { jumpPagingInFlight = false }
+            while !Task.isCancelled, !monthGroups.contains(where: { $0.id == targetId }), photoService.hasMore {
+                await vm.loadMore(photoService: photoService, userId: uid)
+            }
+            guard !Task.isCancelled, monthGroups.contains(where: { $0.id == targetId }) else { return }
+            withAnimation(.snappy) { scrollProxy?.scrollTo(targetId, anchor: .top) }
+        }
+    }
+
     private func reload() async {
         guard let userId = auth.currentUser?.id else { return }
+        async let counts = photoService.darkroomMonthCounts(timezone: TimeZone.current.identifier)
         await vm.load(photoService: photoService, userId: userId)
+        monthCounts = await counts
         // Warm the grid's thumbnails so cells appear instantly as you scroll.
         let prefetch = vm.photos.compactMap { photo -> (url: URL, cacheKey: String?)? in
             vm.signedURLCache[photo.id].map { ($0, photo.displayPath) }

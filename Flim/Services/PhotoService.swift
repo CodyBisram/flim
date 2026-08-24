@@ -1341,34 +1341,85 @@ final class PhotoService {
     /// Whether another page is available for the current feed.
     private(set) var hasMore = true
 
-    /// Keyset (cursor), not offset: `photos` has no uniqueness on `develops_at` and is written to
-    /// constantly, so a page fetched by ROW POSITION (`.range(from:to:)`) silently drifts under
-    /// concurrent writes. Distinctively for this table, the write that moves rows isn't only an
-    /// insert or delete: a ROLL REVEAL patches `develops_at`-crossing photos, or a whole roll's
-    /// worth of rows can land past the boundary the instant the roll's fixed reveal time (see
-    /// `rollRevealDate`) passes, shifting every position below it mid-scroll and re-serving rows
-    /// already shown. The project's own notes record this as two separate roll-count bugs.
-    /// Anchoring to the last-loaded row's own place in the query's order, and asking for
-    /// "everything after that point" rather than "rows N through M", makes that drift impossible.
+    /// Which timestamp column a keyset page is ordered (and cursored) on. Two callers, two
+    /// different orderings, on purpose: `fetchRollPhotos` still cursors on `develops_at` (a roll
+    /// develops as one event, and the roll UI is built around that moment), while
+    /// `fetchPersonalPhotos` cursors on `taken_at` (the Darkroom now groups nights by CAPTURE
+    /// time, see `DarkroomDayUnit`, so a later page anchored to `develops_at` could land a photo
+    /// into an already-rendered night — its `develops_at` order says nothing about where it falls
+    /// in `taken_at` order). `PhotoCursor` carries one of these rather than the query duplicating
+    /// the whole pipeline per column.
+    enum PhotoOrderColumn: Equatable {
+        case developsAt
+        case takenAt
+
+        /// The Postgres column name, used both in `.order(...)` and in `keysetFilter(after:)`.
+        var column: String {
+            switch self {
+            case .developsAt: return "develops_at"
+            case .takenAt: return "taken_at"
+            }
+        }
+
+        /// Which of `Photo`'s two Date fields this column reads, so `nextPhotoCursor` can pull
+        /// the right one off the last row without a second switch at every call site.
+        var dateKeyPath: KeyPath<Photo, Date> {
+            switch self {
+            case .developsAt: return \.developsAt
+            case .takenAt: return \.takenAt
+            }
+        }
+    }
+
+    /// Keyset (cursor), not offset: `photos` has no uniqueness on either orderable column and is
+    /// written to constantly, so a page fetched by ROW POSITION (`.range(from:to:)`) silently
+    /// drifts under concurrent writes. Distinctively for this table, the write that moves rows
+    /// isn't only an insert or delete: a ROLL REVEAL patches `develops_at`-crossing photos, or a
+    /// whole roll's worth of rows can land past the boundary the instant the roll's fixed reveal
+    /// time (see `rollRevealDate`) passes, shifting every position below it mid-scroll and
+    /// re-serving rows already shown. The project's own notes record this as two separate
+    /// roll-count bugs. Anchoring to the last-loaded row's own place in the query's order, and
+    /// asking for "everything after that point" rather than "rows N through M", makes that drift
+    /// impossible regardless of which column is in play.
     private var photoCursor: PhotoCursor?
 
-    /// A boundary in `photos`' own `develops_at DESC, id DESC` order: "everything strictly after
+    /// Which pagination SESSION `loadedPhotos`/`hasMore`/`photoCursor` currently belong to.
+    /// Bumped by every `reset` in `fetchPage`; a fetch that suspended before some other
+    /// surface's reset resumes to find its generation stale and discards its response. This is
+    /// what keeps one shared service instance safe under a Darkroom `taken_at` fetch and a roll
+    /// `develops_at` fetch interleaving: without it the late response appends the wrong
+    /// surface's rows into `loadedPhotos` and leaves its own column's cursor on the other
+    /// column's ordering. Same discard-the-stale-response shape as `AccountEpoch`, one level
+    /// down from accounts to queries.
+    private var fetchGeneration = 0
+
+    /// A boundary in `photos`' own `<column> DESC, id DESC` order: "everything strictly after
     /// this row", see `keysetFilter(after:)`. Compare `FeedService.FeedCursor`'s own doc, where a
-    /// `created_at` tie is a rare same-transaction collision: here a tie is the ORDINARY case, not
-    /// the edge case. `rollDevelopDelay` fixes one `develops_at` for an entire roll at creation
-    /// time, and every shot in that roll crosses it at THE SAME INSTANT when it reveals, so a
-    /// roll's photos routinely share one `develops_at` in a batch, not by coincidence. `id` (a
-    /// primary key) is what turns the pair into a strict total order regardless: a bare
-    /// `develops_at <` comparison would silently skip every photo sharing the boundary instant,
-    /// which for a roll reveal mid-scroll could be most of the roll, not a single stray row.
+    /// `created_at` tie is a rare same-transaction collision: a tie here is the ORDINARY case on
+    /// `develops_at`, not the edge case, `rollDevelopDelay` fixes one `develops_at` for an entire
+    /// roll at creation time, and every shot in that roll crosses it at THE SAME INSTANT when it
+    /// reveals, so a roll's photos routinely share one `develops_at` in a batch, not by
+    /// coincidence. Ties are rarer but real on `taken_at` too, a multi-shot burst can land in the
+    /// same second. `id` (a primary key) is what turns the pair into a strict total order
+    /// regardless: a bare `< cursor` comparison would silently skip every photo sharing the
+    /// boundary instant, which for a roll reveal mid-scroll could be most of the roll, not a
+    /// single stray row.
     struct PhotoCursor: Equatable {
-        let developsAt: Date
+        let column: PhotoOrderColumn
+        let sortDate: Date
         let id: UUID
     }
 
-    func fetchPersonalPhotos(userId: UUID, reset: Bool = true) async throws {
-        // Only sorted photos live in the Darkroom; unsorted instants wait in the sort deck.
-        try await fetchPage(reset: reset) {
+    /// Personal (non-roll) Darkroom photos, cursored on `taken_at` (see `PhotoOrderColumn`'s own
+    /// doc for why this is `taken_at` and not `develops_at`). Only sorted photos live in the
+    /// Darkroom; unsorted instants wait in the sort deck.
+    ///
+    /// Returns whether the response was APPLIED to `loadedPhotos` (see `fetchPage`): a caller
+    /// that gets `false` must not read `loadedPhotos` as its own result, because those fields
+    /// belong to whichever fetch superseded this one.
+    @discardableResult
+    func fetchPersonalPhotos(userId: UUID, reset: Bool = true) async throws -> Bool {
+        try await fetchPage(reset: reset, orderBy: .takenAt) {
             $0.eq("user_id", value: userId.uuidString).eq("is_sorted", value: true)
         }
     }
@@ -1382,6 +1433,23 @@ final class PhotoService {
             .eq("user_id", value: userId.uuidString)
             .eq("is_sorted", value: true)
             .execute().count) ?? 0
+    }
+
+    /// Server-aggregated per-month photo counts for the Darkroom's month bands and jump sheet,
+    /// via `public.darkroom_month_counts(p_timezone)`: caller-scoped server-side (no user id is
+    /// sent), one row per calendar month that has at least one kept photo, ascending.
+    ///
+    /// `nil` on ANY failure, not just the specific one expected until the schema owner's
+    /// migration is pasted in by hand (PostgREST's "Could not find the function ... in the schema
+    /// cache", a 404): every call site treats this as a nice-to-have overlay on server counts,
+    /// degrading to omitting them rather than spinning, crashing, or toasting about a function
+    /// that doesn't exist yet.
+    func darkroomMonthCounts(timezone: String) async -> [DarkroomMonthCount]? {
+        struct Params: Encodable { let p_timezone: String }
+        return try? await supabase
+            .rpc("darkroom_month_counts", params: Params(p_timezone: timezone))
+            .execute()
+            .value
     }
 
     /// Pushes a roll's current shot count to its Live Activity, if one is running.
@@ -1494,12 +1562,17 @@ final class PhotoService {
     /// `blockedIds` is the signed-in user's own block list (owned by FeedService, passed in by
     /// the caller). RLS already hides co-members' photos bidirectionally once blocked; this is
     /// defense-in-depth for stale/offline caches.
-    func fetchRollPhotos(rollId: UUID, reset: Bool = true, blockedIds: Set<UUID> = []) async throws {
+    @discardableResult
+    func fetchRollPhotos(rollId: UUID, reset: Bool = true, blockedIds: Set<UUID> = []) async throws -> Bool {
         // Rolls cap at 50 members and are a small, finite set, unlike the personal Darkroom's
         // unbounded feed, a bigger page means most rolls finish in a single round trip instead
         // of several, directly cutting how long "Play through the roll" takes to appear (it's
         // gated on RollDetailView eagerly draining every page first).
-        try await fetchPage(reset: reset, blockedIds: blockedIds, pageSize: 100) {
+        //
+        // Cursored on `develops_at`, unchanged: a roll develops as one fixed event, and every
+        // roll surface (the reveal, the carousel, the develop reminder) is already built around
+        // that moment, unlike the personal Darkroom's own `taken_at` cursor above.
+        try await fetchPage(reset: reset, blockedIds: blockedIds, pageSize: 100, orderBy: .developsAt) {
             $0.eq("roll_id", value: rollId.uuidString).eq("hidden", value: false)
         }
     }
@@ -1525,29 +1598,31 @@ final class PhotoService {
     // `FeedService`'s `nextFeedCursor`/`keysetFilter`/`dedupedItems` exactly, so the two pagers
     // cannot drift apart from each other.
 
-    /// Where keyset pagination should resume after `page` (already ordered `develops_at DESC, id
-    /// DESC`, `fetchPage`'s own query order): the last row's place in that order, so the next
-    /// fetch can ask for "everything after this point" instead of a row count.
+    /// Where keyset pagination should resume after `page` (already ordered `<column> DESC, id
+    /// DESC`, `fetchPage`'s own query order for whichever `orderBy` it was called with): the last
+    /// row's place in that order, so the next fetch can ask for "everything after this point"
+    /// instead of a row count.
     ///
     /// `nil` for an empty page: there is no row to anchor to, so the caller should leave whatever
     /// cursor it already had alone rather than clobber it with nothing.
-    static func nextPhotoCursor(afterPage page: [Photo]) -> PhotoCursor? {
+    static func nextPhotoCursor(afterPage page: [Photo], orderBy column: PhotoOrderColumn) -> PhotoCursor? {
         guard let last = page.last else { return nil }
-        return PhotoCursor(developsAt: last.developsAt, id: last.id)
+        return PhotoCursor(column: column, sortDate: last[keyPath: column.dateKeyPath], id: last.id)
     }
 
-    /// Raw PostgREST filter syntax for "strictly after `cursor` in `develops_at DESC, id DESC`
-    /// order": `develops_at < cursor.developsAt`, OR tied on `develops_at` and `id < cursor.id`.
-    /// Same shape as `FeedService.keysetFilter(after:)`; see `PhotoCursor`'s own doc for why the
-    /// tie branch is load-bearing far more often here than it is for the feed.
+    /// Raw PostgREST filter syntax for "strictly after `cursor` in `<column> DESC, id DESC`
+    /// order": `<column> < cursor.sortDate`, OR tied on `<column>` and `id < cursor.id`. Same
+    /// shape as `FeedService.keysetFilter(after:)`; see `PhotoCursor`'s own doc for why the tie
+    /// branch is load-bearing far more often here than it is for the feed.
     static func keysetFilter(after cursor: PhotoCursor) -> String {
         // Same explicit formatting `FeedService.keysetFilter(after:)` uses, for the same reason:
         // `.rawValue` is ambiguous between PostgREST's and Realtime's `*FilterValue`
         // conformances for `Date`, both visible through `import Supabase`.
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let ts = formatter.string(from: cursor.developsAt)
-        return "develops_at.lt.\(ts),and(develops_at.eq.\(ts),id.lt.\(cursor.id.uuidString))"
+        let ts = formatter.string(from: cursor.sortDate)
+        let col = cursor.column.column
+        return "\(col).lt.\(ts),and(\(col).eq.\(ts),id.lt.\(cursor.id.uuidString))"
     }
 
     /// `page`, minus anything already in `existingIds`.
@@ -1559,26 +1634,38 @@ final class PhotoService {
         page.filter { !existingIds.contains($0.id) }
     }
 
-    /// Loads one page of photos (newest develop-time first), appending to `loadedPhotos`. `reset`
-    /// starts a fresh list; otherwise it continues from where the last page left off. Only the
-    /// visible pages are ever fetched, and signed URLs are resolved lazily per cell.
+    /// Loads one page of photos (newest first, by whichever column `orderBy` names), appending to
+    /// `loadedPhotos`. `reset` starts a fresh list; otherwise it continues from where the last
+    /// page left off. Only the visible pages are ever fetched, and signed URLs are resolved
+    /// lazily per cell.
     ///
     /// Keyset, not offset (see `photoCursor`'s own doc for why `.range(from:to:)` drifts under
     /// concurrent writes to `photos`, roll reveals above all).
+    ///
+    /// Returns `true` when the response was applied to `loadedPhotos`/`hasMore`/`photoCursor`,
+    /// `false` when it was discarded by the account-epoch or pagination-generation guard. A
+    /// `false` means those fields belong to whichever fetch superseded this one, so the caller
+    /// must not read `loadedPhotos` as its own result.
     private func fetchPage(
         reset: Bool,
         blockedIds: Set<UUID> = [],
         pageSize: Int? = nil,
+        orderBy column: PhotoOrderColumn,
         filter: (PostgrestFilterBuilder) -> PostgrestFilterBuilder
-    ) async throws {
+    ) async throws -> Bool {
         let epoch = AccountEpoch.current
         let limit = pageSize ?? self.pageSize
         if reset {
+            fetchGeneration &+= 1
             photoCursor = nil
             hasMore = true
             loadedPhotos = []
         }
-        guard hasMore else { return }
+        // Captured after the reset above, checked after every await below: a response belonging
+        // to a superseded pagination session is discarded, exactly the way the AccountEpoch
+        // guard discards a response that outlived its account.
+        let generation = fetchGeneration
+        guard hasMore else { return true }
 
         isLoading = true
         // Covers every return below, including the epoch guard inside the loop: without this,
@@ -1602,7 +1689,7 @@ final class PhotoService {
             let filtered = filter(base)
             let cursored = photoCursor.map { filtered.or(PhotoService.keysetFilter(after: $0)) } ?? filtered
             let page: [Photo] = try await cursored
-                .order("develops_at", ascending: false)
+                .order(column.column, ascending: false)
                 .order("id", ascending: false)
                 .limit(limit)
                 .execute()
@@ -1615,19 +1702,33 @@ final class PhotoService {
             // moment each page lands, so a stale response could advance the NEW account's cursor
             // and switch off its `hasMore` before anything visible was appended, truncating a
             // list that had only just been reset. See AccountEpoch.
-            guard AccountEpoch.isCurrent(epoch) else { return }
+            guard AccountEpoch.isCurrent(epoch) else { return false }
+
+            // Discard a response that outlived its pagination SESSION, the same shape one level
+            // down: `loadedPhotos`, `hasMore`, and `photoCursor` are one shared set of fields,
+            // and this service is one shared instance, so a Darkroom page still in flight when a
+            // roll fetch resets everything (or vice versa) would otherwise append its rows into
+            // the other surface's list and leave its own column's cursor on the other column's
+            // ordering. `reset` bumps the generation; a suspended older fetch resumes, fails this
+            // guard, and writes nothing.
+            guard generation == fetchGeneration else { return false }
 
             // Advanced from the RAW page, before blocked-user filtering or dedup: the cursor must
             // move past every row this page looked at, even the ones filtered out, or the next
             // fetch would just ask for the same page again.
-            if let next = PhotoService.nextPhotoCursor(afterPage: page) { photoCursor = next }
+            if let next = PhotoService.nextPhotoCursor(afterPage: page, orderBy: column) { photoCursor = next }
             if page.count < limit { hasMore = false }
 
             let candidates = blockedIds.isEmpty ? page : page.filter { !blockedIds.contains($0.userId) }
             visible = PhotoService.dedupedPhotos(candidates, excluding: existingIds)
         }
 
+        // Same two guards as inside the loop: the loop can exit between an await resuming and
+        // this append, and an append past either boundary is exactly the cross-session write
+        // the guards exist to prevent.
+        guard AccountEpoch.isCurrent(epoch), generation == fetchGeneration else { return false }
         loadedPhotos.append(contentsOf: visible)
+        return true
     }
 
     // MARK: - Signed URLs
