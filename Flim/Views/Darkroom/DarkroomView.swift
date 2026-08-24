@@ -45,7 +45,12 @@ struct DarkroomView: View {
     @State private var showReveal = false
     @State private var revealAnim = false
     @State private var revealCount = 0
-    @State private var unsortedCount = 0
+    /// The unsorted photos themselves, not just a count: the sort row needs three of them for
+    /// its preview thumbnails.
+    @State private var unsortedPhotos: [Photo] = []
+    /// Signed URLs for `unsortedPhotos`' preview thumbnails, resolved in one batched call
+    /// alongside `reload()`, never per cell.
+    @State private var unsortedURLCache: [UUID: URL] = [:]
     @State private var showSortDeck = false
     @State private var showRollDeleteConfirm = false
     @State private var pendingRollDeleteBatch: [Photo] = []
@@ -53,12 +58,40 @@ struct DarkroomView: View {
     /// Set by the grid's "Tag people" action so the viewer opens straight into the share
     /// composer's tag step. Cleared on dismiss so a later ordinary tap opens the photo normally.
     @State private var openForTagging = false
+    /// The scroll content's measured width, so the contact sheet's strip capacity is derived
+    /// from the real available width rather than a hard-coded frame count. 393 is the design's
+    /// own reference width, a reasonable first-paint guess before the geometry read lands.
+    @State private var scrollWidth: CGFloat = 393
 
-    private let columns = [
-        GridItem(.flexible(), spacing: 2),
-        GridItem(.flexible(), spacing: 2),
-        GridItem(.flexible(), spacing: 2)
-    ]
+    private var stripCapacity: Int {
+        max(1, DarkroomDayUnit.stripCapacity(availableWidth: scrollWidth - 32))
+    }
+
+    /// One unit per night, newest first, this render's single source of truth for both the
+    /// contact sheet and the pager's flattened order. Cheap to recompute per body evaluation:
+    /// grouping a few hundred loaded photos is well under the cost of the images beside it.
+    private var dayUnits: [DarkroomDayUnit] {
+        DarkroomDayUnit.units(from: vm.photos)
+    }
+
+    private var monthGroups: [DarkroomMonthGroup] {
+        DarkroomDayUnit.monthGroups(units: dayUnits)
+    }
+
+    /// Bands render only when the loaded library actually spans two or more calendar months.
+    private var showsMonthBands: Bool { monthGroups.count >= 2 }
+
+    private var lastUnitId: Date? { monthGroups.last?.units.last?.id }
+
+    /// The flattened READY photos in render order (units newest first, frames oldest first
+    /// inside each), what the pager pages through and where pagination's trigger frame lives.
+    private var renderOrderReadyPhotos: [Photo] {
+        dayUnits.flatMap(\.developed)
+    }
+
+    private var sortPreviewPhotos: [Photo] {
+        DarkroomDayUnit.pickPreview(from: unsortedPhotos)
+    }
 
     var body: some View {
         ZStack {
@@ -67,25 +100,9 @@ struct DarkroomView: View {
             VStack(spacing: 0) {
                 FlimNavTitle("Darkroom")
 
-                if unsortedCount > 0 {
-                    Button { showSortDeck = true } label: {
-                        HStack(spacing: 10) {
-                            Image(systemName: "square.stack.3d.up.fill")
-                            Text("\(unsortedCount) shot\(unsortedCount == 1 ? "" : "s") to sort")
-                            Spacer()
-                            Image(systemName: "chevron.right").font(.system(size: 12))
-                        }
-                        .flimFont(14, weight: .semibold)
-                        .foregroundStyle(accent)
-                        .padding(.horizontal, 16).padding(.vertical, 12)
-                        .background(accent.opacity(0.16), in: RoundedRectangle(cornerRadius: 12))
-                        .padding(.horizontal, 16).padding(.bottom, 4)
-                    }
-                }
-
                 Group {
                     if vm.isLoading && vm.photos.isEmpty {
-                        ScrollView { LoadingGrid().padding(.top, 8) }
+                        ScrollView { DarkroomLoadingSkeleton().padding(.top, 8) }
                             .scrollDisabled(true)
                     } else if let error = vm.error, vm.photos.isEmpty {
                         ErrorState(message: error) { await reload() }
@@ -95,9 +112,9 @@ struct DarkroomView: View {
                         ScrollViewReader { proxy in
                             ScrollView {
                                 Color.clear.frame(height: 0).id("top")
-                                photoGrid
-                                    .padding(.horizontal, 2)
+                                nightList
                             }
+                            .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { scrollWidth = $0 }
                             .refreshable { await reload() }
                             .onChange(of: scrollToTop) {
                                 withAnimation(.snappy) { proxy.scrollTo("top", anchor: .top) }
@@ -138,21 +155,9 @@ struct DarkroomView: View {
                 .accessibilityLabel("Seed unsorted (DEBUG)")
             }
             #endif
-            // Something to sort → the shortcut pill; otherwise a glanceable count (no empty button).
-            if unsortedCount > 0 {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button { showSortDeck = true } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "square.stack.3d.up.fill").font(.system(size: 11))
-                            Text("\(unsortedCount)").flimFont(13, weight: .semibold)
-                        }
-                        .foregroundStyle(.black)
-                        .padding(.horizontal, 10).padding(.vertical, 5)
-                        .background(accent, in: Capsule())
-                    }
-                    .accessibilityLabel("\(unsortedCount) to sort")
-                }
-            } else if let total = vm.totalCount, total > 0 {
+            // A glanceable total, whenever there is one — it no longer loses its slot to a
+            // sort-shortcut pill; that shortcut lives in the in-scroll sort row now.
+            if let total = vm.totalCount, total > 0 {
                 ToolbarItem(placement: .topBarTrailing) {
                     Text("\(total) shot\(total == 1 ? "" : "s")")
                         .flimFont(13, weight: .medium)
@@ -230,7 +235,7 @@ struct DarkroomView: View {
         .onChange(of: openSortDeckSignal) { _, _ in
             // Guarded on there being something to sort: a tap can land a moment after the deck
             // was emptied on another device, and an empty full-screen deck is a dead end.
-            if unsortedCount > 0 { showSortDeck = true }
+            if !unsortedPhotos.isEmpty { showSortDeck = true }
         }
         .onChange(of: openPhotoId.wrappedValue) { _, _ in openRequestedPhoto() }
         .sheet(item: $shareItem) { SharePreviewSheet(photo: $0.image) }
@@ -247,38 +252,66 @@ struct DarkroomView: View {
         }
     }
 
-    // MARK: - Grid
+    // MARK: - Night list
 
-    @ViewBuilder
-    private var photoGrid: some View {
-        if !vm.developingPhotos.isEmpty {
-            developingSection
-        }
-        if !vm.developedPhotos.isEmpty {
-            developedSection
-        }
-    }
-
-    private var developingSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("\(vm.developingPhotos.count) DEVELOPING")
-                    .flimFont(11, weight: .medium)
-                    .tracking(2)
-                    .foregroundStyle(Color(white: 0.4))
-                Spacer()
+    /// One unit per night, sticky month bands when the library spans more than one month, and
+    /// the sort row above all of it. `Section` per month keeps the header pin working even when
+    /// there is exactly one month to show (its header is then just empty).
+    private var nightList: some View {
+        LazyVStack(alignment: .leading, spacing: 0, pinnedViews: showsMonthBands ? [.sectionHeaders] : []) {
+            if !isSelecting, !unsortedPhotos.isEmpty {
+                DarkroomSortRowView(
+                    accent: accent,
+                    count: unsortedPhotos.count,
+                    previewPhotos: sortPreviewPhotos,
+                    previewURLs: unsortedURLCache,
+                    onTap: { showSortDeck = true }
+                )
             }
-            .padding(.horizontal, 4)
-            .padding(.top, 16)
-
-            LazyVGrid(columns: columns, spacing: 2) {
-                ForEach(vm.developingPhotos) { photo in
-                    PhotoGridCell(photo: photo, signedURL: nil, rollName: rollName(for: photo.rollId))
-                        .overlay { if isSelecting { selectionMark(photo.id) } }
-                        .onTapGesture { if isSelecting { toggleSelect(photo.id) } }
-                        .contextMenu { developingMenu(photo) }
+            ForEach(monthGroups) { group in
+                Section {
+                    ForEach(group.units) { unit in
+                        DarkroomDayUnitView(
+                            unit: unit,
+                            capacity: stripCapacity,
+                            showsMonth: showsMonthBands,
+                            accent: accent,
+                            signedURLCache: vm.signedURLCache,
+                            sharedIds: feed.myPostedPhotoIds,
+                            isSelecting: isSelecting,
+                            selectedIDs: selectedIDs,
+                            rollName: { rollName(for: $0) },
+                            photoNS: photoNS,
+                            onTapDeveloped: { photo in
+                                selectedURL = vm.signedURLCache[photo.id]
+                                selectedPhoto = photo
+                            },
+                            onToggleSelect: { toggleSelect($0) },
+                            developedMenu: { AnyView(developedMenu($0)) },
+                            developingMenu: { AnyView(developingMenu($0)) },
+                            onFrameAppear: { photo in await onFrameAppear(photo) }
+                        )
+                        if unit.id != lastUnitId {
+                            DarkroomUnitSeparator()
+                        }
+                    }
+                } header: {
+                    if showsMonthBands { DarkroomMonthBandView(group: group) }
                 }
             }
+        }
+        .padding(.bottom, 12)
+    }
+
+    /// Resolves a frame's signed URL if it isn't cached yet (freshly-loaded pages aren't covered
+    /// by `reload()`'s batched prefetch), and loads the next page once the last READY frame in
+    /// render order appears — the pagination trigger, unchanged from the old grid's.
+    private func onFrameAppear(_ photo: Photo) async {
+        if photo.isReady, vm.signedURLCache[photo.id] == nil {
+            _ = await vm.signedURL(for: photo, photoService: photoService)
+        }
+        if photo.id == renderOrderReadyPhotos.last?.id, let uid = auth.currentUser?.id {
+            await vm.loadMore(photoService: photoService, userId: uid)
         }
     }
 
@@ -349,19 +382,6 @@ struct DarkroomView: View {
             try? await Task.sleep(for: .seconds(2))
             withAnimation { errorToast = nil }
         }
-    }
-
-    private func selectionMark(_ id: UUID) -> some View {
-        let selected = selectedIDs.contains(id)
-        return ZStack(alignment: .topTrailing) {
-            RoundedRectangle(cornerRadius: 4).fill(Color.black.opacity(selected ? 0.4 : 0.001))
-            Image(systemName: selected ? "checkmark.circle.fill" : "circle")
-                .font(.system(size: 18))
-                .foregroundStyle(selected ? accent : .white.opacity(0.85))
-                .padding(6)
-                .shadow(radius: 2)
-        }
-        .allowsHitTesting(false)
     }
 
     private func toggleSelect(_ id: UUID) {
@@ -482,47 +502,6 @@ struct DarkroomView: View {
         return rolls.rolls.first { $0.id == rollId }?.name
     }
 
-    private var developedSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("DEVELOPED")
-                    .flimFont(11, weight: .medium)
-                    .tracking(2)
-                    .foregroundStyle(Color(white: 0.4))
-                Spacer()
-            }
-            .padding(.horizontal, 4)
-            .padding(.top, 16)
-
-            LazyVGrid(columns: columns, spacing: 2) {
-                ForEach(vm.developedPhotos) { photo in
-                    PhotoGridCell(photo: photo, signedURL: vm.signedURLCache[photo.id], rollName: rollName(for: photo.rollId),
-                                  isShared: feed.myPostedPhotoIds.contains(photo.id))
-                        .matchedTransitionSource(id: photo.id, in: photoNS)
-                        .overlay { if isSelecting { selectionMark(photo.id) } }
-                        .onTapGesture {
-                            if isSelecting {
-                                toggleSelect(photo.id)
-                            } else {
-                                selectedURL = vm.signedURLCache[photo.id]
-                                selectedPhoto = photo
-                            }
-                        }
-                        .contextMenu { developedMenu(photo) }
-                        .task {
-                            if vm.signedURLCache[photo.id] == nil {
-                                _ = await vm.signedURL(for: photo, photoService: photoService)
-                            }
-                            // Load the next page as the last photo scrolls into view.
-                            if photo.id == vm.developedPhotos.last?.id, let uid = auth.currentUser?.id {
-                                await vm.loadMore(photoService: photoService, userId: uid)
-                            }
-                        }
-                }
-            }
-        }
-    }
-
     private var emptyState: some View {
         VStack(spacing: 12) {
             Image(systemName: "camera.aperture")
@@ -541,9 +520,9 @@ struct DarkroomView: View {
             } label: {
                 Label("Take a shot", systemImage: "camera.aperture")
                     .flimFont(14, weight: .semibold)
-                    .foregroundStyle(.black)
+                    .foregroundStyle(accent)
                     .padding(.horizontal, 20).padding(.vertical, 11)
-                    .background(accent, in: Capsule())
+                    .overlay(Capsule().stroke(accent, lineWidth: 1))
             }
             .padding(.top, 4)
         }
@@ -560,9 +539,12 @@ struct DarkroomView: View {
     /// on screen for it to zoom out of.
     @ViewBuilder
     private func pager(for photo: Photo) -> some View {
-        let index = vm.developedPhotos.firstIndex(where: { $0.id == photo.id })
+        // The flattened render order: units newest first, each night's own frames oldest first,
+        // so swiping plays a night forward and then continues into the adjacent one.
+        let orderedPhotos = renderOrderReadyPhotos
+        let index = orderedPhotos.firstIndex(where: { $0.id == photo.id })
         if let index {
-            PhotoPagerView(photos: vm.developedPhotos,
+            PhotoPagerView(photos: orderedPhotos,
                            startIndex: index,
                            signedURLs: vm.signedURLCache,
                            rollName: { rollName(for: $0) },
@@ -613,7 +595,17 @@ struct DarkroomView: View {
         }
         ImageLoader.prefetch(prefetch, maxPixel: 400, scale: displayScale)
         if rolls.rolls.isEmpty { try? await rolls.fetchRolls(for: userId) }   // for roll labels
-        unsortedCount = await photoService.fetchUnsorted(userId: userId).count
+        let unsorted = await photoService.fetchUnsorted(userId: userId)
+        unsortedPhotos = unsorted
+        // The sort row only ever shows up to three thumbnails, so only those three need signed
+        // URLs, batched in one call rather than a round trip per preview cell.
+        let previews = DarkroomDayUnit.pickPreview(from: unsorted)
+        if !previews.isEmpty {
+            let map = await photoService.signedURLs(for: previews.map(\.displayPath))
+            for previewPhoto in previews {
+                if let url = map[previewPhoto.displayPath] { unsortedURLCache[previewPhoto.id] = url }
+            }
+        }
         // One batched query for the whole grid's "shared to your page" badge, not a `hasPosted`
         // round trip per tile.
         await feed.loadMyPostedPhotoIds(userId: userId)

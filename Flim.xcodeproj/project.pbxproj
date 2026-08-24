@@ -57,6 +57,7 @@
 		3867802F2389D9765988E950 /* Activation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 861FB2928E71AE4B67024C57 /* Activation.swift */; };
 		38A6FEF2AD81D86634308EE0 /* FeedbackService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73A9AEBBBFB814304ABC8715 /* FeedbackService.swift */; };
 		3B9C5D883F61F8F4D2587186 /* PhoneAuthView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C14C96ED4A714B7DD3274C7E /* PhoneAuthView.swift */; };
+		3E4B2CD914C331A443B11EB0 /* DarkroomDayUnitTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27A6A72391A59B32B3529736 /* DarkroomDayUnitTests.swift */; };
 		3F3DF3063A089C8F1EEC906E /* FeedServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17748DA0845B5512541A214D /* FeedServiceTests.swift */; };
 		3F49B2B6996C065BA82A0395 /* ReactionBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 235D6F50F5FDD8BE4BB9DE4E /* ReactionBar.swift */; };
 		40156F83DC4D83217CB2DED5 /* AuthHelpersTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9927EBDE8E7056C4DA31EF2 /* AuthHelpersTests.swift */; };
@@ -164,6 +165,7 @@
 		BF7CC543E4B4AA9122A6A435 /* FlimAccentPalette.swift in Sources */ = {isa = PBXBuildFile; fileRef = 605C13CF0D2D65A1EA8701FF /* FlimAccentPalette.swift */; };
 		C284CAB6E1E4B68DD90A2B20 /* EmojiSuggestionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41A387A8908C61FB39ABB6DB /* EmojiSuggestionTests.swift */; };
 		C4599B50B1699E2971A353FF /* MainTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A093E4509E9F7972F5B26E7 /* MainTabView.swift */; };
+		C5019D33058E6895C02A2BF7 /* DarkroomRackView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFA9C65A961FE978AB5AB452 /* DarkroomRackView.swift */; };
 		C539D0CE6C29A43C779AA265 /* PhotoService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01ECCD46517220EBFD0EC621 /* PhotoService.swift */; };
 		C58842FF37430F328241A087 /* RollPickerDestinationsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF40E37CA14E67865D69A9FF /* RollPickerDestinationsTests.swift */; };
 		C74A7254222213AB7C52FB3A /* RollRevealAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DDF52A98F82403864BA86D2 /* RollRevealAttributes.swift */; };
@@ -212,6 +214,7 @@
 		F49C20EEF5B515D8924048EE /* PhotoExportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC186737296AABC10E4A1C48 /* PhotoExportTests.swift */; };
 		F4F2482F4D0C3255D7D82689 /* UserFacingErrorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03FF9DA2DBDEF3CFA038F0ED /* UserFacingErrorTests.swift */; };
 		F5701A740A6BFD822B551A03 /* InstantFilmProcessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14C863F6302D9B2BFBA71B6C /* InstantFilmProcessor.swift */; };
+		F57A1F2209B0D2D44780CEB2 /* DarkroomDayUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = D12980C0CB6174D144ED01F5 /* DarkroomDayUnit.swift */; };
 		F62C33EF31441786B7C91033 /* KeyboardDismissPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0563C97C3D9EAAFA438E4E07 /* KeyboardDismissPolicyTests.swift */; };
 		F63EEF7D9CF0A8333B587BE8 /* ColorProfileTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1BCF6EBC279A8B682333548 /* ColorProfileTests.swift */; };
 		F745F000026F745A673ECF41 /* AvatarBadgeCenteringTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C79CEA8F4E41B389C1CFB5C /* AvatarBadgeCenteringTests.swift */; };
@@ -302,6 +305,7 @@
 		24E8357668BCA14F54E5CBD3 /* WidgetTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetTheme.swift; sourceTree = "<group>"; };
 		2541CCDED4898D0604DB64EA /* CameraViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraViewModel.swift; sourceTree = "<group>"; };
 		2799D0A16BD28480D86704FF /* FilmLookTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilmLookTests.swift; sourceTree = "<group>"; };
+		27A6A72391A59B32B3529736 /* DarkroomDayUnitTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DarkroomDayUnitTests.swift; sourceTree = "<group>"; };
 		27C91B091C398BBCB5FF3E74 /* PhotoServiceEmojiCacheTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoServiceEmojiCacheTests.swift; sourceTree = "<group>"; };
 		2841F63BB7020F90D16433C0 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		287FF4EBE30A5F8F1CB00635 /* WidgetSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetSnapshotTests.swift; sourceTree = "<group>"; };
@@ -443,6 +447,7 @@
 		CDD12AED157BD394A1D49095 /* PhotoServicePaginationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoServicePaginationTests.swift; sourceTree = "<group>"; };
 		CEF88DC660A8BC9D5C2936AA /* TagSaveOutcomeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TagSaveOutcomeTests.swift; sourceTree = "<group>"; };
 		CF062148240A383A260E8EE3 /* Photo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Photo.swift; sourceTree = "<group>"; };
+		D12980C0CB6174D144ED01F5 /* DarkroomDayUnit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DarkroomDayUnit.swift; sourceTree = "<group>"; };
 		D22ACB97D61072B25DA50604 /* PushDestination.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushDestination.swift; sourceTree = "<group>"; };
 		D30B42EBEE797C8D0DEC4848 /* RollRevealViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollRevealViewModel.swift; sourceTree = "<group>"; };
 		D7299D16CD74851BA0C29495 /* PhotoServiceGradedRenditionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoServiceGradedRenditionTests.swift; sourceTree = "<group>"; };
@@ -467,6 +472,7 @@
 		E76395E2FEC6D1DFCEAC9E84 /* UserFacingError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserFacingError.swift; sourceTree = "<group>"; };
 		EA572719CB09DB023B6F4FA8 /* VersionGateService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VersionGateService.swift; sourceTree = "<group>"; };
 		EE73B765C41AB33B6D7D43F4 /* ShareImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareImage.swift; sourceTree = "<group>"; };
+		EFA9C65A961FE978AB5AB452 /* DarkroomRackView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DarkroomRackView.swift; sourceTree = "<group>"; };
 		EFC0C65109A81467AB59472B /* AuthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthService.swift; sourceTree = "<group>"; };
 		F0C42110E6AE811C6B12C87A /* PhotoStoragePathsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoStoragePathsTests.swift; sourceTree = "<group>"; };
 		F1AA5EF66C46272F42891AF4 /* RollMembersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollMembersView.swift; sourceTree = "<group>"; };
@@ -502,6 +508,8 @@
 		01ED5D5DF69FB20B7D2CBE52 /* Darkroom */ = {
 			isa = PBXGroup;
 			children = (
+				D12980C0CB6174D144ED01F5 /* DarkroomDayUnit.swift */,
+				EFA9C65A961FE978AB5AB452 /* DarkroomRackView.swift */,
 				2AACFEBE63C392489A62B63C /* DarkroomView.swift */,
 				060BA5995DD93E64A494A2E4 /* DarkroomViewModel.swift */,
 				A34B801CAAD6D2C6557DD581 /* PhotoGridCell.swift */,
@@ -784,6 +792,7 @@
 				5187733F2549E32AAD048816 /* CommentPreviewTests.swift */,
 				AECB660B4FF8C9C77820A49F /* ContrastTests.swift */,
 				409A6D3129F94E675E11C751 /* CubeLUTTests.swift */,
+				27A6A72391A59B32B3529736 /* DarkroomDayUnitTests.swift */,
 				C6500B5D1912C151BD63BD56 /* DarkroomViewTests.swift */,
 				1C99D91A50FAB51B03509135 /* DevelopDelayPhraseTests.swift */,
 				0F61787FFCEE49A74368FF8C /* DevelopTimingTests.swift */,
@@ -1006,6 +1015,7 @@
 				293CC0DB094A96F35B68C6D7 /* CommentPreviewTests.swift in Sources */,
 				87AB22662BAFF452175C23C6 /* ContrastTests.swift in Sources */,
 				DFCED2D30474E53F1E6B116D /* CubeLUTTests.swift in Sources */,
+				3E4B2CD914C331A443B11EB0 /* DarkroomDayUnitTests.swift in Sources */,
 				989096304D7D5617D123F9DC /* DarkroomViewTests.swift in Sources */,
 				967F2E1B7B7D96A9F195C4B7 /* DevelopDelayPhraseTests.swift in Sources */,
 				AD24F3CB906A687FED7FE687 /* DevelopTimingTests.swift in Sources */,
@@ -1120,6 +1130,8 @@
 				75EF6BCE38ECF791C4CC0D8C /* CrashReporter.swift in Sources */,
 				F3492DCB0D6D8A98FBE699B2 /* CreateRollView.swift in Sources */,
 				F7DB8CBEBE8B5B6A7FA4EEA9 /* CubeLUT.swift in Sources */,
+				F57A1F2209B0D2D44780CEB2 /* DarkroomDayUnit.swift in Sources */,
+				C5019D33058E6895C02A2BF7 /* DarkroomRackView.swift in Sources */,
 				203A74E3F739D03F1FCD6248 /* DarkroomView.swift in Sources */,
 				967633695FA8F00A8A3010DA /* DarkroomViewModel.swift in Sources */,
 				1713A05A7A1BE842F4004BE9 /* DayContactSheet.swift in Sources */,
