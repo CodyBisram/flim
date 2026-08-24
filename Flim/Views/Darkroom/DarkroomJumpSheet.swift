@@ -170,7 +170,7 @@ struct DarkroomJumpSheet: View {
         .padding(.bottom, 24)
         .presentationDetents([.height(340)])
         .presentationDragIndicator(.visible)
-        .presentationBackground(FlimTheme.bg)
+        .flimSheetSurface()
     }
 
     private var header: some View {

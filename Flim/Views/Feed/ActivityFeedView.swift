@@ -60,8 +60,6 @@ struct ActivityFeedView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                FlimTheme.bg.ignoresSafeArea()
-
                 if let error = feed.activityError, items.isEmpty, loaded {
                     ErrorState(message: error) { await load() }
                 } else if items.isEmpty && loaded {
@@ -114,7 +112,7 @@ struct ActivityFeedView: View {
             .navigationDestination(item: $postRoute) { PostDetailView(item: $0) }
             .task { await load() }
         }
-        .presentationBackground(FlimTheme.bg)
+        .flimSheetSurface()
     }
 
     private func load() async {

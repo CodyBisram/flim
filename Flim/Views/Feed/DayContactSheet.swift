@@ -67,7 +67,7 @@ struct DayContactSheet: View {
         }
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
-        .presentationBackground(FlimTheme.bg)
+        .flimSheetSurface()
         // One batched resolution for the whole day, not one round trip per cell; same
         // index-rendition preference as the strip, for the same reason.
         .task {

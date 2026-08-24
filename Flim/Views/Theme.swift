@@ -235,3 +235,56 @@ extension View {
         modifier(GlassCapsuleModifier(interactive: interactive))
     }
 }
+
+// MARK: - Sheet surface
+
+extension FlimTheme {
+    /// The one fill every bottom sheet in the app sits on.
+    ///
+    /// Sheets used to sit directly on `bg`/`bgElevated`, which is the same near-black as the
+    /// page underneath them: a sheet coming up read as a blend rather than an arrival. This is
+    /// one step lighter than `bgElevated`, composited over the system material blur (see
+    /// `flimSheetSurface()`) rather than replacing it, so translucency and legibility both hold.
+    static let sheetSurface = Color(red: 38.0 / 255.0, green: 38.0 / 255.0, blue: 42.0 / 255.0).opacity(0.96)
+
+    /// A row/section fill for content that sits ON `sheetSurface`, not on `bg`.
+    ///
+    /// `bgElevated` and the ad hoc `Color(white: 0.08)` fills scattered through the app were
+    /// designed to lift off of `bg` (near-black), and they do: `bgElevated` is lighter than `bg`.
+    /// But `sheetSurface` is already the lighter of the two grounds, so the exact same fill sits
+    /// UNDER it instead of over it, and a "raised" row reads as a cutout punched into the sheet.
+    /// Translucent white composites lighter than whatever is behind it, on `bg` or on
+    /// `sheetSurface` alike, which is why it's the correct lift for anything drawn on the sheet
+    /// layer rather than a fixed dark color tuned for one specific ground.
+    static let sheetRow = Color.white.opacity(0.06)
+}
+
+/// Draws `FlimTheme.sheetSurface` over `.ultraThinMaterial` as a presentation's background,
+/// with a 1pt white-10% hairline at the very top edge standing in for the "struck" edge
+/// highlight in the approved spec. `.presentationBackground { ... }` is the construction that
+/// actually composites a solid-ish fill over the system blur; a plain `.presentationBackground(color)`
+/// call (the old per-screen pattern) replaces the blur outright instead of sitting on top of it.
+private struct FlimSheetSurfaceModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .presentationBackground {
+                FlimTheme.sheetSurface
+                    .background(.ultraThinMaterial)
+                    .overlay(alignment: .top) {
+                        Rectangle()
+                            .fill(Color.white.opacity(0.10))
+                            .frame(height: 1)
+                    }
+            }
+            .presentationCornerRadius(16)
+    }
+}
+
+extension View {
+    /// The app-wide bottom sheet surface: apply to every `.sheet` presentation so each one
+    /// reads the same "raised" fill, edge highlight, and corner radius. Defined once here;
+    /// never copy the fill color or the hairline into a screen directly.
+    func flimSheetSurface() -> some View {
+        modifier(FlimSheetSurfaceModifier())
+    }
+}

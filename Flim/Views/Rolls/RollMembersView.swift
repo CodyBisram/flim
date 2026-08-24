@@ -36,8 +36,6 @@ struct RollMembersView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                FlimTheme.bg.ignoresSafeArea()
-
                 VStack(spacing: 0) {
                     // Invite code banner
                     VStack(spacing: 6) {
@@ -66,7 +64,7 @@ struct RollMembersView: View {
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 20)
-                    .background(Color(white: 0.08))
+                    .background(FlimTheme.sheetRow)
 
                     if isLoading {
                         Spacer()
@@ -128,7 +126,7 @@ struct RollMembersView: View {
                                     }
                                 }
                                 .padding(.vertical, 4)
-                                .listRowBackground(Color(white: 0.08))
+                                .listRowBackground(FlimTheme.sheetRow)
                                 .listRowSeparatorTint(Color(white: 0.12))
                                 .swipeActions(edge: .trailing) {
                                     // Creator can remove anyone but themselves; anyone else
@@ -188,7 +186,7 @@ struct RollMembersView: View {
                 }
             }
         }
-        .presentationBackground(FlimTheme.bg)
+        .flimSheetSurface()
         .task { await load() }
     }
 

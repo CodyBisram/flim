@@ -26,7 +26,6 @@ struct ReviewerSignInSheet: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                FlimTheme.bg.ignoresSafeArea()
                 VStack(alignment: .leading, spacing: 18) {
                     Text("App Review sign-in")
                         .flimFont(22, weight: .light, relativeTo: .title3)
@@ -72,7 +71,7 @@ struct ReviewerSignInSheet: View {
             }
             .task { focused = true }
         }
-        .presentationBackground(FlimTheme.bg)
+        .flimSheetSurface()
     }
 
     private func signIn() async {

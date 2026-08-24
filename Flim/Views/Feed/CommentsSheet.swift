@@ -59,7 +59,6 @@ struct CommentsSheet: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                FlimTheme.bg.ignoresSafeArea()
                 VStack(spacing: 0) {
                     // The author's caption, pinned above the thread and paints instantly:
                     // it is local data, so the sheet is never a black rectangle while the
@@ -107,6 +106,7 @@ struct CommentsSheet: View {
         // Not full-screen, opens at ~3/4 (like IG) with the feed peeking above; draggable to full.
         .presentationDetents([.fraction(0.75), .large])
         .presentationDragIndicator(.visible)
+        .flimSheetSurface()
         .task {
             // Armed BEFORE the reload's round trip, so the composer is focused and
             // prefilled the moment the sheet is up rather than after comments land.

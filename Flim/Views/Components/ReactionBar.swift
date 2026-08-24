@@ -236,10 +236,9 @@ struct ReactionBar: View {
             (catalogSections, searchTokens) = await (loadedSections, loadedTokens)
         }
         .onDisappear { query = "" }   // next open starts back on the browsable grid, not a stale search
-        .background(FlimTheme.bg)
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
-        .presentationBackground(FlimTheme.bg)
+        .flimSheetSurface()
     }
 
     /// Shown only while actively searching for something that matched nothing, as opposed to the

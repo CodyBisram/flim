@@ -34,7 +34,6 @@ struct PhotoCommentsSheet: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                FlimTheme.bg.ignoresSafeArea()
                 VStack(spacing: 0) {
                     if comments.isEmpty && loaded {
                         VStack(spacing: 8) {
@@ -69,7 +68,7 @@ struct PhotoCommentsSheet: View {
             }
             .task { await load() }
         }
-        .presentationBackground(FlimTheme.bg)
+        .flimSheetSurface()
         .presentationDetents([.medium, .large])
     }
 
@@ -123,7 +122,6 @@ struct PhotoCommentsSheet: View {
         CommentComposer(draft: $draft, style: .surface, isSending: sending,
                         replyTarget: $replyTarget, focus: $focused) { send() }
             .padding(.horizontal, 16).padding(.vertical, 10)
-            .background(FlimTheme.bg)
     }
 
     /// Focuses the composer with `@handle ` in front, preserving whatever was already typed, and

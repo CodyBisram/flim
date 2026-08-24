@@ -14,7 +14,6 @@ struct BlockedUsersSheet: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                FlimTheme.bg.ignoresSafeArea()
                 if loaded && profiles.isEmpty {
                     VStack(spacing: 6) {
                         Text("No blocked users").flimFont(16, weight: .medium, relativeTo: .body).foregroundStyle(.white)
@@ -63,6 +62,7 @@ struct BlockedUsersSheet: View {
             }
         }
         .presentationDetents([.medium, .large])
+        .flimSheetSurface()
         .task { await load() }
     }
 

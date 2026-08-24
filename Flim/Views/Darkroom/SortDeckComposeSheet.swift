@@ -29,7 +29,6 @@ struct SortDeckComposeSheet: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                FlimTheme.bg.ignoresSafeArea()
                 VStack(spacing: 16) {
                     photoPreview
                         .padding(.horizontal, 24)
@@ -80,7 +79,7 @@ struct SortDeckComposeSheet: View {
                 }
             }
         }
-        .presentationBackground(FlimTheme.bg)
+        .flimSheetSurface()
         .sheet(isPresented: $showTagSheet) {
             TagPhotoSheet(url: url, cacheKey: photo.viewPath, tags: $tags, rollId: photo.rollId)
         }

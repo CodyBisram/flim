@@ -831,7 +831,6 @@ private struct RollPickerSheet: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                FlimTheme.bg.ignoresSafeArea()
                 List {
                     // Personal (no roll)
                     Button {
@@ -848,7 +847,7 @@ private struct RollPickerSheet: View {
                             }
                         }
                     }
-                    .listRowBackground(FlimTheme.bgElevated)
+                    .listRowBackground(FlimTheme.sheetRow)
 
                     ForEach(destinations) { roll in
                         let isClosed = roll.isDeveloped
@@ -872,7 +871,7 @@ private struct RollPickerSheet: View {
                             }
                         }
                         .disabled(isClosed)
-                        .listRowBackground(FlimTheme.bgElevated)
+                        .listRowBackground(FlimTheme.sheetRow)
                     }
 
                     if destinations.isEmpty {
@@ -898,6 +897,6 @@ private struct RollPickerSheet: View {
             }
         }
         .presentationDetents([.medium])
-        .presentationBackground(FlimTheme.bg)
+        .flimSheetSurface()
     }
 }

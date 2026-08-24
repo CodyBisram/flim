@@ -78,7 +78,6 @@ struct BadgePickerSheet: View {
         } else {
             NavigationStack {
                 ZStack {
-                    FlimTheme.bg.ignoresSafeArea()
                     ProgressView().tint(.white)
                 }
                 .navigationBarTitleDisplayMode(.inline)
@@ -90,7 +89,7 @@ struct BadgePickerSheet: View {
                     }
                 }
             }
-            .presentationBackground(FlimTheme.bg)
+            .flimSheetSurface()
             .presentationDetents([.large])
             .task { await load() }
         }
@@ -189,7 +188,6 @@ private struct BadgePickerContent: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                FlimTheme.bg.ignoresSafeArea()
                 // Both the earned-selection half and the locked catalog below it now share one
                 // scroll view regardless of whether anything's been earned yet: the catalog is a
                 // collection screen, not conditioned on having something to choose, see
@@ -265,7 +263,7 @@ private struct BadgePickerContent: View {
                 }
             }
         }
-        .presentationBackground(FlimTheme.bg)
+        .flimSheetSurface()
         .presentationDetents([.large])
         // Seen-marking happens when the sheet actually goes away, never on a timer and never on
         // scroll-past: dismissing is the one act that says the person is done looking, so it is

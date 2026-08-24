@@ -866,7 +866,6 @@ struct DiscoverPeopleView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                FlimTheme.bg.ignoresSafeArea()
                 VStack(spacing: 0) {
                     PeopleSearchField(query: $searchText, prompt: "Search by username")
 
@@ -923,7 +922,7 @@ struct DiscoverPeopleView: View {
                 results = await feed.searchProfiles(query: searchText, excluding: uid)
             }
         }
-        .presentationBackground(FlimTheme.bg)
+        .flimSheetSurface()
     }
 
 }
@@ -978,7 +977,6 @@ struct FollowListView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                FlimTheme.bg.ignoresSafeArea()
                 VStack(spacing: 0) {
                     PeopleSearchField(query: $query)
 
@@ -1028,7 +1026,7 @@ struct FollowListView: View {
                 loaded = true
             }
         }
-        .presentationBackground(FlimTheme.bg)
+        .flimSheetSurface()
     }
 }
 

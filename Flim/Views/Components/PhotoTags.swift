@@ -198,7 +198,7 @@ private struct TaggedPeopleSheet: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .presentationDetents([.height(detentHeight)])
         .presentationDragIndicator(.visible)
-        .presentationBackground(FlimTheme.bg)
+        .flimSheetSurface()
         // `isFollowing` reads a set that only Activity and the profile screens populate, so
         // without this someone who opened the app straight to the feed would be offered Follow
         // for people they already follow. Same guard those screens use.

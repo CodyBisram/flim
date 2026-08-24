@@ -59,7 +59,6 @@ struct TagPhotoSheet: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                FlimTheme.bg.ignoresSafeArea()
                 VStack(spacing: 0) {
                     photoHeader
                     if let quickTagHeader, !quickTagPeople.isEmpty {
@@ -80,6 +79,7 @@ struct TagPhotoSheet: View {
                 }
             }
         }
+        .flimSheetSurface()
         .task { await loadQuickTags() }
     }
 

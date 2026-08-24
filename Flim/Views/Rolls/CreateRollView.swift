@@ -19,8 +19,6 @@ struct CreateRollView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                FlimTheme.bg.ignoresSafeArea()
-
                 VStack(alignment: .leading, spacing: 0) {
                     if let roll = createdRoll {
                         successView(roll: roll)
@@ -41,7 +39,7 @@ struct CreateRollView: View {
                 }
             }
         }
-        .presentationBackground(FlimTheme.bg)
+        .flimSheetSurface()
         .presentationDetents([.medium, .large], selection: $detent)
     }
 

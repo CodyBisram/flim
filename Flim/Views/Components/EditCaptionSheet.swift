@@ -13,7 +13,6 @@ struct EditCaptionSheet: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                FlimTheme.bg.ignoresSafeArea()
                 VStack {
                     TextField("Add a caption…", text: $caption, axis: .vertical)
                         .lineLimit(1...5)
@@ -40,6 +39,6 @@ struct EditCaptionSheet: View {
             .onAppear { focused = true }
         }
         .presentationDetents([.height(220)])
-        .presentationBackground(FlimTheme.bg)
+        .flimSheetSurface()
     }
 }

@@ -17,8 +17,6 @@ struct JoinRollView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                FlimTheme.bg.ignoresSafeArea()
-
                 VStack(alignment: .leading, spacing: 0) {
                     if let roll = joinedRoll {
                         successView(roll: roll)
@@ -39,7 +37,7 @@ struct JoinRollView: View {
                 }
             }
         }
-        .presentationBackground(FlimTheme.bg)
+        .flimSheetSurface()
         .presentationDetents([.medium])
         .task {
             // Deep-link arrival: fill the code and join automatically.

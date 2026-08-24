@@ -179,11 +179,10 @@ struct ShareToFeedSheet: View {
             .padding(.horizontal, 20)
             .padding(.top, 10)
             .padding(.bottom, 24)
-            .background(FlimTheme.bg)
         }
         .presentationDetents([.height(detentHeight)])
         .presentationDragIndicator(.visible)
-        .presentationBackground(FlimTheme.bg)
+        .flimSheetSurface()
         .sheet(isPresented: $showAddPeople) {
             AddPeopleSheet(tags: $tags)
         }
@@ -377,7 +376,6 @@ struct AddPeopleSheet: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                FlimTheme.bg.ignoresSafeArea()
                 VStack(spacing: 0) {
                     PeopleSearchField(query: $query, prompt: "Search people you follow")
                     if loaded && results.isEmpty {
@@ -385,7 +383,7 @@ struct AddPeopleSheet: View {
                     } else {
                         List(results) { profile in
                             Button { toggle(profile) } label: { row(profile) }
-                                .listRowBackground(Color(white: 0.08))
+                                .listRowBackground(FlimTheme.sheetRow)
                                 .listRowSeparatorTint(Color(white: 0.15))
                         }
                         .listStyle(.plain)
@@ -402,7 +400,7 @@ struct AddPeopleSheet: View {
                 }
             }
         }
-        .presentationBackground(FlimTheme.bg)
+        .flimSheetSurface()
         .task { await load() }
     }
 

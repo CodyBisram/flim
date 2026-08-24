@@ -44,7 +44,6 @@ struct PhotoPickerSheet: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                FlimTheme.bg.ignoresSafeArea()
                 if photos.isEmpty && loaded {
                     VStack(spacing: 8) {
                         Image(systemName: "photo.on.rectangle.angled")
@@ -141,7 +140,7 @@ struct PhotoPickerSheet: View {
                 for photo in photos { urls[photo.id] = map[photo.storagePath] }
             }
         }
-        .presentationBackground(FlimTheme.bg)
+        .flimSheetSurface()
     }
 
     /// A Darkroom photo goes straight through unless a crop was requested, in which case its

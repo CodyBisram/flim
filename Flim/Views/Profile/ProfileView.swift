@@ -85,7 +85,7 @@ struct ProfileView: View {
                     Toggle("Sound effects", isOn: $soundEffects)
                         .tint(accent)
                 } header: { sectionHeader("Notifications & Sound") }
-                .listRowBackground(FlimTheme.bgElevated)
+                .listRowBackground(FlimTheme.sheetRow)
 
                 Section {
                     accentRow
@@ -120,7 +120,7 @@ struct ProfileView: View {
                         }
                         .tint(accent)
                     } header: { sectionHeader("Film Lab") }
-                    .listRowBackground(FlimTheme.bgElevated)
+                    .listRowBackground(FlimTheme.sheetRow)
                 }
 
                 // Test-only data reset. DEBUG builds only, so App Review never sees it.
@@ -130,7 +130,7 @@ struct ProfileView: View {
                         Label("Wipe my test data", systemImage: "trash")
                     }
                 }
-                .listRowBackground(FlimTheme.bgElevated)
+                .listRowBackground(FlimTheme.sheetRow)
                 #endif
 
                 Section {
@@ -171,7 +171,7 @@ struct ProfileView: View {
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.top, 8)
                 }
-                .listRowBackground(FlimTheme.bgElevated)
+                .listRowBackground(FlimTheme.sheetRow)
                 // Sign Out and Delete Account are centered, different-weight actions. The
                 // default inset row separator between them reads as a stray hairline rather than
                 // a divider, so drop it and let the two sit as one danger block.
@@ -179,7 +179,6 @@ struct ProfileView: View {
             }
             .listStyle(.insetGrouped)
             .scrollContentBackground(.hidden)
-            .background(FlimTheme.bg)
             .navigationBarTitleDisplayMode(.inline)
             .flimInlineTitle("Settings")
             .toolbarColorScheme(.dark, for: .navigationBar)
@@ -236,7 +235,7 @@ struct ProfileView: View {
             guard phase == .active else { return }
             Task { await notifications.refreshAuthorizationState() }
         }
-        .presentationBackground(FlimTheme.bg)
+        .flimSheetSurface()
         .presentationDetents([.large])
     }
 
@@ -352,7 +351,6 @@ struct EditProfileView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                FlimTheme.bg.ignoresSafeArea()
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: 24) {
                         avatarButton
@@ -437,7 +435,7 @@ struct EditProfileView: View {
             .task { await refreshAvatar() }
             .onChange(of: auth.currentUser?.avatarPath) { Task { await refreshAvatar() } }
         }
-        .presentationBackground(FlimTheme.bg)
+        .flimSheetSurface()
         .presentationDetents([.large])
     }
 
@@ -515,7 +513,6 @@ struct InviteSheet: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                FlimTheme.bg.ignoresSafeArea()
                 VStack(spacing: 20) {
                     Text("Share this code so friends can add you on \(AppInfo.appName).")
                         .flimFont(14, relativeTo: .subheadline)
@@ -571,7 +568,7 @@ struct InviteSheet: View {
                 }
             }
         }
-        .presentationBackground(FlimTheme.bg)
+        .flimSheetSurface()
         .presentationDetents([.medium])
     }
 }
@@ -591,7 +588,6 @@ private struct EditBioSheet: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                FlimTheme.bg.ignoresSafeArea()
                 VStack(alignment: .leading, spacing: 12) {
                     TextField("A little about you…", text: $bio, axis: .vertical)
                         .lineLimit(1...4)
@@ -639,7 +635,7 @@ private struct EditBioSheet: View {
             }
         }
         .presentationDetents([.medium])
-        .presentationBackground(FlimTheme.bg)
+        .flimSheetSurface()
     }
 }
 
@@ -658,7 +654,6 @@ private struct EditNameSheet: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                FlimTheme.bg.ignoresSafeArea()
                 VStack(alignment: .leading, spacing: 12) {
                     Text("What should we call you?")
                         .flimFont(13, relativeTo: .subheadline).foregroundStyle(FlimTheme.textTertiary)
@@ -706,7 +701,7 @@ private struct EditNameSheet: View {
             }
         }
         .presentationDetents([.medium])
-        .presentationBackground(FlimTheme.bg)
+        .flimSheetSurface()
     }
 }
 
@@ -725,8 +720,6 @@ private struct EditUsernameSheet: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                FlimTheme.bg.ignoresSafeArea()
-
                 VStack(alignment: .leading, spacing: 20) {
                     Text("USERNAME")
                         .flimFont(11, weight: .medium, relativeTo: .caption)
@@ -782,7 +775,7 @@ private struct EditUsernameSheet: View {
                 }
             }
         }
-        .presentationBackground(FlimTheme.bg)
+        .flimSheetSurface()
         .presentationDetents([.medium])
     }
 

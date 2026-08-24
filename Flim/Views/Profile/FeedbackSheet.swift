@@ -20,7 +20,6 @@ struct FeedbackSheet: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                FlimTheme.bg.ignoresSafeArea()
                 VStack(alignment: .leading, spacing: 16) {
                     TextField("What's going on?", text: $message, axis: .vertical)
                         .lineLimit(6...12)
@@ -66,7 +65,7 @@ struct FeedbackSheet: View {
             }
         }
         .presentationDetents([.medium])
-        .presentationBackground(FlimTheme.bg)
+        .flimSheetSurface()
     }
 
     private func send() async {

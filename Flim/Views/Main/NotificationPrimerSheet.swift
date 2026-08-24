@@ -48,8 +48,7 @@ struct NotificationPrimerSheet: View {
         }
         .padding(.horizontal, 24)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(FlimTheme.bg)
         .presentationDetents([.medium])
-        .presentationBackground(FlimTheme.bg)
+        .flimSheetSurface()
     }
 }

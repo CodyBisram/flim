@@ -28,7 +28,6 @@ struct SharePreviewSheet: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                FlimTheme.bg.ignoresSafeArea()
                 VStack(spacing: 22) {
                     Spacer(minLength: 8)
 
@@ -96,6 +95,7 @@ struct SharePreviewSheet: View {
         }
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
+        .flimSheetSurface()
         .task {
             // Render the framed print off-main once; the toggle then swaps instantly.
             let source = photo
