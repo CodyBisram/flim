@@ -56,6 +56,9 @@ struct DarkroomView: View {
     /// screen (`showSortDeck`, the roll-delete confirm): two surfaces sharing one flag once broke
     /// each other when one dismissed and the other's `onDismiss` fired for it.
     @State private var showJumpSheet = false
+    /// The band that was tapped to open `showJumpSheet`, so the sheet can mark that one cell and
+    /// open on that year's tab. `nil` for any future entry point that isn't a band tap.
+    @State private var jumpSheetOrigin: DarkroomYearMonth?
     /// `darkroom_month_counts`' rows, `nil` until `reload()`'s dedicated fetch resolves or the
     /// RPC isn't reachable yet (see `PhotoService.darkroomMonthCounts`'s own doc). Every reader
     /// treats `nil` as "no server counts yet", never as zero.
@@ -256,7 +259,7 @@ struct DarkroomView: View {
             SortDeckView(onFinish: {})
         }
         .sheet(isPresented: $showJumpSheet) {
-            DarkroomJumpSheet(monthCounts: monthCounts, loadedMonths: loadedMonthKeys) { year, month in
+            DarkroomJumpSheet(monthCounts: monthCounts, loadedMonths: loadedMonthKeys, origin: jumpSheetOrigin) { year, month in
                 jumpToMonth(year: year, month: month)
             }
         }
@@ -328,6 +331,7 @@ struct DarkroomView: View {
                 } header: {
                     DarkroomMonthBandView(group: group, shotCount: shotCount(for: group)) {
                         Haptics.tap()
+                        jumpSheetOrigin = DarkroomYearMonth(date: group.monthKey)
                         showJumpSheet = true
                     }
                 }

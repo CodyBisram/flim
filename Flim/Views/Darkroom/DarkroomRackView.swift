@@ -164,6 +164,14 @@ struct DarkroomFrameView: View {
     /// An empty outlined well instead of the image, for a frame whose fetch failed. Only the
     /// pager's rack can be in this state; the grid never sets it.
     var isFailed: Bool = false
+    /// The pager's own night rack, at the feed strip's own density: a bare 30x40 frame with no
+    /// padding to 36x44 and no gesture or accessibility wrapper of its own. The row above this
+    /// frame owns ONE `SpatialTapGesture` resolving where a touch landed (see
+    /// `PhotoPagerView.rackSection`), matching `FeedUnitCard.FilmStrip`'s own tap mechanism
+    /// verbatim; a per-frame recognizer here would compete with that gesture for the same touch.
+    /// The list's own grid (every caller before this one) never sets this and keeps its 36x44
+    /// frame, own tap gesture, and own accessibility element exactly as before.
+    var compact: Bool = false
 
     var body: some View {
         if let menu {
@@ -173,20 +181,32 @@ struct DarkroomFrameView: View {
         }
     }
 
+    @ViewBuilder
     private var frame: some View {
-        imageArea
-        .frame(width: 36, height: 44)
-        .contentShape(Rectangle())
-        .onTapGesture {
-            if isSelecting {
-                onToggleSelect()
-            } else if photo.isReady || allowsDevelopingTap {
-                onTap()
+        if compact {
+            // No tap gesture of its own (the row's SpatialTapGesture owns touches), but each
+            // frame stays its OWN accessibility element with the button trait: VoiceOver focuses
+            // frames individually and a double-tap lands a synthetic touch at the frame's
+            // center, which the row's recognizer resolves to exactly this frame.
+            imageArea
+                .accessibilityElement()
+                .accessibilityLabel(accessibilityLabel)
+                .accessibilityAddTraits(.isButton)
+        } else {
+            imageArea
+            .frame(width: 36, height: 44)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                if isSelecting {
+                    onToggleSelect()
+                } else if photo.isReady || allowsDevelopingTap {
+                    onTap()
+                }
             }
+            .accessibilityElement()
+            .accessibilityLabel(accessibilityLabel)
+            .accessibilityAddTraits((photo.isReady || allowsDevelopingTap) ? .isButton : [])
         }
-        .accessibilityElement()
-        .accessibilityLabel(accessibilityLabel)
-        .accessibilityAddTraits((photo.isReady || allowsDevelopingTap) ? .isButton : [])
     }
 
     @ViewBuilder

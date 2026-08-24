@@ -113,6 +113,10 @@ struct PhotoPagerView: View {
     /// with a Retry drawn in the photograph's place, and the same photo's rack frame becomes an
     /// empty outlined well, matching `FeedUnitCard`'s `failedFrames`.
     @State private var failedPhotoIds: Set<UUID> = []
+    /// Bumped by `retryFailedImage`, matching `FeedUnitCard`'s own `retryTokens`: folded into the
+    /// page's `.id` so a retry mounts a genuinely fresh `CachedImage` rather than reusing one that
+    /// may still be holding its own failed internal state.
+    @State private var retryTokens: [UUID: Int] = [:]
     @State private var reportedIds: Set<UUID> = []
     @State private var reactions: [PhotoReaction] = []
     /// Drives the heart that blooms over a double tap, matching the feed's.
@@ -660,16 +664,17 @@ struct PhotoPagerView: View {
 
     // MARK: - Pager
 
-    /// The fixed 3:4 photograph, full width, edge to edge (night-rack mode) vs. the flexible fill
-    /// between header and footer every other caller has always had.
-    @ViewBuilder
-    private var pager: some View {
-        if showsNightRack {
-            pagerCore.frame(width: photoWidth, height: photoHeight)
-        } else {
-            pagerCore.frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-    }
+    /// The fixed 3:4 photograph, full width, edge to edge (night-rack mode) vs. the flexible
+    /// fill between header and footer every other caller has always had. Two genuinely
+    /// different frame APIs, so the split cannot collapse into one call: night-rack pins an
+    /// EXACT `.frame(width:height:)` like the feed's pager (that fixed box is the swipe
+    /// pattern's geometry precondition), while the roll/widget path needs
+    /// `.frame(maxWidth: .infinity, maxHeight: .infinity)`. Passing `.infinity` as an exact
+    /// width/height is not "fill what the parent offers", it reports an infinite size upward
+    /// and breaks layout at runtime while compiling clean.
+    // (Frame application lives in `PageFrameModifier` below.)
+
+    private var pager: some View { pagerCore }
 
     /// Native page-style `TabView`, per the ratified swipe pattern (see `FeedUnitCard.pager`):
     /// FIXED geometry, and every page STRUCTURALLY STABLE at every index (the same view for
@@ -707,11 +712,15 @@ struct PhotoPagerView: View {
         ZStack {
             TabView(selection: $selection) {
                 ForEach(Array(photos.enumerated()), id: \.element.id) { index, photo in
-                    photoPage(photo)
+                    photoPage(photo, index: index)
                         .tag(index)
                 }
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
+            // Explicit frame directly on the TabView, matching `FeedUnitCard.pager` (fixed
+            // literal size for night-rack; flexible max-fill for the roll/widget path), rather
+            // than relying on an ancestor to constrain it. See `pageFramed`.
+            .modifier(PageFrameModifier(fixed: showsNightRack ? CGSize(width: photoWidth, height: photoHeight) : nil))
             // Mirrors the old `scale > 1 ? .none : .all` gesture mask exactly: paging is native
             // now, so the equivalent gate is disabling the TabView's own scroll while zoomed,
             // handing the touch fully to `panWhileZoomed` instead. Inert (false) at rest, so it
@@ -735,16 +744,33 @@ struct PhotoPagerView: View {
         }
     }
 
+    /// STRUCTURALLY STABLE at every index, matching `FeedUnitCard.page(item:index:)` exactly (see
+    /// its own comment block): a still-developing or in-window-but-unresolved photo used to
+    /// render as a bare `ProgressView` swapped in for `CachedImage` once its URL resolved, and
+    /// that placeholder-to-image subtree swap, landing while the TabView's own scroll was still
+    /// settling, is the documented way to corrupt page-style scroll state (a swipe jumping two
+    /// photos, or a page settling on a sliver of its neighbour). `CachedImage` is now ALWAYS
+    /// mounted for every non-failed page, at every index, whether or not it currently has a URL;
+    /// a still-developing shot and an out-of-window shot both simply show `CachedImage`'s own
+    /// placeholder (the developing well, or a spinner) rather than a different view type
+    /// entirely. Only the URL fed into it is windowed: `abs(index - selection) <= 1`, same egress
+    /// gate the feed uses, so an off-window page may paint free from the disk cache but can never
+    /// fetch.
+    ///
+    /// The one branch swap left is the failed state, mirroring `FeedUnitCard.brokenWell` exactly
+    /// (down to the `failedPhotoIds` set and the `retryTokens`-keyed `.id`): a failed fetch must
+    /// draw IN the photograph's place, never a stale or broken image underneath a Retry button,
+    /// so that one case stays a genuine subtree replacement rather than an overlay.
     @ViewBuilder
-    private func photoPage(_ photo: Photo) -> some View {
+    private func photoPage(_ photo: Photo, index: Int) -> some View {
+        let isDeveloping = showsNightRack && !photo.isReady
+        let isFailed = showsNightRack && failedPhotoIds.contains(photo.id)
         let failureHandler: (() -> Void)? = showsNightRack ? { failedPhotoIds.insert(photo.id) } : nil
 
         Group {
-            if showsNightRack, !photo.isReady {
-                developingPage
-            } else if showsNightRack, failedPhotoIds.contains(photo.id) {
+            if isFailed {
                 brokenPage(photo)
-            } else if let url = resolvedURLs[photo.id] {
+            } else {
                 // Downloads `viewPath` (the ~1400px feed card when one exists, the full original
                 // only as a fallback for photos with no card yet) rather than always fetching the
                 // 2048px original just to downsample it to `maxPixel` anyway. `cacheKey` MUST
@@ -754,7 +780,10 @@ struct PhotoPagerView: View {
                 // key, and `repairRenditions` would then rebuild the feed rendition FROM the
                 // feed card while believing it had the full original. See `repairRenditions` for
                 // how it now sources the original vs. the card correctly.
-                CachedImage(url: url, maxPixel: 1600, cacheKey: photo.viewPath, onFailure: failureHandler) { image in
+                CachedImage(
+                    url: (!isDeveloping && abs(index - selection) <= 1) ? resolvedURLs[photo.id] : nil,
+                    maxPixel: 1600, cacheKey: photo.viewPath, onFailure: failureHandler
+                ) { image in
                     image
                         .resizable()
                         .scaledToFit()
@@ -773,18 +802,23 @@ struct PhotoPagerView: View {
                         // no reaction bar for this to drive.
                         .onTapGesture(count: 2) { if showsReactions { doubleTapLike() } }
                 } placeholder: {
-                    ProgressView().tint(.white)
+                    if isDeveloping {
+                        developingPlaceholder
+                    } else {
+                        ProgressView().tint(.white)
+                    }
                 }
-            } else {
-                ProgressView().tint(.white)
+                .id("page-\(photo.id)-\(retryTokens[photo.id, default: 0])")
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .modifier(PageFrameModifier(fixed: showsNightRack ? CGSize(width: photoWidth, height: photoHeight) : nil))
     }
 
     /// A still-developing shot in night-rack mode: there is no image to show yet, so the box
-    /// stays a near-black well. The status row below names when it will be ready.
-    private var developingPage: some View {
+    /// stays a near-black well. The status row below names when it will be ready. Lives as
+    /// `CachedImage`'s own placeholder now (see `photoPage`'s doc), not a separate mounted
+    /// subtree, so a shot finishing development mid-session upgrades in place.
+    private var developingPlaceholder: some View {
         Rectangle()
             .fill(Color(white: 0.035))
             .overlay {
@@ -846,6 +880,13 @@ struct PhotoPagerView: View {
     private var photoWidth: CGFloat { screenWidth }
     private var photoHeight: CGFloat { photoWidth * 4 / 3 }
 
+    /// The night rack's own frame geometry, matching `FeedUnitCard.FilmStrip`'s exactly: 30pt
+    /// frames, a 2pt gap, a 32pt pitch. Fixed at every count, same reasoning as the feed strip's
+    /// own doc: sizing frames to fill the row would make a quiet night's frames bigger than a
+    /// busy one's.
+    private static let rackFrameGap: CGFloat = 2
+    private static let rackPitch: CGFloat = 30 + rackFrameGap
+
     /// The rack + status/actions row that replaces the caption/share-pill footer in night-rack
     /// mode.
     private var rackSection: some View {
@@ -853,7 +894,7 @@ struct PhotoPagerView: View {
             DarkroomPerforationLine().frame(height: 3)
             ScrollViewReader { proxy in
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 12) {
+                    HStack(spacing: Self.rackFrameGap) {
                         ForEach(currentNightPhotos) { photo in
                             DarkroomFrameView(
                                 photo: photo,
@@ -864,15 +905,29 @@ struct PhotoPagerView: View {
                                 isSelecting: false,
                                 isSelected: false,
                                 photoNS: rackNS,
-                                onTap: { jump(to: photo) },
+                                onTap: {},
                                 onToggleSelect: {},
                                 isCurrent: photo.id == current?.id,
                                 allowsDevelopingTap: true,
-                                isFailed: failedPhotoIds.contains(photo.id)
+                                isFailed: failedPhotoIds.contains(photo.id),
+                                compact: true
                             )
                             .id(photo.id)
                         }
                     }
+                    .padding(.vertical, Self.rackFrameGap)
+                    // ONE recogniser on the row, resolving x to the frame whose band contains
+                    // it, matching `FeedUnitCard.FilmStrip`'s own tap mechanism verbatim: every
+                    // point in the row belongs to exactly one frame, no gap is dead, and a 30pt
+                    // visual never has to be the 30pt target. `jump(to:)` already carries its own
+                    // haptic and no-op guard for tapping the already-current frame.
+                    .contentShape(Rectangle())
+                    .gesture(SpatialTapGesture().onEnded { value in
+                        let frames = currentNightPhotos
+                        guard !frames.isEmpty else { return }
+                        let index = min(frames.count - 1, max(0, Int(value.location.x / Self.rackPitch)))
+                        jump(to: frames[index])
+                    })
                     // Flush with the photograph's own left edge, which in night-rack mode has
                     // no margin at all (a hard, full-bleed `width x width*4/3` box): the rack
                     // used to carry a 16pt leading inset the photo itself doesn't have, so the
@@ -1190,6 +1245,7 @@ struct PhotoPagerView: View {
         failedPhotoIds.remove(photo.id)
         resolvedURLs.removeValue(forKey: photo.id)
         fullyResolvedIds.remove(photo.id)
+        retryTokens[photo.id, default: 0] += 1
         Task { await resolveAround(selection) }
     }
 
@@ -1328,5 +1384,23 @@ struct PhotoPagerView: View {
                                 height: lastOffset.height + value.translation.height)
             }
             .onEnded { _ in lastOffset = offset }
+    }
+}
+
+/// The pager's two genuinely different frame APIs, one decision: a fixed size pins an EXACT
+/// `.frame(width:height:).clipped()` (night-rack's 3:4 box, the swipe pattern's geometry
+/// precondition, matching `FeedUnitCard.pager`); `nil` means the roll/widget path's flexible
+/// `.frame(maxWidth: .infinity, maxHeight: .infinity)`. Passing `.infinity` as an exact
+/// width/height is NOT "fill what the parent offers": it reports an infinite size upward and
+/// breaks layout at runtime while compiling clean, which is why this cannot be one call.
+private struct PageFrameModifier: ViewModifier {
+    let fixed: CGSize?
+
+    func body(content: Content) -> some View {
+        if let fixed {
+            content.frame(width: fixed.width, height: fixed.height).clipped()
+        } else {
+            content.frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
     }
 }

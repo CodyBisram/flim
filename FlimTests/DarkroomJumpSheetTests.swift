@@ -97,6 +97,46 @@ final class DarkroomJumpSheetTests: XCTestCase {
         XCTAssertEqual(cells[11].state, .future)   // December, still ahead of an August "now"
     }
 
+    // MARK: - origin
+
+    /// The band that opened the sheet gets the soft fill; nothing else does, even the current
+    /// calendar month if that's not what was tapped.
+    func testOriginMarksOnlyTheTappedMonth() {
+        let cells = DarkroomJumpSheetLogic.monthCells(
+            year: 2025, rpcRows: [row(year: 2025, month: 7, count: 6)], loadedMonths: [],
+            origin: DarkroomYearMonth(year: 2025, month: 7), now: now(), calendar: calendar)
+        XCTAssertTrue(cells[6].isOrigin)     // July
+        XCTAssertFalse(cells[5].isOrigin)    // June
+        XCTAssertFalse(cells[7].isOrigin)    // August
+    }
+
+    /// No origin (the sheet's own default entry point): no cell is marked.
+    func testNoOriginMarksNoCell() {
+        let cells = DarkroomJumpSheetLogic.monthCells(year: 2026, rpcRows: [], loadedMonths: [], now: now(), calendar: calendar)
+        XCTAssertFalse(cells.contains { $0.isOrigin })
+    }
+
+    /// The ring (current calendar month) and the fill (origin) are independent and can coexist:
+    /// tapping the current month's own band should not lose either signal.
+    func testCurrentMonthCanAlsoBeTheOrigin() {
+        let cells = DarkroomJumpSheetLogic.monthCells(
+            year: 2026, rpcRows: [], loadedMonths: [],
+            origin: DarkroomYearMonth(year: 2026, month: 8), now: now(), calendar: calendar)
+        XCTAssertTrue(cells[7].isCurrentMonth)
+        XCTAssertTrue(cells[7].isOrigin)
+    }
+
+    func testInitialYearFollowsOriginWhenPresent() {
+        let year = DarkroomJumpSheetLogic.initialYear(origin: DarkroomYearMonth(year: 2025, month: 7), now: now(), calendar: calendar)
+        XCTAssertEqual(year, 2025)
+    }
+
+    /// No origin (the sheet's own default entry point): falls back to the current calendar year.
+    func testInitialYearFallsBackToCurrentYearWithNoOrigin() {
+        let year = DarkroomJumpSheetLogic.initialYear(origin: nil, now: now(), calendar: calendar)
+        XCTAssertEqual(year, 2026)
+    }
+
     // MARK: - Labels
 
     func testMonthAbbreviationIsFixedEnUSPOSIX() {

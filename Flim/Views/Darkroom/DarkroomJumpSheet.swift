@@ -25,6 +25,11 @@ struct DarkroomMonthCell: Identifiable, Equatable {
     /// Whether this cell is the current calendar month, which draws an accent ring regardless of
     /// `state` (a current month with nothing shot yet is still `.empty`, but still gets the ring).
     let isCurrentMonth: Bool
+    /// Whether this cell is the month whose band was tapped to open the sheet. Draws a soft
+    /// accent fill, distinct from `isCurrentMonth`'s ring: the two can coexist (tapping the
+    /// current month's own band) since one is a landmark ("today") and the other is "where you
+    /// came from".
+    let isOrigin: Bool
 
     var id: Int { month }
 
@@ -83,6 +88,7 @@ enum DarkroomJumpSheetLogic {
         year: Int,
         rpcRows: [DarkroomMonthCount]?,
         loadedMonths: Set<DarkroomYearMonth>,
+        origin: DarkroomYearMonth? = nil,
         now: Date = .now,
         calendar: Calendar = .current
     ) -> [DarkroomMonthCell] {
@@ -100,7 +106,7 @@ enum DarkroomJumpSheetLogic {
             } else {
                 state = loadedMonths.contains(ym) ? .enabled(count: nil) : .empty
             }
-            return DarkroomMonthCell(month: month, state: state, isCurrentMonth: ym == current)
+            return DarkroomMonthCell(month: month, state: state, isCurrentMonth: ym == current, isOrigin: ym == origin)
         }
     }
 
@@ -115,6 +121,14 @@ enum DarkroomJumpSheetLogic {
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "MMM"
         return formatter.string(from: date)
+    }
+
+    /// The sheet's initially-selected year tab: the origin band's own year when the sheet was
+    /// opened from one, the current calendar year otherwise (the sheet's own default entry
+    /// point, e.g. a future re-entry that isn't a band tap). Pulled out of the view's `init` so
+    /// it's directly testable.
+    static func initialYear(origin: DarkroomYearMonth?, now: Date = .now, calendar: Calendar = .current) -> Int {
+        origin?.year ?? calendar.component(.year, from: now)
     }
 
     /// Full month name, for the cell's accessibility label.
@@ -135,17 +149,25 @@ struct DarkroomJumpSheet: View {
     @Environment(\.flimAccent) private var accent
     let monthCounts: [DarkroomMonthCount]?
     let loadedMonths: Set<DarkroomYearMonth>
+    /// The month whose band was tapped to open this sheet, `nil` for any other entry point.
+    /// Drives the sheet's initially-selected year tab (a July 2025 band opens the sheet already
+    /// showing 2025) and the origin cell's soft accent fill.
+    var origin: DarkroomYearMonth? = nil
     /// (year, month) of the tapped, enabled cell. The caller dismisses and scrolls; this view
     /// never touches the list itself.
     let onSelect: (Int, Int) -> Void
 
     @State private var selectedYear: Int
 
-    init(monthCounts: [DarkroomMonthCount]?, loadedMonths: Set<DarkroomYearMonth>, onSelect: @escaping (Int, Int) -> Void) {
+    init(
+        monthCounts: [DarkroomMonthCount]?, loadedMonths: Set<DarkroomYearMonth>,
+        origin: DarkroomYearMonth? = nil, onSelect: @escaping (Int, Int) -> Void
+    ) {
         self.monthCounts = monthCounts
         self.loadedMonths = loadedMonths
+        self.origin = origin
         self.onSelect = onSelect
-        _selectedYear = State(initialValue: Calendar.current.component(.year, from: .now))
+        _selectedYear = State(initialValue: DarkroomJumpSheetLogic.initialYear(origin: origin))
     }
 
     private var years: [Int] {
@@ -153,7 +175,7 @@ struct DarkroomJumpSheet: View {
     }
 
     private var cells: [DarkroomMonthCell] {
-        DarkroomJumpSheetLogic.monthCells(year: selectedYear, rpcRows: monthCounts, loadedMonths: loadedMonths)
+        DarkroomJumpSheetLogic.monthCells(year: selectedYear, rpcRows: monthCounts, loadedMonths: loadedMonths, origin: origin)
     }
 
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 6), count: 4)
@@ -220,7 +242,7 @@ struct DarkroomJumpSheet: View {
             }
             .frame(maxWidth: .infinity)
             .frame(height: 52)
-            .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 9))
+            .background(cell.isOrigin ? accent.opacity(0.14) : Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 9))
             .overlay {
                 if cell.isCurrentMonth {
                     RoundedRectangle(cornerRadius: 9).inset(by: 1).stroke(accent, lineWidth: 1.5)
