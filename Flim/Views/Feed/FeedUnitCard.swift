@@ -13,6 +13,7 @@ import UIKit
 struct FeedUnitCard: View {
     @Environment(\.flimAccent) private var accent
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.displayScale) private var displayScale
     @Environment(AuthService.self) private var auth
     @Environment(FeedService.self) private var feed
     @Environment(PhotoService.self) private var photos
@@ -648,13 +649,36 @@ struct FeedUnitCard: View {
     /// Resolves signed URLs for the selected frame and its neighbours, the only pages that
     /// render an image. `CachedImage` hits its disk cache by stable path first, so a nil URL
     /// here never blocks a cached image from painting.
+    /// Stays two photographs ahead of the finger. Swiping into a unit is INTENT, so the
+    /// cost of warming what comes next only ever follows engagement: a unit scrolled past
+    /// still costs its one hero, but once someone is reading a day, the next shot's URL is
+    /// already minted (one batched call) and its bytes are already downloading before they
+    /// arrive. Without this, the neighbour's mint + download + decode all started ON
+    /// arrival, three serial steps racing the next swipe, and a first pass through a day
+    /// showed a placeholder beat on every frame that a second pass never did.
+    ///
+    /// The RENDER window stays selection ±1 (that is the TabView-stability and egress
+    /// gate); this only warms the caches those pages will hit.
     private func resolveURLs(around index: Int) async {
-        for i in max(0, index - 1)...min(unit.items.count - 1, index + 1) {
-            let item = unit.items[i]
-            if urls[item.post.id] == nil {
-                urls[item.post.id] = await feed.signedURL(for: item.post.cardPath)
+        let lo = max(0, index - 2)
+        let hi = min(unit.items.count - 1, index + 2)
+        guard lo <= hi else { return }
+        let window = (lo...hi).map { unit.items[$0] }
+
+        let unresolved = window.filter { urls[$0.post.id] == nil }
+        if !unresolved.isEmpty {
+            let resolved = await feed.signedURLs(for: Array(Set(unresolved.map(\.post.cardPath))))
+            for item in unresolved {
+                urls[item.post.id] = resolved[item.post.cardPath]
             }
         }
+
+        // Bytes, not just URLs: prefetch is cache-first, so anything already on disk or in
+        // memory costs nothing, and only genuinely new photographs download.
+        let warm = window.compactMap { item -> (url: URL, cacheKey: String?)? in
+            urls[item.post.id].map { ($0, item.post.cardPath) }
+        }
+        ImageLoader.prefetch(warm, maxPixel: 1400, scale: displayScale)
     }
 }
 
