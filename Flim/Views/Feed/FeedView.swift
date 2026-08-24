@@ -46,6 +46,13 @@ struct FeedView: View {
     /// Gates the cards' seen-marking until the ledger snapshot exists, so snapshot-then-mark
     /// is an ordering guarantee rather than a race against the first visibility event.
     @State private var ledgerSnapshotted = false
+    /// Bumped by every EXPLICIT catch-up (initial load, pull-to-refresh, the New-posts
+    /// button), telling living unit cards to re-open on their first unseen shot. A unit's
+    /// opening frame is otherwise computed only at view birth, so a fresh launch opened on a
+    /// friend's new shot while a session that watched it arrive stayed parked on frame one.
+    /// Only explicit actions bump this: a background refresh must never move a pager someone
+    /// is mid-read on.
+    @State private var catchUpGeneration = 0
     /// Where the caught-up block sits, SNAPSHOTTED at load like the ledger and for the same
     /// reason: it marks the seam between new and old at the catch-up moment. Derived live,
     /// reading a unit moved the "last unseen" boundary backwards and the block crawled UP
@@ -295,7 +302,8 @@ struct FeedView: View {
                             width: containerWidth,
                             opening: unit.openingIndex(isSeen: { seenStore.isSeen($0) }),
                             seenStore: seenStore,
-                            markingEnabled: ledgerSnapshotted
+                            markingEnabled: ledgerSnapshotted,
+                            catchUpGeneration: catchUpGeneration
                         )
                         .onAppear { unitAppeared(index: index) }
 
@@ -520,6 +528,9 @@ struct FeedView: View {
         didLoad = true
         hasNewPosts = false
         snapshotLedger()
+        // After the snapshot, so the re-opened frames' seen-marks land under an already
+        // computed ledger, the same order every other mark obeys.
+        catchUpGeneration += 1
         if hadContent, feed.feedError != nil {
             Haptics.error()
             withAnimation { refreshFailedToast = true }

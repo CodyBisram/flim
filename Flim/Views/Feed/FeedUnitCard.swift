@@ -27,6 +27,11 @@ struct FeedUnitCard: View {
     /// frame ahead of the snapshot would drain itself out of the ledger it should be counted
     /// in. Deterministic order, not a race: snapshot first, then marks.
     let markingEnabled: Bool
+    /// Bumped by explicit catch-ups (see FeedView): a unit already alive on screen re-opens
+    /// on its first unseen shot, matching what a fresh launch would show. `@State` survives
+    /// re-renders by design, so without this a friend's shot arriving into a visible unit
+    /// left the pager parked wherever it was.
+    let catchUpGeneration: Int
 
     /// The frame on screen. Seeded with the unit's opening frame (its first unseen shot),
     /// computed by the caller because the store is main-actor and a View's init is not.
@@ -76,11 +81,12 @@ struct FeedUnitCard: View {
     @State private var isVisible = false
 
     init(unit: FeedUnit, width: CGFloat, opening: Int, seenStore: FeedSeenStore,
-         markingEnabled: Bool) {
+         markingEnabled: Bool, catchUpGeneration: Int) {
         self.unit = unit
         self.width = width
         self.seenStore = seenStore
         self.markingEnabled = markingEnabled
+        self.catchUpGeneration = catchUpGeneration
         _selection = State(initialValue: min(opening, max(0, unit.items.count - 1)))
     }
 
@@ -155,6 +161,15 @@ struct FeedUnitCard: View {
         // Re-checked when the gate opens, because a unit already on screen had its
         // visibility event before marking was allowed and will not get another.
         .onChange(of: markingEnabled) { maybeMarkReached() }
+        // An explicit catch-up re-opens a LIVING unit the way a fresh launch would open it:
+        // on its first unseen shot. Never fired by background refreshes, so the pager is
+        // yanked only when the reader just asked to be taken to the new.
+        .onChange(of: catchUpGeneration) {
+            let opening = unit.openingIndex(isSeen: { seenStore.isSeen($0) })
+            if opening != selection {
+                withAnimation(.snappy(duration: 0.25)) { selection = opening }
+            }
+        }
         .onChange(of: selection) {
             // A swipe or a strip tap is an explicit reach; it cannot happen off screen.
             seenStore.markSeen(current.post.id)
