@@ -129,6 +129,31 @@ final class FeedService {
 
     func hasSharedPhoto(_ id: UUID) -> Bool { myPostedPhotoIds.contains(id) }
 
+    /// Server-side COUNT of the caller's own posts filed under TODAY's 4am-bounded day
+    /// (`FeedUnit.dayKey`), never derived from `feed`'s already-loaded pages: those may not hold
+    /// the caller's own posts at all, or may be missing today's earliest ones behind a keyset
+    /// page boundary. Same `count: .exact` shape `PhotoService.personalPhotoCount` already uses
+    /// for photos.
+    ///
+    /// `nil` means the fetch FAILED (offline, server error), distinct from a genuine `0`: backs
+    /// `ShareToFeedSheet`'s destination line, and a flaky network must not read as the specific,
+    /// false claim "nothing from today is on the feed yet" — that sentence is only earned by an
+    /// actual resolved zero. See `ShareDestinationCount` for how the sheet keeps the two apart.
+    func todayPostCount(userId: UUID, now: Date = .now) async -> Int? {
+        let start = FeedUnit.dayKey(for: now).addingTimeInterval(FeedUnit.dayBoundaryHour)
+        let end = start.addingTimeInterval(86400)
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return try? await supabase
+            .from("posts")
+            .select("id", head: true, count: .exact)
+            .eq("user_id", value: userId.uuidString)
+            .eq("hidden", value: false)
+            .gte("created_at", value: formatter.string(from: start))
+            .lt("created_at", value: formatter.string(from: end))
+            .execute().count
+    }
+
     /// Pure follow-button/badge copy, pulled out of the views so the four
     /// (following, followsMe) combinations are cheap to pin with a plain unit test.
     ///
@@ -425,6 +450,33 @@ final class FeedService {
             .limit(60)
             .execute().value) ?? []
         return rows.map(\.tagged_user_id)
+    }
+
+    /// The caller's own most-recent tag of each person they've ever tagged, across their own
+    /// posts only: `AddPeopleSheet`'s ordering signal, most-recently-tagged first (see
+    /// `orderPeopleByRecency`). `post_tags.created_at` is a real column (`schema.sql`, added
+    /// alongside the table), so this reads an actual timestamp rather than inventing a proxy for
+    /// one. One query, embedding `posts` to filter to the caller's own rows server-side
+    /// (`posts!inner(user_id)`, same embed shape `WidgetSync.rollState` already uses) rather
+    /// than fetching every post id first the way `recentlyTaggedUserIds` above does; ordered
+    /// newest first, so only the FIRST row seen per tagged user is kept.
+    ///
+    /// Empty on any failure (offline, or before this ships), which degrades the picker to its
+    /// fallback order (the follows list's own order) rather than an error.
+    func tagRecency(taggedBy userId: UUID) async -> [UUID: Date] {
+        struct Row: Decodable { let tagged_user_id: UUID; let created_at: Date }
+        let rows: [Row] = (try? await supabase
+            .from("post_tags")
+            .select("tagged_user_id, created_at, posts!inner(user_id)")
+            .eq("posts.user_id", value: userId.uuidString)
+            .order("created_at", ascending: false)
+            .limit(300)
+            .execute().value) ?? []
+        var map: [UUID: Date] = [:]
+        for row in rows where map[row.tagged_user_id] == nil {
+            map[row.tagged_user_id] = row.created_at
+        }
+        return map
     }
 
     private let discoverLimit = 50

@@ -87,7 +87,6 @@ struct PhotoPagerView: View {
     @State private var profileRoute: ProfileRoute?
     /// A profile chosen inside the comment sheet, opened once that sheet has closed.
     @State private var pendingProfile: ProfileRoute?
-    @State private var dragY: CGFloat = 0
     var memberNames: [UUID: String] = [:]
     /// The roll name for a given photo's rollId (nil for a personal, non-roll shot), used only in
     /// the delete-confirmation wording. A roll grid passes a closure returning its own name.
@@ -135,6 +134,13 @@ struct PhotoPagerView: View {
     @State private var showShareComposer = false
     @State private var shareCaptionDraft = ""
     @State private var pendingTags: [PendingTag] = []
+    /// Night-rack mode's own share moment (Phase D): the promoted `Share` capsule opens
+    /// `ShareToFeedSheet` for THIS photo, via `.sheet(item:)` rather than a bool, so the sheet's
+    /// own `dismiss()` (on Share, or a plain swipe-down) automatically nils this out. Deliberately
+    /// separate from `composerPhoto`, which is the legacy roll-pager composer's own target: the
+    /// two flows must never share one variable, same reasoning as `taggingPhoto` vs.
+    /// `composerPhoto` above.
+    @State private var shareSheetPhoto: Photo?
     @State private var showTagSheet = false
     /// Night-rack mode's OTHER tag sheet: editing an ALREADY-shared photo's tags (the promoted
     /// "Tag" action), as distinct from `showTagSheet` above, which is the share composer's own
@@ -357,6 +363,19 @@ struct PhotoPagerView: View {
         }
         .sheet(item: $shareItem) { item in
             SharePreviewSheet(photo: item.image)
+        }
+        .sheet(item: $shareSheetPhoto) { photo in
+            // Falls back to the rack's own thumbnail resolution too, matching `rackSection`'s own
+            // `signedURLs[photo.id] ?? rackThumbURLs[photo.id]`: a night reached via the jump
+            // sheet (never scrolled past in the grid) has no entry in `signedURLs` at all, and
+            // without the fallback the compose sheet's destination thumbnail sat on a permanent
+            // placeholder.
+            ShareToFeedSheet(
+                photo: photo,
+                thumbURL: signedURLs[photo.id] ?? rackThumbURLs[photo.id],
+                onSuccess: { flashSharedToast() },
+                onPartialFailure: { flashError($0) }
+            )
         }
         .safeAreaInset(edge: .bottom) {
             if showShareComposer { shareComposer }
@@ -586,10 +605,13 @@ struct PhotoPagerView: View {
         }
     }
 
-    /// Inline caption composer, shown at the bottom when publishing a photo to your page. Reused
-    /// as-is in night-rack mode too: the "Share" promoted action below the rack calls the same
-    /// `shareToPage`, which opens this same composer over the rack. The compose sheet proper is
-    /// Phase D; this phase keeps it exactly as it already behaves.
+    /// Inline caption composer, shown at the bottom when publishing a photo to your page.
+    ///
+    /// Phase D split this: night-rack mode's promoted `Share` (`shareCapsule`) now opens
+    /// `ShareToFeedSheet` instead, so this composer, `shareToPage`, and `confirmShare` are dead
+    /// for a Darkroom viewer. They stay exactly as they were for the ONE caller left, `bottomBar`
+    /// above, which only renders when `!showsNightRack`: a roll grid's own photo, or the widget's
+    /// single-photo pager, still publish through this inline bar.
     private var shareComposer: some View {
         VStack(spacing: 10) {
             Button { showTagSheet = true } label: {
@@ -668,6 +690,19 @@ struct PhotoPagerView: View {
     /// Night-rack mode's photograph is a hard `width x width*4/3` box and its rack/status row have
     /// fixed heights; the roll/widget footer here keeps its existing flexible layout, which is why
     /// this conversion was done only once both preconditions held everywhere it's used.
+    ///
+    /// Construction now matches `FeedUnitCard.pager` exactly: a bare `TabView(.page)` with no
+    /// gesture riding alongside it. It used to carry an extra `simultaneousGesture` (a vertical
+    /// drag-to-dismiss) plus a matching `.offset(y:)`, which `FeedUnitCard`'s own pager has
+    /// never had, and it was the prime suspect for the paging still not feeling native even
+    /// after the `TabView(.page)` rewrite: a second gesture recognizer tracking every touch
+    /// simultaneously with a native paging `UIScrollView`, even one that only ACTS on a vertical
+    /// component, is enough for iOS to visibly damp the primary gesture's own physics. There is
+    /// no equivalent in the feed to replicate instead: `FeedUnitCard`'s pager is inline in a
+    /// scrolling card, nothing to dismiss; `PostDetailView`'s own swipe-to-go-back rides
+    /// alongside a vertically-scrolling `ScrollView` showing ONE photo, not a horizontally
+    /// paging `TabView`, so it is not the same situation either. The X button in both headers
+    /// (`legacyHeader`/`nightRackHeader`) is the sole way to close this viewer now.
     private var pagerCore: some View {
         ZStack {
             TabView(selection: $selection) {
@@ -679,13 +714,16 @@ struct PhotoPagerView: View {
             .tabViewStyle(.page(indexDisplayMode: .never))
             // Mirrors the old `scale > 1 ? .none : .all` gesture mask exactly: paging is native
             // now, so the equivalent gate is disabling the TabView's own scroll while zoomed,
-            // handing the touch fully to `panWhileZoomed` instead.
+            // handing the touch fully to `panWhileZoomed` instead. Inert (false) at rest, so it
+            // plays no part in ordinary swiping, only while a pinch is actually held open.
             .scrollDisabled(scale > 1)
             .accessibilityElement(children: .contain)
             .accessibilityLabel(photos.count == 1 ? "Photo" : "Photo \(selection + 1) of \(photos.count)")
 
             // Over the photo rather than inside `photoPage`, so it is not scaled by a pinch in
-            // flight and does not move with the paging offset.
+            // flight and does not move with the paging offset. A plain overlay `Image` with
+            // `allowsHitTesting(false)`, so unlike the dismiss drag this removed, it attaches no
+            // gesture of its own and has no bearing on the TabView's swipe physics.
             Image(systemName: "heart.fill")
                 .font(.system(size: 90))
                 .foregroundStyle(.white)
@@ -695,33 +733,6 @@ struct PhotoPagerView: View {
                 .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.55), value: heartBurst)
                 .allowsHitTesting(false)
         }
-        .offset(y: dragY)
-        // `simultaneousGesture`, not `gesture`: the TabView keeps its own horizontal pan entirely
-        // intact (exactly the trick `PostDetailView`'s swipe-to-go-back uses alongside its
-        // `ScrollView`), and this only rides alongside it, tracking vertical movement for the
-        // dismiss. Gated off entirely while zoomed, matching the old pager's `scale <= 1` guard.
-        .simultaneousGesture(dismissDrag, including: scale > 1 ? .none : .all)
-    }
-
-    /// Vertical drag-to-dismiss, split out of the old combined pager gesture now that paging
-    /// itself is native. Only the vertical axis is tracked (a horizontal drag here is the
-    /// TabView's own page turn and must never be touched), damped the same way the old gesture
-    /// damped it, same 120pt commit threshold.
-    private var dismissDrag: some Gesture {
-        DragGesture(minimumDistance: 12)
-            .onChanged { value in
-                guard abs(value.translation.height) > abs(value.translation.width) else { return }
-                dragY = max(0, value.translation.height) * 0.6
-            }
-            .onEnded { value in
-                let dismissing = abs(value.translation.height) > abs(value.translation.width)
-                    && value.translation.height > 120
-                withAnimation(.easeOut(duration: 0.18)) { dragY = 0 }
-                if dismissing {
-                    Haptics.tap()
-                    dismiss()
-                }
-            }
     }
 
     @ViewBuilder
@@ -862,7 +873,16 @@ struct PhotoPagerView: View {
                             .id(photo.id)
                         }
                     }
-                    .padding(.leading, 16)
+                    // Flush with the photograph's own left edge, which in night-rack mode has
+                    // no margin at all (a hard, full-bleed `width x width*4/3` box): the rack
+                    // used to carry a 16pt leading inset the photo itself doesn't have, so the
+                    // first frame floated in from the edge instead of starting exactly where
+                    // the photo starts, unlike the feed's own strip (which matches ITS photo's
+                    // margined edge, not a bare zero, because that photo has one). The trailing
+                    // side keeps its inset; `rackFadeMask` and the centering `scrollTo` below
+                    // are both already viewport-relative, not padding-relative, so neither needs
+                    // to change alongside this.
+                    .padding(.leading, 0)
                     .padding(.trailing, 16)
                 }
                 .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { rackWidth = $0 }
@@ -961,20 +981,28 @@ struct PhotoPagerView: View {
         return feed.myPostedPhotoIds.contains(photo.id)
     }
 
+    /// Night-rack's own share moment, Phase D: opens `ShareToFeedSheet` (see `shareSheetPhoto`),
+    /// never the legacy inline composer that the roll pager's `bottomBar` still uses below.
     private var shareCapsule: some View {
         let shared = current.map { feed.myPostedPhotoIds.contains($0.id) } ?? false
         return Button {
             guard let photo = current else { return }
-            shareToPage(photo)
+            Haptics.tap()
+            shareSheetPhoto = photo
         } label: {
-            Text("Share")
+            // `shared` used to leave the label reading "Share" while the button quietly did
+            // nothing: pixel-identical to the live state, so a second look never answered
+            // whether a tap here would do anything. Both the text and the dim (matching
+            // `tagCapsuleLabel`'s own disabled treatment) now say so at a glance.
+            Text(shared ? "Shared" : "Share")
                 .flimFont(13, weight: .medium)
                 .foregroundStyle(accent)
                 .padding(.horizontal, 14)
                 .frame(height: 32)
                 .overlay(Capsule().strokeBorder(accent.opacity(0.55), lineWidth: 1))
+                .opacity(shared ? 0.45 : 1)
         }
-        .disabled(shared || showShareComposer)
+        .disabled(shared)
     }
 
     private var tagCapsule: some View {
@@ -1070,6 +1098,17 @@ struct PhotoPagerView: View {
         Task {
             try? await Task.sleep(for: .seconds(2))
             withAnimation { errorToast = nil }
+        }
+    }
+
+    /// The shared top-slot success toast, timed exactly like `confirmShare`'s own inline
+    /// version below, pulled out so `ShareToFeedSheet`'s `onSuccess` can reach it without
+    /// duplicating the animation/sleep/animation dance a second time.
+    private func flashSharedToast() {
+        withAnimation { showSharedToast = true }
+        Task {
+            try? await Task.sleep(for: .seconds(2))
+            withAnimation { showSharedToast = false }
         }
     }
 

@@ -90,17 +90,7 @@ struct DarkroomView: View {
         DarkroomDayUnit.monthGroups(units: dayUnits)
     }
 
-    /// Bands render only when the loaded library actually spans two or more calendar months.
-    private var showsMonthBands: Bool { monthGroups.count >= 2 }
-
     private var lastUnitId: Date? { monthGroups.last?.units.last?.id }
-
-    /// The flattened READY photos in render order (units newest first, frames oldest first
-    /// inside each), used ONLY to find pagination's trigger frame (`onFrameAppear`). The pager
-    /// itself pages `renderOrderPhotos` below, which also carries each night's developing shots.
-    private var renderOrderReadyPhotos: [Photo] {
-        dayUnits.flatMap(\.developed)
-    }
 
     /// The flattened archive in render order, developing shots included in their true
     /// chronological place: what `PhotoPagerView`'s night-rack pages through, so swiping (or a
@@ -294,11 +284,12 @@ struct DarkroomView: View {
 
     // MARK: - Night list
 
-    /// One unit per night, sticky month bands when the library spans more than one month, and
-    /// the sort row above all of it. `Section` per month keeps the header pin working even when
-    /// there is exactly one month to show (its header is then just empty).
+    /// One unit per night, a sticky month band on every month (always, not just when the
+    /// library spans two or more — a single-month library still gets its band, which is also
+    /// the only way into the jump sheet), and the sort row above all of it. `Section` per month
+    /// keeps the header pin working uniformly.
     private var nightList: some View {
-        LazyVStack(alignment: .leading, spacing: 0, pinnedViews: showsMonthBands ? [.sectionHeaders] : []) {
+        LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
             if !isSelecting, !unsortedPhotos.isEmpty {
                 DarkroomSortRowView(
                     accent: accent,
@@ -314,7 +305,6 @@ struct DarkroomView: View {
                         DarkroomDayUnitView(
                             unit: unit,
                             capacity: stripCapacity,
-                            showsMonth: showsMonthBands,
                             accent: accent,
                             signedURLCache: vm.signedURLCache,
                             sharedIds: feed.myPostedPhotoIds,
@@ -336,27 +326,55 @@ struct DarkroomView: View {
                         }
                     }
                 } header: {
-                    if showsMonthBands {
-                        DarkroomMonthBandView(group: group, shotCount: shotCount(for: group)) {
-                            Haptics.tap()
-                            showJumpSheet = true
-                        }
+                    DarkroomMonthBandView(group: group, shotCount: shotCount(for: group)) {
+                        Haptics.tap()
+                        showJumpSheet = true
                     }
                 }
             }
+            loadMoreSentinel
         }
         .padding(.bottom, 12)
     }
 
+    /// The pagination trigger, moved OUT of `onFrameAppear`/per-frame `.task` (see below) and
+    /// into its own view, last in the `LazyVStack`. `.task` on a frame only ever fires once per
+    /// that frame's OWN identity: `reload()` (fired from `.onAppear` every time this tab is
+    /// revisited) resets `vm.photos` back to page one, but the frames for those same photo ids
+    /// stay mounted with the same identity across that reassignment, so a frame whose `.task`
+    /// already ran in an earlier session never re-fires, and the "last ready frame" trigger it
+    /// used to carry could then never fire again: the library stuck at 30 photos, permanently,
+    /// the moment you'd once scrolled far enough to load a second page and then left the tab.
+    ///
+    /// This sentinel has no such per-photo identity to get stuck on. `LazyVStack` mounts/
+    /// unmounts it as it scrolls in and out of the viewport (unlike a rack's own frames, which
+    /// sit inside a plain, non-lazy `HStack` and all mount together the moment their night is
+    /// realized), so scrolling away and back always gives it a fresh `onAppear`. While it stays
+    /// visible, `.task(id: vm.photos.count)` re-arms itself every time a page actually lands
+    /// (the id changes), chaining pages automatically until either `photoService.hasMore` goes
+    /// false (the `if` below then removes the sentinel outright) or the guard inside
+    /// `DarkroomViewModel.loadMore` no-ops because a fetch is already in flight.
+    @ViewBuilder
+    private var loadMoreSentinel: some View {
+        if photoService.hasMore {
+            Color.clear
+                .frame(height: 44)
+                .onAppear { Task { await loadMoreIfNeeded() } }
+                .task(id: vm.photos.count) { await loadMoreIfNeeded() }
+        }
+    }
+
+    private func loadMoreIfNeeded() async {
+        guard let uid = auth.currentUser?.id else { return }
+        await vm.loadMore(photoService: photoService, userId: uid)
+    }
+
     /// Resolves a frame's signed URL if it isn't cached yet (freshly-loaded pages aren't covered
-    /// by `reload()`'s batched prefetch), and loads the next page once the last READY frame in
-    /// render order appears — the pagination trigger, unchanged from the old grid's.
+    /// by `reload()`'s batched prefetch). Pagination itself is `loadMoreSentinel`'s job now, see
+    /// its own doc for why this used to also carry that trigger and why that broke.
     private func onFrameAppear(_ photo: Photo) async {
         if photo.isReady, vm.signedURLCache[photo.id] == nil {
             _ = await vm.signedURL(for: photo, photoService: photoService)
-        }
-        if photo.id == renderOrderReadyPhotos.last?.id, let uid = auth.currentUser?.id {
-            await vm.loadMore(photoService: photoService, userId: uid)
         }
     }
 

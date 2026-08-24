@@ -9,7 +9,6 @@ import SwiftUI
 struct DarkroomDayUnitView: View {
     let unit: DarkroomDayUnit
     let capacity: Int
-    let showsMonth: Bool
     let accent: Color
     let signedURLCache: [UUID: URL]
     let sharedIds: Set<UUID>
@@ -37,7 +36,11 @@ struct DarkroomDayUnitView: View {
     private var band: some View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(unit.title(shortForm: showsMonth))
+                // Month bands render unconditionally now (see `DarkroomView.nightList`'s own
+                // doc), so the day title is always the short form; the full "Sat 16 Aug" form
+                // stays reachable for the pager header (`PhotoPagerView.currentNightTitle`),
+                // which has no band of its own to say the month.
+                Text(unit.title(shortForm: true))
                     .flimFont(17, weight: .light)
                     .tracking(0.4)
                     .foregroundStyle(FlimTheme.textPrimary)
