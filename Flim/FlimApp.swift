@@ -17,6 +17,17 @@ struct FlimApp: App {
         // the first, to receive payloads queued since the previous session.
         CrashReporter.shared.start()
 
+        // One-shot cache purge. Builds 255 through 261 could file the wrong photograph's
+        // bytes under another post's cache keys (the feed's index-keyed URL bug), and a
+        // poisoned entry is indistinguishable from an honest one afterwards, so every
+        // affected device serves wrong images from cache until the whole thing is cleared
+        // once. Keyed by flag, not build number, so it runs exactly once per device and
+        // never again.
+        let purgeFlag = "purgedPoisonedImageCache_2026_08_24"
+        if !UserDefaults.standard.bool(forKey: purgeFlag) {
+            DiskImageCache.purgeAll()
+            UserDefaults.standard.set(true, forKey: purgeFlag)
+        }
     }
 
     @State private var auth = AuthService()

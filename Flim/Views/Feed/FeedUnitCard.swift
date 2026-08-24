@@ -37,15 +37,20 @@ struct FeedUnitCard: View {
     /// computed by the caller because the store is main-actor and a View's init is not.
     @State private var selection: Int
 
-    // Per-frame image plumbing.
-    @State private var urls: [Int: URL] = [:]
+    // Per-frame image plumbing, keyed by POST ID and never by index. A unit's items can
+    // shift mid-life: a straddle completion appends the rest of a day and the capture-time
+    // sort inserts those shots at the FRONT. Index-keyed URLs then belonged to each slot's
+    // previous occupant, and CachedImage fetched one post's URL under another post's cache
+    // key, which is how the wrong photograph got POISONED into the disk cache under paths
+    // every other surface (the profile grid included) then served. Ids cannot shift.
+    @State private var urls: [UUID: URL] = [:]
     @State private var avatarURL: URL?
-    /// Frames whose image failed to load. The page becomes a well with a Retry drawn in the
+    /// Shots whose image failed to load. The page becomes a well with a Retry drawn in the
     /// photograph's place, never over one; the strip frame stays as an empty stroked frame,
     /// because dropping it would renumber the day and make "14 shots" false.
-    @State private var failedFrames: Set<Int> = []
-    /// Bumped per frame to force a fresh `CachedImage` identity on Retry.
-    @State private var retryTokens: [Int: Int] = [:]
+    @State private var failedFrames: Set<UUID> = []
+    /// Bumped per shot to force a fresh `CachedImage` identity on Retry.
+    @State private var retryTokens: [UUID: Int] = [:]
 
     // Thread state.
     @State private var captionExpanded = false
@@ -161,6 +166,21 @@ struct FeedUnitCard: View {
         // Re-checked when the gate opens, because a unit already on screen had its
         // visibility event before marking was allowed and will not get another.
         .onChange(of: markingEnabled) { maybeMarkReached() }
+        // Membership can change under a living card (a straddle completion inserts earlier
+        // captures at the front). The pager should keep showing the same PHOTOGRAPH, not the
+        // same index, so the selection is remapped to follow the post it was on.
+        .onChange(of: unit.items.map(\.post.id)) { oldIds, newIds in
+            guard selection < oldIds.count else {
+                selection = min(selection, max(0, newIds.count - 1))
+                return
+            }
+            let viewing = oldIds[selection]
+            if let kept = newIds.firstIndex(of: viewing), kept != selection {
+                selection = kept
+            } else if selection >= newIds.count {
+                selection = max(0, newIds.count - 1)
+            }
+        }
         // An explicit catch-up re-opens a LIVING unit the way a fresh launch would open it:
         // on its first unseen shot. Never fired by background refreshes, so the pager is
         // yanked only when the reader just asked to be taken to the new.
@@ -192,7 +212,7 @@ struct FeedUnitCard: View {
         .navigationDestination(item: $route) { UserPageView(userId: $0.id) }
         .sheet(item: $shareItem) { SharePreviewSheet(photo: $0.image) }
         .sheet(isPresented: $showEditTags) {
-            TagPhotoSheet(url: urls[selection], tags: $editingTags) {
+            TagPhotoSheet(url: urls[post.id], tags: $editingTags) {
                 Task { await feed.setTags(editingTags, on: post.id) }
             }
         }
@@ -315,19 +335,19 @@ struct FeedUnitCard: View {
         // The egress cap moves into the URL instead: only selection ±1 ever gets a network
         // URL, so an off-window page may paint free from the disk cache but can never fetch.
         // A fourteen-shot day still costs one image until somebody swipes.
-        if failedFrames.contains(index) {
-            brokenWell(index: index)
+        if failedFrames.contains(item.post.id) {
+            brokenWell(item: item)
         } else {
             CachedImage(
-                url: abs(index - selection) <= 1 ? urls[index] : nil,
+                url: abs(index - selection) <= 1 ? urls[item.post.id] : nil,
                 maxPixel: 1400, cacheKey: item.post.cardPath,
-                onFailure: { failedFrames.insert(index) }
+                onFailure: { failedFrames.insert(item.post.id) }
             ) { image in
                 image.resizable().scaledToFill()
             } placeholder: {
                 Rectangle().fill(Color.white.opacity(0.06))
             }
-            .id("page-\(item.post.id)-\(retryTokens[index] ?? 0)")
+            .id("page-\(item.post.id)-\(retryTokens[item.post.id] ?? 0)")
             .frame(width: photoWidth, height: photoHeight)
             .clipped()
             .overlay { GrainOverlay().opacity(0.5) }
@@ -357,7 +377,7 @@ struct FeedUnitCard: View {
     /// only its image did not, so everything below stays live, including reactions on a shot
     /// you cannot see. Retry is per frame: it re-resolves the signed URL (the commonest
     /// failure is an expired one) and refetches that one image, blocking nothing.
-    private func brokenWell(index: Int) -> some View {
+    private func brokenWell(item: FeedItem) -> some View {
         RoundedRectangle(cornerRadius: 12)
             .fill(Color.white.opacity(0.06))
             .frame(width: photoWidth, height: photoHeight)
@@ -370,10 +390,9 @@ struct FeedUnitCard: View {
                         .flimFont(13, relativeTo: .subheadline)
                         .foregroundStyle(FlimTheme.textSecondary)
                     Button {
-                        let item = unit.items[index]
-                        failedFrames.remove(index)
-                        retryTokens[index, default: 0] += 1
-                        Task { urls[index] = await feed.signedURL(for: item.post.cardPath) }
+                        failedFrames.remove(item.post.id)
+                        retryTokens[item.post.id, default: 0] += 1
+                        Task { urls[item.post.id] = await feed.signedURL(for: item.post.cardPath) }
                     } label: {
                         Label("Retry", systemImage: "arrow.clockwise")
                             .flimFont(13, weight: .medium, relativeTo: .subheadline)
@@ -630,8 +649,11 @@ struct FeedUnitCard: View {
     /// render an image. `CachedImage` hits its disk cache by stable path first, so a nil URL
     /// here never blocks a cached image from painting.
     private func resolveURLs(around index: Int) async {
-        for i in max(0, index - 1)...min(unit.items.count - 1, index + 1) where urls[i] == nil {
-            urls[i] = await feed.signedURL(for: unit.items[i].post.cardPath)
+        for i in max(0, index - 1)...min(unit.items.count - 1, index + 1) {
+            let item = unit.items[i]
+            if urls[item.post.id] == nil {
+                urls[item.post.id] = await feed.signedURL(for: item.post.cardPath)
+            }
         }
     }
 }
@@ -650,7 +672,7 @@ private struct FilmStrip: View {
     @Binding var selection: Int
     let accent: Color
     let isSeen: (UUID) -> Bool
-    let failedFrames: Set<Int>
+    let failedFrames: Set<UUID>
     /// Batched on purpose: a cold cache resolves every miss in ONE `createSignedURLs` round
     /// trip. The first cut of this strip awaited one `signedURL` per frame, and on a real
     /// 18-shot day over cellular that was eighteen sequential round trips before the first
@@ -664,7 +686,10 @@ private struct FilmStrip: View {
     private static let frameGap: CGFloat = 2
     private static let pitch = frameWidth + frameGap
 
-    @State private var thumbURLs: [Int: URL] = [:]
+    /// Keyed by post id for the same reason the pager's URLs are: a straddle completion
+    /// re-sorts the items and shifts every index, and an index-keyed thumb then renders the
+    /// slot's previous occupant.
+    @State private var thumbURLs: [UUID: URL] = [:]
 
     private var shown: Int { unit.stripShown }
 
@@ -733,11 +758,15 @@ private struct FilmStrip: View {
             perforation
         }
         .clipShape(RoundedRectangle(cornerRadius: 12))
-        .task(id: unit.id) {
-            let paths = (0..<shown).map { unit.items[$0].post.indexPath }
-            let resolved = await resolveURLs(Array(Set(paths)))
-            for index in 0..<shown where thumbURLs[index] == nil {
-                thumbURLs[index] = resolved[paths[index]]
+        // Keyed on MEMBERSHIP, not just the unit id: a straddle completion grows the same
+        // unit, and the new frames need their thumbs resolved too.
+        .task(id: "\(unit.id)|\(unit.items.count)") {
+            let wanted = (0..<shown).map { unit.items[$0] }
+                .filter { thumbURLs[$0.post.id] == nil }
+            guard !wanted.isEmpty else { return }
+            let resolved = await resolveURLs(Array(Set(wanted.map(\.post.indexPath))))
+            for item in wanted {
+                thumbURLs[item.post.id] = resolved[item.post.indexPath]
             }
         }
     }
@@ -761,14 +790,14 @@ private struct FilmStrip: View {
         let selected = index == selection
         let unseen = !isSeen(item.post.id)
         return Group {
-            if failedFrames.contains(index) {
+            if failedFrames.contains(item.post.id) {
                 // Kept, never dropped: removing it renumbers the day and makes "14 shots"
                 // false, and the reader still needs to swipe past it.
                 Rectangle()
                     .fill(Color(red: 0.07, green: 0.07, blue: 0.07))
                     .overlay(Rectangle().strokeBorder(Color.white.opacity(0.19), lineWidth: 1))
             } else {
-                CachedImage(url: thumbURLs[index], maxPixel: 120, cacheKey: item.post.indexPath) {
+                CachedImage(url: thumbURLs[item.post.id], maxPixel: 120, cacheKey: item.post.indexPath) {
                     $0.resizable().scaledToFill()
                 } placeholder: {
                     Rectangle().fill(Color.black)

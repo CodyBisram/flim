@@ -228,6 +228,21 @@ enum DiskImageCache {
         }
     }
 
+    /// Deletes every cached image. Exists for one reason: a bug can write the WRONG photo's
+    /// bytes under a path's keys (the feed's index-keyed URL bug did exactly that, and the
+    /// profile grid then served the wrong photograph from cache, indefinitely), and there is
+    /// no way to tell a poisoned entry from an honest one after the fact. The caller gates
+    /// this behind a one-shot flag; the cost is one cold re-download of whatever is looked
+    /// at next.
+    static func purgeAll() {
+        Task.detached(priority: .utility) {
+            let fm = FileManager.default
+            for url in (try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? [] {
+                try? fm.removeItem(at: url)
+            }
+        }
+    }
+
     /// Keep the cache bounded, delete the oldest files if it exceeds `maxBytes`. Run at launch.
     static func trim(maxBytes: Int = 200 * 1024 * 1024) {
         Task.detached(priority: .background) {

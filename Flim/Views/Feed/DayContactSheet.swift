@@ -15,7 +15,9 @@ struct DayContactSheet: View {
     let unit: FeedUnit
     let onSelect: (Int) -> Void
 
-    @State private var urls: [Int: URL] = [:]
+    /// Keyed by post id, matching the card and strip: index-keyed URLs go stale when a
+    /// unit's membership shifts, and stale URL-to-key pairs poison the image cache.
+    @State private var urls: [UUID: URL] = [:]
 
     private let columns = [GridItem(.flexible(), spacing: 2),
                            GridItem(.flexible(), spacing: 2),
@@ -42,7 +44,7 @@ struct DayContactSheet: View {
                             Haptics.tap()
                             onSelect(index)
                         } label: {
-                            CachedImage(url: urls[index], maxPixel: 400, cacheKey: item.post.indexPath) {
+                            CachedImage(url: urls[item.post.id], maxPixel: 400, cacheKey: item.post.indexPath) {
                                 $0.resizable().scaledToFill()
                             } placeholder: {
                                 Rectangle().fill(Color.white.opacity(0.06))
@@ -69,10 +71,9 @@ struct DayContactSheet: View {
         // One batched resolution for the whole day, not one round trip per cell; same
         // index-rendition preference as the strip, for the same reason.
         .task {
-            let paths = unit.items.map(\.post.indexPath)
-            let resolved = await feed.signedURLs(for: Array(Set(paths)))
-            for (index, path) in paths.enumerated() where urls[index] == nil {
-                urls[index] = resolved[path]
+            let resolved = await feed.signedURLs(for: Array(Set(unit.items.map(\.post.indexPath))))
+            for item in unit.items where urls[item.post.id] == nil {
+                urls[item.post.id] = resolved[item.post.indexPath]
             }
         }
     }

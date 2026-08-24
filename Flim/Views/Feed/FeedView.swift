@@ -524,13 +524,18 @@ struct FeedView: View {
         // this refresh worked.
         let hadContent = !feed.feed.isEmpty
         await feed.loadFeed(currentUserId: uid)
-        await feed.completeStraddlingDays(currentUserId: uid)
         didLoad = true
         hasNewPosts = false
+        // Snapshotted from page one, BEFORE the straddle completion's extra round trips: the
+        // units render the moment the page lands, and the caught-up block waiting on the
+        // completion appeared a beat after them, popping in at the top of an already-drawn
+        // feed. The completion below then re-snapshots grow-only, the same way paging does.
         snapshotLedger()
         // After the snapshot, so the re-opened frames' seen-marks land under an already
         // computed ledger, the same order every other mark obeys.
         catchUpGeneration += 1
+        await feed.completeStraddlingDays(currentUserId: uid)
+        snapshotLedger(growOnly: true)
         if hadContent, feed.feedError != nil {
             Haptics.error()
             withAnimation { refreshFailedToast = true }
