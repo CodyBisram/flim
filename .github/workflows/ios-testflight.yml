@@ -14,6 +14,9 @@ on:
       - "docs/**"
       - "web/**"
       - "scripts/**"
+      # SQL migrations and edge functions deploy by hand, never through this
+      # pipeline; a database-only commit must not ship an identical app build.
+      - "supabase/**"
       - "*.md"
   pull_request:
   workflow_dispatch:
