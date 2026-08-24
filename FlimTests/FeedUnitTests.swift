@@ -24,11 +24,12 @@ final class FeedUnitTests: XCTestCase {
                     signupOrdinal: nil)
     }
 
-    private func item(author: UserProfile, at createdAt: Date, id: UUID = UUID()) -> FeedItem {
+    private func item(author: UserProfile, at createdAt: Date, taken: Date? = nil,
+                      id: UUID = UUID()) -> FeedItem {
         FeedItem(
             post: Post(id: id, userId: author.id, photoId: UUID(),
                        storagePath: "p/\(id).jpg", thumbPath: nil, feedPath: nil,
-                       takenAt: createdAt, caption: nil, createdAt: createdAt),
+                       takenAt: taken ?? createdAt, caption: nil, createdAt: createdAt),
             author: author)
     }
 
@@ -108,6 +109,60 @@ final class FeedUnitTests: XCTestCase {
         ], calendar: calendar)
         XCTAssertTrue(units[0].metaLine.hasPrefix("2 shots · "))
         XCTAssertTrue(units[0].metaLine.contains(" to "))
+    }
+
+    func testMetaLineNarratesCaptureTimeNotPostTime() {
+        // The batch-publish case: both posted at 11:34, taken through the morning. Post time
+        // produced "11:34 AM to 11:34 AM"; capture time tells the story.
+        let sadia = profile(UUID(), name: "sadia")
+        let units = FeedUnit.units(from: [
+            item(author: sadia, at: date(21, 11, 34), taken: date(21, 9, 12)),
+            item(author: sadia, at: date(21, 11, 34), taken: date(21, 11, 20)),
+        ], calendar: calendar)
+        let line = units[0].metaLine(calendar: calendar)
+        XCTAssertTrue(line.hasPrefix("2 shots · "))
+        XCTAssertTrue(line.contains(" to "))
+        XCTAssertFalse(line.contains("11:34"))
+    }
+
+    func testMetaLineCollapsesADegenerateSpan() {
+        // Two captures in the same minute must not read "11:34 AM to 11:34 AM".
+        let sadia = profile(UUID(), name: "sadia")
+        let units = FeedUnit.units(from: [
+            item(author: sadia, at: date(21, 11, 34), taken: date(21, 11, 34)),
+            item(author: sadia, at: date(21, 11, 34), taken: date(21, 11, 34)),
+        ], calendar: calendar)
+        let line = units[0].metaLine(calendar: calendar)
+        XCTAssertTrue(line.hasPrefix("2 shots · "))
+        XCTAssertFalse(line.contains(" to "))
+    }
+
+    func testMetaLineUsesDatesWhenCapturesCrossDays() {
+        // Darkroom archaeology: a fresh shot posted beside one taken weeks earlier. A
+        // time-of-day span across weeks would lie, so the line switches to dates (which
+        // carry no clock, hence no colon).
+        let sadia = profile(UUID(), name: "sadia")
+        let units = FeedUnit.units(from: [
+            item(author: sadia, at: date(21, 11, 34), taken: date(21, 10, 0)),
+            item(author: sadia, at: date(21, 11, 34), taken: date(2, 15, 30)),
+        ], calendar: calendar)
+        XCTAssertEqual(units.count, 1, "grouping stays keyed on POST time")
+        let line = units[0].metaLine(calendar: calendar)
+        XCTAssertTrue(line.hasPrefix("2 shots · "))
+        XCTAssertTrue(line.contains(" to "))
+        XCTAssertFalse(line.contains(":"), "a cross-day span shows dates, not clock times")
+    }
+
+    func testFramesOrderByCaptureTimeWithinAUnit() {
+        // Batch-published posts land seconds apart in triage order; the strip should read
+        // the day as lived, oldest capture first.
+        let sadia = profile(UUID(), name: "sadia")
+        let lateCapture = item(author: sadia, at: date(21, 11, 34), taken: date(21, 11, 20))
+        let earlyCapture = item(author: sadia, at: date(21, 11, 35), taken: date(21, 9, 12))
+        let units = FeedUnit.units(from: [lateCapture, earlyCapture], calendar: calendar)
+        XCTAssertEqual(units[0].items.map(\.post.id), [earlyCapture.post.id, lateCapture.post.id])
+        // Unit freshness still follows the newest POST, not the newest capture.
+        XCTAssertEqual(units[0].newestAt, date(21, 11, 35))
     }
 
     // MARK: - Seen-state derivations

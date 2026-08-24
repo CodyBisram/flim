@@ -46,14 +46,23 @@ struct FeedUnit: Identifiable, Equatable {
             Key(author: $0.author.id, day: dayKey(for: $0.post.createdAt, calendar: calendar))
         }
         return grouped.map { key, members in
+            // Frames order by CAPTURE time, so the strip reads as the day was lived. Post
+            // time cannot do this job: the dominant flow batch-publishes a day from the sort
+            // deck, which lands every post within the same minute and makes their relative
+            // order the accident of triage taps. Post time still KEYS the group (above) and
+            // ranks the unit (below); capture time narrates the inside.
             let ordered = members.sorted {
-                ($0.post.createdAt, $0.post.id.uuidString) < ($1.post.createdAt, $1.post.id.uuidString)
+                ($0.post.takenAt, $0.post.createdAt, $0.post.id.uuidString)
+                    < ($1.post.takenAt, $1.post.createdAt, $1.post.id.uuidString)
             }
             return FeedUnit(
                 author: ordered[0].author,
                 dayKey: key.day,
                 items: ordered,
-                newestAt: ordered.last?.post.createdAt ?? key.day
+                // Max over POST times, not the last ordered item: items order by capture
+                // now, and a unit's freshness is when it last arrived, not when its newest
+                // moment happened.
+                newestAt: members.map(\.post.createdAt).max() ?? key.day
             )
         }
         .sorted {
@@ -66,17 +75,35 @@ struct FeedUnit: Identifiable, Equatable {
 
     // MARK: - Derived metadata
 
-    /// The band's one derived meta line: `14 shots · 8:12 AM to 11:36 PM`, or
-    /// `1 shot · 8:12 AM` for a solo. ONE time per unit, in the header, at every size: a day
-    /// range up top and a per-shot timestamp lower down are two clocks describing the same
-    /// day. Generated text, never user text, so callers clamp it to one line and truncate.
-    var metaLine: String {
-        let count = items.count
-        guard let first = items.first?.post.createdAt else { return "" }
+    /// The band's one derived meta line, narrated in CAPTURE time: `14 shots · 8:12 AM to
+    /// 11:36 PM` is when the moments happened, not when publish was tapped. Post time made
+    /// the span read `11:34 AM to 11:34 AM` on every batch-published day, which is most
+    /// days: the sort-deck flow shares a whole day in one sitting.
+    ///
+    /// Three shapes, all one line that never wraps:
+    /// - one day of captures: a time span, `2 shots · 9:12 AM to 11:20 AM`
+    /// - a span too tight to say twice (or a solo): one time, `2 shots · 11:34 AM`
+    /// - captures from different days (a fresh shot posted beside one dug out of the
+    ///   Darkroom, which is a supported thing to do): a DATE span, `2 shots · Jul 14 to
+    ///   Aug 24`, because a time-of-day range across weeks would be a lie in small print.
+    ///
+    /// Still ONE clock per unit, in the header, at every size: a range up top and per-shot
+    /// timestamps lower down would be two clocks describing the same day.
+    var metaLine: String { metaLine() }
+
+    func metaLine(calendar: Calendar = .current) -> String {
+        let countLabel = items.count == 1 ? "1 shot" : "\(items.count) shots"
+        guard let first = items.map(\.post.takenAt).min(),
+              let last = items.map(\.post.takenAt).max() else { return countLabel }
+
+        guard Self.dayKey(for: first, calendar: calendar) == Self.dayKey(for: last, calendar: calendar) else {
+            let start = first.formatted(.dateTime.month(.abbreviated).day())
+            let end = last.formatted(.dateTime.month(.abbreviated).day())
+            return "\(countLabel) · \(start) to \(end)"
+        }
         let start = first.formatted(date: .omitted, time: .shortened)
-        if count == 1 { return "1 shot · \(start)" }
-        let end = (items.last?.post.createdAt ?? first).formatted(date: .omitted, time: .shortened)
-        return "\(count) shots · \(start) to \(end)"
+        let end = last.formatted(date: .omitted, time: .shortened)
+        return start == end ? "\(countLabel) · \(start)" : "\(countLabel) · \(start) to \(end)"
     }
 
     // MARK: - Seen-state derivations
