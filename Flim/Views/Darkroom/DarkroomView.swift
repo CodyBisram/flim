@@ -70,9 +70,6 @@ struct DarkroomView: View {
     @State private var showRollDeleteConfirm = false
     @State private var pendingRollDeleteBatch: [Photo] = []
     @State private var shareItem: ShareImage?
-    /// Set by the grid's "Tag people" action so the viewer opens straight into the share
-    /// composer's tag step. Cleared on dismiss so a later ordinary tap opens the photo normally.
-    @State private var openForTagging = false
     /// The scroll content's measured width, so the contact sheet's strip capacity is derived
     /// from the real available width rather than a hard-coded frame count. 393 is the design's
     /// own reference width, a reasonable first-paint guess before the geometry read lands.
@@ -99,9 +96,17 @@ struct DarkroomView: View {
     private var lastUnitId: Date? { monthGroups.last?.units.last?.id }
 
     /// The flattened READY photos in render order (units newest first, frames oldest first
-    /// inside each), what the pager pages through and where pagination's trigger frame lives.
+    /// inside each), used ONLY to find pagination's trigger frame (`onFrameAppear`). The pager
+    /// itself pages `renderOrderPhotos` below, which also carries each night's developing shots.
     private var renderOrderReadyPhotos: [Photo] {
         dayUnits.flatMap(\.developed)
+    }
+
+    /// The flattened archive in render order, developing shots included in their true
+    /// chronological place: what `PhotoPagerView`'s night-rack pages through, so swiping (or a
+    /// rack tap) can land on a still-developing shot's develops-at state instead of skipping it.
+    private var renderOrderPhotos: [Photo] {
+        dayUnits.flatMap(\.photos)
     }
 
     private var sortPreviewPhotos: [Photo] {
@@ -254,7 +259,7 @@ struct DarkroomView: View {
         // The 60s develop poll only needs to run while this screen is on it, and a page-until-
         // anchor jump has no reason to keep paging once nobody's watching for it to land.
         .onDisappear { vm.stopRefreshing(); jumpPagingTask?.cancel() }
-        .fullScreenCover(item: $selectedPhoto, onDismiss: { openForTagging = false }) { photo in
+        .fullScreenCover(item: $selectedPhoto) { photo in
             pager(for: photo)
         }
         .fullScreenCover(isPresented: $showSortDeck, onDismiss: { Task { await reload() } }) {
@@ -365,14 +370,13 @@ struct DarkroomView: View {
     @ViewBuilder
     private func developedMenu(_ photo: Photo) -> some View {
         Button { beginSelecting(photo.id) } label: { Label("Select", systemImage: "checkmark.circle") }
-        // Tags belong to a post, so there is nothing to attach them to until the photo is being
-        // shared. This opens the viewer straight into the share composer with the tag sheet up,
-        // so tagging is one action from the grid rather than three.
-        Button {
-            selectedURL = vm.signedURLCache[photo.id]
-            openForTagging = true
-            selectedPhoto = photo
-        } label: { Label("Tag people", systemImage: "person.crop.circle.badge.plus") }
+        // "Tag people" used to live here, routing into the share composer with the tag sheet up
+        // (tags belong to a post, so there was nothing to attach one to until the photo was being
+        // shared). Removed 2026-08-24: tagging an unshared archive shot from the grid contradicts
+        // the rule that tagging only ever happens AT share time or on an already-shared shot,
+        // even though this route technically went through the composer first. The viewer's own
+        // promoted "Tag" action (only shown once a shot is already shared) is the one remaining
+        // way to tag a Darkroom photo.
         Button { share(photo) } label: { Label("Share", systemImage: "square.and.arrow.up") }
         Button {
             Haptics.tap()
@@ -584,24 +588,25 @@ struct DarkroomView: View {
     @ViewBuilder
     private func pager(for photo: Photo) -> some View {
         // The flattened render order: units newest first, each night's own frames oldest first,
-        // so swiping plays a night forward and then continues into the adjacent one.
-        let orderedPhotos = renderOrderReadyPhotos
+        // developing shots included in their true chronological place, so swiping plays a night
+        // forward (develops-at wells and all) and then continues into the adjacent one.
+        let orderedPhotos = renderOrderPhotos
         let index = orderedPhotos.firstIndex(where: { $0.id == photo.id })
         if let index {
             PhotoPagerView(photos: orderedPhotos,
                            startIndex: index,
                            signedURLs: vm.signedURLCache,
+                           showsNightRack: true,
                            rollName: { rollName(for: $0) },
-                           onDelete: { Task { await reload() } },
-                           startTagging: openForTagging)
+                           onDelete: { Task { await reload() } })
                 .navigationTransition(.zoom(sourceID: photo.id, in: photoNS))
         } else {
             PhotoPagerView(photos: [photo],
                            startIndex: 0,
                            signedURLs: vm.signedURLCache,
+                           showsNightRack: true,
                            rollName: { rollName(for: $0) },
-                           onDelete: { Task { await reload() } },
-                           startTagging: openForTagging)
+                           onDelete: { Task { await reload() } })
         }
     }
 

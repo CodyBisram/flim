@@ -1,8 +1,12 @@
 import SwiftUI
 
 /// How far the photo follows the finger during a paging swipe. At the first and last shot it
-/// resists instead of sliding into blank space, so overswiping reads as a wall rather than as
-/// dead input. Free function so the feel is testable without a view.
+/// resists instead of sliding into blank space, so overswiping reads as a wall rather than dead
+/// input. Free function so the feel is testable without a view.
+///
+/// `PhotoPagerView` itself no longer calls this (native `TabView` paging owns that feel now, see
+/// its own header comment), but `RollCarouselView` still hand-rolls its pager the same way this
+/// file used to, so the function and its tests stay.
 func pagingDragOffset(width: CGFloat, index: Int, count: Int, resistance: CGFloat = 0.2) -> CGFloat {
     let atStart = index == 0 && width > 0
     let atEnd = index == count - 1 && width < 0
@@ -10,7 +14,7 @@ func pagingDragOffset(width: CGFloat, index: Int, count: Int, resistance: CGFloa
 }
 
 /// Which way a finished horizontal drag should page: -1 back, +1 forward, or nil when it didn't
-/// travel far enough to count as a swipe.
+/// travel far enough to count as a swipe. See `pagingDragOffset`'s own note on who still uses this.
 func pagingStep(forDragWidth width: CGFloat, threshold: CGFloat = 60) -> Int? {
     guard abs(width) > threshold else { return nil }
     return width < 0 ? 1 : -1
@@ -62,6 +66,11 @@ func resolvePhotoUpgrade(current: PhotoResolutionState, thumbnail: URL?, fullFet
 /// never see two competing captions/credits. Report-vs-manage is derived from
 /// ownership, so a Darkroom (all-own) never shows report and a roll shows it per photo, with no
 /// extra flag.
+///
+/// `showsNightRack` is the Darkroom redesign's mode flag (Phase C): the same engine, but with a
+/// different header, a single-row film rack under the photograph, and a status+actions row
+/// instead of the plain caption + share pill. Roll grids and the widget's single-photo case leave
+/// it false and get today's chrome unchanged.
 struct PhotoPagerView: View {
     @Environment(\.flimAccent) private var accent
     let photos: [Photo]                 // same order as the grid
@@ -72,6 +81,9 @@ struct PhotoPagerView: View {
     var showsComments: Bool = false
     /// Show the photographer's @handle above the date (roll grid); off shows the date alone.
     var showsAttribution: Bool = false
+    /// The Darkroom's own chrome: a night-scoped header, a single-row rack under the photograph,
+    /// and a status+actions row. See the type's own doc.
+    var showsNightRack: Bool = false
     @State private var profileRoute: ProfileRoute?
     /// A profile chosen inside the comment sheet, opened once that sheet has closed.
     @State private var pendingProfile: ProfileRoute?
@@ -81,11 +93,6 @@ struct PhotoPagerView: View {
     /// the delete-confirmation wording. A roll grid passes a closure returning its own name.
     var rollName: (UUID?) -> String? = { _ in nil }
     var onDelete: () -> Void = {}
-    /// Opens straight into the share-to-page composer with the tag sheet already up. Lets the
-    /// Darkroom's "Tag people" action land on tagging directly: tags belong to a POST, so there's
-    /// nothing to attach them to until the photo is being shared, and this makes that one step
-    /// instead of "open the photo, find Share, then find Tag people".
-    var startTagging: Bool = false
 
     @Environment(PhotoService.self) private var photoService
     @Environment(AuthService.self) private var auth
@@ -103,6 +110,10 @@ struct PhotoPagerView: View {
     /// thumbnail, see `resolvePhotoUpgrade`. A photo not in here is retried on its next visit to
     /// the ±1 window instead of being stuck on the thumbnail for the rest of the session.
     @State private var fullyResolvedIds: Set<UUID> = []
+    /// Photos whose full-res fetch has FAILED (night-rack mode only). The page becomes a well
+    /// with a Retry drawn in the photograph's place, and the same photo's rack frame becomes an
+    /// empty outlined well, matching `FeedUnitCard`'s `failedFrames`.
+    @State private var failedPhotoIds: Set<UUID> = []
     @State private var reportedIds: Set<UUID> = []
     @State private var reactions: [PhotoReaction] = []
     /// Drives the heart that blooms over a double tap, matching the feed's.
@@ -115,8 +126,6 @@ struct PhotoPagerView: View {
     @State private var pinchStart: CGFloat?
     /// Where the current pinch went down, so the photo grows from there instead of its middle.
     @State private var zoomAnchor: UnitPoint = .center
-    /// Live horizontal offset while a paging swipe is in progress; always settles back to 0.
-    @State private var dragX: CGFloat = 0
     @State private var showDeleteConfirm = false
     @State private var isDeleting = false
     @State private var pendingDeletePhoto: Photo?
@@ -127,8 +136,23 @@ struct PhotoPagerView: View {
     @State private var shareCaptionDraft = ""
     @State private var pendingTags: [PendingTag] = []
     @State private var showTagSheet = false
-    /// `startTagging` must fire once, not on every re-resolve as you swipe away and back.
-    @State private var didAutoOpenTagging = false
+    /// Night-rack mode's OTHER tag sheet: editing an ALREADY-shared photo's tags (the promoted
+    /// "Tag" action), as distinct from `showTagSheet` above, which is the share composer's own
+    /// "Tag people" step for a photo not shared yet. Never both true at once: "Tag" only exists
+    /// once a shot is shared (see `PhotoPagerView`'s own doc, the absolute rule that unshared
+    /// shots never get tagging in any form).
+    @State private var showEditTags = false
+    @State private var editingTags: [PendingTag] = []
+    /// Captured when "Tag" is tapped, so the sheet's thumbnail and `setTags` both target the
+    /// right shot even if `selection` moves while the sheet is up. Deliberately separate from
+    /// `composerPhoto`: that one belongs to the share-composer flow, and the two can never be
+    /// allowed to clobber each other's target.
+    @State private var taggingPhoto: Photo?
+    @State private var taggingPostId: UUID?
+    /// In-flight guard for `beginTagging`'s post lookup, disabling the Tag capsule so the
+    /// stale-write race needs an actual photo swap mid-flight, which the identity guard inside
+    /// the task then catches.
+    @State private var isLoadingTags = false
     @State private var showComments = false
     @State private var showSharedToast = false
     /// A failure that must not fail silently: a delete that didn't happen, a share that couldn't
@@ -140,20 +164,41 @@ struct PhotoPagerView: View {
     @State private var composerPhoto: Photo?
     @State private var commentsPhoto: Photo?
     @FocusState private var captionFocused: Bool
+    /// The screen's own measured width, so the night-rack photograph can be a genuinely FIXED
+    /// `width x width*4/3` box rather than guessing. 393 is a reasonable first-paint fallback,
+    /// same convention `DarkroomView.scrollWidth` uses.
+    @State private var screenWidth: CGFloat = 393
+    /// The rack row's own measured width, for its edge-fade mask.
+    @State private var rackWidth: CGFloat = 393
+    /// A private namespace for the rack's OWN frame views. Never wired to a real navigation
+    /// transition (that lives on the call site wrapping this whole view), it exists only because
+    /// `DarkroomFrameView` requires one.
+    @Namespace private var rackNS
+    /// Thumbnail URLs for the rack's OWN frames, keyed by `displayPath` (`maxPixel: 120`,
+    /// matching `DarkroomFrameView`'s own request), resolved lazily as a night's frames appear
+    /// in the rack. Deliberately separate from `resolvedURLs`, which holds the FULL `viewPath`
+    /// URL the main photograph downloads: passing that as a rack thumbnail's `signedURL` would
+    /// hand `CachedImage` a URL for a different Storage object than the `cacheKey` it's keying
+    /// by, which is exactly the cache-key/URL mismatch the image cache's own contract warns
+    /// poisons the disk cache for good. `signedURLs` (seeded by the grid) is checked first; this
+    /// only fills in whatever that didn't already have, e.g. a night's frame the grid never
+    /// scrolled into view.
+    @State private var rackThumbURLs: [UUID: URL] = [:]
 
     private var current: Photo? { photos.indices.contains(selection) ? photos[selection] : nil }
 
     init(photos: [Photo], startIndex: Int = 0, signedURLs: [UUID: URL],
          showsReactions: Bool = false, showsComments: Bool = false, showsAttribution: Bool = false,
+         showsNightRack: Bool = false,
          memberNames: [UUID: String] = [:], rollName: @escaping (UUID?) -> String? = { _ in nil },
-         onDelete: @escaping () -> Void = {}, startTagging: Bool = false) {
-        self.startTagging = startTagging
+         onDelete: @escaping () -> Void = {}) {
         self.photos = photos
         self.startIndex = startIndex
         self.signedURLs = signedURLs
         self.showsReactions = showsReactions
         self.showsComments = showsComments
         self.showsAttribution = showsAttribution
+        self.showsNightRack = showsNightRack
         self.memberNames = memberNames
         self.rollName = rollName
         self.onDelete = onDelete
@@ -179,20 +224,23 @@ struct PhotoPagerView: View {
         ZStack {
             Color.black.ignoresSafeArea()
 
-            VStack {
+            VStack(spacing: 0) {
                 header
 
                 pager
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .padding(.vertical, 12)
+                    .padding(.vertical, showsNightRack ? 8 : 12)
 
-                captionLabel
-
-                bottomBar
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 44)
+                if showsNightRack {
+                    rackSection
+                } else {
+                    captionLabel
+                    bottomBar
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 44)
+                }
             }
         }
+        .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { screenWidth = $0 }
         .ignoresSafeArea(.container)
         .statusBarHidden()
         // Sheet to sheet: the profile cannot be presented until the comment sheet has finished
@@ -207,6 +255,15 @@ struct PhotoPagerView: View {
             TagPhotoSheet(url: composerPhoto.flatMap { resolvedURLs[$0.id] },
                           cacheKey: composerPhoto?.viewPath, tags: $pendingTags,
                           rollId: composerPhoto?.rollId)
+        }
+        .sheet(isPresented: $showEditTags) {
+            TagPhotoSheet(url: taggingPhoto.flatMap { resolvedURLs[$0.id] },
+                          cacheKey: taggingPhoto?.viewPath, tags: $editingTags,
+                          rollId: taggingPhoto?.rollId) {
+                if let postId = taggingPostId {
+                    Task { await feed.setTags(editingTags, on: postId) }
+                }
+            }
         }
         .overlay(alignment: .top) {
             if showSharedToast {
@@ -233,7 +290,7 @@ struct PhotoPagerView: View {
             // Fresh photo, fresh zoom state (otherwise the last photo's zoom carries over).
             // `pinchStart` belongs to that set: leaving it behind means a pinch still in flight
             // when the page turns springs the NEW photo back to the old one's resting scale.
-            scale = 1; offset = .zero; lastOffset = .zero; dragX = 0; pinchStart = nil
+            scale = 1; offset = .zero; lastOffset = .zero; pinchStart = nil
             Task { await resolveAround(selection) }
         }
         .task {
@@ -245,13 +302,6 @@ struct PhotoPagerView: View {
         }
         .task {
             await resolveAround(selection)
-            // After resolveAround, not before: the tag sheet renders the photo from
-            // `resolvedURLs`, so opening it any earlier would show an empty frame to tag onto.
-            if startTagging, !didAutoOpenTagging, let photo = current {
-                didAutoOpenTagging = true
-                shareToPage(photo)
-                showTagSheet = true
-            }
         }
         // Batched for every photo in the pager, not per swipe. Only where reactions actually
         // show (a roll grid); the Darkroom's own-photos pager never renders a reaction bar.
@@ -317,6 +367,15 @@ struct PhotoPagerView: View {
 
     @ViewBuilder
     private var header: some View {
+        if showsNightRack {
+            nightRackHeader
+        } else {
+            legacyHeader
+        }
+    }
+
+    @ViewBuilder
+    private var legacyHeader: some View {
         if let photo = current {
             let isOwnPhoto = photo.userId == auth.currentUser?.id
             HStack(spacing: 12) {
@@ -407,6 +466,89 @@ struct PhotoPagerView: View {
         }
     }
 
+    /// The Darkroom's own header: back, the current photo's night, its position WITHIN that
+    /// night, then the export share button and the same manage menu the legacy header has.
+    /// Every own photo here, developing included, so there is no report branch to derive.
+    @ViewBuilder
+    private var nightRackHeader: some View {
+        if let photo = current {
+            HStack(spacing: 10) {
+                Button { dismiss() } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundStyle(.white)
+                        .padding(12)
+                        .glassCapsule(interactive: true)
+                }
+                .accessibilityLabel("Close")
+
+                Text(currentNightTitle)
+                    .flimFont(15, weight: .medium)
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+
+                Text("\(currentNightPosition) of \(currentNightPhotos.count)")
+                    .flimFont(12)
+                    .foregroundStyle(FlimTheme.textTertiary)
+                    .lineLimit(1)
+                    .fixedSize()
+
+                Spacer(minLength: 8)
+
+                Button { share(photo) } label: {
+                    Group {
+                        if preparingShare {
+                            ProgressView().tint(.white).controlSize(.small)
+                        } else {
+                            Image(systemName: "square.and.arrow.up")
+                                .font(.system(size: 15, weight: .medium))
+                        }
+                    }
+                    .frame(width: 19, height: 19)
+                    .foregroundStyle(.white)
+                    .padding(12)
+                    .glassCapsule(interactive: true)
+                }
+                .disabled(preparingShare)
+                .accessibilityLabel(preparingShare ? "Preparing to share" : "Share photo")
+
+                Menu {
+                    // Setting an unrevealed shot as your profile photo would be a spoiler of your
+                    // own reveal, so the action simply isn't offered until it's ready, matching
+                    // the grid's own developing menu (select + delete only).
+                    if photo.isReady {
+                        Button {
+                            Haptics.tap()
+                            Task {
+                                if await auth.setAvatar(fromPhotoPath: photo.storagePath) {
+                                    Haptics.success()
+                                } else {
+                                    Haptics.error()
+                                    flashError("Couldn't update your profile photo. Check your connection and try again.")
+                                }
+                            }
+                        } label: { Label("Set as profile photo", systemImage: "person.crop.circle") }
+                    }
+                    Button(role: .destructive) {
+                        pendingDeletePhoto = photo
+                        showDeleteConfirm = true
+                    } label: { Label("Delete photo", systemImage: "trash") }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(.white)
+                        .padding(12)
+                        .glassCapsule(interactive: true)
+                }
+                .accessibilityLabel("More")
+                .disabled(isDeleting)
+            }
+            .padding(.leading, 20)
+            .padding(.trailing, 20)
+            .padding(.top, 60)
+        }
+    }
+
     @ViewBuilder
     private var bottomBar: some View {
         if let photo = current {
@@ -444,7 +586,10 @@ struct PhotoPagerView: View {
         }
     }
 
-    /// Inline caption composer, shown at the bottom when publishing a photo to your page.
+    /// Inline caption composer, shown at the bottom when publishing a photo to your page. Reused
+    /// as-is in night-rack mode too: the "Share" promoted action below the rack calls the same
+    /// `shareToPage`, which opens this same composer over the rack. The compose sheet proper is
+    /// Phase D; this phase keeps it exactly as it already behaves.
     private var shareComposer: some View {
         VStack(spacing: 10) {
             Button { showTagSheet = true } label: {
@@ -493,23 +638,52 @@ struct PhotoPagerView: View {
 
     // MARK: - Pager
 
-    /// One photo at a time, swapped by a horizontal swipe.
-    ///
-    /// Deliberately NOT `TabView(.page)`. That keeps neighbouring pages mounted, and three
-    /// separate root-cause fixes for it (page-width sizing, footer-height stability, the reaction
-    /// picker's own height) each closed a real way for it to desync mid-swipe, yet a swipe could
-    /// still settle showing a sliver of the next photo. RollCarouselView abandoned TabView for
-    /// plain state and has never had the complaint. This is the same approach and keeps the
-    /// swipe: only the current photo is ever mounted, so there is no neighbour that CAN leak
-    /// into frame, rather than a neighbour that is supposed to stay hidden.
+    /// The fixed 3:4 photograph, full width, edge to edge (night-rack mode) vs. the flexible fill
+    /// between header and footer every other caller has always had.
+    @ViewBuilder
     private var pager: some View {
+        if showsNightRack {
+            pagerCore.frame(width: photoWidth, height: photoHeight)
+        } else {
+            pagerCore.frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    /// Native page-style `TabView`, per the ratified swipe pattern (see `FeedUnitCard.pager`):
+    /// FIXED geometry, and every page STRUCTURALLY STABLE at every index (the same view for
+    /// `photo.id`, always present in the `ForEach`, never swapped for a placeholder as the
+    /// selection window moves). The egress cap lives in the DATA instead (`resolveAround` only
+    /// ever writes `resolvedURLs` for the ±1 window), not in which view type gets mounted.
+    ///
+    /// This used to be a hand-rolled `DragGesture` mover, deliberately NOT a `TabView(.page)`: the
+    /// gesture kept only ONE photo mounted, because three separate root-cause fixes for an
+    /// earlier `TabView` attempt (page-width sizing, footer-height stability, the reaction
+    /// picker's own height) each closed a real way for it to desync mid-swipe, yet a swipe could
+    /// still settle showing a sliver of the next photo.
+    ///
+    /// `FeedUnitCard`'s pager proved the actual cure: the desync was never `TabView` itself, it
+    /// was pages that were NOT structurally stable (this file's old `photoPage` swapped a bare
+    /// `ProgressView` in for whatever was outside the render window) inside geometry that was NOT
+    /// fixed (this file's old footer changed height with the reaction bar and the share composer).
+    /// Night-rack mode's photograph is a hard `width x width*4/3` box and its rack/status row have
+    /// fixed heights; the roll/widget footer here keeps its existing flexible layout, which is why
+    /// this conversion was done only once both preconditions held everywhere it's used.
+    private var pagerCore: some View {
         ZStack {
-            if let photo = current {
-                photoPage(photo)
-                    .id(photo.id)
-                    .transition(.opacity)
-                    .offset(x: dragX, y: dragY)
+            TabView(selection: $selection) {
+                ForEach(Array(photos.enumerated()), id: \.element.id) { index, photo in
+                    photoPage(photo)
+                        .tag(index)
+                }
             }
+            .tabViewStyle(.page(indexDisplayMode: .never))
+            // Mirrors the old `scale > 1 ? .none : .all` gesture mask exactly: paging is native
+            // now, so the equivalent gate is disabling the TabView's own scroll while zoomed,
+            // handing the touch fully to `panWhileZoomed` instead.
+            .scrollDisabled(scale > 1)
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel(photos.count == 1 ? "Photo" : "Photo \(selection + 1) of \(photos.count)")
+
             // Over the photo rather than inside `photoPage`, so it is not scaled by a pinch in
             // flight and does not move with the paging offset.
             Image(systemName: "heart.fill")
@@ -521,56 +695,45 @@ struct PhotoPagerView: View {
                 .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.55), value: heartBurst)
                 .allowsHitTesting(false)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .contentShape(Rectangle())
-        // At 1x the swipe pages; once zoomed in, `panWhileZoomed` owns the drag instead.
-        .gesture(swipeToPage, including: scale > 1 ? .none : .all)
+        .offset(y: dragY)
+        // `simultaneousGesture`, not `gesture`: the TabView keeps its own horizontal pan entirely
+        // intact (exactly the trick `PostDetailView`'s swipe-to-go-back uses alongside its
+        // `ScrollView`), and this only rides alongside it, tracking vertical movement for the
+        // dismiss. Gated off entirely while zoomed, matching the old pager's `scale <= 1` guard.
+        .simultaneousGesture(dismissDrag, including: scale > 1 ? .none : .all)
     }
 
-    /// Follows the finger, damped at both ends so the first and last shot feel like walls rather
-    /// than dead input, and commits past a threshold.
-    private var swipeToPage: some Gesture {
-        DragGesture(minimumDistance: 20)
+    /// Vertical drag-to-dismiss, split out of the old combined pager gesture now that paging
+    /// itself is native. Only the vertical axis is tracked (a horizontal drag here is the
+    /// TabView's own page turn and must never be touched), damped the same way the old gesture
+    /// damped it, same 120pt commit threshold.
+    private var dismissDrag: some Gesture {
+        DragGesture(minimumDistance: 12)
             .onChanged { value in
-                // Vertical drags move the whole view toward dismissal instead of paging, so the
-                // two gestures never fight: whichever axis dominates wins, and only that axis
-                // moves. This viewer had no swipe-to-dismiss at all, while the carousel had
-                // nothing else; each had exactly the half the other was missing.
-                if abs(value.translation.height) > abs(value.translation.width), scale <= 1 {
-                    dragY = max(0, value.translation.height) * 0.6
-                    dragX = 0
-                } else {
-                    dragX = pagingDragOffset(width: value.translation.width,
-                                             index: selection, count: photos.count)
-                    dragY = 0
-                }
+                guard abs(value.translation.height) > abs(value.translation.width) else { return }
+                dragY = max(0, value.translation.height) * 0.6
             }
             .onEnded { value in
-                let dismissing = scale <= 1
-                    && abs(value.translation.height) > abs(value.translation.width)
+                let dismissing = abs(value.translation.height) > abs(value.translation.width)
                     && value.translation.height > 120
-                withAnimation(.easeOut(duration: 0.18)) { dragX = 0; dragY = 0 }
+                withAnimation(.easeOut(duration: 0.18)) { dragY = 0 }
                 if dismissing {
                     Haptics.tap()
                     dismiss()
-                } else if abs(value.translation.width) > abs(value.translation.height),
-                          let delta = pagingStep(forDragWidth: value.translation.width) {
-                    step(delta)
                 }
             }
-    }
-
-    private func step(_ delta: Int) {
-        let next = selection + delta
-        guard photos.indices.contains(next) else { return }
-        Haptics.tap()
-        withAnimation(.easeOut(duration: 0.22)) { selection = next }
     }
 
     @ViewBuilder
     private func photoPage(_ photo: Photo) -> some View {
+        let failureHandler: (() -> Void)? = showsNightRack ? { failedPhotoIds.insert(photo.id) } : nil
+
         Group {
-            if let url = resolvedURLs[photo.id] {
+            if showsNightRack, !photo.isReady {
+                developingPage
+            } else if showsNightRack, failedPhotoIds.contains(photo.id) {
+                brokenPage(photo)
+            } else if let url = resolvedURLs[photo.id] {
                 // Downloads `viewPath` (the ~1400px feed card when one exists, the full original
                 // only as a fallback for photos with no card yet) rather than always fetching the
                 // 2048px original just to downsample it to `maxPixel` anyway. `cacheKey` MUST
@@ -580,7 +743,7 @@ struct PhotoPagerView: View {
                 // key, and `repairRenditions` would then rebuild the feed rendition FROM the
                 // feed card while believing it had the full original. See `repairRenditions` for
                 // how it now sources the original vs. the card correctly.
-                CachedImage(url: url, maxPixel: 1600, cacheKey: photo.viewPath) { image in
+                CachedImage(url: url, maxPixel: 1600, cacheKey: photo.viewPath, onFailure: failureHandler) { image in
                     image
                         .resizable()
                         .scaledToFit()
@@ -605,10 +768,240 @@ struct PhotoPagerView: View {
                 ProgressView().tint(.white)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// A still-developing shot in night-rack mode: there is no image to show yet, so the box
+    /// stays a near-black well. The status row below names when it will be ready.
+    private var developingPage: some View {
+        Rectangle()
+            .fill(Color(white: 0.035))
+            .overlay {
+                Circle()
+                    .strokeBorder(accent.opacity(0.6), lineWidth: 1.5)
+                    .frame(width: 28, height: 28)
+            }
+    }
+
+    /// A failed fetch in night-rack mode, drawn IN the photograph's box, never over one. The
+    /// rack, header, and status/actions row all stay live; only this one page is a well with a
+    /// Retry, matching `FeedUnitCard.brokenWell`'s exact copy and shape.
+    private func brokenPage(_ photo: Photo) -> some View {
+        Rectangle()
+            .fill(Color.white.opacity(0.06))
+            .overlay {
+                VStack(spacing: 11) {
+                    Image(systemName: "photo.badge.exclamationmark")
+                        .font(.system(size: 27, weight: .light))
+                        .foregroundStyle(Color.white.opacity(0.37))
+                    Text("This shot didn't load")
+                        .flimFont(13, relativeTo: .subheadline)
+                        .foregroundStyle(FlimTheme.textSecondary)
+                    Button { retryFailedImage(photo) } label: {
+                        Label("Retry", systemImage: "arrow.clockwise")
+                            .flimFont(13, weight: .medium, relativeTo: .subheadline)
+                            .foregroundStyle(accent)
+                            .padding(.horizontal, 16).padding(.vertical, 7)
+                            .overlay(Capsule().strokeBorder(accent, lineWidth: 1))
+                    }
+                }
+            }
+    }
+
+    // MARK: - Night rack
+
+    /// This photo's night, everything in it (developing included), in render order: the same
+    /// contiguous block `DarkroomView` already built `photos` from, just filtered back out by
+    /// day key rather than re-fetched.
+    private var currentNightPhotos: [Photo] {
+        guard let current else { return [] }
+        let key = FeedUnit.dayKey(for: current.takenAt)
+        return photos.filter { FeedUnit.dayKey(for: $0.takenAt) == key }
+    }
+
+    private var currentNightPosition: Int {
+        guard let current else { return 0 }
+        return (currentNightPhotos.firstIndex { $0.id == current.id } ?? 0) + 1
+    }
+
+    /// Tonight / Last night / a full `Sat 16 Aug` form, reusing `DarkroomDayUnit.title`'s exact
+    /// rule. The pager never shows month bands, so it always asks for the full form.
+    private var currentNightTitle: String {
+        guard let current else { return "" }
+        let key = FeedUnit.dayKey(for: current.takenAt)
+        return DarkroomDayUnit(dayKey: key, photos: []).title(shortForm: false)
+    }
+
+    private var photoWidth: CGFloat { screenWidth }
+    private var photoHeight: CGFloat { photoWidth * 4 / 3 }
+
+    /// The rack + status/actions row that replaces the caption/share-pill footer in night-rack
+    /// mode.
+    private var rackSection: some View {
+        VStack(spacing: 0) {
+            DarkroomPerforationLine().frame(height: 3)
+            ScrollViewReader { proxy in
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                        ForEach(currentNightPhotos) { photo in
+                            DarkroomFrameView(
+                                photo: photo,
+                                accent: accent,
+                                signedURL: signedURLs[photo.id] ?? rackThumbURLs[photo.id],
+                                isShared: feed.myPostedPhotoIds.contains(photo.id),
+                                rollName: rollName(photo.rollId),
+                                isSelecting: false,
+                                isSelected: false,
+                                photoNS: rackNS,
+                                onTap: { jump(to: photo) },
+                                onToggleSelect: {},
+                                isCurrent: photo.id == current?.id,
+                                allowsDevelopingTap: true,
+                                isFailed: failedPhotoIds.contains(photo.id)
+                            )
+                            .id(photo.id)
+                        }
+                    }
+                    .padding(.leading, 16)
+                    .padding(.trailing, 16)
+                }
+                .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { rackWidth = $0 }
+                .mask(rackFadeMask)
+                .onChange(of: selection) { _, _ in
+                    guard let id = current?.id else { return }
+                    withAnimation(.snappy(duration: 0.22)) { proxy.scrollTo(id, anchor: .center) }
+                }
+                // First appear: land already centred, no animation.
+                .task {
+                    guard let id = current?.id else { return }
+                    proxy.scrollTo(id, anchor: .center)
+                }
+            }
+            // Fills in whatever the grid never resolved (a night the grid didn't scroll past),
+            // batched in one call rather than a round trip per frame. Keyed on the night's own
+            // membership, so swiping into an adjacent night resolves that one too.
+            .task(id: currentNightPhotos.map(\.id)) {
+                let missing = currentNightPhotos.filter { signedURLs[$0.id] == nil && rackThumbURLs[$0.id] == nil }
+                guard !missing.isEmpty else { return }
+                let resolved = await photoService.signedURLs(for: missing.map(\.displayPath))
+                for photo in missing {
+                    if let url = resolved[photo.displayPath] { rackThumbURLs[photo.id] = url }
+                }
+            }
+            DarkroomPerforationLine().frame(height: 3)
+            statusActionsRow
+        }
+    }
+
+    /// Fades both ends of the rack over 26pt, same convention as `DarkroomUnitSeparator`'s hairline.
+    private var rackFadeMask: some View {
+        let fade = rackWidth > 0 ? min(0.4, 26 / rackWidth) : 0
+        return LinearGradient(
+            stops: [
+                .init(color: .clear, location: 0),
+                .init(color: .black, location: fade),
+                .init(color: .black, location: 1 - fade),
+                .init(color: .clear, location: 1)
+            ],
+            startPoint: .leading, endPoint: .trailing)
+    }
+
+    private func jump(to photo: Photo) {
+        guard let index = photos.firstIndex(where: { $0.id == photo.id }), index != selection else { return }
+        Haptics.tap()
+        withAnimation(.easeOut(duration: 0.2)) { selection = index }
+    }
+
+    /// Left: a single-line status, the shot's roll (if any) prefixed on. Right: the promoted
+    /// Share/Tag capsules, dimmed and disabled while the shot is still developing (there is
+    /// nothing to share or tag yet).
+    ///
+    /// No reaction count here. `FeedService.reactionsByPost` is keyed by POST id and is only
+    /// populated for posts the feed has actually paged in; there is no cheap client-side map from
+    /// a Darkroom photo id to its post id for a shot that predates whatever page happens to be
+    /// loaded (the exact trap `PhotoService`'s own pagination note warns about, one layer over in
+    /// `FeedService`). Showing a count here would mean either a new per-photo query on top of
+    /// what this screen already fetches, or a number that's wrong for anything not in the
+    /// currently-loaded feed window, so it's omitted rather than guessed.
+    private var statusActionsRow: some View {
+        HStack(alignment: .center, spacing: 10) {
+            Text(statusText)
+                .flimFont(12)
+                .foregroundStyle(FlimTheme.textTertiary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Spacer(minLength: 8)
+            HStack(spacing: 8) {
+                shareCapsule
+                if showsTagCapsule { tagCapsule }
+            }
+            .opacity(current?.isReady == true ? 1 : 0.45)
+            .disabled(current?.isReady != true)
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 10)
+        .padding(.bottom, 4)
+        .frame(minHeight: 32)
+    }
+
+    private var statusText: String {
+        guard let photo = current else { return "" }
+        guard photo.isReady else {
+            return "Develops at \(FeedUnit.clockTime(photo.developsAt))"
+        }
+        let base = feed.myPostedPhotoIds.contains(photo.id) ? "Shared to Feed" : "Not shared"
+        if let roll = rollName(photo.rollId) { return "\(roll) · \(base)" }
+        return base
+    }
+
+    /// Tag only ever shows once a shot is already shared, and is ABSENT (not merely disabled) on
+    /// an unshared one: tagging an unshared shot is not offered anywhere, in any form.
+    private var showsTagCapsule: Bool {
+        guard let photo = current else { return false }
+        return feed.myPostedPhotoIds.contains(photo.id)
+    }
+
+    private var shareCapsule: some View {
+        let shared = current.map { feed.myPostedPhotoIds.contains($0.id) } ?? false
+        return Button {
+            guard let photo = current else { return }
+            shareToPage(photo)
+        } label: {
+            Text("Share")
+                .flimFont(13, weight: .medium)
+                .foregroundStyle(accent)
+                .padding(.horizontal, 14)
+                .frame(height: 32)
+                .overlay(Capsule().strokeBorder(accent.opacity(0.55), lineWidth: 1))
+        }
+        .disabled(shared || showShareComposer)
+    }
+
+    private var tagCapsule: some View {
+        Button {
+            guard let photo = current else { return }
+            beginTagging(photo)
+        } label: {
+            tagCapsuleLabel
+        }
+        .disabled(isLoadingTags)
+    }
+
+    private var tagCapsuleLabel: some View {
+        Group {
+            Text("Tag")
+                .flimFont(13, weight: .medium)
+                .foregroundStyle(accent)
+                .padding(.horizontal, 14)
+                .frame(height: 32)
+                .overlay(Capsule().strokeBorder(accent.opacity(0.55), lineWidth: 1))
+                .opacity(isLoadingTags ? 0.45 : 1)
+        }
     }
 
     /// The current photo's caption, outside the swiping layer: the photographer @handle (roll
-    /// grid, when `showsAttribution`) above the date; the date alone otherwise.
+    /// grid, when `showsAttribution`) above the date; the date alone otherwise. Roll/widget mode
+    /// only; night-rack mode's rack + status row replaces this.
     private var captionLabel: some View {
         VStack(spacing: 2) {
             if let photo = current {
@@ -721,6 +1114,46 @@ struct PhotoPagerView: View {
         }
     }
 
+    /// The promoted "Tag" action on an already-shared shot: finds that shot's post, loads its
+    /// current tags, and opens the same `TagPhotoSheet` the feed's own "Edit tags" uses. Never
+    /// reachable on an unshared shot (see `showsTagCapsule`).
+    private func beginTagging(_ photo: Photo) {
+        guard let uid = auth.currentUser?.id, !isLoadingTags else { return }
+        Haptics.tap()
+        isLoadingTags = true
+        taggingPhoto = photo
+        Task {
+            defer { isLoadingTags = false }
+            guard let postId = await feed.postId(forPhotoId: photo.id, userId: uid) else {
+                Haptics.error()
+                flashError("Couldn't open tagging. Check your connection and try again.")
+                return
+            }
+            await feed.loadTags(for: postId)
+            // Identity guard after the LAST await: a second Tag tap on a different photo while
+            // this lookup was in flight has already retargeted `taggingPhoto`, and writing this
+            // photo's post id and tag list now would open the sheet showing one photograph while
+            // editing another post's tags, with Done then moving a tag between two posts. The
+            // stale task simply stands down; the newer one owns the sheet.
+            guard taggingPhoto?.id == photo.id else { return }
+            editingTags = (feed.tagsByPost[postId] ?? []).compactMap { tag in
+                feed.tagProfiles[tag.taggedUserId].map { PendingTag(user: $0, x: tag.x, y: tag.y) }
+            }
+            taggingPostId = postId
+            showEditTags = true
+        }
+    }
+
+    /// Clears a failed page and re-requests both the signed URL and the image, matching
+    /// `FeedUnitCard`'s Retry exactly: drop the photo from `resolvedURLs`/`fullyResolvedIds` so
+    /// `resolveAround` treats it as unresolved again, and re-run it for the current window.
+    private func retryFailedImage(_ photo: Photo) {
+        failedPhotoIds.remove(photo.id)
+        resolvedURLs.removeValue(forKey: photo.id)
+        fullyResolvedIds.remove(photo.id)
+        Task { await resolveAround(selection) }
+    }
+
     private func toggleReaction(_ emoji: String, on photo: Photo) {
         guard let uid = auth.currentUser?.id else { return }
         let mine = reactions.contains { $0.emoji == emoji && $0.userId == uid }
@@ -761,12 +1194,12 @@ struct PhotoPagerView: View {
     /// so it's re-read as you swipe. Share state lives in `feed.myPostedPhotoIds` instead, loaded
     /// once for the whole session, not per swipe.
     ///
-    /// A failed upgrade is deliberately silent (no `flashError`, unlike the actions below it):
-    /// the photo is still fully visible, just softer than it will be once the retry lands, and
-    /// nothing about it needs the person's attention or a decision from them the way a failed
-    /// delete/share/report does. It is what `errorToast` is reserved for elsewhere in this file.
-    /// A blurry-then-sharpens photo already IS the visible feedback; a toast on top of it would
-    /// just be noise for something that quietly fixes itself.
+    /// A failed upgrade is deliberately silent in roll/widget mode (no `flashError`, unlike the
+    /// actions below it): the photo is still fully visible, just softer than it will be once the
+    /// retry lands. Night-rack mode is the one place a failure DOES surface, as the broken-page
+    /// well `photoPage` renders once `CachedImage`'s `onFailure` marks the photo in
+    /// `failedPhotoIds`; that failure is per-photo state, not something this function has to know
+    /// about.
     private func resolveAround(_ index: Int) async {
         guard auth.currentUser?.id != nil else { return }
         // Same fix as RollCarouselView: the refetch at the end of this function is async, so
@@ -775,6 +1208,8 @@ struct PhotoPagerView: View {
         for i in [index - 1, index, index + 1] where photos.indices.contains(i) {
             let photo = photos[i]
             guard !fullyResolvedIds.contains(photo.id) else { continue }
+            // Nothing to resolve for a still-developing shot: there is no viewable image yet.
+            guard photo.isReady else { continue }
             // `viewPath`, matching the `cacheKey` used below and in `photoPage`: the feed
             // card when this photo has one, the original only as its own fallback. `try?`
             // still swallows a failed fetch here (there is nothing more specific to do with

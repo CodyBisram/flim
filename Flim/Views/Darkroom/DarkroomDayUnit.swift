@@ -84,9 +84,7 @@ struct DarkroomDayUnit: Identifiable {
 
     private func timeWindow(calendar: Calendar) -> String {
         guard let first = photos.map(\.takenAt).min(), let last = photos.map(\.takenAt).max() else { return "" }
-        let start = first.formatted(date: .omitted, time: .shortened)
-        let end = last.formatted(date: .omitted, time: .shortened)
-        return start == end ? start : "\(start) to \(end)"
+        return FeedUnit.clockWindow(from: first, to: last, calendar: calendar)
     }
 
     // MARK: - Developing pill
@@ -99,7 +97,7 @@ struct DarkroomDayUnit: Identifiable {
         guard !devs.isEmpty else { return nil }
         let uniqueTimes = Set(devs.map(\.developsAt))
         let time = uniqueTimes.count == 1 ? devs[0].developsAt : (devs.map(\.developsAt).max() ?? .now)
-        let timeLabel = time.formatted(date: .omitted, time: .shortened)
+        let timeLabel = FeedUnit.clockTime(time, calendar: calendar)
         return "\(devs.count) developing · \(timeLabel)"
     }
 

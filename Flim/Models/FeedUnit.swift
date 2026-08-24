@@ -89,7 +89,8 @@ struct FeedUnit: Identifiable, Equatable {
     /// days: the sort-deck flow shares a whole day in one sitting.
     ///
     /// Three shapes, all one line that never wraps:
-    /// - one day of captures: a time span, `2 shots · 9:12 AM to 11:20 AM`
+    /// - one day of captures: a time span, `2 shots · 9:12 to 11:20 AM` (same meridiem said
+    ///   once, at the end, see `clockWindow`)
     /// - a span too tight to say twice (or a solo): one time, `2 shots · 11:34 AM`
     /// - captures from different days (a fresh shot posted beside one dug out of the
     ///   Darkroom, which is a supported thing to do): a DATE span, `2 shots · Jul 14 to
@@ -109,9 +110,66 @@ struct FeedUnit: Identifiable, Equatable {
             let end = last.formatted(.dateTime.month(.abbreviated).day())
             return "\(countLabel) · \(start) to \(end)"
         }
-        let start = first.formatted(date: .omitted, time: .shortened)
-        let end = last.formatted(date: .omitted, time: .shortened)
-        return start == end ? "\(countLabel) · \(start)" : "\(countLabel) · \(start) to \(end)"
+        return "\(countLabel) · \(Self.clockWindow(from: first, to: last, calendar: calendar))"
+    }
+
+    // MARK: - Clock elision
+
+    /// One clock rule for the whole app. `metaLine`'s time-span branch and
+    /// `DarkroomDayUnit.timeWindow`/`developingPillText` all narrate a window (or a single
+    /// instant) through these two functions, so a shot's clock never reads two different ways
+    /// depending on which screen it's on.
+    ///
+    /// Always the system's own short time formatting; there is no in-app 12/24-hour setting.
+    /// `locale` defaults to the device's own (`Locale.autoupdatingCurrent`, which already
+    /// reflects the "24-Hour Time" system toggle) and is exposed only so a test can pin a
+    /// specific locale's fixture; no production call site passes one.
+    static func clockTime(_ date: Date, calendar: Calendar = .current,
+                          locale: Locale = .autoupdatingCurrent) -> String {
+        clockFormatter(calendar: calendar, locale: locale).string(from: date)
+    }
+
+    /// A window's clock string, eliding the shared meridiem when both ends fall on the same
+    /// one: `9:05 to 11:58 PM`. Three more shapes: a solo instant (or two ends that render
+    /// identically) says the time once; crossing meridiems says both, `11:40 PM to 2:15 AM`;
+    /// a 24-hour locale (detected by checking the formatter's OWN am/pm symbols, never a
+    /// hard-coded "AM"/"PM") never elides, `21:05 to 23:58`.
+    static func clockWindow(from start: Date, to end: Date, calendar: Calendar = .current,
+                            locale: Locale = .autoupdatingCurrent) -> String {
+        let formatter = clockFormatter(calendar: calendar, locale: locale)
+        let startText = formatter.string(from: start)
+        let endText = formatter.string(from: end)
+        guard startText != endText else { return startText }
+
+        let am = formatter.amSymbol ?? ""
+        let pm = formatter.pmSymbol ?? ""
+        guard let startMeridiem = meridiem(in: startText, am: am, pm: pm),
+              let endMeridiem = meridiem(in: endText, am: am, pm: pm),
+              startMeridiem == endMeridiem
+        else {
+            // Either a 24-hour locale (no am/pm symbol appears in either string) or the two
+            // ends cross meridiems: both say, nothing to elide.
+            return "\(startText) to \(endText)"
+        }
+        let elidedStart = startText.replacingOccurrences(of: startMeridiem, with: "")
+            .trimmingCharacters(in: .whitespaces)
+        return "\(elidedStart) to \(endText)"
+    }
+
+    private static func meridiem(in text: String, am: String, pm: String) -> String? {
+        if !am.isEmpty, text.contains(am) { return am }
+        if !pm.isEmpty, text.contains(pm) { return pm }
+        return nil
+    }
+
+    private static func clockFormatter(calendar: Calendar, locale: Locale) -> DateFormatter {
+        let formatter = DateFormatter()
+        formatter.calendar = calendar
+        formatter.timeZone = calendar.timeZone
+        formatter.locale = locale
+        formatter.dateStyle = .none
+        formatter.timeStyle = .short
+        return formatter
     }
 
     // MARK: - Seen-state derivations

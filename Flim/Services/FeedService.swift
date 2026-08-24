@@ -1403,6 +1403,20 @@ final class FeedService {
         return !rows.isEmpty
     }
 
+    /// The id of the user's own post of this photo, if it has one. Tags live on the POST, not
+    /// the photo, so the Darkroom viewer's "Tag" action (only offered once `myPostedPhotoIds`
+    /// says the shot is already shared) needs this to reach the same `setTags`/`loadTags` path
+    /// `PostDetailView` and `FeedUnitCard` already use for editing an existing post's tags.
+    func postId(forPhotoId photoId: UUID, userId: UUID) async -> UUID? {
+        struct Row: Decodable { let id: UUID }
+        let rows: [Row] = (try? await supabase
+            .from("posts").select("id")
+            .eq("user_id", value: userId.uuidString)
+            .eq("photo_id", value: photoId.uuidString)
+            .limit(1).execute().value) ?? []
+        return rows.first?.id
+    }
+
     /// Which of these photos have been shared to ANYONE's page, not just the caller's own, so a
     /// roll's "shared to their page" indicator works regardless of who took the shot or who shared
     /// it. One query for the whole roll rather than a round trip per photo.

@@ -115,8 +115,10 @@ struct DarkroomDayUnitView: View {
     }
 }
 
-/// The repeating-dash perforation line above (and below the last of) a strip.
-private struct DarkroomPerforationLine: View {
+/// The repeating-dash perforation line above (and below the last of) a strip. Also reused by
+/// `PhotoPagerView`'s own night-rack (the same atom above and below that row too), so this is
+/// package-visible rather than private to this file.
+struct DarkroomPerforationLine: View {
     var body: some View {
         GeometryReader { geo in
             Path { path in
@@ -142,29 +144,56 @@ struct DarkroomFrameView: View {
     let photoNS: Namespace.ID
     let onTap: () -> Void
     let onToggleSelect: () -> Void
-    @ViewBuilder var menu: () -> AnyView
+    /// `nil` skips `.contextMenu` entirely rather than attaching one with nothing in it: an empty
+    /// `.contextMenu` still triggers the long-press blur/preview with nothing to show. The
+    /// pager's own rack (Phase C) has no long-press action at all, so it passes `nil`; the grid
+    /// keeps passing a real menu.
+    var menu: (() -> AnyView)? = nil
+    /// The pager's own rack, added in Phase C: `true` draws a 1.5pt accent ring around the
+    /// image, `false` dims it to 45% opacity, `nil` (every caller before this one, the
+    /// Darkroom's own night-per-unit grid) leaves the frame exactly as it always rendered, no
+    /// ring or dim ever applied there.
+    var isCurrent: Bool? = nil
+    /// The pager's own rack renders a developing frame as a live jump target (tapping it lands
+    /// the pager on that photo's develops-at state); the grid's long-press menu is still the
+    /// only way to act on a developing frame there, so every existing caller keeps `false`.
+    var allowsDevelopingTap: Bool = false
+    /// An empty outlined well instead of the image, for a frame whose fetch failed. Only the
+    /// pager's rack can be in this state; the grid never sets it.
+    var isFailed: Bool = false
 
     var body: some View {
+        if let menu {
+            frame.contextMenu { menu() }
+        } else {
+            frame
+        }
+    }
+
+    private var frame: some View {
         imageArea
         .frame(width: 36, height: 44)
         .contentShape(Rectangle())
         .onTapGesture {
             if isSelecting {
                 onToggleSelect()
-            } else if photo.isReady {
+            } else if photo.isReady || allowsDevelopingTap {
                 onTap()
             }
         }
-        .contextMenu { menu() }
         .accessibilityElement()
         .accessibilityLabel(accessibilityLabel)
-        .accessibilityAddTraits(photo.isReady ? .isButton : [])
+        .accessibilityAddTraits((photo.isReady || allowsDevelopingTap) ? .isButton : [])
     }
 
     @ViewBuilder
     private var imageArea: some View {
         ZStack(alignment: .topTrailing) {
-            if photo.isReady {
+            if isFailed {
+                RoundedRectangle(cornerRadius: 2)
+                    .strokeBorder(FlimTheme.stroke, lineWidth: 1)
+                    .frame(width: 30, height: 40)
+            } else if photo.isReady {
                 CachedImage(url: signedURL, maxPixel: 120, cacheKey: photo.displayPath) { image in
                     image.resizable().scaledToFill()
                 } placeholder: {
@@ -181,16 +210,25 @@ struct DarkroomFrameView: View {
             }
         }
         .frame(width: 30, height: 40)
+        .overlay {
+            if isCurrent == true {
+                RoundedRectangle(cornerRadius: 2).stroke(accent, lineWidth: 1.5)
+            }
+        }
+        .opacity(isCurrent == false ? 0.45 : 1)
         // The shared mark rides INSIDE the photograph's bottom edge (owner's call, on device,
         // 2026-08-24: the reserved under-frame slot left every strip floating loose inside its
         // perforations, and a 14x2 bar at the very bottom of the image costs about 1% of it).
-        // The faint shadow keeps it legible over a bright bottom edge without scrimming anything.
+        // A dark keyline plus a stronger shadow keep it legible on bright bottoms too (2026-08-24
+        // follow-up: the shadow alone washed out on a light sky/wall), without a scrim behind it
+        // or any change to its size.
         .overlay(alignment: .bottom) {
             if photo.isReady, isShared {
                 Capsule()
                     .fill(accent)
                     .frame(width: 14, height: 2)
-                    .shadow(color: .black.opacity(0.55), radius: 1)
+                    .overlay(Capsule().strokeBorder(Color.black.opacity(0.5), lineWidth: 0.5))
+                    .shadow(color: .black.opacity(0.7), radius: 1.5)
                     .padding(.bottom, 2)
             }
         }
