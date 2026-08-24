@@ -222,6 +222,22 @@ final class FeedUnitTests: XCTestCase {
         XCTAssertNil(FeedUnit.caughtUpIndex(units: units, isSeen: { _ in true }))
     }
 
+    func testDuplicatePostsCollapseToOne() {
+        // The render-side guarantee behind the 21-shots-of-12-photos incident: however a
+        // duplicate reaches the flat feed (the straddle-completion race that caused it now
+        // has a guard), grouping must never emit the same post twice, because colliding ids
+        // scramble every ForEach and pager tag keyed on them.
+        let ricky = profile(UUID(), name: "ricky")
+        let shot = item(author: ricky, at: date(21, 10, 0))
+        let other = item(author: ricky, at: date(21, 11, 0))
+        let units = FeedUnit.units(from: [shot, other, shot, shot], calendar: calendar)
+
+        XCTAssertEqual(units.count, 1)
+        XCTAssertEqual(units[0].items.count, 2)
+        XCTAssertEqual(Set(units[0].items.map(\.post.id)).count, 2)
+        XCTAssertTrue(units[0].metaLine(calendar: calendar).hasPrefix("2 shots"))
+    }
+
     // MARK: - Retention
 
     func testUnitWithAnyUnseenShotNeverClears() {

@@ -900,7 +900,12 @@ final class FeedService {
             commentsByPost.merge(fetchedComments) { _, new in new }
             tagsByPost.merge(tagMap) { _, new in new }
             tagProfiles.merge(tagProf) { _, new in new }
-            feed.append(contentsOf: items)
+            // Re-deduped against the live feed, not only `existingIds`: that snapshot
+            // predates this function's awaits, and a straddle completion landing during them
+            // holds rows this page can also contain (they sit below the old cursor, which is
+            // where the next page begins). See completeStraddlingDays for the same rule.
+            let currentIds = Set(feed.map(\.post.id))
+            feed.append(contentsOf: items.filter { !currentIds.contains($0.post.id) })
         }
     }
 
@@ -918,7 +923,19 @@ final class FeedService {
     /// the next ordinary page will re-return them and `dedupedItems` (which exists as exactly
     /// this backstop) drops them. One query per straddling author-day; on any given page that
     /// is the handful of authors active around the boundary, usually zero or one.
+    /// Reentrancy guard, same as `isLoadingMoreFeed`'s. This function was the one mutating
+    /// feed path WITHOUT one, and it races with itself: the last unit's `onAppear` fires a
+    /// task per appearance and reload() calls this directly, so two overlapping runs each
+    /// snapshotted `existingIds` before either had appended, fetched the same below-horizon
+    /// posts, and appended them twice. On device that rendered a real day as 21 shots of
+    /// ~12 photos, and the duplicate post ids scrambled the pager's identity mapping so
+    /// strip taps showed the wrong photograph.
+    private var isCompletingStraddle = false
+
     func completeStraddlingDays(currentUserId: UUID) async {
+        guard !isCompletingStraddle else { return }
+        isCompletingStraddle = true
+        defer { isCompletingStraddle = false }
         // No more pages means nothing sits below the window; every group is already whole.
         guard hasMoreFeed, let oldest = feed.map(\.post.createdAt).min() else { return }
         let epoch = AccountEpoch.current
@@ -977,7 +994,13 @@ final class FeedService {
         commentsByPost.merge(fetchedComments) { _, new in new }
         tagsByPost.merge(tagMap) { _, new in new }
         tagProfiles.merge(tagProf) { _, new in new }
-        feed.append(contentsOf: completions)
+        // Deduped against the feed AS IT IS NOW, not the snapshot from before this
+        // function's awaits: anything else that appended while those were in flight would
+        // otherwise be appended a second time here. The guard above should make this
+        // unreachable; it stays because an unreachable duplicate is cheaper than a rendered
+        // one.
+        let currentIds = Set(feed.map(\.post.id))
+        feed.append(contentsOf: completions.filter { !currentIds.contains($0.post.id) })
     }
 
     /// Loads tags for a single post (e.g. a detail view opened outside the feed) into the caches.

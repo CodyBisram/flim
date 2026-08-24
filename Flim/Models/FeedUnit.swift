@@ -41,8 +41,16 @@ struct FeedUnit: Identifiable, Equatable {
     /// Groups a flat feed into units: one per author per 04:00-bounded day, ordered by each
     /// group's newest post descending, items within a group oldest first.
     static func units(from feed: [FeedItem], calendar: Calendar = .current) -> [FeedUnit] {
+        // Uniqued by post id before anything else, first occurrence wins. The service's
+        // append paths dedup on their own; this is the render-side guarantee that a bug
+        // upstream can never put the same post on screen twice, because duplicate ids do
+        // worse than duplicate pixels: every ForEach and pager tag in a unit keys on the
+        // post id, and a collision scrambles which photograph a tap lands on.
+        var seenIds = Set<UUID>()
+        let unique = feed.filter { seenIds.insert($0.post.id).inserted }
+
         struct Key: Hashable { let author: UUID; let day: Date }
-        let grouped = Dictionary(grouping: feed) {
+        let grouped = Dictionary(grouping: unique) {
             Key(author: $0.author.id, day: dayKey(for: $0.post.createdAt, calendar: calendar))
         }
         return grouped.map { key, members in
