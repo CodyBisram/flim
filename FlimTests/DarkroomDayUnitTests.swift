@@ -65,25 +65,30 @@ final class DarkroomDayUnitTests: XCTestCase {
     }
 
     func testCapacityIsDerivedFromWidth() {
-        // 393pt screen, 16pt side margins: 361pt available, 8 whole frames at 44pt pitch.
-        XCTAssertEqual(DarkroomDayUnit.stripCapacity(availableWidth: 361), 8)
-        // A hair under one more frame's worth still fits 8, not 9.
-        XCTAssertEqual(DarkroomDayUnit.stripCapacity(availableWidth: 393.9), 8)
-        XCTAssertEqual(DarkroomDayUnit.stripCapacity(availableWidth: 350), 8)   // exactly 8*44-2
-        XCTAssertEqual(DarkroomDayUnit.stripCapacity(availableWidth: 349.9), 7)
+        // 393pt screen, 16pt side margins: 361pt available, 7 whole frames at the 46pt pitch
+        // (44pt frame + 2pt gap, the owner's 2026-08-25 bump from 42x56 to 44x59).
+        XCTAssertEqual(DarkroomDayUnit.stripCapacity(availableWidth: 361), 7)
+        // A hair under one more frame's worth still fits 7, not 8.
+        XCTAssertEqual(DarkroomDayUnit.stripCapacity(availableWidth: 365.9), 7)
+        XCTAssertEqual(DarkroomDayUnit.stripCapacity(availableWidth: 320), 7)   // exactly 7*46-2
+        XCTAssertEqual(DarkroomDayUnit.stripCapacity(availableWidth: 319.9), 6)
         XCTAssertEqual(DarkroomDayUnit.stripCapacity(availableWidth: 0), 0)
+        // A wider device: one more frame's worth of content width derives one more frame per
+        // strip, the design working exactly as intended rather than a fixed count everywhere.
+        XCTAssertEqual(DarkroomDayUnit.stripCapacity(availableWidth: 366), 8)
     }
 
-    func testFourteenShotsAtCapacityEightCutEightSixPadded() {
-        // PR 1's worked example: a 14-shot night at the new capacity cuts 8 + 6, and only the
-        // short LAST strip pads out to capacity with unexposed slots.
-        let photos = (0..<14).map { photo(takenAt: date(21, 4).addingTimeInterval(Double($0) * 60)) }
-        let strips = DarkroomDayUnit.cutStrips(photos: photos, capacity: 8)
+    func testTwelveShotsAtCapacitySevenCutSevenFivePadded() {
+        // The owner's 2026-08-25 frame bump (42x56 -> 44x59, pitch 46) worked example: a 12-shot
+        // night at the new capacity cuts 7 + 5, and only the short LAST strip pads out to
+        // capacity with unexposed slots.
+        let photos = (0..<12).map { photo(takenAt: date(21, 4).addingTimeInterval(Double($0) * 60)) }
+        let strips = DarkroomDayUnit.cutStrips(photos: photos, capacity: 7)
         XCTAssertEqual(strips.count, 2)
-        XCTAssertEqual(strips[0].slots.count, 8)
-        XCTAssertEqual(strips[1].slots.count, 8)
+        XCTAssertEqual(strips[0].slots.count, 7)
+        XCTAssertEqual(strips[1].slots.count, 7)
         let realInLast = strips[1].slots.filter { if case .photo = $0 { return true } else { return false } }.count
-        XCTAssertEqual(realInLast, 6)
+        XCTAssertEqual(realInLast, 5)
     }
 
     // MARK: - Grouping across the 4am boundary

@@ -443,7 +443,9 @@ struct SortDeckView: View {
 
     private func load() async {
         guard let uid = auth.currentUser?.id else { loaded = true; return }
-        cards = await photoService.fetchUnsorted(userId: uid)
+        // `?? []` preserves this view's original behavior: a fresh deck has no earlier list to
+        // keep, so a failure here still just shows the (now correctly typed) empty case.
+        cards = await photoService.fetchUnsorted(userId: uid) ?? []
 
         // Batched, not one at a time. `signedURLs` reuses persisted URLs and mints the misses in
         // parallel; signing them in a loop cost one sequential round trip PER PHOTO before the

@@ -1552,13 +1552,19 @@ final class PhotoService {
     /// relive the session in the order you shot it, the same order the roll reveal plays
     /// (`RollRevealViewModel.loadDeck` sorts `takenAt` ascending too), the way a physical roll
     /// develops front to back.
-    func fetchUnsorted(userId: UUID) async -> [Photo] {
-        (try? await supabase
+    ///
+    /// `nil` on failure, mirroring `personalPhotoCount`'s own `Int?` precedent, NEVER `[]` as a
+    /// stand-in for a failed round trip: `[]` is a real answer ("nothing left to sort") that
+    /// `DarkroomView`'s sort banner acts on by hiding itself, so a dropped fetch coalescing to `[]`
+    /// made the banner (and the shots it names) vanish on any pull-to-refresh whose fetch didn't
+    /// resolve. Callers keep their last known list when this returns `nil`.
+    func fetchUnsorted(userId: UUID) async -> [Photo]? {
+        try? await supabase
             .from("photos").select()
             .eq("user_id", value: userId.uuidString)
             .eq("is_sorted", value: false)
             .order("taken_at", ascending: true)
-            .execute().value) ?? []
+            .execute().value
     }
 
     /// Marks a photo sorted (archived to the Darkroom or published). Removes it from the deck.

@@ -110,20 +110,25 @@ final class FeedService {
 
     /// Batched, one query for every photo the user owns rather than `hasPosted` per photo. Same
     /// `AccountEpoch` guard as `loadFollowing`/`loadFollowers`: capture before the await, write
-    /// only if nothing has switched accounts underneath it since.
+    /// only if nothing has switched accounts underneath it since. A dropped round trip (a
+    /// `.refreshable` pull cancelled as the gesture settles, same as `DarkroomView.reload`'s
+    /// own `monthSummaries`/`unsortedPhotos` fetches) keeps the last known set instead of wiping
+    /// every "shared to your page" badge on screen; `fetchMyPostedPhotoIds` returning `nil` on
+    /// failure is what makes that distinguishable from the real, resolved zero.
     func loadMyPostedPhotoIds(userId: UUID) async {
         let epoch = AccountEpoch.current
         let posted = await fetchMyPostedPhotoIds(userId: userId)
         guard AccountEpoch.isCurrent(epoch) else { return }
-        myPostedPhotoIds = posted
+        if let posted { myPostedPhotoIds = posted }
     }
 
-    private func fetchMyPostedPhotoIds(userId: UUID) async -> Set<UUID> {
+    private func fetchMyPostedPhotoIds(userId: UUID) async -> Set<UUID>? {
         struct Row: Decodable { let photo_id: UUID }
-        let rows: [Row] = (try? await supabase
+        guard let rows: [Row] = try? await supabase
             .from("posts").select("photo_id")
             .eq("user_id", value: userId.uuidString)
-            .execute().value) ?? []
+            .execute().value
+        else { return nil }
         return Set(rows.map(\.photo_id))
     }
 

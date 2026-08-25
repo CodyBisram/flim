@@ -15,8 +15,10 @@ struct DarkroomMonthSummary: Decodable, Equatable {
     /// Photos in this month with `develops_at` still in the future, computed the same way the
     /// client itself decides "is this ready": time-derived, never the lagging `is_developed` flag.
     let developingCount: Int
-    /// Up to `p_covers` display paths, oldest night first, for a future covers pass (PR 6). Not
-    /// rendered yet: the Year and All-time rungs draw unexposed placeholder frames this PR.
+    /// Up to `p_covers` display paths, oldest night first: `DarkroomYearRow`'s strip and
+    /// `DarkroomAllTimeRow`'s per-month mosaic both draw from this array (the mosaic reusing only
+    /// the first 4, see that row's own doc), each resolving its own signed URLs per row as it
+    /// scrolls into view.
     let coverPaths: [String]
 
     var yearMonth: DarkroomYearMonth { DarkroomYearMonth(date: monthStart) }

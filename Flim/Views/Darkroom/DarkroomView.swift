@@ -427,6 +427,19 @@ struct DarkroomView: View {
                 .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, y in
                     scrollOffsetY = y
                 }
+                // The pagination backstop, alongside (not instead of) `loadMoreSentinel`'s own
+                // mount/`.task(id:)` re-arm — see that view's own doc for why a second, geometry-
+                // driven trigger earns its keep here. Fires on every scroll frame's geometry
+                // update, so unlike the sentinel it cannot be starved by how much (or how little)
+                // of the `LazyVStack` SwiftUI has chosen to realize: within 600pt of the bottom
+                // of the currently measured content, ask for the next page. `loadMore`'s own
+                // `hasMore`/`isLoading` guards make this safe to call redundantly every frame
+                // that stays within the threshold.
+                .onScrollGeometryChange(for: Bool.self) { geo in
+                    geo.contentOffset.y + geo.containerSize.height >= geo.contentSize.height - 600
+                } action: { _, isNearBottom in
+                    if isNearBottom { Task { await loadMoreIfNeeded() } }
+                }
                 .refreshable { await reload() }
                 .onAppear { scrollProxy = proxy }
                 // Consumes `pendingMonthLanding` using THIS `proxy`, the one that actually belongs
@@ -677,6 +690,25 @@ struct DarkroomView: View {
     /// (the id changes), chaining pages automatically until either `photoService.hasMore` goes
     /// false (the `if` below then removes the sentinel outright) or the guard inside
     /// `DarkroomViewModel.loadMore` no-ops because a fetch is already in flight.
+    ///
+    /// INVARIANT (found 2026-08-25, the zoom redesign's PR 3): this sentinel's mount is no longer
+    /// the ONLY thing driving pagination, and must not become the only thing again. PR 3 added
+    /// `DarkroomDayUnitView.onMountChange`, which mutates `mountedNightDayKeys` (a `DarkroomView`
+    /// `@State` `Set`) on every single night's mount AND unmount — nothing this screen's scroll
+    /// region did before PR 3 touched `@State` at all. A fast scroll through months of nights now
+    /// drives dozens of full `DarkroomView` body re-evaluations per second where it used to drive
+    /// zero, and that is exactly the kind of render pressure that can leave a `LazyVStack` behind
+    /// on realizing the cells nearest the bottom of the currently-scrolled-to viewport, this
+    /// sentinel included: its `.onAppear` (and by extension its `.task(id:)` re-arm) never fires,
+    /// pagination silently stalls, and nothing scrolled past it looks any different than "there's
+    /// nothing more" (a page-until-anchor jump, like the Year rung's, is unaffected: it pages via
+    /// a plain `while` loop with no scroll-driven realization in the loop at all, which is why
+    /// that path kept working while ordinary scroll-back didn't). `monthContent`'s own
+    /// `.onScrollGeometryChange(for: Bool.self)` near-bottom trigger is the fix: it is driven by
+    /// scroll geometry alone, which SwiftUI reports every frame regardless of what the
+    /// `LazyVStack` has chosen to realize, so it cannot be starved the way this sentinel's mount
+    /// can. Keep both. Removing the geometry trigger because "the sentinel already does this"
+    /// reopens this exact stall.
     @ViewBuilder
     private var loadMoreSentinel: some View {
         if photoService.hasMore {
@@ -1160,12 +1192,31 @@ struct DarkroomView: View {
         storedAnchor = DarkroomAnchorCoding.encode(ym)
     }
 
+    /// Every fetch here that assigns into screen state follows the same rule (`vm.totalCount`'s
+    /// own doc names it first): a fetch that fails or is cancelled — and `.refreshable`'s task IS
+    /// cancelled as the pull gesture settles, not merely paused — resolves to `nil`/a failure
+    /// default, and that default must never overwrite state a previous, successful load already
+    /// put on screen. Before this pass, `monthSummaries` and `unsortedPhotos` both broke that
+    /// rule: `monthSummaries = await summaries` assigned the RPC's `nil` straight through on a
+    /// cancelled pull, which flips the Year/All-time rungs to `rungUnavailableState` (their
+    /// `nil`-and-resolved case) the instant a refresh lands mid-settle; the NEXT successful pull
+    /// puts a real value back, which is the exact alternation the owner saw pulling down
+    /// repeatedly at Year/All-time. `unsortedPhotos = unsorted` had the same shape one level
+    /// down: `fetchUnsorted` folded a failure to `[]` internally, so a cancelled refresh emptied
+    /// the sort banner (and the "shots to sort" it names) even though the shots themselves were
+    /// never touched. Both now only assign a resolved SUCCESS; a failure leaves the last known
+    /// value exactly where it was, silently, and `isLoadingSummaries` still drops to `false`
+    /// either way since the fetch DID resolve, just not with new data.
     private func reload() async {
         guard let userId = auth.currentUser?.id else { return }
         isLoadingSummaries = true
-        async let summaries = photoService.darkroomMonthSummary(timezone: TimeZone.current.identifier)
+        // 8 covers: the Year row's own strip width (`DarkroomYearRow.slotCount`). The All-time
+        // rung's mosaics reuse the first 4 of these SAME paths rather than asking the RPC for a
+        // second, separately-ordered set, so a month browsed on one rung is a cache hit on the
+        // other (see `DarkroomAllTimeRow`'s own doc).
+        async let summaries = photoService.darkroomMonthSummary(timezone: TimeZone.current.identifier, covers: 8)
         await vm.load(photoService: photoService, userId: userId)
-        monthSummaries = await summaries
+        if let resolvedSummaries = await summaries { monthSummaries = resolvedSummaries }
         isLoadingSummaries = false
         applyColdLaunchAnchorIfNeeded()
         // Warm the grid's thumbnails so cells appear instantly as you scroll.
@@ -1174,11 +1225,11 @@ struct DarkroomView: View {
         }
         ImageLoader.prefetch(prefetch, maxPixel: 400, scale: displayScale)
         if rolls.rolls.isEmpty { try? await rolls.fetchRolls(for: userId) }   // for roll labels
-        let unsorted = await photoService.fetchUnsorted(userId: userId)
-        unsortedPhotos = unsorted
-        // The sort row only ever shows up to three thumbnails, so only those three need signed
-        // URLs, batched in one call rather than a round trip per preview cell.
-        let previews = DarkroomDayUnit.pickPreview(from: unsorted)
+        if let unsorted = await photoService.fetchUnsorted(userId: userId) { unsortedPhotos = unsorted }
+        // Read back from `unsortedPhotos` (not the local `fetchUnsorted` result above), so a
+        // failed fetch's previews still come from whatever was last known, the same keep-last-
+        // known shape as the assignment right above.
+        let previews = DarkroomDayUnit.pickPreview(from: unsortedPhotos)
         if !previews.isEmpty {
             let map = await photoService.signedURLs(for: previews.map(\.displayPath))
             for previewPhoto in previews {

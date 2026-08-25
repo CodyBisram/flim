@@ -132,7 +132,7 @@ struct DarkroomDayUnitView: View {
         case .empty:
             // An unexposed slot: holds its space, draws nothing, no hit target.
             Color.clear
-                .frame(width: DarkroomDayUnit.framePitch - DarkroomDayUnit.frameGap, height: 56)
+                .frame(width: DarkroomDayUnit.framePitch - DarkroomDayUnit.frameGap, height: 59)
                 .accessibilityHidden(true)
         }
     }
@@ -203,10 +203,11 @@ struct DarkroomFrameView: View {
     /// its own untouched static ring regardless of what's passed here.
     var developingFraction: Double? = nil
 
-    /// The list's frames are 42x56 (readable, PR 1 of the zoom redesign); the pager's compact
-    /// rack keeps the feed strip's 30x40. One shared `imageArea`, two geometries.
-    private var imgW: CGFloat { compact ? 30 : 42 }
-    private var imgH: CGFloat { compact ? 40 : 56 }
+    /// The list's frames are 44x59 (readable, grown from 42x56 by the owner's 2026-08-25 call on
+    /// top of PR 1 of the zoom redesign); the pager's compact rack keeps the feed strip's 30x40.
+    /// One shared `imageArea`, two geometries.
+    private var imgW: CGFloat { compact ? 30 : 44 }
+    private var imgH: CGFloat { compact ? 40 : 59 }
 
     var body: some View {
         if let menu {
@@ -506,7 +507,7 @@ struct DarkroomLoadingSkeleton: View {
                         ForEach(0..<3, id: \.self) { _ in
                             RoundedRectangle(cornerRadius: 2)
                                 .fill(Color.white.opacity(0.06))
-                                .frame(width: 42, height: 56)
+                                .frame(width: 44, height: 59)
                         }
                     }
                     .padding(.vertical, 2)
