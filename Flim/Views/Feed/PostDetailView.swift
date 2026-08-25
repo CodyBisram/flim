@@ -504,28 +504,24 @@ struct PostDetailView: View {
         }
     }
 
-    /// Pinned above the keyboard, so it reads as a deliberate surface rather than a squared band
-    /// floating over the keyboard's own rounded top. This screen IS the comment thread (the full
-    /// list renders inline above, in `commentsSection`), so there's no separate sheet to route
-    /// into here the way the feed's "View all comments" does; this stays the inline composer and
-    /// only its background changes, composed from the same tokens every bottom sheet in the app
-    /// uses (`FlimTheme.sheetSurface` over the system material, with the sheet surface's own 1pt
-    /// top hairline) rather than new values, clipped to rounded top corners since this sits in a
-    /// `safeAreaInset`, not a presentation, so `.presentationCornerRadius` doesn't apply here.
+    /// Pinned above the keyboard. This screen IS the comment thread (the full list renders
+    /// inline above, in `commentsSection`), so there's no separate sheet to route into here the
+    /// way the feed's "View all comments" does; the composer stays inline and reads as part of
+    /// the PAGE: the page's own opaque ground, full width, square edges, one hairline against
+    /// the thread above. Anything more dressed becomes a third surface sandwiched between the
+    /// page and the keyboard's own rounded panel, which is exactly what read wrong on device
+    /// twice (first a frosted material band, then a rounded sheet-surface card). Two layers on
+    /// this screen, never three: the page, and the keyboard.
     private var commentInput: some View {
-        let shape = UnevenRoundedRectangle(topLeadingRadius: 16, bottomLeadingRadius: 0,
-                                            bottomTrailingRadius: 0, topTrailingRadius: 16,
-                                            style: .continuous)
-        return CommentComposer(draft: $draft, style: .surface, isSending: sending,
+        CommentComposer(draft: $draft, style: .surface, isSending: sending,
                         replyTarget: $replyTarget, focus: $commentFocused) { send() }
             .padding(.horizontal, 16).padding(.vertical, 10)
             .background(
-                FlimTheme.sheetSurface
-                    .background(.ultraThinMaterial)
+                FlimTheme.bg
                     .overlay(alignment: .top) {
                         Rectangle().fill(Color.white.opacity(0.10)).frame(height: 1)
                     }
-                    .clipShape(shape)
+                    .ignoresSafeArea(edges: .bottom)
             )
     }
 
