@@ -1330,10 +1330,13 @@ final class FeedService {
             taken_at: photo.takenAt,
             caption: (trimmed?.isEmpty ?? true) ? nil : trimmed
         )).select("id").single().execute().value
-        // Born seen: you are not your own friend, so a post you just made must not count
-        // against yourself in the header ledger the moment it lands. First-seen-wins in the
-        // store, so this only ever does something the instant the post is created.
-        FeedSeenStore.shared.markSeen(created.id)
+        // Deliberately NOT marked seen at creation. It was, briefly (2026-08-24): "born seen"
+        // paired with the ledger's own-author exclusion. But a seen mark is what retention
+        // clears on, so a post made before 4am vanished from its AUTHOR's own feed at the
+        // boundary without ever being consciously seen there, while staying visible to
+        // everyone else, which reads as "my post is gone". The ledger exclusion alone keeps
+        // you out of your own "N shots from N friends" count; the post stays honestly unseen
+        // in your own feed until you actually meet it there.
         Activation.log(.postShared)
         Usage.log(.postShared)
         // The tile's headline state is "your last frame and what happened to it", and this is the

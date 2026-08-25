@@ -108,6 +108,18 @@ struct FeedView: View {
                         }
                         .refreshable { await reload() }
                     }
+                } else if units.isEmpty {
+                    // Posts were FETCHED (feed.feed is non-empty) but every unit has cleared:
+                    // the whole feed was seen and the 4am boundary passed. Without this branch
+                    // the screen fell through to `feedList`, whose ForEach over zero units
+                    // painted nothing, and the caught-up seam sat parked in `.pending`, so the
+                    // first fully-caught-up morning rendered as a bare black page with a
+                    // header. The block IS the screen here, same as the never-posted case.
+                    ScrollView {
+                        caughtUpBlock
+                            .padding(.top, 120)
+                    }
+                    .refreshable { await reload() }
                 } else {
                     feedList
                 }
