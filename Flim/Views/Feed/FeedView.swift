@@ -39,6 +39,11 @@ struct FeedView: View {
     /// The container width, which every unit needs up front: the pager's height is derived
     /// from it before any image arrives, so nothing reflows when one does.
     @State private var containerWidth: CGFloat = 0
+    /// The day key (`FeedUnit.dayKey`) at the moment this view's scene last left `.active`.
+    /// Compared against the current day key on return to `.active` so a genuine 04:00 boundary
+    /// crossed while backgrounded can be told apart from an ordinary foregrounding mid-scroll;
+    /// see the scenePhase `onChange` below.
+    @State private var backgroundedDayKey: Date?
     /// The header ledger, SNAPSHOTTED at load rather than derived live: it counts what
     /// arrived, not what is left, so reading a shot must not tick it down. It disappears
     /// (rather than recomputing) when the last mark clears.
@@ -47,7 +52,8 @@ struct FeedView: View {
     /// is an ordering guarantee rather than a race against the first visibility event.
     @State private var ledgerSnapshotted = false
     /// Bumped by every EXPLICIT catch-up (initial load, pull-to-refresh, the New-posts
-    /// button), telling living unit cards to re-open on their first unseen shot. A unit's
+    /// button, and a 04:00 boundary crossed while backgrounded), telling living unit cards to
+    /// re-open on their first unseen shot. A unit's
     /// opening frame is otherwise computed only at view birth, so a fresh launch opened on a
     /// friend's new shot while a session that watched it arrive stayed parked on frame one.
     /// Only explicit actions bump this: a background refresh must never move a pager someone
@@ -152,9 +158,30 @@ struct FeedView: View {
             await photos.fetchSuggestedEmoji(photoIds: feed.feed.map(\.post.photoId))
         }
         // Refresh reactions on RETURN to the foreground rather than on a timer; coming back
-        // to the app is the moment stale counts are noticeable.
+        // to the app is the moment stale counts are noticeable. This view stays mounted inside
+        // the TabView even when Feed isn't the frontmost tab, so this fires (and, below, can
+        // trigger a background reload) whether or not Feed is on screen; that mirrors
+        // `checkNewPosts`, which already tolerates running unseen.
+        //
+        // A 04:00 boundary crossed while backgrounded is an EXPLICIT catch-up moment, same as
+        // launch or pull-to-refresh: the person was almost certainly asleep, not mid-scroll, so
+        // the ledger, seam and cleared set are allowed to recompute. An ordinary foregrounding
+        // that never crosses a boundary must never reshape the feed, so it keeps doing only the
+        // reactions refresh this onChange already did.
         .onChange(of: scenePhase) { _, phase in
-            guard phase == .active, !feed.feed.isEmpty else { return }
+            guard phase == .active else {
+                backgroundedDayKey = FeedUnit.dayKey(for: .now)
+                return
+            }
+            // `didLoad` false means the initial `.task` load hasn't landed yet (or there's no
+            // signed-in user); that path owns the first load, so this one no-ops rather than
+            // racing it with a second, redundant reload.
+            if didLoad, let backgroundedDayKey, FeedUnit.dayKey(for: .now) != backgroundedDayKey {
+                self.backgroundedDayKey = nil
+                Task { await reload() }
+                return
+            }
+            guard !feed.feed.isEmpty else { return }
             Task {
                 await feed.refreshReactions(
                     postIds: LiveRefresh.postsToRefresh(feed.feed).map(\.post.id))

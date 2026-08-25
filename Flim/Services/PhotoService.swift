@@ -1427,12 +1427,17 @@ final class PhotoService {
     /// The Darkroom's true total kept-photo count, same filter as `fetchPersonalPhotos`, a
     /// headless `count: .exact` request (no rows transferred), so the toolbar's "N shots"
     /// label can show the real total without waiting on (or being capped by) pagination.
-    func personalPhotoCount(userId: UUID) async -> Int {
-        (try? await supabase.from("photos")
+    /// `nil` on failure (or cancellation), NEVER zero: a zero is a real answer ("the library
+    /// is empty") that callers act on by hiding the count, so a dropped round trip coalesced
+    /// to 0 made the header's shot count vanish on any pull-to-refresh whose count query
+    /// didn't complete. Callers keep their last known value when this returns nil.
+    func personalPhotoCount(userId: UUID) async -> Int? {
+        guard let count = try? await supabase.from("photos")
             .select("id", head: true, count: .exact)
             .eq("user_id", value: userId.uuidString)
             .eq("is_sorted", value: true)
-            .execute().count) ?? 0
+            .execute().count else { return nil }
+        return count
     }
 
     /// Server-aggregated per-month photo counts for the Darkroom's month bands and jump sheet,

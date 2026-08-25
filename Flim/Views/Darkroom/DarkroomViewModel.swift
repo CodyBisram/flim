@@ -126,7 +126,12 @@ final class DarkroomViewModel {
             await MainActor.run { self.error = error.localizedDescription }
         }
         let total = await count
-        await MainActor.run { totalCount = total; isLoading = false }
+        // A nil count is a failed round trip, not an empty library: keep the last known
+        // total rather than blanking the header's shot count until the next reload.
+        await MainActor.run {
+            if let total { totalCount = total }
+            isLoading = false
+        }
         startRefreshLoop(photoService: photoService)
     }
 

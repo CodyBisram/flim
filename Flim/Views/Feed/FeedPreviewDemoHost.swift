@@ -169,6 +169,11 @@ enum FeedPreviewFixtures {
         // "2 new" → "1 new" the moment it appears), one of dev.k's, and noor's. Ricky's whole
         // day is seen, which is what puts the caught-up seam above him. Reset first: a
         // previous demo run's marks would otherwise read as already-caught-up.
+        //
+        // This harness never runs through ContentView's real sign-in wiring, so nothing else
+        // ever sets `activeUserId`; without it every mark below would silently no-op against
+        // the now account-scoped store.
+        FeedSeenStore.shared.activeUserId = uuid(1)
         FeedSeenStore.shared.resetForDemo()
         let unseen: Set<UUID> = [miraItems[12].post.id, miraItems[13].post.id,
                                  devItems[1].post.id, noorItems[0].post.id]

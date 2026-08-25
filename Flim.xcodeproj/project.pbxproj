@@ -24,6 +24,7 @@
 		0D80A4E64324784932627EC2 /* CaptionSaveOutcomeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B56B57E60E3BDB61525E938 /* CaptionSaveOutcomeTests.swift */; };
 		0DAD8E1E42DA8B2B10137202 /* VersionGateService.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA572719CB09DB023B6F4FA8 /* VersionGateService.swift */; };
 		0E4C555DA32570F306A25E9A /* FeedServiceTaggedReactionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCECA298D090FCA6707ED245 /* FeedServiceTaggedReactionTests.swift */; };
+		11BA671A5970F575E07653FE /* FeedSeenStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E8B0741F91A42BB1CF04C7C /* FeedSeenStoreTests.swift */; };
 		1248B9A183489756AF5CA9EB /* PhotoStoragePathsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0C42110E6AE811C6B12C87A /* PhotoStoragePathsTests.swift */; };
 		1327A206130E2B17775AFE56 /* EmojiCatalogTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2089CA6DE2924FA1349B5C0C /* EmojiCatalogTests.swift */; };
 		1529DA83A8F81093027FE732 /* RollRevealCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3160152C151C46D58498F19D /* RollRevealCard.swift */; };
@@ -342,6 +343,7 @@
 		3CEA4E3C37801DCE0D47B428 /* PhotoPagerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoPagerView.swift; sourceTree = "<group>"; };
 		3D57B674A9A7991DFBFF8014 /* PeopleSearchField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeopleSearchField.swift; sourceTree = "<group>"; };
 		3DF84E2ABEB95328CF9208B4 /* WidgetSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetSync.swift; sourceTree = "<group>"; };
+		3E8B0741F91A42BB1CF04C7C /* FeedSeenStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedSeenStoreTests.swift; sourceTree = "<group>"; };
 		3EF17B9249B262F2D8A2C799 /* PinchZoom.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinchZoom.swift; sourceTree = "<group>"; };
 		3F90A7FA0AD7F2B443E7E332 /* OTPInputTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OTPInputTests.swift; sourceTree = "<group>"; };
 		4016CE892900287C20E82E97 /* FeedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedView.swift; sourceTree = "<group>"; };
@@ -823,6 +825,7 @@
 				2089CA6DE2924FA1349B5C0C /* EmojiCatalogTests.swift */,
 				41A387A8908C61FB39ABB6DB /* EmojiSuggestionTests.swift */,
 				28E79BD8BDBD1CBF43D02C44 /* FailedUploadStoreTests.swift */,
+				3E8B0741F91A42BB1CF04C7C /* FeedSeenStoreTests.swift */,
 				DD20709164F76B4BAC61F144 /* FeedServiceCommentLikeTests.swift */,
 				FCECA298D090FCA6707ED245 /* FeedServiceTaggedReactionTests.swift */,
 				17748DA0845B5512541A214D /* FeedServiceTests.swift */,
@@ -1051,6 +1054,7 @@
 				1327A206130E2B17775AFE56 /* EmojiCatalogTests.swift in Sources */,
 				C284CAB6E1E4B68DD90A2B20 /* EmojiSuggestionTests.swift in Sources */,
 				89E54968982939C239A869AB /* FailedUploadStoreTests.swift in Sources */,
+				11BA671A5970F575E07653FE /* FeedSeenStoreTests.swift in Sources */,
 				FAAE2D3846A6C1C529177847 /* FeedServiceCommentLikeTests.swift in Sources */,
 				0E4C555DA32570F306A25E9A /* FeedServiceTaggedReactionTests.swift in Sources */,
 				3F3DF3063A089C8F1EEC906E /* FeedServiceTests.swift in Sources */,
