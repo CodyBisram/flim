@@ -245,7 +245,12 @@ extension FlimTheme {
     /// page underneath them: a sheet coming up read as a blend rather than an arrival. This is
     /// one step lighter than `bgElevated`, composited over the system material blur (see
     /// `flimSheetSurface()`) rather than replacing it, so translucency and legibility both hold.
-    static let sheetSurface = Color(red: 38.0 / 255.0, green: 38.0 / 255.0, blue: 42.0 / 255.0).opacity(0.96)
+    /// Retuned on device 2026-08-24 (owner): the spec's rgba(38,38,42) read as a light gray
+    /// panel against real content, washing out the sheet's own internal dividers. The fill is
+    /// as dark as it can be while still unmistakably a different ground than `bg`: separation
+    /// comes from the top hairline, the ambient shadow, and the dimming scrim as much as from
+    /// lightness, so the fill itself only has to clear `bgElevated`, not carry the whole job.
+    static let sheetSurface = Color(red: 28.0 / 255.0, green: 28.0 / 255.0, blue: 32.0 / 255.0).opacity(0.96)
 
     /// A row/section fill for content that sits ON `sheetSurface`, not on `bg`.
     ///
