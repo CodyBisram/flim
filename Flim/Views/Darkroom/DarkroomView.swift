@@ -106,6 +106,12 @@ struct DarkroomView: View {
         DarkroomDayUnit.pickPreview(from: unsortedPhotos)
     }
 
+    /// Distinct nights among `unsortedPhotos`, for the sort banner's second line. See
+    /// `DarkroomDayUnit.distinctNightCount`'s own doc.
+    private var unsortedNightCount: Int {
+        DarkroomDayUnit.distinctNightCount(in: unsortedPhotos)
+    }
+
     /// Every month currently rendered on screen, for the jump sheet's pre-migration fallback
     /// (see `DarkroomJumpSheetLogic`'s own doc) and for `jumpToMonth`'s "already loaded" check.
     private var loadedMonthKeys: Set<DarkroomYearMonth> {
@@ -213,6 +219,20 @@ struct DarkroomView: View {
 
             VStack(spacing: 0) {
                 darkroomHeader
+
+                // Pinned under the header, outside the scroll (PR 2 of the zoom redesign,
+                // 2026-08-25): visible at every scroll offset instead of scrolling out of view
+                // the moment a scan reaches night two. Same hide rules as before the move.
+                if !isSelecting, !unsortedPhotos.isEmpty {
+                    DarkroomSortBanner(
+                        accent: accent,
+                        count: unsortedPhotos.count,
+                        nightCount: unsortedNightCount,
+                        previewPhotos: sortPreviewPhotos,
+                        previewURLs: unsortedURLCache,
+                        onTap: { showSortDeck = true }
+                    )
+                }
 
                 Group {
                     if vm.isLoading && vm.photos.isEmpty {
@@ -342,19 +362,11 @@ struct DarkroomView: View {
 
     /// One unit per night, a sticky month band on every month (always, not just when the
     /// library spans two or more — a single-month library still gets its band, which is also
-    /// the only way into the jump sheet), and the sort row above all of it. `Section` per month
-    /// keeps the header pin working uniformly.
+    /// the only way into the jump sheet). The sort banner is no longer in here: it's pinned
+    /// under the header instead, see `body`. `Section` per month keeps the header pin working
+    /// uniformly.
     private var nightList: some View {
         LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
-            if !isSelecting, !unsortedPhotos.isEmpty {
-                DarkroomSortRowView(
-                    accent: accent,
-                    count: unsortedPhotos.count,
-                    previewPhotos: sortPreviewPhotos,
-                    previewURLs: unsortedURLCache,
-                    onTap: { showSortDeck = true }
-                )
-            }
             ForEach(monthGroups) { group in
                 Section {
                     ForEach(group.units) { unit in

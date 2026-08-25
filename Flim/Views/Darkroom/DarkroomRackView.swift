@@ -374,51 +374,97 @@ struct DarkroomMonthBandView: View {
     }
 }
 
-// MARK: - Sort row
+// MARK: - Sort banner
 
-/// The one accent-labelled row on the screen: a shortcut into the sort deck, with up to three
-/// preview thumbnails from distinct nights. Hidden entirely at zero unsorted, and while
-/// selecting (it is a destination, select is a mode).
-struct DarkroomSortRowView: View {
+/// The one accent-labelled surface on the screen: a shortcut into the sort deck, with up to
+/// three preview thumbnails from distinct nights. Pinned under the header, outside the scroll
+/// (PR 2 of the zoom redesign, 2026-08-25), so it stays visible at every scroll offset rather
+/// than scrolling away the moment a scan reaches night two. `DarkroomView` mounts this at all
+/// only when there's something to sort and nobody's mid-select: hidden entirely at zero
+/// unsorted, and while selecting (it is a destination, select is a mode).
+struct DarkroomSortBanner: View {
     let accent: Color
     let count: Int
+    /// Distinct nights among the unsorted photos (see `DarkroomDayUnit.distinctNightCount`'s
+    /// own doc for why deriving this client-side, here, is correct).
+    let nightCount: Int
     let previewPhotos: [Photo]
     let previewURLs: [UUID: URL]
     let onTap: () -> Void
 
+    /// New copy pending owner sign-off. Kept as one named constant so a reword touches exactly
+    /// one place.
+    private var subtitle: String {
+        "from \(nightCount) night\(nightCount == 1 ? "" : "s") \u{00B7} keep or share"
+    }
+
+    /// 26pt-wide thumbs overlapped by 9pt (17pt visible pitch each).
+    private var deckWidth: CGFloat {
+        guard !previewPhotos.isEmpty else { return 0 }
+        return 26 + CGFloat(previewPhotos.count - 1) * 17
+    }
+
     var body: some View {
-        VStack(spacing: 0) {
-            Button(action: onTap) {
-                HStack(spacing: 10) {
+        Button(action: onTap) {
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
                     Text("\(count) shot\(count == 1 ? "" : "s") to sort")
-                        .flimFont(14, weight: .medium)
+                        .flimFont(13.5, weight: .medium)
                         .foregroundStyle(accent)
-                    Spacer(minLength: 8)
-                    HStack(spacing: 2) {
-                        ForEach(previewPhotos) { photo in
-                            CachedImage(url: previewURLs[photo.id], maxPixel: 120, cacheKey: photo.displayPath) { image in
-                                image.resizable().scaledToFill()
-                            } placeholder: {
-                                Color.white.opacity(0.06)
-                            }
-                            .frame(width: 30, height: 40)
-                            .clipShape(RoundedRectangle(cornerRadius: 2))
-                        }
-                    }
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 13))
+                    Text(subtitle)
+                        .flimFont(11)
                         .foregroundStyle(FlimTheme.textTertiary)
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
-                .contentShape(Rectangle())
+                Spacer(minLength: 8)
+                previewDeck
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13))
+                    .foregroundStyle(accent)
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("\(count) shot\(count == 1 ? "" : "s") to sort")
-            .accessibilityAddTraits(.isButton)
-
-            DarkroomUnitSeparator()
+            .padding(.top, 9)
+            .padding(.bottom, 9)
+            .padding(.leading, 12)
+            .padding(.trailing, 10)
+            .background(
+                LinearGradient(
+                    stops: [
+                        .init(color: accent.opacity(0.09), location: 0),
+                        .init(color: .clear, location: 0.7)
+                    ],
+                    startPoint: .leading, endPoint: .trailing)
+            )
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(accent.opacity(0.42), lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .contentShape(RoundedRectangle(cornerRadius: 10))
         }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 16)
+        .padding(.top, 2)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(count) shot\(count == 1 ? "" : "s") to sort")
+        .accessibilityAddTraits(.isButton)
+    }
+
+    /// A small overlapped deck reading front-to-back: the first preview photo sits frontmost
+    /// (drawn last, on top), the rest recede behind it toward the trailing edge. Built as an
+    /// offset `ZStack` rather than a negative-spacing `HStack`: an `HStack`'s later (rightmost)
+    /// child paints on top, which would put the LAST preview photo frontmost instead of the
+    /// first.
+    private var previewDeck: some View {
+        ZStack(alignment: .leading) {
+            ForEach(Array(previewPhotos.enumerated().reversed()), id: \.element.id) { index, photo in
+                CachedImage(url: previewURLs[photo.id], maxPixel: 120, cacheKey: photo.displayPath) { image in
+                    image.resizable().scaledToFill()
+                } placeholder: {
+                    Color.white.opacity(0.06)
+                }
+                .frame(width: 26, height: 35)
+                .clipShape(RoundedRectangle(cornerRadius: 2))
+                .overlay(RoundedRectangle(cornerRadius: 2).strokeBorder(FlimTheme.bg, lineWidth: 1))
+                .offset(x: CGFloat(index) * 17)
+            }
+        }
+        .frame(width: deckWidth, height: 35, alignment: .leading)
     }
 }
 

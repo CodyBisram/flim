@@ -124,6 +124,15 @@ struct DarkroomDayUnit: Identifiable {
         }
         return result
     }
+
+    /// The number of distinct nights (by `FeedUnit.dayKey`) among `unsorted`, for the sort
+    /// banner's "from N nights" line. A property of the already-loaded unsorted array itself,
+    /// not a paged aggregate: unlike `PhotoService`'s paged libraries, the whole unsorted set is
+    /// always loaded in one shot (see `DarkroomView.reload`), so counting it client-side here is
+    /// correct rather than a repeat of the pagination trap.
+    static func distinctNightCount(in unsorted: [Photo], calendar: Calendar = .current) -> Int {
+        Set(unsorted.map { FeedUnit.dayKey(for: $0.takenAt, calendar: calendar) }).count
+    }
 }
 
 // MARK: - Month bands

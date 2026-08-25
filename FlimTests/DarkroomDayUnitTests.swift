@@ -249,4 +249,26 @@ final class DarkroomDayUnitTests: XCTestCase {
         let preview = DarkroomDayUnit.pickPreview(from: unsorted, count: 3, calendar: calendar)
         XCTAssertEqual(preview.count, 3)
     }
+
+    // MARK: - Distinct night count (sort banner's second line)
+
+    func testDistinctNightCountCollapsesSameNightMultipleShots() {
+        let sameNight = [photo(takenAt: date(1, 9)), photo(takenAt: date(1, 10)), photo(takenAt: date(1, 23, 40))]
+        XCTAssertEqual(DarkroomDayUnit.distinctNightCount(in: sameNight, calendar: calendar), 1)
+    }
+
+    func testDistinctNightCountCountsEachDistinctNightOnce() {
+        let unsorted = [photo(takenAt: date(1, 9)), photo(takenAt: date(2, 9)), photo(takenAt: date(3, 20))]
+        XCTAssertEqual(DarkroomDayUnit.distinctNightCount(in: unsorted, calendar: calendar), 3)
+    }
+
+    func testDistinctNightCountRespectsFourAMBoundary() {
+        // A midnight-straddling pair is one night; a shot after 4am starts a new one.
+        let unsorted = [photo(takenAt: date(1, 23, 40)), photo(takenAt: date(2, 2, 15)), photo(takenAt: date(2, 4, 30))]
+        XCTAssertEqual(DarkroomDayUnit.distinctNightCount(in: unsorted, calendar: calendar), 2)
+    }
+
+    func testDistinctNightCountEmpty() {
+        XCTAssertEqual(DarkroomDayUnit.distinctNightCount(in: [], calendar: calendar), 0)
+    }
 }
