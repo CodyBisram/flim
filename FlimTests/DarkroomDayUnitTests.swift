@@ -204,31 +204,69 @@ final class DarkroomDayUnitTests: XCTestCase {
         XCTAssertEqual(text?.hasPrefix("2 developing · "), true)
     }
 
-    // MARK: - Month grouping
+    // MARK: - Develop arc (DarkroomDayUnitView.rack's shared per-night fraction)
 
-    func testMonthGroupsSpanTwoMonths() {
-        let units = DarkroomDayUnit.units(from: [
-            photo(takenAt: date(3, 12)),
-            photo(takenAt: date(21, 12)),
-        ], calendar: calendar)
-        let groups = DarkroomDayUnit.monthGroups(units: units, calendar: calendar)
-        XCTAssertEqual(groups.count, 1)   // both in August in this fixture
+    /// `developingProgress` only looks at photos `unit.developing` (`!isReady`) already filtered
+    /// to, and `Photo.isReady` compares `developsAt` against the REAL wall clock, not any test
+    /// fixture calendar — so every fixture below anchors `developsAt` off the real `Date.now`
+    /// (same pattern `testDevelopingPillUsesSharedTime` above already uses), never off the fixed
+    /// August 2026 calendar the rest of this file uses. The `now:` handed to `developingProgress`
+    /// itself is a separate, fully synthetic instant used only for the elapsed/total math.
+    private func developingPhoto(takenAt: Date, developsAt: Date) -> Photo {
+        photo(takenAt: takenAt, developsAt: developsAt, ready: false)
     }
 
-    /// The band names the month alone inside the current year; the year joins only for months
-    /// outside it, where a bare month name in one continuous scroll would be ambiguous.
-    func testMonthBandTitleAddsYearOnlyOutsideCurrentYear() {
-        let august = DarkroomDayUnit.monthGroups(
-            units: DarkroomDayUnit.units(from: [photo(takenAt: date(21, 12))], calendar: calendar),
-            calendar: calendar)[0]
-        let now = date(24, 12)
-        XCTAssertEqual(august.title(calendar: calendar, now: now), "August")
+    func testDevelopingProgressNilWhenNothingDeveloping() {
+        let unit = DarkroomDayUnit(dayKey: date(21, 0), photos: [photo(takenAt: date(21, 9), ready: true)])
+        XCTAssertNil(unit.developingProgress(now: date(21, 12)))
+    }
 
-        let january2025 = calendar.date(from: DateComponents(year: 2025, month: 1, day: 15, hour: 12))!
-        let older = DarkroomDayUnit.monthGroups(
-            units: DarkroomDayUnit.units(from: [photo(takenAt: january2025)], calendar: calendar),
-            calendar: calendar)[0]
-        XCTAssertEqual(older.title(calendar: calendar, now: now), "January 2025")
+    func testDevelopingProgressMidWindow() throws {
+        // A night that started an hour ago, develops 3 hours from now (a 4-hour window):
+        // checking in 1 hour after it started should read a quarter of the way through.
+        let start = Date.now.addingTimeInterval(-3600)
+        let developsAt = Date.now.addingTimeInterval(3 * 3600)
+        let unit = DarkroomDayUnit(dayKey: date(21, 0), photos: [developingPhoto(takenAt: start, developsAt: developsAt)])
+        let fraction = try XCTUnwrap(unit.developingProgress(now: start.addingTimeInterval(3600)))
+        XCTAssertEqual(fraction, 0.25, accuracy: 0.0001)
+    }
+
+    /// Clamped at both ends: a `now` before the night even started (a stale/misordered read)
+    /// never goes negative, and a `now` past the develop instant never exceeds 1.
+    func testDevelopingProgressClampsBelowZeroAndAboveOne() throws {
+        let start = Date.now.addingTimeInterval(-3600)
+        let developsAt = Date.now.addingTimeInterval(3 * 3600)
+        let unit = DarkroomDayUnit(dayKey: date(21, 0), photos: [developingPhoto(takenAt: start, developsAt: developsAt)])
+
+        let before = try XCTUnwrap(unit.developingProgress(now: start.addingTimeInterval(-600)))
+        XCTAssertEqual(before, 0)
+
+        let after = try XCTUnwrap(unit.developingProgress(now: developsAt.addingTimeInterval(3600)))
+        XCTAssertEqual(after, 1)
+    }
+
+    /// A capture and its develops-at landing on the exact same instant (a zero-length window)
+    /// must not divide by zero; it reads as fully progressed rather than crashing or NaN-ing.
+    func testDevelopingProgressGuardsAgainstAZeroLengthWindow() throws {
+        let instant = Date.now.addingTimeInterval(3600)   // still in the future, so still "developing"
+        let unit = DarkroomDayUnit(dayKey: date(21, 0), photos: [developingPhoto(takenAt: instant, developsAt: instant)])
+        let fraction = try XCTUnwrap(unit.developingProgress(now: instant))
+        XCTAssertEqual(fraction, 1)
+        XCTAssertFalse(fraction.isNaN)
+    }
+
+    /// Several developing shots with different `developsAt` times: the window runs through to
+    /// the LATEST of them (the moment the whole night finishes), same convention as
+    /// `developingPillText`.
+    func testDevelopingProgressUsesLatestDevelopsAtWhenTheyDiffer() throws {
+        let start = Date.now.addingTimeInterval(-3600)
+        let earlier = developingPhoto(takenAt: start, developsAt: Date.now.addingTimeInterval(3600))
+        let later = developingPhoto(takenAt: Date.now.addingTimeInterval(-1800), developsAt: Date.now.addingTimeInterval(3 * 3600))
+        let unit = DarkroomDayUnit(dayKey: date(21, 0), photos: [earlier, later])
+        // Total window: start (1hr ago) through the LATEST develops-at (3hr from now) is 4 hours;
+        // checking in 2 hours after start is halfway.
+        let fraction = try XCTUnwrap(unit.developingProgress(now: start.addingTimeInterval(2 * 3600)))
+        XCTAssertEqual(fraction, 0.5, accuracy: 0.0001)
     }
 
     // MARK: - Sort-row preview

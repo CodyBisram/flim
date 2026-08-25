@@ -101,6 +101,24 @@ struct DarkroomDayUnit: Identifiable {
         return "\(devs.count) developing · \(timeLabel)"
     }
 
+    // MARK: - Develop arc
+
+    /// This night's shared develop-arc progress: elapsed time from the night's earliest capture
+    /// through to its (assumed shared, same convention as `developingPillText`) develops-at,
+    /// clamped 0...1. `nil` when nothing in the night is still developing. Takes `now` as a
+    /// parameter rather than reading `Date.now` itself so the caller's own `TimelineView` tick is
+    /// the only thing that ever changes the result, and so this stays directly testable.
+    func developingProgress(now: Date) -> Double? {
+        let devs = developing
+        guard !devs.isEmpty, let start = photos.map(\.takenAt).min() else { return nil }
+        let uniqueTimes = Set(devs.map(\.developsAt))
+        let end = uniqueTimes.count == 1 ? devs[0].developsAt : (devs.map(\.developsAt).max() ?? now)
+        guard end > start else { return 1 }
+        let elapsed = now.timeIntervalSince(start)
+        let total = end.timeIntervalSince(start)
+        return max(0, min(1, elapsed / total))
+    }
+
     // MARK: - Sort-row previews
 
     /// Up to `count` unsorted photos for the sort row's preview strip, preferring one per
@@ -132,50 +150,6 @@ struct DarkroomDayUnit: Identifiable {
     /// correct rather than a repeat of the pagination trap.
     static func distinctNightCount(in unsorted: [Photo], calendar: Calendar = .current) -> Int {
         Set(unsorted.map { FeedUnit.dayKey(for: $0.takenAt, calendar: calendar) }).count
-    }
-}
-
-// MARK: - Month bands
-
-/// One calendar month's worth of day units, newest first. Bands render only when the loaded
-/// library spans two or more of these; see `DarkroomDayUnit.monthGroups`.
-struct DarkroomMonthGroup: Identifiable {
-    let monthKey: Date   // the first of the month, in the grouping calendar
-    let units: [DarkroomDayUnit]
-
-    var id: Date { monthKey }
-
-    /// The band names the month alone within the current year ("AUGUST"); the year joins only
-    /// for months outside it ("JANUARY 2025"), where the name by itself would be ambiguous in
-    /// one continuous scroll. Year navigation proper is the jump sheet's job.
-    func title(calendar: Calendar = .current, now: Date = .now) -> String {
-        let formatter = DateFormatter()
-        formatter.calendar = calendar
-        formatter.timeZone = calendar.timeZone
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        let sameYear = calendar.component(.year, from: monthKey) == calendar.component(.year, from: now)
-        formatter.dateFormat = sameYear ? "MMMM" : "MMMM yyyy"
-        return formatter.string(from: monthKey)
-    }
-}
-
-extension DarkroomDayUnit {
-    /// Groups day units (already day-keyed, already 4am-shifted) by calendar month, newest
-    /// month first, units within a month newest first.
-    static func monthGroups(units: [DarkroomDayUnit], calendar: Calendar = .current) -> [DarkroomMonthGroup] {
-        struct Key: Hashable { let year: Int; let month: Int }
-        let grouped = Dictionary(grouping: units) { unit -> Key in
-            let comps = calendar.dateComponents([.year, .month], from: unit.dayKey)
-            return Key(year: comps.year ?? 0, month: comps.month ?? 0)
-        }
-        return grouped
-            .map { key, groupUnits -> DarkroomMonthGroup in
-                let sorted = groupUnits.sorted { $0.dayKey > $1.dayKey }
-                let monthKey = calendar.date(from: DateComponents(year: key.year, month: key.month, day: 1))
-                    ?? sorted[0].dayKey
-                return DarkroomMonthGroup(monthKey: monthKey, units: sorted)
-            }
-            .sorted { $0.monthKey > $1.monthKey }
     }
 }
 

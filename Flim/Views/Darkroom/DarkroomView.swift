@@ -52,24 +52,67 @@ struct DarkroomView: View {
     /// alongside `reload()`, never per cell.
     @State private var unsortedURLCache: [UUID: URL] = [:]
     @State private var showSortDeck = false
-    /// The month jump sheet's own flag, deliberately not shared with any other sheet on this
-    /// screen (`showSortDeck`, the roll-delete confirm): two surfaces sharing one flag once broke
-    /// each other when one dismissed and the other's `onDismiss` fired for it.
-    @State private var showJumpSheet = false
-    /// The band that was tapped to open `showJumpSheet`, so the sheet can mark that one cell and
-    /// open on that year's tab. `nil` for any future entry point that isn't a band tap.
-    @State private var jumpSheetOrigin: DarkroomYearMonth?
-    /// `darkroom_month_counts`' rows, `nil` until `reload()`'s dedicated fetch resolves or the
-    /// RPC isn't reachable yet (see `PhotoService.darkroomMonthCounts`'s own doc). Every reader
-    /// treats `nil` as "no server counts yet", never as zero.
-    @State private var monthCounts: [DarkroomMonthCount]?
-    /// Set once the scroll view exists, so a month-jump can call `scrollTo` from outside the
-    /// `ScrollViewReader` closure that owns it.
+    /// `darkroom_month_summary`'s rows, `nil` until `reload()`'s dedicated fetch resolves or the
+    /// RPC isn't reachable yet (see `PhotoService.darkroomMonthSummary`'s own doc). Every reader
+    /// treats `nil` as "no server summary yet", never as zero; every count the zoom bar and the
+    /// Year/All-time rungs show comes from this, never from a loaded page.
+    @State private var monthSummaries: [DarkroomMonthSummary]?
+    /// Whether the `darkroom_month_summary` fetch is currently in flight, distinct from
+    /// `monthSummaries == nil`: the two together are what let the Year/All-time rungs tell "still
+    /// loading, be quiet about it" from "genuinely failed/unreachable, say so" (see
+    /// `yearContent`/`allTimeContent`/`rungUnavailableState`'s own docs). Starts `true` so the
+    /// very first frame — including a warm relaunch that lands directly on Year or All-time
+    /// before `reload()` has even started — never flashes the failure copy.
+    @State private var isLoadingSummaries = true
+    /// Set once the current rung's scroll view exists, so the tab-retap handler can call
+    /// `scrollTo` from outside the `ScrollViewReader` closure that owns it. Reassigned by
+    /// whichever rung is currently mounted (see `monthContent`/`yearContent`/`allTimeContent`).
+    /// NOT used for landing on a selected month any more — see `pendingMonthLanding`'s own doc for
+    /// why that used to race this exact property and how it's avoided now.
     @State private var scrollProxy: ScrollViewProxy?
-    /// Guards `jumpToMonth`'s page-until-anchor loop so a second tap on an unloaded month can't
-    /// start a second one racing the first.
-    @State private var jumpPagingInFlight = false
+    /// The current rung's approximate vertical scroll offset, tracked so the tab-retap handler can
+    /// tell "already at the top" (zoom out one rung) from "scrolled down" (scroll to top). A
+    /// threshold, not an exact zero check: `.onScrollGeometryChange` can report a hair off zero at
+    /// rest.
+    @State private var scrollOffsetY: CGFloat = 0
+    /// A month `selectMonth`/`zoomIn` asked the `.month` rung to land on, consumed by
+    /// `monthContent` itself once ITS OWN `ScrollViewReader` exists (see `monthContent`'s
+    /// `.task(id:)`).
+    ///
+    /// Setting `zoom = .month` and then immediately calling the paging/scroll helper in the SAME
+    /// call stack was the original bug: at that point the `.year`/`.allTime` rung's content is
+    /// still what's mounted (the `Group { switch zoom { ... } }` hasn't re-rendered yet), so
+    /// `scrollProxy` still belongs to the OUTGOING rung and `scrollTo` silently no-ops. Worse,
+    /// `monthContent` then mounts at the top (offset 0) a moment later, and the mounted-night
+    /// anchor tracker (`updateMonthAnchorFromScroll`) immediately overwrote the anchor right back
+    /// to the newest month, undoing the very selection that was just made. Storing the request as
+    /// state instead and letting `monthContent`'s own `ScrollViewReader` consume it once it
+    /// actually exists fixes both: the anchor tracker also checks this and stays quiet while a
+    /// landing is pending, so the two can't fight over the anchor.
+    @State private var pendingMonthLanding: DarkroomYearMonth?
+    /// `pageUntilMonth`'s current page-until-anchor target, `nil` when nothing is in flight. A
+    /// second target arriving while one is already in flight REPLACES it (cancels the old task,
+    /// starts a new one) rather than being dropped — a global "refuse while anything is running"
+    /// guard was silently swallowing a second tap and letting the first target's scroll land under
+    /// the second target's crumb once it (eventually) finished. The one surviving use of this pair
+    /// until PR 5's seeded anchored fetch replaces the whole loop.
+    @State private var jumpPagingTarget: DarkroomYearMonth?
     @State private var jumpPagingTask: Task<Void, Never>?
+
+    // MARK: - Zoom ladder (PR 3 of the zoom redesign, revision 2)
+
+    /// `@SceneStorage` has no optional-`Int` initializer: `-1` is the "never set" sentinel, see
+    /// `DarkroomZoom.resolveEntry`'s own doc. Mirrored, not authoritative — `zoom` below is what
+    /// every view reads; this only exists to survive relaunch.
+    @SceneStorage("darkroom.rung") private var storedRung = -1
+    /// The anchor's `"yyyy-MM"` mirror, see `DarkroomAnchorCoding`'s own doc.
+    @SceneStorage("darkroom.anchor") private var storedAnchor = ""
+    @State private var zoom: DarkroomZoom = .month
+    @State private var anchor = DarkroomYearMonth(date: .now)
+    /// The set of nights currently mounted in `nightList`'s `LazyVStack`, kept only while
+    /// `zoom == .month`: the coarse "topmost mounted unit" the zoom bar's crumb follows while
+    /// scrolling. See `updateMonthAnchorFromScroll`'s own doc.
+    @State private var mountedNightDayKeys: Set<Date> = []
     @State private var showRollDeleteConfirm = false
     @State private var pendingRollDeleteBatch: [Photo] = []
     @State private var shareItem: ShareImage?
@@ -89,11 +132,16 @@ struct DarkroomView: View {
         DarkroomDayUnit.units(from: vm.photos)
     }
 
-    private var monthGroups: [DarkroomMonthGroup] {
-        DarkroomDayUnit.monthGroups(units: dayUnits)
-    }
+    private var lastUnitId: Date? { dayUnits.last?.id }
 
-    private var lastUnitId: Date? { monthGroups.last?.units.last?.id }
+    /// Distinct calendar months among currently-loaded photos, for the Year/All-time rungs' quiet
+    /// loading treatment (see `yearContent`/`allTimeContent`'s own docs) before the server summary
+    /// resolves. A LOWER BOUND only, never trusted as "the whole library" — the same trap
+    /// `PhotoService`'s own pagination doc warns about: a month can gain a cell here and later gain
+    /// a real count once the summary lands, but a month absent here is never asserted empty.
+    private var loadedYearMonths: Set<DarkroomYearMonth> {
+        Set(dayUnits.map { DarkroomYearMonth(date: $0.dayKey) })
+    }
 
     /// The flattened archive in render order, developing shots included in their true
     /// chronological place: what `PhotoPagerView`'s night-rack pages through, so swiping (or a
@@ -110,19 +158,6 @@ struct DarkroomView: View {
     /// `DarkroomDayUnit.distinctNightCount`'s own doc.
     private var unsortedNightCount: Int {
         DarkroomDayUnit.distinctNightCount(in: unsortedPhotos)
-    }
-
-    /// Every month currently rendered on screen, for the jump sheet's pre-migration fallback
-    /// (see `DarkroomJumpSheetLogic`'s own doc) and for `jumpToMonth`'s "already loaded" check.
-    private var loadedMonthKeys: Set<DarkroomYearMonth> {
-        Set(monthGroups.map { DarkroomYearMonth(date: $0.monthKey) })
-    }
-
-    /// This month band's server-counted total, `nil` while `darkroom_month_counts` hasn't
-    /// answered (or the month isn't in its rows, which the RPC's own contract makes equivalent
-    /// to "unknown" here, since a month with zero photos wouldn't be rendering a band at all).
-    private func shotCount(for group: DarkroomMonthGroup) -> Int? {
-        monthCounts?.photoCount(for: DarkroomYearMonth(date: group.monthKey))
     }
 
     // MARK: - Header
@@ -176,7 +211,9 @@ struct DarkroomView: View {
             .accessibilityLabel("Seed unsorted (DEBUG)")
             #endif
 
-            if !vm.photos.isEmpty {
+            // Select only exists at the deepest rung: there is nothing to select at the Year or
+            // All-time rungs, which render summary rows, not photo frames.
+            if !vm.photos.isEmpty, zoom == .month {
                 Button("Select") {
                     isSelecting = true
                     selectedIDs = []
@@ -222,8 +259,10 @@ struct DarkroomView: View {
 
                 // Pinned under the header, outside the scroll (PR 2 of the zoom redesign,
                 // 2026-08-25): visible at every scroll offset instead of scrolling out of view
-                // the moment a scan reaches night two. Same hide rules as before the move.
-                if !isSelecting, !unsortedPhotos.isEmpty {
+                // the moment a scan reaches night two. Same hide rules as before the move, plus
+                // select mode and the zoom bar hide it together: the sort row is a .month-only
+                // destination the same way the zoom control is a .month-only tool.
+                if !isSelecting, zoom == .month, !unsortedPhotos.isEmpty {
                     DarkroomSortBanner(
                         accent: accent,
                         count: unsortedPhotos.count,
@@ -234,34 +273,44 @@ struct DarkroomView: View {
                     )
                 }
 
+                if !isSelecting {
+                    DarkroomZoomBar(
+                        zoom: zoom,
+                        anchor: anchor,
+                        sub: DarkroomZoomChrome.sub(zoom: zoom, anchor: anchor, summaries: monthSummaries),
+                        accent: accent,
+                        onZoomOut: { zoomOut() },
+                        onZoomIn: { zoomIn() }
+                    )
+                }
+
                 Group {
-                    if vm.isLoading && vm.photos.isEmpty {
-                        ScrollView { DarkroomLoadingSkeleton().padding(.top, 8) }
-                            .scrollDisabled(true)
-                    } else if let error = vm.error, vm.photos.isEmpty {
-                        ErrorState(message: error) { await reload() }
-                    } else if vm.photos.isEmpty {
-                        emptyState
-                    } else {
-                        ScrollViewReader { proxy in
-                            ScrollView {
-                                Color.clear.frame(height: 0).id("top")
-                                nightList
-                            }
-                            .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { scrollWidth = $0 }
-                            .refreshable { await reload() }
-                            .onChange(of: scrollToTop) {
-                                withAnimation(.snappy) { proxy.scrollTo("top", anchor: .top) }
-                            }
-                            .onAppear { scrollProxy = proxy }
-                        }
+                    switch zoom {
+                    case .month: monthContent
+                    case .year: yearContent
+                    case .allTime: allTimeContent
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .transition(.opacity)
+                .animation(.easeInOut(duration: 0.22), value: zoom)
             }
         }
         .overlay {
             if showReveal { revealOverlay }
+        }
+        // The tab re-tap signal: scroll the current rung to its top, unless it's already there,
+        // in which case it zooms OUT one rung instead (the ladder's other half of "tap the tab
+        // you're already on"). `scrollOffsetY` is tracked per-rung by whichever `ScrollView` is
+        // currently mounted (see `monthContent`/`yearContent`/`allTimeContent`). Gated on
+        // `!isSelecting`: a retap while the selection header is up keeps its old scroll-to-top-only
+        // meaning, never switches rungs out from under an in-progress selection.
+        .onChange(of: scrollToTop) {
+            if !isSelecting, scrollOffsetY <= 2, let out = zoom.zoomedOut {
+                setZoom(out)
+            } else {
+                withAnimation(.snappy) { scrollProxy?.scrollTo("top", anchor: .top) }
+            }
         }
         .navigationBarTitleDisplayMode(.inline)
         .toolbarColorScheme(.dark, for: .navigationBar)
@@ -309,6 +358,7 @@ struct DarkroomView: View {
             }
         }
         .onAppear {
+            resolveInitialZoomAndAnchor()
             Task {
                 await reload()
                 #if DEBUG
@@ -330,11 +380,6 @@ struct DarkroomView: View {
         }
         .fullScreenCover(isPresented: $showSortDeck, onDismiss: { Task { await reload() } }) {
             SortDeckView(onFinish: {})
-        }
-        .sheet(isPresented: $showJumpSheet) {
-            DarkroomJumpSheet(monthCounts: monthCounts, loadedMonths: loadedMonthKeys, origin: jumpSheetOrigin) { year, month in
-                jumpToMonth(year: year, month: month)
-            }
         }
         // On the outer chain, not on the grid's ScrollView: the grid does not exist in the empty
         // and loading states, and a widget tap that lands then would be silently dropped.
@@ -358,52 +403,261 @@ struct DarkroomView: View {
         }
     }
 
-    // MARK: - Night list
+    // MARK: - Rung content (PR 3 of the zoom redesign, revision 2)
 
-    /// One unit per night, a sticky month band on every month (always, not just when the
-    /// library spans two or more — a single-month library still gets its band, which is also
-    /// the only way into the jump sheet). The sort banner is no longer in here: it's pinned
-    /// under the header instead, see `body`. `Section` per month keeps the header pin working
-    /// uniformly.
+    /// The `.month` rung: today's continuous, multi-month night list, structurally unchanged this
+    /// PR (month-scoping is PR 5). Owns its own loading/error/empty states, same as before the
+    /// zoom ladder existed.
+    @ViewBuilder
+    private var monthContent: some View {
+        if vm.isLoading && vm.photos.isEmpty {
+            ScrollView { DarkroomLoadingSkeleton().padding(.top, 8) }
+                .scrollDisabled(true)
+        } else if let error = vm.error, vm.photos.isEmpty {
+            ErrorState(message: error) { await reload() }
+        } else if vm.photos.isEmpty {
+            emptyState
+        } else {
+            ScrollViewReader { proxy in
+                ScrollView {
+                    Color.clear.frame(height: 0).id("top")
+                    nightList
+                }
+                .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { scrollWidth = $0 }
+                .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, y in
+                    scrollOffsetY = y
+                }
+                .refreshable { await reload() }
+                .onAppear { scrollProxy = proxy }
+                // Consumes `pendingMonthLanding` using THIS `proxy`, the one that actually belongs
+                // to the now-mounted `.month` rung — see `pendingMonthLanding`'s own doc for the
+                // race this fixes. Keyed on the value itself, not a bare `Void` id, so a fresh
+                // request landing while this same rung is already mounted (year -> month twice in
+                // a row without leaving `.month` in between isn't currently reachable, but this
+                // stays correct if that ever changes) reruns too, not just the initial mount.
+                .task(id: pendingMonthLanding) {
+                    guard let target = pendingMonthLanding else { return }
+                    pageUntilMonth(target, proxy: proxy)
+                }
+            }
+        }
+    }
+
+    /// One unit per night, a flat list (no month Sections, no sticky band: the jump sheet and the
+    /// month band it lived under are both gone, replaced by the zoom ladder). Unit separators stay
+    /// between every pair of nights, same as before.
     private var nightList: some View {
-        LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
-            ForEach(monthGroups) { group in
-                Section {
-                    ForEach(group.units) { unit in
-                        DarkroomDayUnitView(
-                            unit: unit,
-                            capacity: stripCapacity,
-                            accent: accent,
-                            signedURLCache: vm.signedURLCache,
-                            sharedIds: feed.myPostedPhotoIds,
-                            isSelecting: isSelecting,
-                            selectedIDs: selectedIDs,
-                            rollName: { rollName(for: $0) },
-                            photoNS: photoNS,
-                            onTapDeveloped: { photo in
-                                selectedURL = vm.signedURLCache[photo.id]
-                                selectedPhoto = photo
-                            },
-                            onToggleSelect: { toggleSelect($0) },
-                            developedMenu: { AnyView(developedMenu($0)) },
-                            developingMenu: { AnyView(developingMenu($0)) },
-                            onFrameAppear: { photo in await onFrameAppear(photo) }
-                        )
-                        if unit.id != lastUnitId {
-                            DarkroomUnitSeparator()
-                        }
+        LazyVStack(alignment: .leading, spacing: 0) {
+            ForEach(dayUnits) { unit in
+                DarkroomDayUnitView(
+                    unit: unit,
+                    capacity: stripCapacity,
+                    accent: accent,
+                    signedURLCache: vm.signedURLCache,
+                    sharedIds: feed.myPostedPhotoIds,
+                    isSelecting: isSelecting,
+                    selectedIDs: selectedIDs,
+                    rollName: { rollName(for: $0) },
+                    photoNS: photoNS,
+                    onTapDeveloped: { photo in
+                        selectedURL = vm.signedURLCache[photo.id]
+                        selectedPhoto = photo
+                    },
+                    onToggleSelect: { toggleSelect($0) },
+                    developedMenu: { AnyView(developedMenu($0)) },
+                    developingMenu: { AnyView(developingMenu($0)) },
+                    onFrameAppear: { photo in await onFrameAppear(photo) },
+                    onMountChange: { dayKey, isMounted in
+                        if isMounted { mountedNightDayKeys.insert(dayKey) } else { mountedNightDayKeys.remove(dayKey) }
+                        updateMonthAnchorFromScroll()
                     }
-                } header: {
-                    DarkroomMonthBandView(group: group, shotCount: shotCount(for: group)) {
-                        Haptics.tap()
-                        jumpSheetOrigin = DarkroomYearMonth(date: group.monthKey)
-                        showJumpSheet = true
-                    }
+                )
+                if unit.id != lastUnitId {
+                    DarkroomUnitSeparator()
                 }
             }
             loadMoreSentinel
         }
         .padding(.bottom, 12)
+    }
+
+    /// The `.year` rung: one row per month with photos in `anchor.year`, newest first.
+    ///
+    /// Three states, not two: `monthSummaries` resolved with rows -> full content (real counts);
+    /// `isLoadingSummaries` and nothing resolved yet -> the quiet loading structure, rows derived
+    /// from `loadedYearMonths` with counts omitted rather than guessed, still fully tappable
+    /// (`DarkroomYearRow`'s `meta: nil` case exists for exactly this); resolved to `nil` (the
+    /// fetch genuinely failed, or the RPC isn't reachable) -> `rungUnavailableState`. Landing on
+    /// Year/All-time on every warm relaunch is the DEFAULT case whenever `SceneStorage` restored a
+    /// non-`.month` rung, so the middle state is not an edge case, it is the first frame.
+    @ViewBuilder
+    private var yearContent: some View {
+        if let monthSummaries {
+            let rows = monthSummaries
+                .filter { $0.yearMonth.year == anchor.year && $0.shotCount > 0 }
+                .sorted { $0.monthStart > $1.monthStart }
+            if rows.isEmpty {
+                emptyRungState("Nothing shot in \(anchor.year) yet.")
+            } else {
+                yearScrollList {
+                    ForEach(rows, id: \.monthStart) { row in
+                        DarkroomYearRow(
+                            summary: row,
+                            isAnchor: row.yearMonth == anchor,
+                            accent: accent,
+                            onTap: { selectMonth(row.yearMonth) }
+                        )
+                    }
+                }
+            }
+        } else if isLoadingSummaries {
+            let months = loadedYearMonths.filter { $0.year == anchor.year }.sorted { $0.month > $1.month }
+            if months.isEmpty {
+                // Nothing loaded yet at all (the very first frame of a cold reload): a blank,
+                // quiet region rather than a message that might turn out to be wrong a moment
+                // later either way.
+                Color.clear.frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                yearScrollList {
+                    ForEach(months, id: \.self) { ym in
+                        DarkroomYearRow(
+                            monthStart: dateFromYearMonth(ym),
+                            isAnchor: ym == anchor,
+                            meta: nil,
+                            hasDeveloping: false,
+                            accent: accent,
+                            onTap: { selectMonth(ym) }
+                        )
+                    }
+                }
+            }
+        } else {
+            rungUnavailableState
+        }
+    }
+
+    /// The scroll chrome shared by both the resolved and loading-state Year rung content, so the
+    /// offset tracking / refresh / proxy wiring isn't duplicated between them.
+    private func yearScrollList<Rows: View>(@ViewBuilder rows: () -> Rows) -> some View {
+        // Built once, up front, as a concrete value rather than left as a closure: `rows` isn't
+        // `@escaping`, and `ScrollViewReader`'s own content closure IS, so calling `rows()` from
+        // inside it is a non-escaping-capture error. Capturing the already-built view instead
+        // sidesteps that; it costs nothing extra since a `LazyVStack`'s children are lazy either
+        // way.
+        let content = rows()
+        return ScrollViewReader { proxy in
+            ScrollView {
+                Color.clear.frame(height: 0).id("top")
+                LazyVStack(alignment: .leading, spacing: 0) { content }
+            }
+            .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, y in
+                scrollOffsetY = y
+            }
+            .refreshable { await reload() }
+            .onAppear { scrollProxy = proxy }
+        }
+    }
+
+    /// The `.allTime` rung: one row per year, newest first. Same three-state shape as
+    /// `yearContent`, see its own doc.
+    @ViewBuilder
+    private var allTimeContent: some View {
+        if let monthSummaries {
+            let totals = DarkroomSummaryAggregation.yearTotals(from: monthSummaries)
+            if totals.isEmpty {
+                emptyRungState("Nothing developed yet.")
+            } else {
+                allTimeScrollList {
+                    ForEach(totals, id: \.year) { yearTotal in
+                        DarkroomAllTimeRow(
+                            totals: yearTotal,
+                            monthSummaries: monthSummaries.filter { $0.yearMonth.year == yearTotal.year },
+                            anchor: anchor,
+                            accent: accent,
+                            onSelectMonth: { selectMonth($0) }
+                        )
+                    }
+                }
+            }
+        } else if isLoadingSummaries {
+            let years = Set(loadedYearMonths.map(\.year)).sorted(by: >)
+            if years.isEmpty {
+                Color.clear.frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                allTimeScrollList {
+                    ForEach(years, id: \.self) { year in
+                        DarkroomAllTimeRow(
+                            year: year,
+                            headerMeta: nil,
+                            monthHasPhotos: { month in loadedYearMonths.contains(DarkroomYearMonth(year: year, month: month)) },
+                            // Never a guessed number: "present" is known from what's loaded,
+                            // "how many" is not, until the real summary resolves.
+                            monthShotCount: { _ in nil },
+                            anchor: anchor,
+                            accent: accent,
+                            onSelectMonth: { selectMonth($0) }
+                        )
+                    }
+                }
+            }
+        } else {
+            rungUnavailableState
+        }
+    }
+
+    private func allTimeScrollList<Rows: View>(@ViewBuilder rows: () -> Rows) -> some View {
+        let content = rows()   // see `yearScrollList`'s own doc for why this is captured, not called, inside
+        return ScrollViewReader { proxy in
+            ScrollView {
+                Color.clear.frame(height: 0).id("top")
+                LazyVStack(alignment: .leading, spacing: 0) { content }
+            }
+            .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, y in
+                scrollOffsetY = y
+            }
+            .refreshable { await reload() }
+            .onAppear { scrollProxy = proxy }
+        }
+    }
+
+    /// Reconstructs a `Date` (first of the month) from a `DarkroomYearMonth`, for the loading-state
+    /// Year rows, which have no `DarkroomMonthSummary.monthStart` to read yet.
+    private func dateFromYearMonth(_ ym: DarkroomYearMonth) -> Date {
+        Calendar.current.date(from: DateComponents(year: ym.year, month: ym.month, day: 1)) ?? .now
+    }
+
+    /// A rung with nothing in it (a real, server-confirmed zero, not "unavailable").
+    private func emptyRungState(_ message: String) -> some View {
+        VStack(spacing: 8) {
+            Text(message)
+                .flimFont(14)
+                .foregroundStyle(FlimTheme.textTertiary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// The Year/All-time rungs' genuine failure state: the summary fetch has RESOLVED (not merely
+    /// pending, see `isLoadingSummaries`) to `nil` — a real failure, or a pre-migration RPC 404,
+    /// mirroring the predecessor `darkroomMonthCounts`'s own degraded-state doc. Pull-to-refresh
+    /// retries the same way the month list's own error state does.
+    private var rungUnavailableState: some View {
+        ScrollView {
+            VStack(spacing: 12) {
+                Image(systemName: "square.stack.3d.up.slash")
+                    .font(.system(size: 34, weight: .ultraLight))
+                    .foregroundStyle(accent.opacity(0.7))
+                Text("This view isn't ready yet.")
+                    .flimFont(15, weight: .light)
+                    .foregroundStyle(FlimTheme.textSecondary)
+                Text("Pull down to try again, or zoom back in.")
+                    .flimFont(12)
+                    .foregroundStyle(FlimTheme.textTertiary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 40)
+            }
+            .frame(maxWidth: .infinity, minHeight: 260)
+        }
+        .refreshable { await reload() }
     }
 
     /// The pagination trigger, moved OUT of `onFrameAppear`/per-frame `.task` (see below) and
@@ -754,42 +1008,166 @@ struct DarkroomView: View {
         }
     }
 
-    /// Dismisses the jump sheet, then lands `year`/`month`'s band at the top of the scroller.
-    ///
-    /// A month already loaded scrolls immediately. A month the sheet promised has photos but
-    /// isn't loaded yet is reached by paging forward (anchored paging proper is deferred, see
-    /// the design brief) until a unit of it appears or `photoService.hasMore` runs out, guarded
-    /// by `jumpPagingInFlight` so a second tap on an unloaded month can't race the first, and
-    /// cancelled from `.onDisappear` if the screen goes away mid-loop. If pagination exhausts
-    /// without ever finding the month (the RPC and the page boundary disagreeing, e.g. a
-    /// timezone edge), this no-ops silently rather than crash or show a real photo as a bogus one.
-    private func jumpToMonth(year: Int, month: Int) {
-        showJumpSheet = false
-        guard let targetId = Calendar.current.date(from: DateComponents(year: year, month: month, day: 1))
-        else { return }
+    // MARK: - Zoom ladder navigation
 
-        if monthGroups.contains(where: { $0.id == targetId }) {
-            withAnimation(.snappy) { scrollProxy?.scrollTo(targetId, anchor: .top) }
+    /// The single choke point for every rung/anchor mutation: sets the state, writes the
+    /// `@SceneStorage` mirror, and fires the "rung changed" haptic. Every other zoom function
+    /// (`zoomOut`, `zoomIn`, `selectMonth`, the tab-retap handler) routes through this rather than
+    /// touching `zoom` directly, so none of them can change rungs silently.
+    ///
+    /// Also the one place that cancels a still-running `pageUntilMonth` paging task whenever the
+    /// destination rung ISN'T `.month`: leaving `.month` (zooming out, or any other future path)
+    /// with a jump still in flight used to leave it running headless, landing a scroll nobody was
+    /// looking at once it eventually finished, or worse fighting a second, newer request. Zooming
+    /// TO `.month` never cancels here — `pendingMonthLanding` (set by the caller right after this
+    /// returns) is what starts a landing, this only ever tears one down.
+    private func setZoom(_ newZoom: DarkroomZoom) {
+        guard newZoom != zoom else { return }
+        Haptics.tap()
+        zoom = newZoom
+        storedRung = newZoom.rawValue
+        if newZoom != .month {
+            jumpPagingTask?.cancel()
+            jumpPagingTask = nil
+            jumpPagingTarget = nil
+            pendingMonthLanding = nil
+        }
+    }
+
+    private func zoomOut() {
+        guard let out = zoom.zoomedOut else { return }
+        setZoom(out)
+    }
+
+    /// Plus from `.year` lands `.month` on the ANCHOR month, not the newest: the anchor itself is
+    /// untouched by zooming (only a row/cell tap or the `.month` rung's own scroll tracking ever
+    /// changes it), so this only has to ask the `.month` rung to land there once it mounts (see
+    /// `pendingMonthLanding`'s own doc).
+    private func zoomIn() {
+        guard let deeper = zoom.zoomedIn else { return }
+        setZoom(deeper)
+        if deeper == .month { pendingMonthLanding = anchor }
+    }
+
+    /// The one entry point both the Year row and the All-time cell taps call: sets a new anchor,
+    /// zooms to `.month`, and asks that rung to land there once it mounts (see
+    /// `pendingMonthLanding`'s own doc for why this doesn't page/scroll directly, in the same call
+    /// stack, the way it originally did).
+    private func selectMonth(_ ym: DarkroomYearMonth) {
+        anchor = ym
+        storedAnchor = DarkroomAnchorCoding.encode(ym)
+        setZoom(.month)
+        pendingMonthLanding = ym
+    }
+
+    /// TODO(PR 5): replaced by the seeded anchored fetch.
+    ///
+    /// Lands `ym`'s topmost (newest) night at the top of the `.month` scroller, using `proxy` —
+    /// the `.month` rung's OWN `ScrollViewReader` proxy, handed in by `monthContent`'s `.task(id:)`
+    /// once that rung actually exists (never the shared `scrollProxy` state, which can still
+    /// belong to the rung being left behind at the moment this is called).
+    ///
+    /// A month already loaded scrolls immediately. A month that isn't loaded yet is reached by
+    /// paging forward until a night of it appears or `photoService.hasMore` runs out. A SECOND
+    /// target arriving while one is already in flight (`jumpPagingTarget` differs) cancels the
+    /// first task and starts a new one for the new target, rather than being silently dropped —
+    /// the earlier bug this fixes let the first target's scroll land under the second target's
+    /// crumb once it eventually finished. Cancelled outright by `setZoom` on leaving `.month`, and
+    /// from `.onDisappear` if the whole screen goes away mid-loop. If pagination exhausts without
+    /// ever finding the month (the RPC and the page boundary disagreeing, e.g. a timezone edge),
+    /// this no-ops silently rather than crash or show a real photo as a bogus one.
+    private func pageUntilMonth(_ ym: DarkroomYearMonth, proxy: ScrollViewProxy) {
+        if let firstUnit = dayUnits.first(where: { DarkroomYearMonth(date: $0.dayKey) == ym }) {
+            jumpPagingTask?.cancel()
+            jumpPagingTask = nil
+            jumpPagingTarget = nil
+            withAnimation(.snappy) { proxy.scrollTo(firstUnit.id, anchor: .top) }
+            if pendingMonthLanding == ym { pendingMonthLanding = nil }
             return
         }
 
-        guard !jumpPagingInFlight, let uid = auth.currentUser?.id else { return }
-        jumpPagingInFlight = true
+        guard let uid = auth.currentUser?.id else {
+            if pendingMonthLanding == ym { pendingMonthLanding = nil }
+            return
+        }
+
+        // The same target already paging: leave it running rather than starting a redundant
+        // second loop. A DIFFERENT target replaces it.
+        if jumpPagingTarget == ym, jumpPagingTask != nil { return }
+        jumpPagingTask?.cancel()
+        jumpPagingTarget = ym
         jumpPagingTask = Task {
-            defer { jumpPagingInFlight = false }
-            while !Task.isCancelled, !monthGroups.contains(where: { $0.id == targetId }), photoService.hasMore {
+            defer { if jumpPagingTarget == ym { jumpPagingTarget = nil } }
+            while !Task.isCancelled,
+                  !dayUnits.contains(where: { DarkroomYearMonth(date: $0.dayKey) == ym }),
+                  photoService.hasMore {
                 await vm.loadMore(photoService: photoService, userId: uid)
             }
-            guard !Task.isCancelled, monthGroups.contains(where: { $0.id == targetId }) else { return }
-            withAnimation(.snappy) { scrollProxy?.scrollTo(targetId, anchor: .top) }
+            guard !Task.isCancelled,
+                  let firstUnit = dayUnits.first(where: { DarkroomYearMonth(date: $0.dayKey) == ym })
+            else {
+                if pendingMonthLanding == ym { pendingMonthLanding = nil }
+                return
+            }
+            withAnimation(.snappy) { proxy.scrollTo(firstUnit.id, anchor: .top) }
+            if pendingMonthLanding == ym { pendingMonthLanding = nil }
         }
+    }
+
+    /// Resolves the entry rung and anchor once, from `.onAppear`. Cold launch (the `-1` sentinel)
+    /// starts the anchor at the current month; the quiet-month fallback (stepping back to the
+    /// newest month that actually has photos) needs data that isn't loaded yet, and is applied
+    /// once `reload()`'s fetches land, see `applyColdLaunchAnchorIfNeeded`. A warm return decodes
+    /// the stored anchor directly, garbage falling back to the current month.
+    private func resolveInitialZoomAndAnchor() {
+        zoom = DarkroomZoom.resolveEntry(storedRung: storedRung)
+        let currentMonth = DarkroomYearMonth(date: .now)
+        anchor = storedRung == -1 ? currentMonth : DarkroomAnchorCoding.decode(storedAnchor, fallback: currentMonth)
+    }
+
+    /// The other half of `resolveInitialZoomAndAnchor`: only meaningful on a genuine cold launch
+    /// (`storedRung` still `-1`, meaning the person has never explicitly changed rungs this
+    /// install), and safe to call every `reload()` regardless, since it's a no-op once that's no
+    /// longer true.
+    private func applyColdLaunchAnchorIfNeeded() {
+        guard storedRung == -1 else { return }
+        let currentMonth = DarkroomYearMonth(date: .now)
+        let resolved = DarkroomAnchorResolution.coldLaunchAnchor(
+            currentMonth: currentMonth,
+            summaries: monthSummaries,
+            loadedMonths: dayUnits.map { DarkroomYearMonth(date: $0.dayKey) }
+        )
+        anchor = resolved
+        storedAnchor = DarkroomAnchorCoding.encode(resolved)
+    }
+
+    /// The `.month` rung's crumb follows the topmost currently MOUNTED night (a coarse stand-in
+    /// for true visibility, see `DarkroomDayUnitView.onMountChange`'s own doc): since the list
+    /// renders newest-first, the night with the latest `dayKey` among whatever's mounted is the
+    /// one nearest the top of the current scroll window. Only updates while `.month` is the
+    /// active rung — Year/All-time change the anchor solely through an explicit row/cell tap.
+    ///
+    /// Also skipped entirely while `pendingMonthLanding != nil`: a fresh mount at scroll offset 0
+    /// fires this from every initially-visible night's `onAppear` before the requested scroll has
+    /// had a chance to run, and without this guard it overwrote the just-made selection right back
+    /// to the newest month every time. It re-arms itself the moment the landing clears (see
+    /// `pageUntilMonth`), so real scrolling resumes driving the anchor immediately after.
+    private func updateMonthAnchorFromScroll() {
+        guard zoom == .month, pendingMonthLanding == nil, let topKey = mountedNightDayKeys.max() else { return }
+        let ym = DarkroomYearMonth(date: topKey)
+        guard ym != anchor else { return }
+        anchor = ym
+        storedAnchor = DarkroomAnchorCoding.encode(ym)
     }
 
     private func reload() async {
         guard let userId = auth.currentUser?.id else { return }
-        async let counts = photoService.darkroomMonthCounts(timezone: TimeZone.current.identifier)
+        isLoadingSummaries = true
+        async let summaries = photoService.darkroomMonthSummary(timezone: TimeZone.current.identifier)
         await vm.load(photoService: photoService, userId: userId)
-        monthCounts = await counts
+        monthSummaries = await summaries
+        isLoadingSummaries = false
+        applyColdLaunchAnchorIfNeeded()
         // Warm the grid's thumbnails so cells appear instantly as you scroll.
         let prefetch = vm.photos.compactMap { photo -> (url: URL, cacheKey: String?)? in
             vm.signedURLCache[photo.id].map { ($0, photo.displayPath) }

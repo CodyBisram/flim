@@ -1,8 +1,8 @@
 import SwiftUI
 
 /// The Darkroom's one-unit-per-night rendering: a night's band + contact-sheet film rack, the
-/// sticky month band, the sort row, and the loading skeleton. Pulled out of `DarkroomView.swift`
-/// because that file already owns the screen's state, actions, and delete/undo flow.
+/// sort row, and the loading skeleton. Pulled out of `DarkroomView.swift` because that file
+/// already owns the screen's state, actions, and delete/undo flow.
 
 // MARK: - Day unit (band + rack)
 
@@ -23,6 +23,12 @@ struct DarkroomDayUnitView: View {
     /// Fires once per real frame as it appears: resolves its signed URL if still missing, and
     /// (only for the very last ready frame in render order) triggers the next page load.
     let onFrameAppear: (Photo) async -> Void
+    /// Fires as this whole night mounts/unmounts in the `LazyVStack` (`true` on appear, `false`
+    /// on disappear), so the screen can track "the topmost mounted night" as a coarse anchor for
+    /// the zoom bar's crumb while scrolling. See `DarkroomView.updateMonthAnchorFromScroll`'s own
+    /// doc for why a mounted-set approximation, rather than true visibility, is the right amount
+    /// of precision here.
+    var onMountChange: (Date, Bool) -> Void = { _, _ in }
 
     private var strips: [DarkroomFilmStrip] { DarkroomDayUnit.cutStrips(photos: unit.photos, capacity: capacity) }
 
@@ -31,15 +37,18 @@ struct DarkroomDayUnitView: View {
             band
             rack
         }
+        .onAppear { onMountChange(unit.dayKey, true) }
+        .onDisappear { onMountChange(unit.dayKey, false) }
     }
 
     private var band: some View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                // Month bands render unconditionally now (see `DarkroomView.nightList`'s own
-                // doc), so the day title is always the short form; the full "Sat 16 Aug" form
-                // stays reachable for the pager header (`PhotoPagerView.currentNightTitle`),
-                // which has no band of its own to say the month.
+                // The night title stays the short form even now that the month band is gone
+                // (PR 3 of the zoom redesign, revision 2 replaced it with the zoom bar's crumb):
+                // the full "Sat 16 Aug" form stays reachable for the pager header
+                // (`PhotoPagerView.currentNightTitle`), which has no crumb of its own to say the
+                // month.
                 Text(unit.title(shortForm: true))
                     .flimFont(17, weight: .light)
                     .tracking(0.4)
@@ -70,12 +79,27 @@ struct DarkroomDayUnitView: View {
         .accessibilityElement(children: .combine)
     }
 
+    /// One `TimelineView(.periodic(from:by:))` per NIGHT, never per well: every developing frame
+    /// in this night shares the one fraction it computes, so a night with several wells in the
+    /// well arc redraws once a minute total, not once per well. Nights with nothing developing
+    /// skip the `TimelineView` outright (a static `nil` fraction, no periodic redraw to pay for).
+    @ViewBuilder
     private var rack: some View {
+        if unit.developing.isEmpty {
+            rackContent(developingFraction: nil)
+        } else {
+            TimelineView(.periodic(from: .now, by: 60)) { context in
+                rackContent(developingFraction: unit.developingProgress(now: context.date))
+            }
+        }
+    }
+
+    private func rackContent(developingFraction: Double?) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             ForEach(strips) { strip in
                 perforation(slotCount: strip.slots.count)
                 HStack(spacing: 2) {
-                    ForEach(strip.slots) { slot in frameView(slot) }
+                    ForEach(strip.slots) { slot in frameView(slot, developingFraction: developingFraction) }
                 }
                 .padding(.vertical, 2)
             }
@@ -87,7 +111,7 @@ struct DarkroomDayUnitView: View {
     }
 
     @ViewBuilder
-    private func frameView(_ slot: DarkroomFrameSlot) -> some View {
+    private func frameView(_ slot: DarkroomFrameSlot, developingFraction: Double?) -> some View {
         switch slot {
         case .photo(let photo):
             DarkroomFrameView(
@@ -101,7 +125,8 @@ struct DarkroomDayUnitView: View {
                 photoNS: photoNS,
                 onTap: { onTapDeveloped(photo) },
                 onToggleSelect: { onToggleSelect(photo.id) },
-                menu: { photo.isReady ? developedMenu(photo) : developingMenu(photo) }
+                menu: { photo.isReady ? developedMenu(photo) : developingMenu(photo) },
+                developingFraction: developingFraction
             )
             .task { await onFrameAppear(photo) }
         case .empty:
@@ -172,6 +197,11 @@ struct DarkroomFrameView: View {
     /// The list's own grid (every caller before this one) never sets this and keeps its 36x44
     /// frame, own tap gesture, and own accessibility element exactly as before.
     var compact: Bool = false
+    /// This NIGHT's develop-arc progress (0...1), shared by every developing well in it: see
+    /// `DarkroomDayUnitView.rack`'s own doc for why it's computed once per night rather than per
+    /// well. `nil` for a developed frame (unused) or for the pager's `compact` rack, which keeps
+    /// its own untouched static ring regardless of what's passed here.
+    var developingFraction: Double? = nil
 
     /// The list's frames are 42x56 (readable, PR 1 of the zoom redesign); the pager's compact
     /// rack keeps the feed strip's 30x40. One shared `imageArea`, two geometries.
@@ -262,6 +292,9 @@ struct DarkroomFrameView: View {
         }
     }
 
+    /// Compact (the pager's own rack) keeps its untouched static ring. Everywhere else, this
+    /// night's shared develop arc: track + progress, no digits, no text — the band pill stays the
+    /// only STATED time.
     private var developingWell: some View {
         RoundedRectangle(cornerRadius: 2)
             .fill(Color(white: 0.063))
@@ -269,11 +302,16 @@ struct DarkroomFrameView: View {
                 RoundedRectangle(cornerRadius: 2)
                     .strokeBorder(FlimTheme.stroke, lineWidth: 1)
             )
-            .overlay(
-                Circle()
-                    .strokeBorder(accent.opacity(0.7), lineWidth: 1.5)
-                    .frame(width: compact ? 9 : 11, height: compact ? 9 : 11)
-            )
+            .overlay {
+                if compact {
+                    Circle()
+                        .strokeBorder(accent.opacity(0.7), lineWidth: 1.5)
+                        .frame(width: 9, height: 9)
+                } else {
+                    DarkroomDevelopArc(accent: accent, fraction: developingFraction ?? 0)
+                        .frame(width: 16, height: 16)
+                }
+            }
             .frame(width: imgW, height: imgH)
     }
 
@@ -321,56 +359,29 @@ struct DarkroomUnitSeparator: View {
     }
 }
 
-// MARK: - Month band
+// MARK: - Develop arc
 
-/// A sticky section header naming the month, with its server-counted shot total when one is
-/// known, and a caret. Solid background so frames scroll under it. The whole band is the tap
-/// target for the jump sheet, one object rather than a label plus a separate filter chip.
-struct DarkroomMonthBandView: View {
-    let group: DarkroomMonthGroup
-    /// The server's photo count for this month, `nil` when the RPC hasn't answered (the count
-    /// segment is then omitted entirely, never a page-derived guess and never "0 shots").
-    let shotCount: Int?
-    let onTap: () -> Void
+/// The quiet develop-progress ring drawn inside a non-compact `developingWell`: a full-circle
+/// track plus an accent arc from the top, clockwise, `fraction` 0...1. No digits, no text — the
+/// band pill (`DarkroomDayUnit.developingPillText`) stays the only STATED time on this screen.
+///
+/// Carries no animation of its own, and never should: the caller's `TimelineView` already redraws
+/// it once a minute (see `DarkroomDayUnitView.rack`'s own doc), and an implicit animation on a
+/// value that only changes on that cadence would be a stutter with nothing gained. This also
+/// makes Reduce Motion a non-issue here without a branch: there was never anything to suppress.
+struct DarkroomDevelopArc: View {
+    let accent: Color
+    let fraction: Double
 
     var body: some View {
-        Button(action: onTap) {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(group.title().uppercased())
-                        .flimFont(12, weight: .semibold)
-                        .tracking(1.1)
-                        .foregroundStyle(FlimTheme.textSecondary)
-                    if let shotCount {
-                        Text("· \(shotCount) shot\(shotCount == 1 ? "" : "s")")
-                            .flimFont(11.5)
-                            .foregroundStyle(FlimTheme.textTertiary)
-                    }
-                    Spacer(minLength: 8)
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(FlimTheme.textTertiary)
-                }
-                LinearGradient(
-                    stops: [
-                        .init(color: FlimTheme.stroke, location: 0),
-                        .init(color: .clear, location: 0.6),
-                        .init(color: .clear, location: 1)
-                    ],
-                    startPoint: .leading, endPoint: .trailing)
-                    .frame(height: 1)
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 14)
-            .padding(.bottom, 8)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(FlimTheme.bg)
-            .contentShape(Rectangle())
+        ZStack {
+            Circle().stroke(FlimTheme.stroke, lineWidth: 1.5)
+            Circle()
+                .trim(from: 0, to: max(0, min(1, fraction)))
+                .stroke(accent, style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
+                .rotationEffect(.degrees(-90))
         }
-        .buttonStyle(.plain)
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits([.isHeader, .isButton])
-        .accessibilityHint("Jump to month")
+        .accessibilityHidden(true)
     }
 }
 
