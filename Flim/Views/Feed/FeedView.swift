@@ -571,7 +571,11 @@ struct FeedView: View {
             clearedUnitIDs = Set(cleared)
         }
 
-        let fresh = FeedUnit.ledger(units: units, isSeen: { seenStore.isSeen($0) })
+        // You are not your own friend: see `FeedUnit.ledger`'s own doc for why this is the
+        // only seen-state derivation that excludes your own posts (unit rendering, seen
+        // pills, `caughtUpIndex`, and retention all keep counting them normally).
+        let fresh = FeedUnit.ledger(units: units, isSeen: { seenStore.isSeen($0) },
+                                     excludingAuthor: auth.currentUser?.id)
         if growOnly, let old = ledger {
             if let fresh {
                 ledger = (max(old.shots, fresh.shots), max(old.friends, fresh.friends))

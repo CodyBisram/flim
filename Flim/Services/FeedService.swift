@@ -1330,6 +1330,10 @@ final class FeedService {
             taken_at: photo.takenAt,
             caption: (trimmed?.isEmpty ?? true) ? nil : trimmed
         )).select("id").single().execute().value
+        // Born seen: you are not your own friend, so a post you just made must not count
+        // against yourself in the header ledger the moment it lands. First-seen-wins in the
+        // store, so this only ever does something the instant the post is created.
+        FeedSeenStore.shared.markSeen(created.id)
         Activation.log(.postShared)
         Usage.log(.postShared)
         // The tile's headline state is "your last frame and what happened to it", and this is the

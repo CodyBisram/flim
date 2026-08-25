@@ -119,12 +119,100 @@ struct DarkroomView: View {
         monthCounts?.photoCount(for: DarkroomYearMonth(date: group.monthKey))
     }
 
+    // MARK: - Header
+
+    /// The one-row 44pt header the approved Darkroom design replaces the old big-title +
+    /// toolbar arrangement with. Two mutually exclusive rows, not one row with conditional
+    /// pieces bolted on: normal mode and select mode read as different intents (browse vs.
+    /// batch action) and the approved design lays them out differently enough (title-left vs.
+    /// centered count) that sharing one HStack would mean fighting its own alignment rules for
+    /// both cases at once.
+    @ViewBuilder
+    private var darkroomHeader: some View {
+        if isSelecting {
+            selectionHeaderRow
+        } else {
+            normalHeaderRow
+        }
+    }
+
+    private var normalHeaderRow: some View {
+        HStack(spacing: 6) {
+            Text("Darkroom")
+                .flimFont(17, weight: .light)
+                .tracking(0.5)
+                .foregroundStyle(FlimTheme.textPrimary)
+
+            // The ledger: server-counted, never the loaded page count (see PhotoService's own
+            // pagination trap doc). Omitted with its dot at zero, same as the old toolbar total.
+            if let total = vm.totalCount, total > 0 {
+                Text("·")
+                    .flimFont(12)
+                    .foregroundStyle(FlimTheme.textTertiary)
+                Text("\(total) shot\(total == 1 ? "" : "s")")
+                    .flimFont(12)
+                    .foregroundStyle(FlimTheme.textTertiary)
+            }
+
+            Spacer()
+
+            #if DEBUG
+            Button {
+                Task {
+                    if let uid = auth.currentUser?.id {
+                        await photoService.seedUnsortedPhotos(userId: uid)
+                        await reload()
+                    }
+                }
+            } label: {
+                Image(systemName: "ladybug").foregroundStyle(FlimTheme.textTertiary)
+            }
+            .accessibilityLabel("Seed unsorted (DEBUG)")
+            #endif
+
+            if !vm.photos.isEmpty {
+                Button("Select") {
+                    isSelecting = true
+                    selectedIDs = []
+                }
+                .flimFont(15)
+                .foregroundStyle(accent)
+            }
+        }
+        .frame(height: 44)
+        .padding(.horizontal, 20)
+    }
+
+    /// Cancel leading, the running count centered, laid out with a `ZStack` rather than a
+    /// three-way `HStack` split so the count is exactly centered regardless of how wide "Cancel"
+    /// renders at a given Dynamic Type size.
+    private var selectionHeaderRow: some View {
+        ZStack {
+            Text("\(selectedIDs.count) selected")
+                .flimFont(15)
+                .foregroundStyle(FlimTheme.textPrimary)
+
+            HStack {
+                Button("Cancel") {
+                    isSelecting = false
+                    selectedIDs = []
+                }
+                .flimFont(15)
+                .foregroundStyle(accent)
+
+                Spacer()
+            }
+        }
+        .frame(height: 44)
+        .padding(.horizontal, 20)
+    }
+
     var body: some View {
         ZStack {
             FlimTheme.bg.ignoresSafeArea()
 
             VStack(spacing: 0) {
-                FlimNavTitle("Darkroom")
+                darkroomHeader
 
                 Group {
                     if vm.isLoading && vm.photos.isEmpty {
@@ -157,43 +245,6 @@ struct DarkroomView: View {
         }
         .navigationBarTitleDisplayMode(.inline)
         .toolbarColorScheme(.dark, for: .navigationBar)
-        .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                if !vm.photos.isEmpty {
-                    Button(isSelecting ? "Cancel" : "Select") {
-                        isSelecting.toggle()
-                        selectedIDs = []
-                    }
-                    .foregroundStyle(.white)
-                }
-            }
-            #if DEBUG
-            ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    Task {
-                        if let uid = auth.currentUser?.id {
-                            await photoService.seedUnsortedPhotos(userId: uid)
-                            await reload()
-                        }
-                    }
-                } label: {
-                    Image(systemName: "ladybug").foregroundStyle(FlimTheme.textTertiary)
-                }
-                .accessibilityLabel("Seed unsorted (DEBUG)")
-            }
-            #endif
-            // A glanceable total, whenever there is one — it no longer loses its slot to a
-            // sort-shortcut pill; that shortcut lives in the in-scroll sort row now.
-            if let total = vm.totalCount, total > 0 {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Text("\(total) shot\(total == 1 ? "" : "s")")
-                        .flimFont(13, weight: .medium)
-                        .foregroundStyle(FlimTheme.textTertiary)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                }
-            }
-        }
         .safeAreaInset(edge: .bottom) {
             if isSelecting {
                 Button(role: .destructive) { deleteSelected() } label: {

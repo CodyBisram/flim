@@ -189,8 +189,19 @@ struct FeedUnit: Identifiable, Equatable {
     /// never ticks down as you read; it simply goes when the last mark clears. Summing over
     /// units-with-unseen rather than the whole rendered list is what keeps an archive feed
     /// from counting the size of someone's scroll a year in.
-    static func ledger(units: [FeedUnit], isSeen: (UUID) -> Bool) -> (shots: Int, friends: Int)? {
-        let arrived = units.filter { $0.unseenCount(isSeen: isSeen) > 0 }
+    ///
+    /// `excludingAuthor`, when given, drops that author's own units before any of the above:
+    /// you are not your own friend, so "N shots from N friends" must never count posts you
+    /// made yourself. This is the ONLY seen-state derivation that excludes them: rendering,
+    /// pills, `caughtUpIndex`, and retention all keep treating a unit as a unit regardless of
+    /// who posted it, and creating a post separately marks it seen on its own device
+    /// (`FeedService.createPost`) so it never shows unseen there in the first place; this
+    /// parameter is what also keeps a pre-existing own post, or one made from another device,
+    /// out of the count.
+    static func ledger(units: [FeedUnit], isSeen: (UUID) -> Bool,
+                        excludingAuthor currentUserId: UUID? = nil) -> (shots: Int, friends: Int)? {
+        let eligible = currentUserId.map { uid in units.filter { $0.author.id != uid } } ?? units
+        let arrived = eligible.filter { $0.unseenCount(isSeen: isSeen) > 0 }
         guard !arrived.isEmpty else { return nil }
         let friends = Set(arrived.map(\.author.id)).count
         return (arrived.reduce(0) { $0 + $1.items.count }, friends)

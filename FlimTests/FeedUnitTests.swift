@@ -206,6 +206,28 @@ final class FeedUnitTests: XCTestCase {
         XCTAssertNil(FeedUnit.ledger(units: units, isSeen: { _ in true }))
     }
 
+    func testLedgerExcludesTheSignedInUsersOwnUnitEvenUnseen() {
+        // "2 shots from 2 friends" once counted the owner themselves: you are not your own
+        // friend, so a unit authored by the signed-in user must contribute nothing to the
+        // ledger, unseen or not.
+        let me = profile(UUID(), name: "me")
+        let dev = profile(UUID(), name: "dev.k")
+        let myItems = (0..<3).map { item(author: me, at: date(21, 8 + $0)) }
+        let devItems = [item(author: dev, at: date(21, 12))]
+        let units = FeedUnit.units(from: myItems + devItems, calendar: calendar)
+
+        // Nothing marked seen anywhere: without exclusion this would read 4 shots, 2 friends.
+        let ledger = FeedUnit.ledger(units: units, isSeen: { _ in false }, excludingAuthor: me.id)
+        XCTAssertEqual(ledger?.shots, 1)
+        XCTAssertEqual(ledger?.friends, 1)
+    }
+
+    func testLedgerNilWhenOnlyTheSignedInUsersOwnUnitIsUnseen() {
+        let me = profile(UUID(), name: "me")
+        let units = FeedUnit.units(from: [item(author: me, at: date(21, 8))], calendar: calendar)
+        XCTAssertNil(FeedUnit.ledger(units: units, isSeen: { _ in false }, excludingAuthor: me.id))
+    }
+
     func testCaughtUpIndexIsLastUnitWithUnseen() {
         let mira = profile(UUID(), name: "mira")
         let dev = profile(UUID(), name: "dev.k")
