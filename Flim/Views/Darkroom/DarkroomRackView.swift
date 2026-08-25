@@ -107,7 +107,7 @@ struct DarkroomDayUnitView: View {
         case .empty:
             // An unexposed slot: holds its space, draws nothing, no hit target.
             Color.clear
-                .frame(width: DarkroomDayUnit.framePitch - DarkroomDayUnit.frameGap, height: 44)
+                .frame(width: DarkroomDayUnit.framePitch - DarkroomDayUnit.frameGap, height: 56)
                 .accessibilityHidden(true)
         }
     }
@@ -173,6 +173,11 @@ struct DarkroomFrameView: View {
     /// frame, own tap gesture, and own accessibility element exactly as before.
     var compact: Bool = false
 
+    /// The list's frames are 42x56 (readable, PR 1 of the zoom redesign); the pager's compact
+    /// rack keeps the feed strip's 30x40. One shared `imageArea`, two geometries.
+    private var imgW: CGFloat { compact ? 30 : 42 }
+    private var imgH: CGFloat { compact ? 40 : 56 }
+
     var body: some View {
         if let menu {
             frame.contextMenu { menu() }
@@ -194,7 +199,7 @@ struct DarkroomFrameView: View {
                 .accessibilityAddTraits(.isButton)
         } else {
             imageArea
-            .frame(width: 36, height: 44)
+            .frame(width: imgW, height: imgH)
             .contentShape(Rectangle())
             .onTapGesture {
                 if isSelecting {
@@ -215,14 +220,14 @@ struct DarkroomFrameView: View {
             if isFailed {
                 RoundedRectangle(cornerRadius: 2)
                     .strokeBorder(FlimTheme.stroke, lineWidth: 1)
-                    .frame(width: 30, height: 40)
+                    .frame(width: imgW, height: imgH)
             } else if photo.isReady {
                 CachedImage(url: signedURL, maxPixel: 120, cacheKey: photo.displayPath) { image in
                     image.resizable().scaledToFill()
                 } placeholder: {
                     Color.white.opacity(0.06)
                 }
-                .frame(width: 30, height: 40)
+                .frame(width: imgW, height: imgH)
                 .clipShape(RoundedRectangle(cornerRadius: 2))
                 .matchedTransitionSource(id: photo.id, in: photoNS)
             } else {
@@ -232,7 +237,7 @@ struct DarkroomFrameView: View {
                 selectionOverlay
             }
         }
-        .frame(width: 30, height: 40)
+        .frame(width: imgW, height: imgH)
         .overlay {
             if isCurrent == true {
                 RoundedRectangle(cornerRadius: 2).stroke(accent, lineWidth: 1.5)
@@ -252,7 +257,7 @@ struct DarkroomFrameView: View {
                     .frame(width: 14, height: 2)
                     .overlay(Capsule().strokeBorder(Color.black.opacity(0.5), lineWidth: 0.5))
                     .shadow(color: .black.opacity(0.7), radius: 1.5)
-                    .padding(.bottom, 2)
+                    .padding(.bottom, compact ? 2 : 3)
             }
         }
     }
@@ -267,9 +272,9 @@ struct DarkroomFrameView: View {
             .overlay(
                 Circle()
                     .strokeBorder(accent.opacity(0.7), lineWidth: 1.5)
-                    .frame(width: 9, height: 9)
+                    .frame(width: compact ? 9 : 11, height: compact ? 9 : 11)
             )
-            .frame(width: 30, height: 40)
+            .frame(width: imgW, height: imgH)
     }
 
     private var selectionOverlay: some View {
@@ -444,8 +449,7 @@ struct DarkroomLoadingSkeleton: View {
                         ForEach(0..<3, id: \.self) { _ in
                             RoundedRectangle(cornerRadius: 2)
                                 .fill(Color.white.opacity(0.06))
-                                .frame(width: 30, height: 40)
-                                .frame(width: 36, height: 44)
+                                .frame(width: 42, height: 56)
                         }
                     }
                     .padding(.vertical, 2)

@@ -194,9 +194,11 @@ struct DarkroomFilmStrip: Identifiable {
 }
 
 extension DarkroomDayUnit {
-    /// Frame pitch: a 36pt block plus a 2pt gap. `n` frames occupy `n * pitch - gap`, since the
-    /// last frame needs no trailing gap.
-    static let framePitch: CGFloat = 38
+    /// Frame pitch: a 42pt frame plus a 2pt gap (PR 1 of the zoom redesign, 2026-08-25: frames
+    /// grew from 30x40 to 42x56 because testers could not read them; capacity falls out of the
+    /// width as always). `n` frames occupy `n * pitch - gap`, since the last frame needs no
+    /// trailing gap. The pager's own compact rack keeps its separate 30pt/32pt geometry.
+    static let framePitch: CGFloat = 44
     static let frameGap: CGFloat = 2
 
     /// How many whole frames fit `availableWidth` at the fixed pitch. Always measured from the
