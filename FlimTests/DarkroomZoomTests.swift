@@ -177,4 +177,61 @@ final class DarkroomZoomTests: XCTestCase {
         let summaries = [summary(2026, 8, shots: 700, nights: 40), summary(2025, 7, shots: 342, nights: 174)]
         XCTAssertEqual(DarkroomZoomChrome.sub(zoom: .allTime, anchor: anchor, summaries: summaries, calendar: calendar), "· 2 years · 214 nights")
     }
+
+    // MARK: - DarkroomYearMonth ordering (PR 5 of the zoom redesign, revision 2)
+
+    func testYearMonthComparableOrdersByYearThenMonth() {
+        XCTAssertLessThan(DarkroomYearMonth(year: 2025, month: 12), DarkroomYearMonth(year: 2026, month: 1))
+        XCTAssertLessThan(DarkroomYearMonth(year: 2026, month: 7), DarkroomYearMonth(year: 2026, month: 8))
+        XCTAssertFalse(DarkroomYearMonth(year: 2026, month: 8) < DarkroomYearMonth(year: 2026, month: 8))
+    }
+
+    // MARK: - DarkroomYearMonth.upperEdge (PR 5's anchored fetch)
+
+    /// The exclusive upper edge of August 2026: September 1st, plus the shared 4am
+    /// `dayBoundaryHour` — the exact instant `FeedUnit.dayKey` starts crediting the NEXT month.
+    func testUpperEdgeIsNextMonthStartPlusDayBoundaryHour() {
+        let edge = DarkroomYearMonth(year: 2026, month: 8).upperEdge(calendar: calendar)
+        let expected = calendar.date(from: DateComponents(year: 2026, month: 9, day: 1, hour: 4))!
+        XCTAssertEqual(edge, expected)
+    }
+
+    /// December rolls the year over correctly: no separate branch needed, `Calendar.date(from:)`
+    /// normalizes `month: 13` on its own.
+    func testUpperEdgeRollsOverIntoNextYear() {
+        let edge = DarkroomYearMonth(year: 2026, month: 12).upperEdge(calendar: calendar)
+        let expected = calendar.date(from: DateComponents(year: 2027, month: 1, day: 1, hour: 4))!
+        XCTAssertEqual(edge, expected)
+    }
+
+    /// A photo taken EXACTLY at the upper edge belongs to the NEXT month by `FeedUnit.dayKey`'s
+    /// own math, not the anchor month: the edge is deliberately exclusive.
+    func testPhotoTakenExactlyAtUpperEdgeBelongsToTheNextMonth() {
+        let anchor = DarkroomYearMonth(year: 2026, month: 8)
+        let edge = anchor.upperEdge(calendar: calendar)
+        let dayKey = FeedUnit.dayKey(for: edge, calendar: calendar)
+        XCTAssertEqual(DarkroomYearMonth(date: dayKey, calendar: calendar), DarkroomYearMonth(year: 2026, month: 9))
+    }
+
+    /// A photo taken one second before the upper edge still belongs to the anchor month.
+    func testPhotoTakenOneSecondBeforeUpperEdgeBelongsToTheAnchorMonth() {
+        let anchor = DarkroomYearMonth(year: 2026, month: 8)
+        let edge = anchor.upperEdge(calendar: calendar)
+        let dayKey = FeedUnit.dayKey(for: edge.addingTimeInterval(-1), calendar: calendar)
+        XCTAssertEqual(DarkroomYearMonth(date: dayKey, calendar: calendar), anchor)
+    }
+
+    /// The current month's own upper edge is always in the future relative to "now" (as long as
+    /// "now" is genuinely within that month): what makes a plain, unconstrained `reload()` and an
+    /// anchored fetch at the present edge functionally equivalent, so `DarkroomView` doesn't
+    /// bother special-casing the current-month case through the anchored path.
+    func testUpperEdgeForTheCurrentMonthIsAlwaysAfterNow() {
+        let now = date(2026, 8, 15, 12)
+        let anchor = DarkroomYearMonth(date: now, calendar: calendar)
+        XCTAssertGreaterThan(anchor.upperEdge(calendar: calendar), now)
+    }
+
+    private func date(_ year: Int, _ month: Int, _ day: Int, _ hour: Int) -> Date {
+        calendar.date(from: DateComponents(year: year, month: month, day: day, hour: hour))!
+    }
 }

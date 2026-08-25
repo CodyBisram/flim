@@ -90,14 +90,22 @@ struct DarkroomView: View {
     /// actually exists fixes both: the anchor tracker also checks this and stays quiet while a
     /// landing is pending, so the two can't fight over the anchor.
     @State private var pendingMonthLanding: DarkroomYearMonth?
-    /// `pageUntilMonth`'s current page-until-anchor target, `nil` when nothing is in flight. A
-    /// second target arriving while one is already in flight REPLACES it (cancels the old task,
-    /// starts a new one) rather than being dropped — a global "refuse while anything is running"
-    /// guard was silently swallowing a second tap and letting the first target's scroll land under
-    /// the second target's crumb once it (eventually) finished. The one surviving use of this pair
-    /// until PR 5's seeded anchored fetch replaces the whole loop.
-    @State private var jumpPagingTarget: DarkroomYearMonth?
-    @State private var jumpPagingTask: Task<Void, Never>?
+    /// `landOnAnchorMonth`'s current in-flight anchored-fetch target, `nil` when nothing is in
+    /// flight. A second target arriving while one is already in flight REPLACES it (cancels the
+    /// old task, starts a new one) rather than being dropped or queued — a global "refuse while
+    /// anything is running" guard would silently swallow a second tap and let the first target's
+    /// scroll land under the second target's crumb once it (eventually) finished.
+    ///
+    /// PR 5 of the zoom redesign, revision 2, replaced this pair's predecessor
+    /// (`jumpPagingTarget`/`jumpPagingTask`) entirely along with the `while` loop it guarded: that
+    /// loop called `vm.loadMore` repeatedly with no guaranteed progress per iteration (`loadMore`'s
+    /// own `!photoService.isLoading` guard can return synchronously, doing nothing, if another
+    /// fetch is already in flight), which could spin the main actor with no suspension point.
+    /// `landOnAnchorMonth` now awaits exactly ONE fetch (`PhotoService.fetchPersonalPhotos(userId:
+    /// anchoredBefore:)`) per target; this pair only exists to let a SECOND target still in
+    /// flight retarget the one outstanding call rather than compete with it.
+    @State private var anchoredJumpTarget: DarkroomYearMonth?
+    @State private var anchoredJumpTask: Task<Void, Never>?
 
     // MARK: - Zoom ladder (PR 3 of the zoom redesign, revision 2)
 
@@ -132,7 +140,45 @@ struct DarkroomView: View {
         DarkroomDayUnit.units(from: vm.photos)
     }
 
-    private var lastUnitId: Date? { dayUnits.last?.id }
+    /// PR 5 of the zoom redesign, revision 2: what `nightList` actually renders at `.month` —
+    /// `dayUnits` restricted to `anchor`'s own calendar month. Anything older the last fetched
+    /// page's boundary dragged in stays loaded in `vm.photos`/`dayUnits`, just not shown here:
+    /// SPILLOVER, warming the client-side cache for whichever OLDER month gets anchored next
+    /// (a closing-row tap, most commonly), rather than being thrown away.
+    private var monthScopedUnits: [DarkroomDayUnit] {
+        DarkroomDayUnit.units(from: vm.photos, anchor: anchor)
+    }
+
+    private var lastMonthScopedUnitId: Date? { monthScopedUnits.last?.id }
+
+    /// Every distinct calendar month currently loaded OTHER than `anchor` itself: the spillover
+    /// fallback `DarkroomMonthPaging.nextOlderMonth` reads when the server summary hasn't
+    /// resolved yet. Not pre-filtered to "older than anchor" here — `nextOlderMonth` does that
+    /// itself, defensively, since an anchored fetch should never load anything newer than its own
+    /// anchor in practice, but nothing here enforces that as an invariant worth trusting blindly.
+    private var spilloverMonths: [DarkroomYearMonth] {
+        Array(Set(dayUnits.map { DarkroomYearMonth(date: $0.dayKey) })).filter { $0 != anchor }
+    }
+
+    /// Whether within-month pagination should still be trying for another page. `loadMoreSentinel`,
+    /// the geometry backstop, AND the closing row all read this ONE property (see
+    /// `DarkroomMonthPaging.shouldContinuePaging`'s own doc for the rule itself), so none of the
+    /// three can disagree about whether pagination for the current anchor is still live.
+    private var monthPagingActive: Bool {
+        DarkroomMonthPaging.shouldContinuePaging(
+            oldestLoadedMonth: dayUnits.last.map { DarkroomYearMonth(date: $0.dayKey) },
+            anchor: anchor,
+            hasMore: photoService.hasMore
+        )
+    }
+
+    /// The closing row's target + count, `nil` while pagination might still be live (never shown
+    /// while a page may still arrive, see `DarkroomMonthClosingRow`'s own doc) or when neither the
+    /// summary nor loaded spillover knows of anything older than `anchor`.
+    private var closingRowInfo: (month: DarkroomYearMonth, shotCount: Int?)? {
+        guard !monthPagingActive else { return nil }
+        return DarkroomMonthPaging.nextOlderMonth(anchor: anchor, summaries: monthSummaries, spilloverMonths: spilloverMonths)
+    }
 
     /// Distinct calendar months among currently-loaded photos, for the Year/All-time rungs' quiet
     /// loading treatment (see `yearContent`/`allTimeContent`'s own docs) before the server summary
@@ -370,11 +416,11 @@ struct DarkroomView: View {
                 #endif
             }
         }
-        // The 60s develop poll only needs to run while this screen is on it, and a page-until-
-        // anchor jump has no reason to keep paging once nobody's watching for it to land. A
+        // The 60s develop poll only needs to run while this screen is on it, and an in-flight
+        // anchored jump has no reason to keep running once nobody's watching for it to land. A
         // still-pending delete is flushed rather than left to its own 4s timer, see
         // `commitPendingDelete`'s own doc.
-        .onDisappear { vm.stopRefreshing(); jumpPagingTask?.cancel(); commitPendingDelete() }
+        .onDisappear { vm.stopRefreshing(); anchoredJumpTask?.cancel(); commitPendingDelete() }
         .fullScreenCover(item: $selectedPhoto) { photo in
             pager(for: photo)
         }
@@ -405,12 +451,19 @@ struct DarkroomView: View {
 
     // MARK: - Rung content (PR 3 of the zoom redesign, revision 2)
 
-    /// The `.month` rung: today's continuous, multi-month night list, structurally unchanged this
-    /// PR (month-scoping is PR 5). Owns its own loading/error/empty states, same as before the
-    /// zoom ladder existed.
+    /// The `.month` rung. As of PR 5 of the zoom redesign, revision 2, this renders ONLY the
+    /// anchor month's own nights, not a continuous multi-month scroll: see `monthScopedUnits`'s
+    /// own doc for what happens to rows a page boundary drags in past that month. Owns its own
+    /// loading/error/empty states, same as before the zoom ladder existed.
     @ViewBuilder
     private var monthContent: some View {
-        if vm.isLoading && vm.photos.isEmpty {
+        if (vm.isLoading && vm.photos.isEmpty)
+            || (monthScopedUnits.isEmpty && anchoredJumpTarget != nil) {
+            // The second clause: an anchored jump is in flight for a month whose rows are not
+            // loaded yet. `vm.photos` still holds the PREVIOUS anchor's rows, so the plain
+            // isLoading/isEmpty gate would render an essentially blank night list (nothing
+            // matches the new anchor) with no affordance until the fetch resolves. The
+            // skeleton is the honest state for that window.
             ScrollView { DarkroomLoadingSkeleton().padding(.top, 8) }
                 .scrollDisabled(true)
         } else if let error = vm.error, vm.photos.isEmpty {
@@ -435,10 +488,16 @@ struct DarkroomView: View {
                 // of the currently measured content, ask for the next page. `loadMore`'s own
                 // `hasMore`/`isLoading` guards make this safe to call redundantly every frame
                 // that stays within the threshold.
+                //
+                // Gated on `monthPagingActive` (PR 5 of the zoom redesign, revision 2), the SAME
+                // property `loadMoreSentinel` and the closing row read: once the oldest loaded
+                // photo has crossed the anchor month's own edge, this must stop firing right
+                // alongside the sentinel, or it would keep paging PAST the month the closing row
+                // is already offering as the next step, forever, every frame near the bottom.
                 .onScrollGeometryChange(for: Bool.self) { geo in
                     geo.contentOffset.y + geo.containerSize.height >= geo.contentSize.height - 600
                 } action: { _, isNearBottom in
-                    if isNearBottom { Task { await loadMoreIfNeeded() } }
+                    if isNearBottom, monthPagingActive { Task { await loadMoreIfNeeded() } }
                 }
                 .refreshable { await reload() }
                 .onAppear { scrollProxy = proxy }
@@ -450,18 +509,20 @@ struct DarkroomView: View {
                 // stays correct if that ever changes) reruns too, not just the initial mount.
                 .task(id: pendingMonthLanding) {
                     guard let target = pendingMonthLanding else { return }
-                    pageUntilMonth(target, proxy: proxy)
+                    landOnAnchorMonth(target, proxy: proxy)
                 }
             }
         }
     }
 
-    /// One unit per night, a flat list (no month Sections, no sticky band: the jump sheet and the
-    /// month band it lived under are both gone, replaced by the zoom ladder). Unit separators stay
-    /// between every pair of nights, same as before.
+    /// One unit per night within the anchor month only (`monthScopedUnits`, see its own doc), no
+    /// month Sections, no sticky band: the jump sheet and the month band it lived under are both
+    /// gone, replaced by the zoom ladder. Unit separators stay between every pair of nights, same
+    /// as before; the closing row (PR 5) takes the separator's place after the LAST one, once
+    /// pagination for this month has genuinely stopped.
     private var nightList: some View {
         LazyVStack(alignment: .leading, spacing: 0) {
-            ForEach(dayUnits) { unit in
+            ForEach(monthScopedUnits) { unit in
                 DarkroomDayUnitView(
                     unit: unit,
                     capacity: stripCapacity,
@@ -485,11 +546,24 @@ struct DarkroomView: View {
                         updateMonthAnchorFromScroll()
                     }
                 )
-                if unit.id != lastUnitId {
+                if unit.id != lastMonthScopedUnitId {
                     DarkroomUnitSeparator()
                 }
             }
             loadMoreSentinel
+            // Only once pagination has genuinely stopped (`loadMoreSentinel` itself has already
+            // gone quiet, see its own doc) AND a next-older month is actually known: never shown
+            // while a page may still arrive, or it would flash under the real next night. Also
+            // hidden entirely in select mode, the same convention the zoom bar and sort banner
+            // already follow: `selectMonth` doesn't clear `isSelecting`/`selectedIDs`, so jumping
+            // months mid-selection would leave a selection referring to a photo no longer even
+            // being rendered.
+            if !isSelecting, let info = closingRowInfo {
+                DarkroomMonthClosingRow(month: info.month, shotCount: info.shotCount) {
+                    Haptics.tap()
+                    selectMonth(info.month)
+                }
+            }
         }
         .padding(.bottom, 12)
     }
@@ -687,9 +761,11 @@ struct DarkroomView: View {
     /// sit inside a plain, non-lazy `HStack` and all mount together the moment their night is
     /// realized), so scrolling away and back always gives it a fresh `onAppear`. While it stays
     /// visible, `.task(id: vm.photos.count)` re-arms itself every time a page actually lands
-    /// (the id changes), chaining pages automatically until either `photoService.hasMore` goes
-    /// false (the `if` below then removes the sentinel outright) or the guard inside
-    /// `DarkroomViewModel.loadMore` no-ops because a fetch is already in flight.
+    /// (the id changes), chaining pages automatically until `monthPagingActive` goes false (the
+    /// `if` below then removes the sentinel outright — PR 5 of the zoom redesign, revision 2,
+    /// widened this from a bare `photoService.hasMore` check to also stop once the oldest loaded
+    /// photo crosses the anchor month's own edge, see `monthPagingActive`'s own doc) or the guard
+    /// inside `DarkroomViewModel.loadMore` no-ops because a fetch is already in flight.
     ///
     /// INVARIANT (found 2026-08-25, the zoom redesign's PR 3): this sentinel's mount is no longer
     /// the ONLY thing driving pagination, and must not become the only thing again. PR 3 added
@@ -701,17 +777,20 @@ struct DarkroomView: View {
     /// on realizing the cells nearest the bottom of the currently-scrolled-to viewport, this
     /// sentinel included: its `.onAppear` (and by extension its `.task(id:)` re-arm) never fires,
     /// pagination silently stalls, and nothing scrolled past it looks any different than "there's
-    /// nothing more" (a page-until-anchor jump, like the Year rung's, is unaffected: it pages via
-    /// a plain `while` loop with no scroll-driven realization in the loop at all, which is why
-    /// that path kept working while ordinary scroll-back didn't). `monthContent`'s own
-    /// `.onScrollGeometryChange(for: Bool.self)` near-bottom trigger is the fix: it is driven by
-    /// scroll geometry alone, which SwiftUI reports every frame regardless of what the
-    /// `LazyVStack` has chosen to realize, so it cannot be starved the way this sentinel's mount
-    /// can. Keep both. Removing the geometry trigger because "the sentinel already does this"
-    /// reopens this exact stall.
+    /// nothing more". `monthContent`'s own `.onScrollGeometryChange(for: Bool.self)` near-bottom
+    /// trigger is the fix: it is driven by scroll geometry alone, which SwiftUI reports every
+    /// frame regardless of what the `LazyVStack` has chosen to realize, so it cannot be starved
+    /// the way this sentinel's mount can. Keep both, and keep both reading `monthPagingActive`, or
+    /// they will disagree about when to stop. Removing the geometry trigger because "the sentinel
+    /// already does this" reopens this exact stall.
+    ///
+    /// A jump straight to an OLDER anchor (a Year row, an All-time cell, or the closing row below)
+    /// is a different mechanism entirely (`landOnAnchorMonth`): a single awaited anchored fetch,
+    /// never a scroll-driven loop, so it cannot be starved by any of the above and this sentinel's
+    /// own starvation risk doesn't apply to it.
     @ViewBuilder
     private var loadMoreSentinel: some View {
-        if photoService.hasMore {
+        if monthPagingActive {
             Color.clear
                 .frame(height: 44)
                 .onAppear { Task { await loadMoreIfNeeded() } }
@@ -1047,21 +1126,21 @@ struct DarkroomView: View {
     /// (`zoomOut`, `zoomIn`, `selectMonth`, the tab-retap handler) routes through this rather than
     /// touching `zoom` directly, so none of them can change rungs silently.
     ///
-    /// Also the one place that cancels a still-running `pageUntilMonth` paging task whenever the
-    /// destination rung ISN'T `.month`: leaving `.month` (zooming out, or any other future path)
-    /// with a jump still in flight used to leave it running headless, landing a scroll nobody was
-    /// looking at once it eventually finished, or worse fighting a second, newer request. Zooming
-    /// TO `.month` never cancels here — `pendingMonthLanding` (set by the caller right after this
-    /// returns) is what starts a landing, this only ever tears one down.
+    /// Also the one place that cancels a still-running anchored-jump fetch (`landOnAnchorMonth`)
+    /// whenever the destination rung ISN'T `.month`: leaving `.month` (zooming out, or any other
+    /// future path) with a jump still in flight used to leave it running headless, landing a
+    /// scroll nobody was looking at once it eventually finished, or worse fighting a second, newer
+    /// request. Zooming TO `.month` never cancels here — `pendingMonthLanding` (set by the caller
+    /// right after this returns) is what starts a landing, this only ever tears one down.
     private func setZoom(_ newZoom: DarkroomZoom) {
         guard newZoom != zoom else { return }
         Haptics.tap()
         zoom = newZoom
         storedRung = newZoom.rawValue
         if newZoom != .month {
-            jumpPagingTask?.cancel()
-            jumpPagingTask = nil
-            jumpPagingTarget = nil
+            anchoredJumpTask?.cancel()
+            anchoredJumpTask = nil
+            anchoredJumpTarget = nil
             pendingMonthLanding = nil
         }
     }
@@ -1081,10 +1160,11 @@ struct DarkroomView: View {
         if deeper == .month { pendingMonthLanding = anchor }
     }
 
-    /// The one entry point both the Year row and the All-time cell taps call: sets a new anchor,
-    /// zooms to `.month`, and asks that rung to land there once it mounts (see
-    /// `pendingMonthLanding`'s own doc for why this doesn't page/scroll directly, in the same call
-    /// stack, the way it originally did).
+    /// The one entry point the Year row, the All-time cell, and the closing row taps all call:
+    /// sets a new anchor, zooms to `.month`, and asks that rung to land there once it mounts (see
+    /// `pendingMonthLanding`'s own doc for why this doesn't fetch/scroll directly, in the same
+    /// call stack, the way an early version did). `landOnAnchorMonth` is what actually performs
+    /// the anchored fetch and the scroll, once `.month`'s own `ScrollViewReader` exists.
     private func selectMonth(_ ym: DarkroomYearMonth) {
         anchor = ym
         storedAnchor = DarkroomAnchorCoding.encode(ym)
@@ -1092,27 +1172,43 @@ struct DarkroomView: View {
         pendingMonthLanding = ym
     }
 
-    /// TODO(PR 5): replaced by the seeded anchored fetch.
-    ///
     /// Lands `ym`'s topmost (newest) night at the top of the `.month` scroller, using `proxy` —
     /// the `.month` rung's OWN `ScrollViewReader` proxy, handed in by `monthContent`'s `.task(id:)`
     /// once that rung actually exists (never the shared `scrollProxy` state, which can still
     /// belong to the rung being left behind at the moment this is called).
     ///
-    /// A month already loaded scrolls immediately. A month that isn't loaded yet is reached by
-    /// paging forward until a night of it appears or `photoService.hasMore` runs out. A SECOND
-    /// target arriving while one is already in flight (`jumpPagingTarget` differs) cancels the
-    /// first task and starts a new one for the new target, rather than being silently dropped —
-    /// the earlier bug this fixes let the first target's scroll land under the second target's
-    /// crumb once it eventually finished. Cancelled outright by `setZoom` on leaving `.month`, and
-    /// from `.onDisappear` if the whole screen goes away mid-loop. If pagination exhausts without
-    /// ever finding the month (the RPC and the page boundary disagreeing, e.g. a timezone edge),
-    /// this no-ops silently rather than crash or show a real photo as a bogus one.
-    private func pageUntilMonth(_ ym: DarkroomYearMonth, proxy: ScrollViewProxy) {
+    /// A month already loaded (its own night already sitting in `dayUnits`, most often SPILLOVER
+    /// a previous anchored fetch's page boundary already warmed, see `monthScopedUnits`'s own
+    /// doc) scrolls immediately, no fetch. A month that isn't loaded issues exactly ONE anchored
+    /// fetch (`PhotoService.fetchPersonalPhotos(userId:anchoredBefore:)`, seeded at `ym.upperEdge`)
+    /// and then scrolls, rather than paging forward from the top: tapping an old month costs one
+    /// round trip, not N.
+    ///
+    /// PR 5 of the zoom redesign, revision 2, replaced this function's predecessor
+    /// (`pageUntilMonth`) entirely: that one drove a client-side `while` loop calling `vm.loadMore`
+    /// repeatedly until `ym`'s own night appeared, with no guaranteed progress per iteration —
+    /// `loadMore`'s own `!photoService.isLoading` guard can return synchronously, doing nothing at
+    /// all, the moment another fetch (the geometry backstop, ordinary scroll pagination) is
+    /// already in flight, and a loop with no `await` guaranteed to suspend on every path through
+    /// it can spin the main actor indefinitely. A single awaited call cannot repeat that failure
+    /// mode; do not reintroduce a paging loop here.
+    ///
+    /// A SECOND target arriving while one is already in flight (`anchoredJumpTarget` differs)
+    /// cancels the first task and starts a new one for the new target, rather than being silently
+    /// dropped — the earlier bug this pattern fixes let the first target's scroll land under the
+    /// second target's crumb once it eventually finished. Cancelled outright by `setZoom` on
+    /// leaving `.month`, and from `.onDisappear` if the whole screen goes away mid-fetch.
+    ///
+    /// A fetch that fails or is superseded (`applied == false`, or the request throws) still
+    /// clears `pendingMonthLanding` and returns rather than spinning or retrying on its own: the
+    /// `.month` rung lands on whatever IS loaded, its crumb still reads the real anchor, and pull-
+    /// to-refresh (which re-runs the same anchored fetch, see `reload()`'s own doc) is the
+    /// retry path, the same as every other failed fetch on this screen.
+    private func landOnAnchorMonth(_ ym: DarkroomYearMonth, proxy: ScrollViewProxy) {
         if let firstUnit = dayUnits.first(where: { DarkroomYearMonth(date: $0.dayKey) == ym }) {
-            jumpPagingTask?.cancel()
-            jumpPagingTask = nil
-            jumpPagingTarget = nil
+            anchoredJumpTask?.cancel()
+            anchoredJumpTask = nil
+            anchoredJumpTarget = nil
             withAnimation(.snappy) { proxy.scrollTo(firstUnit.id, anchor: .top) }
             if pendingMonthLanding == ym { pendingMonthLanding = nil }
             return
@@ -1123,18 +1219,14 @@ struct DarkroomView: View {
             return
         }
 
-        // The same target already paging: leave it running rather than starting a redundant
-        // second loop. A DIFFERENT target replaces it.
-        if jumpPagingTarget == ym, jumpPagingTask != nil { return }
-        jumpPagingTask?.cancel()
-        jumpPagingTarget = ym
-        jumpPagingTask = Task {
-            defer { if jumpPagingTarget == ym { jumpPagingTarget = nil } }
-            while !Task.isCancelled,
-                  !dayUnits.contains(where: { DarkroomYearMonth(date: $0.dayKey) == ym }),
-                  photoService.hasMore {
-                await vm.loadMore(photoService: photoService, userId: uid)
-            }
+        // The same target already fetching: leave it running rather than starting a redundant
+        // second request. A DIFFERENT target replaces it.
+        if anchoredJumpTarget == ym, anchoredJumpTask != nil { return }
+        anchoredJumpTask?.cancel()
+        anchoredJumpTarget = ym
+        anchoredJumpTask = Task {
+            defer { if anchoredJumpTarget == ym { anchoredJumpTarget = nil } }
+            await vm.loadAnchored(photoService: photoService, userId: uid, upperEdge: ym.upperEdge())
             guard !Task.isCancelled,
                   let firstUnit = dayUnits.first(where: { DarkroomYearMonth(date: $0.dayKey) == ym })
             else {
@@ -1183,7 +1275,14 @@ struct DarkroomView: View {
     /// fires this from every initially-visible night's `onAppear` before the requested scroll has
     /// had a chance to run, and without this guard it overwrote the just-made selection right back
     /// to the newest month every time. It re-arms itself the moment the landing clears (see
-    /// `pageUntilMonth`), so real scrolling resumes driving the anchor immediately after.
+    /// `landOnAnchorMonth`), so real scrolling resumes driving the anchor immediately after.
+    ///
+    /// PR 5 of the zoom redesign, revision 2, made this function effectively a no-op in ordinary
+    /// use: `nightList` now only ever mounts nights from `monthScopedUnits` (the anchor's own
+    /// month), so `mountedNightDayKeys.max()` can only ever resolve back to `anchor` itself, and
+    /// the `guard ym != anchor` below always holds. Left in place rather than removed: it is still
+    /// correct, still cheap, and still the one thing standing between a hypothetical future
+    /// caller that mounts a night outside the anchor month and a silently wrong crumb.
     private func updateMonthAnchorFromScroll() {
         guard zoom == .month, pendingMonthLanding == nil, let topKey = mountedNightDayKeys.max() else { return }
         let ym = DarkroomYearMonth(date: topKey)
@@ -1207,6 +1306,17 @@ struct DarkroomView: View {
     /// never touched. Both now only assign a resolved SUCCESS; a failure leaves the last known
     /// value exactly where it was, silently, and `isLoadingSummaries` still drops to `false`
     /// either way since the fetch DID resolve, just not with new data.
+    ///
+    /// PR 5 of the zoom redesign, revision 2, split the personal-photo half of this into two
+    /// paths: at `.month`, anchored on anything OTHER than the current month (a warm relaunch
+    /// that restored an older `@SceneStorage` anchor, or — the common case — pull-to-refresh while
+    /// browsing an old month), this re-runs the SAME anchored fetch `landOnAnchorMonth` uses,
+    /// keeping the anchor exactly where it was; every other case (cold launch, `.year`/`.allTime`,
+    /// the sort deck dismissing, a reveal) uses the plain, unconstrained `vm.load()` it always
+    /// has. The plain fetch is functionally identical to an anchored one for the CURRENT month
+    /// anyway (`DarkroomYearMonth.upperEdge` for the current month is always in the future), so
+    /// this only forks where it actually changes the result: an anchored pull-to-refresh must
+    /// never teleport the person back to the present month they weren't looking at.
     private func reload() async {
         guard let userId = auth.currentUser?.id else { return }
         isLoadingSummaries = true
@@ -1215,7 +1325,12 @@ struct DarkroomView: View {
         // second, separately-ordered set, so a month browsed on one rung is a cache hit on the
         // other (see `DarkroomAllTimeRow`'s own doc).
         async let summaries = photoService.darkroomMonthSummary(timezone: TimeZone.current.identifier, covers: 8)
-        await vm.load(photoService: photoService, userId: userId)
+        let anchoredBranch = zoom == .month && anchor != DarkroomYearMonth(date: .now)
+        if anchoredBranch {
+            await vm.loadAnchored(photoService: photoService, userId: userId, upperEdge: anchor.upperEdge())
+        } else {
+            await vm.load(photoService: photoService, userId: userId)
+        }
         if let resolvedSummaries = await summaries { monthSummaries = resolvedSummaries }
         isLoadingSummaries = false
         applyColdLaunchAnchorIfNeeded()
@@ -1239,7 +1354,14 @@ struct DarkroomView: View {
         // One batched query for the whole grid's "shared to your page" badge, not a `hasPosted`
         // round trip per tile.
         await feed.loadMyPostedPhotoIds(userId: userId)
-        checkForReveal()
+        // ONLY on the unanchored (present-spanning) load. `checkForReveal` scans
+        // `vm.developedPhotos` for rolls that developed since `lastRevealCheck` and then
+        // unconditionally advances that watermark. An anchored load holds only an OLD month's
+        // photos, so running the check against it would find nothing and still burn the
+        // window: a roll that developed while you were parked on last month would never get
+        // its reveal, permanently. The anchored branch leaves the watermark alone so the next
+        // present-anchored reload still gets its chance.
+        if !anchoredBranch { checkForReveal() }
         // The library is loaded now, so a pending widget tap can finally be answered — or
         // recognised as pointing at something that is gone.
         openRequestedPhoto()

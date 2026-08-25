@@ -258,8 +258,20 @@ struct RollDetailView: View {
                     warmFirstRevealPrint()
                 }
 
+                // Progress-guarded: `loadMoreRoll` early-returns WITHOUT suspending when the
+                // shared PhotoService is mid-fetch for another screen (`isLoading` guard), and
+                // a while-await loop whose awaits return synchronously spins the main actor
+                // until the watchdog kills the app. The Darkroom's month-jump loop died of
+                // exactly this (2026-08-25, owner-reproduced freeze); a loop of this shape must
+                // break when an iteration makes no progress, and yield so the starving fetch
+                // can finish.
                 while photoService.hasMore {
+                    let before = photoService.loadedPhotos.count
                     await vm.loadMoreRoll(photoService: photoService, rollId: roll.id, blockedIds: feed.blockedIds)
+                    if photoService.loadedPhotos.count == before, photoService.hasMore {
+                        await Task.yield()
+                        break
+                    }
                 }
                 rollFullyPaged = true
                 // Only loadRoll batches signed URLs; loadMoreRoll doesn't, so every photo past

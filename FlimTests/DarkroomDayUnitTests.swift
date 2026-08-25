@@ -314,4 +314,40 @@ final class DarkroomDayUnitTests: XCTestCase {
     func testDistinctNightCountEmpty() {
         XCTAssertEqual(DarkroomDayUnit.distinctNightCount(in: [], calendar: calendar), 0)
     }
+
+    // MARK: - Month-scoped units (PR 5 of the zoom redesign, revision 2)
+
+    /// `units(from:anchor:)` keeps only nights whose own month is the anchor; a spillover photo
+    /// from an older month a page boundary dragged in is excluded from the render, not the data.
+    func testUnitsAnchorFiltersOutOlderMonthSpillover() {
+        let augustCalendar = calendar
+        let inAugust = photo(takenAt: date(21, 9))
+        let julyDate = augustCalendar.date(byAdding: .month, value: -1, to: date(21, 9))!
+        let inJuly = photo(takenAt: julyDate)
+
+        let anchor = DarkroomYearMonth(year: 2026, month: 8)
+        let units = DarkroomDayUnit.units(from: [inAugust, inJuly], anchor: anchor, calendar: calendar)
+
+        XCTAssertEqual(units.count, 1)
+        XCTAssertEqual(units[0].photos.map(\.id), [inAugust.id])
+    }
+
+    /// A month with nothing loaded for it (e.g. the anchor itself has zero loaded photos yet)
+    /// renders an empty list rather than crashing or falling back to something else's units.
+    func testUnitsAnchorIsEmptyWhenNothingMatches() {
+        let onlyJuly = photo(takenAt: calendar.date(byAdding: .month, value: -1, to: date(21, 9))!)
+        let anchor = DarkroomYearMonth(year: 2026, month: 8)
+        XCTAssertTrue(DarkroomDayUnit.units(from: [onlyJuly], anchor: anchor, calendar: calendar).isEmpty)
+    }
+
+    /// Multiple nights within the anchor month all survive, still newest-first, still oldest-
+    /// first within each night: `units(from:anchor:)` filters, it doesn't re-order.
+    func testUnitsAnchorKeepsEveryNightInTheAnchorMonth() {
+        let early = photo(takenAt: date(1, 9))
+        let late = photo(takenAt: date(21, 20))
+        let anchor = DarkroomYearMonth(year: 2026, month: 8)
+        let units = DarkroomDayUnit.units(from: [early, late], anchor: anchor, calendar: calendar)
+        XCTAssertEqual(units.count, 2)
+        XCTAssertGreaterThan(units[0].dayKey, units[1].dayKey)
+    }
 }

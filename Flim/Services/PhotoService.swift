@@ -1424,6 +1424,46 @@ final class PhotoService {
         }
     }
 
+    /// Personal Darkroom photos ANCHORED at a fixed point in time instead of at "now": a RESET
+    /// fetch whose very first page already starts past `upperEdge` (`DarkroomYearMonth.
+    /// upperEdge`, typically), rather than the top of the whole library. PR 5 of the zoom
+    /// redesign, revision 2: this is what lets a jump to an old month land in ONE round trip
+    /// instead of paging forward from the newest photo one page at a time.
+    ///
+    /// Goes through the exact same `fetchPage` machinery `fetchPersonalPhotos(userId:reset:)`
+    /// uses (the `applied`-Bool contract, `fetchGeneration`, every guard) with only the seeded
+    /// starting cursor different — see `anchoredSeedCursor(before:)`'s own doc for exactly what
+    /// that cursor is and why its tiebreak id is the maximum possible UUID.
+    ///
+    /// A single awaited call, deliberately: the predecessor this replaces (`DarkroomView`'s old
+    /// `pageUntilMonth`) drove a client-side `while` loop calling `loadMore` repeatedly until the
+    /// target month appeared, with no bound on how many times it could spin and no guarantee any
+    /// individual iteration actually suspended (`loadMore`'s own `!photoService.isLoading` guard
+    /// can return synchronously without progress if another fetch is already in flight). A caller
+    /// awaiting exactly one round trip here cannot repeat that failure mode; do not reintroduce a
+    /// loop around this call.
+    @discardableResult
+    func fetchPersonalPhotos(userId: UUID, anchoredBefore upperEdge: Date) async throws -> Bool {
+        try await fetchPage(reset: true, orderBy: .takenAt, seedCursor: PhotoService.anchoredSeedCursor(before: upperEdge)) {
+            $0.eq("user_id", value: userId.uuidString).eq("is_sorted", value: true)
+        }
+    }
+
+    /// The seeded cursor `fetchPersonalPhotos(userId:anchoredBefore:)` starts an anchored fetch
+    /// from: `upperEdge` itself, tie-broken by the maximum possible UUID (no real photo id will
+    /// ever equal or exceed it) so the keyset filter's own tie branch (`keysetFilter(after:)`)
+    /// never has a reason to exclude a row sharing that exact instant. Which side of that exact
+    /// instant a row falls on is decided by the CLIENT-side day-key month grouping
+    /// (`DarkroomDayUnit.units(from:anchor:)`, built on `FeedUnit.dayKey`), not by this cursor —
+    /// see `DarkroomYearMonth.upperEdge`'s own doc — so this only has to guarantee the fetch
+    /// starts far enough back to include everything the anchor month could possibly need. Pulled
+    /// out as its own pure function so the exact cursor (and the filter string it produces) is
+    /// directly testable without a network round trip.
+    static func anchoredSeedCursor(before upperEdge: Date) -> PhotoCursor {
+        let maxId = UUID(uuidString: "FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF") ?? UUID()
+        return PhotoCursor(column: .takenAt, sortDate: upperEdge, id: maxId)
+    }
+
     /// The Darkroom's true total kept-photo count, same filter as `fetchPersonalPhotos`, a
     /// headless `count: .exact` request (no rows transferred), so the toolbar's "N shots"
     /// label can show the real total without waiting on (or being capped by) pagination.
@@ -1671,13 +1711,18 @@ final class PhotoService {
         blockedIds: Set<UUID> = [],
         pageSize: Int? = nil,
         orderBy column: PhotoOrderColumn,
+        /// Where a RESET fetch starts from, instead of the top of the whole library. `nil` (every
+        /// caller except the anchored personal fetch) resets to nothing, exactly as before this
+        /// parameter existed. Ignored entirely when `reset` is `false`, since a continuing fetch
+        /// resumes from whatever `photoCursor` pagination already advanced to.
+        seedCursor: PhotoCursor? = nil,
         filter: (PostgrestFilterBuilder) -> PostgrestFilterBuilder
     ) async throws -> Bool {
         let epoch = AccountEpoch.current
         let limit = pageSize ?? self.pageSize
         if reset {
             fetchGeneration &+= 1
-            photoCursor = nil
+            photoCursor = seedCursor
             hasMore = true
             loadedPhotos = []
         }

@@ -39,6 +39,16 @@ struct DarkroomDayUnit: Identifiable {
             .sorted { $0.dayKey > $1.dayKey }
     }
 
+    /// The same grouping as `units(from:calendar:)`, restricted to units whose own calendar month
+    /// is exactly `anchor` (PR 5 of the zoom redesign, revision 2: the `.month` rung only ever
+    /// RENDERS its anchor month). Older-month rows a page boundary dragged in ("spillover", see
+    /// `DarkroomView.monthContent`'s own doc) simply don't appear here; they still exist in the
+    /// caller's own photo list and are dropped only at this render-time filter, never mutated out
+    /// of the data itself — spillover is what warms the NEXT anchor's client-side cache.
+    static func units(from photos: [Photo], anchor: DarkroomYearMonth, calendar: Calendar = .current) -> [DarkroomDayUnit] {
+        units(from: photos, calendar: calendar).filter { DarkroomYearMonth(date: $0.dayKey, calendar: calendar) == anchor }
+    }
+
     // MARK: - Title
 
     /// `Tonight` / `Last night`, else a short (`Sat 16`) or full (`Sat 16 Aug`) form depending

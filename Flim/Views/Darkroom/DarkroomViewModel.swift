@@ -135,6 +135,40 @@ final class DarkroomViewModel {
         startRefreshLoop(photoService: photoService)
     }
 
+    /// Anchored variant of `load()`, PR 5 of the zoom redesign, revision 2: resets the personal
+    /// fetch the same way, but seeds its cursor at `upperEdge` (`DarkroomYearMonth.upperEdge`)
+    /// instead of starting from "now", so the first page lands already inside an OLDER month
+    /// rather than at the top of the whole library. Same `applied`-Bool contract, same
+    /// `pendingHiddenIds` filtering through `assign`, same URL-prefetch side effect as `load()`.
+    ///
+    /// Deliberately does NOT touch `totalCount`: that's the whole-library ledger the header shows
+    /// (see its own doc), unaffected by which month is anchored, and re-querying it here would
+    /// only add a redundant round trip.
+    ///
+    /// Only STARTS the 60s develop-poll loop when it isn't already running, rather than
+    /// unconditionally like `load()` does: a warm relaunch that restores an OLDER `@SceneStorage`
+    /// anchor calls this, not `load()`, as `DarkroomView.reload()`'s very first fetch, and without
+    /// this the poll would simply never start for that session. Every LATER anchored jump
+    /// (a Year row, a closing-row tap, an anchored pull-to-refresh) leaves an already-running loop
+    /// alone rather than resetting its 60s countdown back to zero on every jump.
+    func loadAnchored(photoService: PhotoService, userId: UUID, upperEdge: Date) async {
+        await MainActor.run { isLoading = true; error = nil }
+        do {
+            // Same applied-or-superseded contract as `load()` above.
+            let applied = try await photoService.fetchPersonalPhotos(userId: userId, anchoredBefore: upperEdge)
+            if applied {
+                let fetched = photoService.loadedPhotos
+                await MainActor.run { assign(fetched) }
+                await markReadyPhotos(photoService: photoService)
+                await prefetchURLs(photoService: photoService)
+            }
+        } catch {
+            await MainActor.run { self.error = error.localizedDescription }
+        }
+        await MainActor.run { isLoading = false }
+        if refreshTask == nil { startRefreshLoop(photoService: photoService) }
+    }
+
     func loadRoll(photoService: PhotoService, rollId: UUID, blockedIds: Set<UUID> = []) async {
         await MainActor.run { isLoading = true; error = nil }
         do {

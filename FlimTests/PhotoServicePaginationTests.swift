@@ -120,4 +120,30 @@ final class PhotoServicePaginationTests: XCTestCase {
         let result = PhotoService.dedupedPhotos(items, excluding: [])
         XCTAssertEqual(result.map(\.id), items.map(\.id))
     }
+
+    // MARK: - anchoredSeedCursor(before:) (PR 5 of the zoom redesign, revision 2)
+
+    /// The anchored fetch's seeded cursor: `taken_at` (never `develops_at`, the Darkroom's own
+    /// ordering column), the exact `upperEdge` handed in, and the maximum possible UUID as its
+    /// tiebreak id.
+    func testAnchoredSeedCursorUsesTakenAtAndMaxUUID() {
+        let edge = Date(timeIntervalSince1970: 1_700_000_000)
+        let cursor = PhotoService.anchoredSeedCursor(before: edge)
+        XCTAssertEqual(cursor.column, .takenAt)
+        XCTAssertEqual(cursor.sortDate, edge)
+        XCTAssertEqual(cursor.id, UUID(uuidString: "FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF"))
+    }
+
+    /// The exact PostgREST filter string an anchored fetch's first page sends, pinned as a
+    /// literal the same way `testKeysetFilterComparesTakenAtThenBreaksTiesById` is: the seeded
+    /// cursor has to flow through `keysetFilter(after:)` unmodified.
+    func testAnchoredSeedCursorProducesTheExpectedKeysetFilter() {
+        let edge = Date(timeIntervalSince1970: 1_700_000_000)
+        let cursor = PhotoService.anchoredSeedCursor(before: edge)
+        let filter = PhotoService.keysetFilter(after: cursor)
+        XCTAssertEqual(
+            filter,
+            "taken_at.lt.2023-11-14T22:13:20.000Z,and(taken_at.eq.2023-11-14T22:13:20.000Z,id.lt.FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF)"
+        )
+    }
 }
