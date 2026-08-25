@@ -410,11 +410,11 @@ struct PostDetailView: View {
         HStack(spacing: 10) {
             Button { route = ProfileRoute(id: post.userId) } label: {
                 HStack(spacing: 10) {
-                    Circle()
-                        .fill(accent.opacity(0.18))
-                        .frame(width: 34, height: 34)
-                        .overlay(Text(String(item.author.handle.dropFirst().prefix(1)).uppercased())
-                            .flimFont(14, weight: .thin, relativeTo: .subheadline).foregroundStyle(accent))
+                    // AvatarView resolves the real profile photo and falls back to the initial
+                    // itself. This row used to hand-roll the initials circle without ever
+                    // requesting the image, so every author here showed a letter even when
+                    // they had a photo everywhere else in the app.
+                    AvatarView(path: item.author.avatarPath, name: item.author.handle, size: 34)
                     Text(item.author.handle).flimFont(15, weight: .semibold, relativeTo: .body).foregroundStyle(.white)
                 }
             }
