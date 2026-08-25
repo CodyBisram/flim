@@ -80,6 +80,10 @@ struct PostDetailView: View {
     /// attempted text rather than the unchanged server value it was never able to replace.
     @State private var pendingCaptionRetry: String?
     @State private var captionFailedToast = false
+    /// A comment that didn't reach the server. Mirrors `CommentsSheet.send()`'s restore
+    /// semantics (draft and reply target both come back so the send is retryable) with the
+    /// toast this screen already uses for every other failed action.
+    @State private var commentFailedToast = false
     /// Swipe-down-to-go-back state: only armed at the top of the scroll.
     @State private var atTop = true
     @State private var dragY: CGFloat = 0
@@ -247,6 +251,12 @@ struct PostDetailView: View {
                     .transition(.move(edge: .top).combined(with: .opacity))
             } else if deleteFailedToast {
                 Label("Couldn't delete that. Check your connection and try again.", systemImage: "exclamationmark.triangle.fill")
+                    .flimFont(13, weight: .medium).foregroundStyle(.white)
+                    .padding(.horizontal, 16).padding(.vertical, 10)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            } else if commentFailedToast {
+                Label("Couldn't send that comment. Try again.", systemImage: "exclamationmark.triangle.fill")
                     .flimFont(13, weight: .medium).foregroundStyle(.white)
                     .padding(.horizontal, 16).padding(.vertical, 10)
                     .background(.ultraThinMaterial, in: Capsule())
@@ -579,14 +589,25 @@ struct PostDetailView: View {
     private func send() {
         guard let uid = auth.currentUser?.id, canSend else { return }
         let body = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        let target = replyTarget
         draft = ""
         replyTarget = nil
         commentFocused = false
         sending = true
         Task {
-            _ = await feed.addComment(postId: post.id, body: body, userId: uid)
+            // The Bool-returning wrapper, same as `CommentsSheet.send()`: `addComment` alone
+            // returns nil on failure with nothing here checking it, which is how a comment
+            // that never reached the server still cleared the draft as if it had.
+            let ok = await feed.commentOnPost(post.id, body: body, userId: uid)
             await reloadComments()
             sending = false
+            if !ok {
+                draft = body   // don't lose what they typed, restore and let them retry
+                replyTarget = target
+                Haptics.error()
+                withAnimation { commentFailedToast = true }
+                try? await Task.sleep(for: .seconds(2)); withAnimation { commentFailedToast = false }
+            }
         }
     }
 

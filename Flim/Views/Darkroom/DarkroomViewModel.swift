@@ -1,6 +1,15 @@
 import Foundation
 import Observation
 
+/// The filtering rule behind `DarkroomViewModel.assign`: drop anything still inside
+/// `pendingHiddenIds`, the photos `DarkroomView` has optimistically hidden for a delete that
+/// hasn't resolved yet. Free function so the rule itself, "a server reassignment of `photos`
+/// cannot resurrect a photo still pending a delete", is testable without a live `PhotoService` or
+/// the 4s undo timer.
+func filterHiddenPhotos(_ photos: [Photo], hiding pendingHiddenIds: Set<UUID>) -> [Photo] {
+    pendingHiddenIds.isEmpty ? photos : photos.filter { !pendingHiddenIds.contains($0.id) }
+}
+
 /// Main-actor isolated, like every service in the app.
 ///
 /// This was the one `@Observable` type in the codebase with no isolation at all. Most mutations
@@ -40,6 +49,13 @@ final class DarkroomViewModel {
     /// to eager-load in full), the personal Darkroom can grow unbounded, so pagination itself
     /// stays lazy; only the total is fetched eagerly, via a headless count query.
     var totalCount: Int?
+    /// Photos `DarkroomView` has optimistically hidden for a delete still inside its 4s undo
+    /// window (or a still-pending delete about to be flushed), filtered out of every server
+    /// reassignment of `photos` (see `assign`) so a reload or the 60s develop poll landing inside
+    /// that window can't reintroduce a batch the person just "deleted" while the Undo toast is
+    /// still up. `DarkroomView` owns the lifecycle: added when a batch is hidden, removed once
+    /// the real delete resolves (success or failure) or the person taps Undo.
+    var pendingHiddenIds: Set<UUID> = []
 
     /// Split by `isReady` (time-based), cached and recomputed only when `photos` is assigned, 
     /// not on every access. `DarkroomView.body` reads these ~8 times per evaluation and
@@ -53,6 +69,17 @@ final class DarkroomViewModel {
     /// than sorted at each call site in RollDetailView) so re-presenting either surface doesn't
     /// re-sort; recomputed alongside the splits when `photos` changes.
     private(set) var chronologicalDeveloped: [Photo] = []
+
+    /// The single choke point for every path that reassigns `photos` wholesale from the server:
+    /// `load`, `loadRoll`, `loadMore`, `loadMoreRoll`, and the develop poll's `markReadyPhotos`.
+    /// Filters `pendingHiddenIds` out uniformly, so none of those five has to remember the guard
+    /// on its own, the trap that let a reload resurrect an optimistically-hidden delete in the
+    /// first place: only the obvious caller was ever checked, and a photo still developing (whose
+    /// removal doesn't change the ready-id set `markReadyPhotos` compares) came back through that
+    /// one indefinitely.
+    private func assign(_ newPhotos: [Photo]) {
+        photos = filterHiddenPhotos(newPhotos, hiding: pendingHiddenIds)
+    }
 
     private func recomputeSplits() {
         developingPhotos = photos.filter { !$0.isReady }
@@ -91,7 +118,7 @@ final class DarkroomViewModel {
             let applied = try await photoService.fetchPersonalPhotos(userId: userId)
             if applied {
                 let fetched = photoService.loadedPhotos
-                await MainActor.run { photos = fetched }
+                await MainActor.run { assign(fetched) }
                 await markReadyPhotos(photoService: photoService)
                 await prefetchURLs(photoService: photoService)
             }
@@ -110,7 +137,7 @@ final class DarkroomViewModel {
             let applied = try await photoService.fetchRollPhotos(rollId: rollId, blockedIds: blockedIds)
             if applied {
                 let fetched = photoService.loadedPhotos
-                await MainActor.run { photos = fetched }
+                await MainActor.run { assign(fetched) }
                 await markReadyPhotos(photoService: photoService)
                 await prefetchURLs(photoService: photoService)
             }
@@ -128,15 +155,21 @@ final class DarkroomViewModel {
         // mean `loadedPhotos` is not this call's result; see `load()`.
         guard (try? await photoService.fetchPersonalPhotos(userId: userId, reset: false)) == true else { return }
         let fetched = photoService.loadedPhotos
-        await MainActor.run { photos = fetched }
+        await MainActor.run { assign(fetched) }
         await markReadyPhotos(photoService: photoService)
+        // One batched call for the whole new page, same as `load()`. Without this, every cell in
+        // pages 2+ minted its own signed URL on `onFrameAppear` one round trip at a time, so
+        // scrolling into a fresh page read as thumbnails popping in individually instead of the
+        // batched arrival page one already gets. `onFrameAppear`'s per-cell fallback still covers
+        // any straggler this misses.
+        await prefetchURLs(photoService: photoService)
     }
 
     func loadMoreRoll(photoService: PhotoService, rollId: UUID, blockedIds: Set<UUID> = []) async {
         guard photoService.hasMore, !photoService.isLoading else { return }
         guard (try? await photoService.fetchRollPhotos(rollId: rollId, reset: false, blockedIds: blockedIds)) == true else { return }
         let fetched = photoService.loadedPhotos
-        await MainActor.run { photos = fetched }
+        await MainActor.run { assign(fetched) }
         await markReadyPhotos(photoService: photoService)
     }
 
@@ -179,16 +212,23 @@ final class DarkroomViewModel {
         let before = developedPhotos.count
         await photoService.markDevelopedIfReady()
         let fetched = photoService.loadedPhotos
-        // Only reassign when the developed set actually changed. The 60s poll otherwise
-        // replaced the entire `photos` array every minute even when nothing had developed, 
-        // and because the array backs the grid's ForEach, that re-diffed the whole grid (and,
-        // now, recomputed the cached splits above) on a timer for no reason. `isReady` is
-        // time-based, so comparing ready-id sets is exactly what catches a photo that crossed
-        // its develop threshold since the last poll.
+        // Only reassign when something actually changed. The 60s poll otherwise replaced the
+        // entire `photos` array every minute even when nothing had developed, and because the
+        // array backs the grid's ForEach, that re-diffed the whole grid (and, now, recomputed the
+        // cached splits above) on a timer for no reason. `isReady` is time-based, so comparing
+        // ready-id sets catches a photo that crossed its develop threshold since the last poll.
+        //
+        // The full id-set comparison alongside it is the other half: a STILL-DEVELOPING photo
+        // being deleted doesn't move it in or out of the ready-id set at all (it was never in
+        // there), so without this a deleted-but-still-developing shot's removal never reached
+        // this screen through the poll, only through a full `reload()`, and could sit in the grid
+        // indefinitely otherwise.
         let fetchedReadyIds = Set(fetched.filter(\.isReady).map(\.id))
         let currentReadyIds = Set(developedPhotos.map(\.id))
-        guard fetchedReadyIds != currentReadyIds else { return }
-        await MainActor.run { photos = fetched }
+        let fetchedIds = Set(fetched.map(\.id))
+        let currentIds = Set(photos.map(\.id))
+        guard fetchedReadyIds != currentReadyIds || fetchedIds != currentIds else { return }
+        await MainActor.run { assign(fetched) }
         // Celebrate photos that develop while you're watching (not on initial load).
         if notify, developedPhotos.count > before {
             await MainActor.run { Haptics.reveal() }

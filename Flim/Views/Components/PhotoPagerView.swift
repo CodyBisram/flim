@@ -53,6 +53,23 @@ func resolvePhotoUpgrade(current: PhotoResolutionState, thumbnail: URL?, fullFet
     return next
 }
 
+/// Which storage object's key a resolved URL must be filed under: `displayPath` (the grid
+/// thumbnail's own object) while only the seed is in (`isFull == false`), `viewPath` (the real
+/// upgrade's object) once it has landed. Pure and free-standing so the rule is pinned by a test
+/// rather than only by eye.
+///
+/// THE INVARIANT this exists to protect: a `CachedImage`'s `url` and `cacheKey` must always name
+/// the SAME storage object. `ImageLoader.fetch` downloads whatever `url` currently points to and
+/// files those bytes under `cacheKey`, and a cache hit on `cacheKey` beats `url` on every later
+/// load. Pairing a thumbnail URL (the seed phase, `isFull == false`) with the `viewPath` key
+/// would file thumbnail-quality bytes under the full-res key, and once that entry exists in
+/// memory, a later successful full-res fetch is never even attempted: `CachedImage.load()` hits
+/// the poisoned cache entry first and returns the stretched thumbnail forever, across launches,
+/// from one transient `viewPath` fetch failure. See `PhotoPagerTests` for the pin.
+func resolvedCacheKey(isFull: Bool, displayPath: String, viewPath: String) -> String {
+    isFull ? viewPath : displayPath
+}
+
 /// The single swipeable full-screen photo viewer, opened at whichever grid photo was tapped.
 /// One component for both the Darkroom and a roll's grid (it replaced three near-duplicate views:
 /// FullScreenPhotoView, DarkroomPhotoPagerView, RollPhotoPagerView, which had drifted apart and
@@ -194,6 +211,10 @@ struct PhotoPagerView: View {
     /// only fills in whatever that didn't already have, e.g. a night's frame the grid never
     /// scrolled into view.
     @State private var rackThumbURLs: [UUID: URL] = [:]
+    /// Bumped by `watchDeveloping` whenever a shot in the window crosses `developsAt` while this
+    /// page is already on screen, purely so reading it inside `photoPage` forces that body to
+    /// re-evaluate. See `watchDeveloping`'s own doc.
+    @State private var developPulse = 0
 
     private var current: Photo? { photos.indices.contains(selection) ? photos[selection] : nil }
 
@@ -262,14 +283,23 @@ struct PhotoPagerView: View {
                                memberNames: memberNames) { pendingProfile = ProfileRoute(id: $0) }
         }
         .sheet(isPresented: $showTagSheet) {
+            // Same `resolvedCacheKey` phase rule as `photoPage`: `url` here is whatever
+            // `resolvedURLs` currently holds for this photo, which is the thumbnail seed until
+            // `fullyResolvedIds` says otherwise, so the key has to track that, not assume `viewPath`.
             TagPhotoSheet(url: composerPhoto.flatMap { resolvedURLs[$0.id] },
-                          cacheKey: composerPhoto?.viewPath, tags: $pendingTags,
-                          rollId: composerPhoto?.rollId)
+                          cacheKey: composerPhoto.map {
+                              resolvedCacheKey(isFull: fullyResolvedIds.contains($0.id),
+                                                displayPath: $0.displayPath, viewPath: $0.viewPath)
+                          },
+                          tags: $pendingTags, rollId: composerPhoto?.rollId)
         }
         .sheet(isPresented: $showEditTags) {
             TagPhotoSheet(url: taggingPhoto.flatMap { resolvedURLs[$0.id] },
-                          cacheKey: taggingPhoto?.viewPath, tags: $editingTags,
-                          rollId: taggingPhoto?.rollId) {
+                          cacheKey: taggingPhoto.map {
+                              resolvedCacheKey(isFull: fullyResolvedIds.contains($0.id),
+                                                displayPath: $0.displayPath, viewPath: $0.viewPath)
+                          },
+                          tags: $editingTags, rollId: taggingPhoto?.rollId) {
                 if let postId = taggingPostId {
                     Task { await feed.setTags(editingTags, on: postId) }
                 }
@@ -312,6 +342,12 @@ struct PhotoPagerView: View {
         }
         .task {
             await resolveAround(selection)
+        }
+        // Keyed on `selection`, so it cancels naturally on the next swipe (`.task(id:)`'s own
+        // contract) and on dismiss, and restarts fresh for the new window. See its own doc.
+        .task(id: selection) {
+            guard showsNightRack else { return }
+            await watchDeveloping()
         }
         // Batched for every photo in the pager, not per swipe. Only where reactions actually
         // show (a roll grid); the Darkroom's own-photos pager never renders a reaction bar.
@@ -766,6 +802,11 @@ struct PhotoPagerView: View {
         let isDeveloping = showsNightRack && !photo.isReady
         let isFailed = showsNightRack && failedPhotoIds.contains(photo.id)
         let failureHandler: (() -> Void)? = showsNightRack ? { failedPhotoIds.insert(photo.id) } : nil
+        // Read for its own sake: bumped by `watchDeveloping` when a shot in the ±1 window
+        // crosses `developsAt` while this page is already on screen, so this body evaluation
+        // (and therefore `isDeveloping` above, which is otherwise only re-derived when SOME
+        // other `@State` changes) is actually re-run. See `watchDeveloping`'s own doc.
+        let _ = developPulse
 
         Group {
             if isFailed {
@@ -773,16 +814,25 @@ struct PhotoPagerView: View {
             } else {
                 // Downloads `viewPath` (the ~1400px feed card when one exists, the full original
                 // only as a fallback for photos with no card yet) rather than always fetching the
-                // 2048px original just to downsample it to `maxPixel` anyway. `cacheKey` MUST
-                // match: it's what gets saved as the raw bytes on disk, and `repairRenditions`
-                // reads them back by that same key. Keying by `storagePath` here while
-                // downloading `viewPath` bytes would cache a 1400px card under the original's
-                // key, and `repairRenditions` would then rebuild the feed rendition FROM the
-                // feed card while believing it had the full original. See `repairRenditions` for
-                // how it now sources the original vs. the card correctly.
+                // 2048px original just to downsample it to `maxPixel` anyway.
+                //
+                // `cacheKey` MUST name the same storage object `url` actually points to, see
+                // `resolvedCacheKey`'s own doc for the mechanism a mismatch breaks. While a photo
+                // is only seeded with the grid's thumbnail (`fullyResolvedIds` doesn't have it
+                // yet), `url` is the THUMBNAIL's URL, so the key has to be `displayPath`, that
+                // thumbnail's own object, not `viewPath`. Only once `resolvePhotoUpgrade` reports
+                // the real upgrade landed does `url` actually point at `viewPath`, and the key
+                // switches to match. `repairRenditions` reads the raw bytes back by whichever key
+                // was actually used here, so this also keeps that read honest: keying by
+                // `storagePath`/`viewPath` while the bytes on disk are the thumbnail's would have
+                // it rebuild the feed rendition FROM the thumbnail while believing it had the
+                // full original.
                 CachedImage(
                     url: (!isDeveloping && abs(index - selection) <= 1) ? resolvedURLs[photo.id] : nil,
-                    maxPixel: 1600, cacheKey: photo.viewPath, onFailure: failureHandler
+                    maxPixel: 1600,
+                    cacheKey: resolvedCacheKey(isFull: fullyResolvedIds.contains(photo.id),
+                                                displayPath: photo.displayPath, viewPath: photo.viewPath),
+                    onFailure: failureHandler
                 ) { image in
                     image
                         .resizable()
@@ -1126,7 +1176,14 @@ struct PhotoPagerView: View {
     /// reads as a broken app, so a miss now costs a spinner rather than the feature.
     private func share(_ photo: Photo) {
         guard !preparingShare, let url = resolvedURLs[photo.id] else { return }
-        let key = "\(photo.viewPath)|1600" as NSString
+        // Same `resolvedCacheKey` phase rule as `photoPage`: `resolvedURLs[photo.id]` may still
+        // be the thumbnail seed here, and keying this memory-cache entry `viewPath` regardless
+        // would file thumbnail bytes under the key `photoPage`'s own `CachedImage` later reads
+        // as "the full-res image is already decoded", the same poisoning `resolvedCacheKey`'s
+        // own doc describes, just through the in-memory cache instead of disk.
+        let shareCacheKey = resolvedCacheKey(isFull: fullyResolvedIds.contains(photo.id),
+                                              displayPath: photo.displayPath, viewPath: photo.viewPath)
+        let key = "\(shareCacheKey)|1600" as NSString
         if let image = ImageCache.shared.object(forKey: key) {
             shareItem = ShareImage(image: image)
             return
@@ -1142,6 +1199,10 @@ struct PhotoPagerView: View {
                 return
             }
             ImageCache.set(image, forKey: key)
+            // A swipe mid-flight already moved `current` on; silently drop the stale export
+            // rather than pop a share sheet for a photo no longer on screen. Retryable: the
+            // share button is right there on whatever photo is current now.
+            guard current?.id == photo.id else { return }
             shareItem = ShareImage(image: image)
         }
     }
@@ -1261,7 +1322,12 @@ struct PhotoPagerView: View {
                 reactions.append(PhotoReaction(id: UUID(), photoId: photo.id, userId: uid, emoji: emoji))
                 await photoService.addReaction(photoId: photo.id, emoji: emoji, userId: uid)
             }
-            reactions = await photoService.fetchReactions(photoId: photo.id)
+            let fetched = await photoService.fetchReactions(photoId: photo.id)
+            // Same fast-swipe guard as `resolveAround`'s own terminal write: a swipe mid-flight
+            // has already moved `current` on, and writing this photo's counts into `reactions`
+            // now would show them under whatever photo the person swiped to instead.
+            guard current?.id == photo.id else { return }
+            reactions = fetched
         }
     }
 
@@ -1279,7 +1345,10 @@ struct PhotoPagerView: View {
         Task {
             reactions.append(PhotoReaction(id: UUID(), photoId: photo.id, userId: uid, emoji: "❤️"))
             await photoService.addReaction(photoId: photo.id, emoji: "❤️", userId: uid)
-            reactions = await photoService.fetchReactions(photoId: photo.id)
+            let fetched = await photoService.fetchReactions(photoId: photo.id)
+            // Same fast-swipe guard as `toggleReaction`/`resolveAround`.
+            guard current?.id == photo.id else { return }
+            reactions = fetched
         }
     }
 
@@ -1323,11 +1392,17 @@ struct PhotoPagerView: View {
         // the adjacent pages mounted, so they were already decoded by the time you swiped; the
         // pager mounts only the current photo now, so without this a swipe could land on a
         // spinner. The cacheKey must match what `photoPage` requests exactly, or this warms an
-        // entry the view never looks for.
+        // entry the view never looks for. Same `resolvedCacheKey` phase rule as `photoPage`: a
+        // neighbour still on the thumbnail seed must warm under `displayPath`, not `viewPath`,
+        // or this prefetch is the exact same poisoning bug from a second call site.
         let neighbours: [(url: URL, cacheKey: String?)] = [index - 1, index + 1]
             .filter { photos.indices.contains($0) }
             .compactMap { i in
-                resolvedURLs[photos[i].id].map { (url: $0, cacheKey: photos[i].viewPath) }
+                let neighbour = photos[i]
+                return resolvedURLs[neighbour.id].map {
+                    (url: $0, cacheKey: resolvedCacheKey(isFull: fullyResolvedIds.contains(neighbour.id),
+                                                          displayPath: neighbour.displayPath, viewPath: neighbour.viewPath))
+                }
             }
         ImageLoader.prefetch(neighbours, maxPixel: 1600, scale: displayScale)
 
@@ -1359,6 +1434,37 @@ struct PhotoPagerView: View {
         let fetched = await photoService.fetchReactions(photoId: id)
         guard current?.id == id else { return }   // fast-swipe guard
         reactions = fetched
+    }
+
+    /// Keeps re-checking the ±1 window while any photo in it is still developing, so sitting on
+    /// (or beside) a shot as it crosses `developsAt` promotes it in place, without needing
+    /// another swipe. `resolveAround` itself only ever runs on a selection change or the initial
+    /// `.task`, so before this a shot that finished developing while already on screen (or one
+    /// swipe away) stayed a "Develops at HH:MM" well until the person swiped away and back.
+    ///
+    /// Driven by `.task(id: selection)`, which is what gives this its cancellation for free: a
+    /// new selection starts a fresh loop for the new window, and the old one is torn down by
+    /// SwiftUI, same as it would be on dismiss. Capped at re-checking every 60s even when the
+    /// nearest `developsAt` is much further out, so this can't sleep past the point where
+    /// something else (a retry, a delete) has already changed the window.
+    private func watchDeveloping() async {
+        while !Task.isCancelled {
+            let window = [selection - 1, selection, selection + 1]
+                .filter { photos.indices.contains($0) }
+                .map { photos[$0] }
+            let stillDeveloping = window.filter { !$0.isReady }
+            guard let earliest = stillDeveloping.map(\.developsAt).min() else { return }
+            let wait = min(60, max(1, earliest.timeIntervalSinceNow + 1))
+            try? await Task.sleep(for: .seconds(wait))
+            guard !Task.isCancelled else { return }
+            await resolveAround(selection)
+            // `resolveAround` itself only writes observable state for a photo it actually
+            // resolves a URL for; a shot that just crossed `developsAt` needs the page to
+            // re-render regardless (to swap `developingPlaceholder` for the real image, and to
+            // recompute `statusText`), so this is bumped unconditionally rather than trusting
+            // that side effect.
+            developPulse += 1
+        }
     }
 
     // MARK: - Gestures

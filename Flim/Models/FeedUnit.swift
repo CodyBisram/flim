@@ -194,10 +194,9 @@ struct FeedUnit: Identifiable, Equatable {
     /// you are not your own friend, so "N shots from N friends" must never count posts you
     /// made yourself. This is the ONLY seen-state derivation that excludes them: rendering,
     /// pills, `caughtUpIndex`, and retention all keep treating a unit as a unit regardless of
-    /// who posted it, and creating a post separately marks it seen on its own device
-    /// (`FeedService.createPost`) so it never shows unseen there in the first place; this
-    /// parameter is what also keeps a pre-existing own post, or one made from another device,
-    /// out of the count.
+    /// who posted it, and a post you just created stays honestly unseen for you like any
+    /// other post (nothing marks it seen on your own behalf); the exclusion alone is what
+    /// keeps it, or any other post of yours, out of the count.
     static func ledger(units: [FeedUnit], isSeen: (UUID) -> Bool,
                         excludingAuthor currentUserId: UUID? = nil) -> (shots: Int, friends: Int)? {
         let eligible = currentUserId.map { uid in units.filter { $0.author.id != uid } } ?? units
@@ -235,6 +234,17 @@ struct FeedUnit: Identifiable, Equatable {
         let lastBoundary = Self.dayKey(for: now, calendar: calendar)
             .addingTimeInterval(Self.dayBoundaryHour)
         return latest < lastBoundary
+    }
+
+    /// Every currently-cleared unit id, derived fresh from `units` and the seen marks alone.
+    /// Pure and total: no history, no accumulation, so a caller can call it as often as it
+    /// likes and always get the answer that is true of the CURRENT units, never a stale one
+    /// carried over from an earlier call. See `FeedView.snapshotLedger` for why re-deriving
+    /// on every snapshot, rather than merging forward, is what keeps a unit whose membership
+    /// grows to include an unseen shot from staying wrongly hidden.
+    static func clearedUnitIDs(units: [FeedUnit], seenAt: (UUID) -> Date?, now: Date = .now,
+                                calendar: Calendar = .current) -> Set<String> {
+        Set(units.filter { $0.hasCleared(seenAt: seenAt, now: now, calendar: calendar) }.map(\.id))
     }
 
     /// How far back the feed reaches: the last 7 days, so a fortnight away does not open

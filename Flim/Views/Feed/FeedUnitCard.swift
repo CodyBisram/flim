@@ -33,6 +33,11 @@ struct FeedUnitCard: View {
     /// re-renders by design, so without this a friend's shot arriving into a visible unit
     /// left the pager parked wherever it was.
     let catchUpGeneration: Int
+    /// Fired after a successful block removes this unit's author from `feed.feed`. FeedView
+    /// re-runs `snapshotLedger` (full, not growOnly) so the cleared-unit set and the
+    /// caught-up seam stop referencing units that no longer render, the only way either can
+    /// come to point at nothing mid-session.
+    let onAuthorBlocked: () -> Void
 
     /// The frame on screen. Seeded with the unit's opening frame (its first unseen shot),
     /// computed by the caller because the store is main-actor and a View's init is not.
@@ -87,14 +92,22 @@ struct FeedUnitCard: View {
 
     /// Whether this unit is genuinely on screen (not merely built by the LazyVStack).
     @State private var isVisible = false
+    /// Consumed by the very next `.onChange(of: selection)`, set just before a
+    /// `catchUpGeneration` reposition assigns `selection` programmatically. See that
+    /// `.onChange` and the one on `selection` for why this exists: `catchUpGeneration` fires
+    /// on every MOUNTED card, including ones the LazyVStack built ahead of the viewport, so
+    /// treating a programmatic reposition as a reach would mark shots nobody has scrolled to
+    /// yet as seen.
+    @State private var repositioningProgrammatically = false
 
     init(unit: FeedUnit, width: CGFloat, opening: Int, seenStore: FeedSeenStore,
-         markingEnabled: Bool, catchUpGeneration: Int) {
+         markingEnabled: Bool, catchUpGeneration: Int, onAuthorBlocked: @escaping () -> Void) {
         self.unit = unit
         self.width = width
         self.seenStore = seenStore
         self.markingEnabled = markingEnabled
         self.catchUpGeneration = catchUpGeneration
+        self.onAuthorBlocked = onAuthorBlocked
         _selection = State(initialValue: min(opening, max(0, unit.items.count - 1)))
     }
 
@@ -190,12 +203,22 @@ struct FeedUnitCard: View {
         .onChange(of: catchUpGeneration) {
             let opening = unit.openingIndex(isSeen: { seenStore.isSeen($0) })
             if opening != selection {
+                repositioningProgrammatically = true
                 withAnimation(.snappy(duration: 0.25)) { selection = opening }
             }
         }
         .onChange(of: selection) {
-            // A swipe or a strip tap is an explicit reach; it cannot happen off screen.
-            seenStore.markSeen(current.post.id)
+            // ONLY visibility (`maybeMarkReached`) or an explicit user gesture on a visible
+            // card marks seen, never a programmatic reposition: a `catchUpGeneration` bump
+            // reopens every MOUNTED card, including ones below the fold the LazyVStack built
+            // ahead of the viewport, and marking those seen would clear units nobody actually
+            // reached.
+            if repositioningProgrammatically {
+                repositioningProgrammatically = false
+            } else {
+                // A swipe or a strip tap is an explicit reach; it cannot happen off screen.
+                seenStore.markSeen(current.post.id)
+            }
             captionExpanded = false
             // Radius 2 HERE and only here: a selection change is a real swipe, the intent
             // signal that pays for staying two photographs ahead of the finger.
@@ -671,6 +694,9 @@ struct FeedUnitCard: View {
             await feed.block(unit.author.id, from: uid)
             if feed.isBlocked(unit.author.id) {
                 withAnimation { feed.feed.removeAll { $0.author.id == unit.author.id } }
+                // The ledger and the caught-up seam both hold state keyed on unit ids; without
+                // this, either could keep referencing a unit that just stopped rendering.
+                onAuthorBlocked()
             }
         }
     }

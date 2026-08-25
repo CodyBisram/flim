@@ -310,6 +310,68 @@ final class FeedUnitTests: XCTestCase {
         XCTAssertTrue(unit.hasCleared(seenAt: { _ in .distantPast }, now: date(20, 12), calendar: calendar))
     }
 
+    // MARK: - Clear derivation (re-derive every call, never merge forward)
+
+    func testClearedUnitIDsRevealsAUnitThatGrowsToIncludeAnUnseenShot() {
+        // The bug this pins: a unit fully seen on an early, partial snapshot must not stay
+        // hidden once a straddle completion appends an unseen shot to it. `formUnion`-ing the
+        // cleared set across calls could only ever ADD ids and never retract this one; the
+        // fix is that every call re-derives from scratch.
+        let mira = profile(UUID(), name: "mira")
+        let originalItems = (0..<2).map { item(author: mira, at: date(20, 8 + $0)) }
+        let unit = FeedUnit.units(from: originalItems, calendar: calendar)[0]
+        let seenMarks: [UUID: Date] = [originalItems[0].post.id: date(21, 9), originalItems[1].post.id: date(21, 9)]
+
+        // Cleared: both shots read the night of the 20th, and it's now morning on the 22nd.
+        let clearedBefore = FeedUnit.clearedUnitIDs(
+            units: [unit], seenAt: { seenMarks[$0] }, now: date(22, 5), calendar: calendar)
+        XCTAssertTrue(clearedBefore.contains(unit.id))
+
+        // A straddle completion appends an earlier, still-unread capture from that same day.
+        let newShot = item(author: mira, at: date(20, 7))
+        let grownUnits = FeedUnit.units(from: originalItems + [newShot], calendar: calendar)
+        XCTAssertEqual(grownUnits.count, 1, "same author, same day: still one unit")
+
+        let clearedAfter = FeedUnit.clearedUnitIDs(
+            units: grownUnits, seenAt: { seenMarks[$0] }, now: date(22, 5), calendar: calendar)
+        XCTAssertFalse(clearedAfter.contains(grownUnits[0].id),
+                        "growth into an unseen shot must reveal the unit, not leave it hidden")
+    }
+
+    func testClearedUnitIDsNeverClearsMarksMadeAfterTheLastBoundary() {
+        // Marks made mid-session are always after the most recent boundary relative to `now`,
+        // so a freshly-seen unit must never come back cleared until the NEXT boundary passes.
+        let mira = profile(UUID(), name: "mira")
+        let items = (0..<2).map { item(author: mira, at: date(21, 8 + $0)) }
+        let unit = FeedUnit.units(from: items, calendar: calendar)[0]
+        let now = date(21, 20)
+        let marks = [items[0].post.id: now, items[1].post.id: now]
+
+        let cleared = FeedUnit.clearedUnitIDs(units: [unit], seenAt: { marks[$0] }, now: now, calendar: calendar)
+        XCTAssertTrue(cleared.isEmpty)
+    }
+
+    func testClearedUnitIDsShrinksWhenAnAuthorsUnitsAreRemoved() {
+        // Blocking an author removes their units from the list FeedView re-derives over; the
+        // cleared set must shrink to match, not keep referencing units that no longer render.
+        let mira = profile(UUID(), name: "mira")
+        let dev = profile(UUID(), name: "dev.k")
+        let miraItem = item(author: mira, at: date(20, 8))
+        let devItem = item(author: dev, at: date(20, 9))
+        let units = FeedUnit.units(from: [miraItem, devItem], calendar: calendar)
+        let devUnit = units.first { $0.author.id == dev.id }!
+        let marks = [miraItem.post.id: date(20, 10), devItem.post.id: date(20, 10)]
+        let now = date(21, 5)
+
+        let before = FeedUnit.clearedUnitIDs(units: units, seenAt: { marks[$0] }, now: now, calendar: calendar)
+        XCTAssertEqual(before.count, 2)
+
+        let afterBlock = units.filter { $0.author.id != dev.id }
+        let after = FeedUnit.clearedUnitIDs(units: afterBlock, seenAt: { marks[$0] }, now: now, calendar: calendar)
+        XCTAssertEqual(after.count, 1)
+        XCTAssertFalse(after.contains(devUnit.id))
+    }
+
     // MARK: - Strip cap
 
     func testStripCapAndOverflow() {

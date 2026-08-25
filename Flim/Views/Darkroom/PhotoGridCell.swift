@@ -194,7 +194,9 @@ enum DiskImageCache {
 
     static func load(_ key: String) async -> UIImage? {
         await Task.detached(priority: .userInitiated) {
-            guard let data = try? Data(contentsOf: file(key)) else { return nil }
+            let url = file(key)
+            guard let data = try? Data(contentsOf: url) else { return nil }
+            touch(url)
             return UIImage(data: data)
         }.value
     }
@@ -203,6 +205,27 @@ enum DiskImageCache {
         Task.detached(priority: .background) {
             guard let data = image.jpegData(compressionQuality: 0.9) else { return }
             try? data.write(to: file(key), options: .atomic)
+        }
+    }
+
+    /// Bumps a cache file's modification date on a hit, so `trim`'s oldest-first eviction is
+    /// LRU-ish rather than pure FIFO-by-write-time. Reads never used to touch the file at all, so
+    /// a tile revisited constantly (the newest night's thumbnails, the one photo everyone keeps
+    /// reopening) aged out on exactly the same schedule as one nobody has looked at since the day
+    /// it was written, the file that ends up evicted first at scale is the one most likely to be
+    /// re-downloaded again immediately after.
+    ///
+    /// Only touches files older than a day, so a session that reads the same tile repeatedly (a
+    /// grid scroll passing back over already-visible cells) doesn't turn into constant metadata
+    /// churn for no ordering benefit within that same day.
+    private static func touch(_ url: URL) {
+        Task.detached(priority: .background) {
+            let fm = FileManager.default
+            guard let attrs = try? fm.attributesOfItem(atPath: url.path),
+                  let modified = attrs[.modificationDate] as? Date,
+                  modified.timeIntervalSinceNow < -86400
+            else { return }
+            try? fm.setAttributes([.modificationDate: Date.now], ofItemAtPath: url.path)
         }
     }
 
@@ -218,7 +241,10 @@ enum DiskImageCache {
     /// a second budget to keep in sync.
     static func loadRaw(path: String) async -> Data? {
         await Task.detached(priority: .userInitiated) {
-            try? Data(contentsOf: file("raw|" + path))
+            let url = file("raw|" + path)
+            guard let data = try? Data(contentsOf: url) else { return nil }
+            touch(url)
+            return data
         }.value
     }
 
@@ -244,6 +270,12 @@ enum DiskImageCache {
     }
 
     /// Keep the cache bounded, delete the oldest files if it exceeds `maxBytes`. Run at launch.
+    ///
+    /// "Oldest" is modification date, which `load`/`loadRaw` now bump on every cache hit (via
+    /// `touch`, throttled to once a day per file), so this is LRU-ish rather than pure
+    /// FIFO-by-write-time: a file that keeps getting read stays fresh and survives a trim, a file
+    /// nobody has revisited since it was written ages out first, regardless of which one was
+    /// downloaded earlier.
     static func trim(maxBytes: Int = 200 * 1024 * 1024) {
         Task.detached(priority: .background) {
             let fm = FileManager.default

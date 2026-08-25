@@ -130,4 +130,47 @@ final class PhotoPagerTests: XCTestCase {
         XCTAssertNil(next.url)
         XCTAssertFalse(next.isFull)
     }
+
+    // MARK: - resolvedCacheKey
+    //
+    // The critical fix: `photoPage`'s `CachedImage` pairs `resolvedURLs[photo.id]` (a URL that is
+    // only the thumbnail stand-in until `resolvePhotoUpgrade` reports `isFull`) with a cacheKey.
+    // `ImageLoader.fetch` downloads whatever the URL points to and files those bytes under the
+    // cacheKey, and a cache hit on that key beats the URL on every later load. Pairing the
+    // thumbnail's URL with the `viewPath` key would file thumbnail bytes under the full-res key
+    // and poison it for good the moment that happens once. The rule this pins: the seed phase
+    // (`isFull == false`) must NEVER produce the `viewPath` key.
+
+    func testSeedPhaseUsesTheThumbnailsOwnKey() {
+        XCTAssertEqual(
+            resolvedCacheKey(isFull: false, displayPath: "display/a.jpg", viewPath: "view/a.jpg"),
+            "display/a.jpg"
+        )
+    }
+
+    func testFullPhaseUsesTheUpgradesOwnKey() {
+        XCTAssertEqual(
+            resolvedCacheKey(isFull: true, displayPath: "display/a.jpg", viewPath: "view/a.jpg"),
+            "view/a.jpg"
+        )
+    }
+
+    func testSeedPhaseNeverPairsWithTheViewPathKey() {
+        // The exact invariant, stated as a negative: whatever the two paths are, the seed phase's
+        // chosen key must never equal the viewPath unless displayPath and viewPath already
+        // coincide (a photo with no feed rendition yet, where both fall back to the same object,
+        // so there is nothing to mismatch).
+        let displayPath = "display/b.jpg"
+        let viewPath = "view/b.jpg"
+        XCTAssertNotEqual(resolvedCacheKey(isFull: false, displayPath: displayPath, viewPath: viewPath), viewPath)
+    }
+
+    func testWhenDisplayAndViewPathsCoincideBothPhasesAgree() {
+        // A photo with no feed rendition (`feedPath == nil`): `viewPath` and `displayPath` both
+        // fall back to `storagePath`, so seed and full phases resolve to the identical key, no
+        // mismatch is possible either way.
+        let path = "storage/c.jpg"
+        XCTAssertEqual(resolvedCacheKey(isFull: false, displayPath: path, viewPath: path),
+                       resolvedCacheKey(isFull: true, displayPath: path, viewPath: path))
+    }
 }

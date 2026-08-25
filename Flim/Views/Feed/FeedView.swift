@@ -315,7 +315,8 @@ struct FeedView: View {
                             opening: unit.openingIndex(isSeen: { seenStore.isSeen($0) }),
                             seenStore: seenStore,
                             markingEnabled: ledgerSnapshotted,
-                            catchUpGeneration: catchUpGeneration
+                            catchUpGeneration: catchUpGeneration,
+                            onAuthorBlocked: { snapshotLedger() }
                         )
                         .onAppear { unitAppeared(index: index) }
 
@@ -571,17 +572,25 @@ struct FeedView: View {
     /// genuine reloads.
     private func snapshotLedger(growOnly: Bool = false) {
         // Clearing first, so the ledger and the seam are computed over the feed the reader
-        // will actually be shown. Cleared ids only ever accumulate between full reloads:
-        // paging can bring in a day read yesterday (still inside the 7-day fetch window),
-        // and it must not surface just because it arrived on page three.
-        let cleared = FeedUnit.units(from: feed.feed)
-            .filter { $0.hasCleared(seenAt: { seenStore.seenDate($0) }) }
-            .map(\.id)
-        if growOnly {
-            clearedUnitIDs.formUnion(cleared)
-        } else {
-            clearedUnitIDs = Set(cleared)
-        }
+        // will actually be shown. RE-DERIVED FROM SCRATCH on every call, growOnly included,
+        // never union-merged forward: a unit marked cleared on an early, partial snapshot
+        // (page one, before `completeStraddlingDays` finishes) must not stay cleared once the
+        // straddle completion appends the rest of that day, because the append can bring an
+        // unseen shot into a unit this exact id already got merged into the accumulated set.
+        // A `formUnion` can only ever ADD ids, so that unit and its unseen shot would vanish
+        // for the whole session, breaking "nothing unseen expires".
+        //
+        // Full re-derivation is safe mid-session because `hasCleared` is a pure function of
+        // (items, seen marks, now): within one session, a new mark is always made AFTER the
+        // last boundary already baked into `now`, so a unit that just became fully seen does
+        // not become cleared until the NEXT boundary passes, and a straddle completion or a
+        // fresh arrival that appends an unseen item to a unit only ever moves it AWAY from
+        // cleared, never toward it. So re-deriving on a growOnly pass can only ever REVEAL a
+        // unit an earlier, partial pass wrongly hid; it can never hide one the reader is
+        // currently looking at. Hiding a genuinely-cleared unit still only happens on the
+        // next full reload, i.e. the next explicit catch-up moment, exactly as designed.
+        clearedUnitIDs = FeedUnit.clearedUnitIDs(
+            units: FeedUnit.units(from: feed.feed), seenAt: { seenStore.seenDate($0) })
 
         // You are not your own friend: see `FeedUnit.ledger`'s own doc for why this is the
         // only seen-state derivation that excludes your own posts (unit rendering, seen
@@ -611,14 +620,23 @@ struct FeedView: View {
     private func snapshotSeam(growOnly: Bool) {
         let freshIndex = FeedUnit.caughtUpIndex(units: units, isSeen: { seenStore.isSeen($0) })
         if growOnly {
-            guard let freshIndex else { return }
             switch caughtUp {
             case .after(let currentID):
-                if let current = units.firstIndex(where: { $0.id == currentID }), freshIndex > current {
+                guard let current = units.firstIndex(where: { $0.id == currentID }) else {
+                    // The unit the seam pointed at is gone (blocking its author is the only
+                    // way that happens mid-session): re-derive against the CURRENT units
+                    // instead of leaving a reference to nothing, which silently dropped the
+                    // block for the rest of the session.
+                    caughtUp = freshIndex.map { .after(units[$0].id) } ?? (units.isEmpty ? .pending : .top)
+                    return
+                }
+                if let freshIndex, freshIndex > current {
                     caughtUp = .after(units[freshIndex].id)
                 }
             case .top, .pending:
-                caughtUp = .after(units[freshIndex].id)
+                if let freshIndex {
+                    caughtUp = .after(units[freshIndex].id)
+                }
             }
         } else if let freshIndex {
             caughtUp = .after(units[freshIndex].id)

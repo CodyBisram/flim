@@ -301,8 +301,10 @@ struct DarkroomView: View {
             }
         }
         // The 60s develop poll only needs to run while this screen is on it, and a page-until-
-        // anchor jump has no reason to keep paging once nobody's watching for it to land.
-        .onDisappear { vm.stopRefreshing(); jumpPagingTask?.cancel() }
+        // anchor jump has no reason to keep paging once nobody's watching for it to land. A
+        // still-pending delete is flushed rather than left to its own 4s timer, see
+        // `commitPendingDelete`'s own doc.
+        .onDisappear { vm.stopRefreshing(); jumpPagingTask?.cancel(); commitPendingDelete() }
         .fullScreenCover(item: $selectedPhoto) { photo in
             pager(for: photo)
         }
@@ -479,15 +481,26 @@ struct DarkroomView: View {
 
     /// Pulls the full-res file down and hands it to the share composer, the same path the feed
     /// card's "Save to Camera Roll" uses.
+    ///
+    /// Checks the disk cache's raw bytes for this exact object first (see `DiskImageCache.
+    /// loadRaw`): a long-press Share used to go through a bare `URLSession` every single time,
+    /// re-downloading the ~1MB+ master even when it was already sitting on the device from an
+    /// earlier repair pass or a previous share this session. A miss still falls all the way
+    /// through to the same download this always did, and now saves those bytes for next time.
     private func share(_ photo: Photo) {
         Haptics.tap()
         Task {
+            if let raw = await DiskImageCache.loadRaw(path: photo.storagePath), let image = UIImage(data: raw) {
+                shareItem = ShareImage(image: image)
+                return
+            }
             guard let url = try? await photoService.signedURL(for: photo.storagePath),
                   let (data, _) = try? await URLSession.shared.data(from: url),
                   let image = UIImage(data: data) else {
                 Haptics.error()
                 return
             }
+            DiskImageCache.saveRaw(data, path: photo.storagePath)
             shareItem = ShareImage(image: image)
         }
     }
@@ -541,6 +554,11 @@ struct DarkroomView: View {
 
         let ids = Set(toDelete.map(\.id))
         vm.photos.removeAll { ids.contains($0.id) }   // optimistic hide
+        // Held for the whole undo window (and past it, until the server delete actually
+        // resolves), so a reload or the 60s develop poll landing in between can't reassign
+        // `vm.photos` from the server and resurrect this batch with the Undo toast still up.
+        // See `DarkroomViewModel.assign`.
+        vm.pendingHiddenIds.formUnion(ids)
         pendingDelete = toDelete
         selectedIDs = []
         isSelecting = false
@@ -553,9 +571,15 @@ struct DarkroomView: View {
             let ok = await photoService.deletePhotos(batch)
             showUndoToast = false
             pendingDelete = []
+            vm.pendingHiddenIds.subtract(ids)
             if ok {
                 // Confirmed gone server-side, so any post among these photos has to go too, or
                 // this device's already-loaded feed keeps showing an imageless card for it.
+                // Removed directly rather than trusting the (now-lifted) `pendingHiddenIds`
+                // filter alone: a reload could have landed inside the window and, filtered or
+                // not, this batch belongs gone from `vm.photos` regardless of what it currently
+                // holds.
+                vm.photos.removeAll { ids.contains($0.id) }
                 feed.dropPosts(forDeletedPhotoIds: batch.map(\.id))
             } else {
                 restoreAfterFailedDelete(batch)
@@ -566,20 +590,30 @@ struct DarkroomView: View {
     private func undoDelete() {
         undoTask?.cancel()
         showUndoToast = false
+        // Lifted before the restoring reload below, or that reload's own reassignment would
+        // filter this batch right back out.
+        vm.pendingHiddenIds.subtract(pendingDelete.map(\.id))
         pendingDelete = []
         Task { await reload() }   // restore from the server, nothing was actually deleted
     }
 
-    /// Flush a still-pending delete immediately (e.g. leaving the view or starting a new delete).
+    /// Flush a still-pending delete immediately: a new delete starting while one is still in its
+    /// undo window, or the screen disappearing (wired from `.onDisappear`) while one is still
+    /// waiting out its 4 seconds. Timing a delete's commit to a view that may already be torn
+    /// down is what the undo window risks otherwise; flushing on disappear is strictly safer than
+    /// leaving the timer to fire into whatever is left of this screen.
     private func commitPendingDelete() {
         guard !pendingDelete.isEmpty else { return }
         undoTask?.cancel()
         let batch = pendingDelete
+        let ids = Set(batch.map(\.id))
         pendingDelete = []
         showUndoToast = false
         Task {
             let ok = await photoService.deletePhotos(batch)
+            vm.pendingHiddenIds.subtract(ids)
             if ok {
+                vm.photos.removeAll { ids.contains($0.id) }
                 feed.dropPosts(forDeletedPhotoIds: batch.map(\.id))
             } else {
                 restoreAfterFailedDelete(batch)
