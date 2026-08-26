@@ -348,12 +348,23 @@ struct DarkroomView: View {
         // The tab re-tap signal: scroll the current rung to its top, unless it's already there,
         // in which case it zooms OUT one rung instead (the ladder's other half of "tap the tab
         // you're already on"). `scrollOffsetY` is tracked per-rung by whichever `ScrollView` is
-        // currently mounted (see `monthContent`/`yearContent`/`allTimeContent`). Gated on
-        // `!isSelecting`: a retap while the selection header is up keeps its old scroll-to-top-only
-        // meaning, never switches rungs out from under an in-progress selection.
+        // Tab re-tap means HOME, not "zoom out one rung". The shipped zoom-out rule assumed
+        // re-taps mostly arrive mid-scroll; on device you are almost always already at the top,
+        // so every tap zoomed out and repeated taps walked the whole ladder (owner-reported as
+        // "cycling through the views", 2026-08-25). The platform-native semantic instead:
+        // first tap scrolls the current rung to its top; a tap already at the top returns to
+        // the DEFAULT view (Nights of the current month); once home, further taps do nothing.
+        // Terminal, never cycles, and doubles as the escape hatch from any rung. Gated on
+        // `!isSelecting`: a retap during selection keeps its scroll-to-top-only meaning and
+        // never switches rungs out from under an in-progress selection.
         .onChange(of: scrollToTop) {
-            if !isSelecting, scrollOffsetY <= 2, let out = zoom.zoomedOut {
-                setZoom(out)
+            let currentMonth = DarkroomYearMonth(date: .now)
+            let atHome = zoom == .month && anchor == currentMonth
+            if !isSelecting, scrollOffsetY <= 2, !atHome {
+                // Through the same landing machinery a Year-row tap uses: an anchored view's
+                // reset cleared the present's rows, so going home must RELOAD them, not just
+                // flip the anchor and render an empty scope.
+                selectMonth(currentMonth)
             } else {
                 withAnimation(.snappy) { scrollProxy?.scrollTo("top", anchor: .top) }
             }
