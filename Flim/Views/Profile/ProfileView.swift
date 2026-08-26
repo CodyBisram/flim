@@ -1,3 +1,4 @@
+import Photos
 import SwiftUI
 
 /// Whether an account is the FLIM owner's: the one account Film Lab (neutral capture, for LUT
@@ -31,6 +32,16 @@ struct ProfileView: View {
     /// Guards `requestAuthorizationIfNeeded()` against a double tap while the OS's one-shot
     /// prompt (or the settings read backing it) is still in flight.
     @State private var isRequestingNotifAuth = false
+
+    /// Mirrors `CameraRollAutoSave.isEnabled(for:)`. Re-read in `onAppear` and on foreground
+    /// (same precedent as the notification status row below), never bound straight to the store:
+    /// turning it ON has to wait on an async Photos permission request first, and a plain
+    /// `Binding` would flip the switch before that answer comes back.
+    @State private var cameraRollAutoSaveEnabled = false
+    /// Guards the toggle against a double tap while `PHPhotoLibrary.requestAuthorization` is in
+    /// flight, same shape as `isRequestingNotifAuth`.
+    @State private var isRequestingPhotosAuth = false
+    @State private var showPhotosAccessAlert = false
 
     @AppStorage(InstantFilmProcessor.neutralCaptureKey) private var neutralCapture = false
     @AppStorage("developNotificationsEnabled") private var notificationsEnabled = true
@@ -85,6 +96,20 @@ struct ProfileView: View {
                     Toggle("Sound effects", isOn: $soundEffects)
                         .tint(accent)
                 } header: { sectionHeader("Notifications & Sound") }
+                .listRowBackground(FlimTheme.sheetRow)
+
+                Section {
+                    Toggle("Save developed shots", isOn: Binding(
+                        get: { cameraRollAutoSaveEnabled },
+                        set: { handleCameraRollAutoSaveToggle($0) }
+                    ))
+                    .tint(accent)
+                    .disabled(auth.currentUser?.id == nil || isRequestingPhotosAuth)
+                } header: {
+                    sectionHeader("Camera Roll")
+                } footer: {
+                    Text("Shots you keep are saved to your photo library. Shots from a roll save once you watch the reveal. Applies to shots you take from now on.")
+                }
                 .listRowBackground(FlimTheme.sheetRow)
 
                 Section {
@@ -234,9 +259,61 @@ struct ProfileView: View {
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active else { return }
             Task { await notifications.refreshAuthorizationState() }
+            refreshCameraRollAutoSaveState()
+        }
+        .onAppear { refreshCameraRollAutoSaveState() }
+        .alert("Allow Photos access", isPresented: $showPhotosAccessAlert) {
+            Button("Open Settings") {
+                if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
+            }
+            Button("Not Now", role: .cancel) {}
+        } message: {
+            Text("\(AppInfo.appName) needs permission to add photos to your library.")
         }
         .flimSheetSurface()
         .presentationDetents([.large])
+    }
+
+    /// The toggle shows ON only when the preference is on AND Photos access is still granted:
+    /// a revoke in iOS Settings otherwise leaves the switch lying ON forever over a sweep that
+    /// silently no-ops. Rendering it OFF is the honest state, and tapping it back ON walks the
+    /// normal request path, whose instant `.denied` answer re-offers the Open Settings alert;
+    /// once access is restored the stored preference (never cleared by the revoke) shows through
+    /// again on the next refresh without needing a re-tap.
+    private func refreshCameraRollAutoSaveState() {
+        guard let uid = auth.currentUser?.id else { cameraRollAutoSaveEnabled = false; return }
+        cameraRollAutoSaveEnabled = CameraRollAutoSave.shared.isEnabled(for: uid)
+            && PHPhotoLibrary.authorizationStatus(for: .addOnly) == .authorized
+    }
+
+    /// Turning the toggle OFF is immediate, no prompt. Turning it ON first asks iOS for
+    /// add-only Photos permission (never granted implicitly), since the toggle means nothing
+    /// without it; a denial reverts the switch and offers Settings instead of leaving it ON with
+    /// nothing actually able to save.
+    private func handleCameraRollAutoSaveToggle(_ newValue: Bool) {
+        guard let uid = auth.currentUser?.id else { return }
+        guard !isRequestingPhotosAuth else { return }
+
+        guard newValue else {
+            cameraRollAutoSaveEnabled = false
+            CameraRollAutoSave.shared.setEnabled(false, for: uid)
+            return
+        }
+
+        isRequestingPhotosAuth = true
+        Task {
+            let status = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
+            isRequestingPhotosAuth = false
+            switch status {
+            case .authorized:
+                cameraRollAutoSaveEnabled = true
+                CameraRollAutoSave.shared.setEnabled(true, for: uid)
+            default:
+                cameraRollAutoSaveEnabled = false
+                Haptics.error()
+                showPhotosAccessAlert = true
+            }
+        }
     }
 
     // MARK: - Rows

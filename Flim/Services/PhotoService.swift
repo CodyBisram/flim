@@ -377,6 +377,14 @@ final class PhotoService {
             // The row exists now, under whichever account captured it, independent of whether
             // that account is still the current one below.
             await failedUploadStore.remove(id: photoId, userId: userId)
+            // Seeds the raw-bytes cache with the master JPEG under its OWN storage path, the same
+            // key `DiskImageCache.loadRaw`/`saveRaw` use everywhere else. Unconditional, not gated
+            // on the camera-roll auto-save toggle: this cache backs every existing share/save path
+            // too, and it's a bounded 200MB LRU, so seeding it here just means a save later (this
+            // photo develops and either the sort deck or `CameraRollAutoSave.sweep` wants its
+            // bytes) skips a redundant re-download of exactly what's already in hand. Fire-and-
+            // forget, like every other `saveRaw` call site.
+            DiskImageCache.saveRaw(imageData, path: path)
             // Every successful capture, not just the first ever: the server dedupes by
             // (user, event), so this is what makes "first shot" correct without a local flag.
             Activation.log(.firstShot)
@@ -496,6 +504,10 @@ final class PhotoService {
             // The row exists now, independent of whether this account is still the current one
             // below, same reasoning as the ordinary success path above.
             await failedUploadStore.remove(id: photoId, userId: userId)
+            // Same seed as the ordinary success path: `imageData` is the exact byte buffer already
+            // sitting in Storage under `path` (uploaded before the primary insert refused), so the
+            // re-homed shot's later save/share reads from disk instead of re-downloading.
+            DiskImageCache.saveRaw(imageData, path: path)
             // This fallback insert and the ordinary success path above are mutually exclusive
             // outcomes of the SAME capture (this only runs from the catch branch after the
             // primary insert refused with a roll-developed error, see this function's own
@@ -1603,6 +1615,34 @@ final class PhotoService {
             .from("photos").select()
             .eq("user_id", value: userId.uuidString)
             .eq("is_sorted", value: false)
+            .order("taken_at", ascending: true)
+            .execute().value
+    }
+
+    /// Photos this user shot that are eligible for camera-roll auto-save: kept (personal, sorted)
+    /// or a roll contribution (rolls insert `is_sorted: true` and skip the deck entirely, see
+    /// `captureAndUpload`'s `InsertPhoto`), already developed, and taken after `takenAfter` (the
+    /// watermark set when the toggle was enabled). Ordered oldest first, the same replay order
+    /// `CameraRollAutoSave.sweep` saves in.
+    ///
+    /// `develops_at <= now`, not `is_developed`: the latter is a cron-maintained cache with an
+    /// untracked cadence, `develops_at` is the truthful signal every other "is this ready" check
+    /// in the app already uses (`Photo.isReady`).
+    ///
+    /// `nil` on failure, never `[]`, matching `fetchUnsorted`'s own contract: a dropped fetch must
+    /// not read as "nothing to save" to a caller deciding what to sweep. Does NOT touch
+    /// `loadedPhotos` or any other published state.
+    func fetchDevelopedKept(userId: UUID, takenAfter: Date) async -> [Photo]? {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let now = formatter.string(from: .now)
+        let watermark = formatter.string(from: takenAfter)
+        return try? await supabase
+            .from("photos").select()
+            .eq("user_id", value: userId.uuidString)
+            .eq("is_sorted", value: true)
+            .lte("develops_at", value: now)
+            .gt("taken_at", value: watermark)
             .order("taken_at", ascending: true)
             .execute().value
     }

@@ -172,6 +172,16 @@ struct ContentView: View {
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active else { return }
             Task { await refreshVersionGate() }
+            // Save-on-develop, not save-on-capture: this is the one place that decides "the app
+            // just came to the foreground", which is exactly when a photo shot earlier may have
+            // developed since. No background execution, ever; the sweep only ever runs from here
+            // (foreground) or MainTabView's own once-per-launch `onAppear` (cold start, which
+            // this `onChange` does not itself catch since scenePhase already reads `.active` by
+            // the time this view first appears). Single-flight inside the sweep makes firing from
+            // both harmless.
+            if let uid = auth.currentUser?.id {
+                Task { await CameraRollAutoSave.shared.sweep(userId: uid, photoService: photos) }
+            }
         }
     }
 

@@ -94,8 +94,10 @@ struct MainTabView: View {
     /// profile grid), so leaving this set after the first, intended focus would re-arm the
     /// keyboard on every later, unrelated visit to the same post.
     @State private var focusCommentsPostId: UUID?
-    #if DEBUG
+    /// Was DEBUG-only (it only backed `-seedRoll`/`-openPhotoFullscreen`); now also needed
+    /// unconditionally for the camera-roll auto-save sweep kicked off below.
     @Environment(PhotoService.self) private var photos
+    #if DEBUG
     /// Drives `-openPhotoFullscreen`: presents the same full-screen viewer used from the
     /// darkroom/roll grids, without needing a tap to get there.
     @State private var debugFullscreenPhoto: Photo?
@@ -234,6 +236,14 @@ struct MainTabView: View {
             // Same once-per-launch slot, same reasoning: the widget's answer changes when a frame
             // is shot or reacted to, neither of which is urgent enough to re-derive more often.
             WidgetSync.refresh()
+            // Cold launch: ContentView's own `scenePhase == .active` handler covers every
+            // foreground AFTER this, but scenePhase already reads `.active` by the time that
+            // view's `onChange` first attaches, so it never fires for the launch that got us
+            // here. This `onAppear` is that missing first call; the sweep's single-flight guard
+            // makes the ContentView foreground handler firing again right after harmless.
+            if let uid = auth.currentUser?.id {
+                Task { await CameraRollAutoSave.shared.sweep(userId: uid, photoService: photos) }
+            }
             // A roll link that opened the app from cold arrives before this view exists, so the
             // notification finds nobody. The code is on disk; collect it here.
             if let held = PendingRollInvite.take() {
