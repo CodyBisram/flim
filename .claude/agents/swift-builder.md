@@ -34,6 +34,9 @@ and deployment order. Stop if that contract is missing or ambiguous.
 - Reuse `FlimTheme`, `.glassCapsule()`, `.glassCard()`, `Haptics`, `PrimaryButton`, and
   `CachedImage`. Do not create parallel primitives without a concrete gap.
 - User-facing copy uses `AppInfo.appName`, never literal `FLIM`.
+- No em dashes in user-facing copy, ever. Use a period, comma, or "to".
+- Nothing that identifies a tool or assistant goes into repo content: not in code,
+  comments, commit text, or docs.
 - No force unwraps, `try!`, `fatalError`, or unchecked subscripts.
 - Failed user actions restore input, trigger `Haptics.error()`, and remain retryable.
 - Success state appears only after the server operation succeeds.
@@ -47,6 +50,15 @@ and deployment order. Stop if that contract is missing or ambiguous.
   whole library: count server-side with `count: .exact`, and fetch by id for anything
   that may be older than one page. This trap has produced three wrong totals and one
   deep link that silently opened the wrong photo.
+- Never hang a load-more trigger on a bare `.task`/`.onAppear` of a content view: same
+  view identity means it fires once per lifetime, and a reload that truncates the list
+  leaves it dead (the Darkroom stalled at 30 photos this way). Use a dedicated sentinel
+  at the list's end that re-arms via `.task(id:)` on a value that changes per page.
+- Paging surfaces (TabView(.page)) keep every page STRUCTURALLY STABLE: one always-mounted
+  image view per page whose URL goes nil outside the window, never an
+  if-resolved-image-else-placeholder swap; swapping subtrees while the scroll settles
+  corrupts paging state (settled slivers, two-page jumps). FeedUnitCard.pager is the
+  reference; `.frame(width: .infinity)` is invalid, that is `maxWidth:`.
 
 ## Off-app surfaces (widgets and the Live Activity)
 
