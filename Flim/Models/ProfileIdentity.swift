@@ -256,7 +256,7 @@ enum ProfileBadgeKind: String, CaseIterable {
         case .firstIn:
             return "First to open the reveal on a roll."
         case .rollMaker:
-            return "You started a roll, and people actually shot into it."
+            return "You started a roll, and people shot into it."
         case .broughtSomeone:
             // Not "and they stuck around": the predicate only proves they signed up, and nothing
             // measures whether they stayed. Copy must not claim more than the data does. Phrased
@@ -277,7 +277,7 @@ enum ProfileBadgeKind: String, CaseIterable {
             // is the moment the roll's FIFTH contributor's first photo landed, one shared instant
             // for every contributor of that roll, including someone who arrived sixth or later.
             // This describes the roll filling up, not the reader's own arrival.
-            return "A roll you shot into reached five photographers."
+            return "A roll you shot in reached five photographers."
         case .foundingCrew:
             return "Part of the crew that got this off the ground."
         case .frontRow:

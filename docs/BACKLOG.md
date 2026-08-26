@@ -9,7 +9,6 @@ are not burnable until decided.
   generated (EmojiCatalogTests.swift:48,56). Diagnose whether flag generation broke on
   the new OS or the test environment lost the CLDR data. Diagnosis only; a code fix is
   its own decision.
-- skipped: owner decision — BadgeSwapLineTests: `.rollMaker` (348pt) and `.fullHouse`
-  (337pt) explanations no longer fit one line at 337pt on the current OS fonts
-  (BadgeSwapLineTests.swift:46). The fix is shorter copy, and copy is user-facing, so
-  the owner picks the words.
+- done 2026-08-26 — BadgeSwapLineTests: `.rollMaker` and `.fullHouse` explanations
+  no longer fit one line at 337pt on the current OS fonts. Owner approved shorter
+  copy ("people shot into it", "shot in"); suite passes again.
