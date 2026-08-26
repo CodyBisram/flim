@@ -240,8 +240,15 @@ final class DarkroomViewModel {
 
     /// Prefetch signed URLs for all visible-ready photos in ONE batched request, so cells don't
     /// each fire their own round-trip as they scroll in.
+    ///
+    /// "Cached" here means cached AND NOT EXPIRED: `signedURLCache.keys` alone used to be the
+    /// whole story, so a session parked longer than the hour-long TTL came back to a batch that
+    /// thought every already-seen photo was still covered, and every one of those cells fell back
+    /// to `onFrameAppear`'s per-cell mint one row at a time instead of re-batching here.
     func prefetchURLs(photoService: PhotoService) async {
-        let ready = photosNeedingSignedURL(photos, cached: Set(signedURLCache.keys))
+        let now = Date.now
+        let freshIds = Set(signedURLCache.keys.filter { (urlExpiry[$0] ?? .distantPast) > now })
+        let ready = photosNeedingSignedURL(photos, cached: freshIds)
         guard !ready.isEmpty else { return }
         // Grid shows the thumbnail (displayPath), tiny download vs the full image.
         let map = await photoService.signedURLs(for: ready.map(\.displayPath))

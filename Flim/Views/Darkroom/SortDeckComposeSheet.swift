@@ -88,7 +88,10 @@ struct SortDeckComposeSheet: View {
     private var photoPreview: some View {
         Group {
             if let url {
-                CachedImage(url: url, maxPixel: 900, cacheKey: photo.viewPath) { $0.resizable().scaledToFit() }
+                // 1400, matching the deck (`SortDeckView`) and the app-wide full-screen decode
+                // budget, so a photo just swiped through the deck is a cache hit here, not a
+                // second decode at a different size.
+                CachedImage(url: url, maxPixel: 1400, cacheKey: photo.viewPath) { $0.resizable().scaledToFit() }
                     placeholder: { ShimmerPlaceholder(cornerRadius: 16) }
             } else {
                 ShimmerPlaceholder(cornerRadius: 16)

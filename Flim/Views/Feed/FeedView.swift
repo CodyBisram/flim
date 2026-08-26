@@ -85,9 +85,32 @@ struct FeedView: View {
     /// under the reader, so clearing applies at the catch-up moment, not per render.
     @State private var clearedUnitIDs: Set<String> = []
 
-    private var units: [FeedUnit] {
-        FeedUnit.units(from: feed.feed).filter { !clearedUnitIDs.contains($0.id) }
+    /// Cached `FeedUnit` grouping (already filtered by `clearedUnitIDs`), the fix for the same
+    /// scroll hitch `DarkroomView.cachedDayUnits` names (its own doc is the worked example): the
+    /// `feedList` `ForEach`'s row closure reads `units.count` PER ROW (`index < units.count - 1`,
+    /// deciding whether to draw a seam or the caught-up block), and `units` used to be a computed
+    /// property re-running `FeedUnit.units(from:)` — a `Dictionary(grouping:)` + a sort over the
+    /// whole loaded feed — on every one of those per-row reads, not once per body pass.
+    ///
+    /// Recomputed via `recomputeUnits()`, called from two places: explicitly, right after
+    /// `clearedUnitIDs` is reassigned inside `snapshotLedger` (synchronous code in THAT function
+    /// reads `units` again immediately afterward, before SwiftUI's own `.onChange` below would
+    /// ever fire, so the explicit call is what keeps that read correct, not merely a redundant
+    /// belt-and-suspenders); and via `.onChange(of: feed.feed)` / `.onChange(of: clearedUnitIDs)`
+    /// as the safety net for `feed.feed` changing OUTSIDE this view's own reload path (a photo
+    /// deleted from the Darkroom calls `feed.dropPosts(forDeletedPhotoIds:)` directly on the
+    /// shared service, with no call back into this view at all).
+    ///
+    /// ANTI-PATTERN, do not reintroduce: `FeedUnit.units(from:)` (or anything that calls it) read
+    /// from inside the `ForEach` row closure, or any other per-row path.
+    @State private var cachedUnits: [FeedUnit] = []
+
+    private var units: [FeedUnit] { cachedUnits }
+
+    private func recomputeUnits() {
+        cachedUnits = FeedUnit.units(from: feed.feed).filter { !clearedUnitIDs.contains($0.id) }
     }
+
     private var anythingUnseen: Bool {
         units.contains { $0.unseenCount(isSeen: { seenStore.isSeen($0) }) > 0 }
     }
@@ -145,6 +168,11 @@ struct FeedView: View {
                 containerWidth = width
             }
         })
+        // `cachedUnits`'s safety net for `feed.feed` (or `clearedUnitIDs`) changing outside this
+        // view's own reload path; see that property's own doc for why `snapshotLedger` ALSO calls
+        // `recomputeUnits()` explicitly rather than relying on this alone.
+        .onChange(of: feed.feed) { _, _ in recomputeUnits() }
+        .onChange(of: clearedUnitIDs) { _, _ in recomputeUnits() }
         .navigationBarHidden(true)
         .task {
             // `feed_viewed` semantics: once per time this view genuinely appears (initial
@@ -602,12 +630,31 @@ struct FeedView: View {
             withAnimation { refreshFailedToast = true }
             Task { try? await Task.sleep(for: .seconds(2)); withAnimation { refreshFailedToast = false } }
         }
-        if let path = auth.currentUser?.avatarPath { myAvatarURL = await feed.signedURL(for: path) }
-        unreadActivity = await feed.unreadActivityCount(
+        // Three independent round trips — the avatar, the unread-activity count, and the unseen
+        // badge refresh — none of which reads or writes what either of the others touches, so
+        // they run concurrently instead of one after another. `prefetchUnitHeroes()` below still
+        // waits on all three landing (`await`s in sequence, not itself parallelized in): it reads
+        // `units`, not any of these, so there's no ordering requirement, it's just the natural
+        // place for the function to end.
+        async let avatarTask = resolveAvatarURL()
+        async let unreadTask = feed.unreadActivityCount(
             userId: uid, since: Date(timeIntervalSince1970: lastActivitySeen))
-        await feed.refreshUnseenBadgeCount()
+        async let badgeTask: Void = feed.refreshUnseenBadgeCount()
+        if let resolved = await avatarTask { myAvatarURL = resolved }
+        unreadActivity = await unreadTask
+        _ = await badgeTask
         prefetchedThrough = 0
         await prefetchUnitHeroes()
+    }
+
+    /// `nil` when there's no avatar path to resolve at all (skip the assignment in `reload()`
+    /// entirely, keep-last-known); `.some(possiblyNil)` when a path existed and a fetch was
+    /// attempted, matching `reload()`'s original `if let path { myAvatarURL = await ... }` shape
+    /// exactly: a path that resolves to no URL still overwrites `myAvatarURL`, only a MISSING path
+    /// leaves it alone.
+    private func resolveAvatarURL() async -> URL?? {
+        guard let path = auth.currentUser?.avatarPath else { return nil }
+        return await feed.signedURL(for: path)
     }
 
     /// Re-derived at each load, then held: the number states what arrived and must not
@@ -639,6 +686,11 @@ struct FeedView: View {
         // next full reload, i.e. the next explicit catch-up moment, exactly as designed.
         clearedUnitIDs = FeedUnit.clearedUnitIDs(
             units: FeedUnit.units(from: feed.feed), seenAt: { seenStore.seenDate($0) })
+        // Explicit, not left to the `.onChange(of: clearedUnitIDs)` safety net: everything below
+        // this line reads `units` (the cache) synchronously, in the same function call, before
+        // SwiftUI's own change-tracking would ever have a chance to fire. See `cachedUnits`'s own
+        // doc.
+        recomputeUnits()
 
         // You are not your own friend: see `FeedUnit.ledger`'s own doc for why this is the
         // only seen-state derivation that excludes your own posts (unit rendering, seen

@@ -186,15 +186,17 @@ final class RollRevealViewModel {
         // already in cache from the roll grid the viewer just came from, so this typically
         // returns instantly and the reveal starts on a real photograph instead of a spinner.
         //
-        // No cacheKey on any of these, matching what the view's CachedImage asks for; a
-        // different key would warm an entry the view never looks for.
+        // Each warm passes the EXACT cacheKey and maxPixel the view asks for at that phase
+        // (thumbPath at 400 for the underlay, viewPath at 1400 for the full-size layer). Warm
+        // and view must agree on key+size or the warm files bytes under an entry the view never
+        // looks for, and CachedImage falls through to a second, redundant download.
         if let first = deck.first {
             if let thumbPath = first.thumbPath, let thumbURL = urls[thumbPath] {
-                _ = await ImageLoader.fetch(url: thumbURL, maxPixel: 400, scale: displayScale)
+                _ = await ImageLoader.fetch(url: thumbURL, maxPixel: 400, scale: displayScale, cacheKey: thumbPath)
             } else if let url = urls[first.viewPath] {
                 // No thumbnail (an older photo, or a rendition upload that failed): fall back to
                 // waiting on the full image, which is the old behaviour rather than a blank frame.
-                _ = await ImageLoader.fetch(url: url, maxPixel: 1600, scale: displayScale)
+                _ = await ImageLoader.fetch(url: url, maxPixel: 1400, scale: displayScale, cacheKey: first.viewPath)
             }
         }
         // Full renditions warm in the background, the first one included: it has the develop
@@ -285,10 +287,13 @@ final class RollRevealViewModel {
     /// costs nothing and keeps the runway ahead of the viewer however they move through the roll.
     private func prefetchAhead(from index: Int) {
         let range = RevealPacing.prefetchRange(from: index, count: deck.count)
+        // cacheKey: photo.viewPath, matching exactly what the view's CachedImage keys the
+        // full-size layer under (see RollRevealView). A nil key here would warm a URL-only
+        // entry the view never looks for, downloading the same bytes twice.
         let items: [(url: URL, cacheKey: String?)] = deck[range].compactMap { photo in
-            urls[photo.viewPath].map { (url: $0, cacheKey: nil) }
+            urls[photo.viewPath].map { (url: $0, cacheKey: photo.viewPath) }
         }
-        ImageLoader.prefetch(items, maxPixel: 1600, scale: displayScale)
+        ImageLoader.prefetch(items, maxPixel: 1400, scale: displayScale)
     }
 
     /// The current frame's image failed to load (deleted between fetch and play, or any other

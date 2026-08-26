@@ -22,6 +22,21 @@ func jumpTokenIsCurrent(_ capturedToken: Int, latest: Int) -> Bool {
     capturedToken == latest
 }
 
+/// Manual `Equatable`, added here rather than on `Photo` itself (a model file this pass doesn't
+/// own): every stored field participates, which is what `.onChange(of: vm.photos)` below needs to
+/// tell "a real reassignment happened" from "the array is the same photos it was a moment ago".
+/// Swift can only auto-synthesize a conformance declared in the SAME FILE as the type, so this has
+/// to be written out by hand rather than left to the compiler.
+extension Photo: Equatable {
+    static func == (lhs: Photo, rhs: Photo) -> Bool {
+        lhs.id == rhs.id && lhs.userId == rhs.userId && lhs.rollId == rhs.rollId
+            && lhs.storagePath == rhs.storagePath && lhs.thumbPath == rhs.thumbPath
+            && lhs.feedPath == rhs.feedPath && lhs.takenAt == rhs.takenAt
+            && lhs.developsAt == rhs.developsAt && lhs.isDeveloped == rhs.isDeveloped
+            && lhs.caption == rhs.caption && lhs.isSorted == rhs.isSorted
+    }
+}
+
 struct DarkroomView: View {
     @Environment(\.flimAccent) private var accent
     var scrollToTop: Int = 0
@@ -150,27 +165,58 @@ struct DarkroomView: View {
     /// own reference width, a reasonable first-paint guess before the geometry read lands.
     @State private var scrollWidth: CGFloat = 393
 
+    /// Cached `DarkroomDayUnit` groupings over `vm.photos`, the fix for the Darkroom's own scroll
+    /// hitch (perf audit finding 1+2): `dayUnits`/`monthScopedUnits` used to be computed
+    /// properties re-running `Dictionary(grouping:)` + a sort over the WHOLE loaded photo list on
+    /// every access, and `nightList`'s own `ForEach` read `lastMonthScopedUnitId` (which chains
+    /// through `monthScopedUnits`) once PER MOUNTED ROW per body evaluation — so a month of thirty
+    /// nights regrouped its own thirty-plus photos thirty separate times every scroll frame.
+    ///
+    /// Recomputed ONLY when an input changes (`vm.photos` or `anchor`, see `recomputeDayUnits`),
+    /// never inside a row. Mirrors `DarkroomViewModel.recomputeSplits`'s own cache-on-`didSet`
+    /// pattern one layer up (that type's own doc names the exact crash on record for touching
+    /// `@Observable` state off the main actor); this cache is `@State`, so it is main-actor-only
+    /// the same way every other piece of this view's state already is, and every write below
+    /// happens synchronously inline with the mutation that invalidates it, never off-actor.
+    ///
+    /// ANTI-PATTERN, do not reintroduce: a computed grouping property (or anything that calls
+    /// `DarkroomDayUnit.units`) read from inside a `ForEach` row, or from any per-row closure.
+    /// `lastMonthScopedUnitId`/`closingRowInfo` below are free by-products of this cache: they
+    /// already only ever read `dayUnits`/`monthScopedUnits`, so caching THOSE is what makes both
+    /// of them cheap too, with no separate cache of their own needed.
+    @State private var cachedDayUnits: [DarkroomDayUnit] = []
+    @State private var cachedMonthScopedUnits: [DarkroomDayUnit] = []
+
     private var stripCapacity: Int {
         max(1, DarkroomDayUnit.stripCapacity(availableWidth: scrollWidth - 32))
     }
 
     /// One unit per night, newest first, this render's single source of truth for both the
-    /// contact sheet and the pager's flattened order. Cheap to recompute per body evaluation:
-    /// grouping a few hundred loaded photos is well under the cost of the images beside it.
-    private var dayUnits: [DarkroomDayUnit] {
-        DarkroomDayUnit.units(from: vm.photos)
-    }
+    /// contact sheet and the pager's flattened order. A cached read (see `cachedDayUnits`'s own
+    /// doc), not a recomputation: this used to run `Dictionary(grouping:)` + a sort over the whole
+    /// loaded photo list on every access.
+    private var dayUnits: [DarkroomDayUnit] { cachedDayUnits }
 
     /// PR 5 of the zoom redesign, revision 2: what `nightList` actually renders at `.month` —
     /// `dayUnits` restricted to `anchor`'s own calendar month. Anything older the last fetched
     /// page's boundary dragged in stays loaded in `vm.photos`/`dayUnits`, just not shown here:
     /// SPILLOVER, warming the client-side cache for whichever OLDER month gets anchored next
-    /// (a closing-row tap, most commonly), rather than being thrown away.
-    private var monthScopedUnits: [DarkroomDayUnit] {
-        DarkroomDayUnit.units(from: vm.photos, anchor: anchor)
-    }
+    /// (a closing-row tap, most commonly), rather than being thrown away. A cached read, same as
+    /// `dayUnits` above.
+    private var monthScopedUnits: [DarkroomDayUnit] { cachedMonthScopedUnits }
 
     private var lastMonthScopedUnitId: Date? { monthScopedUnits.last?.id }
+
+    /// The single choke point for both caches above: reruns `DarkroomDayUnit.units` over the
+    /// current `vm.photos`, once unscoped and once scoped to the current `anchor`. Called
+    /// explicitly from `.onAppear` (after `resolveInitialZoomAndAnchor` has set the real anchor,
+    /// so the very first cache isn't built against the placeholder default) and from
+    /// `.onChange(of:)` on both `vm.photos` and `anchor` below, the same two inputs
+    /// `DarkroomDayUnit.units(from:anchor:)` itself takes.
+    private func recomputeDayUnits() {
+        cachedDayUnits = DarkroomDayUnit.units(from: vm.photos)
+        cachedMonthScopedUnits = DarkroomDayUnit.units(from: vm.photos, anchor: anchor)
+    }
 
     /// Every distinct calendar month currently loaded OTHER than `anchor` itself: the spillover
     /// fallback `DarkroomMonthPaging.nextOlderMonth` reads when the server summary hasn't
@@ -437,6 +483,12 @@ struct DarkroomView: View {
         }
         .onAppear {
             resolveInitialZoomAndAnchor()
+            // Builds the very first cache against the REAL anchor `resolveInitialZoomAndAnchor`
+            // just resolved, not the placeholder default `anchor` starts at: `vm.photos` is still
+            // empty at this point either way (nothing has loaded yet), so this is cheap, and
+            // `.onChange(of: anchor)` below would otherwise be the only thing to build it, one
+            // frame later than it needs to be.
+            recomputeDayUnits()
             Task {
                 await reload()
                 #if DEBUG
@@ -448,6 +500,14 @@ struct DarkroomView: View {
                 #endif
             }
         }
+        // The Darkroom scroll-hitch fix's other half (see `cachedDayUnits`'s own doc): every path
+        // that can change either input recomputes the cache right here, ONCE per change, rather
+        // than the grouping re-running per mounted row. `vm.photos` covers every reassignment
+        // (`load`, `loadAnchored`, `loadMore`, `markReadyPhotos`'s poll, an optimistic delete, an
+        // undo's restore); `anchor` covers every jump (`selectMonth`, the scroll-driven crumb
+        // tracker, a cold-launch resolution).
+        .onChange(of: vm.photos) { _, _ in recomputeDayUnits() }
+        .onChange(of: anchor) { _, _ in recomputeDayUnits() }
         // The 60s develop poll only needs to run while this screen is on it, and an in-flight
         // anchored jump has no reason to keep running once nobody's watching for it to land. A
         // still-pending delete is flushed rather than left to its own 4s timer, see
@@ -1142,12 +1202,7 @@ struct DarkroomView: View {
     /// zoom bar's own crumb formatting lives elsewhere and is not reused here on purpose, this
     /// is prose ("Nothing left in August."), not a label.
     private var scopedEmptyMonthName: String {
-        let formatter = DateFormatter()
-        formatter.calendar = Calendar.current
-        formatter.timeZone = Calendar.current.timeZone
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "MMMM"
-        return formatter.string(from: dateFromYearMonth(anchor))
+        DarkroomDayUnit.monthNameFormatter.string(from: dateFromYearMonth(anchor))
     }
 
     /// The full-screen pager for a tapped frame.
@@ -1422,8 +1477,10 @@ struct DarkroomView: View {
         // window for a stale response, resolved after the epoch has moved on, to paint the
         // DEPARTED account's months. Mirrors `FeedService`'s own per-write pattern, see
         // `AccountEpoch`'s own doc for why a single guard partway through this function is not
-        // enough: `monthSummaries`, `unsortedPhotos`/`unsortedURLCache`, and the trailing
-        // `loadMyPostedPhotoIds`/`checkForReveal`/`openRequestedPhoto` chain each need their own.
+        // enough: `monthSummaries`, `unsortedPhotos`/`unsortedURLCache` (guarded inline, see
+        // `loadUnsortedAndPreviews`), `feed.loadMyPostedPhotoIds`'s own write (guarded inside that
+        // service call itself), and the trailing `checkForReveal`/`openRequestedPhoto` chain each
+        // need their own.
         let epoch = AccountEpoch.current
         isLoadingSummaries = true
         // 8 covers: the Year row's own strip width (`DarkroomYearRow.slotCount`). The All-time
@@ -1442,33 +1499,29 @@ struct DarkroomView: View {
         }
         isLoadingSummaries = false
         applyColdLaunchAnchorIfNeeded()
-        // Warm the grid's thumbnails so cells appear instantly as you scroll.
+        // Warm the grid's thumbnails so cells appear instantly as you scroll. 120, not the grid
+        // cell's own 400: this only has to cover the sort banner's tiny preview strip
+        // (`DarkroomSortBanner`'s thumbnails), the same size every other Darkroom surface that
+        // shows these previews decodes at.
         let prefetch = vm.photos.compactMap { photo -> (url: URL, cacheKey: String?)? in
             vm.signedURLCache[photo.id].map { ($0, photo.displayPath) }
         }
-        ImageLoader.prefetch(prefetch, maxPixel: 400, scale: displayScale)
-        if rolls.rolls.isEmpty { try? await rolls.fetchRolls(for: userId) }   // for roll labels
-        if let unsorted = await photoService.fetchUnsorted(userId: userId), AccountEpoch.isCurrent(epoch) {
-            unsortedPhotos = unsorted
-        }
-        // Read back from `unsortedPhotos` (not the local `fetchUnsorted` result above), so a
-        // failed fetch's previews still come from whatever was last known, the same keep-last-
-        // known shape as the assignment right above.
-        let previews = DarkroomDayUnit.pickPreview(from: unsortedPhotos)
-        if !previews.isEmpty {
-            let map = await photoService.signedURLs(for: previews.map(\.displayPath))
-            if AccountEpoch.isCurrent(epoch) {
-                for previewPhoto in previews {
-                    if let url = map[previewPhoto.displayPath] { unsortedURLCache[previewPhoto.id] = url }
-                }
-            }
-        }
-        // The trailing chain: a badge query, a reveal check, and a widget-tap deep link, none of
-        // which belong to whoever is signed in now if the epoch has moved on.
+        ImageLoader.prefetch(prefetch, maxPixel: 120, scale: displayScale)
+        // The rest of this reload is three independent round trips — roll names, the unsorted
+        // preview strip, and the "shared to your page" badge query — none of which reads or
+        // writes what either of the others touches, so they run concurrently rather than one
+        // after another. Each still guards its OWN write with `epoch`: `loadRollsIfNeeded` and
+        // `feed.loadMyPostedPhotoIds` do that internally (see `RollService.fetchRolls`'s own doc,
+        // "guard the assignment, not the call"), and `loadUnsortedAndPreviews` does it inline,
+        // same as before this pass. Running them concurrently doesn't change WHEN any of them are
+        // allowed to write, only whether they wait on each other first.
+        async let rollsTask: Void = loadRollsIfNeeded(userId: userId)
+        async let unsortedTask: Void = loadUnsortedAndPreviews(userId: userId, epoch: epoch)
+        async let postedTask: Void = feed.loadMyPostedPhotoIds(userId: userId)
+        _ = await (rollsTask, unsortedTask, postedTask)
+        // The trailing chain: a reveal check and a widget-tap deep link, neither of which belongs
+        // to whoever is signed in now if the epoch has moved on.
         guard AccountEpoch.isCurrent(epoch) else { return }
-        // One batched query for the whole grid's "shared to your page" badge, not a `hasPosted`
-        // round trip per tile.
-        await feed.loadMyPostedPhotoIds(userId: userId)
         // ONLY on the unanchored (present-spanning) load. `checkForReveal` scans
         // `vm.developedPhotos` for rolls that developed since `lastRevealCheck` and then
         // unconditionally advances that watermark. An anchored load holds only an OLD month's
@@ -1480,6 +1533,34 @@ struct DarkroomView: View {
         // The library is loaded now, so a pending widget tap can finally be answered — or
         // recognised as pointing at something that is gone.
         openRequestedPhoto()
+    }
+
+    /// One of `reload()`'s three independent tail round trips, see its own doc. For roll labels;
+    /// only fetches when nothing is loaded yet, same guard `reload()` always had.
+    private func loadRollsIfNeeded(userId: UUID) async {
+        guard rolls.rolls.isEmpty else { return }
+        try? await rolls.fetchRolls(for: userId)
+    }
+
+    /// The other of `reload()`'s three independent tail round trips: the unsorted set itself,
+    /// then (chained, not parallel — the previews need `fetchUnsorted`'s OWN result, not merely a
+    /// later read of `unsortedPhotos`) signed URLs for its preview strip. Both writes keep the
+    /// same keep-last-known shape `reload()` always used: a failed or superseded fetch leaves
+    /// whatever was last known exactly where it was, silently.
+    private func loadUnsortedAndPreviews(userId: UUID, epoch: Int) async {
+        if let unsorted = await photoService.fetchUnsorted(userId: userId), AccountEpoch.isCurrent(epoch) {
+            unsortedPhotos = unsorted
+        }
+        // Read back from `unsortedPhotos` (not the local `fetchUnsorted` result above), so a
+        // failed fetch's previews still come from whatever was last known, the same keep-last-
+        // known shape as the assignment right above.
+        let previews = DarkroomDayUnit.pickPreview(from: unsortedPhotos)
+        guard !previews.isEmpty else { return }
+        let map = await photoService.signedURLs(for: previews.map(\.displayPath))
+        guard AccountEpoch.isCurrent(epoch) else { return }
+        for previewPhoto in previews {
+            if let url = map[previewPhoto.displayPath] { unsortedURLCache[previewPhoto.id] = url }
+        }
     }
 
     /// Celebrate shots that have finished developing since the last time the Darkroom was open.

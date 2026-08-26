@@ -215,9 +215,9 @@ struct SortDeckView: View {
                 // look for. Someone standing at the edge of the frame was invisible here and
                 // present in the developed shot.
                 //
-                // 1600 rather than the old 2048: that budget existed to cover the extra
+                // 1400 rather than the old 2048: that larger budget existed to cover the extra
                 // magnification scaledToFill applied. Fitting a 3:4 photo into a 3:4 card is 1:1,
-                // so it now matches the full-screen viewer's budget.
+                // so it matches the full-screen viewer's own budget (`PhotoPagerView`).
                 CachedImage(url: urls[photo.id], maxPixel: 1400, cacheKey: photo.viewPath) { $0.resizable().scaledToFit() }
                     placeholder: { ShimmerPlaceholder(cornerRadius: 22) }
             }

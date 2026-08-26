@@ -20,6 +20,10 @@ struct RollsView: View {
     @State private var rollToLeave: Roll?
     @State private var mutedRolls: Set<UUID> = []
     @State private var inviteShareRoll: Roll?
+    /// Top-slot toast for a leave that failed server-side; a successful leave just needs the row
+    /// gone, this is only for the failure the swipe action can't otherwise report.
+    @State private var toastMessage: String?
+    @State private var toastDismiss: Task<Void, Never>?
 
     private func isCreator(_ roll: Roll) -> Bool { auth.currentUser?.id == roll.createdBy }
 
@@ -42,6 +46,16 @@ struct RollsView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .overlay(alignment: .top) {
+            if let toastMessage {
+                Label(toastMessage, systemImage: "exclamationmark.triangle.fill")
+                    .flimFont(13, weight: .medium)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 16).padding(.vertical, 10)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
         .navigationBarTitleDisplayMode(.inline)
@@ -233,7 +247,23 @@ struct RollsView: View {
             Button("Leave Roll", role: .destructive) {
                 Haptics.warning()
                 guard let uid = auth.currentUser?.id else { return }
-                Task { try? await rolls.leaveRoll(rollId: roll.id, userId: uid); await load() }
+                Task {
+                    do {
+                        try await rolls.leaveRoll(rollId: roll.id, userId: uid)
+                        await load()
+                    } catch {
+                        // The leave never landed server-side; the row must stay put, not
+                        // disappear as though it had, and reloading here would be reload-as-if-left.
+                        Haptics.error()
+                        withAnimation { toastMessage = "Couldn't leave the roll. Check your connection and try again." }
+                        toastDismiss?.cancel()
+                        toastDismiss = Task {
+                            try? await Task.sleep(for: .seconds(2.4))
+                            guard !Task.isCancelled else { return }
+                            withAnimation { toastMessage = nil }
+                        }
+                    }
+                }
             }
             Button("Cancel", role: .cancel) {}
         } message: { roll in

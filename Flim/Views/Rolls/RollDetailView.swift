@@ -79,7 +79,12 @@ struct RollDetailView: View {
     @State private var showShareAll = false
     @State private var displayName = ""
     @State private var showInviteShare = false
-    @State private var coverToast = false
+    /// The file's one top-slot toast, reused for every transient status line (cover updated,
+    /// rename/leave failures) so there is a single presentation and timing to reason about
+    /// instead of one boolean per message.
+    @State private var toastMessage: String?
+    @State private var toastDismiss: Task<Void, Never>?
+    @State private var toastIsError = false
     @State private var showLeaveRoll = false
     @State private var showCarousel = false
     @State private var shareItem: ShareImage?
@@ -197,8 +202,8 @@ struct RollDetailView: View {
             }
         }
         .overlay(alignment: .top) {
-            if coverToast {
-                Label("Roll cover updated", systemImage: "checkmark.circle.fill")
+            if let toastMessage {
+                Label(toastMessage, systemImage: toastIsError ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
                     .flimFont(13, weight: .medium)
                     .foregroundStyle(.white)
                     .padding(.horizontal, 16).padding(.vertical, 10)
@@ -445,10 +450,17 @@ struct RollDetailView: View {
             Button("Leave Roll", role: .destructive) {
                 guard let uid = auth.currentUser?.id else { return }
                 Haptics.warning()
-                notifications.cancelRollDevelopNotification(rollId: roll.id)
                 Task {
-                    try? await rollService.leaveRoll(rollId: roll.id, userId: uid)
-                    dismiss()
+                    do {
+                        try await rollService.leaveRoll(rollId: roll.id, userId: uid)
+                        // Only cancel the develop notification and dismiss once the server
+                        // confirms the leave; a failed leave must not act as though it happened.
+                        notifications.cancelRollDevelopNotification(rollId: roll.id)
+                        dismiss()
+                    } catch {
+                        Haptics.error()
+                        showToast("Couldn't leave the roll. Check your connection and try again.", isError: true)
+                    }
                 }
             }
             Button("Cancel", role: .cancel) {}
@@ -461,7 +473,17 @@ struct RollDetailView: View {
                 let name = renameDraft.trimmingCharacters(in: .whitespaces)
                 guard !name.isEmpty else { return }
                 displayName = name
-                Task { try? await rollService.renameRoll(rollId: roll.id, name: name) }
+                Task {
+                    do {
+                        try await rollService.renameRoll(rollId: roll.id, name: name)
+                    } catch {
+                        // The rename never landed; restore the input so it stays retryable
+                        // instead of showing a name the server never accepted.
+                        displayName = roll.name
+                        Haptics.error()
+                        showToast("Couldn't rename the roll. Check your connection and try again.", isError: true)
+                    }
+                }
             }
             Button("Cancel", role: .cancel) {}
         }
@@ -596,9 +618,10 @@ struct RollDetailView: View {
         guard let first = vm.chronologicalDeveloped.first else { return }
         Task {
             guard let url = try? await photoService.signedURL(for: first.viewPath) else { return }
-            // `cacheKey: nil` and maxPixel 1600 match what RollRevealView requests; a different
-            // key or size would warm an entry the reveal never looks for.
-            _ = await ImageLoader.fetch(url: url, maxPixel: 1600, scale: displayScale)
+            // cacheKey: first.viewPath and maxPixel 1400, matching exactly what RollRevealView's
+            // full-size layer keys itself under; a different key or size would warm an entry the
+            // reveal never looks for and it would download the bytes again itself.
+            _ = await ImageLoader.fetch(url: url, maxPixel: 1400, scale: displayScale, cacheKey: first.viewPath)
         }
     }
 
@@ -624,8 +647,22 @@ struct RollDetailView: View {
     private func setCover(_ photo: Photo) {
         Haptics.select()
         Task { await rollService.setRollCover(rollId: roll.id, path: photo.storagePath) }
-        withAnimation { coverToast = true }
-        Task { try? await Task.sleep(for: .seconds(1.6)); withAnimation { coverToast = false } }
+        showToast("Roll cover updated")
+    }
+
+    /// The file's one top-slot toast. Errors sit slightly longer, they're longer sentences and
+    /// the moment carries more consequence than a confirmation. A newer toast cancels the older
+    /// one's pending dismiss, so a confirmation's 1.6s timer can never cut short an error that
+    /// replaced it mid-flight.
+    private func showToast(_ message: String, isError: Bool = false) {
+        toastIsError = isError
+        withAnimation { toastMessage = message }
+        toastDismiss?.cancel()
+        toastDismiss = Task {
+            try? await Task.sleep(for: .seconds(isError ? 2.4 : 1.6))
+            guard !Task.isCancelled else { return }
+            withAnimation { toastMessage = nil }
+        }
     }
 
     /// Pulls the full-res file down and hands it to the share composer.

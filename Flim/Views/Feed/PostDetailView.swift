@@ -110,7 +110,10 @@ struct PostDetailView: View {
 
                     Group {
                         if let url {
-                            CachedImage(url: url, maxPixel: 1400, cacheKey: post.storagePath) { $0.resizable().scaledToFit() } placeholder: { ShimmerPlaceholder(cornerRadius: 14).aspectRatio(3.0 / 4.0, contentMode: .fit) }
+                            // cardPath, matching the feed card's own key exactly: the feed the
+                            // viewer arrived from already cached this object, so most opens are a
+                            // disk hit instead of a second download of the master.
+                            CachedImage(url: url, maxPixel: 1400, cacheKey: post.cardPath) { $0.resizable().scaledToFit() } placeholder: { ShimmerPlaceholder(cornerRadius: 14).aspectRatio(3.0 / 4.0, contentMode: .fit) }
                         } else { ShimmerPlaceholder(cornerRadius: 14).aspectRatio(3.0 / 4.0, contentMode: .fit) }
                     }
                         .frame(maxWidth: .infinity)
@@ -406,13 +409,25 @@ struct PostDetailView: View {
         Task { await feed.removeMyTag(from: post.id, userId: uid) }
     }
 
+    /// Saves the master, not the card rendition on screen: this genuinely needs `storagePath`.
+    ///
+    /// Checks the disk cache's raw bytes for this exact object first, the same path
+    /// `DarkroomView.share` uses, so a save doesn't re-download the master when it's already on
+    /// the device from an earlier repair pass or a previous share this session.
     private func saveToCameraRoll() {
-        guard let url else { return }
         Task {
-            if let (data, _) = try? await URLSession.shared.data(from: url),
-               let image = UIImage(data: data) {
+            if let raw = await DiskImageCache.loadRaw(path: post.storagePath), let image = UIImage(data: raw) {
                 shareItem = ShareImage(image: image)
+                return
             }
+            guard let saveURL = await feed.signedURL(for: post.storagePath),
+                  let (data, _) = try? await URLSession.shared.data(from: saveURL),
+                  let image = UIImage(data: data) else {
+                Haptics.error()
+                return
+            }
+            DiskImageCache.saveRaw(data, path: post.storagePath)
+            shareItem = ShareImage(image: image)
         }
     }
 
@@ -538,7 +553,7 @@ struct PostDetailView: View {
     private var canSend: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
     private func load() async {
-        url = await feed.signedURL(for: post.storagePath)
+        url = await feed.signedURL(for: post.cardPath)
         reactions = await feed.fetchReactions(postId: post.id)
         await feed.loadTags(for: post.id)
         await reloadComments()

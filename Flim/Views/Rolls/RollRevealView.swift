@@ -87,7 +87,10 @@ struct RollRevealView: View {
                                 CachedImage(url: thumbURL, maxPixel: 400, cacheKey: thumbPath) { $0.resizable().scaledToFit() }
                                     placeholder: { Color.clear }
                             }
-                            CachedImage(url: url, maxPixel: 1600, cacheKey: photo.viewPath,
+                            // maxPixel 1400, matching the warm in loadDeck and the prefetch window
+                            // in prefetchAhead exactly: warm and view must agree on key+size, or a
+                            // slide re-downloads bytes the reveal already fetched for itself.
+                            CachedImage(url: url, maxPixel: 1400, cacheKey: photo.viewPath,
                                        onFailure: { viewModel.skipDeadFrame(photo.id) }) { image in
                                 image.resizable().scaledToFit()
                             } placeholder: {

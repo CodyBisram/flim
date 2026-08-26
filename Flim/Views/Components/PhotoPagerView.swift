@@ -852,7 +852,9 @@ struct PhotoPagerView: View {
                 // full original.
                 CachedImage(
                     url: (!isDeveloping && abs(index - selection) <= 1) ? resolvedURLs[photo.id] : nil,
-                    maxPixel: 1600,
+                    // 1400, the app-wide full-screen decode budget: `resolveAround`'s own neighbour
+                    // prefetch and `share`'s memory-cache key both stay in lockstep with this.
+                    maxPixel: 1400,
                     cacheKey: resolvedCacheKey(isFull: fullyResolvedIds.contains(photo.id),
                                                 displayPath: photo.displayPath, viewPath: photo.viewPath),
                     onFailure: failureHandler
@@ -1228,7 +1230,10 @@ struct PhotoPagerView: View {
         // own doc describes, just through the in-memory cache instead of disk.
         let shareCacheKey = resolvedCacheKey(isFull: fullyResolvedIds.contains(photo.id),
                                               displayPath: photo.displayPath, viewPath: photo.viewPath)
-        let key = "\(shareCacheKey)|1600" as NSString
+        // 1400, matching `photoPage`'s own `CachedImage` and `resolveAround`'s neighbour prefetch:
+        // all three have to agree on this number or a decode landed under one budget is a miss
+        // when looked up under another.
+        let key = "\(shareCacheKey)|1400" as NSString
         if let image = ImageCache.shared.object(forKey: key) {
             shareItem = ShareImage(image: image)
             return
@@ -1414,24 +1419,32 @@ struct PhotoPagerView: View {
         // Same fix as RollCarouselView: the refetch at the end of this function is async, so
         // without clearing, the bar shows the PREVIOUS photo's counts under the new photo.
         if showsReactions { reactions = [] }
-        for i in [index - 1, index, index + 1] where photos.indices.contains(i) {
-            let photo = photos[i]
-            guard !fullyResolvedIds.contains(photo.id) else { continue }
-            // Nothing to resolve for a still-developing shot: there is no viewable image yet.
-            guard photo.isReady else { continue }
-            // `viewPath`, matching the `cacheKey` used below and in `photoPage`: the feed
-            // card when this photo has one, the original only as its own fallback. `try?`
-            // still swallows a failed fetch here (there is nothing more specific to do with
-            // the error), but unlike before, failing no longer permanently blocks the retry:
-            // see `resolvePhotoUpgrade`.
-            let full = try? await photoService.signedURL(for: photo.viewPath)
-            let next = resolvePhotoUpgrade(
-                current: PhotoResolutionState(url: resolvedURLs[photo.id], isFull: false),
-                thumbnail: signedURLs[photo.id],
-                fullFetch: full
-            )
-            resolvedURLs[photo.id] = next.url
-            if next.isFull { fullyResolvedIds.insert(photo.id) }
+        let window = [index - 1, index, index + 1]
+            .filter { photos.indices.contains($0) }
+            .map { photos[$0] }
+        // Still-developing shots have no viewable image yet, and an already-fully-resolved photo
+        // needs nothing more, so only the genuine misses go in the batch.
+        let pending = window.filter { !fullyResolvedIds.contains($0.id) && $0.isReady }
+        if !pending.isEmpty {
+            // ONE batched `signedURLs` call for the whole ±1 window's misses, rather than one
+            // `signedURL` await per photo, sequentially — the batched API's own doc
+            // (`PhotoService.signedURLs`) names this exact shape. `viewPath`, matching the
+            // `cacheKey` used below and in `photoPage`: the feed card when this photo has one, the
+            // original only as its own fallback. A path absent from the result (a genuine
+            // failure, never a thrown error for one path among many) applies as `fullFetch: nil`
+            // below, the same as the old per-photo `try?`'s nil on failure, so
+            // `resolvePhotoUpgrade`'s retry-on-next-visit semantics are unchanged: a photo that
+            // fails here is retried the next time it re-enters the window, not blocked forever.
+            let map = await photoService.signedURLs(for: pending.map(\.viewPath))
+            for photo in pending {
+                let next = resolvePhotoUpgrade(
+                    current: PhotoResolutionState(url: resolvedURLs[photo.id], isFull: false),
+                    thumbnail: signedURLs[photo.id],
+                    fullFetch: map[photo.viewPath]
+                )
+                resolvedURLs[photo.id] = next.url
+                if next.isFull { fullyResolvedIds.insert(photo.id) }
+            }
         }
         // Warm the neighbours' decoded images, not just their URLs. TabView(.page) used to keep
         // the adjacent pages mounted, so they were already decoded by the time you swiped; the
@@ -1449,7 +1462,11 @@ struct PhotoPagerView: View {
                                                           displayPath: neighbour.displayPath, viewPath: neighbour.viewPath))
                 }
             }
-        ImageLoader.prefetch(neighbours, maxPixel: 1600, scale: displayScale)
+        // 1400, the app-wide full-screen decode budget: the pager's own `CachedImage` (`photoPage`
+        // below) and the share cache key (`share(_:)`) stay in the same lockstep, or a neighbour
+        // warmed here under one size and later requested under another is a cache miss dressed up
+        // as a hit.
+        ImageLoader.prefetch(neighbours, maxPixel: 1400, scale: displayScale)
 
         // Rebuild any missing renditions from bytes now on the device. Free: it reads the disk
         // cache and gives up when the bytes aren't there, so nothing is ever downloaded for this.
@@ -1460,9 +1477,6 @@ struct PhotoPagerView: View {
         // put two uploads in front of the reaction fetch below and, through the caller, in front
         // of the tag sheet opening. On the 9% of photos that need repair that meant the bar sat
         // empty and the sheet sat shut for as long as an upload takes on a bad connection.
-        let window = [index - 1, index, index + 1]
-            .filter { photos.indices.contains($0) }
-            .map { photos[$0] }
         Task {
             for photo in window {
                 await photoService.repairRenditions(for: photo)

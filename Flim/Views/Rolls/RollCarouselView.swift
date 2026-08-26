@@ -65,7 +65,9 @@ struct RollCarouselView: View {
                 ZStack {
                     Group {
                         if let photo = current, let url = urls[photo.id] {
-                            CachedImage(url: url, maxPixel: 1600, cacheKey: photo.viewPath) { $0.resizable().scaledToFit() }
+                            // 1400, the app-wide full-screen decode budget (`PhotoPagerView`,
+                            // `SortDeckView`); `shareCurrent`'s memory-cache key stays in lockstep.
+                            CachedImage(url: url, maxPixel: 1400, cacheKey: photo.viewPath) { $0.resizable().scaledToFit() }
                                 placeholder: { ProgressView().tint(.white) }
                         } else {
                             ProgressView().tint(.white)
@@ -253,9 +255,21 @@ struct RollCarouselView: View {
         // bar was rendering those counts and highlights underneath the NEW photo, then seeding
         // its emoji order from them.
         reactions = []
-        for i in [index - 1, index, index + 1] where photos.indices.contains(i) {
-            let photo = photos[i]
-            if urls[photo.id] == nil { urls[photo.id] = try? await photoService.signedURL(for: photo.viewPath) }
+        // ONE batched `signedURLs` call for the whole ±1 window's misses, rather than one
+        // `signedURL` await per photo, sequentially — the same fix as `PhotoPagerView
+        // .resolveAround`, see its own doc for why the batched API is the shape to reach for
+        // here. A path this call fails to resolve is simply absent from `map`, so it's retried
+        // the next time that photo re-enters the window, same as the old per-photo `try?`'s nil
+        // on failure.
+        let missing = [index - 1, index, index + 1]
+            .filter { photos.indices.contains($0) }
+            .map { photos[$0] }
+            .filter { urls[$0.id] == nil }
+        if !missing.isEmpty {
+            let map = await photoService.signedURLs(for: missing.map(\.viewPath))
+            for photo in missing {
+                if let url = map[photo.viewPath] { urls[photo.id] = url }
+            }
         }
         if let photo = current {
             // Guard against fast swipes: only apply the fetch if this is still the visible photo.
@@ -289,7 +303,9 @@ struct RollCarouselView: View {
     /// instant; the miss now costs a spinner instead of the feature.
     private func shareCurrent() {
         guard !preparingShare, let photo = current, let url = urls[photo.id] else { return }
-        let key = "\(url.absoluteString)|1600" as NSString
+        // Must match ImageLoader's memKey for the CachedImage above: "\(cacheKey)|\(maxPixel)".
+        // Keying on the signed URL instead never hits (the token in the URL churns hourly).
+        let key = "\(photo.viewPath)|1400" as NSString
         if let image = ImageCache.shared.object(forKey: key) {
             shareItem = ShareImage(image: image)
             return

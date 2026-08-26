@@ -67,13 +67,37 @@ struct DarkroomDayUnit: Identifiable {
     /// Fixed `EEE d` / `EEE d MMM` formats, deliberately not locale-driven date styles: the
     /// approved anatomy is "Sat 16" / "Sat 16 Aug" exactly, day before month, which is not what
     /// every device locale would produce on its own.
-    private static func dayFormatter(full: Bool, calendar: Calendar) -> DateFormatter {
+    ///
+    /// Two reused instances rather than a fresh `DateFormatter()` per call: `title` runs once per
+    /// mounted night per body pass, and allocating (never mind configuring) a `DateFormatter` is
+    /// not free. Each shared instance is configured ONCE, inside its `static let`, and never
+    /// written again: `DateFormatter` is thread-safe to read but not to mutate, and a shared
+    /// instance reconfigured per call is only ever safe by the convention that no caller strays
+    /// off the main thread — the exact shape of shared mutable state this codebase has already
+    /// paid a production crash for. A caller pinning a DIFFERENT calendar (the
+    /// `DarkroomDayUnitTests` fixtures) gets a fresh throwaway formatter instead, so it still
+    /// gets exactly the answer it always did; only the hot device-calendar path shares.
+    ///
+    /// `nonisolated(unsafe)`, not `@MainActor`: `title` itself is a plain, non-isolated method
+    /// (`DarkroomDayUnitTests` calls it directly, off any actor). The `unsafe` is honest about
+    /// `DateFormatter` not being `Sendable`, but with the instances immutable after publication
+    /// the remaining surface is formatting-only reads, which Apple documents as thread-safe.
+    private nonisolated static func makeDayFormatter(full: Bool, calendar: Calendar) -> DateFormatter {
         let formatter = DateFormatter()
         formatter.calendar = calendar
         formatter.timeZone = calendar.timeZone
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = full ? "EEE d MMM" : "EEE d"
         return formatter
+    }
+
+    private nonisolated(unsafe) static let shortDayFormatterInstance = makeDayFormatter(full: false, calendar: .current)
+    private nonisolated(unsafe) static let fullDayFormatterInstance = makeDayFormatter(full: true, calendar: .current)
+
+    private static func dayFormatter(full: Bool, calendar: Calendar) -> DateFormatter {
+        let shared = full ? fullDayFormatterInstance : shortDayFormatterInstance
+        if shared.calendar == calendar, shared.timeZone == calendar.timeZone { return shared }
+        return makeDayFormatter(full: full, calendar: calendar)
     }
 
     // MARK: - Meta line
@@ -161,6 +185,24 @@ struct DarkroomDayUnit: Identifiable {
     static func distinctNightCount(in unsorted: [Photo], calendar: Calendar = .current) -> Int {
         Set(unsorted.map { FeedUnit.dayKey(for: $0.takenAt, calendar: calendar) }).count
     }
+
+    /// Shared `"MMMM"`, en_US_POSIX month-name formatter for the zoom rungs' rows
+    /// (`DarkroomYearRow.monthName`, `DarkroomAllTimeRow.monthName(_:)`) and the month-scoped
+    /// empty state (`DarkroomView.scopedEmptyMonthName`): one instance rather than one alloc per
+    /// row per scroll. Locale-fixed (always `Calendar.current`, unlike `dayFormatter` above, which
+    /// a test can hand a fixture calendar), so a single shared instance is safe here.
+    /// `DateFormatter` is not `Sendable`, so this stays `@MainActor`, matching every one of those
+    /// call sites (all view-side).
+    @MainActor
+    static let monthNameFormatter: DateFormatter = {
+        let calendar = Calendar.current
+        let formatter = DateFormatter()
+        formatter.calendar = calendar
+        formatter.timeZone = calendar.timeZone
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "MMMM"
+        return formatter
+    }()
 }
 
 // MARK: - The contact sheet (strip cutting)

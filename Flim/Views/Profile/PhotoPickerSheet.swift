@@ -136,8 +136,12 @@ struct PhotoPickerSheet: View {
                 loaded = true
                 // One batched call rather than one round trip per photo: this grid can hold a
                 // whole Darkroom, so the thumbnails used to fill in one by one, top to bottom.
-                let map = await photoService.signedURLs(for: photos.map(\.storagePath))
-                for photo in photos { urls[photo.id] = map[photo.storagePath] }
+                //
+                // Signs displayPath, matching the grid cell's cacheKey exactly (see the
+                // CachedImage below): signing storagePath here downloaded the ~1.25MB master and
+                // filed it under the thumb's own key, a cache miss on every single cell.
+                let map = await photoService.signedURLs(for: photos.map(\.displayPath))
+                for photo in photos { urls[photo.id] = map[photo.displayPath] }
             }
         }
         .flimSheetSurface()
@@ -184,7 +188,9 @@ struct ImageViewer: View {
         ZStack {
             Color.black.ignoresSafeArea()
             if let url {
-                CachedImage(url: url, maxPixel: 1600, cacheKey: cacheKey) { image in
+                // maxPixel 1400, matching the app's unified full-screen budget (see the reveal
+                // and `Photo.viewPath`).
+                CachedImage(url: url, maxPixel: 1400, cacheKey: cacheKey) { image in
                     image.resizable().scaledToFit()
                         .scaleEffect(scale, anchor: zoomAnchor).offset(offset)
                         .gesture(dragGesture).gesture(pinch)

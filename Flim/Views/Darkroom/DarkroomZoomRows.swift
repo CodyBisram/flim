@@ -42,13 +42,7 @@ struct DarkroomYearRow: View {
     static let slotCount = 8
 
     private var monthName: String {
-        let calendar = Calendar.current
-        let formatter = DateFormatter()
-        formatter.calendar = calendar
-        formatter.timeZone = calendar.timeZone
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "MMMM"
-        return formatter.string(from: monthStart)
+        DarkroomDayUnit.monthNameFormatter.string(from: monthStart)
     }
 
     var body: some View {
@@ -328,14 +322,8 @@ struct DarkroomAllTimeRow: View {
     }
 
     private func monthName(_ month: Int) -> String {
-        let calendar = Calendar.current
-        guard let date = calendar.date(from: DateComponents(year: 2000, month: month, day: 1)) else { return "" }
-        let formatter = DateFormatter()
-        formatter.calendar = calendar
-        formatter.timeZone = calendar.timeZone
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "MMMM"
-        return formatter.string(from: date)
+        guard let date = Calendar.current.date(from: DateComponents(year: 2000, month: month, day: 1)) else { return "" }
+        return DarkroomDayUnit.monthNameFormatter.string(from: date)
     }
 }
 

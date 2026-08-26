@@ -27,6 +27,11 @@ struct UserPageView: View {
     /// `FeedService.fetchOwnEffectiveDisplayedBadgeIds`.
     @State private var effectiveDisplayedBadgeIds: [String]?
     @State private var posts: [Post] = []
+    /// Signed URLs for the grid's thumbnails, keyed by `displayPath` (matching `PostThumb`'s own
+    /// cache key), minted in one batched call per page-load rather than one round trip per
+    /// cell. `PostThumb` still falls back to its own per-cell mint for anything a batch missed
+    /// (a straggler post that arrived after the batch already resolved).
+    @State private var postThumbURLs: [String: URL] = [:]
     @State private var avatarURL: URL?
     @State private var coverURL: URL?
     @State private var followers = 0
@@ -127,6 +132,11 @@ struct UserPageView: View {
                             // retry instead of an empty grid under a blank header.
                             ErrorState(message: "Couldn't load this profile.") { await load() }
                                 .padding(.top, 30)
+                        } else if !loaded && posts.isEmpty {
+                            // First visit this session, nothing seeded from `profilePostsCache`:
+                            // a shimmer grid instead of the blank void under the header while
+                            // the real fetch is still in flight.
+                            skeletonGrid
                         } else if posts.isEmpty && loaded {
                             emptyState
                         } else {
@@ -648,7 +658,7 @@ struct UserPageView: View {
                         // theirs, and they are fine because they present via fullScreenCover(item:)
                         // rather than a navigation push.
                         NavigationLink { PostDetailView(item: FeedItem(post: post, author: author)) } label: {
-                            PostThumb(path: post.displayPath)
+                            PostThumb(path: post.displayPath, resolvedURL: postThumbURLs[post.displayPath])
                         }
                         .buttonStyle(.plain)
                     }
@@ -656,6 +666,20 @@ struct UserPageView: View {
             }
             .padding(.horizontal, 3)
         }
+    }
+
+    /// Three columns of shimmer squares, standing in for the grid before the first fetch lands.
+    /// Same column count and spacing as `monthSection`'s real grid, so the page doesn't reflow
+    /// once actual posts replace it.
+    private var skeletonGrid: some View {
+        LazyVGrid(columns: columns, spacing: 3) {
+            ForEach(0..<12, id: \.self) { _ in
+                Color.clear
+                    .aspectRatio(1, contentMode: .fit)
+                    .overlay { ShimmerPlaceholder(cornerRadius: 3) }
+            }
+        }
+        .padding(.horizontal, 3)
     }
 
     private var emptyState: some View {
@@ -731,6 +755,8 @@ struct UserPageView: View {
         // the fetch still runs every visit, because visibility can change with no new post.
         if posts.isEmpty, let cachedPosts = feed.profilePostsCache[userId] {
             posts = cachedPosts
+            // Fire-and-forget: this must not delay the `async let`s kicked off right after it.
+            Task { await mintThumbURLs(for: cachedPosts) }
         }
         // Captured before any `await` below so the one write it guards (`effectiveDisplayedBadgeIds`,
         // see below) can't land after an account switch mid-flight: this is a pure read with
@@ -764,6 +790,7 @@ struct UserPageView: View {
             // Epoch-guarded because this cache is on the shared service and outlives this view:
             // a fetch that lands after an account switch must not seed the next account's pages.
             if AccountEpoch.isCurrent(epoch) { feed.profilePostsCache[userId] = fetchedPosts }
+            await mintThumbURLs(for: fetchedPosts)
         }
         followers = await fr
         following = await fg
@@ -813,6 +840,16 @@ struct UserPageView: View {
         loaded = true
     }
 
+    /// One batched `signedURLs` call for the whole page's grid rather than one round trip per
+    /// cell, mirroring `DayContactSheet`'s pattern. Only asks for paths not already resolved,
+    /// so the cached-then-fetched double call in `load()` never re-signs the same object twice.
+    private func mintThumbURLs(for posts: [Post]) async {
+        let unresolved = Set(posts.map(\.displayPath)).subtracting(postThumbURLs.keys)
+        guard !unresolved.isEmpty else { return }
+        let resolved = await feed.signedURLs(for: Array(unresolved))
+        for (path, url) in resolved { postThumbURLs[path] = url }
+    }
+
     private func toggleFollow() {
         guard let uid = auth.currentUser?.id else { return }
         Haptics.tap()
@@ -833,8 +870,14 @@ struct UserPageView: View {
 
 struct PostThumb: View {
     let path: String
+    /// Minted once, batched, by the page's own `mintThumbURLs` for the whole grid at once. Nil
+    /// for a straggler (a post that arrived after the batch already resolved), in which case
+    /// this cell falls back to minting its own.
+    var resolvedURL: URL? = nil
     @Environment(FeedService.self) private var feed
-    @State private var url: URL?
+    @State private var fallbackURL: URL?
+
+    private var url: URL? { resolvedURL ?? fallbackURL }
 
     var body: some View {
         Color.clear
@@ -845,7 +888,10 @@ struct PostThumb: View {
                 } else { ShimmerPlaceholder(cornerRadius: 3) }
             }
             .clipShape(RoundedRectangle(cornerRadius: 3))
-            .task { url = await feed.signedURL(for: path) }
+            .task {
+                guard resolvedURL == nil else { return }
+                fallbackURL = await feed.signedURL(for: path)
+            }
     }
 }
 
