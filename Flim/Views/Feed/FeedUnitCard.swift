@@ -184,17 +184,20 @@ struct FeedUnitCard: View {
         .onChange(of: markingEnabled) { maybeMarkReached() }
         // Membership can change under a living card (a straddle completion inserts earlier
         // captures at the front). The pager should keep showing the same PHOTOGRAPH, not the
-        // same index, so the selection is remapped to follow the post it was on.
+        // same index, so the selection is remapped to follow the post it was on. Through
+        // `reposition`, never a bare assignment: this fires on every mounted card, including
+        // ones the LazyVStack built below the fold, and a bare assignment reads as a swipe
+        // to the `selection` onChange, which marked shots seen that nobody had scrolled to.
         .onChange(of: unit.items.map(\.post.id)) { oldIds, newIds in
             guard selection < oldIds.count else {
-                selection = min(selection, max(0, newIds.count - 1))
+                reposition(to: min(selection, max(0, newIds.count - 1)))
                 return
             }
             let viewing = oldIds[selection]
-            if let kept = newIds.firstIndex(of: viewing), kept != selection {
-                selection = kept
+            if let kept = newIds.firstIndex(of: viewing) {
+                reposition(to: kept)
             } else if selection >= newIds.count {
-                selection = max(0, newIds.count - 1)
+                reposition(to: max(0, newIds.count - 1))
             }
         }
         // An explicit catch-up re-opens a LIVING unit the way a fresh launch would open it:
@@ -567,6 +570,16 @@ struct FeedUnitCard: View {
     private func maybeMarkReached() {
         guard isVisible, markingEnabled else { return }
         seenStore.markSeen(current.post.id)
+    }
+
+    /// The one door for every programmatic `selection` write. Arms the flag only when the
+    /// value will actually change, because the flag is consumed by the very next `selection`
+    /// onChange: armed for a write that never fires, it would swallow the mark for the next
+    /// GENUINE swipe instead.
+    private func reposition(to index: Int) {
+        guard index != selection else { return }
+        repositioningProgrammatically = true
+        selection = index
     }
 
     // MARK: - Actions (per frame, never per group)

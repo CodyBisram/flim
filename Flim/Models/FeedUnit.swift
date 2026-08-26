@@ -184,26 +184,63 @@ struct FeedUnit: Identifiable, Equatable {
         items.reduce(0) { $0 + (isSeen($1.post.id) ? 0 : 1) }
     }
 
-    /// The header ledger: `(shots, friends)` summed over units holding at least one unseen
-    /// shot. It counts what ARRIVED (every shot in those units), not what is left, so it
-    /// never ticks down as you read; it simply goes when the last mark clears. Summing over
-    /// units-with-unseen rather than the whole rendered list is what keeps an archive feed
-    /// from counting the size of someone's scroll a year in.
+    /// One unit's share of the header ledger: its full shot count ("what arrived") and its
+    /// author, keyed by unit id so `FeedView`'s grow-only refreshes can merge per unit. The
+    /// totals used to be merged as a component-wise max of two `(shots, friends)` tuples,
+    /// which paired a shot count from one snapshot with a friend count from another — a
+    /// combination that was never true of any moment.
+    struct LedgerContribution: Equatable {
+        let shots: Int
+        let author: UUID
+    }
+
+    /// The header ledger's makeup: every unit holding at least one unseen shot, each
+    /// contributing its WHOLE shot count. The ledger counts what ARRIVED, not what is left,
+    /// so it never ticks down as you read; it simply goes when the last mark clears.
+    /// Counting units-with-unseen rather than the whole rendered list is what keeps an
+    /// archive feed from counting the size of someone's scroll a year in.
     ///
     /// `excludingAuthor`, when given, drops that author's own units before any of the above:
     /// you are not your own friend, so "N shots from N friends" must never count posts you
-    /// made yourself. This is the ONLY seen-state derivation that excludes them: rendering,
+    /// made yourself. This and `FeedView.anythingUnseen` (which decides when the ledger
+    /// SHOWS, and must agree or a stale count stays lit on the strength of posts the ledger
+    /// refuses to count) are the only seen-state derivations that exclude them: rendering,
     /// pills, `caughtUpIndex`, and retention all keep treating a unit as a unit regardless of
     /// who posted it, and a post you just created stays honestly unseen for you like any
     /// other post (nothing marks it seen on your own behalf); the exclusion alone is what
     /// keeps it, or any other post of yours, out of the count.
-    static func ledger(units: [FeedUnit], isSeen: (UUID) -> Bool,
-                        excludingAuthor currentUserId: UUID? = nil) -> (shots: Int, friends: Int)? {
+    static func ledgerContributions(units: [FeedUnit], isSeen: (UUID) -> Bool,
+                                    excludingAuthor currentUserId: UUID? = nil) -> [String: LedgerContribution] {
         let eligible = currentUserId.map { uid in units.filter { $0.author.id != uid } } ?? units
         let arrived = eligible.filter { $0.unseenCount(isSeen: isSeen) > 0 }
-        guard !arrived.isEmpty else { return nil }
-        let friends = Set(arrived.map(\.author.id)).count
-        return (arrived.reduce(0) { $0 + $1.items.count }, friends)
+        return Dictionary(uniqueKeysWithValues: arrived.map {
+            ($0.id, LedgerContribution(shots: $0.items.count, author: $0.author.id))
+        })
+    }
+
+    /// The line the header actually renders, `nil` when nothing contributed (the ledger is
+    /// never a zero).
+    static func ledgerTotal(_ contributions: [String: LedgerContribution]) -> (shots: Int, friends: Int)? {
+        guard !contributions.isEmpty else { return nil }
+        return (contributions.values.reduce(0) { $0 + $1.shots },
+                Set(contributions.values.map(\.author)).count)
+    }
+
+    static func ledger(units: [FeedUnit], isSeen: (UUID) -> Bool,
+                        excludingAuthor currentUserId: UUID? = nil) -> (shots: Int, friends: Int)? {
+        ledgerTotal(ledgerContributions(units: units, isSeen: isSeen, excludingAuthor: currentUserId))
+    }
+
+    /// The grow-only ratchet, per unit: everything already counted stays counted (reading a
+    /// unit mid-session must not pull the number down), fresh units join, and a unit present
+    /// in both keeps the larger shot count (a straddle completion can grow a counted day).
+    static func mergedLedgerContributions(
+        counted: [String: LedgerContribution],
+        fresh: [String: LedgerContribution]
+    ) -> [String: LedgerContribution] {
+        counted.merging(fresh) { old, new in
+            LedgerContribution(shots: max(old.shots, new.shots), author: new.author)
+        }
     }
 
     /// The caught-up block's position: after the last unit that still holds anything unseen,

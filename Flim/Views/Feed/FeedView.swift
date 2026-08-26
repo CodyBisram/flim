@@ -57,6 +57,11 @@ struct FeedView: View {
     /// arrived, not what is left, so reading a shot must not tick it down. It disappears
     /// (rather than recomputing) when the last mark clears.
     @State private var ledger: (shots: Int, friends: Int)?
+    /// What the ledger is made of, per unit id, so grow-only refreshes ratchet by MERGING
+    /// units rather than taking a component-wise max of two totals (which paired shot and
+    /// friend counts from different snapshots into a line that was never true of any
+    /// moment). `ledger` is always `FeedUnit.ledgerTotal` of this.
+    @State private var ledgerContributions: [String: FeedUnit.LedgerContribution] = [:]
     /// Gates the cards' seen-marking until the ledger snapshot exists, so snapshot-then-mark
     /// is an ordering guarantee rather than a race against the first visibility event.
     @State private var ledgerSnapshotted = false
@@ -111,8 +116,16 @@ struct FeedView: View {
         cachedUnits = FeedUnit.units(from: feed.feed).filter { !clearedUnitIDs.contains($0.id) }
     }
 
+    /// Whether the header ledger still has anything to stand for. Mirrors the ledger's own
+    /// author exclusion (you are not your own friend): the ledger must go out when the last
+    /// FRIEND mark clears. Counting your own units here kept a stale friend count lit
+    /// indefinitely — your own deeper frames stay honestly unseen unless you swipe your own
+    /// day, and those are exactly the posts the ledger refuses to count.
     private var anythingUnseen: Bool {
-        units.contains { $0.unseenCount(isSeen: { seenStore.isSeen($0) }) > 0 }
+        let uid = auth.currentUser?.id
+        return units.contains {
+            $0.author.id != uid && $0.unseenCount(isSeen: { seenStore.isSeen($0) }) > 0
+        }
     }
     /// First run: nobody followed and nothing to show. Not "caught up", which describes a
     /// feed that ran out rather than one that has not started.
@@ -205,9 +218,14 @@ struct FeedView: View {
         // the ledger, seam and cleared set are allowed to recompute. An ordinary foregrounding
         // that never crosses a boundary must never reshape the feed, so it keeps doing only the
         // reactions refresh this onChange already did.
-        .onChange(of: scenePhase) { _, phase in
+        .onChange(of: scenePhase) { previous, phase in
             guard phase == .active else {
-                backgroundedDayKey = FeedUnit.dayKey(for: .now)
+                // Stamp only on a genuine departure FROM .active. The return trip also
+                // passes through .inactive, and stamping there overwrote the overnight
+                // stamp with the current morning's day key one instant before the
+                // comparison below could see it — which made the boundary reload
+                // unreachable from any foregrounding, ever.
+                if previous == .active { backgroundedDayKey = FeedUnit.dayKey(for: .now) }
                 return
             }
             // `didLoad` false means the initial `.task` load hasn't landed yet (or there's no
@@ -675,35 +693,33 @@ struct FeedView: View {
         // A `formUnion` can only ever ADD ids, so that unit and its unseen shot would vanish
         // for the whole session, breaking "nothing unseen expires".
         //
-        // Full re-derivation is safe mid-session because `hasCleared` is a pure function of
-        // (items, seen marks, now): within one session, a new mark is always made AFTER the
-        // last boundary already baked into `now`, so a unit that just became fully seen does
-        // not become cleared until the NEXT boundary passes, and a straddle completion or a
-        // fresh arrival that appends an unseen item to a unit only ever moves it AWAY from
-        // cleared, never toward it. So re-deriving on a growOnly pass can only ever REVEAL a
-        // unit an earlier, partial pass wrongly hid; it can never hide one the reader is
-        // currently looking at. Hiding a genuinely-cleared unit still only happens on the
-        // next full reload, i.e. the next explicit catch-up moment, exactly as designed.
-        clearedUnitIDs = FeedUnit.clearedUnitIDs(
+        // On a growOnly pass the fresh derivation is INTERSECTED in, not taken wholesale: a
+        // growOnly pass may only ever REVEAL a unit an earlier, partial pass wrongly hid
+        // (intersection can remove ids, never add them). Taking it wholesale relied on "a
+        // mark made this session is always after the last boundary baked into `now`", which
+        // fails when the session itself is alive across 04:00 — a unit fully read at 3:55
+        // would clear on a 4:05 paging event and vanish under the reader mid-scroll. Hiding
+        // a genuinely-cleared unit therefore only happens on a full snapshot, i.e. the next
+        // explicit catch-up moment, exactly as designed.
+        let freshCleared = FeedUnit.clearedUnitIDs(
             units: FeedUnit.units(from: feed.feed), seenAt: { seenStore.seenDate($0) })
+        clearedUnitIDs = growOnly ? clearedUnitIDs.intersection(freshCleared) : freshCleared
         // Explicit, not left to the `.onChange(of: clearedUnitIDs)` safety net: everything below
         // this line reads `units` (the cache) synchronously, in the same function call, before
         // SwiftUI's own change-tracking would ever have a chance to fire. See `cachedUnits`'s own
         // doc.
         recomputeUnits()
 
-        // You are not your own friend: see `FeedUnit.ledger`'s own doc for why this is the
-        // only seen-state derivation that excludes your own posts (unit rendering, seen
-        // pills, `caughtUpIndex`, and retention all keep counting them normally).
-        let fresh = FeedUnit.ledger(units: units, isSeen: { seenStore.isSeen($0) },
-                                     excludingAuthor: auth.currentUser?.id)
-        if growOnly, let old = ledger {
-            if let fresh {
-                ledger = (max(old.shots, fresh.shots), max(old.friends, fresh.friends))
-            }
-        } else {
-            ledger = fresh
-        }
+        // You are not your own friend: see `FeedUnit.ledgerContributions`'s own doc for why
+        // this and `anythingUnseen` are the only seen-state derivations that exclude your
+        // own posts (unit rendering, seen pills, `caughtUpIndex`, and retention all keep
+        // counting them normally).
+        let fresh = FeedUnit.ledgerContributions(units: units, isSeen: { seenStore.isSeen($0) },
+                                                 excludingAuthor: auth.currentUser?.id)
+        ledgerContributions = growOnly
+            ? FeedUnit.mergedLedgerContributions(counted: ledgerContributions, fresh: fresh)
+            : fresh
+        ledger = FeedUnit.ledgerTotal(ledgerContributions)
         ledgerSnapshotted = true
         snapshotSeam(growOnly: growOnly)
     }

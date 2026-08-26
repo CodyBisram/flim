@@ -228,6 +228,49 @@ final class FeedUnitTests: XCTestCase {
         XCTAssertNil(FeedUnit.ledger(units: units, isSeen: { _ in false }, excludingAuthor: me.id))
     }
 
+    func testLedgerRatchetMergesPerUnitNotComponentWise() {
+        // The bug this pins: the growOnly ratchet was a component-wise max of two totals,
+        // so counted (5 shots, 1 friend) merged with fresh (3 shots, 2 friends) displayed
+        // "5 shots from 2 friends", a pairing that was never true of any moment. Merging
+        // per unit keeps every counted unit AND every fresh one: 8 shots from 3 friends.
+        let a = UUID(), b = UUID(), c = UUID()
+        let counted = ["unitA": FeedUnit.LedgerContribution(shots: 5, author: a)]
+        let fresh = [
+            "unitB": FeedUnit.LedgerContribution(shots: 2, author: b),
+            "unitC": FeedUnit.LedgerContribution(shots: 1, author: c),
+        ]
+        let merged = FeedUnit.mergedLedgerContributions(counted: counted, fresh: fresh)
+        let total = FeedUnit.ledgerTotal(merged)
+        XCTAssertEqual(total?.shots, 8)
+        XCTAssertEqual(total?.friends, 3)
+    }
+
+    func testLedgerRatchetKeepsAUnitReadSinceItWasCounted() {
+        // A unit read mid-session drops out of the FRESH derivation; the ratchet must keep
+        // it counted anyway (the ledger states what arrived, and never ticks down).
+        let a = UUID()
+        let counted = ["unitA": FeedUnit.LedgerContribution(shots: 4, author: a)]
+        let merged = FeedUnit.mergedLedgerContributions(counted: counted, fresh: [:])
+        XCTAssertEqual(FeedUnit.ledgerTotal(merged)?.shots, 4)
+        XCTAssertEqual(FeedUnit.ledgerTotal(merged)?.friends, 1)
+    }
+
+    func testLedgerRatchetGrowsACountedUnitThatGainedShots() {
+        // A straddle completion can append shots to a day already counted: the unit keeps
+        // one entry and takes the larger count, never double-counts.
+        let a = UUID()
+        let counted = ["unitA": FeedUnit.LedgerContribution(shots: 2, author: a)]
+        let fresh = ["unitA": FeedUnit.LedgerContribution(shots: 5, author: a)]
+        let merged = FeedUnit.mergedLedgerContributions(counted: counted, fresh: fresh)
+        XCTAssertEqual(FeedUnit.ledgerTotal(merged)?.shots, 5)
+        XCTAssertEqual(FeedUnit.ledgerTotal(merged)?.friends, 1)
+    }
+
+    func testLedgerTotalOfNothingIsNil() {
+        // The ledger is never a zero: no contributions means no line at all.
+        XCTAssertNil(FeedUnit.ledgerTotal([:]))
+    }
+
     func testCaughtUpIndexIsLastUnitWithUnseen() {
         let mira = profile(UUID(), name: "mira")
         let dev = profile(UUID(), name: "dev.k")
