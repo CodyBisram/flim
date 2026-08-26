@@ -115,10 +115,13 @@ final class RollRevealViewModel {
     /// File URLs, not UIImages. See PhotoExport.
     var shareImages: [URL] = []
     var showShareAll = false
+    /// A TOTAL failure, shown inline beside the Save all button with a retry (rule 4 of the
+    /// confirmations redesign: failures land where the action was, never as a modal). A
+    /// partial result doesn't set this; it proceeds to the share sheet with `partialNotice`.
     var saveAllError: String?
-    /// The alert is a warning, not a failure: open the sheet once it is dismissed. Presenting
-    /// both at once means SwiftUI shows one and silently drops the other.
-    var shareAfterAlert = false
+    /// The some-of-them line ("Only 4 of 9..."), shown alongside the share sheet rather than
+    /// as a modal in front of it. Cleared when the sheet closes.
+    var partialNotice: String?
 
     /// Cancels the auto-advance. Call from the view's `onDisappear`; the gesture layer's own hold
     /// timer is view-local and cancels alongside this one, not through here.
@@ -391,7 +394,7 @@ final class RollRevealViewModel {
         guard !savingAll else { return }
         savingAll = true
         saveAllError = nil
-        shareAfterAlert = false
+        partialNotice = nil
         Haptics.tap()
         Task {
             // Same streaming export as the roll's own Save all, for the same reason: a reveal can
@@ -409,14 +412,15 @@ final class RollRevealViewModel {
             if images.isEmpty {
                 // Silence here is indistinguishable from a broken button.
                 Haptics.error()
-                saveAllError = "Couldn't load the photos. Check your connection and try again."
+                saveAllError = "Couldn't load the photos. Check your connection."
             } else {
                 if images.count < deck.count {
-                    saveAllError = "Only \(images.count) of \(deck.count) photos could be loaded. Saving those now."
-                    shareAfterAlert = true
-                } else {
-                    showShareAll = true
+                    // Some photos IS better than none, but claiming "all" when it was 4 of 9
+                    // would be a lie discovered later in the camera roll. Said beside the
+                    // sheet, not as a modal in front of it.
+                    partialNotice = "Only \(images.count) of \(deck.count) photos could be loaded. Saving those now."
                 }
+                showShareAll = true
             }
         }
     }

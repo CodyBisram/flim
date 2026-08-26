@@ -66,14 +66,16 @@ struct RollDetailView: View {
     @Namespace private var photoNS
     @State private var selectedPhoto: Photo?
     @State private var memberNames: [UUID: String] = [:]   // userId → username, for attribution
-    @State private var showRename = false
-    @State private var renameDraft = ""
+    /// The editable title's live text, seeded from the roll once (see the `.task` seed) and
+    /// re-seeded only by a failed save's revert; the field itself is the source while focused.
+    @State private var titleDraft = ""
+    @FocusState private var titleFocused: Bool
+    /// The grid long-press delete flow: the photo held, and the consequence sheet for it.
+    @State private var gridDeletePhoto: Photo?
+    @State private var gridDeleteConsequence: RollConsequence?
     @State private var showDeleteRoll = false
     @State private var savingAll = false
     @State private var saveAllError: String?
-    /// Set when the alert is a warning rather than a failure, so the share sheet opens after it
-    /// is dismissed. Presenting both at once means SwiftUI shows one and drops the other.
-    @State private var shareAfterAlert = false
     /// File URLs, not UIImages: see PhotoExport for why the roll is not held in memory.
     @State private var shareImages: [URL] = []
     @State private var showShareAll = false
@@ -126,7 +128,30 @@ struct RollDetailView: View {
             FlimTheme.bg.ignoresSafeArea()
 
             VStack(spacing: 0) {
-                FlimNavTitle(displayName.isEmpty ? roll.name : displayName)
+                // The creator's title IS the rename control (confirmations redesign rule 4's
+                // sibling: the text-field alert became this). Tap, type, saves on blur or
+                // return; a failed save reverts with the toast. Everyone else gets the plain
+                // title, renaming was creator-only before and stays so.
+                if isCreator {
+                    TextField("Roll name", text: $titleDraft)
+                        .flimFont(34, weight: .light, relativeTo: .title3)
+                        .tracking(0.5)
+                        .foregroundStyle(FlimTheme.textPrimary)
+                        .textFieldStyle(.plain)
+                        .submitLabel(.done)
+                        .focused($titleFocused)
+                        .onSubmit { titleFocused = false }
+                        .onChange(of: titleFocused) { _, focused in
+                            if !focused { commitTitleEdit() }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 20)
+                        .padding(.top, 6)
+                        .padding(.bottom, 10)
+                        .accessibilityLabel("Roll name, editable")
+                } else {
+                    FlimNavTitle(displayName.isEmpty ? roll.name : displayName)
+                }
 
                 if let count = rollService.memberCounts[roll.id] {
                     Label("\(count) member\(count == 1 ? "" : "s")", systemImage: "person.2.fill")
@@ -281,8 +306,9 @@ struct RollDetailView: View {
 
                     if isCreator {
                         Button {
-                            renameDraft = roll.name
-                            showRename = true
+                            // The title itself is the editor now; this menu item just puts
+                            // the cursor in it, so the old path stays discoverable.
+                            titleFocused = true
                         } label: { Label("Rename roll", systemImage: "pencil") }
                         Button(role: .destructive) {
                             showDeleteRoll = true
@@ -308,6 +334,10 @@ struct RollDetailView: View {
         // itself also checks `Task.isCancelled` on top of that, so a mid-drain cancellation stops
         // between iterations rather than waiting for one more full page.
         .task {
+            // Seed the editable title once per appearance; while focused, the field itself
+            // is the source of truth and this must not fight it (it can't: `.task` runs
+            // before any focus exists).
+            titleDraft = displayName.isEmpty ? roll.name : displayName
             if let uid = auth.currentUser?.id { await feed.loadBlocked(userId: uid) }
             guard !Task.isCancelled else { return }
             await vm.loadRoll(photoService: photoService, rollId: roll.id, blockedIds: feed.blockedIds)
@@ -426,16 +456,38 @@ struct RollDetailView: View {
         .sheet(isPresented: $showShareAll) {
             ActivityView(items: shareImages)
         }
-        .alert("Save all", isPresented: Binding(get: { saveAllError != nil },
-                                                set: { if !$0 { saveAllError = nil } })) {
-            Button("OK", role: .cancel) {
-                if shareAfterAlert {
-                    shareAfterAlert = false
-                    showShareAll = true
+        // Rule 4 (confirmations redesign): a failed Save all lands where the action was, with
+        // retry in place, never as a modal whose only button admits it. Partial results skip
+        // this entirely: they proceed straight to the share sheet with a toast saying how
+        // many made it, see `saveAll()`.
+        .overlay(alignment: .bottom) {
+            if let saveAllError {
+                HStack(spacing: 10) {
+                    Image(systemName: "exclamationmark.circle")
+                        .foregroundStyle(.red.opacity(0.9))
+                    Text(saveAllError)
+                        .flimFont(13, weight: .medium)
+                        .foregroundStyle(.white)
+                        .lineLimit(2)
+                    Spacer(minLength: 6)
+                    Button("Retry") { saveAll() }
+                        .flimFont(13, weight: .semibold)
+                        .foregroundStyle(accent)
+                    Button {
+                        withAnimation { self.saveAllError = nil }
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(FlimTheme.textTertiary)
+                    }
+                    .accessibilityLabel("Dismiss")
                 }
+                .padding(.horizontal, 16).padding(.vertical, 12)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.red.opacity(0.3), lineWidth: 1))
+                .padding(.horizontal, 16).padding(.bottom, 10)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
             }
-        } message: {
-            Text(saveAllError ?? "")
         }
         .sheet(isPresented: $showInviteShare) {
             ActivityView(items: [AppInfo.rollInviteMessage(rollName: displayName.isEmpty ? roll.name : displayName,
@@ -449,13 +501,17 @@ struct RollDetailView: View {
         .sheet(isPresented: $showDeleteRoll) {
             ConsequenceSheet(consequence: .deleteRoll(
                 name: displayName.isEmpty ? roll.name : displayName,
-                people: memberNames.isEmpty ? nil : memberNames.count)) {
+                people: rollService.memberCounts[roll.id]
+                    ?? (memberNames.isEmpty ? nil : memberNames.count))) {
                 notifications.cancelRollDevelopNotification(rollId: roll.id)
                 Task {
                     try? await rollService.deleteRoll(rollId: roll.id)
                     dismiss()
                 }
             }
+        }
+        .sheet(item: $gridDeleteConsequence) { consequence in
+            ConsequenceSheet(consequence: consequence) { performGridDelete() }
         }
         .sheet(isPresented: $showLeaveRoll) {
             ConsequenceSheet(consequence: .leave(
@@ -476,25 +532,28 @@ struct RollDetailView: View {
                 }
             }
         }
-        .alert("Rename roll", isPresented: $showRename) {
-            TextField("Roll name", text: $renameDraft)
-            Button("Save") {
-                let name = renameDraft.trimmingCharacters(in: .whitespaces)
-                guard !name.isEmpty else { return }
-                displayName = name
-                Task {
-                    do {
-                        try await rollService.renameRoll(rollId: roll.id, name: name)
-                    } catch {
-                        // The rename never landed; restore the input so it stays retryable
-                        // instead of showing a name the server never accepted.
-                        displayName = roll.name
-                        Haptics.error()
-                        showToast("Couldn't rename the roll. Check your connection and try again.", isError: true)
-                    }
-                }
+    }
+
+    /// The editable title's save-on-blur. Empty or unchanged input reverts silently (leaving
+    /// the field blank must not rename a roll to nothing); a failed save reverts the visible
+    /// name so the screen never shows a name the server never accepted.
+    private func commitTitleEdit() {
+        let name = titleDraft.trimmingCharacters(in: .whitespaces)
+        let current = displayName.isEmpty ? roll.name : displayName
+        guard !name.isEmpty, name != current else {
+            titleDraft = current
+            return
+        }
+        displayName = name
+        Task {
+            do {
+                try await rollService.renameRoll(rollId: roll.id, name: name)
+            } catch {
+                displayName = current
+                titleDraft = current
+                Haptics.error()
+                showToast("Couldn't rename the roll. Check your connection and try again.", isError: true)
             }
-            Button("Cancel", role: .cancel) {}
         }
     }
 
@@ -511,7 +570,6 @@ struct RollDetailView: View {
 
     private func saveAll() {
         saveAllError = nil
-        shareAfterAlert = false
         guard !savingAll else { return }
         savingAll = true
         Task {
@@ -544,19 +602,18 @@ struct RollDetailView: View {
             savingAll = false
             if images.isEmpty {
                 // Every fetch failed, so no share sheet is coming. Silence here looks exactly
-                // like the menu item doing nothing at all.
+                // like the menu item doing nothing at all. Inline with Retry, never a modal.
                 Haptics.error()
-                saveAllError = "Couldn't load the photos. Check your connection and try again."
+                withAnimation { saveAllError = "Couldn't load the photos. Check your connection." }
             } else {
                 if images.count < vm.developedPhotos.count {
                     // A partial result still reaches the sheet, because some photos IS better
                     // than none, but claiming "all" when it was 4 of 9 would be a lie the person
                     // only discovers later, in their camera roll, with no way to tell which four.
-                    saveAllError = "Only \(images.count) of \(vm.developedPhotos.count) photos could be loaded. Saving those now."
-                    shareAfterAlert = true
-                } else {
-                    showShareAll = true
+                    // Said in a toast alongside the sheet now, not a modal in front of it.
+                    showToast("Only \(images.count) of \(vm.developedPhotos.count) photos could be loaded. Saving those now.", isError: true)
                 }
+                showShareAll = true
             }
         }
     }
@@ -571,10 +628,47 @@ struct RollDetailView: View {
                 Button { setCover(photo) } label: { Label("Use as roll cover", systemImage: "rectangle.on.rectangle") }
             }
             Button { share(photo) } label: { Label("Share", systemImage: "square.and.arrow.up") }
+            // Own shots only: the item simply doesn't exist on a friend's cell (a disabled
+            // Delete on their photo would read as broken, not as theirs). Routes through the
+            // same consequence sheet the pager uses; the grid must not be a quieter door to
+            // the same shared delete.
+            if photo.userId == auth.currentUser?.id {
+                Button(role: .destructive) { requestGridDelete(photo) } label: {
+                    Label("Delete photo", systemImage: "trash")
+                }
+            }
         } else {
             // Nothing to act on until the roll develops, but an empty menu would just flash a
             // blank card, so say why instead.
             Text("Develops with the roll")
+        }
+    }
+
+    private func requestGridDelete(_ photo: Photo) {
+        gridDeletePhoto = photo
+        let mine = (auth.currentUser?.id).map { uid in
+            (vm.developedPhotos + vm.developingPhotos)
+                .filter { $0.userId == uid && $0.id != photo.id }.count
+        }
+        gridDeleteConsequence = .deleteShot(
+            rollName: displayName.isEmpty ? roll.name : displayName,
+            people: rollService.memberCounts[roll.id],
+            myOtherShots: mine)
+    }
+
+    private func performGridDelete() {
+        guard let photo = gridDeletePhoto else { return }
+        gridDeletePhoto = nil
+        Task {
+            // Same contract as the pager's delete: `deletePhoto` only reports success once
+            // the photo is actually gone, and only then does the grid drop the cell.
+            guard await photoService.deletePhoto(photo) else {
+                Haptics.error()
+                showToast("Couldn't delete that. Check your connection and try again.", isError: true)
+                return
+            }
+            feed.dropPost(forDeletedPhotoId: photo.id)
+            vm.photos.removeAll { $0.id == photo.id }
         }
     }
 

@@ -580,6 +580,26 @@ final class AuthService {
         try await supabase.auth.signOut()
     }
 
+    /// What the account-deletion page shows before the held confirm: server-side counts of
+    /// the caller's photos, created rolls, and posts (the `account_inventory` RPC, pinned to
+    /// auth.uid()). Server counts on purpose: the client's photo list is paginated and any
+    /// local count would understate exactly when the number matters most. `nil` on any
+    /// failure; the page then says it couldn't load the numbers rather than showing zeros.
+    struct AccountInventory: Codable {
+        let photos: Int
+        let rollsCreated: Int
+        let posts: Int
+        enum CodingKeys: String, CodingKey {
+            case photos
+            case rollsCreated = "rolls_created"
+            case posts
+        }
+    }
+
+    func accountInventory() async -> AccountInventory? {
+        try? await supabase.rpc("account_inventory").single().execute().value
+    }
+
     /// Permanently deletes the account + all associated data (App Store Guideline 5.1.1(v)).
     /// The `delete_account` RPC removes the auth user, which cascades to the profile, rolls,
     /// memberships, photos, and reports. Then we clear the local session.

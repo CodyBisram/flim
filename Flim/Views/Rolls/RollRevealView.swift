@@ -421,23 +421,39 @@ struct RollRevealView: View {
                 }
                 .disabled(viewModel.savingAll)
                 .padding(.top, 4)
+
+                // Rule 4 (confirmations redesign): a failed Save all lands right here, under
+                // the button that caused it, with the retry in place. A partial result says
+                // how many made it in the same quiet spot; the share sheet still opens.
+                if let error = viewModel.saveAllError {
+                    HStack(spacing: 10) {
+                        Text(error)
+                            .font(.system(size: 12.5))
+                            .foregroundStyle(Color(white: 0.55))
+                        Button("Retry") { viewModel.saveAll() }
+                            .font(.system(size: 12.5, weight: .semibold))
+                            .foregroundStyle(accent)
+                    }
+                    .padding(.top, 6)
+                    .transition(.opacity)
+                } else if let notice = viewModel.partialNotice {
+                    Text(notice)
+                        .font(.system(size: 12.5))
+                        .foregroundStyle(Color(white: 0.55))
+                        .padding(.top, 6)
+                        .transition(.opacity)
+                }
             }
         }
         .transition(.opacity)
         .sheet(isPresented: Binding(get: { viewModel.showShareAll },
-                                    set: { viewModel.showShareAll = $0 })) {
+                                    set: {
+                                        viewModel.showShareAll = $0
+                                        // The some-of-them line has done its job once the
+                                        // sheet closes; a stale count must not linger.
+                                        if !$0 { viewModel.partialNotice = nil }
+                                    })) {
             ActivityView(items: viewModel.shareImages)
-        }
-        .alert("Save all", isPresented: Binding(get: { viewModel.saveAllError != nil },
-                                                set: { if !$0 { viewModel.saveAllError = nil } })) {
-            Button("OK", role: .cancel) {
-                if viewModel.shareAfterAlert {
-                    viewModel.shareAfterAlert = false
-                    viewModel.showShareAll = true
-                }
-            }
-        } message: {
-            Text(viewModel.saveAllError ?? "")
         }
     }
 

@@ -23,10 +23,8 @@ struct ProfileView: View {
     @Environment(\.openURL) private var openURL
     @Environment(\.scenePhase) private var scenePhase
 
-    @State private var showDeleteConfirm = false
-    @State private var isDeleting = false
-    @State private var deleteError: String?
-    @State private var showWipeConfirm = false
+    @State private var showDeletePage = false
+    @State private var showWipePage = false
     @State private var showBlockedUsers = false
     @State private var showFeedbackSheet = false
     /// Guards `requestAuthorizationIfNeeded()` against a double tap while the OS's one-shot
@@ -41,7 +39,11 @@ struct ProfileView: View {
     /// Guards the toggle against a double tap while `PHPhotoLibrary.requestAuthorization` is in
     /// flight, same shape as `isRequestingNotifAuth`.
     @State private var isRequestingPhotosAuth = false
-    @State private var showPhotosAccessAlert = false
+    /// True after iOS refused (or has revoked) add-only Photos access while the save toggle
+    /// was being turned on: the toggle row explains itself inline with Open Settings beside
+    /// it, instead of a modal (confirmations redesign rule 4). Cleared the moment a refresh
+    /// sees access granted again.
+    @State private var photosAccessBlocked = false
 
     @AppStorage(InstantFilmProcessor.neutralCaptureKey) private var neutralCapture = false
     @AppStorage("developNotificationsEnabled") private var notificationsEnabled = true
@@ -105,6 +107,19 @@ struct ProfileView: View {
                     ))
                     .tint(accent)
                     .disabled(auth.currentUser?.id == nil || isRequestingPhotosAuth)
+                    if photosAccessBlocked {
+                        HStack(spacing: 11) {
+                            Text("iOS is holding this one. Photos access is off for \(AppInfo.appName).")
+                                .flimFont(12, relativeTo: .caption)
+                                .foregroundStyle(FlimTheme.textSecondary)
+                            Spacer(minLength: 6)
+                            Button("Open Settings") {
+                                if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
+                            }
+                            .flimFont(12.5, weight: .semibold, relativeTo: .caption)
+                            .foregroundStyle(accent)
+                        }
+                    }
                 } header: {
                     sectionHeader("Camera Roll")
                 } footer: {
@@ -151,7 +166,7 @@ struct ProfileView: View {
                 // Test-only data reset. DEBUG builds only, so App Review never sees it.
                 #if DEBUG
                 Section {
-                    Button(role: .destructive) { showWipeConfirm = true } label: {
+                    Button(role: .destructive) { showWipePage = true } label: {
                         Label("Wipe my test data", systemImage: "trash")
                     }
                 }
@@ -167,19 +182,12 @@ struct ProfileView: View {
                             .foregroundStyle(Color(red: 1, green: 0.35, blue: 0.35))
                             .frame(maxWidth: .infinity)
                     }
-                    Button { showDeleteConfirm = true } label: {
-                        Group {
-                            if isDeleting {
-                                ProgressView().tint(FlimTheme.textSecondary)
-                            } else {
-                                Text("Delete Account")
-                                    .flimFont(13, relativeTo: .subheadline)
-                                    .foregroundStyle(FlimTheme.textTertiary)
-                            }
-                        }
-                        .frame(maxWidth: .infinity)
+                    Button { showDeletePage = true } label: {
+                        Text("Delete Account")
+                            .flimFont(13, relativeTo: .subheadline)
+                            .foregroundStyle(FlimTheme.textTertiary)
+                            .frame(maxWidth: .infinity)
                     }
-                    .disabled(isDeleting)
                 } footer: {
                     // The build, then the signature under it. Smaller and fainter than the
                     // version on purpose: the version is the line you come here to read when
@@ -218,38 +226,14 @@ struct ProfileView: View {
             .sheet(isPresented: $showFeedbackSheet) {
                 FeedbackSheet()
             }
-            .confirmationDialog("Delete your account?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
-                Button("Delete Everything", role: .destructive) {
-                    Haptics.warning()
-                    isDeleting = true
-                    Task {
-                        do {
-                            try await auth.deleteAccount()
-                            dismiss()
-                        } catch {
-                            deleteError = error.localizedDescription
-                            isDeleting = false
-                        }
-                    }
-                }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text("This permanently deletes your account, photos, and rolls. This can't be undone.")
+            // Rule 3 (confirmations redesign): the irreversible-forever action gets a page
+            // with a real inventory and a held confirm, never a sheet with a yes/no. The
+            // debug wipe shares the page's shape; see `AccountDeleteView`.
+            .navigationDestination(isPresented: $showDeletePage) {
+                AccountDeleteView(mode: .deleteAccount)
             }
-            .alert("Couldn't delete account", isPresented: .constant(deleteError != nil)) {
-                Button("OK") { deleteError = nil }
-            } message: {
-                Text(deleteError ?? "")
-            }
-            .confirmationDialog("Wipe all your test data?", isPresented: $showWipeConfirm, titleVisibility: .visible) {
-                Button("Wipe Everything", role: .destructive) {
-                    guard let uid = auth.currentUser?.id else { return }
-                    Haptics.warning()
-                    Task { await photos.deleteAllMyData(userId: uid) }
-                }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text("Deletes all your photos, thumbnails, avatar/cover, and posts from storage. Resets your egress baseline. Your account stays.")
+            .navigationDestination(isPresented: $showWipePage) {
+                AccountDeleteView(mode: .wipeData)
             }
         }
         .task { await notifications.refreshAuthorizationState() }
@@ -262,14 +246,6 @@ struct ProfileView: View {
             refreshCameraRollAutoSaveState()
         }
         .onAppear { refreshCameraRollAutoSaveState() }
-        .alert("Allow Photos access", isPresented: $showPhotosAccessAlert) {
-            Button("Open Settings") {
-                if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
-            }
-            Button("Not Now", role: .cancel) {}
-        } message: {
-            Text("\(AppInfo.appName) needs permission to add photos to your library.")
-        }
         .flimSheetSurface()
         .presentationDetents([.large])
     }
@@ -282,8 +258,11 @@ struct ProfileView: View {
     /// again on the next refresh without needing a re-tap.
     private func refreshCameraRollAutoSaveState() {
         guard let uid = auth.currentUser?.id else { cameraRollAutoSaveEnabled = false; return }
-        cameraRollAutoSaveEnabled = CameraRollAutoSave.shared.isEnabled(for: uid)
-            && PHPhotoLibrary.authorizationStatus(for: .addOnly) == .authorized
+        let authorized = PHPhotoLibrary.authorizationStatus(for: .addOnly) == .authorized
+        cameraRollAutoSaveEnabled = CameraRollAutoSave.shared.isEnabled(for: uid) && authorized
+        // Access came back (someone went to Settings and returned): the inline explainer's
+        // job is done.
+        if authorized { photosAccessBlocked = false }
     }
 
     /// Turning the toggle OFF is immediate, no prompt. Turning it ON first asks iOS for
@@ -311,7 +290,7 @@ struct ProfileView: View {
             default:
                 cameraRollAutoSaveEnabled = false
                 Haptics.error()
-                showPhotosAccessAlert = true
+                withAnimation { photosAccessBlocked = true }
             }
         }
     }
@@ -505,10 +484,27 @@ struct EditProfileView: View {
                     }
                 }
             }
-            .alert("Couldn't save", isPresented: Binding(get: { photoError != nil },
-                                                         set: { if !$0 { photoError = nil } })) {
-                Button("OK", role: .cancel) {}
-            } message: { Text(photoError ?? "") }
+            // Rule 4 (confirmations redesign): a failed avatar/cover save is a banner over
+            // the screen where retrying is one tap away (the picker is right there), never a
+            // modal whose only button admits it.
+            .overlay(alignment: .top) {
+                if let photoError {
+                    Label(photoError, systemImage: "exclamationmark.triangle.fill")
+                        .flimFont(13, weight: .medium).foregroundStyle(.white)
+                        .padding(.horizontal, 16).padding(.vertical, 10)
+                        .background(.ultraThinMaterial, in: Capsule())
+                        .padding(.top, 6).padding(.horizontal, 16)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
+            }
+            .animation(.snappy(duration: 0.25), value: photoError)
+            .onChange(of: photoError) { _, error in
+                guard error != nil else { return }
+                Task {
+                    try? await Task.sleep(for: .seconds(2.6))
+                    withAnimation { photoError = nil }
+                }
+            }
             .task { await refreshAvatar() }
             .onChange(of: auth.currentUser?.avatarPath) { Task { await refreshAvatar() } }
         }

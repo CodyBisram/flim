@@ -225,6 +225,7 @@
 		EECAD4AB8FC87AFACD4A5A80 /* RollMembersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1AA5EF66C46272F42891AF4 /* RollMembersView.swift */; };
 		F15C4CF69166348822131747 /* LookRenditionSweep.swift in Sources */ = {isa = PBXBuildFile; fileRef = E53325DF6E6AAFC6CD2ACBB6 /* LookRenditionSweep.swift */; };
 		F184E9E2AABA6A9F4F29EE52 /* FollowingList.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0361D553ECF38F99C180ACF4 /* FollowingList.swift */; };
+		F1A30C1267511FF08CEF2AB9 /* AccountDeleteView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 982135580D7C1245419DF28E /* AccountDeleteView.swift */; };
 		F23A4D91C6CD5C10DAAD5948 /* ActivitySectionsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B77B536156AA303ED4CF95D3 /* ActivitySectionsTests.swift */; };
 		F28BA958FD55FFA0EE8BDA41 /* FlimApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01F7C56CF5A21FB71964CFEB /* FlimApp.swift */; };
 		F3492DCB0D6D8A98FBE699B2 /* CreateRollView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA95E5BB427471DF71E11E56 /* CreateRollView.swift */; };
@@ -440,6 +441,7 @@
 		9249229E385AAD5E2A06EBB0 /* FeedUnitCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedUnitCard.swift; sourceTree = "<group>"; };
 		950384B61AF8316D3517594E /* PostDetailSwipeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PostDetailSwipeTests.swift; sourceTree = "<group>"; };
 		9733A56107406A4222E1AE1C /* DarkroomWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DarkroomWidget.swift; sourceTree = "<group>"; };
+		982135580D7C1245419DF28E /* AccountDeleteView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountDeleteView.swift; sourceTree = "<group>"; };
 		9A9A45FD713A54E4C2F2140E /* DarkroomMonthSummaryV2Tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DarkroomMonthSummaryV2Tests.swift; sourceTree = "<group>"; };
 		9AE61FE9182CC567D4698F8A /* CameraRollSelection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraRollSelection.swift; sourceTree = "<group>"; };
 		9B22CA37A589546819FD3D43 /* ProfileCropGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileCropGeometry.swift; sourceTree = "<group>"; };
@@ -688,6 +690,7 @@
 		65E89728796BB8EE12A233ED /* Profile */ = {
 			isa = PBXGroup;
 			children = (
+				982135580D7C1245419DF28E /* AccountDeleteView.swift */,
 				4391C801DD418F969E730432 /* BadgePickerSheet.swift */,
 				2DBDD795E7211D298DCFEB50 /* BlockedUsersSheet.swift */,
 				A251B6DCFD8210DF89FD18B3 /* FeedbackSheet.swift */,
@@ -1188,6 +1191,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				FA0835F7D7364268088D32F2 /* AccountChange.swift in Sources */,
+				F1A30C1267511FF08CEF2AB9 /* AccountDeleteView.swift in Sources */,
 				3867802F2389D9765988E950 /* Activation.swift in Sources */,
 				DF79D7CBD7A4684626EF2080 /* ActivityFeedView.swift in Sources */,
 				74EA99E5BA040D1C53184975 /* ActivitySections.swift in Sources */,
