@@ -20,10 +20,16 @@ doing anything else. Prefer the `admin_*` RPCs and the tested queries in
 
 ## The checks
 
-1. **Egress vs the launch gate.** Current calendar month's egress total, and a straight-
-   line projection to month end. ALERT if the projection exceeds 4GB (80% of the 5GB free
-   tier). This is also the R2 tripwire: an ALERT here is the signal that re-opens the R2
-   conversation, per the 1.5 direction. Do not re-propose R2 on a PASS.
+1. **Egress run-rate vs the R2 trigger.** The project is on Supabase Pro: 250GB egress
+   per month included (decided 2026-08-21; the free-tier 5GB gate is dead, do not
+   resurrect it). Compute the modeled monthly RUN-RATE exactly as the dashboard's
+   Ceilings gauge does: (app opens last 7 days / 7) x 30 x 9MB. Report it as a run-rate,
+   never as a month projection; the month-to-date figure is a floor and says so. ALERT
+   if the run-rate exceeds 100GB/month, which is the owner-ratified R2 trigger. The
+   Monday GitHub workflow `r2-tripwire.yml` (scripts/r2_trigger_check.sh) automates this
+   same threshold; this check is the cross-check, so also confirm that workflow's most
+   recent run succeeded. The 9MB constant is a measured cold-cache session; if the owner
+   supplies the dashboard's real egress figure, recalibrate it rather than trusting it.
 2. **pg_net bloat.** Size of `net._http_response`. The 2026-08 incident was 110MB of
    response rows from per-minute crons. ALERT above 20MB, which means the cleanup cron
    has stopped doing its job.
