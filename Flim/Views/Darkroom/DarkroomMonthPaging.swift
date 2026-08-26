@@ -35,7 +35,7 @@ enum DarkroomMonthPaging {
     /// and a count must never be guessed (see the closing row's own doc for the exact copy).
     static func nextOlderMonth(
         anchor: DarkroomYearMonth,
-        summaries: [DarkroomMonthSummary]?,
+        summaries: [DarkroomMonthSummaryV2]?,
         spilloverMonths: [DarkroomYearMonth]
     ) -> (month: DarkroomYearMonth, shotCount: Int?)? {
         if let summaries {

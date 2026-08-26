@@ -76,12 +76,12 @@ struct DarkroomView: View {
     /// alongside `reload()`, never per cell.
     @State private var unsortedURLCache: [UUID: URL] = [:]
     @State private var showSortDeck = false
-    /// `darkroom_month_summary`'s rows, `nil` until `reload()`'s dedicated fetch resolves or the
-    /// RPC isn't reachable yet (see `PhotoService.darkroomMonthSummary`'s own doc). Every reader
-    /// treats `nil` as "no server summary yet", never as zero; every count the zoom bar and the
-    /// Year/All-time rungs show comes from this, never from a loaded page.
-    @State private var monthSummaries: [DarkroomMonthSummary]?
-    /// Whether the `darkroom_month_summary` fetch is currently in flight, distinct from
+    /// `darkroom_month_summary_v2`'s rows, `nil` until `reload()`'s dedicated fetch resolves or
+    /// the RPC isn't reachable yet (see `PhotoService.darkroomMonthSummaryV2`'s own doc). Every
+    /// reader treats `nil` as "no server summary yet", never as zero; every count the zoom bar
+    /// and the Year/All-time rungs show comes from this, never from a loaded page.
+    @State private var monthSummaries: [DarkroomMonthSummaryV2]?
+    /// Whether the `darkroom_month_summary_v2` fetch is currently in flight, distinct from
     /// `monthSummaries == nil`: the two together are what let the Year/All-time rungs tell "still
     /// loading, be quiet about it" from "genuinely failed/unreachable, say so" (see
     /// `yearContent`/`allTimeContent`/`rungUnavailableState`'s own docs). Starts `true` so the
@@ -188,6 +188,18 @@ struct DarkroomView: View {
     @State private var cachedMonthScopedUnits: [DarkroomDayUnit] = []
 
     private var stripCapacity: Int {
+        max(1, DarkroomDayUnit.stripCapacity(availableWidth: scrollWidth - 32))
+    }
+
+    /// `DarkroomYearRow`'s own per-row frame capacity: the SAME `DarkroomDayUnit.stripCapacity`
+    /// math `stripCapacity` above uses for the default rack (44x59 frames, 46pt pitch), against
+    /// the Year row's own 16pt-a-side horizontal padding (`scrollWidth - 32`, identical to the
+    /// rack's). Never a hard-coded frame count: a Pro Max's extra width earns the Year rung an
+    /// eighth frame the exact same way it earns the rack one. `scrollWidth` is shared with the
+    /// `.month` rung's own measurement (`yearScrollList`'s `.onGeometryChange` keeps it current
+    /// while `.year` is the mounted rung, same as the night list's own `ScrollView` does for
+    /// `.month`), so whichever rung was measured last is what this reads.
+    private var yearRowCapacity: Int {
         max(1, DarkroomDayUnit.stripCapacity(availableWidth: scrollWidth - 32))
     }
 
@@ -699,6 +711,7 @@ struct DarkroomView: View {
                             summary: row,
                             isAnchor: row.yearMonth == anchor,
                             accent: accent,
+                            capacity: yearRowCapacity,
                             onTap: { selectMonth(row.yearMonth) }
                         )
                     }
@@ -720,6 +733,7 @@ struct DarkroomView: View {
                             meta: nil,
                             hasDeveloping: false,
                             accent: accent,
+                            capacity: yearRowCapacity,
                             onTap: { selectMonth(ym) }
                         )
                     }
@@ -744,6 +758,12 @@ struct DarkroomView: View {
                 Color.clear.frame(height: 0).id("top")
                 LazyVStack(alignment: .leading, spacing: 0) { content }
             }
+            // Keeps `scrollWidth` (and so `yearRowCapacity`) current while `.year` is the
+            // mounted rung, the same way the `.month` night list's own `ScrollView` does: a cold
+            // launch (or a warm relaunch) that lands directly on Year, never having mounted
+            // `.month` first, would otherwise derive the Year row's own frame capacity from the
+            // 393pt first-paint default forever.
+            .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { scrollWidth = $0 }
             .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, y in
                 scrollOffsetY = y
             }
@@ -815,7 +835,7 @@ struct DarkroomView: View {
     }
 
     /// Reconstructs a `Date` (first of the month) from a `DarkroomYearMonth`, for the loading-state
-    /// Year rows, which have no `DarkroomMonthSummary.monthStart` to read yet.
+    /// Year rows, which have no `DarkroomMonthSummaryV2.monthStart` to read yet.
     private func dateFromYearMonth(_ ym: DarkroomYearMonth) -> Date {
         Calendar.current.date(from: DateComponents(year: ym.year, month: ym.month, day: 1)) ?? .now
     }
@@ -1483,11 +1503,11 @@ struct DarkroomView: View {
         // need their own.
         let epoch = AccountEpoch.current
         isLoadingSummaries = true
-        // 8 covers: the Year row's own strip width (`DarkroomYearRow.slotCount`). The All-time
-        // rung's mosaics reuse the first 4 of these SAME paths rather than asking the RPC for a
-        // second, separately-ordered set, so a month browsed on one rung is a cache hit on the
-        // other (see `DarkroomAllTimeRow`'s own doc).
-        async let summaries = photoService.darkroomMonthSummary(timezone: TimeZone.current.identifier, covers: 8)
+        // 7 covers: the Year row's own strip capacity at the rack's 44x59/46pt pitch (see
+        // `yearRowCapacity`'s own doc). The All-time rung draws its single per-month cover from
+        // `top_cover_path` instead, the same row's own field, so nothing here needs a second,
+        // separately-ordered request.
+        async let summaries = photoService.darkroomMonthSummaryV2(timezone: TimeZone.current.identifier, covers: 7)
         let anchoredBranch = zoom == .month && anchor != DarkroomYearMonth(date: .now)
         if anchoredBranch {
             await vm.loadAnchored(photoService: photoService, userId: userId, upperEdge: anchor.upperEdge())

@@ -1492,28 +1492,26 @@ final class PhotoService {
         return count
     }
 
-    /// Server-aggregated per-month shot/night/developing counts and a handful of cover paths per
-    /// calendar month, via `public.darkroom_month_summary(p_timezone, p_covers)`, for the
-    /// Darkroom's Year and All-time zoom rungs: caller-scoped server-side (no user id is sent),
-    /// one row per calendar month with at least one kept photo, ascending.
+    /// Server-aggregated per-month shot/night/developing counts, a ranked chronological cover
+    /// strip, and the single true rank-1 cover per calendar month, via `public
+    /// .darkroom_month_summary_v2(p_timezone, p_covers)`, for the Darkroom's Year and All-time
+    /// zoom rungs: caller-scoped server-side (no user id is sent), one row per calendar month
+    /// with at least one kept photo, ascending.
     ///
-    /// `public.darkroom_month_counts(p_timezone)` — the older, count-only sibling this function
-    /// replaced as the app's own client-side consumer (the Year jump sheet, which read it, was
-    /// deleted in PR 3 of the zoom redesign, revision 2) — is left alone in the database: it's
-    /// harmless there and may still have other callers, so there is no reason to migrate it out.
-    /// Only the now-dead client wrapper and its `DarkroomMonthCount` model were removed; parsing
-    /// its bare-DATE `month_start` column moved to `DarkroomMonthSummary.parseMonthStart`, the
-    /// surviving consumer of that exact shape.
+    /// `public.darkroom_month_summary(p_timezone, p_covers)` — the v1 function this replaced as
+    /// the app's own client-side consumer — is left alone in the database for whatever older
+    /// build still calls it; only the client wrapper and its `DarkroomMonthSummary` model were
+    /// removed, this app version calling v2 exclusively.
     ///
     /// `nil` on ANY failure, not just the specific one expected until the schema owner's
     /// migration is pasted in by hand (PostgREST's "Could not find the function ... in the schema
     /// cache", a 404): every call site treats this as a nice-to-have overlay on server counts,
     /// degrading to omitting them rather than spinning, crashing, or toasting about a function
     /// that doesn't exist yet.
-    func darkroomMonthSummary(timezone: String, covers: Int = 4) async -> [DarkroomMonthSummary]? {
+    func darkroomMonthSummaryV2(timezone: String, covers: Int = 4) async -> [DarkroomMonthSummaryV2]? {
         struct Params: Encodable { let p_timezone: String; let p_covers: Int }
         return try? await supabase
-            .rpc("darkroom_month_summary", params: Params(p_timezone: timezone, p_covers: covers))
+            .rpc("darkroom_month_summary_v2", params: Params(p_timezone: timezone, p_covers: covers))
             .execute()
             .value
     }

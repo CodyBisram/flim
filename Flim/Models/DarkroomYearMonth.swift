@@ -1,7 +1,7 @@
 import Foundation
 
 /// A stable (year, month) key for aggregating Darkroom photos by calendar month, shared between
-/// `darkroom_month_summary` RPC rows (`DarkroomMonthSummary`), the Darkroom's zoom ladder
+/// `darkroom_month_summary_v2` RPC rows (`DarkroomMonthSummaryV2`), the Darkroom's zoom ladder
 /// (`DarkroomZoom`, the anchor, the Year/All-time rungs), so all of it describes "August 2026"
 /// the same way.
 struct DarkroomYearMonth: Hashable {

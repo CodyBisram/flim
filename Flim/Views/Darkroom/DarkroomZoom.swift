@@ -55,7 +55,7 @@ enum DarkroomAnchorResolution {
     /// at zero, does.
     static func coldLaunchAnchor(
         currentMonth: DarkroomYearMonth,
-        summaries: [DarkroomMonthSummary]?,
+        summaries: [DarkroomMonthSummaryV2]?,
         loadedMonths: [DarkroomYearMonth],
         calendar: Calendar = .current
     ) -> DarkroomYearMonth {
@@ -73,7 +73,7 @@ enum DarkroomAnchorResolution {
     }
 }
 
-/// One year's totals, summed client-side from `DarkroomMonthSummary` rows: the All-time rung's
+/// One year's totals, summed client-side from `DarkroomMonthSummaryV2` rows: the All-time rung's
 /// per-year header and the zoom bar's "N years · N nights" figure.
 struct DarkroomYearTotals: Equatable {
     let year: Int
@@ -85,7 +85,7 @@ enum DarkroomSummaryAggregation {
     /// Newest year first. A year with no summary rows never appears here: nothing invents a
     /// placeholder for it, since the RPC never emits a zero-shot month for it to sum from in the
     /// first place.
-    static func yearTotals(from summaries: [DarkroomMonthSummary], calendar: Calendar = .current) -> [DarkroomYearTotals] {
+    static func yearTotals(from summaries: [DarkroomMonthSummaryV2], calendar: Calendar = .current) -> [DarkroomYearTotals] {
         let grouped = Dictionary(grouping: summaries) { calendar.component(.year, from: $0.monthStart) }
         return grouped
             .map { year, rows in
@@ -143,7 +143,7 @@ enum DarkroomZoomChrome {
     /// "· N shots · N nights" (month), "· N shots · N nights" (year, summed), "· N years ·
     /// N nights" (all time, summed). `nil` when the relevant summary row(s) aren't available,
     /// never a partial or guessed line.
-    static func sub(zoom: DarkroomZoom, anchor: DarkroomYearMonth, summaries: [DarkroomMonthSummary]?, calendar: Calendar = .current) -> String? {
+    static func sub(zoom: DarkroomZoom, anchor: DarkroomYearMonth, summaries: [DarkroomMonthSummaryV2]?, calendar: Calendar = .current) -> String? {
         guard let summaries else { return nil }
         switch zoom {
         case .month:

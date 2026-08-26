@@ -16,8 +16,8 @@ final class DarkroomZoomTests: XCTestCase {
         calendar.date(from: DateComponents(year: year, month: month, day: 1))!
     }
 
-    private func summary(_ year: Int, _ month: Int, shots: Int, nights: Int, developing: Int = 0) -> DarkroomMonthSummary {
-        DarkroomMonthSummary(monthStart: monthStart(year, month), shotCount: shots, nightCount: nights, developingCount: developing, coverPaths: [])
+    private func summary(_ year: Int, _ month: Int, shots: Int, nights: Int, developing: Int = 0) -> DarkroomMonthSummaryV2 {
+        DarkroomMonthSummaryV2(monthStart: monthStart(year, month), shotCount: shots, nightCount: nights, developingCount: developing, coverPaths: [], topCoverPath: nil)
     }
 
     // MARK: - DarkroomZoom ladder

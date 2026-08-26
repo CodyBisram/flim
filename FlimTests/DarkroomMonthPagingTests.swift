@@ -15,8 +15,8 @@ final class DarkroomMonthPagingTests: XCTestCase {
         calendar.date(from: DateComponents(year: year, month: month, day: 1))!
     }
 
-    private func summary(_ year: Int, _ month: Int, shots: Int, nights: Int = 1) -> DarkroomMonthSummary {
-        DarkroomMonthSummary(monthStart: monthStart(year, month), shotCount: shots, nightCount: nights, developingCount: 0, coverPaths: [])
+    private func summary(_ year: Int, _ month: Int, shots: Int, nights: Int = 1) -> DarkroomMonthSummaryV2 {
+        DarkroomMonthSummaryV2(monthStart: monthStart(year, month), shotCount: shots, nightCount: nights, developingCount: 0, coverPaths: [], topCoverPath: nil)
     }
 
     // MARK: - shouldContinuePaging
