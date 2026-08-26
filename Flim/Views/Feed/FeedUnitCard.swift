@@ -670,7 +670,7 @@ struct FeedUnitCard: View {
         let target = post
         let feedService = feed
         UndoCenter.shared.stage(
-            title: "Reported. We'll look at it",
+            title: "Reported. We'll look into it.",
             failureText: "Couldn't send that report",
             commit: { await feedService.reportPost(target, from: uid) })
     }

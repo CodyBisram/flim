@@ -1255,7 +1255,7 @@ struct PhotoPagerView: View {
         // from these closures is safe, and harmless if the pager is gone by then.
         reportedIds.insert(photo.id)
         UndoCenter.shared.stage(
-            title: "Reported. We'll look at it",
+            title: "Reported. We'll look into it.",
             failureText: "Couldn't send that report",
             revert: { reportedIds.remove(photo.id) },
             commit: { await service.reportPhoto(photo) })
