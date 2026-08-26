@@ -1587,8 +1587,14 @@ struct DarkroomView: View {
 
     /// Celebrate shots that have finished developing since the last time the Darkroom was open.
     private func checkForReveal() {
+        // A skipped check leaves the watermark alone. Advancing it unconditionally meant a
+        // reload landing mid-selection (pull-to-refresh stays live in select mode) or under
+        // an already-showing overlay jumped the watermark past rolls it never scanned, and
+        // no later call could ever surface them: that batch's celebration was silently and
+        // permanently lost.
+        guard !showReveal, !isSelecting else { return }
         let now = Date().timeIntervalSince1970
-        if lastRevealCheck > 0, !showReveal, !isSelecting {
+        if lastRevealCheck > 0 {
             // Roll shots only, personal instants get the sort deck as their reveal moment.
             let newlyReady = vm.developedPhotos.filter {
                 $0.rollId != nil && $0.developsAt.timeIntervalSince1970 > lastRevealCheck && $0.isReady

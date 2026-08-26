@@ -352,6 +352,27 @@ struct PhotoPagerView: View {
             scale = 1; offset = .zero; lastOffset = .zero; pinchStart = nil
             Task { await resolveAround(selection) }
         }
+        // Membership can change under an OPEN pager: a presenting view's cover content keeps
+        // re-evaluating, and the Darkroom's 60s develop-poll reassigns its photos when a roll
+        // co-member's delete lands, shifting every later index down by one. `selection` is a
+        // raw index pinned by @State, so without this remap `photos[selection]` silently
+        // became a DIFFERENT photograph, no swipe, no transition. Follow the photo, not the
+        // slot; same rule as `FeedUnitCard`'s remap.
+        .onChange(of: photos.map(\.id)) { oldIds, newIds in
+            guard !newIds.isEmpty else { dismiss(); return }
+            guard oldIds.indices.contains(selection) else {
+                selection = min(selection, newIds.count - 1)
+                return
+            }
+            let viewing = oldIds[selection]
+            if let kept = newIds.firstIndex(of: viewing) {
+                if kept != selection { selection = kept }
+            } else {
+                // The viewed photograph itself is gone (deleted from another device): land
+                // on its neighbour rather than whatever inherited its slot.
+                selection = min(selection, newIds.count - 1)
+            }
+        }
         .task {
             // One batched query for the whole session rather than a `hasPosted` round trip per
             // photo in `resolveAround`'s window. The Darkroom's own reload already warms this,
