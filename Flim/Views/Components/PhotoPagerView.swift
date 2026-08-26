@@ -146,10 +146,10 @@ struct PhotoPagerView: View {
     @State private var pinchStart: CGFloat?
     /// Where the current pinch went down, so the photo grows from there instead of its middle.
     @State private var zoomAnchor: UnitPoint = .center
-    @State private var showDeleteConfirm = false
     @State private var isDeleting = false
     @State private var pendingDeletePhoto: Photo?
-    @State private var showReportConfirm = false
+    /// Non-nil while the roll-shot consequence sheet is up; see `requestDelete`.
+    @State private var deleteConsequence: RollConsequence?
     @State private var shareItem: ShareImage?
     @State private var preparingShare = false
     @State private var showShareComposer = false
@@ -293,6 +293,9 @@ struct PhotoPagerView: View {
         .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { screenWidth = $0 }
         .ignoresSafeArea(.container)
         .statusBarHidden()
+        // This pager is a fullScreenCover painting over MainTabView's capsule host, and
+        // reports are staged without leaving the pager, so it hosts its own copy.
+        .undoCapsuleHost(bottomPadding: 44)
         // Sheet to sheet: the profile cannot be presented until the comment sheet has finished
         // dismissing, so the id waits in `pendingProfile` and onDismiss opens it.
         .sheet(isPresented: $showComments, onDismiss: {
@@ -394,52 +397,11 @@ struct PhotoPagerView: View {
         .task {
             if showsReactions { await photoService.fetchSuggestedEmoji(photoIds: photos.map(\.id)) }
         }
-        .confirmationDialog("Delete this photo?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
-            Button("Delete", role: .destructive) {
-                guard let photo = pendingDeletePhoto else { return }
-                Haptics.warning()
-                isDeleting = true
-                Task {
-                    // `deletePhoto` only reports success once the photo is actually gone (it
-                    // deliberately leaves the row in place if the Storage removal failed). Only
-                    // then is it safe to close the pager, otherwise this would tell the person
-                    // their photo was deleted while it is still sitting in their account.
-                    let deleted = await photoService.deletePhoto(photo)
-                    isDeleting = false
-                    guard deleted else {
-                        flashError("Couldn't delete that. Check your connection and try again.")
-                        return
-                    }
-                    // Confirmed gone server-side (posts.photo_id cascades), so drop any post of
-                    // it from the already-loaded feed too, otherwise the Feed tab keeps showing
-                    // this device's own now-imageless card until the next pull-to-refresh.
-                    feed.dropPost(forDeletedPhotoId: photo.id)
-                    onDelete()
-                    dismiss()
-                }
-            }
-            Button("Cancel", role: .cancel) { pendingDeletePhoto = nil }
-        } message: {
-            Text(deleteMessage(pendingDeletePhoto))
-        }
-        .confirmationDialog("Report this photo?", isPresented: $showReportConfirm, titleVisibility: .visible) {
-            Button("Report", role: .destructive) {
-                guard let photo = current else { return }
-                Task {
-                    // Only mark it reported (which disables the flag button below) once the
-                    // write actually lands, a failed report used to look identical to a
-                    // successful one and there was no way left to retry it.
-                    if await photoService.reportPhoto(photo) {
-                        reportedIds.insert(photo.id)
-                        Haptics.success()
-                    } else {
-                        Haptics.error()
-                    }
-                }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Flag this for review. Thanks for keeping \(AppInfo.appName) safe.")
+        // Rule 2: a roll shot's delete touches everyone in the roll, so it gets the
+        // consequence sheet (named roll, counted people, what survives first) instead of a
+        // system dialog. Personal shots skip the prompt entirely; see `requestDelete`.
+        .sheet(item: $deleteConsequence) { consequence in
+            ConsequenceSheet(consequence: consequence) { performRollDelete() }
         }
         .sheet(item: $shareItem) { item in
             SharePreviewSheet(photo: item.image)
@@ -535,8 +497,7 @@ struct PhotoPagerView: View {
                             }
                         } label: { Label("Set as profile photo", systemImage: "person.crop.circle") }
                         Button(role: .destructive) {
-                            pendingDeletePhoto = photo
-                            showDeleteConfirm = true
+                            requestDelete(photo)
                         } label: { Label("Delete photo", systemImage: "trash") }
                     } label: {
                         Image(systemName: "ellipsis")
@@ -549,7 +510,7 @@ struct PhotoPagerView: View {
                     .disabled(isDeleting)
                 } else {
                     let reported = reportedIds.contains(photo.id)
-                    Button { showReportConfirm = true } label: {
+                    Button { reportCurrent() } label: {
                         Image(systemName: reported ? "flag.fill" : "flag")
                             .font(.system(size: 15, weight: .medium))
                             .foregroundStyle(.white)
@@ -629,8 +590,7 @@ struct PhotoPagerView: View {
                         } label: { Label("Set as profile photo", systemImage: "person.crop.circle") }
                     }
                     Button(role: .destructive) {
-                        pendingDeletePhoto = photo
-                        showDeleteConfirm = true
+                        requestDelete(photo)
                     } label: { Label("Delete photo", systemImage: "trash") }
                 } label: {
                     Image(systemName: "ellipsis")
@@ -1226,11 +1186,79 @@ struct PhotoPagerView: View {
         .animation(.easeOut(duration: 0.2), value: scale > 1)
     }
 
-    private func deleteMessage(_ photo: Photo?) -> String {
-        if let name = rollName(photo?.rollId) {
-            return "This shot is in the roll \"\(name)\". Deleting removes it for everyone."
+    // Deletes, split by who they touch (confirmations redesign): a personal shot is the
+    // reader's own and commits undo-first behind the shared capsule with no prompt at all; a
+    // roll shot leaves the roll for everyone, so it gets the consequence sheet, and once
+    // confirmed there it deletes directly, no second net (the old flow was dialog AND undo,
+    // two safety nets for one tap).
+
+    private func requestDelete(_ photo: Photo) {
+        if photo.rollId == nil {
+            stagePersonalDelete(photo)
+        } else {
+            pendingDeletePhoto = photo
+            let mine = (auth.currentUser?.id).map { uid in
+                photos.filter { $0.rollId == photo.rollId && $0.userId == uid && $0.id != photo.id }.count
+            }
+            deleteConsequence = .deleteShot(
+                rollName: rollName(photo.rollId) ?? "",
+                people: memberNames.isEmpty ? nil : memberNames.count,
+                myOtherShots: mine)
         }
-        return "This can't be undone."
+    }
+
+    private func stagePersonalDelete(_ photo: Photo) {
+        Haptics.warning()
+        let service = photoService
+        let feedService = feed
+        let afterDelete = onDelete
+        dismiss()
+        UndoCenter.shared.stage(
+            title: "Photo deleted",
+            failureText: "Couldn't delete that. Check your connection.",
+            commit: {
+                // `deletePhoto` only reports success once the photo is actually gone (it
+                // deliberately leaves the row in place if the Storage removal failed).
+                guard await service.deletePhoto(photo) else { return false }
+                // Confirmed gone server-side (posts.photo_id cascades), so drop any post of
+                // it from the already-loaded feed too.
+                feedService.dropPost(forDeletedPhotoId: photo.id)
+                afterDelete()
+                return true
+            })
+    }
+
+    private func performRollDelete() {
+        guard let photo = pendingDeletePhoto else { return }
+        pendingDeletePhoto = nil
+        isDeleting = true
+        Task {
+            // Only close the pager once the photo is actually gone, otherwise this would tell
+            // the person their photo was deleted while it is still sitting in their account.
+            let deleted = await photoService.deletePhoto(photo)
+            isDeleting = false
+            guard deleted else {
+                flashError("Couldn't delete that. Check your connection and try again.")
+                return
+            }
+            feed.dropPost(forDeletedPhotoId: photo.id)
+            onDelete()
+            dismiss()
+        }
+    }
+
+    private func reportCurrent() {
+        guard let photo = current else { return }
+        Haptics.tap()
+        let service = photoService
+        // Optimistic: the flag control disables now; an undo re-arms it. Writing view state
+        // from these closures is safe, and harmless if the pager is gone by then.
+        reportedIds.insert(photo.id)
+        UndoCenter.shared.stage(
+            title: "Reported. We'll look at it",
+            failureText: "Couldn't send that report",
+            revert: { reportedIds.remove(photo.id) },
+            commit: { await service.reportPhoto(photo) })
     }
 
     // MARK: - Actions

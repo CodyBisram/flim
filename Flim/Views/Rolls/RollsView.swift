@@ -243,9 +243,11 @@ struct RollsView: View {
                 withAnimation(.snappy) { proxy.scrollTo(sortedRolls.first?.id, anchor: .top) }
             }
         }
-        .confirmationDialog("Leave this roll?", isPresented: Binding(get: { rollToLeave != nil }, set: { if !$0 { rollToLeave = nil } }), presenting: rollToLeave) { roll in
-            Button("Leave Roll", role: .destructive) {
-                Haptics.warning()
+        // The consequence sheet's copy is `RollConsequence.leave`, the same one every other
+        // screen asks this question with: this screen, RollDetailView and RollMembersView
+        // used to ship three different messages, two disagreeing about needing the code.
+        .sheet(item: $rollToLeave) { roll in
+            ConsequenceSheet(consequence: .leave(name: roll.name, myShots: nil)) {
                 guard let uid = auth.currentUser?.id else { return }
                 Task {
                     do {
@@ -265,9 +267,6 @@ struct RollsView: View {
                     }
                 }
             }
-            Button("Cancel", role: .cancel) {}
-        } message: { roll in
-            Text("You'll leave “\(roll.name)” and need the code to rejoin.")
         }
     }
 

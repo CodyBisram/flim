@@ -80,11 +80,6 @@ struct UserPageView: View {
     /// is what lets a genuinely new badge raise the pill next time.
     @State private var badgesLocallySeenUntil: Date?
     @State private var showInvite = false
-    @State private var showBlockConfirm = false
-    @State private var showReportConfirm = false
-    @State private var reportedToast = false
-    /// Separate from `reportedToast` rather than an enum: mirrors FeedView's toast shape.
-    @State private var reportFailedToast = false
     @State private var showAvatarViewer = false
     @Environment(\.dismiss) private var dismiss
 
@@ -171,14 +166,14 @@ struct UserPageView: View {
                     .accessibilityLabel("Settings")
                 } else {
                     Menu {
-                        Button { showReportConfirm = true } label: { Label("Report", systemImage: "flag") }
+                        Button { reportAccount() } label: { Label("Report", systemImage: "flag") }
                         if feed.isBlocked(userId) {
                             Button {
                                 guard let uid = auth.currentUser?.id else { return }
                                 Task { await feed.unblock(userId, from: uid) }
                             } label: { Label("Unblock", systemImage: "hand.raised.slash") }
                         } else {
-                            Button(role: .destructive) { showBlockConfirm = true } label: { Label("Block", systemImage: "hand.raised") }
+                            Button(role: .destructive) { blockAccount() } label: { Label("Block", systemImage: "hand.raised") }
                         }
                     } label: {
                         Image(systemName: "ellipsis").foregroundStyle(accent)
@@ -186,56 +181,6 @@ struct UserPageView: View {
                     .accessibilityLabel("More")
                 }
             }
-        }
-        .overlay(alignment: .top) {
-            if reportedToast {
-                Label("Reported, thanks for keeping \(AppInfo.appName) safe", systemImage: "checkmark.circle.fill")
-                    .flimFont(13, weight: .medium).foregroundStyle(.white)
-                    .padding(.horizontal, 16).padding(.vertical, 10)
-                    .background(.ultraThinMaterial, in: Capsule())
-                    .transition(.move(edge: .top).combined(with: .opacity))
-            } else if reportFailedToast {
-                Label("Couldn't report. Try again.", systemImage: "exclamationmark.triangle.fill")
-                    .flimFont(13, weight: .medium).foregroundStyle(.white)
-                    .padding(.horizontal, 16).padding(.vertical, 10)
-                    .background(.ultraThinMaterial, in: Capsule())
-                    .transition(.move(edge: .top).combined(with: .opacity))
-            }
-        }
-        .confirmationDialog("Block \(profile?.handle ?? "this user")?", isPresented: $showBlockConfirm, titleVisibility: .visible) {
-            Button("Block", role: .destructive) {
-                guard let uid = auth.currentUser?.id else { return }
-                Haptics.warning()
-                Task {
-                    await feed.block(userId, from: uid)
-                    // `feed.block` rolls its optimistic state back on a failed write, only leave
-                    // this page once the block actually took, this page IS the blocked-state
-                    // affordance, and it's still reachable to retry from if it stays put.
-                    if feed.isBlocked(userId) { dismiss() }
-                }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("You won't see each other's posts, and they'll be unfollowed.")
-        }
-        .confirmationDialog("Report \(profile?.handle ?? "this user")?", isPresented: $showReportConfirm, titleVisibility: .visible) {
-            Button("Report", role: .destructive) {
-                guard let uid = auth.currentUser?.id else { return }
-                Task {
-                    if await feed.reportUser(userId, from: uid) {
-                        Haptics.success()   // the report went through, matching the toast
-                        withAnimation { reportedToast = true }
-                        try? await Task.sleep(for: .seconds(2)); withAnimation { reportedToast = false }
-                    } else {
-                        Haptics.error()
-                        withAnimation { reportFailedToast = true }
-                        try? await Task.sleep(for: .seconds(2)); withAnimation { reportFailedToast = false }
-                    }
-                }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Flag this account for review.")
         }
         .task { await load() }
         .sheet(item: $followList) { list in
@@ -281,6 +226,43 @@ struct UserPageView: View {
         .fullScreenCover(isPresented: $showAvatarViewer) {
             ImageViewer(url: avatarURL, cacheKey: profile?.avatarPath)
         }
+    }
+
+    // Undo-first (confirmations redesign rule 1): commit optimistically, stage the server
+    // call behind the shared undo capsule. Closures capture services and plain values only.
+
+    private func reportAccount() {
+        guard let uid = auth.currentUser?.id else { return }
+        Haptics.tap()
+        let handle = profile?.handle ?? "this account"
+        let targetId = userId
+        let feedService = feed
+        UndoCenter.shared.stage(
+            title: "Reported \(handle)",
+            failureText: "Couldn't send that report",
+            commit: { await feedService.reportUser(targetId, from: uid) })
+    }
+
+    private func blockAccount() {
+        guard let uid = auth.currentUser?.id else { return }
+        Haptics.warning()
+        let handle = profile?.handle ?? "this account"
+        let targetId = userId
+        let feedService = feed
+        // The page stays put during the window (undo would have nothing to come back to
+        // otherwise); it only closes once the block has actually landed, same rule as before.
+        let leave = dismiss
+        UndoCenter.shared.stage(
+            title: "Blocked \(handle), and unfollowed them",
+            subtitle: "Reversible in Blocked accounts",
+            failureText: "Couldn't block \(handle)",
+            commit: {
+                await feedService.block(targetId, from: uid)
+                guard feedService.isBlocked(targetId) else { return false }
+                feedService.feed.removeAll { $0.author.id == targetId }
+                leave()
+                return true
+            })
     }
 
     private func pageHeader(topInset: CGFloat) -> some View {

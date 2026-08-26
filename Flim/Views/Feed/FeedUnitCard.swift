@@ -74,20 +74,14 @@ struct FeedUnitCard: View {
     @State private var heartBurst = false
 
     // Actions state, ported from the per-post card; each acts on the SELECTED frame.
-    @State private var showDeleteConfirm = false
-    @State private var showReportConfirm = false
-    @State private var showBlockConfirm = false
     @State private var showEditCaption = false
     @State private var captionDraft = ""
     /// What a caption edit didn't manage to save, per frame, so reopening "Edit caption"
     /// starts from the attempted text rather than the value it never replaced.
     @State private var pendingCaptionRetry: [UUID: String] = [:]
     @State private var captionFailedToast = false
-    @State private var deleteFailedToast = false
     @State private var showEditTags = false
     @State private var editingTags: [PendingTag] = []
-    @State private var reportedToast = false
-    @State private var reportFailedToast = false
     @State private var shareItem: ShareImage?
 
     /// Whether this unit is genuinely on screen (not merely built by the LazyVStack).
@@ -251,24 +245,6 @@ struct FeedUnitCard: View {
         }
         .sheet(isPresented: $showEditCaption) { editCaptionSheet }
         .overlay(alignment: .top) { toasts }
-        .confirmationDialog("Delete this post?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
-            Button("Delete", role: .destructive) { deleteCurrent() }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("It's removed from your page and feed. The photo stays in your Darkroom.")
-        }
-        .confirmationDialog("Report this photo?", isPresented: $showReportConfirm, titleVisibility: .visible) {
-            Button("Report", role: .destructive) { reportCurrent() }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Flag this for review. Thanks for keeping \(AppInfo.appName) safe.")
-        }
-        .confirmationDialog("Block \(unit.author.handle)?", isPresented: $showBlockConfirm, titleVisibility: .visible) {
-            Button("Block", role: .destructive) { blockAuthor() }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("You won't see each other's posts, and they'll be unfollowed.")
-        }
     }
 
     // MARK: - Band
@@ -595,13 +571,13 @@ struct FeedUnitCard: View {
                 Label(tagCount == 0 ? "Tag people" : "Edit tags", systemImage: "person.crop.circle.badge.plus")
             }
             Button { saveToCameraRoll() } label: { Label("Save to Camera Roll", systemImage: "square.and.arrow.down") }
-            Button(role: .destructive) { showDeleteConfirm = true } label: { Label("Delete post", systemImage: "trash") }
+            Button(role: .destructive) { deleteCurrent() } label: { Label("Delete post", systemImage: "trash") }
         } else {
             if let uid = auth.currentUser?.id, feed.isTagged(uid, in: post.id) {
                 Button { removeMyTag() } label: { Label("Remove me from this photo", systemImage: "person.crop.circle.badge.xmark") }
             }
-            Button { showReportConfirm = true } label: { Label("Report", systemImage: "flag") }
-            Button(role: .destructive) { showBlockConfirm = true } label: { Label("Block \(unit.author.handle)", systemImage: "hand.raised") }
+            Button { reportCurrent() } label: { Label("Report", systemImage: "flag") }
+            Button(role: .destructive) { blockAuthor() } label: { Label("Block \(unit.author.handle)", systemImage: "hand.raised") }
         }
     }
 
@@ -629,14 +605,8 @@ struct FeedUnitCard: View {
 
     @ViewBuilder
     private var toasts: some View {
-        if reportedToast {
-            toast("Reported, thanks", icon: "checkmark.circle.fill")
-        } else if reportFailedToast {
-            toast("Couldn't report. Try again.", icon: "exclamationmark.triangle.fill")
-        } else if captionFailedToast {
+        if captionFailedToast {
             toast("Couldn't save caption. Try again.", icon: "exclamationmark.triangle.fill")
-        } else if deleteFailedToast {
-            toast("Couldn't delete that. Check your connection and try again.", icon: "exclamationmark.triangle.fill")
         }
     }
 
@@ -671,47 +641,65 @@ struct FeedUnitCard: View {
         }
     }
 
+    // Undo-first (confirmations redesign rule 1): these three commit optimistically and stage
+    // the server call behind the shared undo capsule instead of asking permission up front.
+    // Closures capture the SERVICES and plain values, never `self`'s view state: they can run
+    // after this card is long gone.
+
     private func deleteCurrent() {
         Haptics.warning()
         let target = post
-        Task {
-            let deleted = await feed.deletePost(id: target.id)
-            if deleted == false {
-                Haptics.error()
-                withAnimation { deleteFailedToast = true }
-                try? await Task.sleep(for: .seconds(2)); withAnimation { deleteFailedToast = false }
-            }
-        }
+        let feedService = feed
+        let removed = feedService.feed.filter { $0.post.id == target.id }
+        withAnimation { feedService.feed.removeAll { $0.post.id == target.id } }
+        UndoCenter.shared.stage(
+            title: "Post removed",
+            subtitle: "The photo is still in your Darkroom",
+            failureText: "Couldn't delete. The post is still up.",
+            revert: { feedService.restore(removed) },
+            commit: {
+                // nil is a superseded/cancelled call, not a failure; stay silent like the
+                // pre-capsule path did.
+                await feedService.deletePost(id: target.id) != false
+            })
     }
 
     private func reportCurrent() {
         guard let uid = auth.currentUser?.id else { return }
+        Haptics.tap()
         let target = post
-        Task {
-            if await feed.reportPost(target, from: uid) {
-                Haptics.success()
-                withAnimation { reportedToast = true }
-                try? await Task.sleep(for: .seconds(2)); withAnimation { reportedToast = false }
-            } else {
-                Haptics.error()
-                withAnimation { reportFailedToast = true }
-                try? await Task.sleep(for: .seconds(2)); withAnimation { reportFailedToast = false }
-            }
-        }
+        let feedService = feed
+        UndoCenter.shared.stage(
+            title: "Reported. We'll look at it",
+            failureText: "Couldn't send that report",
+            commit: { await feedService.reportPost(target, from: uid) })
     }
 
     private func blockAuthor() {
         guard let uid = auth.currentUser?.id else { return }
         Haptics.warning()
-        Task {
-            await feed.block(unit.author.id, from: uid)
-            if feed.isBlocked(unit.author.id) {
-                withAnimation { feed.feed.removeAll { $0.author.id == unit.author.id } }
-                // The ledger and the caught-up seam both hold state keyed on unit ids; without
-                // this, either could keep referencing a unit that just stopped rendering.
-                onAuthorBlocked()
-            }
-        }
+        let authorId = unit.author.id
+        let handle = unit.author.handle
+        let feedService = feed
+        let removed = feedService.feed.filter { $0.author.id == authorId }
+        withAnimation { feedService.feed.removeAll { $0.author.id == authorId } }
+        // The ledger and the caught-up seam both hold state keyed on unit ids; without this,
+        // either could keep referencing a unit that just stopped rendering. Captured for the
+        // revert too: an undo brings those units back and the seam must follow.
+        let resnapshot = onAuthorBlocked
+        resnapshot()
+        UndoCenter.shared.stage(
+            title: "Blocked \(handle), and unfollowed them",
+            subtitle: "Reversible in Blocked accounts",
+            failureText: "Couldn't block \(handle)",
+            revert: {
+                feedService.restore(removed)
+                resnapshot()
+            },
+            commit: {
+                await feedService.block(authorId, from: uid)
+                return feedService.isBlocked(authorId)
+            })
     }
 
     private func doubleTapLike() {

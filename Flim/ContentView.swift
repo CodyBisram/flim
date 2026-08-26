@@ -103,6 +103,10 @@ struct ContentView: View {
             guard newId != cachedAccountId else { return }
             let previousId = cachedAccountId
             cachedAccountId = newId
+            // Before any cache reset below: a pending undoable action belongs to the departing
+            // account and its commit closure captures that account's ids, so it commits now,
+            // against state that still matches it.
+            UndoCenter.shared.flush()
             photos.resetForAccountChange()
             feed.resetForAccountChange()
             rolls.resetForAccountChange()
@@ -170,7 +174,13 @@ struct ContentView: View {
         // Mirrors ProfileView's notification-status re-check: cheap, side-effect-free, and the
         // one moment a stale "you're on the latest version" is actually noticeable.
         .onChange(of: scenePhase) { _, phase in
-            guard phase == .active else { return }
+            guard phase == .active else {
+                // A staged undoable action must not ride out its window in the background: an
+                // app killed there would silently lose an action the person watched happen.
+                // Leaving the foreground commits it now; see `UndoCenter`.
+                UndoCenter.shared.flush()
+                return
+            }
             Task { await refreshVersionGate() }
             // Save-on-develop, not save-on-capture: this is the one place that decides "the app
             // just came to the foreground", which is exactly when a photo shot earlier may have

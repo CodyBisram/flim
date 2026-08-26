@@ -1,8 +1,8 @@
 import SwiftUI
 
 /// Reacted emojis first (most-reacted first, ties broken alphabetically so the order is stable),
-/// then whichever defaults nobody has used. A free function, like
-/// `rollDeleteConfirmationMessage`, so the rule itself is testable without standing up a view.
+/// then whichever defaults nobody has used. A free function, like `jumpTokenIsCurrent`, so
+/// the rule itself is testable without standing up a view.
 func reactionDisplayOrder(counts: [String: Int], defaults: [String]) -> [String] {
     let reacted = counts.filter { $0.value > 0 }
         .sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }

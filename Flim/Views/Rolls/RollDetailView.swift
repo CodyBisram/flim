@@ -102,6 +102,15 @@ struct RollDetailView: View {
     /// Developed shots oldest → newest, for the flip-through carousel, cached on the view model
     /// (recomputed only when the roll's photos change) rather than sorted on every access.
     private var chronologicalDeveloped: [Photo] { vm.chronologicalDeveloped }
+
+    /// The signed-in member's own shots in this roll, developed and developing alike, for the
+    /// leave sheet's "your N shots stay" line. `nil` (rather than 0) when nothing is loaded
+    /// yet, so the copy falls back to the countless wording instead of claiming "0 shots".
+    private var myShotCount: Int? {
+        guard let uid = auth.currentUser?.id else { return nil }
+        let mine = (vm.developedPhotos + vm.developingPhotos).filter { $0.userId == uid }.count
+        return mine > 0 ? mine : nil
+    }
     private var isFullyDeveloped: Bool {
         roll.isDeveloped && rollFullyPaged && !vm.developedPhotos.isEmpty
     }
@@ -433,23 +442,26 @@ struct RollDetailView: View {
                                                            code: roll.inviteCode)],
                         onComplete: { Activation.log(.inviteSent) })
         }
-        .confirmationDialog("Delete this roll?", isPresented: $showDeleteRoll, titleVisibility: .visible) {
-            Button("Delete Roll", role: .destructive) {
-                Haptics.warning()
+        // Consequence sheets, not system dialogs (confirmations redesign rule 2): both of
+        // these touch everyone in the roll, so they name it, count the people, and lead with
+        // what survives. The copy lives in `RollConsequence`, shared with every other screen
+        // that asks these questions, so the answers can never drift apart again.
+        .sheet(isPresented: $showDeleteRoll) {
+            ConsequenceSheet(consequence: .deleteRoll(
+                name: displayName.isEmpty ? roll.name : displayName,
+                people: memberNames.isEmpty ? nil : memberNames.count)) {
                 notifications.cancelRollDevelopNotification(rollId: roll.id)
                 Task {
                     try? await rollService.deleteRoll(rollId: roll.id)
                     dismiss()
                 }
             }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("The roll is removed for everyone. Each person keeps their own photos.")
         }
-        .confirmationDialog("Leave this roll?", isPresented: $showLeaveRoll, titleVisibility: .visible) {
-            Button("Leave Roll", role: .destructive) {
+        .sheet(isPresented: $showLeaveRoll) {
+            ConsequenceSheet(consequence: .leave(
+                name: displayName.isEmpty ? roll.name : displayName,
+                myShots: myShotCount)) {
                 guard let uid = auth.currentUser?.id else { return }
-                Haptics.warning()
                 Task {
                     do {
                         try await rollService.leaveRoll(rollId: roll.id, userId: uid)
@@ -463,9 +475,6 @@ struct RollDetailView: View {
                     }
                 }
             }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("You'll stop seeing this roll. Your own photos stay in your Darkroom.")
         }
         .alert("Rename roll", isPresented: $showRename) {
             TextField("Roll name", text: $renameDraft)

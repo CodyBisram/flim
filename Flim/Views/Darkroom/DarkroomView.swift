@@ -1,18 +1,6 @@
 import SwiftUI
 import UIKit
 
-/// Builds the roll-delete confirmation message from each photo's already-resolved roll name
-/// (`nil` for a personal, non-roll photo). A batch that resolves to exactly one shared roll
-/// names it; anything else (multiple rolls, a roll mixed with personal shots, or no rolls at
-/// all) falls back to generic wording.
-func rollDeleteConfirmationMessage(forRollNames names: [String?]) -> String {
-    let uniqueNames = Set(names.compactMap { $0 })
-    if uniqueNames.count == 1, let name = uniqueNames.first {
-        return "This shot is in the roll \"\(name)\". Deleting removes it for everyone."
-    }
-    return "This shot is in a shared roll. Deleting removes it for everyone."
-}
-
 /// Whether a `landOnAnchorMonth` anchored fetch, captured at `capturedToken`, is still the live
 /// jump by the time it resolves. Free function so the compare itself is testable without a
 /// `DarkroomView`, a live `PhotoService`, or a `Task` to race against; see `DarkroomView
@@ -157,8 +145,6 @@ struct DarkroomView: View {
     /// `zoom == .month`: the coarse "topmost mounted unit" the zoom bar's crumb follows while
     /// scrolling. See `updateMonthAnchorFromScroll`'s own doc.
     @State private var mountedNightDayKeys: Set<Date> = []
-    @State private var showRollDeleteConfirm = false
-    @State private var pendingRollDeleteBatch: [Photo] = []
     @State private var shareItem: ShareImage?
     /// The scroll content's measured width, so the contact sheet's strip capacity is derived
     /// from the real available width rather than a hard-coded frame count. 393 is the design's
@@ -540,17 +526,6 @@ struct DarkroomView: View {
         }
         .onChange(of: openPhotoId.wrappedValue) { _, _ in openRequestedPhoto() }
         .sheet(item: $shareItem) { SharePreviewSheet(photo: $0.image) }
-        .confirmationDialog("Delete this photo?", isPresented: $showRollDeleteConfirm, titleVisibility: .visible) {
-            Button("Delete", role: .destructive) {
-                Haptics.warning()
-                let batch = pendingRollDeleteBatch
-                pendingRollDeleteBatch = []
-                commitDeleteBatch(batch)
-            }
-            Button("Cancel", role: .cancel) { pendingRollDeleteBatch = [] }
-        } message: {
-            Text(rollDeleteMessage(for: pendingRollDeleteBatch))
-        }
     }
 
     // MARK: - Rung content (PR 3 of the zoom redesign, revision 2)
@@ -1028,28 +1003,14 @@ struct DarkroomView: View {
     }
 
     /// Optimistically hides the photos and shows an Undo toast; the real (irreversible) server
-    /// delete only commits after a few seconds if the user doesn't undo. Roll shots are shared,
-    /// so if the batch includes any, confirm first (naming the roll), personal photos keep the
-    /// instant-hide-then-undo behavior. The single delete entry point for both the selection
-    /// toolbar and a cell's long-press menu, so a one-photo delete gets the same confirmation
-    /// a batch does.
+    /// delete only commits after a few seconds if the user doesn't undo. The single delete
+    /// entry point for both the selection toolbar and a cell's long-press menu. Roll shots
+    /// used to ALSO confirm in a dialog first, which was two safety nets for one tap
+    /// (confirmations redesign); the undo window is the net now, for every batch alike.
     private func requestDelete(_ toDelete: [Photo]) {
         guard !toDelete.isEmpty else { return }
-
-        if toDelete.contains(where: { $0.rollId != nil }) {
-            // No haptic yet, nothing destructive has happened until the dialog is confirmed.
-            pendingRollDeleteBatch = toDelete
-            showRollDeleteConfirm = true
-        } else {
-            Haptics.warning()
-            commitDeleteBatch(toDelete)
-        }
-    }
-
-    /// The roll-name message for a batch that includes shared shots, names the roll if every
-    /// roll shot in the batch belongs to the same one, else falls back to generic wording.
-    private func rollDeleteMessage(for batch: [Photo]) -> String {
-        rollDeleteConfirmationMessage(forRollNames: batch.map { rollName(for: $0.rollId) })
+        Haptics.warning()
+        commitDeleteBatch(toDelete)
     }
 
     private func commitDeleteBatch(_ toDelete: [Photo]) {

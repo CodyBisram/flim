@@ -145,30 +145,24 @@ struct RollMembersView: View {
                         }
                         .listStyle(.plain)
                         .scrollContentBackground(.hidden)
-                        .confirmationDialog("Remove @\(memberToRemove?.username ?? "this person")?",
-                                            isPresented: Binding(get: { memberToRemove != nil },
-                                                                 set: { if !$0 { memberToRemove = nil } }),
-                                            titleVisibility: .visible) {
-                            Button("Remove", role: .destructive) {
-                                if let member = memberToRemove { remove(member) }
-                                memberToRemove = nil
+                        // Both consequence sheets share `RollConsequence`'s copy with every
+                        // other screen that asks (see that type: three screens used to ship
+                        // three different leave messages).
+                        .sheet(item: $memberToRemove) { member in
+                            ConsequenceSheet(consequence: .removeMember(
+                                handle: "@\(member.username ?? "this person")",
+                                rollName: roll.name, theirShots: nil)) {
+                                remove(member)
                             }
-                            Button("Cancel", role: .cancel) { memberToRemove = nil }
-                        } message: {
-                            Text("They'll lose access to this roll. Their own photos stay in their Darkroom.")
                         }
-                        .confirmationDialog("Leave this roll?", isPresented: $confirmLeave,
-                                            titleVisibility: .visible) {
-                            Button("Leave Roll", role: .destructive) {
+                        .sheet(isPresented: $confirmLeave) {
+                            ConsequenceSheet(consequence: .leave(name: roll.name, myShots: nil)) {
                                 // Resolved from the loaded list rather than captured at swipe
                                 // time, so this cannot act on a stale row.
                                 if let me = members.first(where: { $0.id == auth.currentUser?.id }) {
                                     remove(me, leaving: true)
                                 }
                             }
-                            Button("Cancel", role: .cancel) {}
-                        } message: {
-                            Text("You'll stop seeing this roll. Your own photos stay in your Darkroom.")
                         }
                     }
                 }

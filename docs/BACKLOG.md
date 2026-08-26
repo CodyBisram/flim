@@ -5,6 +5,12 @@ what qualifies and the rules). One line per item; statuses are `candidate`,
 `done <short-sha>`, or `skipped: <reason>`. Items needing an owner decision say so and
 are not burnable until decided.
 
+- candidate — SwiftUI warns "Do not put a navigation destination modifier inside a lazy
+  container" for `.navigationDestination(item:)` in FeedUnitCard.swift and
+  PostDetailView.swift (both live inside lazily built feed cards). Ignored today, will be
+  ignored-and-broken in a future SwiftUI release; the fix is hoisting the destination to
+  the owning stack. Diagnosis and a hoist plan are mechanical; the hoist itself touches
+  navigation behavior, so flag before doing it.
 - candidate — EmojiCatalogTests fails on the iOS 26.3.1 simulator: no Flags section is
   generated (EmojiCatalogTests.swift:48,56). Diagnose whether flag generation broke on
   the new OS or the test environment lost the CLDR data. Diagnosis only; a code fix is

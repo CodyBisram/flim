@@ -179,6 +179,9 @@ struct MainTabView: View {
             }
         }
         .animation(.easeInOut(duration: 0.3), value: network.isConnected)
+        // The app-wide undo capsule, above the tab bar. Screens presented OVER this
+        // (the photo pager's fullScreenCover) host their own copy; see `UndoCapsuleHost`.
+        .undoCapsuleHost()
         .fullScreenCover(isPresented: Binding(get: { !hasOnboarded }, set: { _ in })) {
             OnboardingView()
         }

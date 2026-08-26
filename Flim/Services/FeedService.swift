@@ -1378,6 +1378,18 @@ final class FeedService {
     /// someone their photo was taken down while it stayed live and visible to everyone else,
     /// with nothing left on screen to prompt a retry.
     @discardableResult
+    /// Reinserts items an undo-first action removed optimistically (an undone post delete or
+    /// block; see `UndoCenter`), restoring the feed's own `created_at DESC, id DESC` order so
+    /// the units regroup exactly as before. Deduped against the live feed: a refresh landing
+    /// inside the undo window may already have brought a row back.
+    func restore(_ items: [FeedItem]) {
+        let existing = Set(feed.map(\.post.id))
+        feed.append(contentsOf: items.filter { !existing.contains($0.post.id) })
+        feed.sort {
+            ($0.post.createdAt, $0.post.id.uuidString) > ($1.post.createdAt, $1.post.id.uuidString)
+        }
+    }
+
     func deletePost(id: UUID) async -> Bool? {
         do {
             try await supabase.from("posts").delete().eq("id", value: id.uuidString).execute()

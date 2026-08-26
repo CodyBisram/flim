@@ -53,15 +53,8 @@ struct PostDetailView: View {
     @State private var replyTarget: String?
     @State private var sending = false
     @State private var shareItem: ShareImage?
-    @State private var showReportConfirm = false
-    @State private var showBlockConfirm = false
-    @State private var showDeleteConfirm = false
-    @State private var reportedToast = false
-    /// Separate from `reportedToast` rather than an enum: mirrors FeedView's toast shape.
-    @State private var reportFailedToast = false
     /// A delete that didn't reach the server. Distinct from dismissing: staying on a post that
     /// still exists is correct, so a failed delete must leave this screen open, not close it.
-    @State private var deleteFailedToast = false
     @State private var route: ProfileRoute?
     @State private var showEditTags = false
     @State private var editingTags: [PendingTag] = []
@@ -216,15 +209,15 @@ struct PostDetailView: View {
                                   systemImage: "person.crop.circle.badge.plus")
                         }
                         Button { saveToCameraRoll() } label: { Label("Save to Camera Roll", systemImage: "square.and.arrow.down") }
-                        Button(role: .destructive) { showDeleteConfirm = true } label: { Label("Delete post", systemImage: "trash") }
+                        Button(role: .destructive) { deletePost() } label: { Label("Delete post", systemImage: "trash") }
                     } else {
                         if let uid = auth.currentUser?.id, feed.isTagged(uid, in: post.id) {
                             Button { removeMyTag() } label: {
                                 Label("Remove me from this photo", systemImage: "person.crop.circle.badge.xmark")
                             }
                         }
-                        Button { showReportConfirm = true } label: { Label("Report", systemImage: "flag") }
-                        Button(role: .destructive) { showBlockConfirm = true } label: { Label("Block \(item.author.handle)", systemImage: "hand.raised") }
+                        Button { reportPost() } label: { Label("Report", systemImage: "flag") }
+                        Button(role: .destructive) { blockAuthor() } label: { Label("Block \(item.author.handle)", systemImage: "hand.raised") }
                     }
                 } label: {
                     Image(systemName: "ellipsis").foregroundStyle(accent)
@@ -234,26 +227,8 @@ struct PostDetailView: View {
         }
         .safeAreaInset(edge: .bottom) { commentInput }
         .overlay(alignment: .top) {
-            if reportedToast {
-                Label("Reported, thanks", systemImage: "checkmark.circle.fill")
-                    .flimFont(13, weight: .medium).foregroundStyle(.white)
-                    .padding(.horizontal, 16).padding(.vertical, 10)
-                    .background(.ultraThinMaterial, in: Capsule())
-                    .transition(.move(edge: .top).combined(with: .opacity))
-            } else if reportFailedToast {
-                Label("Couldn't report. Try again.", systemImage: "exclamationmark.triangle.fill")
-                    .flimFont(13, weight: .medium).foregroundStyle(.white)
-                    .padding(.horizontal, 16).padding(.vertical, 10)
-                    .background(.ultraThinMaterial, in: Capsule())
-                    .transition(.move(edge: .top).combined(with: .opacity))
-            } else if captionFailedToast {
+            if captionFailedToast {
                 Label("Couldn't save caption. Try again.", systemImage: "exclamationmark.triangle.fill")
-                    .flimFont(13, weight: .medium).foregroundStyle(.white)
-                    .padding(.horizontal, 16).padding(.vertical, 10)
-                    .background(.ultraThinMaterial, in: Capsule())
-                    .transition(.move(edge: .top).combined(with: .opacity))
-            } else if deleteFailedToast {
-                Label("Couldn't delete that. Check your connection and try again.", systemImage: "exclamationmark.triangle.fill")
                     .flimFont(13, weight: .medium).foregroundStyle(.white)
                     .padding(.horizontal, 16).padding(.vertical, 10)
                     .background(.ultraThinMaterial, in: Capsule())
@@ -301,64 +276,6 @@ struct PostDetailView: View {
                 }
             }
         }
-        .confirmationDialog("Delete this post?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
-            Button("Delete", role: .destructive) {
-                Haptics.warning()
-                Task {
-                    let deleted = await feed.deletePost(id: post.id)
-                    if shouldTreatAsDeleted(afterDeleting: deleted) {
-                        dismiss()   // it's actually gone, safe to leave
-                    } else if deleted == false {
-                        // Not gone: staying here, where the post still visibly exists, is the
-                        // honest state. Dismissing would tell someone it's down when it isn't.
-                        Haptics.error()
-                        withAnimation { deleteFailedToast = true }
-                        try? await Task.sleep(for: .seconds(2)); withAnimation { deleteFailedToast = false }
-                    }
-                    // deleted == nil: cancelled, not a failure, stay silent.
-                }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("It's removed from your page and feed. The photo stays in your Darkroom.")
-        }
-        .confirmationDialog("Report this photo?", isPresented: $showReportConfirm, titleVisibility: .visible) {
-            Button("Report", role: .destructive) {
-                guard let uid = auth.currentUser?.id else { return }
-                Task {
-                    if await feed.reportPost(post, from: uid) {
-                        Haptics.success()   // the report went through, matching the toast
-                        withAnimation { reportedToast = true }
-                        try? await Task.sleep(for: .seconds(2)); withAnimation { reportedToast = false }
-                    } else {
-                        Haptics.error()
-                        withAnimation { reportFailedToast = true }
-                        try? await Task.sleep(for: .seconds(2)); withAnimation { reportFailedToast = false }
-                    }
-                }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Flag this for review. Thanks for keeping \(AppInfo.appName) safe.")
-        }
-        .confirmationDialog("Block \(item.author.handle)?", isPresented: $showBlockConfirm, titleVisibility: .visible) {
-            Button("Block", role: .destructive) {
-                guard let uid = auth.currentUser?.id else { return }
-                Haptics.warning()
-                Task {
-                    await feed.block(post.userId, from: uid)
-                    // `feed.block` rolls its optimistic state back on a failed write, so only
-                    // leave the post (and this screen) once the block actually landed, rather
-                    // than dismissing on a block that didn't take.
-                    guard feed.isBlocked(post.userId) else { return }
-                    feed.feed.removeAll { $0.author.id == post.userId }
-                    dismiss()
-                }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("You won't see each other's posts, and they'll be unfollowed.")
-        }
         // Keyed on the post, so everything below re-runs if this view is ever handed a different
         // one rather than being rebuilt. Belt and braces alongside the caller passing the tapped
         // post explicitly: a plain `.task` would not re-run on a reused instance, which is how
@@ -396,6 +313,57 @@ struct PostDetailView: View {
     }
 
     /// Seeds the editor from the post's current tags, so saving doesn't wipe what's there.
+    // Undo-first (confirmations redesign rule 1), matching `FeedUnitCard`'s three exactly:
+    // optimistic commit, server call staged behind the shared undo capsule. This screen also
+    // dismisses immediately: the capsule outlives it, and an undo puts the post back in the
+    // feed underneath.
+
+    private func deletePost() {
+        Haptics.warning()
+        let target = post
+        let feedService = feed
+        let removed = feedService.feed.filter { $0.post.id == target.id }
+        withAnimation { feedService.feed.removeAll { $0.post.id == target.id } }
+        dismiss()
+        UndoCenter.shared.stage(
+            title: "Post removed",
+            subtitle: "The photo is still in your Darkroom",
+            failureText: "Couldn't delete. The post is still up.",
+            revert: { feedService.restore(removed) },
+            commit: { await feedService.deletePost(id: target.id) != false })
+    }
+
+    private func reportPost() {
+        guard let uid = auth.currentUser?.id else { return }
+        Haptics.tap()
+        let target = post
+        let feedService = feed
+        UndoCenter.shared.stage(
+            title: "Reported. We'll look at it",
+            failureText: "Couldn't send that report",
+            commit: { await feedService.reportPost(target, from: uid) })
+    }
+
+    private func blockAuthor() {
+        guard let uid = auth.currentUser?.id else { return }
+        Haptics.warning()
+        let authorId = post.userId
+        let handle = item.author.handle
+        let feedService = feed
+        let removed = feedService.feed.filter { $0.author.id == authorId }
+        withAnimation { feedService.feed.removeAll { $0.author.id == authorId } }
+        dismiss()
+        UndoCenter.shared.stage(
+            title: "Blocked \(handle), and unfollowed them",
+            subtitle: "Reversible in Blocked accounts",
+            failureText: "Couldn't block \(handle)",
+            revert: { feedService.restore(removed) },
+            commit: {
+                await feedService.block(authorId, from: uid)
+                return feedService.isBlocked(authorId)
+            })
+    }
+
     private func beginEditingTags() {
         editingTags = (feed.tagsByPost[post.id] ?? []).compactMap { tag in
             feed.tagProfiles[tag.taggedUserId].map { PendingTag(user: $0, x: tag.x, y: tag.y) }

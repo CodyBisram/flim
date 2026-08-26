@@ -150,7 +150,6 @@ private struct BadgePickerContent: View {
     /// real rule rather than a tap that silently did nothing.
     @State private var showCapNotice = false
     /// Raised instead of committing when Custom is showing with nothing picked. See `save()`.
-    @State private var showEmptyConfirm = false
     /// Unseen rows whose develop-in has run. A row starts undeveloped (blurred, washed out,
     /// its words held back) and joins this set on its beat; rows that were never unseen are
     /// developed by definition. See `developChoreography()`.
@@ -245,12 +244,6 @@ private struct BadgePickerContent: View {
                     }
                     .disabled(isSaving || nothingToSave)
                 }
-            }
-            .alert("Show no badges?", isPresented: $showEmptyConfirm) {
-                Button("Cancel", role: .cancel) { }
-                Button("Show none", role: .destructive) { Task { await commit() } }
-            } message: {
-                Text("Your profile will show no badges at all until you pick some. Your earned badges are kept either way.")
             }
             .overlay(alignment: .top) {
                 if showCapNotice {
@@ -634,11 +627,10 @@ private struct BadgePickerContent: View {
         }
     }
 
-    /// True when saving right now would write something destructive that the person may not have
-    /// meant: Custom showing, nothing picked, which commits `[]` and takes every badge off the
-    /// profile. The explanatory line above the list already says so in words, and that turned out
-    /// not to be enough — it is a sentence you scroll past on the way to a button, and every other
-    /// irreversible action in FLIM asks first.
+    /// True when saving writes an empty selection and takes every badge off the profile:
+    /// Custom showing, nothing picked. Fully reversible (earned badges are kept), so per the
+    /// confirmations redesign it stages behind the undo capsule instead of prompting; see
+    /// `save()`.
     private var wouldClearProfile: Bool { mode == .custom && order.isEmpty }
 
     /// Nothing to save against. `fetchProfileBadges` returns `[]` for a failed round trip exactly
@@ -651,7 +643,17 @@ private struct BadgePickerContent: View {
     private func save() async {
         guard !nothingToSave else { return }
         if wouldClearProfile {
-            showEmptyConfirm = true
+            // Undo-first (confirmations redesign rule 1): earned badges are kept either way,
+            // so nothing is at risk and nothing needs a prompt. The empty selection commits
+            // when the capsule's window closes; an undo means it was simply never saved.
+            let apply = onSave
+            Haptics.tap()
+            dismiss()
+            UndoCenter.shared.stage(
+                title: "Badges hidden",
+                subtitle: "Your earned badges are kept",
+                failureText: "Couldn't save that. Your badges are unchanged.",
+                commit: { (try? await apply([])) != nil })
             return
         }
         await commit()
