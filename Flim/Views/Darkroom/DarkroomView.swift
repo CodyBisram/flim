@@ -13,6 +13,15 @@ func rollDeleteConfirmationMessage(forRollNames names: [String?]) -> String {
     return "This shot is in a shared roll. Deleting removes it for everyone."
 }
 
+/// Whether a `landOnAnchorMonth` anchored fetch, captured at `capturedToken`, is still the live
+/// jump by the time it resolves. Free function so the compare itself is testable without a
+/// `DarkroomView`, a live `PhotoService`, or a `Task` to race against; see `DarkroomView
+/// .jumpToken`'s own doc for the specific race this closes (a cancelled-but-already-past-its-
+/// await anchored fetch landing an old month's rows under a newer crumb).
+func jumpTokenIsCurrent(_ capturedToken: Int, latest: Int) -> Bool {
+    capturedToken == latest
+}
+
 struct DarkroomView: View {
     @Environment(\.flimAccent) private var accent
     var scrollToTop: Int = 0
@@ -106,6 +115,18 @@ struct DarkroomView: View {
     /// flight retarget the one outstanding call rather than compete with it.
     @State private var anchoredJumpTarget: DarkroomYearMonth?
     @State private var anchoredJumpTask: Task<Void, Never>?
+    /// Monotonically increasing "which jump is the live one" token, bumped by `landOnAnchorMonth`
+    /// itself whenever it lands (fast path) or starts a NEW anchored fetch (never when it merely
+    /// joins one already running for the same target). `anchoredJumpTask?.cancel()` alone cannot
+    /// stop a fetch that's already past its own last `await` when the cancel happens, so a
+    /// cancelled-but-effectively-still-running anchored fetch used to complete and assign an old
+    /// month's rows into `vm.photos` AFTER a retap-home had already taken the fast path back to
+    /// the present, leaving `vm.photos` holding the old month under the current month's crumb
+    /// (found 2026-08-25, second audit). `landOnAnchorMonth` captures this token before it starts
+    /// (or joins) a fetch and hands `DarkroomViewModel.loadAnchored` a closure that re-checks it,
+    /// which is what actually stops the stale assignment, not merely the scroll that would have
+    /// followed it. See `jumpTokenIsCurrent`.
+    @State private var jumpToken = 0
 
     // MARK: - Zoom ladder (PR 3 of the zoom redesign, revision 2)
 
@@ -480,7 +501,22 @@ struct DarkroomView: View {
         } else if let error = vm.error, vm.photos.isEmpty {
             ErrorState(message: error) { await reload() }
         } else if vm.photos.isEmpty {
-            emptyState
+            // Nothing loaded anywhere. `emptyState`'s "Your darkroom's empty" copy is written
+            // for the present-day case (never shot anything); anchored on an older month it
+            // reads as a lie the moment the person zooms back to the present and finds photos
+            // after all. See `scopedEmptyMonthState`'s own doc.
+            if anchor != DarkroomYearMonth(date: .now) {
+                scopedEmptyMonthState
+            } else {
+                emptyState
+            }
+        } else if monthScopedUnits.isEmpty, anchoredJumpTarget == nil, pendingMonthLanding == nil {
+            // Spillover: photos ARE loaded (an older or newer month's rows, most often left
+            // behind by a previous anchored fetch's page boundary), just none of them belong to
+            // THIS anchor, e.g. every shot in the month was just deleted. `emptyState` would be
+            // actively wrong here, it claims the whole darkroom is empty. Gated on no jump being
+            // in flight so this never flashes mid-fetch, ahead of the loading skeleton above.
+            scopedEmptyMonthState
         } else {
             ScrollViewReader { proxy in
                 ScrollView {
@@ -1071,6 +1107,49 @@ struct DarkroomView: View {
         }
     }
 
+    /// The `.month` rung's own empty state for an anchor with nothing in it: EITHER photos
+    /// loaded elsewhere (spillover, an older/newer month's rows a previous anchored fetch's page
+    /// boundary left behind) with none of them belonging to THIS anchor, e.g. every shot in the
+    /// month was just deleted, or an anchored jump/reload that resolved to a genuinely empty
+    /// month. Distinct from `emptyState` above (the whole-library "you've never shot anything"
+    /// case): that copy is wrong the moment photos are known to exist, just not here, and reduced
+    /// in prominence relative to it (smaller icon, one line, no camera CTA) since it's a scoped,
+    /// recoverable dead end, not the app's very first empty moment.
+    ///
+    /// Copy reported for owner veto (consolidated fix pass, item 4).
+    private var scopedEmptyMonthState: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "camera.aperture")
+                .font(.system(size: 28, weight: .ultraLight))
+                .foregroundStyle(accent.opacity(0.5))
+            Text("Nothing left in \(scopedEmptyMonthName).")
+                .flimFont(14, weight: .light)
+                .foregroundStyle(FlimTheme.textTertiary)
+            // The same closing row `nightList` shows once pagination for a non-empty month
+            // genuinely stops: here it's the only way out of an anchor that has nothing at all.
+            if !isSelecting, let info = closingRowInfo {
+                DarkroomMonthClosingRow(month: info.month, shotCount: info.shotCount) {
+                    Haptics.tap()
+                    selectMonth(info.month)
+                }
+                .padding(.top, 8)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// The anchor month's full name ("August"), for `scopedEmptyMonthState`'s copy only — the
+    /// zoom bar's own crumb formatting lives elsewhere and is not reused here on purpose, this
+    /// is prose ("Nothing left in August."), not a label.
+    private var scopedEmptyMonthName: String {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar.current
+        formatter.timeZone = Calendar.current.timeZone
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "MMMM"
+        return formatter.string(from: dateFromYearMonth(anchor))
+    }
+
     /// The full-screen pager for a tapped frame.
     ///
     /// Its own function because the body could no longer be type-checked with it inline, and
@@ -1217,6 +1296,10 @@ struct DarkroomView: View {
     /// retry path, the same as every other failed fetch on this screen.
     private func landOnAnchorMonth(_ ym: DarkroomYearMonth, proxy: ScrollViewProxy) {
         if let firstUnit = dayUnits.first(where: { DarkroomYearMonth(date: $0.dayKey) == ym }) {
+            // This landing is authoritative now: bump the token so any anchored fetch still
+            // running for an earlier target (cancelled below, but possibly already past its own
+            // last `await`) discards its result instead of assigning into `vm.photos` behind it.
+            jumpToken += 1
             anchoredJumpTask?.cancel()
             anchoredJumpTask = nil
             anchoredJumpTarget = nil
@@ -1231,14 +1314,18 @@ struct DarkroomView: View {
         }
 
         // The same target already fetching: leave it running rather than starting a redundant
-        // second request. A DIFFERENT target replaces it.
+        // second request, and leave `jumpToken` alone, this IS that same jump, not a new one.
+        // A DIFFERENT target replaces it.
         if anchoredJumpTarget == ym, anchoredJumpTask != nil { return }
+        jumpToken += 1
+        let myToken = jumpToken
         anchoredJumpTask?.cancel()
         anchoredJumpTarget = ym
         anchoredJumpTask = Task {
             defer { if anchoredJumpTarget == ym { anchoredJumpTarget = nil } }
-            await vm.loadAnchored(photoService: photoService, userId: uid, upperEdge: ym.upperEdge())
-            guard !Task.isCancelled,
+            await vm.loadAnchored(photoService: photoService, userId: uid, upperEdge: ym.upperEdge(),
+                                   shouldApply: { jumpTokenIsCurrent(myToken, latest: jumpToken) })
+            guard !Task.isCancelled, jumpTokenIsCurrent(myToken, latest: jumpToken),
                   let firstUnit = dayUnits.first(where: { DarkroomYearMonth(date: $0.dayKey) == ym })
             else {
                 if pendingMonthLanding == ym { pendingMonthLanding = nil }
@@ -1330,6 +1417,14 @@ struct DarkroomView: View {
     /// never teleport the person back to the present month they weren't looking at.
     private func reload() async {
         guard let userId = auth.currentUser?.id else { return }
+        // Captured once, re-checked before every write past an await below: a sign-out then
+        // straight back in as someone else (or a plain account switch) mid-reload is otherwise a
+        // window for a stale response, resolved after the epoch has moved on, to paint the
+        // DEPARTED account's months. Mirrors `FeedService`'s own per-write pattern, see
+        // `AccountEpoch`'s own doc for why a single guard partway through this function is not
+        // enough: `monthSummaries`, `unsortedPhotos`/`unsortedURLCache`, and the trailing
+        // `loadMyPostedPhotoIds`/`checkForReveal`/`openRequestedPhoto` chain each need their own.
+        let epoch = AccountEpoch.current
         isLoadingSummaries = true
         // 8 covers: the Year row's own strip width (`DarkroomYearRow.slotCount`). The All-time
         // rung's mosaics reuse the first 4 of these SAME paths rather than asking the RPC for a
@@ -1342,7 +1437,9 @@ struct DarkroomView: View {
         } else {
             await vm.load(photoService: photoService, userId: userId)
         }
-        if let resolvedSummaries = await summaries { monthSummaries = resolvedSummaries }
+        if let resolvedSummaries = await summaries, AccountEpoch.isCurrent(epoch) {
+            monthSummaries = resolvedSummaries
+        }
         isLoadingSummaries = false
         applyColdLaunchAnchorIfNeeded()
         // Warm the grid's thumbnails so cells appear instantly as you scroll.
@@ -1351,17 +1448,24 @@ struct DarkroomView: View {
         }
         ImageLoader.prefetch(prefetch, maxPixel: 400, scale: displayScale)
         if rolls.rolls.isEmpty { try? await rolls.fetchRolls(for: userId) }   // for roll labels
-        if let unsorted = await photoService.fetchUnsorted(userId: userId) { unsortedPhotos = unsorted }
+        if let unsorted = await photoService.fetchUnsorted(userId: userId), AccountEpoch.isCurrent(epoch) {
+            unsortedPhotos = unsorted
+        }
         // Read back from `unsortedPhotos` (not the local `fetchUnsorted` result above), so a
         // failed fetch's previews still come from whatever was last known, the same keep-last-
         // known shape as the assignment right above.
         let previews = DarkroomDayUnit.pickPreview(from: unsortedPhotos)
         if !previews.isEmpty {
             let map = await photoService.signedURLs(for: previews.map(\.displayPath))
-            for previewPhoto in previews {
-                if let url = map[previewPhoto.displayPath] { unsortedURLCache[previewPhoto.id] = url }
+            if AccountEpoch.isCurrent(epoch) {
+                for previewPhoto in previews {
+                    if let url = map[previewPhoto.displayPath] { unsortedURLCache[previewPhoto.id] = url }
+                }
             }
         }
+        // The trailing chain: a badge query, a reveal check, and a widget-tap deep link, none of
+        // which belong to whoever is signed in now if the epoch has moved on.
+        guard AccountEpoch.isCurrent(epoch) else { return }
         // One batched query for the whole grid's "shared to your page" badge, not a `hasPosted`
         // round trip per tile.
         await feed.loadMyPostedPhotoIds(userId: userId)

@@ -1,6 +1,55 @@
 import SwiftUI
 import UIKit
 
+/// One iteration's outcome from `RollDetailView`'s roll-pagination drain loop, decided from
+/// three server-observed facts rather than inline in the loop, so the "give up without claiming
+/// the roll is fully paged" rule (and the retry budget behind it) is directly testable without a
+/// live `PhotoService` or the `Task.sleep` backoff.
+///
+/// The loop this backs replaced an unconditional `break` on a starved (no-progress) iteration
+/// that still fell through to `rollFullyPaged = true`: the shared `PhotoService.isLoading` guard
+/// inside `loadMoreRoll` can return synchronously, doing nothing, whenever another screen (or
+/// this same screen's own grid-scroll trigger) already has a fetch in flight, and a single
+/// starved iteration used to be read as "the roll is done" rather than "something else is busy
+/// right now" (both audits, 2026-08-25/26). See `rollDrainCompletedFully`.
+enum RollDrainStep: Equatable {
+    /// The loaded page grew: keep draining immediately, retry budget reset.
+    case progressed
+    /// No growth this iteration, but the retry budget isn't spent: yield, back off briefly, retry.
+    case retry(starvedRetries: Int)
+    /// The server says there's nothing left (`hasMore == false`): the drain is genuinely,
+    /// honestly complete.
+    case exhausted
+    /// No growth, and the retry budget is spent: give up WITHOUT claiming the roll is fully
+    /// paged. A later grid-scroll `loadMoreRoll` trigger, or simply reappearing on this roll, can
+    /// still finish the job; this only stops THIS drain from lying about having finished it.
+    case gaveUp
+}
+
+/// Pure decision function behind one iteration of the drain loop: given what that iteration
+/// actually observed (the page count before/after `loadMoreRoll`, whether the server still has
+/// more, and how many consecutive starved iterations have already happened), which of the four
+/// `RollDrainStep` outcomes applies. `maxStarvedRetries` bounds the ~200ms-backoff retries the
+/// loop performs before giving up (25 ≈ 5s worst case).
+func rollDrainStep(loadedBefore: Int, loadedAfter: Int, hasMore: Bool,
+                    starvedRetries: Int, maxStarvedRetries: Int = 25) -> RollDrainStep {
+    guard hasMore else { return .exhausted }
+    guard loadedAfter > loadedBefore else {
+        let next = starvedRetries + 1
+        return next >= maxStarvedRetries ? .gaveUp : .retry(starvedRetries: next)
+    }
+    return .progressed
+}
+
+/// Whether `RollDetailView.rollFullyPaged` may be set true: only when the drain loop exited
+/// because the server genuinely reported nothing left (`hasMore == false`), never merely because
+/// it returned. Setting `rollFullyPaged` on a starved give-up is the exact bug both audits found:
+/// every count gated on it (the reveal banner's shot count, "Play through the roll · N", the
+/// DEVELOPING header count) would silently undercount a roll that was still mid-drain.
+func rollDrainCompletedFully(exitedBecauseExhausted: Bool) -> Bool {
+    exitedBecauseExhausted
+}
+
 struct RollDetailView: View {
     @Environment(\.flimAccent) private var accent
     let roll: Roll
@@ -236,90 +285,94 @@ struct RollDetailView: View {
                 .accessibilityLabel("More")
             }
         }
-        .onAppear {
-            Task {
-                if let uid = auth.currentUser?.id { await feed.loadBlocked(userId: uid) }
-                await vm.loadRoll(photoService: photoService, rollId: roll.id, blockedIds: feed.blockedIds)
-                // A roll's photo set is small (a friend group's shots), not the endless, ever-
-                // growing personal Darkroom feed, where lazy, scroll-triggered pagination
-                // genuinely protects performance, so it's safe to finish paging eagerly here
-                // regardless of develop state. Without this, EVERY roll-count label read
-                // PhotoService's first-30-photo page instead of the true total: the developing
-                // banner's "N shots waiting" (the single most commonly seen roll screen, since a
-                // roll spends most of its life developing), "Play through the roll · N", the
-                // carousel, the reveal, and the develop-reminder notification's own shot count
-                // below all draw from `vm.photos` / `vm.developingPhotos` / `vm.developedPhotos`.
-                // If this roll is about to play its reveal, start pulling the first print NOW,
-                // in parallel with the paging below rather than after it. The reveal waits for
-                // that image before it starts (otherwise the develop animation plays over an
-                // empty frame), so every second of the drain that isn't also spent downloading
-                // is a second the user spends looking at a spinner.
-                if roll.isDeveloped, !UserDefaults.standard.bool(forKey: revealSeenKey) {
-                    warmFirstRevealPrint()
-                }
+        // The whole-roll drain used to live in `.onAppear { Task { ... } }`, which is never
+        // cancelled on disappear: leaving this screen didn't stop it, so a second roll's own
+        // fetch could interleave with a dead roll's still-running drain, and `loadMoreRoll`
+        // reads the SHARED `PhotoService.loadedPhotos` fresh on every call, so the stale roll's
+        // rows could append straight into the new roll's list (cross-roll mixing, found by the
+        // feed audit). `.task` is auto-cancelled the moment this view disappears; the drain loop
+        // itself also checks `Task.isCancelled` on top of that, so a mid-drain cancellation stops
+        // between iterations rather than waiting for one more full page.
+        .task {
+            if let uid = auth.currentUser?.id { await feed.loadBlocked(userId: uid) }
+            guard !Task.isCancelled else { return }
+            await vm.loadRoll(photoService: photoService, rollId: roll.id, blockedIds: feed.blockedIds)
+            guard !Task.isCancelled else { return }
+            // A roll's photo set is small (a friend group's shots), not the endless, ever-
+            // growing personal Darkroom feed, where lazy, scroll-triggered pagination
+            // genuinely protects performance, so it's safe to finish paging eagerly here
+            // regardless of develop state. Without this, EVERY roll-count label read
+            // PhotoService's first-30-photo page instead of the true total: the developing
+            // banner's "N shots waiting" (the single most commonly seen roll screen, since a
+            // roll spends most of its life developing), "Play through the roll · N", the
+            // carousel, the reveal, and the develop-reminder notification's own shot count
+            // below all draw from `vm.photos` / `vm.developingPhotos` / `vm.developedPhotos`.
+            // If this roll is about to play its reveal, start pulling the first print NOW,
+            // in parallel with the paging below rather than after it. The reveal waits for
+            // that image before it starts (otherwise the develop animation plays over an
+            // empty frame), so every second of the drain that isn't also spent downloading
+            // is a second the user spends looking at a spinner.
+            if roll.isDeveloped, !UserDefaults.standard.bool(forKey: revealSeenKey) {
+                warmFirstRevealPrint()
+            }
 
-                // Progress-guarded: `loadMoreRoll` early-returns WITHOUT suspending when the
-                // shared PhotoService is mid-fetch for another screen (`isLoading` guard), and
-                // a while-await loop whose awaits return synchronously spins the main actor
-                // until the watchdog kills the app. The Darkroom's month-jump loop died of
-                // exactly this (2026-08-25, owner-reproduced freeze); a loop of this shape must
-                // break when an iteration makes no progress, and yield so the starving fetch
-                // can finish.
-                while photoService.hasMore {
-                    let before = photoService.loadedPhotos.count
-                    await vm.loadMoreRoll(photoService: photoService, rollId: roll.id, blockedIds: feed.blockedIds)
-                    if photoService.loadedPhotos.count == before, photoService.hasMore {
-                        await Task.yield()
-                        break
-                    }
-                }
+            let exitedBecauseExhausted = await drainRollPagination()
+            guard !Task.isCancelled else { return }
+            // Only ever flips true when the server genuinely said there was nothing left. A
+            // starved give-up leaves it false, silently: a later grid-scroll `loadMoreRoll`
+            // trigger (`photoGrid`'s own `.task`) or simply reopening this roll can still finish
+            // the drain and set it then. See `rollDrainCompletedFully`'s own doc for the bug this
+            // replaces: setting it on a starved break, not just an exhausted one, undercounted
+            // every label gated on it.
+            if rollDrainCompletedFully(exitedBecauseExhausted: exitedBecauseExhausted) {
                 rollFullyPaged = true
-                // Only loadRoll batches signed URLs; loadMoreRoll doesn't, so every photo past
-                // the first page used to mint its own URL round-trip as it scrolled into view.
-                // One batched call for the whole (now fully paged) roll instead, then warm the
-                // thumbnails those URLs point at.
-                await vm.prefetchURLs(photoService: photoService)
-                warmGridThumbnails()
-                // The reveal, as an event: play everyone's shots once, the first time the
-                // roll is opened after it has developed.
-                if roll.isDeveloped, !vm.developedPhotos.isEmpty,
-                   !UserDefaults.standard.bool(forKey: revealSeenKey) {
-                    UserDefaults.standard.set(true, forKey: revealSeenKey)
-                    showReveal = true
-                }
-                // Ensure EVERY member gets a develop reminder, even those who didn't shoot.
-                // The reveal is fixed at the roll's creation, so this works with zero photos too.
-                if notificationsEnabled, !roll.isDeveloped {
-                    let myCount = vm.photos.filter { $0.userId == auth.currentUser?.id }.count
-                    await notifications.requestAuthorizationIfNeeded()
-                    notifications.scheduleRollDevelopNotification(
-                        rollId: roll.id, rollName: displayName.isEmpty ? roll.name : displayName,
-                        developsAt: roll.revealAt, photoCount: myCount
-                    )
-                }
-                // Keeps the countdown Live Activity going for anyone who opens the roll while it's
-                // still developing, not just whoever created it, since sync() starts one fresh if
-                // nothing's running yet. Ends it once developed; there's no push-driven lifecycle,
-                // so this only fires the next time the roll is opened after reveal, not the instant
-                // it happens.
-                if roll.isDeveloped {
-                    RollLiveActivity.end(rollId: roll.id)
-                } else {
-                    RollLiveActivity.sync(rollId: roll.id, rollName: displayName.isEmpty ? roll.name : displayName,
-                                          revealAt: roll.revealAt, shotCount: vm.developingPhotos.count,
-                                          developFrom: roll.createdAt)
-                }
             }
-            Task {
-                if let members = try? await rollService.fetchMembers(for: roll.id) {
-                    memberNames = Dictionary(members.map { ($0.id, $0.username ?? "unknown") },
-                                             uniquingKeysWith: { first, _ in first })
-                }
+            // Only loadRoll batches signed URLs; loadMoreRoll doesn't, so every photo past
+            // the first page used to mint its own URL round-trip as it scrolled into view.
+            // One batched call for the whole (now fully paged, or as far as the drain got)
+            // roll instead, then warm the thumbnails those URLs point at.
+            await vm.prefetchURLs(photoService: photoService)
+            guard !Task.isCancelled else { return }
+            warmGridThumbnails()
+            // The reveal, as an event: play everyone's shots once, the first time the
+            // roll is opened after it has developed.
+            if roll.isDeveloped, !vm.developedPhotos.isEmpty,
+               !UserDefaults.standard.bool(forKey: revealSeenKey) {
+                UserDefaults.standard.set(true, forKey: revealSeenKey)
+                showReveal = true
             }
-            Task {
-                if let uid = auth.currentUser?.id {
-                    isMuted = await photoService.fetchMutedRolls(userId: uid).contains(roll.id)
-                }
+            // Ensure EVERY member gets a develop reminder, even those who didn't shoot.
+            // The reveal is fixed at the roll's creation, so this works with zero photos too.
+            if notificationsEnabled, !roll.isDeveloped {
+                let myCount = vm.photos.filter { $0.userId == auth.currentUser?.id }.count
+                await notifications.requestAuthorizationIfNeeded()
+                notifications.scheduleRollDevelopNotification(
+                    rollId: roll.id, rollName: displayName.isEmpty ? roll.name : displayName,
+                    developsAt: roll.revealAt, photoCount: myCount
+                )
+            }
+            // Keeps the countdown Live Activity going for anyone who opens the roll while it's
+            // still developing, not just whoever created it, since sync() starts one fresh if
+            // nothing's running yet. Ends it once developed; there's no push-driven lifecycle,
+            // so this only fires the next time the roll is opened after reveal, not the instant
+            // it happens.
+            if roll.isDeveloped {
+                RollLiveActivity.end(rollId: roll.id)
+            } else {
+                RollLiveActivity.sync(rollId: roll.id, rollName: displayName.isEmpty ? roll.name : displayName,
+                                      revealAt: roll.revealAt, shotCount: vm.developingPhotos.count,
+                                      developFrom: roll.createdAt)
+            }
+        }
+        .task {
+            if let members = try? await rollService.fetchMembers(for: roll.id) {
+                memberNames = Dictionary(members.map { ($0.id, $0.username ?? "unknown") },
+                                         uniquingKeysWith: { first, _ in first })
+            }
+        }
+        .task {
+            if let uid = auth.currentUser?.id {
+                isMuted = await photoService.fetchMutedRolls(userId: uid).contains(roll.id)
             }
         }
         .fullScreenCover(item: $selectedPhoto) { photo in
@@ -491,6 +544,46 @@ struct RollDetailView: View {
             // Nothing to act on until the roll develops, but an empty menu would just flash a
             // blank card, so say why instead.
             Text("Develops with the roll")
+        }
+    }
+
+    /// Drains this roll's remaining pages until the server reports nothing left (`hasMore ==
+    /// false`), or until `rollDrainStep` gives up after too many consecutive iterations that made
+    /// no progress while `hasMore` stayed true (most often the shared `PhotoService` mid-fetch
+    /// for another screen, including this same screen's own grid-scroll trigger). Returns
+    /// whether the loop exited because pagination genuinely finished; callers must gate
+    /// `rollFullyPaged` on exactly that (`rollDrainCompletedFully`), never on the loop merely
+    /// returning.
+    ///
+    /// Every iteration below either makes progress (the loaded count grew), genuinely suspends
+    /// (`Task.sleep`), or exits: a starved iteration used to `break` immediately and still let
+    /// the caller flag the roll complete, which is what silently undercounted every label gated
+    /// on `rollFullyPaged` (both audits, 2026-08-25/26). Yielding and retrying with a short
+    /// backoff instead gives the starving fetch room to finish while keeping every path through
+    /// the loop a genuine suspension point, so it stays spin-proof the same way the Darkroom's
+    /// own month-jump loop had to be fixed to be (see that incident's doc, referenced in the
+    /// comment this replaced): no path here can return synchronously in a tight cycle.
+    private func drainRollPagination() async -> Bool {
+        var starvedRetries = 0
+        while true {
+            if Task.isCancelled { return false }
+            let before = photoService.loadedPhotos.count
+            await vm.loadMoreRoll(photoService: photoService, rollId: roll.id, blockedIds: feed.blockedIds)
+            if Task.isCancelled { return false }
+            let after = photoService.loadedPhotos.count
+            switch rollDrainStep(loadedBefore: before, loadedAfter: after,
+                                  hasMore: photoService.hasMore, starvedRetries: starvedRetries) {
+            case .progressed:
+                starvedRetries = 0
+            case .retry(let next):
+                starvedRetries = next
+                await Task.yield()
+                try? await Task.sleep(for: .milliseconds(200))
+            case .exhausted:
+                return true
+            case .gaveUp:
+                return false
+            }
         }
     }
 

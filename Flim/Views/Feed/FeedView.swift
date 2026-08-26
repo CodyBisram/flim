@@ -44,6 +44,15 @@ struct FeedView: View {
     /// crossed while backgrounded can be told apart from an ordinary foregrounding mid-scroll;
     /// see the scenePhase `onChange` below.
     @State private var backgroundedDayKey: Date?
+    /// Bumped once a 04:00-boundary-triggered background reload resolves, consumed by
+    /// `feedList`'s own `ScrollViewReader` the same way `scrollToTop` is: a reader who was
+    /// scrolled deep into yesterday's archive when the app backgrounded overnight would otherwise
+    /// come back to a completely different page one (content page one replaced under them) at
+    /// whatever offset they left it, which reads as a jump or a blank region. This is the
+    /// morning-reset semantic: after a genuine boundary crossing, land back at the top exactly
+    /// the way the very first load does. Ordinary foregrounding and pull-to-refresh are
+    /// unaffected, neither one bumps this.
+    @State private var boundaryReloadGeneration = 0
     /// The header ledger, SNAPSHOTTED at load rather than derived live: it counts what
     /// arrived, not what is left, so reading a shot must not tick it down. It disappears
     /// (rather than recomputing) when the last mark clears.
@@ -178,7 +187,12 @@ struct FeedView: View {
             // racing it with a second, redundant reload.
             if didLoad, let backgroundedDayKey, FeedUnit.dayKey(for: .now) != backgroundedDayKey {
                 self.backgroundedDayKey = nil
-                Task { await reload() }
+                Task {
+                    await reload()
+                    // The reload just replaced page one out from under whatever scroll offset was
+                    // left overnight; see `boundaryReloadGeneration`'s own doc.
+                    boundaryReloadGeneration += 1
+                }
                 return
             }
             guard !feed.feed.isEmpty else { return }
@@ -372,6 +386,13 @@ struct FeedView: View {
             .task { proxy.scrollTo("top", anchor: .top) }
             .onChange(of: scrollToTop) {
                 withAnimation(.snappy) { proxy.scrollTo("top", anchor: .top) }
+            }
+            // The boundary-triggered reload replaced page one while the reader's scroll offset
+            // was still wherever it was left; land back at the top exactly like the initial
+            // load, unanimated (this fires with the app likely still backgrounded, not mid-
+            // gesture, so there's no scroll to animate away from).
+            .onChange(of: boundaryReloadGeneration) {
+                proxy.scrollTo("top", anchor: .top)
             }
             .overlay(alignment: .top) {
                 if hasNewPosts {

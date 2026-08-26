@@ -255,15 +255,34 @@ struct PhotoPagerView: View {
         ZStack {
             Color.black.ignoresSafeArea()
 
-            VStack(spacing: 0) {
-                header
+            if showsNightRack {
+                // Header pinned directly under the top safe area; the photo+rack+status group
+                // CENTERED in whatever is left below it, via a real spacer on each side rather
+                // than the group's own alignment. Without the two spacers (and the explicit
+                // `maxHeight: .infinity` that lets them actually expand), this VStack's content
+                // -- a fixed 3:4 box plus a fixed-height rack, almost always shorter than the
+                // screen -- was centered by the surrounding ZStack as ONE block, and the
+                // header's own top padding then stacked on top of that centering offset while
+                // nothing matched it at the bottom. On device that read as the header floating
+                // a sixth of the screen down over dead black, with the photo+rack+status group
+                // hugging the bottom instead of splitting the leftover space evenly.
+                VStack(spacing: 0) {
+                    header
+                    Spacer(minLength: 0)
+                    VStack(spacing: 0) {
+                        pager.padding(.vertical, 8)
+                        rackSection
+                    }
+                    Spacer(minLength: 0)
+                }
+                .frame(maxHeight: .infinity)
+            } else {
+                VStack(spacing: 0) {
+                    header
 
-                pager
-                    .padding(.vertical, showsNightRack ? 8 : 12)
+                    pager
+                        .padding(.vertical, 12)
 
-                if showsNightRack {
-                    rackSection
-                } else {
                     captionLabel
                     bottomBar
                         .padding(.horizontal, 20)
@@ -755,8 +774,12 @@ struct PhotoPagerView: View {
             .tabViewStyle(.page(indexDisplayMode: .never))
             // Explicit frame directly on the TabView, matching `FeedUnitCard.pager` (fixed
             // literal size for night-rack; flexible max-fill for the roll/widget path), rather
-            // than relying on an ancestor to constrain it. See `pageFramed`.
-            .modifier(PageFrameModifier(fixed: showsNightRack ? CGSize(width: photoWidth, height: photoHeight) : nil))
+            // than relying on an ancestor to constrain it. See `pageFramed`. Rounded to 12pt in
+            // night-rack mode, matching `FeedUnitCard.pager`'s own clip exactly, so the outer
+            // TabView boundary itself is never a square sliver behind the (also rounded)
+            // per-page clip below while a swipe is settling.
+            .modifier(PageFrameModifier(fixed: showsNightRack ? CGSize(width: photoWidth, height: photoHeight) : nil,
+                                         cornerRadius: showsNightRack ? 12 : 0))
             // Mirrors the old `scale > 1 ? .none : .all` gesture mask exactly: paging is native
             // now, so the equivalent gate is disabling the TabView's own scroll while zoomed,
             // handing the touch fully to `panWhileZoomed` instead. Inert (false) at rest, so it
@@ -861,7 +884,15 @@ struct PhotoPagerView: View {
                 .id("page-\(photo.id)-\(retryTokens[photo.id, default: 0])")
             }
         }
-        .modifier(PageFrameModifier(fixed: showsNightRack ? CGSize(width: photoWidth, height: photoHeight) : nil))
+        // Rounded to 12pt in night-rack mode (see `PageFrameModifier`'s own doc): the clip sits
+        // OUTSIDE the pinch/pan modifiers above (they transform the `Image` inside this `Group`,
+        // this `.modifier` wraps the whole thing), so a zoomed photo clips to the rounded box
+        // rather than painting past its corners. Also covers `brokenPage` and
+        // `developingPlaceholder` for free: both are bare `Rectangle`s inside this same `Group`,
+        // so this one clip rounds every full-frame state night-rack mode can show, not only the
+        // loaded photo.
+        .modifier(PageFrameModifier(fixed: showsNightRack ? CGSize(width: photoWidth, height: photoHeight) : nil,
+                                     cornerRadius: showsNightRack ? 12 : 0))
     }
 
     /// A still-developing shot in night-rack mode: there is no image to show yet, so the box
@@ -927,7 +958,12 @@ struct PhotoPagerView: View {
         return DarkroomDayUnit(dayKey: key, photos: []).title(shortForm: false)
     }
 
-    private var photoWidth: CGFloat { screenWidth }
+    /// Inset 16pt each side, night-rack mode only, so the rounded corners below never touch the
+    /// screen edge: matches `FeedUnitCard`'s own hero (`photoWidth = width - 32`) and its 16pt
+    /// card gutter exactly. This deliberately overrides the Darkroom redesign's original
+    /// full-bleed-square spec for the night-rack photo box (owner-ratified 2026-08-26; the
+    /// rounded, inset treatment below is the owner's later call, from a device screenshot).
+    private var photoWidth: CGFloat { max(1, screenWidth - 32) }
     private var photoHeight: CGFloat { photoWidth * 4 / 3 }
 
     /// The night rack's own frame geometry, matching `FeedUnitCard.FilmStrip`'s exactly: 30pt
@@ -941,79 +977,88 @@ struct PhotoPagerView: View {
     /// mode.
     private var rackSection: some View {
         VStack(spacing: 0) {
-            DarkroomPerforationLine().frame(height: 3)
-            ScrollViewReader { proxy in
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: Self.rackFrameGap) {
-                        ForEach(currentNightPhotos) { photo in
-                            DarkroomFrameView(
-                                photo: photo,
-                                accent: accent,
-                                signedURL: signedURLs[photo.id] ?? rackThumbURLs[photo.id],
-                                isShared: feed.myPostedPhotoIds.contains(photo.id),
-                                rollName: rollName(photo.rollId),
-                                isSelecting: false,
-                                isSelected: false,
-                                photoNS: rackNS,
-                                onTap: {},
-                                onToggleSelect: {},
-                                isCurrent: photo.id == current?.id,
-                                allowsDevelopingTap: true,
-                                isFailed: failedPhotoIds.contains(photo.id),
-                                compact: true
-                            )
-                            .id(photo.id)
+            VStack(spacing: 0) {
+                DarkroomPerforationLine().frame(height: 3)
+                ScrollViewReader { proxy in
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: Self.rackFrameGap) {
+                            ForEach(currentNightPhotos) { photo in
+                                DarkroomFrameView(
+                                    photo: photo,
+                                    accent: accent,
+                                    signedURL: signedURLs[photo.id] ?? rackThumbURLs[photo.id],
+                                    isShared: feed.myPostedPhotoIds.contains(photo.id),
+                                    rollName: rollName(photo.rollId),
+                                    isSelecting: false,
+                                    isSelected: false,
+                                    photoNS: rackNS,
+                                    onTap: {},
+                                    onToggleSelect: {},
+                                    isCurrent: photo.id == current?.id,
+                                    allowsDevelopingTap: true,
+                                    isFailed: failedPhotoIds.contains(photo.id),
+                                    compact: true
+                                )
+                                .id(photo.id)
+                            }
                         }
+                        .padding(.vertical, Self.rackFrameGap)
+                        // ONE recogniser on the row, resolving x to the frame whose band contains
+                        // it, matching `FeedUnitCard.FilmStrip`'s own tap mechanism verbatim: every
+                        // point in the row belongs to exactly one frame, no gap is dead, and a 30pt
+                        // visual never has to be the 30pt target. `jump(to:)` already carries its own
+                        // haptic and no-op guard for tapping the already-current frame. Attached
+                        // BEFORE the row's own 16pt inset below, so `value.location.x` is relative
+                        // to the HStack's own content and unaffected by that outer padding: x = 0
+                        // here is still the first frame's own leading edge.
+                        .contentShape(Rectangle())
+                        .gesture(SpatialTapGesture().onEnded { value in
+                            let frames = currentNightPhotos
+                            guard !frames.isEmpty else { return }
+                            let index = min(frames.count - 1, max(0, Int(value.location.x / Self.rackPitch)))
+                            jump(to: frames[index])
+                        })
                     }
-                    .padding(.vertical, Self.rackFrameGap)
-                    // ONE recogniser on the row, resolving x to the frame whose band contains
-                    // it, matching `FeedUnitCard.FilmStrip`'s own tap mechanism verbatim: every
-                    // point in the row belongs to exactly one frame, no gap is dead, and a 30pt
-                    // visual never has to be the 30pt target. `jump(to:)` already carries its own
-                    // haptic and no-op guard for tapping the already-current frame.
-                    .contentShape(Rectangle())
-                    .gesture(SpatialTapGesture().onEnded { value in
-                        let frames = currentNightPhotos
-                        guard !frames.isEmpty else { return }
-                        let index = min(frames.count - 1, max(0, Int(value.location.x / Self.rackPitch)))
-                        jump(to: frames[index])
-                    })
-                    // Flush with the photograph's own left edge, which in night-rack mode has
-                    // no margin at all (a hard, full-bleed `width x width*4/3` box): the rack
-                    // used to carry a 16pt leading inset the photo itself doesn't have, so the
-                    // first frame floated in from the edge instead of starting exactly where
-                    // the photo starts, unlike the feed's own strip (which matches ITS photo's
-                    // margined edge, not a bare zero, because that photo has one). The trailing
-                    // side keeps its inset; `rackFadeMask` and the centering `scrollTo` below
-                    // are both already viewport-relative, not padding-relative, so neither needs
-                    // to change alongside this.
-                    .padding(.leading, 0)
-                    .padding(.trailing, 16)
+                    .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { rackWidth = $0 }
+                    .mask(rackFadeMask)
+                    .onChange(of: selection) { _, _ in
+                        guard let id = current?.id else { return }
+                        withAnimation(.snappy(duration: 0.22)) { proxy.scrollTo(id, anchor: .center) }
+                    }
+                    // First appear: land already centred, no animation.
+                    .task {
+                        guard let id = current?.id else { return }
+                        proxy.scrollTo(id, anchor: .center)
+                    }
                 }
-                .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { rackWidth = $0 }
-                .mask(rackFadeMask)
-                .onChange(of: selection) { _, _ in
-                    guard let id = current?.id else { return }
-                    withAnimation(.snappy(duration: 0.22)) { proxy.scrollTo(id, anchor: .center) }
+                // Fills in whatever the grid never resolved (a night the grid didn't scroll past),
+                // batched in one call rather than a round trip per frame. Keyed on the night's own
+                // membership, so swiping into an adjacent night resolves that one too.
+                .task(id: currentNightPhotos.map(\.id)) {
+                    let missing = currentNightPhotos.filter { signedURLs[$0.id] == nil && rackThumbURLs[$0.id] == nil }
+                    guard !missing.isEmpty else { return }
+                    let resolved = await photoService.signedURLs(for: missing.map(\.displayPath))
+                    for photo in missing {
+                        if let url = resolved[photo.displayPath] { rackThumbURLs[photo.id] = url }
+                    }
                 }
-                // First appear: land already centred, no animation.
-                .task {
-                    guard let id = current?.id else { return }
-                    proxy.scrollTo(id, anchor: .center)
-                }
+                DarkroomPerforationLine().frame(height: 3)
             }
-            // Fills in whatever the grid never resolved (a night the grid didn't scroll past),
-            // batched in one call rather than a round trip per frame. Keyed on the night's own
-            // membership, so swiping into an adjacent night resolves that one too.
-            .task(id: currentNightPhotos.map(\.id)) {
-                let missing = currentNightPhotos.filter { signedURLs[$0.id] == nil && rackThumbURLs[$0.id] == nil }
-                guard !missing.isEmpty else { return }
-                let resolved = await photoService.signedURLs(for: missing.map(\.displayPath))
-                for photo in missing {
-                    if let url = resolved[photo.displayPath] { rackThumbURLs[photo.id] = url }
-                }
-            }
-            DarkroomPerforationLine().frame(height: 3)
+            // The same 16pt inset the photograph itself now carries (see `photoWidth`), matching
+            // the feed's own relationship between `FilmStrip` and its hero exactly: both share
+            // ONE `.padding(.horizontal, 16)` on their container, so the strip's leading edge
+            // lines up with the photo's, not later or earlier. The rack used to sit flush at
+            // x = 0 to match a photo that was itself full-bleed square; now that the photo
+            // carries this same 16pt margin (the owner's rounded-corner call), the rack is
+            // re-inset here so it keeps tucking into that same line instead of floating past
+            // the photo's now-rounded corner. Perforations move with it: they live inside this
+            // same padded block, not the frame row alone.
+            //
+            // `rackFadeMask` and the centering `scrollTo` above stay untouched: both are
+            // viewport-relative (the `ScrollView`'s own measured width / SwiftUI's own anchor
+            // scrolling), not padding-relative, so a narrower viewport from this inset is
+            // already the correct input for both, no separate math to update.
+            .padding(.horizontal, 16)
             statusActionsRow
         }
     }
@@ -1501,10 +1546,20 @@ struct PhotoPagerView: View {
 /// breaks layout at runtime while compiling clean, which is why this cannot be one call.
 private struct PageFrameModifier: ViewModifier {
     let fixed: CGSize?
+    /// Rounds the fixed night-rack box to match `FeedUnitCard.pager`'s own clip exactly (12pt);
+    /// `0` (every caller before the corner-rounding pass, and the roll/widget's flexible-fill
+    /// path today) keeps the plain rectangular `.clipped()` it has always had. Ignored when
+    /// `fixed` is nil, since that path never clips at all.
+    var cornerRadius: CGFloat = 0
 
     func body(content: Content) -> some View {
         if let fixed {
-            content.frame(width: fixed.width, height: fixed.height).clipped()
+            if cornerRadius > 0 {
+                content.frame(width: fixed.width, height: fixed.height)
+                    .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
+            } else {
+                content.frame(width: fixed.width, height: fixed.height).clipped()
+            }
         } else {
             content.frame(maxWidth: .infinity, maxHeight: .infinity)
         }

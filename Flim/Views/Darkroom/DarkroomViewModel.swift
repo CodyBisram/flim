@@ -10,6 +10,19 @@ func filterHiddenPhotos(_ photos: [Photo], hiding pendingHiddenIds: Set<UUID>) -
     pendingHiddenIds.isEmpty ? photos : photos.filter { !pendingHiddenIds.contains($0.id) }
 }
 
+/// Which of `photos` still need a signed URL resolved: ready (developed) shots not already
+/// cached. The rule behind `DarkroomViewModel.prefetchURLs`, pulled out as a free function so it
+/// is testable without a live `PhotoService`: the 60s develop poll used to call `markReadyPhotos`
+/// alone, so a photo that flipped ready while being watched moved buckets (into
+/// `developedPhotos`) with no signed URL ever requested for it, and sat as a blank tile until
+/// something else reloaded the screen. `startRefreshLoop` now chains `prefetchURLs` after
+/// `markReadyPhotos`, and this is the decision that call ends up making: a freshly-ready photo,
+/// not yet in `signedURLCache`, needs a request; anything already cached, or still developing,
+/// does not.
+func photosNeedingSignedURL(_ photos: [Photo], cached: Set<UUID>) -> [Photo] {
+    photos.filter { $0.isReady && !cached.contains($0.id) }
+}
+
 /// Main-actor isolated, like every service in the app.
 ///
 /// This was the one `@Observable` type in the codebase with no isolation at all. Most mutations
@@ -151,12 +164,23 @@ final class DarkroomViewModel {
     /// this the poll would simply never start for that session. Every LATER anchored jump
     /// (a Year row, a closing-row tap, an anchored pull-to-refresh) leaves an already-running loop
     /// alone rather than resetting its 60s countdown back to zero on every jump.
-    func loadAnchored(photoService: PhotoService, userId: UUID, upperEdge: Date) async {
+    /// `shouldApply` is re-checked right here, after the fetch resolves and before `assign`
+    /// touches `photos` at all: the ViewModel stays generic (it has no notion of "jump token",
+    /// just a closure it's handed), but this is the one place that can actually stop a stale
+    /// anchored fetch from landing, rather than merely skipping whatever the caller does
+    /// afterward. `anchoredJumpTask?.cancel()` alone cannot do this: a `Task` only reacts to
+    /// cancellation at a checkpoint it chooses to check, and this function has none between the
+    /// `await` above and `assign` below, so a cancelled-but-already-past-that-await fetch used to
+    /// complete and assign its month's rows regardless (found 2026-08-25, second audit,
+    /// `DarkroomView.landOnAnchorMonth`'s own doc names the exact race). Defaults to always
+    /// applying, so every other caller (`DarkroomView.reload()`'s anchored branch) is unaffected.
+    func loadAnchored(photoService: PhotoService, userId: UUID, upperEdge: Date,
+                       shouldApply: () -> Bool = { true }) async {
         await MainActor.run { isLoading = true; error = nil }
         do {
             // Same applied-or-superseded contract as `load()` above.
             let applied = try await photoService.fetchPersonalPhotos(userId: userId, anchoredBefore: upperEdge)
-            if applied {
+            if applied, shouldApply() {
                 let fetched = photoService.loadedPhotos
                 await MainActor.run { assign(fetched) }
                 await markReadyPhotos(photoService: photoService)
@@ -217,7 +241,7 @@ final class DarkroomViewModel {
     /// Prefetch signed URLs for all visible-ready photos in ONE batched request, so cells don't
     /// each fire their own round-trip as they scroll in.
     func prefetchURLs(photoService: PhotoService) async {
-        let ready = photos.filter { $0.isReady && signedURLCache[$0.id] == nil }
+        let ready = photosNeedingSignedURL(photos, cached: Set(signedURLCache.keys))
         guard !ready.isEmpty else { return }
         // Grid shows the thumbnail (displayPath), tiny download vs the full image.
         let map = await photoService.signedURLs(for: ready.map(\.displayPath))
@@ -274,7 +298,7 @@ final class DarkroomViewModel {
         }
     }
 
-    // Polls every 60s to reveal newly developed photos (signed URLs load lazily per cell).
+    // Polls every 60s to reveal newly developed photos.
     private func startRefreshLoop(photoService: PhotoService) {
         refreshTask?.cancel()
         refreshTask = Task { [weak self] in
@@ -282,6 +306,12 @@ final class DarkroomViewModel {
                 try? await Task.sleep(for: .seconds(60))
                 guard let self, !Task.isCancelled else { return }
                 await self.markReadyPhotos(photoService: photoService, notify: true)
+                // Every OTHER call site that reassigns `photos` chains this; this loop was the
+                // one exception, so a photo that crossed its develop threshold while being
+                // watched flipped buckets (into `developedPhotos`) with no signed URL ever
+                // requested, and sat as a blank tile until something else reloaded the screen.
+                // See `photosNeedingSignedURL`'s own doc.
+                await self.prefetchURLs(photoService: photoService)
             }
         }
     }

@@ -30,6 +30,12 @@ struct DarkroomYearRow: View {
 
     @Environment(PhotoService.self) private var photoService
     @State private var coverURLs: [String: URL] = [:]
+    /// Cover paths whose `CachedImage` has permanently failed (the object no longer exists, most
+    /// often a deleted photo). Without this, a 404 read as CachedImage's own built-in retry tile
+    /// (a spinning-arrow, tap-to-retry affordance), which forever fails again since the photo is
+    /// actually gone, not merely offline. Flipping the slot to the SAME unexposed look every
+    /// other unresolved slot already uses reads as "nothing here", not as a broken control.
+    @State private var failedPaths: Set<String> = []
 
     /// The strip's fixed slot count: real covers fill from the left, whatever's left over stays
     /// unexposed. Matches the RPC's own `p_covers` call site (`DarkroomView.reload`).
@@ -96,8 +102,10 @@ struct DarkroomYearRow: View {
         HStack(spacing: 2) {
             ForEach(coverSlots) { slot in
                 switch slot {
-                case .cover(let path):
-                    CachedImage(url: coverURLs[path], maxPixel: 120, cacheKey: path) { image in
+                case .cover(let path) where !failedPaths.contains(path):
+                    CachedImage(url: coverURLs[path], maxPixel: 120, cacheKey: path, onFailure: {
+                        failedPaths.insert(path)
+                    }) { image in
                         image.resizable().scaledToFill()
                     } placeholder: {
                         unexposedCell
@@ -105,7 +113,7 @@ struct DarkroomYearRow: View {
                     .frame(width: 26, height: 35)
                     .clipShape(RoundedRectangle(cornerRadius: 2))
                     .overlay(RoundedRectangle(cornerRadius: 2).stroke(FlimTheme.stroke, lineWidth: 1))
-                case .empty:
+                case .cover, .empty:
                     unexposedCell
                 }
             }
@@ -187,6 +195,9 @@ struct DarkroomAllTimeRow: View {
 
     @Environment(PhotoService.self) private var photoService
     @State private var coverURLs: [String: URL] = [:]
+    /// Same reasoning as `DarkroomYearRow.failedPaths`: a permanently-failed cover (a deleted
+    /// photo) must read as no cover at all, not as a forever-retrying tile.
+    @State private var failedPaths: Set<String> = []
 
     private static let monthInitials = ["J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D"]
 
@@ -291,9 +302,15 @@ struct DarkroomAllTimeRow: View {
 
     @ViewBuilder
     private func mosaicTile(_ covers: [String], index: Int, size: CGFloat) -> some View {
-        if index < covers.count {
+        // A permanently-failed cover renders exactly like an absent one (`Color.clear` over the
+        // cell's own fill+stroke, see `monthMosaic`'s own doc for why there is no second
+        // "unexposed" look here to keep in sync with) rather than CachedImage's built-in
+        // tap-to-retry tile, which would never succeed for a photo that's actually gone.
+        if index < covers.count, !failedPaths.contains(covers[index]) {
             let path = covers[index]
-            CachedImage(url: coverURLs[path], maxPixel: 120, cacheKey: path) { image in
+            CachedImage(url: coverURLs[path], maxPixel: 120, cacheKey: path, onFailure: {
+                failedPaths.insert(path)
+            }) { image in
                 image.resizable().scaledToFill()
             } placeholder: {
                 Color.clear

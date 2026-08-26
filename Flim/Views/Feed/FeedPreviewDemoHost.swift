@@ -173,6 +173,14 @@ enum FeedPreviewFixtures {
         // This harness never runs through ContentView's real sign-in wiring, so nothing else
         // ever sets `activeUserId`; without it every mark below would silently no-op against
         // the now account-scoped store.
+        //
+        // Simulator only: `activeUserId`'s `didSet` runs `FeedSeenStore`'s one-shot legacy-marks
+        // migration (guarded by a flag that survives forever, see its own doc) the very first
+        // time ANY account activates the store. `-feedPreviewDemo` is a launch argument, not
+        // something the simulator alone can enforce, so a DEBUG build launched on a real device
+        // with it set could otherwise consume that one-shot migration into this fixture's fake
+        // id, permanently losing the chance to fold the real signed-in account's legacy marks in.
+        #if targetEnvironment(simulator)
         FeedSeenStore.shared.activeUserId = uuid(1)
         FeedSeenStore.shared.resetForDemo()
         let unseen: Set<UUID> = [miraItems[12].post.id, miraItems[13].post.id,
@@ -180,6 +188,7 @@ enum FeedPreviewFixtures {
         for item in items where !unseen.contains(item.post.id) {
             FeedSeenStore.shared.markSeen(item.post.id)
         }
+        #endif
     }
 }
 #endif
