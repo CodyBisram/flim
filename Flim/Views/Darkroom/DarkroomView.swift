@@ -1503,11 +1503,13 @@ struct DarkroomView: View {
         // need their own.
         let epoch = AccountEpoch.current
         isLoadingSummaries = true
-        // 7 covers: the Year row's own strip capacity at the rack's 44x59/46pt pitch (see
-        // `yearRowCapacity`'s own doc). The All-time rung draws its single per-month cover from
-        // `top_cover_path` instead, the same row's own field, so nothing here needs a second,
-        // separately-ordered request.
-        async let summaries = photoService.darkroomMonthSummaryV2(timezone: TimeZone.current.identifier, covers: 7)
+        // 8 covers: the WIDEST any device's Year strip fits at the rack's 44x59/46pt pitch (see
+        // `yearRowCapacity`'s own doc; owner report 2026-08-27: a 402pt phone fits 8, and asking
+        // for 7 left its eighth slot as an empty frame). Narrower devices render the first
+        // `capacity` of the array and simply never show the extras. The All-time rung draws its
+        // single per-month cover from `top_cover_path` instead, the same row's own field, so
+        // nothing here needs a second, separately-ordered request.
+        async let summaries = photoService.darkroomMonthSummaryV2(timezone: TimeZone.current.identifier, covers: 8)
         let anchoredBranch = zoom == .month && anchor != DarkroomYearMonth(date: .now)
         if anchoredBranch {
             await vm.loadAnchored(photoService: photoService, userId: userId, upperEdge: anchor.upperEdge())

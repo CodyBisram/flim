@@ -82,16 +82,17 @@ struct DarkroomYearRow: View {
         .accessibilityAddTraits(.isButton)
     }
 
-    /// `capacity` slots, left-aligned: `coverPaths` fills from the left as either a real image
-    /// (once its signed URL resolves) or the unexposed placeholder (while it's still resolving —
-    /// no spinner, same look as a slot with no cover at all), and whatever's left over past
-    /// `coverPaths.count` stays unexposed permanently, never a guessed image. Keyed by the cover
-    /// PATH itself (a pad slot keyed by its own synthetic id), never by index: a path is stable
-    /// identity, an index is not once `coverPaths` itself changes between renders.
+    /// Up to `capacity` covers, left-aligned, and ONLY covers: each renders as a real image once
+    /// its signed URL resolves, with the unexposed placeholder while resolving or after a failed
+    /// load (no spinner, never a guessed image). See `visibleCoverPaths` for why the strip never
+    /// pads empty frames past the covers it actually has. Keyed by the cover PATH itself, never
+    /// by index: a path is stable identity, an index is not once `coverPaths` itself changes
+    /// between renders.
     ///
     /// Frame size and pitch match the default rack's own (`DarkroomDayUnit.framePitch`/
     /// `frameGap`, 44x59 frames on a 46pt pitch, owner call 2026-08-27: take the reading trade,
-    /// 7 per row): this strip is the Year rung's own contact sheet, not a miniature of it.
+    /// a row shows what it fits): this strip is the Year rung's own contact sheet, not a
+    /// miniature of it.
     ///
     /// Resolution is THIS row's own job, not `DarkroomView`'s: the `.task(id:)` below fires once
     /// as this specific row scrolls into view (a `LazyVStack` row, mounted/unmounted like any
@@ -101,9 +102,8 @@ struct DarkroomYearRow: View {
     /// on either rung costs nothing to redraw here.
     private var sampleStrip: some View {
         HStack(spacing: DarkroomDayUnit.frameGap) {
-            ForEach(coverSlots) { slot in
-                switch slot {
-                case .cover(let path) where !failedPaths.contains(path):
+            ForEach(visibleCoverPaths, id: \.self) { path in
+                if !failedPaths.contains(path) {
                     CachedImage(url: coverURLs[path], maxPixel: 120, cacheKey: path, onFailure: {
                         failedPaths.insert(path)
                     }) { image in
@@ -114,7 +114,7 @@ struct DarkroomYearRow: View {
                     .frame(width: DarkroomDayUnit.framePitch - DarkroomDayUnit.frameGap, height: 59)
                     .clipShape(RoundedRectangle(cornerRadius: 2))
                     .overlay(RoundedRectangle(cornerRadius: 2).stroke(FlimTheme.stroke, lineWidth: 1))
-                case .cover, .empty:
+                } else {
                     unexposedCell
                 }
             }
@@ -133,22 +133,13 @@ struct DarkroomYearRow: View {
             .overlay(RoundedRectangle(cornerRadius: 2).stroke(FlimTheme.stroke, lineWidth: 1))
     }
 
-    private enum CoverSlot: Identifiable {
-        case cover(String)
-        case empty(Int)
-        var id: String {
-            switch self {
-            case .cover(let path): return path
-            case .empty(let index): return "empty-\(index)"
-            }
-        }
-    }
-
-    private var coverSlots: [CoverSlot] {
-        let real = coverPaths.prefix(capacity).map(CoverSlot.cover)
-        let padCount = capacity - real.count
-        guard padCount > 0 else { return Array(real) }
-        return real + (0..<padCount).map(CoverSlot.empty)
+    /// NO pad slots, unlike the night rack: there an unexposed frame is film that was never
+    /// shot, part of the object; here it read as a photo that failed to load (owner report
+    /// 2026-08-27, the "empty block"). A month with fewer covers than the row fits just ends,
+    /// and a device narrower than the server's 8-cover ask renders the first `capacity` of the
+    /// chronological array and never shows the extras.
+    private var visibleCoverPaths: [String] {
+        Array(coverPaths.prefix(capacity))
     }
 }
 
