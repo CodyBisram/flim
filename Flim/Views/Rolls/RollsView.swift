@@ -46,6 +46,9 @@ struct RollsView: View {
     @State private var myFrameCounts: [UUID: Int] = [:]
     /// The screen's width, measured once, for `DarkroomDayUnit.stripCapacity`.
     @State private var containerWidth: CGFloat = 0
+    /// Bumped at the instant the active roll develops, purely to re-derive the bands; see
+    /// the `.task(id:)` on the body.
+    @State private var developTick = 0
 
     private func isCreator(_ roll: Roll) -> Bool { auth.currentUser?.id == roll.createdBy }
 
@@ -76,7 +79,7 @@ struct RollsView: View {
             FlimTheme.bg.ignoresSafeArea()
 
             VStack(spacing: 0) {
-                FlimNavTitle("Rolls")
+                header
 
                 Group {
                     if rolls.isLoading && rolls.rolls.isEmpty {
@@ -93,6 +96,19 @@ struct RollsView: View {
             }
         }
         .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { containerWidth = $0 }
+        // The bands (open / ready / developed) are derived in BODY, which TimelineView ticks
+        // do not re-evaluate: without this, the moment the active roll develops the header
+        // would sit on "0s left to shoot" with a dead verb until some other state changed.
+        // Sleeping until the active roll's own reveal instant and bumping state re-derives
+        // the bands right as the roll crosses over; `task(id:)` re-arms when the active roll
+        // changes and cancels when the view goes away.
+        .task(id: activeRoll?.revealAt) {
+            guard let revealAt = activeRoll?.revealAt else { return }
+            let wait = revealAt.timeIntervalSinceNow + 0.5
+            guard wait > 0 else { return }
+            try? await Task.sleep(for: .seconds(wait))
+            developTick += 1
+        }
         .overlay(alignment: .top) {
             if let toastMessage {
                 Label(toastMessage, systemImage: "exclamationmark.triangle.fill")
@@ -103,25 +119,7 @@ struct RollsView: View {
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbarColorScheme(.dark, for: .navigationBar)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                // One glyph, two actions (the redesign collapses the old pair): creating and
-                // joining are the same kind of act, starting a roll's life on this device.
-                Menu {
-                    Button { showCreate = true } label: { Label("New roll", systemImage: "plus") }
-                    Button { showJoin = true } label: { Label("Join with a code", systemImage: "person.badge.plus") }
-                } label: {
-                    Image(systemName: "plus")
-                        .font(.system(size: 18, weight: .medium))
-                        .foregroundStyle(accent)
-                        .frame(width: 26, height: 24)
-                        .expandTapTarget(by: 9)
-                }
-                .accessibilityLabel("New roll or join with a code")
-            }
-        }
+        .navigationBarHidden(true)
         .sheet(isPresented: $showCreate) {
             CreateRollView()
         }
@@ -163,6 +161,56 @@ struct RollsView: View {
         .navigationDestination(for: Roll.self) { roll in
             RollDetailView(roll: roll)
         }
+    }
+
+    // MARK: - Header
+
+    /// The compact bar every tab shares: the screen's own name at the far left, controls at
+    /// the right, one row (Feed and Darkroom set the pattern). One glyph, two actions: the
+    /// redesign collapses the old create/join pair, since both start a roll's life here.
+    private var header: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text("Rolls")
+                .flimFont(17, weight: .light, relativeTo: .body)
+                .tracking(0.5)
+                .foregroundStyle(FlimTheme.textPrimary)
+            // The ledger, taken whole from Feed's and Darkroom's bars: the urgent fact in
+            // accent with the glow (a sealed roll is exactly what that treatment is reserved
+            // for), the calm fact in tertiary, and never a zero. `fetchRolls` is unpaginated
+            // (every membership row in one query), so counting the loaded set IS the
+            // server-side truth; no extra count query needed.
+            if !readyRolls.isEmpty {
+                Text("·")
+                    .flimFont(12, relativeTo: .caption)
+                    .foregroundStyle(FlimTheme.textTertiary)
+                Text("\(readyRolls.count) ready")
+                    .flimFont(12, relativeTo: .caption)
+                    .foregroundStyle(accent)
+                    .shadow(color: accent.opacity(0.55), radius: 6)
+            } else if !openRolls.isEmpty {
+                Text("·")
+                    .flimFont(12, relativeTo: .caption)
+                    .foregroundStyle(FlimTheme.textTertiary)
+                Text("\(openRolls.count) open")
+                    .flimFont(12, relativeTo: .caption)
+                    .foregroundStyle(FlimTheme.textTertiary)
+            }
+            Spacer(minLength: 8)
+            Menu {
+                Button { showCreate = true } label: { Label("New roll", systemImage: "plus") }
+                Button { showJoin = true } label: { Label("Join with a code", systemImage: "person.badge.plus") }
+            } label: {
+                Image(systemName: "plus")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(accent)
+                    .frame(width: 38, height: 38)
+                    .glassCapsule(interactive: true)
+            }
+            .accessibilityLabel("New roll or join with a code")
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 2)
+        .padding(.bottom, 6)
     }
 
     // MARK: - The scroll
@@ -491,11 +539,9 @@ struct RollsView: View {
                 .padding(.horizontal, 16)
                 .padding(.top, 6)
 
-            // A blank piece of film.
-            rack(frames: 0, fraction: 0, sealed: false)
-                .padding(.horizontal, 16)
-                .padding(.top, 14)
-
+            // No rack here (cut in revision 3): a strip of empty slots carried no state and
+            // read as a loading skeleton. The whitespace is correct; the photographs begin
+            // one section down.
             HStack(spacing: 8) {
                 Button { showCreate = true } label: {
                     HStack(spacing: 7) {

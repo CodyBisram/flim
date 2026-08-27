@@ -1,9 +1,18 @@
-# Rolls redesign handoff (Claude Design, revision 2)
+# Rolls redesign handoff (Claude Design, revision 3)
 
-> Batch 1 (screens 3a-3d, 3h: picker, active-roll header, ready bands, archive grid) shipped 2026-08-26.
+> Batch 1 (screens 3a-3d, 3h: header with ledger, picker, active-roll block, ready bands, archive grid)
+> shipped 2026-08-26, revision-3 header + 3c amendments applied.
 > Batch 2 (3e-3g: the reveal rework) is NOT yet built; its spec is below and is authoritative,
 > including the Amendments section, which wins over anything after it.
 
+
+**Revision 3.** Read the *Amendments* section before anything else — it supersedes the body where they disagree.
+
+| Rev | What changed |
+| --- | --- |
+| 1 | Initial spec: eight screens (3a–3h), workflow, copy inventory, token mapping. |
+| 2 | Developer review. The develop beat kept (timer-only deletion); `rollRevealSeen` moved to completion; Share invite dropped from archive tiles; adaptive clock tick; 3f reclassified as a third `PhotoPagerView` composition, not a flag flip. Camera pre-selection confirmed to exist already. |
+| 3 | Header corrected to Feed/Darkroom's compact one-row bar with a ledger slot (`FlimNavTitle` is used in only two places in the app, both of them Rolls). 3c's blank film strip cut. |
 
 ## Overview
 
@@ -17,8 +26,8 @@ The redesign:
 2. The other open rolls become a **picker**, not a list. You only ever shoot into one roll; switching is a tap.
 3. **Ready to reveal** stays a loud, transient band. It is an inbox that empties.
 4. **Developed rolls become an album grid** (180pt covers, two-up), because at that point a roll is something you browse by picture, not an agenda item.
-5. The **reveal drops its timed slideshow** and reuses `PhotoPagerView` in night-rack mode, so you page at your own speed and can comment on a frame.
-6. The visual anatomy is lifted directly from the recently-redesigned **Darkroom**: band → meta line → film rack between dashed perforations, units divided by a hairline that fades out at both ends.
+5. The **reveal drops its timer, not its ceremony.** The shared clock, the story bar and Skip all go; you page at your own speed on the shared photo viewer and can comment on a frame for the first time. Each frame still arrives as a well and **develops in place** the first time you reach it — once per frame, never again.
+6. The visual anatomy is lifted directly from the recently-redesigned **Darkroom**: band → meta line → film rack between dashed perforations, units divided by a hairline that fades out at both ends. The header is Feed's and Darkroom's compact one-row bar, not the 34pt title Rolls uses today.
 
 ## About the design files
 
@@ -39,13 +48,15 @@ The one genuinely new geometry is the archive grid (two columns, 10pt gutter). E
 
 ## Amendments (review round 2)
 
-Five corrections after implementation review. Where this section disagrees with anything below, **this section wins.**
+Seven corrections after implementation review — five from the developer, two from a design pass. Where this section disagrees with anything below, **this section wins.**
 
 1. **The develop beat stays.** Only the *timer* is deleted. Each frame arrives as a well and develops in place the first time you page to it — one ~0.8s blur-to-sharp, once per frame, never again. See 3f.
 2. **`rollRevealSeen` moves from presentation to completion.** Today it is written when the reveal is presented (`RollDetailView` line ~360, before a frame plays). Under self-pacing that is wrong. See *State*.
 3. **Archive tiles do not offer Share invite.** Invites end when a roll develops (owner decision, 2026-08-26; `RollDetailView` ~line 232, `RollMembersView` ~line 70). See *Interactions*.
 4. **The clock tick is adaptive, not fixed at 60s.** See *Interactions*.
 5. **3f is a third composition of `PhotoPagerView`, not `showsNightRack: true`.** See 3f.
+6. **The header is the compact one-row bar, not `FlimNavTitle`.** My original spec said "`FlimNavTitle("Rolls")` unchanged" — faithful to today's `RollsView`, and wrong about the app. See *Shared chrome*.
+7. **3c loses its blank film strip.** Cut on review: it carried no state, read as a loading skeleton, and misused `DarkroomFrameSlot.empty` — whose own doc says a single-strip day gets no padding "because a three-shot day is a short piece of film, not a strip nine-tenths empty." See 3c.
 
 ---
 
@@ -55,7 +66,24 @@ Eight screens, ids `3a`–`3h`, in `design/Rolls - redesign.dc.html` (turn 3, th
 
 ### Shared chrome (all Rolls screens)
 
-**Nav row** — `FlimNavTitle("Rolls")` unchanged: 34pt weight `.light`, tracking 0.5, `FlimTheme.textPrimary`, horizontal padding 20, top 6, bottom 10. Trailing toolbar item: a single `plus` glyph, 18pt `.medium`, accent, in a 26×24 frame with `.expandTapTarget(by: 9)`. It presents a menu with **New roll** and **Join with a code** (today these are two separate toolbar glyphs; collapse them).
+**Header row** — the compact one-row bar the redesigned Feed and Darkroom both use. **Not `FlimNavTitle`.**
+
+Audit: `FlimNavTitle` (34pt `.light`) appears in exactly two places in the whole app — `RollsView` and `RollDetailView`. `flimInlineTitle` is for sheets. Feed (`FeedView.header`) and Darkroom (`DarkroomView.normalHeaderRow`) use neither: both render a plain `HStack` with `Text(...).flimFont(17, weight: .light).tracking(0.5).foregroundStyle(FlimTheme.textPrimary)`, then a `·` and a 12pt ledger, then `Spacer`, then trailing controls. Rolls was the odd one out, and my first spec canonised the odd one out. Correcting it.
+
+Anatomy, matching `FeedView.header` / `DarkroomView.normalHeaderRow`:
+
+- `HStack` baseline-aligned, spacing 6, horizontal padding 16, bottom padding 10.
+- `"Rolls"` — 17pt `.light`, tracking 0.5, `FlimTheme.textPrimary`, `relativeTo: .body`.
+- **The ledger** — take the pattern whole rather than only shrinking the type; the slot is genuinely wanted here. `·` then a 12pt value, `relativeTo: .caption`:
+  - Something ready to reveal → `"1 ready"` in **accent** with Feed's glow (`.shadow(color: accent.opacity(0.55), radius: 6)`). Feed reserves that treatment for the urgent, right-now fact, which is exactly what a sealed roll is.
+  - Otherwise → `"3 open"` in `FlimTheme.textTertiary`, matching Darkroom's shot count.
+  - **Never a zero.** Omitted entirely when nothing is open and nothing is ready (3c, 3d), the same rule Feed's ledger doc states.
+  - Count open rolls **server-side**, never from a loaded page — same trap as `frameCounts`.
+- `Spacer`, then the trailing `plus`: 17pt accent, `.expandTapTarget(by: 9)` to reach 44. Presents a menu with **New roll** and **Join with a code** (today these are two separate toolbar glyphs; collapse them).
+
+Consequence worth noting: with the tab title at 17pt, the **active roll's name at 26pt `.light` is the largest type on the screen.** That is correct — the roll is the subject, the tab is a label — but it inverts today's hierarchy, so expect it to look wrong for a day.
+
+**Do not revert this.** A later pass reading `RollsView.swift` in isolation will see `FlimNavTitle` and "fix" the header back. It is a deliberate deviation from the current code toward the app's actual convention.
 
 **Tab bar** — unchanged (`MainTabView`), Rolls selected.
 
@@ -109,9 +137,12 @@ Every roll has developed, so there is no active roll and no picker.
 
 - Title 26pt `.light` `textPrimary`: `"No roll is open"`.
 - Body 12.5pt `textSecondary`, line spacing ~1.55: `"A roll closes 12 hours after it starts. Nobody sees a frame until then."` — **the "12 hours" must come from `Roll.developDelayPhrase`.** A literal here is false in every DEBUG build; `Roll`'s own doc records this.
-- A rack of **unexposed pad slots** (`DarkroomFrameSlot.empty` — holds its space, draws nothing, no hit target) between two perforation lines. A blank piece of film.
-- Two 46pt capsules side by side, 8pt gap: **Start a roll** (accent border, accent-200 label, `plus` glyph) and **Join with a code** (`FlimTheme.stroke` border, `textSecondary` label, `person.badge.plus`).
+- Two 46pt capsules side by side, 8pt gap, top padding 6: **Start a roll** (accent border, accent-200 label, `plus` glyph) and **Join with a code** (`FlimTheme.stroke` border, `textSecondary` label, `person.badge.plus`).
 - Then the Developed grid.
+
+**No rack on this screen.** An earlier revision put a strip of unexposed pad slots here as a "blank piece of film". It was cut: it carried no state (there is no roll, so there are no slots), it read as a loading skeleton next to the app's real `ShimmerPlaceholder`, and it used `DarkroomFrameSlot.empty` against the reasoning in that type's own doc. The whitespace is correct — the photographs begin one section down, and the screen was never bare, only bare at the top.
+
+If this state later needs a nudge rather than an absence, the honest version is a fact, not an ornament: the roll that closed most recently, named, with its own developed strip — *"Ilana's birthday closed 4 hours ago · 47 frames"*. Note that it duplicates the newest archive tile directly beneath it, so it needs a reason beyond filling space.
 
 ### 3d — No rolls at all
 
@@ -276,7 +307,9 @@ Do **not** read the accent statically. `FlimTheme.accent` reads `UserDefaults` d
 
 | Use | Size | Weight | Tracking | relativeTo |
 | --- | --- | --- | --- | --- |
-| Page title (`FlimNavTitle`) | 34 | `.light` | 0.5 | `.title3` |
+| Header title (compact bar) | 17 | `.light` | 0.5 | `.body` |
+| Header ledger | 12 | `.regular` | — | `.caption` |
+| ~~Page title (`FlimNavTitle`)~~ | ~~34~~ | — | — | Not used — see *Shared chrome* |
 | Active roll name | 26 | `.light` | 0.3 | `.title3` |
 | Reveal cover roll name | 34 | `.ultraLight` | 2 | — |
 | Reveal end roll name | 24 | `.light` | — | — |
@@ -300,6 +333,15 @@ Do **not** read the accent statically. `FlimTheme.accent` reads `UserDefaults` d
 ---
 
 ## Copy
+
+### Rolls — header
+
+| State | String |
+| --- | --- |
+| Title | `Rolls` |
+| Ledger, something ready | `· 1 ready` (accent + glow) |
+| Ledger, otherwise | `· 3 open` (textTertiary) |
+| Ledger, nothing open or ready | omitted entirely |
 
 ### Rolls — active roll
 
@@ -423,6 +465,6 @@ The presence line on 3g now carries the communal half on its own, and it is thin
 
 ### Source files to read before starting
 
-`Flim/Views/Rolls/RollsView.swift` · `Flim/Models/RollImminence.swift` · `Flim/Models/Roll.swift` · `Flim/Views/Theme.swift` · `Flim/Views/Components/FlimFont.swift` · `Flim/Views/Darkroom/DarkroomRackView.swift` · `Flim/Views/Darkroom/DarkroomDayUnit.swift` · `Flim/Views/Rolls/RollDetailView.swift` · `Flim/Views/Rolls/RollRevealView.swift` · `Flim/Views/Rolls/RollRevealViewModel.swift` · `Flim/Models/RevealPacing.swift` · `Flim/Views/Components/PhotoPagerView.swift` · `Flim/Views/Components/ReactionBar.swift` · `Flim/Views/Main/MainTabView.swift`
+`Flim/Views/Rolls/RollsView.swift` · `Flim/Models/RollImminence.swift` · `Flim/Models/Roll.swift` · `Flim/Views/Theme.swift` · `Flim/Views/Components/FlimFont.swift` · `Flim/Views/Darkroom/DarkroomRackView.swift` · `Flim/Views/Darkroom/DarkroomDayUnit.swift` · `Flim/Views/Rolls/RollDetailView.swift` · `Flim/Views/Rolls/RollRevealView.swift` · `Flim/Views/Rolls/RollRevealViewModel.swift` · `Flim/Models/RevealPacing.swift` · `Flim/Views/Components/PhotoPagerView.swift` · `Flim/Views/Components/ReactionBar.swift` · `Flim/Views/Main/MainTabView.swift` · `Flim/Views/Feed/FeedView.swift` (the `header` property — the convention this design follows) · `Flim/Views/Darkroom/DarkroomView.swift` (`normalHeaderRow`)
 
 The doc comments in these files are unusually load-bearing — several record specific production bugs (cover URLs keyed by id instead of path, counts read from a page length instead of the server, a statically-read accent that never invalidates, `rollFullyPaged` set on a starved drain). Read them before changing the code they sit on.
