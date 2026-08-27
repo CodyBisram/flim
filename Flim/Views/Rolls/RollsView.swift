@@ -407,41 +407,41 @@ struct RollsView: View {
 
     // MARK: - Film rack
 
-    /// One strip, never wrapped: existing frames render as wells (sealed wells for a Ready
-    /// roll), the remaining capacity as unexposed pad slots, and when the roll holds more
-    /// frames than fit, the last slot becomes a `+N` overflow well.
+    /// One strip, never wrapped, and only as long as its film: existing frames render as
+    /// wells (sealed wells for a Ready roll) and when the roll holds more than fit, the last
+    /// slot becomes a `+N` overflow well. No pad slots and NOTHING at zero frames, per
+    /// `DarkroomFrameSlot.empty`'s own rule ("a three-shot day is a short piece of film, not
+    /// a strip nine-tenths empty"): the meta line already says "no frames yet", and a
+    /// full-width blank strip read as a loading skeleton (the same reason 3c's was cut).
+    @ViewBuilder
     private func rack(frames: Int, fraction: Double, sealed: Bool) -> some View {
         let capacity = DarkroomDayUnit.stripCapacity(availableWidth: max(0, containerWidth - 32))
         let overflow = frames > capacity ? frames - (capacity - 1) : 0
         let wells = overflow > 0 ? capacity - 1 : min(frames, capacity)
-        let slotCount = max(capacity, 1)
-        return VStack(spacing: 0) {
-            perforation(slotCount: slotCount)
-            HStack(spacing: DarkroomDayUnit.frameGap) {
-                ForEach(0..<wells, id: \.self) { _ in
-                    rackWell(sealed: sealed) {
-                        DarkroomDevelopArc(accent: accent, fraction: sealed ? 1 : fraction)
-                            .frame(width: 16, height: 16)
+        let slotCount = wells + (overflow > 0 ? 1 : 0)
+        if slotCount > 0 {
+            VStack(alignment: .leading, spacing: 0) {
+                perforation(slotCount: slotCount)
+                HStack(spacing: DarkroomDayUnit.frameGap) {
+                    ForEach(0..<wells, id: \.self) { _ in
+                        rackWell(sealed: sealed) {
+                            DarkroomDevelopArc(accent: accent, fraction: sealed ? 1 : fraction)
+                                .frame(width: 16, height: 16)
+                        }
+                    }
+                    if overflow > 0 {
+                        rackWell(sealed: sealed) {
+                            Text("+\(overflow)")
+                                .flimFont(11, weight: .medium, relativeTo: .caption)
+                                .foregroundStyle(accent)
+                        }
                     }
                 }
-                if overflow > 0 {
-                    rackWell(sealed: sealed) {
-                        Text("+\(overflow)")
-                            .flimFont(11, weight: .medium, relativeTo: .caption)
-                            .foregroundStyle(accent)
-                    }
-                }
-                ForEach(0..<max(0, capacity - wells - (overflow > 0 ? 1 : 0)), id: \.self) { _ in
-                    // An unexposed slot: holds its space, draws nothing, no hit target.
-                    Color.clear
-                        .frame(width: DarkroomDayUnit.framePitch - DarkroomDayUnit.frameGap, height: 59)
-                        .accessibilityHidden(true)
-                }
+                .padding(.vertical, 2)
+                perforation(slotCount: slotCount)
             }
-            .padding(.vertical, 2)
-            perforation(slotCount: slotCount)
+            .accessibilityHidden(true)
         }
-        .accessibilityHidden(true)
     }
 
     /// The Darkroom's developing well, verbatim geometry; `sealed` is the Ready band's
@@ -602,22 +602,28 @@ struct RollsView: View {
     private func archiveTile(_ roll: Roll) -> some View {
         NavigationLink(value: roll) {
             VStack(alignment: .leading, spacing: 5) {
-                ZStack {
-                    LinearGradient(colors: Self.gradient(for: roll),
-                                   startPoint: .topLeading, endPoint: .bottomTrailing)
-                    if let path = rolls.coverPaths[roll.id], let url = coverURLs[path] {
-                        CachedImage(url: url, maxPixel: 400, cacheKey: path) { image in
-                            image.resizable().scaledToFill()
-                        } placeholder: { Color.clear }
-                    } else {
-                        Text(roll.name.prefix(1).uppercased())
-                            .flimFont(26, weight: .light, relativeTo: .title3)
-                            .foregroundStyle(.white.opacity(0.95))
+                // The square takes its size from the COLUMN (Color.clear + fit), never from
+                // the image: a scaledToFill photo in a bare container inflates past its grid
+                // cell and paints over the header, the gutters, and its own caption row.
+                Color.clear
+                    .aspectRatio(1, contentMode: .fit)
+                    .overlay {
+                        ZStack {
+                            LinearGradient(colors: Self.gradient(for: roll),
+                                           startPoint: .topLeading, endPoint: .bottomTrailing)
+                            if let path = rolls.coverPaths[roll.id], let url = coverURLs[path] {
+                                CachedImage(url: url, maxPixel: 400, cacheKey: path) { image in
+                                    image.resizable().scaledToFill()
+                                } placeholder: { Color.clear }
+                            } else {
+                                Text(roll.name.prefix(1).uppercased())
+                                    .flimFont(26, weight: .light, relativeTo: .title3)
+                                    .foregroundStyle(.white.opacity(0.95))
+                            }
+                        }
                     }
-                }
-                .aspectRatio(1, contentMode: .fill)
-                .clipShape(RoundedRectangle(cornerRadius: 2))
-                .overlay(RoundedRectangle(cornerRadius: 2).strokeBorder(FlimTheme.stroke, lineWidth: 1))
+                    .clipShape(RoundedRectangle(cornerRadius: 2))
+                    .overlay(RoundedRectangle(cornerRadius: 2).strokeBorder(FlimTheme.stroke, lineWidth: 1))
 
                 HStack(spacing: 5) {
                     Text(roll.name)
