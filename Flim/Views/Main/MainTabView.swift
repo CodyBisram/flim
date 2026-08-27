@@ -295,6 +295,31 @@ struct MainTabView: View {
                     }
                 }
             }
+            //   -openDevelopedRoll : push into the first DEVELOPED roll the account can see,
+            //                        clearing its `rollRevealSeen.<id>` first so the reveal
+            //                        replays from the cover.
+            //
+            // `-openRollId` above is the older way in, and it has a practical flaw: it needs a
+            // roll UUID, and there is no sanctioned way to read one from a simulator (no tap
+            // automation in this repo, and the local stores are account data). Two separate
+            // verification passes stalled on exactly that, unable to reach the one screen they
+            // were sent to look at. This asks the account for an eligible roll instead of
+            // requiring the caller to already know one.
+            //
+            // Clearing the seen flag is the point, not a side effect: the reveal is one-shot
+            // per roll, so without it the second run of any check lands on the roll's grid.
+            // DEBUG-only, like everything in this block, so it cannot burn a real reader's
+            // one-shot flag.
+            if args.contains("-openDevelopedRoll") {
+                selected = 2
+                Task {
+                    guard let uid = auth.currentUser?.id else { return }
+                    try? await rolls.fetchRolls(for: uid)
+                    guard let roll = rolls.rolls.first(where: { $0.isDeveloped }) else { return }
+                    UserDefaults.standard.removeObject(forKey: "rollRevealSeen.\(roll.id.uuidString)")
+                    rollsPath.append(roll)
+                }
+            }
             if let photoIdArg = Self.launchArgValue("-openPhotoFullscreen", in: args),
                let photoId = UUID(uuidString: photoIdArg) {
                 Task {
