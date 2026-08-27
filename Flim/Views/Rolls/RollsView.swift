@@ -1,5 +1,15 @@
 import SwiftUI
 
+/// The Rolls tab, rebuilt around one idea (Rolls redesign, 2026-08-26): the screen should do
+/// the thing its clocks are asking for. The roll closing soonest is a header with a primary
+/// action (Shoot into this roll); the other open rolls are a picker, not a list; Ready to
+/// reveal stays a loud transient band; developed rolls become an album grid. The visual
+/// anatomy is the Darkroom's: band, meta line, film rack between dashed perforations.
+///
+/// One periodic redraw on the whole screen: a single TimelineView drives the active roll's
+/// clock and every develop arc. Its tick is ADAPTIVE: 60s normally, 1s only when the closing
+/// label is in its seconds form, because a seconds label on a minute tick is stale the moment
+/// it draws. The archive is static; the Ready band is static (its arc is complete).
 struct RollsView: View {
     @Environment(\.flimAccent) private var accent
     var scrollToTop: Int = 0
@@ -21,11 +31,45 @@ struct RollsView: View {
     @State private var mutedRolls: Set<UUID> = []
     @State private var inviteShareRoll: Roll?
     /// Top-slot toast for a leave that failed server-side; a successful leave just needs the row
-    /// gone, this is only for the failure the swipe action can't otherwise report.
+    /// gone, this is only for the failure the menu action can't otherwise report.
     @State private var toastMessage: String?
     @State private var toastDismiss: Task<Void, Never>?
+    /// The roll in the header. Persisted per scene so returning from Camera does not reset the
+    /// choice; `activeRoll` falls back to the soonest-closing roll when this develops, is left,
+    /// or is deleted.
+    @SceneStorage("rollsActiveRollId") private var activeRollIdRaw = ""
+    /// Per-roll TOTAL shot counts for the racks and meta lines. Server-side counts, never a
+    /// page length: `PhotoService`'s pagination doc and `RollDetailView.rollFullyPaged` both
+    /// record undercounting bugs from exactly that.
+    @State private var frameCounts: [UUID: Int] = [:]
+    /// The signed-in member's own counts, for "you shot 4". Same server-side rule.
+    @State private var myFrameCounts: [UUID: Int] = [:]
+    /// The screen's width, measured once, for `DarkroomDayUnit.stripCapacity`.
+    @State private var containerWidth: CGFloat = 0
 
     private func isCreator(_ roll: Roll) -> Bool { auth.currentUser?.id == roll.createdBy }
+
+    // MARK: - The three bands
+
+    /// Open rolls, soonest closing first. A developed roll is not shootable, so it is not
+    /// a choice in the picker.
+    private var openRolls: [Roll] {
+        rolls.rolls.filter { !$0.isDeveloped }.sorted { $0.revealAt < $1.revealAt }
+    }
+
+    private var readyRolls: [Roll] {
+        rolls.rolls.filter { isReadyToReveal($0) }
+    }
+
+    /// Developed and seen, newest reveal first.
+    private var developedRolls: [Roll] {
+        rolls.rolls.filter { $0.isDeveloped && !isReadyToReveal($0) }
+            .sorted { $0.revealAt > $1.revealAt }
+    }
+
+    private var activeRoll: Roll? {
+        openRolls.first { $0.id.uuidString == activeRollIdRaw } ?? openRolls.first
+    }
 
     var body: some View {
         ZStack {
@@ -42,12 +86,13 @@ struct RollsView: View {
                     } else if rolls.rolls.isEmpty {
                         emptyState
                     } else {
-                        rollList
+                        rollsScroll
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
+        .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { containerWidth = $0 }
         .overlay(alignment: .top) {
             if let toastMessage {
                 Label(toastMessage, systemImage: "exclamationmark.triangle.fill")
@@ -62,30 +107,19 @@ struct RollsView: View {
         .toolbarColorScheme(.dark, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                HStack(spacing: 18) {
-                    Button {
-                        showJoin = true
-                    } label: {
-                        Image(systemName: "person.badge.plus")
-                            .font(.system(size: 16, weight: .regular))
-                            .foregroundStyle(accent)
-                            .frame(width: 26, height: 24)
-                            // 9 is the most these two can take: the HStack spacing is 18, so at 9
-                            // each their touch areas meet exactly and neither steals the other's.
-                            .expandTapTarget(by: 9)
-                    }
-                    .accessibilityLabel("Join a roll")
-                    Button {
-                        showCreate = true
-                    } label: {
-                        Image(systemName: "plus")
-                            .font(.system(size: 18, weight: .medium))
-                            .foregroundStyle(accent)
-                            .frame(width: 26, height: 24)
-                            .expandTapTarget(by: 9)
-                    }
-                    .accessibilityLabel("New roll")
+                // One glyph, two actions (the redesign collapses the old pair): creating and
+                // joining are the same kind of act, starting a roll's life on this device.
+                Menu {
+                    Button { showCreate = true } label: { Label("New roll", systemImage: "plus") }
+                    Button { showJoin = true } label: { Label("Join with a code", systemImage: "person.badge.plus") }
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundStyle(accent)
+                        .frame(width: 26, height: 24)
+                        .expandTapTarget(by: 9)
                 }
+                .accessibilityLabel("New roll or join with a code")
             }
         }
         .sheet(isPresented: $showCreate) {
@@ -98,6 +132,30 @@ struct RollsView: View {
             ActivityView(items: [AppInfo.rollInviteMessage(rollName: roll.name, code: roll.inviteCode)],
                         onComplete: { Activation.log(.inviteSent) })
         }
+        // The consequence sheet's copy is `RollConsequence.leave`, the same one every other
+        // screen asks this question with.
+        .sheet(item: $rollToLeave) { roll in
+            ConsequenceSheet(consequence: .leave(name: roll.name, myShots: myFrameCounts[roll.id])) {
+                guard let uid = auth.currentUser?.id else { return }
+                Task {
+                    do {
+                        try await rolls.leaveRoll(rollId: roll.id, userId: uid)
+                        await load()
+                    } catch {
+                        // The leave never landed server-side; the roll must stay put, not
+                        // disappear as though it had.
+                        Haptics.error()
+                        withAnimation { toastMessage = "Couldn't leave the roll. Check your connection and try again." }
+                        toastDismiss?.cancel()
+                        toastDismiss = Task {
+                            try? await Task.sleep(for: .seconds(2.4))
+                            guard !Task.isCancelled else { return }
+                            withAnimation { toastMessage = nil }
+                        }
+                    }
+                }
+            }
+        }
         .onAppear { Task { await load() } }
         .onChange(of: rolls.coverPaths) {
             Task { await resolveCovers() }
@@ -107,65 +165,462 @@ struct RollsView: View {
         }
     }
 
-    /// Fetches the user's rolls, surfacing a network error for the retry state.
-    private func load() async {
-        guard let userId = auth.currentUser?.id else { return }
-        do {
-            try await rolls.fetchRolls(for: userId)
-            loadError = nil
-            await resolveCovers()
-            mutedRolls = await photos.fetchMutedRolls(userId: userId)
-            await refreshLiveActivities(userId: userId)
-        } catch {
-            loadError = error.localizedDescription
+    // MARK: - The scroll
+
+    private var rollsScroll: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    Color.clear.frame(height: 0).id("rollsTop")
+
+                    // The whole open-roll region shares ONE clock. The cadence is decided
+                    // from the active roll: 1s only near the closing window's seconds form,
+                    // 60s the rest of a roll's life, so the fast tick is reachable only in
+                    // the last minutes and costs nothing in practice.
+                    if let active = activeRoll {
+                        TimelineView(.periodic(from: .now, by: clockCadence(for: active))) { tl in
+                            VStack(spacing: 0) {
+                                openRollPicker(now: tl.date)
+                                activeRollBlock(active, now: tl.date)
+                            }
+                        }
+                    } else {
+                        nothingOpenBlock
+                    }
+
+                    DarkroomUnitSeparator()
+                        .padding(.top, 9)   // the separator brings its own 11; the design wants 20 here
+
+                    ForEach(readyRolls) { roll in
+                        readyBand(roll)
+                    }
+
+                    if !developedRolls.isEmpty {
+                        developedSection
+                    }
+                }
+                .padding(.bottom, 24)
+            }
+            .refreshable { await load() }
+            .onChange(of: scrollToTop) {
+                withAnimation(.snappy) { proxy.scrollTo("rollsTop", anchor: .top) }
+            }
         }
     }
 
-    /// Re-requests the lock-screen countdown for the rolls closest to revealing.
-    ///
-    /// This is the whole fix for the reach problem. The system ends a Live Activity after about
-    /// 8 hours, and a roll takes 12 to develop, so the card that was started at creation is gone
-    /// for the last third of the wait. Nothing server-side can restart it, so the app does, every
-    /// time this list loads, which is the most-visited screen in the app.
-    ///
-    /// This runs for every candidate, including rolls whose card is already live.
-    ///
-    /// It used to skip those, to avoid paying for a shot count that a running card supposedly did
-    /// not need. That was wrong, and visibly so: a running card then never received anything new,
-    /// so a changed accent or a shot taken since never reached the lock screen, and the only way
-    /// to update one was to open that specific roll, which syncs unconditionally.
-    ///
-    /// The cost is bounded by `maxConcurrent`, so it is at most two count queries on a screen
-    /// that already makes several round trips, and `sync` itself is a no-op when the state is
-    /// unchanged.
-    private func refreshLiveActivities(userId: UUID) async {
-        // First the other half of the pass: end cards for rolls that are no longer ours. A roll
-        // deleted by its creator, or left on another device, leaves a card counting down to a
-        // reveal that is never coming — and this list is the one place that reliably knows the
-        // current set.
-        RollLiveActivity.reconcile(activeRollIds: rolls.rolls.map(\.id))
-        let candidates = RollLiveActivity.rollsNeedingActivity(rolls.rolls, revealAt: \.revealAt)
-        for roll in candidates {
-            let shots = await photos.rollTotalShotCount(rollId: roll.id)
-            RollLiveActivity.sync(rollId: roll.id, rollName: roll.name, revealAt: roll.revealAt,
-                                  shotCount: shots, developFrom: roll.createdAt)
+    /// 1s only while the closing label is (or is about to be) counting seconds; 60s otherwise.
+    /// The 120s threshold catches the minutes-to-seconds transition on a coarse tick.
+    private func clockCadence(for roll: Roll) -> TimeInterval {
+        RollImminence.secondsRemaining(roll: roll, now: .now) < 120 ? 1 : 60
+    }
+
+    // MARK: - Picker
+
+    private func openRollPicker(now: Date) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 18) {
+                ForEach(openRolls) { roll in
+                    pickerItem(roll, now: now)
+                }
+            }
+            .padding(.horizontal, 16)
+        }
+        // The trailing fade says "there is more" without a scroll indicator.
+        .mask(
+            HStack(spacing: 0) {
+                Rectangle()
+                LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing)
+                    .frame(width: 26)
+            }
+        )
+    }
+
+    private func pickerItem(_ roll: Roll, now: Date) -> some View {
+        let selected = roll.id == activeRoll?.id
+        return Button {
+            Haptics.tap()
+            activeRollIdRaw = roll.id.uuidString
+        } label: {
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(roll.name)
+                        .flimFont(13, weight: .medium, relativeTo: .footnote)
+                        .foregroundStyle(selected ? FlimTheme.textPrimary : FlimTheme.textSecondary)
+                    Text(pickerTime(roll, now: now))
+                        .flimFont(11, relativeTo: .caption)
+                        .foregroundStyle(selected ? accent : FlimTheme.textSecondary)
+                }
+                .lineLimit(1)
+                // Selection is carried by the accent mark, never by contrast: unselected
+                // items must stay readable (that regression has been caught three times).
+                RoundedRectangle(cornerRadius: 1)
+                    .fill(selected ? accent : .clear)
+                    .frame(height: 2)
+            }
+        }
+        .buttonStyle(.plain)
+        .contextMenu { rollMenu(roll) }
+        .accessibilityLabel("\(roll.name), \(pickerTime(roll, now: now))\(selected ? ", selected" : "")")
+    }
+
+    private func pickerTime(_ roll: Roll, now: Date) -> String {
+        if let closing = RollImminence.closingLabel(roll: roll, now: now) {
+            // "24m left" / "40s left"; the picker only has room for the number.
+            return closing.replacingOccurrences(of: " left", with: "")
+        }
+        return Self.longRemaining(RollImminence.secondsRemaining(roll: roll, now: now))
+    }
+
+    // MARK: - Active roll
+
+    private func activeRollBlock(_ roll: Roll, now: Date) -> some View {
+        let closing = RollImminence.closingLabel(roll: roll, now: now) != nil
+        return VStack(alignment: .leading, spacing: 0) {
+            NavigationLink(value: roll) {
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(roll.name)
+                        .flimFont(26, weight: .light, relativeTo: .title3)
+                        .tracking(0.3)
+                        .foregroundStyle(FlimTheme.textPrimary)
+                        .padding(.bottom, 5)
+                    clockLine(roll, now: now, closing: closing)
+                    Text(activeMeta(roll))
+                        .flimFont(12.5, relativeTo: .footnote)
+                        .foregroundStyle(FlimTheme.textSecondary)
+                        .padding(.top, 2)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 16)
+
+            NavigationLink(value: roll) {
+                rack(frames: frameCounts[roll.id] ?? 0,
+                     fraction: RollImminence.progress(roll: roll, now: now),
+                     sealed: false)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+            .accessibilityLabel("\(frameCounts[roll.id] ?? 0) frames, developing. Opens the roll.")
+
+            Button {
+                Haptics.tap()
+                // The Camera already accepts a pre-selected roll; reuse that path, then
+                // switch tabs. Two notifications because they already exist separately.
+                NotificationCenter.default.post(name: .selectCameraRoll, object: roll)
+                NotificationCenter.default.post(name: .openCamera, object: nil)
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "camera.aperture").font(.system(size: 18))
+                    Text(closing ? "Last frames. Shoot now" : "Shoot into this roll")
+                        .flimFont(15, weight: .medium, relativeTo: .body)
+                }
+                .foregroundStyle(accent)
+                .frame(maxWidth: .infinity)
+                .frame(height: 46)
+                .overlay(Capsule().strokeBorder(accent, lineWidth: 1))
+                .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 16)
+            .padding(.top, 14)
+        }
+        .padding(.top, 16)
+    }
+
+    private func clockLine(_ roll: Roll, now: Date, closing: Bool) -> some View {
+        let closesAt = roll.revealAt.formatted(date: .omitted, time: .shortened)
+        let remaining: String
+        if let label = RollImminence.closingLabel(roll: roll, now: now) {
+            remaining = label.replacingOccurrences(of: " left", with: "") + " left to shoot"
+        } else {
+            remaining = Self.longRemaining(RollImminence.secondsRemaining(roll: roll, now: now)) + " left to shoot"
+        }
+        // Inside the last hour the WHOLE line goes accent; the deadline is the message.
+        return (
+            Text("Closes \(closesAt) · ").foregroundStyle(closing ? accent : FlimTheme.textSecondary)
+            + Text(remaining).foregroundStyle(accent)
+        )
+        .flimFont(12.5, relativeTo: .footnote)
+    }
+
+    private func activeMeta(_ roll: Roll) -> String {
+        let people = rolls.memberCounts[roll.id].map { "\($0) \($0 == 1 ? "person" : "people")" } ?? "Your roll"
+        guard let frames = frameCounts[roll.id], frames > 0 else {
+            return "\(people) · no frames yet"
+        }
+        let mine = myFrameCounts[roll.id] ?? 0
+        let yours = mine > 0 ? "you shot \(mine)" : "none of them yours"
+        return "\(people) · \(frames) frame\(frames == 1 ? "" : "s") · \(yours)"
+    }
+
+    // MARK: - Film rack
+
+    /// One strip, never wrapped: existing frames render as wells (sealed wells for a Ready
+    /// roll), the remaining capacity as unexposed pad slots, and when the roll holds more
+    /// frames than fit, the last slot becomes a `+N` overflow well.
+    private func rack(frames: Int, fraction: Double, sealed: Bool) -> some View {
+        let capacity = DarkroomDayUnit.stripCapacity(availableWidth: max(0, containerWidth - 32))
+        let overflow = frames > capacity ? frames - (capacity - 1) : 0
+        let wells = overflow > 0 ? capacity - 1 : min(frames, capacity)
+        let slotCount = max(capacity, 1)
+        return VStack(spacing: 0) {
+            perforation(slotCount: slotCount)
+            HStack(spacing: DarkroomDayUnit.frameGap) {
+                ForEach(0..<wells, id: \.self) { _ in
+                    rackWell(sealed: sealed) {
+                        DarkroomDevelopArc(accent: accent, fraction: sealed ? 1 : fraction)
+                            .frame(width: 16, height: 16)
+                    }
+                }
+                if overflow > 0 {
+                    rackWell(sealed: sealed) {
+                        Text("+\(overflow)")
+                            .flimFont(11, weight: .medium, relativeTo: .caption)
+                            .foregroundStyle(accent)
+                    }
+                }
+                ForEach(0..<max(0, capacity - wells - (overflow > 0 ? 1 : 0)), id: \.self) { _ in
+                    // An unexposed slot: holds its space, draws nothing, no hit target.
+                    Color.clear
+                        .frame(width: DarkroomDayUnit.framePitch - DarkroomDayUnit.frameGap, height: 59)
+                        .accessibilityHidden(true)
+                }
+            }
+            .padding(.vertical, 2)
+            perforation(slotCount: slotCount)
+        }
+        .accessibilityHidden(true)
+    }
+
+    /// The Darkroom's developing well, verbatim geometry; `sealed` is the Ready band's
+    /// accent-tinted variant. Sealed frames are never real photographs: the reveal is the
+    /// first time anyone sees them.
+    private func rackWell(sealed: Bool, @ViewBuilder content: () -> some View) -> some View {
+        RoundedRectangle(cornerRadius: 2)
+            .fill(sealed ? accent.opacity(0.16) : Color(white: 0.063))
+            .overlay(
+                RoundedRectangle(cornerRadius: 2)
+                    .strokeBorder(sealed ? accent.opacity(0.35) : FlimTheme.stroke, lineWidth: 1)
+            )
+            .overlay { content() }
+            .frame(width: DarkroomDayUnit.framePitch - DarkroomDayUnit.frameGap, height: 59)
+    }
+
+    private func perforation(slotCount: Int) -> some View {
+        DarkroomPerforationLine()
+            .frame(width: DarkroomDayUnit.perforationWidth(slotCount: slotCount), height: 3)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    // MARK: - Ready band
+
+    private func readyBand(_ roll: Roll) -> some View {
+        NavigationLink(value: roll) {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 8) {
+                    Text(roll.name)
+                        .flimFont(17, weight: .light, relativeTo: .body)
+                        .tracking(0.4)
+                        .foregroundStyle(FlimTheme.textPrimary)
+                    Spacer(minLength: 8)
+                    HStack(spacing: 4) {
+                        Image(systemName: "sparkles").font(.system(size: 10, weight: .bold))
+                        Text(frameCounts[roll.id].map { "Reveal · \($0)" } ?? "Reveal")
+                            .flimFont(11, weight: .medium, relativeTo: .caption)
+                    }
+                    .foregroundStyle(accent)
+                    .padding(.vertical, 4).padding(.horizontal, 9)
+                    .background(accent.opacity(0.16), in: Capsule())
+                    .overlay(Capsule().strokeBorder(accent, lineWidth: 1))
+                }
+                .padding(.top, 10).padding(.leading, 16).padding(.trailing, 12).padding(.bottom, 5)
+
+                Text(readyMeta(roll))
+                    .flimFont(11.5, relativeTo: .caption)
+                    .foregroundStyle(FlimTheme.textTertiary)
+                    .padding(.horizontal, 16).padding(.bottom, 5)
+
+                rack(frames: frameCounts[roll.id] ?? 0, fraction: 1, sealed: true)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 5)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        // Developed, so no Share invite here: invites end when a roll develops.
+        .contextMenu {
+            Button { toggleMute(roll) } label: {
+                let muted = mutedRolls.contains(roll.id)
+                Label(muted ? "Unmute notifications" : "Mute notifications",
+                      systemImage: muted ? "bell.slash" : "bell")
+            }
+            if !isCreator(roll) {
+                Button(role: .destructive) { rollToLeave = roll } label: {
+                    Label("Leave roll", systemImage: "rectangle.portrait.and.arrow.right")
+                }
+            }
+        }
+        .accessibilityLabel("\(roll.name), ready to reveal, \(frameCounts[roll.id] ?? 0) sealed shots")
+    }
+
+    private func readyMeta(_ roll: Roll) -> String {
+        let members = rolls.memberCounts[roll.id] ?? 1
+        return members > 1
+            ? "\(members) people · sealed until you open it"
+            : "Just you · sealed until you open it"
+    }
+
+    // MARK: - Nothing open (3c)
+
+    private var nothingOpenBlock: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("No roll is open")
+                .flimFont(26, weight: .light, relativeTo: .title3)
+                .foregroundStyle(FlimTheme.textPrimary)
+                .padding(.horizontal, 16)
+            // The duration must come from the constant: a literal "12 hours" is false in
+            // every DEBUG build, and `Roll`'s own doc records exactly that bug.
+            Text("A roll closes \(Roll.developDelayPhrase) after it starts. Nobody sees a frame until then.")
+                .flimFont(12.5, relativeTo: .footnote)
+                .foregroundStyle(FlimTheme.textSecondary)
+                .lineSpacing(4)
+                .padding(.horizontal, 16)
+                .padding(.top, 6)
+
+            // A blank piece of film.
+            rack(frames: 0, fraction: 0, sealed: false)
+                .padding(.horizontal, 16)
+                .padding(.top, 14)
+
+            HStack(spacing: 8) {
+                Button { showCreate = true } label: {
+                    HStack(spacing: 7) {
+                        Image(systemName: "plus").font(.system(size: 14))
+                        Text("Start a roll").flimFont(15, weight: .medium, relativeTo: .body)
+                    }
+                    .foregroundStyle(accent)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 46)
+                    .overlay(Capsule().strokeBorder(accent, lineWidth: 1))
+                    .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                Button { showJoin = true } label: {
+                    HStack(spacing: 7) {
+                        Image(systemName: "person.badge.plus").font(.system(size: 14))
+                        Text("Join with a code").flimFont(15, weight: .medium, relativeTo: .body)
+                    }
+                    .foregroundStyle(FlimTheme.textSecondary)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 46)
+                    .overlay(Capsule().strokeBorder(FlimTheme.stroke, lineWidth: 1))
+                    .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 14)
+        }
+        .padding(.top, 16)
+    }
+
+    // MARK: - Developed (the archive)
+
+    private var developedSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 10) {
+                Text("Developed · \(developedRolls.count)")
+                    .flimFont(10.5, weight: .semibold, relativeTo: .caption)
+                    .tracking(1.4)
+                    .textCase(.uppercase)
+                    .foregroundStyle(FlimTheme.textSecondary)
+                LinearGradient(colors: [FlimTheme.stroke, .clear], startPoint: .leading, endPoint: .trailing)
+                    .frame(height: 1)
+            }
+            .padding(.top, 18).padding(.horizontal, 16).padding(.bottom, 12)
+
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)],
+                      spacing: 10) {
+                ForEach(developedRolls) { roll in
+                    archiveTile(roll)
+                }
+            }
+            .padding(.horizontal, 16)
         }
     }
 
-    /// Signs every not-yet-resolved cover PATH in one batched call. This used to sign them one at a time in
-    /// a loop, so on a cold cache the list's covers appeared one per round-trip, top to bottom,
-    /// instead of together.
-    private func resolveCovers() async {
-        let pending = Set(rolls.coverPaths.values).filter { coverURLs[$0] == nil }
-        guard !pending.isEmpty else { return }
-        let urls = await photos.signedURLs(for: Array(pending))
-        for (path, url) in urls { coverURLs[path] = url }
+    private func archiveTile(_ roll: Roll) -> some View {
+        NavigationLink(value: roll) {
+            VStack(alignment: .leading, spacing: 5) {
+                ZStack {
+                    LinearGradient(colors: Self.gradient(for: roll),
+                                   startPoint: .topLeading, endPoint: .bottomTrailing)
+                    if let path = rolls.coverPaths[roll.id], let url = coverURLs[path] {
+                        CachedImage(url: url, maxPixel: 400, cacheKey: path) { image in
+                            image.resizable().scaledToFill()
+                        } placeholder: { Color.clear }
+                    } else {
+                        Text(roll.name.prefix(1).uppercased())
+                            .flimFont(26, weight: .light, relativeTo: .title3)
+                            .foregroundStyle(.white.opacity(0.95))
+                    }
+                }
+                .aspectRatio(1, contentMode: .fill)
+                .clipShape(RoundedRectangle(cornerRadius: 2))
+                .overlay(RoundedRectangle(cornerRadius: 2).strokeBorder(FlimTheme.stroke, lineWidth: 1))
+
+                HStack(spacing: 5) {
+                    Text(roll.name)
+                        .flimFont(13, relativeTo: .footnote)
+                        .foregroundStyle(FlimTheme.textSecondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    if mutedRolls.contains(roll.id) {
+                        Image(systemName: "bell.slash.fill")
+                            .font(.system(size: 10))
+                            .foregroundStyle(FlimTheme.textTertiary)
+                            .accessibilityLabel("Muted")
+                    }
+                }
+                Text(archiveMeta(roll))
+                    .flimFont(11.5, relativeTo: .caption)
+                    .foregroundStyle(FlimTheme.textTertiary)
+                    .padding(.top, -3)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        // No Share invite on an archive tile: invites end when a roll develops, and
+        // offering one here would resurrect a dead action.
+        .contextMenu {
+            Button { toggleMute(roll) } label: {
+                let muted = mutedRolls.contains(roll.id)
+                Label(muted ? "Unmute notifications" : "Mute notifications",
+                      systemImage: muted ? "bell.slash" : "bell")
+            }
+            if !isCreator(roll) {
+                Button(role: .destructive) { rollToLeave = roll } label: {
+                    Label("Leave roll", systemImage: "rectangle.portrait.and.arrow.right")
+                }
+            }
+        }
+        .accessibilityLabel("\(roll.name), developed \(roll.revealAt.formatted(date: .abbreviated, time: .omitted))")
     }
 
-    /// Long-press actions on a roll row. Muting was previously reachable only from inside the
-    /// roll's own ••• menu, even though this row is where the muted bell is actually shown, and
-    /// inviting meant opening the roll first. Leaving stays a swipe action too; both paths run
-    /// through the same confirmation.
+    private func archiveMeta(_ roll: Roll) -> String {
+        let date = roll.revealAt.formatted(.dateTime.month(.abbreviated).day())
+        if let members = rolls.memberCounts[roll.id], members > 1 {
+            return "\(members) people · \(date)"
+        }
+        return date
+    }
+
+    // MARK: - Shared menu (open rolls only; developed surfaces build their own without invite)
+
     @ViewBuilder
     private func rollMenu(_ roll: Roll) -> some View {
         Button { inviteShareRoll = roll } label: { Label("Share invite", systemImage: "square.and.arrow.up") }
@@ -199,76 +654,99 @@ struct RollsView: View {
     }
 
     /// A developed roll the user hasn't opened the reveal for yet, the "your photos are ready"
-    /// state. `rollRevealSeen.<id>` is set in RollDetailView the first time the reveal plays.
+    /// state. `rollRevealSeen.<id>` is set in RollDetailView when the reveal completes.
     private func isReadyToReveal(_ roll: Roll) -> Bool {
         roll.isDeveloped && !UserDefaults.standard.bool(forKey: "rollRevealSeen.\(roll.id.uuidString)")
     }
 
-    /// Ready to reveal, then still-open rolls by soonest reveal, then the archive. See
-    /// `RollImminence.sorted`, which holds the reasoning and the tests.
-    private var sortedRolls: [Roll] {
-        RollImminence.sorted(rolls.rolls, now: .now, isReadyToReveal: isReadyToReveal)
+    // MARK: - Loading
+
+    /// Fetches the user's rolls, surfacing a network error for the retry state.
+    private func load() async {
+        guard let userId = auth.currentUser?.id else { return }
+        do {
+            try await rolls.fetchRolls(for: userId)
+            loadError = nil
+            await resolveCovers()
+            mutedRolls = await photos.fetchMutedRolls(userId: userId)
+            await refreshFrameCounts(userId: userId)
+            await refreshLiveActivities(userId: userId)
+        } catch {
+            loadError = error.localizedDescription
+        }
     }
 
-    private var rollList: some View {
-        ScrollViewReader { proxy in
-            List {
-                ForEach(sortedRolls) { roll in
-                    NavigationLink(value: roll) {
-                        RollRow(roll: roll,
-                                memberCount: rolls.memberCounts[roll.id],
-                                coverURL: rolls.coverPaths[roll.id].flatMap { coverURLs[$0] },
-                                coverPath: rolls.coverPaths[roll.id],
-                                isMuted: mutedRolls.contains(roll.id),
-                                isReadyToReveal: isReadyToReveal(roll))
-                    }
-                    .listRowBackground(Color(white: 0.08))
-                    .listRowSeparatorTint(Color(white: 0.15))
-                    .swipeActions(edge: .trailing) {
-                        // Members leave via swipe; creators delete from inside the roll (too
-                        // destructive for a swipe, it removes the roll for everyone).
-                        if !isCreator(roll) {
-                            Button(role: .destructive) { rollToLeave = roll } label: {
-                                Label("Leave", systemImage: "rectangle.portrait.and.arrow.right")
-                            }
-                        }
-                    }
-                    .contextMenu { rollMenu(roll) }
-                }
-            }
-            .listStyle(.plain)
-            .scrollContentBackground(.hidden)
-            .refreshable { await load() }
-            .onChange(of: scrollToTop) {
-                withAnimation(.snappy) { proxy.scrollTo(sortedRolls.first?.id, anchor: .top) }
-            }
-        }
-        // The consequence sheet's copy is `RollConsequence.leave`, the same one every other
-        // screen asks this question with: this screen, RollDetailView and RollMembersView
-        // used to ship three different messages, two disagreeing about needing the code.
-        .sheet(item: $rollToLeave) { roll in
-            ConsequenceSheet(consequence: .leave(name: roll.name, myShots: nil)) {
-                guard let uid = auth.currentUser?.id else { return }
-                Task {
-                    do {
-                        try await rolls.leaveRoll(rollId: roll.id, userId: uid)
-                        await load()
-                    } catch {
-                        // The leave never landed server-side; the row must stay put, not
-                        // disappear as though it had, and reloading here would be reload-as-if-left.
-                        Haptics.error()
-                        withAnimation { toastMessage = "Couldn't leave the roll. Check your connection and try again." }
-                        toastDismiss?.cancel()
-                        toastDismiss = Task {
-                            try? await Task.sleep(for: .seconds(2.4))
-                            guard !Task.isCancelled else { return }
-                            withAnimation { toastMessage = nil }
-                        }
-                    }
-                }
+    /// Server-side counts for every roll the racks and meta lines describe: the open set and
+    /// the Ready set. The archive shows no counts, so it costs nothing here.
+    private func refreshFrameCounts(userId: UUID) async {
+        for roll in openRolls + readyRolls {
+            frameCounts[roll.id] = await photos.rollTotalShotCount(rollId: roll.id)
+            if !roll.isDeveloped {
+                myFrameCounts[roll.id] = await photos.rollPhotoCount(rollId: roll.id, userId: userId)
             }
         }
     }
+
+    /// Re-requests the lock-screen countdown for the rolls closest to revealing.
+    ///
+    /// This is the whole fix for the reach problem. The system ends a Live Activity after about
+    /// 8 hours, and a roll takes 12 to develop, so the card that was started at creation is gone
+    /// for the last third of the wait. Nothing server-side can restart it, so the app does, every
+    /// time this list loads, which is the most-visited screen in the app.
+    ///
+    /// This runs for every candidate, including rolls whose card is already live: a running card
+    /// never receives anything new otherwise (see the doc this preserved from the list era).
+    private func refreshLiveActivities(userId: UUID) async {
+        // End cards for rolls that are no longer ours first. A roll deleted by its creator, or
+        // left on another device, leaves a card counting down to a reveal that is never coming,
+        // and this screen is the one place that reliably knows the current set.
+        RollLiveActivity.reconcile(activeRollIds: rolls.rolls.map(\.id))
+        let candidates = RollLiveActivity.rollsNeedingActivity(rolls.rolls, revealAt: \.revealAt)
+        for roll in candidates {
+            let shots: Int
+            if let cached = frameCounts[roll.id] {
+                shots = cached
+            } else {
+                shots = await photos.rollTotalShotCount(rollId: roll.id)
+            }
+            RollLiveActivity.sync(rollId: roll.id, rollName: roll.name, revealAt: roll.revealAt,
+                                  shotCount: shots, developFrom: roll.createdAt)
+        }
+    }
+
+    /// Signs every not-yet-resolved cover PATH in one batched call, so on a cold cache the
+    /// covers appear together instead of one per round trip.
+    private func resolveCovers() async {
+        let pending = Set(rolls.coverPaths.values).filter { coverURLs[$0] == nil }
+        guard !pending.isEmpty else { return }
+        let urls = await photos.signedURLs(for: Array(pending))
+        for (path, url) in urls { coverURLs[path] = url }
+    }
+
+    // MARK: - Formatting
+
+    /// "3h 12m", "24m", "40s": the long-form remainder for the clock line and picker.
+    static func longRemaining(_ seconds: TimeInterval) -> String {
+        let total = max(0, Int(seconds))
+        let h = total / 3600, m = (total % 3600) / 60
+        if h > 0 { return "\(h)h \(m)m" }
+        if m > 0 { return "\(m)m" }
+        return "\(total)s"
+    }
+
+    /// Deterministic hue from the roll's UUID bytes, stable across launches; the coverless
+    /// tile's identity.
+    static func gradient(for roll: Roll) -> [Color] {
+        let bytes = withUnsafeBytes(of: roll.id.uuid) { Array($0) }
+        let sum = bytes.reduce(0) { $0 + Int($1) }
+        let h = Double(sum % 360) / 360.0
+        return [
+            Color(hue: h, saturation: 0.52, brightness: 0.5),
+            Color(hue: (h + 0.07).truncatingRemainder(dividingBy: 1), saturation: 0.62, brightness: 0.26)
+        ]
+    }
+
+    // MARK: - First run (3d, verbatim from the list era: it is already the product's voice)
 
     private var emptyState: some View {
         VStack(spacing: 12) {
@@ -292,170 +770,6 @@ struct RollsView: View {
             }
             .padding(.top, 8)
         }
-    }
-}
-
-private struct RollRow: View {
-    @Environment(\.flimAccent) private var accent
-    let roll: Roll
-    var memberCount: Int?
-    var coverURL: URL?
-    var coverPath: String?
-    var isMuted: Bool = false
-    var isReadyToReveal: Bool = false
-
-    var body: some View {
-        HStack(spacing: 14) {
-            RollCover(roll: roll, coverURL: coverURL, coverPath: coverPath)
-
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 6) {
-                    Text(roll.name)
-                        .flimFont(17, weight: .semibold, relativeTo: .body)
-                        .foregroundStyle(.white)
-                    if isMuted {
-                        Image(systemName: "bell.slash.fill")
-                            .font(.system(size: 11))
-                            .foregroundStyle(FlimTheme.textTertiary)
-                            .accessibilityLabel("Muted")
-                    }
-                }
-
-                HStack(spacing: 8) {
-                    if let memberCount {
-                        MetaChip(icon: "person.2.fill", text: "\(memberCount)")
-                    }
-
-                    HStack(spacing: 5) {
-                        Image(systemName: "number")
-                            .font(.system(size: 9, weight: .bold))
-                        Text(roll.inviteCode)
-                            .flimFont(12, weight: .semibold, design: .monospaced, relativeTo: .caption)
-                            .tracking(1)
-                    }
-                    .foregroundStyle(accent)
-                    .padding(.horizontal, 9)
-                    .padding(.vertical, 4)
-                    .background(accent.opacity(0.16), in: Capsule())
-                }
-
-                // Reveal status, the clock runs from when the roll was created.
-                if isReadyToReveal {
-                    // Developed and NOT yet opened: the one thing that should pull you into the
-                    // app, so it's loud (filled accent pill, not the muted grey "Developed" chip)
-                    // and this row is sorted to the top of the list.
-                    HStack(spacing: 5) {
-                        Image(systemName: "sparkles").font(.system(size: 10, weight: .bold))
-                        Text("Ready to reveal").flimFont(11, weight: .semibold)
-                    }
-                    .foregroundStyle(.black)
-                    .padding(.horizontal, 10).padding(.vertical, 4)
-                    .background(accent, in: Capsule())
-                    .accessibilityLabel("Ready to reveal, tap to open")
-                } else if roll.isDeveloped {
-                    MetaChip(icon: "checkmark.seal.fill", text: "Developed",
-                             color: FlimTheme.textTertiary, textSize: 11)
-                } else {
-                    TimelineView(.periodic(from: .now, by: 60)) { tl in
-                        let remaining = max(0, Int(roll.revealAt.timeIntervalSince(tl.date)))
-                        MetaChip(icon: "hourglass", text: "Reveals in \(Self.short(remaining))",
-                                 color: accent, textSize: 11)
-                    }
-                }
-            }
-
-            Spacer()
-        }
-        .padding(.vertical, 8)
-    }
-
-    private static func short(_ seconds: Int) -> String {
-        let h = seconds / 3600, m = (seconds % 3600) / 60
-        if h > 0 { return "\(h)h \(m)m" }
-        if m > 0 { return "\(m)m" }
-        return "\(seconds)s"
-    }
-}
-
-/// A film-frame cover: the roll's latest photo when there is one, otherwise a stable
-/// identity gradient + initial.
-private struct RollCover: View {
-    @Environment(\.flimAccent) private var accent
-    let roll: Roll
-    var coverURL: URL?
-    var coverPath: String?
-
-    var body: some View {
-        RoundedRectangle(cornerRadius: 13, style: .continuous)
-            .fill(LinearGradient(colors: Self.gradient(for: roll),
-                                 startPoint: .topLeading, endPoint: .bottomTrailing))
-            .frame(width: 54, height: 54)
-            .overlay {
-                if let coverURL {
-                    // CachedImage (not AsyncImage): downsamples the decode to the 54pt box and
-                    // caches to memory + disk, so revisiting the Rolls tab or scrolling a row
-                    // back doesn't re-download and re-decode the image every time. cacheKey is
-                    // the path (token-independent) so a rotated signed URL still hits the cache.
-                    CachedImage(url: coverURL, maxPixel: 120, cacheKey: coverPath) { image in
-                        image.resizable().scaledToFill()
-                    } placeholder: {
-                        Color.clear
-                    }
-                } else {
-                    Text(roll.name.prefix(1).uppercased())
-                        .flimFont(22, weight: .light, relativeTo: .title3)
-                        .foregroundStyle(.white.opacity(0.95))
-                }
-            }
-            .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 13, style: .continuous)
-                    .strokeBorder(.white.opacity(0.14), lineWidth: 1)
-            )
-            .overlay { developProgressRing }
-            // Padded so the ring's stroke has room outside the cover's own border instead of
-            // sitting on top of it.
-            .padding(2)
-    }
-
-    /// A ring tracing the cover's edge as the roll fills its develop window.
-    ///
-    /// Text alone wasn't enough: "Reveals in 20m" and "Reveals in 8h" were the same chip at the
-    /// same weight, and nobody reads digits while scanning. A ring is readable at a glance with no
-    /// text and, unlike a pulsing or colour-escalating chip, adds no motion to a list, which is
-    /// the kind of noise the tooltips were removed for.
-    @ViewBuilder
-    private var developProgressRing: some View {
-        if !roll.isDeveloped {
-            // Once a minute is plenty for a 12-hour window and matches the countdown chip's tick.
-            TimelineView(.periodic(from: .now, by: 60)) { tl in
-                let progress = RollImminence.progress(roll: roll, now: tl.date)
-                ZStack {
-                    RoundedRectangle(cornerRadius: 15, style: .continuous)
-                        .inset(by: -2)
-                        .stroke(.white.opacity(0.10), lineWidth: 2)
-                    RoundedRectangle(cornerRadius: 15, style: .continuous)
-                        .inset(by: -2)
-                        .trim(from: 0, to: progress)
-                        .stroke(accent, style: StrokeStyle(lineWidth: 2, lineCap: .round))
-                        // Starts the fill at the top edge rather than mid-right, so a nearly-full
-                        // ring reads as nearly-round rather than lopsided.
-                        .rotationEffect(.degrees(-90))
-                }
-                .accessibilityHidden(true)   // the row's countdown chip already says this in words
-            }
-        }
-    }
-
-    /// Deterministic hue from the roll's UUID bytes, stable across launches.
-    static func gradient(for roll: Roll) -> [Color] {
-        let bytes = withUnsafeBytes(of: roll.id.uuid) { Array($0) }
-        let sum = bytes.reduce(0) { $0 + Int($1) }
-        let h = Double(sum % 360) / 360.0
-        return [
-            Color(hue: h, saturation: 0.52, brightness: 0.5),
-            Color(hue: (h + 0.07).truncatingRemainder(dividingBy: 1), saturation: 0.62, brightness: 0.26)
-        ]
     }
 }
 
