@@ -33,38 +33,46 @@ struct RollMembersView: View {
         }
     }
 
+    private var inviteCodeBanner: some View {
+        VStack(spacing: 6) {
+            Text("INVITE CODE")
+                .flimFont(11, weight: .medium, relativeTo: .caption)
+                .tracking(2)
+                .foregroundStyle(Color(white: 0.4))
+            Button {
+                UIPasteboard.general.string = roll.inviteCode
+                withAnimation { codeCopied = true }
+                Task {
+                    try? await Task.sleep(for: .seconds(2))
+                    withAnimation { codeCopied = false }
+                }
+            } label: {
+                HStack(spacing: 10) {
+                    Text(roll.inviteCode)
+                        .flimFont(28, weight: .thin, design: .monospaced, relativeTo: .title2)
+                        .tracking(6)
+                        .foregroundStyle(.white)
+                    Image(systemName: codeCopied ? "checkmark" : "doc.on.doc")
+                        .font(.system(size: 14))
+                        .foregroundStyle(codeCopied ? accent : Color(white: 0.5))
+                }
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 20)
+        .background(FlimTheme.sheetRow)
+    }
+
     var body: some View {
         NavigationStack {
             ZStack {
                 VStack(spacing: 0) {
-                    // Invite code banner
-                    VStack(spacing: 6) {
-                        Text("INVITE CODE")
-                            .flimFont(11, weight: .medium, relativeTo: .caption)
-                            .tracking(2)
-                            .foregroundStyle(Color(white: 0.4))
-                        Button {
-                            UIPasteboard.general.string = roll.inviteCode
-                            withAnimation { codeCopied = true }
-                            Task {
-                                try? await Task.sleep(for: .seconds(2))
-                                withAnimation { codeCopied = false }
-                            }
-                        } label: {
-                            HStack(spacing: 10) {
-                                Text(roll.inviteCode)
-                                    .flimFont(28, weight: .thin, design: .monospaced, relativeTo: .title2)
-                                    .tracking(6)
-                                    .foregroundStyle(.white)
-                                Image(systemName: codeCopied ? "checkmark" : "doc.on.doc")
-                                    .font(.system(size: 14))
-                                    .foregroundStyle(codeCopied ? accent : Color(white: 0.5))
-                            }
-                        }
+                    // Invite code banner. Gone once the roll develops, same rule as the roll
+                    // screen's share-invite button (owner decision, 2026-08-26): invites are
+                    // for a group still forming, not a finished roll.
+                    if !roll.isDeveloped {
+                        inviteCodeBanner
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 20)
-                    .background(FlimTheme.sheetRow)
 
                     if isLoading {
                         Spacer()

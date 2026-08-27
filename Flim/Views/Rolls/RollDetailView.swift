@@ -66,10 +66,8 @@ struct RollDetailView: View {
     @Namespace private var photoNS
     @State private var selectedPhoto: Photo?
     @State private var memberNames: [UUID: String] = [:]   // userId → username, for attribution
-    /// The editable title's live text, seeded from the roll once (see the `.task` seed) and
-    /// re-seeded only by a failed save's revert; the field itself is the source while focused.
-    @State private var titleDraft = ""
-    @FocusState private var titleFocused: Bool
+    @State private var showRename = false
+    @State private var renameDraft = ""
     /// The grid long-press delete flow: the photo held, and the consequence sheet for it.
     @State private var gridDeletePhoto: Photo?
     @State private var gridDeleteConsequence: RollConsequence?
@@ -128,30 +126,7 @@ struct RollDetailView: View {
             FlimTheme.bg.ignoresSafeArea()
 
             VStack(spacing: 0) {
-                // The creator's title IS the rename control (confirmations redesign rule 4's
-                // sibling: the text-field alert became this). Tap, type, saves on blur or
-                // return; a failed save reverts with the toast. Everyone else gets the plain
-                // title, renaming was creator-only before and stays so.
-                if isCreator {
-                    TextField("Roll name", text: $titleDraft)
-                        .flimFont(34, weight: .light, relativeTo: .title3)
-                        .tracking(0.5)
-                        .foregroundStyle(FlimTheme.textPrimary)
-                        .textFieldStyle(.plain)
-                        .submitLabel(.done)
-                        .focused($titleFocused)
-                        .onSubmit { titleFocused = false }
-                        .onChange(of: titleFocused) { _, focused in
-                            if !focused { commitTitleEdit() }
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 20)
-                        .padding(.top, 6)
-                        .padding(.bottom, 10)
-                        .accessibilityLabel("Roll name, editable")
-                } else {
-                    FlimNavTitle(displayName.isEmpty ? roll.name : displayName)
-                }
+                FlimNavTitle(displayName.isEmpty ? roll.name : displayName)
 
                 if let count = rollService.memberCounts[roll.id] {
                     Label("\(count) member\(count == 1 ? "" : "s")", systemImage: "person.2.fill")
@@ -254,14 +229,20 @@ struct RollDetailView: View {
                         .foregroundStyle(accent)
                 }
                 .accessibilityLabel("Members")
-                Button {
-                    Haptics.tap()
-                    showInviteShare = true
-                } label: {
-                    Image(systemName: "square.and.arrow.up")
-                        .foregroundStyle(accent)
+                // Invites end when the roll develops (owner decision, 2026-08-26): a
+                // developed roll is a finished thing to rewatch, not a group still forming,
+                // so the share-invite affordance disappears with the develop. The members
+                // sheet's code banner follows the same rule.
+                if !roll.isDeveloped {
+                    Button {
+                        Haptics.tap()
+                        showInviteShare = true
+                    } label: {
+                        Image(systemName: "square.and.arrow.up")
+                            .foregroundStyle(accent)
+                    }
+                    .accessibilityLabel("Share invite")
                 }
-                .accessibilityLabel("Share invite")
 
                 Menu {
                     // The reveal is the best thing this app does and it was strictly one-shot:
@@ -306,9 +287,8 @@ struct RollDetailView: View {
 
                     if isCreator {
                         Button {
-                            // The title itself is the editor now; this menu item just puts
-                            // the cursor in it, so the old path stays discoverable.
-                            titleFocused = true
+                            renameDraft = roll.name
+                            showRename = true
                         } label: { Label("Rename roll", systemImage: "pencil") }
                         Button(role: .destructive) {
                             showDeleteRoll = true
@@ -334,10 +314,6 @@ struct RollDetailView: View {
         // itself also checks `Task.isCancelled` on top of that, so a mid-drain cancellation stops
         // between iterations rather than waiting for one more full page.
         .task {
-            // Seed the editable title once per appearance; while focused, the field itself
-            // is the source of truth and this must not fight it (it can't: `.task` runs
-            // before any focus exists).
-            titleDraft = displayName.isEmpty ? roll.name : displayName
             if let uid = auth.currentUser?.id { await feed.loadBlocked(userId: uid) }
             guard !Task.isCancelled else { return }
             await vm.loadRoll(photoService: photoService, rollId: roll.id, blockedIds: feed.blockedIds)
@@ -532,28 +508,25 @@ struct RollDetailView: View {
                 }
             }
         }
-    }
-
-    /// The editable title's save-on-blur. Empty or unchanged input reverts silently (leaving
-    /// the field blank must not rename a roll to nothing); a failed save reverts the visible
-    /// name so the screen never shows a name the server never accepted.
-    private func commitTitleEdit() {
-        let name = titleDraft.trimmingCharacters(in: .whitespaces)
-        let current = displayName.isEmpty ? roll.name : displayName
-        guard !name.isEmpty, name != current else {
-            titleDraft = current
-            return
-        }
-        displayName = name
-        Task {
-            do {
-                try await rollService.renameRoll(rollId: roll.id, name: name)
-            } catch {
-                displayName = current
-                titleDraft = current
-                Haptics.error()
-                showToast("Couldn't rename the roll. Check your connection and try again.", isError: true)
+        .alert("Rename roll", isPresented: $showRename) {
+            TextField("Roll name", text: $renameDraft)
+            Button("Save") {
+                let name = renameDraft.trimmingCharacters(in: .whitespaces)
+                guard !name.isEmpty else { return }
+                displayName = name
+                Task {
+                    do {
+                        try await rollService.renameRoll(rollId: roll.id, name: name)
+                    } catch {
+                        // The rename never landed; restore the input so it stays retryable
+                        // instead of showing a name the server never accepted.
+                        displayName = roll.name
+                        Haptics.error()
+                        showToast("Couldn't rename the roll. Check your connection and try again.", isError: true)
+                    }
+                }
             }
+            Button("Cancel", role: .cancel) {}
         }
     }
 
