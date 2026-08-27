@@ -2,8 +2,12 @@
 
 > Batch 1 (screens 3a-3d, 3h: header with ledger, picker, active-roll block, ready bands, archive grid)
 > shipped 2026-08-26, revision-3 header + 3c amendments applied.
-> Batch 2 (3e-3g: the reveal rework) is NOT yet built; its spec is below and is authoritative,
-> including the Amendments section, which wins over anything after it.
+> Batch 2 (3e-3g: the reveal rework) SHIPPED 2026-08-27. Deviation worth knowing: 3f is a
+> rework of RollRevealView in place, reusing the Darkroom's rack ATOMS and PhotoCommentsSheet
+> rather than threading the reveal's own deck, cover, summary and presence state through
+> PhotoPagerView. Same result on screen, far smaller blast radius: PhotoPagerView ships in the
+> Darkroom and the roll grid today, and a third mode there would have put both at risk for a
+> once-per-roll surface that cannot be easily re-tested.
 
 
 **Revision 3.** Read the *Amendments* section before anything else — it supersedes the body where they disagree.

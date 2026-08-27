@@ -356,9 +356,15 @@ struct RollDetailView: View {
             warmGridThumbnails()
             // The reveal, as an event: play everyone's shots once, the first time the
             // roll is opened after it has developed.
+            //
+            // Presenting no longer writes the seen flag. Under the old timed slideshow the
+            // deck always finished on its own, so open and watched were the same event; the
+            // self-paced reveal (Rolls redesign) lets someone swipe away at frame 2 of 47,
+            // and writing on open would burn their only ceremony AND fire the camera-roll
+            // auto-save gate for a reveal nobody watched. `RollRevealView` reports genuine
+            // completion instead; see its `onCompleted`.
             if roll.isDeveloped, !vm.developedPhotos.isEmpty,
                !UserDefaults.standard.bool(forKey: revealSeenKey) {
-                UserDefaults.standard.set(true, forKey: revealSeenKey)
                 showReveal = true
             }
             // Ensure EVERY member gets a develop reminder, even those who didn't shoot.
@@ -416,7 +422,8 @@ struct RollDetailView: View {
         }
         .fullScreenCover(isPresented: $showReveal) {
             RollRevealView(rollId: roll.id, rollName: displayName.isEmpty ? roll.name : displayName,
-                           photos: chronologicalDeveloped, memberNames: memberNames)
+                           photos: chronologicalDeveloped, memberNames: memberNames,
+                           onCompleted: { UserDefaults.standard.set(true, forKey: revealSeenKey) })
         }
         .onChange(of: showReveal) { wasShowing, isShowing in
             // Finishing a reveal is one of the two moments a badge most plausibly just became
@@ -530,14 +537,10 @@ struct RollDetailView: View {
         }
     }
 
-    /// Replays the reveal for this roll.
-    ///
-    /// Clears the seen flag as well as presenting, so the roll is left in the same state a
-    /// first-time viewer would leave it in: watched. Without the clear, a replay would present
-    /// once and then the flag would still read "seen", which is the same thing, but leaving a
-    /// stale flag around invites the next reader to wonder which one is authoritative.
+    /// Replays the reveal for this roll. The flag is already set (a replay is only offered on
+    /// a roll whose reveal has been watched), and `RollRevealView` re-sets it on completion,
+    /// so this only has to present.
     private func replayReveal() {
-        UserDefaults.standard.set(true, forKey: revealSeenKey)
         showReveal = true
     }
 

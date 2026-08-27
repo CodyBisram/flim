@@ -49,42 +49,26 @@ final class RollRevealViewModel {
     var deck: [Photo] = []
     var index = 0
     var urls: [String: URL] = [:]
-    var developed = false          // current photo's develop animation
+    /// Which frames have already played their develop beat, keyed by PHOTO ID and never by
+    /// index: `skipDeadFrame` mutates the deck mid-reveal, and an index-keyed set would hand
+    /// one photo's developed state to whichever frame inherited its slot (the same poisoning
+    /// `FeedUnitCard`'s per-frame plumbing records). A frame develops once, on first reach,
+    /// and is sharp on every later visit.
+    var developedFrameIds: Set<UUID> = []
     var showSummary = false
+    /// Set when the reader genuinely reached the end: paging past the last frame, or tapping
+    /// Done. THIS, not opening the reveal, is what writes `rollRevealSeen.<id>`, so a reveal
+    /// abandoned at frame 2 of 47 stays unwatched and replays from the cover.
+    var completed = false
     var isEmpty = false
     /// Reactions across the whole deck, keyed by photo id, batch-loaded once in `loadDeck`.
     /// Includes the reactions others left BEFORE you opened the reveal, so the moment feels
     /// communal, you see the group's response accreting even though everyone arrives at their
     /// own time.
     var reactionsByPhoto: [UUID: [PhotoReaction]] = [:]
-    /// Set once you interact with the current shot (react, or open the picker). While true, the
-    /// auto-advance timer is held off so a slide never yanks away mid-reaction. Reset per photo.
-    var engaged = false
     /// The group's progress through this reveal ("you're the Nth of M to open it"), recorded and
     /// fetched on open. Shown on the summary card so the roll feels shared, not solitary.
     var presence: RollService.RevealPresence?
-
-    private var advanceTask: Task<Void, Never>?
-
-    // MARK: - Playback pacing
-    //
-    // A slide used to be a fixed 3.4s with no way to stop it, and the progress bar filled a whole
-    // segment at a time, so it showed WHERE you were and never how long you had. Between them, a
-    // photo you were still looking at just left, with no warning and no recourse. The fix is all
-    // three together: longer, visible, and holdable.
-
-    /// This slide's length. Reduce Motion skips the develop animation entirely, so there is no
-    /// unreadable phase to allow for and the slide is just the viewing time.
-    var currentSlideDuration: TimeInterval {
-        reduceMotion ? RevealPacing.viewingDuration : RevealPacing.slideDuration
-    }
-
-    /// When the current slide is due to advance. Drives the filling progress segment, and is
-    /// rewritten on resume so a paused slide gets its remaining time back rather than restarting.
-    var slideEndsAt: Date?
-    /// Time left on the current slide while paused.
-    var pausedRemaining: TimeInterval = RevealPacing.slideDuration
-    var paused = false
 
     // MARK: - Opening card
     //
@@ -123,11 +107,6 @@ final class RollRevealViewModel {
     /// as a modal in front of it. Cleared when the sheet closes.
     var partialNotice: String?
 
-    /// Cancels the auto-advance. Call from the view's `onDisappear`; the gesture layer's own hold
-    /// timer is view-local and cancels alongside this one, not through here.
-    func stopPlayback() {
-        advanceTask?.cancel()
-    }
 
     // MARK: - Load
 
@@ -253,35 +232,41 @@ final class RollRevealViewModel {
         else { return }
         withAnimation(.easeOut(duration: reduceMotion ? 0 : 0.45)) { showCover = false }
         guard !isEmpty else { return }
-        develop()
+        develop(at: 0)
     }
 
-    // MARK: - Playback
+    // MARK: - Paging
 
-    /// Runs the develop animation for the current photo, then auto-advances, unless you've
-    /// engaged with this shot (started reacting), in which case it waits for you to step forward.
+    /// Plays the develop beat for the frame at `index`, once ever. Reduce Motion marks it
+    /// developed immediately: the beat is the one part of the reveal that IS motion, so the
+    /// setting removes it rather than shortening it.
     ///
     /// Doesn't touch the pinch-zoom: that's view-local state, reset by the view whenever the
     /// photo on screen changes.
-    private func develop() {
-        developed = false
-        engaged = false
-        paused = false
-        pausedRemaining = currentSlideDuration
-        withAnimation(.easeOut(duration: reduceMotion ? 0 : RevealPacing.developDuration)) { developed = true }
-        armAdvance(after: currentSlideDuration)
+    func develop(at index: Int) {
+        guard deck.indices.contains(index) else { return }
+        let photo = deck[index]
+        prefetchAhead(from: index)
+        guard !developedFrameIds.contains(photo.id) else { return }
+        guard !reduceMotion else {
+            developedFrameIds.insert(photo.id)
+            return
+        }
+        withAnimation(.easeOut(duration: RevealPacing.developDuration)) {
+            _ = developedFrameIds.insert(photo.id)
+        }
     }
 
-    func step(_ delta: Int) {
+    /// Whether the frame at `index` has already developed. The view reads this per page, so a
+    /// frame ahead of the reader stays a well until they actually reach it.
+    func hasDeveloped(_ photo: Photo) -> Bool { developedFrameIds.contains(photo.id) }
+
+    /// The reader paged to a new frame.
+    func moved(to newIndex: Int) {
+        guard newIndex != index, deck.indices.contains(newIndex) else { return }
+        index = newIndex
         Haptics.tap()
-        let next = index + delta
-        if next >= deck.count {
-            finish()
-        } else if next >= 0 {
-            index = next
-            prefetchAhead(from: next)
-            develop()
-        }
+        develop(at: newIndex)
     }
 
     /// Warms a bounded window of upcoming slides instead of the whole deck.
@@ -307,8 +292,8 @@ final class RollRevealViewModel {
     /// subscript rather than trusting `index` to still be valid.
     func skipDeadFrame(_ photoId: UUID) {
         guard let deadIndex = deck.firstIndex(where: { $0.id == photoId }) else { return }
-        advanceTask?.cancel()
         deck.remove(at: deadIndex)
+        developedFrameIds.remove(photoId)
         guard !deck.isEmpty else {
             isEmpty = true
             deckReady = true
@@ -316,53 +301,14 @@ final class RollRevealViewModel {
             return
         }
         if index >= deck.count { index = deck.count - 1 }
-        develop()
+        develop(at: index)
     }
 
+    /// The end of the reveal, and the ONLY thing that counts as having watched it: reached by
+    /// paging past the last frame or by tapping Done. See `completed`.
     func finish() {
-        advanceTask?.cancel()
+        completed = true
         withAnimation(.easeInOut(duration: 0.3)) { showSummary = true }
-    }
-
-    /// Holds the current shot up until the finger lifts.
-    func pausePlayback() {
-        guard !paused, !showSummary else { return }
-        paused = true
-        advanceTask?.cancel()
-        pausedRemaining = RevealPacing.remaining(endsAt: slideEndsAt, now: .now, fallback: currentSlideDuration)
-        Haptics.tap()
-    }
-
-    /// Gives the slide its REMAINING time back rather than restarting it, so holding to look at a
-    /// photo four seconds in doesn't hand you another five.
-    func resumePlayback() {
-        guard paused else { return }
-        paused = false
-        guard !engaged else { return }
-        armAdvance(after: pausedRemaining)
-    }
-
-    /// Arms the auto-advance for `seconds` and records the deadline the progress bar reads from.
-    private func armAdvance(after seconds: TimeInterval) {
-        advanceTask?.cancel()
-        guard seconds > 0 else { step(1); return }
-        slideEndsAt = Date.now.addingTimeInterval(seconds)
-        advanceTask = Task {
-            try? await Task.sleep(for: .seconds(seconds))
-            guard !Task.isCancelled, !engaged, !paused else { return }
-            step(1)
-        }
-    }
-
-    /// Cancels the current shot's auto-advance so it stays put while you're reacting. You step
-    /// forward yourself (tap the right zone) when ready. Engaged viewers set their own pace;
-    /// passive viewers keep the auto-play.
-    func holdAutoAdvance() {
-        engaged = true
-        advanceTask?.cancel()
-        // Freeze the bar where it stands, rather than leaving it mid-animation against a deadline
-        // that will never arrive.
-        pausedRemaining = RevealPacing.remaining(endsAt: slideEndsAt, now: .now, fallback: currentSlideDuration)
     }
 
     // MARK: - Reactions
