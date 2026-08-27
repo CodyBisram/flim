@@ -46,6 +46,14 @@ Two colour notes before anything else:
 
 The one genuinely new geometry is the archive grid (two columns, 10pt gutter). Everything else reuses an existing spec.
 
+## Amendment (implementation, 2026-08-27)
+
+**The picker only appears when there is something to switch to.** Owner's call after
+device testing: with a single open roll, the picker item repeats the roll name and its
+remaining time immediately above the header that states both, and in practice one open
+roll is the common case. It is now gated on `openRolls.count > 1`. The picker is for the
+OTHER open rolls; with one roll there are no others.
+
 ## Amendments (review round 2)
 
 Seven corrections after implementation review — five from the developer, two from a design pass. Where this section disagrees with anything below, **this section wins.**

@@ -228,7 +228,14 @@ struct RollsView: View {
                     if let active = activeRoll {
                         TimelineView(.periodic(from: .now, by: clockCadence(for: active))) { tl in
                             VStack(spacing: 0) {
-                                openRollPicker(now: tl.date)
+                                // A picker with one choice is an echo of the header right
+                                // below it (owner's call, on device, 2026-08-27): it only
+                                // appears once there is genuinely something to switch to.
+                                // Long-press actions for a solo roll live on the header's
+                                // own menu paths.
+                                if openRolls.count > 1 {
+                                    openRollPicker(now: tl.date)
+                                }
                                 activeRollBlock(active, now: tl.date)
                             }
                         }
