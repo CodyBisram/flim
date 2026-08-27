@@ -194,6 +194,14 @@ struct RollRevealView: View {
     }
 
     /// One frame: the photograph, developing in place the first time it is reached.
+    ///
+    /// The print sits in a 3:4 box, the capture aspect and the same geometry `FeedUnitCard` gives
+    /// a photograph, and it earns its place twice. It rounds the corners the way every other photo
+    /// surface in the app rounds them, and it gives the develop beat AN EDGE TO STOP AT: `.blur`
+    /// renders outside the bounds of the view it is applied to, so the unclipped radius-26 opening
+    /// washed a blurred copy of the photograph up under the close button, the roll name and Done.
+    /// The box was also full-bleed tight before (524pt of photograph in 526pt of room), which is
+    /// what put the frame against the header even once the bleed is cut.
     @ViewBuilder
     private func frame(_ photo: Photo) -> some View {
         let developed = viewModel.hasDeveloped(photo)
@@ -208,6 +216,10 @@ struct RollRevealView: View {
                 // spinner through three network round trips before its first frame; a spinner
                 // is the one thing that cannot develop into anything.
                 ZStack {
+                    // Opaque backing, and the reason the blur below can be `opaque: true`: a
+                    // blur over transparent pixels samples the clear space at the boundary and
+                    // fades out, which under a hard clip reads as a dark rim around the print.
+                    Color.black
                     if let thumbPath = photo.thumbPath, let thumbURL = viewModel.urls[thumbPath] {
                         CachedImage(url: thumbURL, maxPixel: 400, cacheKey: thumbPath) { $0.resizable().scaledToFit() }
                             placeholder: { Color.clear }
@@ -224,15 +236,23 @@ struct RollRevealView: View {
                         Color.clear
                     }
                 }
-                .blur(radius: developed ? 0 : 26)
+                .compositingGroup()
+                .blur(radius: developed ? 0 : RevealPacing.openingBlurRadius, opaque: true)
                 .saturation(developed ? 1 : 1.7)
                 .opacity(developed ? 1 : 0.65)
             } else {
                 ProgressView().tint(.white)
             }
         }
+        // The box, then the clip. Order matters: `aspectRatio` is what sizes the stack the blur
+        // is applied to, and `clipShape` outside it is what cuts the bleed off at the print's
+        // own edge. Rounding here rather than on the image itself keeps the corners while the
+        // pinch below scales the frame.
+        .aspectRatio(RevealPacing.frameAspectRatio, contentMode: .fit)
+        .clipShape(RoundedRectangle(cornerRadius: RevealPacing.frameCornerRadius))
         .scaleEffect(photo.id == currentPhoto?.id ? revealZoom : 1, anchor: zoomAnchor)
-        .padding(.vertical, 14)
+        .padding(.horizontal, RevealPacing.frameHorizontalInset)
+        .padding(.vertical, RevealPacing.frameVerticalInset)
         // The pinch rides the photograph itself here (no tap-zone layer left to steal it).
         .simultaneousGesture(TransientPinch(scale: $revealZoom, anchor: $zoomAnchor,
                                             restingScale: $pinchStart))
