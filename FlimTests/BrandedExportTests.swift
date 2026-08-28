@@ -150,7 +150,11 @@ struct BrandedExportTests {
     @Test("the apostrophe and the separator never rest")
     func narrowCellsDoNotGhost() {
         #expect(ink(" ", cellRect: CGRect(x: 0, y: 0, width: 1, height: 1)) < 0.005)
+        // And the apostrophe stays a mark at the TOP. It lights the same centre segment the
+        // letters do, and the full-height stem treatment is letters-only for exactly this
+        // reason: an apostrophe running floor to ceiling is a stem, not a punctuation mark.
         #expect(ink("'", cellRect: CGRect(x: 0, y: 0.6, width: 1, height: 0.4)) < 0.01)
+        #expect(ink("'", cellRect: CGRect(x: 0, y: 0.13, width: 1, height: 0.28)) > 0.3)
     }
 
     @Test("the I is a narrow centred stroke, not a bar and not a serifed letter")
@@ -160,10 +164,13 @@ struct BrandedExportTests {
         // neighbours. A digit one (b c) is a RIGHT-hand vertical, so it hugged the M and the
         // wordmark read "FL IM". Centre-only in a full cell floated as a divider. This is
         // centre-only in a NARROW cell, tucked against both neighbours.
-        let topBar = CGRect(x: 0.19, y: 0, width: 0.62, height: 0.09)
-        let bottomBar = CGRect(x: 0.19, y: 0.91, width: 0.62, height: 0.09)
-        #expect(ink("I", cellRect: topBar) < 0.01, "no serifs")
-        #expect(ink("I", cellRect: bottomBar) < 0.01, "no serifs")
+        // Sampled at the bar's OUTER end, which a serif reaches and a centred stem never does.
+        // The stem itself now runs the full cell height (all four letters share one band), so
+        // the middle of the bar row IS lit and is not the thing to measure.
+        let topBarEnd = CGRect(x: 0.20, y: 0, width: 0.12, height: 0.09)
+        let bottomBarEnd = CGRect(x: 0.20, y: 0.91, width: 0.12, height: 0.09)
+        #expect(ink("I", cellRect: topBarEnd) < 0.01, "no serifs")
+        #expect(ink("I", cellRect: bottomBarEnd) < 0.01, "no serifs")
 
         // The stroke is centred, not against either edge, which is what separates it from a 1.
         let centre = CGRect(x: 0.35, y: 0.13, width: 0.3, height: 0.74)

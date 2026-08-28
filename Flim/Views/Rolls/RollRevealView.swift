@@ -229,7 +229,9 @@ struct RollRevealView: View {
                     // re-downloads bytes the reveal already fetched for itself.
                     CachedImage(url: url, maxPixel: 1400, cacheKey: photo.viewPath,
                                onFailure: { viewModel.skipDeadFrame(photo.id) },
-                               onLoaded: { viewModel.imageLoaded(photo.id) }) { image in
+                               // Reveal only: the photograph arrives under a clearing blur here,
+                               // so it lands and settles rather than rushing in at the end.
+                               fadeIn: .easeOut(duration: 0.45)) { image in
                         image.resizable().scaledToFit()
                     } placeholder: {
                         // Clear, not a spinner: the thumbnail below is already showing the

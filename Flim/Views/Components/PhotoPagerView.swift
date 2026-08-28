@@ -596,52 +596,60 @@ struct PhotoPagerView: View {
 
                 Spacer(minLength: 8)
 
-                Button { share(photo) } label: {
-                    Group {
-                        if preparingShare {
-                            ProgressView().tint(.white).controlSize(.small)
-                        } else {
-                            Image(systemName: "square.and.arrow.up")
-                                .font(.system(size: 15, weight: .medium))
-                        }
-                    }
-                    .frame(width: 19, height: 19)
-                    .foregroundStyle(.white)
-                    .padding(12)
-                    .glassCapsule(interactive: true)
-                }
-                .disabled(preparingShare)
-                .accessibilityLabel(preparingShare ? "Preparing to share" : "Share photo")
-
-                Menu {
-                    // Setting an unrevealed shot as your profile photo would be a spoiler of your
-                    // own reveal, so the action simply isn't offered until it's ready, matching
-                    // the grid's own developing menu (select + delete only).
-                    if photo.isReady {
-                        Button {
-                            Haptics.tap()
-                            Task {
-                                if await auth.setAvatar(fromPhotoPath: photo.storagePath) {
-                                    Haptics.success()
-                                } else {
-                                    Haptics.error()
-                                    flashError("Couldn't update your profile photo. Check your connection and try again.")
-                                }
+                // ONE capsule holding both controls, glyphs in the accent, matching the pair the
+                // Rolls screen's own toolbar renders (members + overflow in a single pill). They
+                // used to be two separate white circles here, which read as two unrelated
+                // controls and as a different visual language from the screen you arrive from.
+                HStack(spacing: 18) {
+                    Button { share(photo) } label: {
+                        Group {
+                            if preparingShare {
+                                ProgressView().tint(accent).controlSize(.small)
+                            } else {
+                                Image(systemName: "square.and.arrow.up")
+                                    .font(.system(size: 15, weight: .medium))
                             }
-                        } label: { Label("Set as profile photo", systemImage: "person.crop.circle") }
+                        }
+                        .frame(width: 19, height: 19)
+                        .foregroundStyle(accent)
+                        .contentShape(Rectangle())
                     }
-                    Button(role: .destructive) {
-                        requestDelete(photo)
-                    } label: { Label("Delete photo", systemImage: "trash") }
-                } label: {
-                    Image(systemName: "ellipsis")
-                        .font(.system(size: 15, weight: .medium))
-                        .foregroundStyle(.white)
-                        .padding(12)
-                        .glassCapsule(interactive: true)
+                    .disabled(preparingShare)
+                    .accessibilityLabel(preparingShare ? "Preparing to share" : "Share photo")
+
+                    Menu {
+                        // Setting an unrevealed shot as your profile photo would be a spoiler of
+                        // your own reveal, so the action simply isn't offered until it's ready,
+                        // matching the grid's own developing menu (select + delete only).
+                        if photo.isReady {
+                            Button {
+                                Haptics.tap()
+                                Task {
+                                    if await auth.setAvatar(fromPhotoPath: photo.storagePath) {
+                                        Haptics.success()
+                                    } else {
+                                        Haptics.error()
+                                        flashError("Couldn't update your profile photo. Check your connection and try again.")
+                                    }
+                                }
+                            } label: { Label("Set as profile photo", systemImage: "person.crop.circle") }
+                        }
+                        Button(role: .destructive) {
+                            requestDelete(photo)
+                        } label: { Label("Delete photo", systemImage: "trash") }
+                    } label: {
+                        Image(systemName: "ellipsis")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundStyle(accent)
+                            .frame(width: 19, height: 19)
+                            .contentShape(Rectangle())
+                    }
+                    .accessibilityLabel("More")
+                    .disabled(isDeleting)
                 }
-                .accessibilityLabel("More")
-                .disabled(isDeleting)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 11)
+                .glassCapsule(interactive: true)
             }
             .padding(.leading, 20)
             .padding(.trailing, 20)

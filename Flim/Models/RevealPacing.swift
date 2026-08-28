@@ -15,17 +15,17 @@ import Foundation
 /// that rhythm for agency and, for the first time, comments on a frame.
 enum RevealPacing {
 
-    /// How long the blur-to-sharp develop animation runs, once there is a photograph to run it
-    /// on.
+    /// How long the blur-to-sharp develop animation runs.
     ///
-    /// 0.5s, down from 0.8. The beat used to start the moment a frame was REACHED, which meant
-    /// it usually cleared onto the 400px thumbnail underneath while the full-resolution image
-    /// was still arriving; the real photograph then faded in separately a moment later and the
-    /// whole thing read as a snap rather than a develop. The beat now waits for the image (see
-    /// `RollRevealViewModel.imageLoaded`), so the half second is spent sharpening onto the
-    /// actual print instead of onto a placeholder, and readers who want to keep swiping are not
-    /// held up by an animation that was not showing them anything yet.
-    static let developDuration: TimeInterval = 0.5
+    /// 0.35s. It has been 1.4, then 0.8, then 0.5, and every complaint about it has been the
+    /// same one: too slow. The treatment itself (blur, washed out, then sharp) is the part worth
+    /// keeping, so what changes is only how long it takes.
+    ///
+    /// It runs on ARRIVAL, not on the image landing. Holding it until the full-resolution frame
+    /// loaded made the slow case worse, which is the case that was already the complaint. The
+    /// thumbnail underneath carries the beat, and the real photograph cross-fades in over it on
+    /// the reveal's own `fadeIn` curve, so the swap is not a second transition.
+    static let developDuration: TimeInterval = 0.35
 
     /// Movement past this many points means a press is a swipe, not a tap.
     static let moveSlop: CGFloat = 10

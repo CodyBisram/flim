@@ -55,14 +55,6 @@ final class RollRevealViewModel {
     /// `FeedUnitCard`'s per-frame plumbing records). A frame develops once, on first reach,
     /// and is sharp on every later visit.
     var developedFrameIds: Set<UUID> = []
-    /// Frames the reader has actually arrived at. Separate from `developedFrameIds` because
-    /// reaching a frame is no longer enough to run its beat: the photograph has to be there too.
-    private var reachedFrameIds: Set<UUID> = []
-    /// Frames whose FULL-resolution image has finished loading, reported by the view's own
-    /// `CachedImage`. A frame develops when it has been both reached and loaded, in either
-    /// order: prefetched shots are usually loaded before you get to them, and a slow one is
-    /// reached first and develops when it lands.
-    private var loadedFrameIds: Set<UUID> = []
     var showSummary = false
     /// Set when the reader genuinely reached the end: paging past the last frame, or tapping
     /// Done. THIS, not opening the reveal, is what writes `rollRevealSeen.<id>`, so a reveal
@@ -255,31 +247,13 @@ final class RollRevealViewModel {
         guard deck.indices.contains(index) else { return }
         let photo = deck[index]
         prefetchAhead(from: index)
-        reachedFrameIds.insert(photo.id)
-        developIfReady(photo.id)
-    }
-
-    /// The view's report that this frame's full-resolution image is on screen.
-    func imageLoaded(_ photoId: UUID) {
-        guard loadedFrameIds.insert(photoId).inserted else { return }
-        developIfReady(photoId)
-    }
-
-    /// Runs the beat once a frame has been both reached and loaded, once ever.
-    ///
-    /// Waiting for the image is the whole point. Clearing the blur on arrival meant it usually
-    /// resolved onto the 400px thumbnail underneath, and the real photograph then faded in on its
-    /// own a beat later: two transitions, the second of which looked like a snap. One transition
-    /// now, onto the actual print.
-    private func developIfReady(_ photoId: UUID) {
-        guard reachedFrameIds.contains(photoId), loadedFrameIds.contains(photoId) else { return }
-        guard !developedFrameIds.contains(photoId) else { return }
+        guard !developedFrameIds.contains(photo.id) else { return }
         guard !reduceMotion else {
-            developedFrameIds.insert(photoId)
+            developedFrameIds.insert(photo.id)
             return
         }
         withAnimation(.easeOut(duration: RevealPacing.developDuration)) {
-            _ = developedFrameIds.insert(photoId)
+            _ = developedFrameIds.insert(photo.id)
         }
     }
 
@@ -320,8 +294,6 @@ final class RollRevealViewModel {
         guard let deadIndex = deck.firstIndex(where: { $0.id == photoId }) else { return }
         deck.remove(at: deadIndex)
         developedFrameIds.remove(photoId)
-        reachedFrameIds.remove(photoId)
-        loadedFrameIds.remove(photoId)
         guard !deck.isEmpty else {
             isEmpty = true
             deckReady = true
