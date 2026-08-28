@@ -101,6 +101,22 @@ struct PhotoPagerView: View {
     /// The Darkroom's own chrome: a night-scoped header, a single-row rack under the photograph,
     /// and a status+actions row. See the type's own doc.
     var showsNightRack: Bool = false
+    /// The roll grid's viewer, given the reveal's shape: the film strip, the credit line, the
+    /// reactions and the thread, in that order under a boxed photograph.
+    ///
+    /// A third layout mode in this file rather than a fourth surface, because the rack, the
+    /// jump-to-frame gesture and the develop/failure plumbing all already live here and the only
+    /// real difference from `showsNightRack` is which photos the strip holds and what sits under
+    /// it. Rebuilding that elsewhere would have meant two racks to keep in step.
+    var showsRollRack: Bool = false
+
+    /// What the film strip holds. The Darkroom's rack is scoped to the night you are inside; a
+    /// roll's is the roll, which is exactly the array this pager was handed.
+    private var rackPhotos: [Photo] { showsRollRack ? photos : currentNightPhotos }
+
+    /// Either rack mode: both box the photograph, both carry a strip, both resolve thumbnails
+    /// for frames the grid never scrolled past.
+    private var showsAnyRack: Bool { showsNightRack || showsRollRack }
     @State private var profileRoute: ProfileRoute?
     /// A profile chosen inside the comment sheet, opened once that sheet has closed.
     @State private var pendingProfile: ProfileRoute?
@@ -220,7 +236,7 @@ struct PhotoPagerView: View {
 
     init(photos: [Photo], startIndex: Int = 0, signedURLs: [UUID: URL],
          showsReactions: Bool = false, showsComments: Bool = false, showsAttribution: Bool = false,
-         showsNightRack: Bool = false,
+         showsNightRack: Bool = false, showsRollRack: Bool = false,
          memberNames: [UUID: String] = [:], rollName: @escaping (UUID?) -> String? = { _ in nil },
          onDelete: @escaping () -> Void = {}) {
         self.photos = photos
@@ -230,6 +246,7 @@ struct PhotoPagerView: View {
         self.showsComments = showsComments
         self.showsAttribution = showsAttribution
         self.showsNightRack = showsNightRack
+        self.showsRollRack = showsRollRack
         self.memberNames = memberNames
         self.rollName = rollName
         self.onDelete = onDelete
@@ -276,6 +293,22 @@ struct PhotoPagerView: View {
                     Spacer(minLength: 0)
                 }
                 .frame(maxHeight: .infinity)
+            } else if showsRollRack {
+                // The reveal's shape, for the roll grid. Same order top to bottom: the
+                // photograph boxed, the strip under it, then who took it, then the reactions,
+                // then the thread. The photograph FITS rather than taking a fixed box: this
+                // footer carries three more rows than the Darkroom's, and a fixed 3:4 box plus
+                // all of them overflows the screen on a 402pt phone by about 50pt.
+                VStack(spacing: 0) {
+                    header
+                    Spacer(minLength: 0)
+                    pager.padding(.vertical, 8)
+                    rackSection
+                    rollFooter
+                    Spacer(minLength: 0)
+                }
+                .frame(maxHeight: .infinity)
+                .padding(.bottom, 44)
             } else {
                 VStack(spacing: 0) {
                     header
@@ -389,7 +422,7 @@ struct PhotoPagerView: View {
         // Keyed on `selection`, so it cancels naturally on the next swipe (`.task(id:)`'s own
         // contract) and on dismiss, and restarts fresh for the new window. See its own doc.
         .task(id: selection) {
-            guard showsNightRack else { return }
+            guard showsAnyRack else { return }
             await watchDeveloping()
         }
         // Batched for every photo in the pager, not per swipe. Only where reactions actually
@@ -430,6 +463,8 @@ struct PhotoPagerView: View {
     private var header: some View {
         if showsNightRack {
             nightRackHeader
+        } else if showsRollRack {
+            rollRackHeader
         } else {
             legacyHeader
         }
@@ -608,6 +643,160 @@ struct PhotoPagerView: View {
         }
     }
 
+    /// The roll viewer's header: close, the roll's name, and the actions that have nowhere else
+    /// to go. Plain glyphs rather than the legacy glass capsules, matching the reveal, since the
+    /// two screens now show the same roll a few taps apart.
+    ///
+    /// No comments button here: the thread moved to its own row at the bottom, where the reveal
+    /// puts it, and two ways into the same sheet on one screen is one too many.
+    @ViewBuilder
+    private var rollRackHeader: some View {
+        if let photo = current {
+            HStack(spacing: 12) {
+                Button { dismiss() } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(FlimTheme.textPrimary)
+                }
+                .accessibilityLabel("Close")
+
+                if let name = rollName(photo.rollId) {
+                    Text(name)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 8)
+
+                Button { share(photo) } label: {
+                    Group {
+                        if preparingShare {
+                            ProgressView().tint(.white).controlSize(.small)
+                        } else {
+                            Image(systemName: "square.and.arrow.up")
+                                .font(.system(size: 15, weight: .medium))
+                        }
+                    }
+                    .frame(width: 19, height: 19)
+                    .foregroundStyle(Color(white: 0.7))
+                }
+                .disabled(preparingShare)
+                .accessibilityLabel(preparingShare ? "Preparing to share" : "Share photo")
+
+                if photo.userId == auth.currentUser?.id {
+                    Menu {
+                        Button {
+                            Haptics.tap()
+                            Task {
+                                if await auth.setAvatar(fromPhotoPath: photo.storagePath) {
+                                    Haptics.success()
+                                } else {
+                                    Haptics.error()
+                                    flashError("Couldn't update your profile photo. Check your connection and try again.")
+                                }
+                            }
+                        } label: { Label("Set as profile photo", systemImage: "person.crop.circle") }
+                        Button(role: .destructive) {
+                            requestDelete(photo)
+                        } label: { Label("Delete photo", systemImage: "trash") }
+                    } label: {
+                        Image(systemName: "ellipsis")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundStyle(Color(white: 0.7))
+                    }
+                    .accessibilityLabel("More")
+                    .disabled(isDeleting)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
+        }
+    }
+
+    /// Credit, reactions, thread, and the one action this screen has that the reveal does not.
+    @ViewBuilder
+    private var rollFooter: some View {
+        if let photo = current {
+            VStack(spacing: 0) {
+                VStack(spacing: 2) {
+                    // Always rendered, faded when the name has not resolved, so the row's height
+                    // cannot vary per photo while a paging TabView sits above it. Same rule the
+                    // carousel's own footer documents, and for the same reason.
+                    Button { profileRoute = ProfileRoute(id: photo.userId) } label: {
+                        Text(memberNames[photo.userId].map { "@\($0)" } ?? "@")
+                            .flimFont(15, weight: .semibold, relativeTo: .body)
+                            .foregroundStyle(.white)
+                            .opacity(memberNames[photo.userId] == nil ? 0 : 1)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(memberNames[photo.userId] == nil)
+
+                    Text("\(selection + 1) of \(photos.count) · \(photo.takenAt.formatted(date: .omitted, time: .shortened))")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color(white: 0.6))
+                }
+                .padding(.top, 12)
+
+                if showsReactions {
+                    ReactionBar(
+                        defaults: photoService.reactionDefaults(for: photo.id),
+                        counts: Dictionary(grouping: reactions, by: \.emoji).mapValues(\.count),
+                        mine: Set(reactions.filter { $0.userId == auth.currentUser?.id }.map(\.emoji))
+                    ) { toggleReaction($0, on: photo) }
+                    .id(photo.id)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 10)
+                }
+
+                HStack(spacing: 12) {
+                    Button { commentsPhoto = photo; showComments = true } label: {
+                        HStack(spacing: 7) {
+                            Image(systemName: "bubble.left").font(.system(size: 14))
+                            Text("Comments").font(.system(size: 12.5))
+                        }
+                        .foregroundStyle(Color(white: 0.6))
+                    }
+                    .buttonStyle(.plain)
+                    Spacer(minLength: 8)
+                    if photo.userId != auth.currentUser?.id {
+                        let reported = reportedIds.contains(photo.id)
+                        Button { reportCurrent() } label: {
+                            Image(systemName: reported ? "flag.fill" : "flag")
+                                .font(.system(size: 13))
+                                .foregroundStyle(Color(white: 0.5))
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(reported)
+                        .accessibilityLabel("Report photo")
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 10)
+
+                // The one thing this screen does that the reveal does not: a roll shot is
+                // yours to put on your page. Kept as a real button rather than folded into the
+                // menu, because it is the reason people open a developed roll a second time.
+                if (photo.userId == auth.currentUser?.id || photo.rollId != nil), !showShareComposer {
+                    let shared = feed.myPostedPhotoIds.contains(photo.id)
+                    Button { shareToPage(photo) } label: {
+                        Label(shared ? "Shared to your page" : "Share to your page",
+                              systemImage: shared ? "checkmark.circle.fill" : "square.and.arrow.up")
+                            .flimFont(14, weight: .semibold)
+                            .foregroundStyle(shared ? Color(white: 0.7) : accent)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 44)
+                            .overlay(Capsule().strokeBorder(shared ? Color.white.opacity(0.2) : accent,
+                                                            lineWidth: 1))
+                    }
+                    .disabled(shared)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 12)
+                }
+            }
+        }
+    }
+
     @ViewBuilder
     private var bottomBar: some View {
         if let photo = current {
@@ -760,7 +949,8 @@ struct PhotoPagerView: View {
             // TabView boundary itself is never a square sliver behind the (also rounded)
             // per-page clip below while a swipe is settling.
             .modifier(PageFrameModifier(fixed: showsNightRack ? CGSize(width: photoWidth, height: photoHeight) : nil,
-                                         cornerRadius: showsNightRack ? 12 : 0))
+                                         aspect: showsRollRack ? 3.0 / 4.0 : nil,
+                                         cornerRadius: showsAnyRack ? 12 : 0))
             // Mirrors the old `scale > 1 ? .none : .all` gesture mask exactly: paging is native
             // now, so the equivalent gate is disabling the TabView's own scroll while zoomed,
             // handing the touch fully to `panWhileZoomed` instead. Inert (false) at rest, so it
@@ -875,7 +1065,8 @@ struct PhotoPagerView: View {
         // so this one clip rounds every full-frame state night-rack mode can show, not only the
         // loaded photo.
         .modifier(PageFrameModifier(fixed: showsNightRack ? CGSize(width: photoWidth, height: photoHeight) : nil,
-                                     cornerRadius: showsNightRack ? 12 : 0))
+                                     aspect: showsRollRack ? 3.0 / 4.0 : nil,
+                                     cornerRadius: showsAnyRack ? 12 : 0))
     }
 
     /// A still-developing shot in night-rack mode: there is no image to show yet, so the box
@@ -965,7 +1156,7 @@ struct PhotoPagerView: View {
                 ScrollViewReader { proxy in
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: Self.rackFrameGap) {
-                            ForEach(currentNightPhotos) { photo in
+                            ForEach(rackPhotos) { photo in
                                 DarkroomFrameView(
                                     photo: photo,
                                     accent: accent,
@@ -996,7 +1187,7 @@ struct PhotoPagerView: View {
                         // here is still the first frame's own leading edge.
                         .contentShape(Rectangle())
                         .gesture(SpatialTapGesture().onEnded { value in
-                            let frames = currentNightPhotos
+                            let frames = rackPhotos
                             guard !frames.isEmpty else { return }
                             let index = min(frames.count - 1, max(0, Int(value.location.x / Self.rackPitch)))
                             jump(to: frames[index])
@@ -1017,8 +1208,8 @@ struct PhotoPagerView: View {
                 // Fills in whatever the grid never resolved (a night the grid didn't scroll past),
                 // batched in one call rather than a round trip per frame. Keyed on the night's own
                 // membership, so swiping into an adjacent night resolves that one too.
-                .task(id: currentNightPhotos.map(\.id)) {
-                    let missing = currentNightPhotos.filter { signedURLs[$0.id] == nil && rackThumbURLs[$0.id] == nil }
+                .task(id: rackPhotos.map(\.id)) {
+                    let missing = rackPhotos.filter { signedURLs[$0.id] == nil && rackThumbURLs[$0.id] == nil }
                     guard !missing.isEmpty else { return }
                     let resolved = await photoService.signedURLs(for: missing.map(\.displayPath))
                     for photo in missing {
@@ -1609,6 +1800,12 @@ struct PhotoPagerView: View {
 /// breaks layout at runtime while compiling clean, which is why this cannot be one call.
 private struct PageFrameModifier: ViewModifier {
     let fixed: CGSize?
+    /// Roll mode's box: this aspect, FITTED into whatever height the footer leaves, rather than
+    /// the Darkroom's fixed one. That footer carries the credit line, the reactions and the
+    /// thread on top of the strip, and a fixed 3:4 box plus all of them runs off the bottom of a
+    /// 402pt phone. Uniform across every page, so the paging scroll view still sees identical
+    /// children, which is the rule that matters here.
+    var aspect: CGFloat?
     /// Rounds the fixed night-rack box to match `FeedUnitCard.pager`'s own clip exactly (12pt);
     /// `0` (every caller before the corner-rounding pass, and the roll/widget's flexible-fill
     /// path today) keeps the plain rectangular `.clipped()` it has always had. Ignored when
@@ -1623,6 +1820,9 @@ private struct PageFrameModifier: ViewModifier {
             } else {
                 content.frame(width: fixed.width, height: fixed.height).clipped()
             }
+        } else if let aspect {
+            content.aspectRatio(aspect, contentMode: .fit)
+                .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
         } else {
             content.frame(maxWidth: .infinity, maxHeight: .infinity)
         }

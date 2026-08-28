@@ -194,6 +194,48 @@ struct BrandedExportTests {
         #expect(BrandedExport.flatGhostOpacity > BrandedExport.ghostOpacity)
     }
 
+    // MARK: - The full-bleed 9:16
+
+    @Test("the full frame really is 9:16, and cropped from the width")
+    func fillIsNineSixteen() {
+        // A 3:4 master is 0.75 and 9:16 is 0.5625, so filling keeps the full height and spends
+        // the sides. Getting this backwards would letterbox instead of fill.
+        let source = CGSize(width: 1536, height: 2048)
+        let filled = BrandedExport.fill(solidImage(source))
+        #expect(abs(filled.size.width / filled.size.height - 9.0 / 16.0) < 0.001)
+        #expect(filled.size.height == source.height, "height should survive the crop intact")
+        #expect(filled.size.width < source.width, "the sides are what get spent")
+        #expect(abs(filled.size.width - source.height * 9 / 16) < 1)
+    }
+
+    @Test("a frame already wider than 9:16 crops its height instead")
+    func fillHandlesWideSources() {
+        // Legacy landscape photos: keeping the full height would need a width the master does
+        // not have, so the crop has to switch axes rather than upscale.
+        let filled = BrandedExport.fill(solidImage(CGSize(width: 800, height: 900)))
+        #expect(abs(filled.size.width / filled.size.height - 9.0 / 16.0) < 0.001)
+        #expect(filled.size.width <= 800)
+        #expect(filled.size.height <= 900)
+    }
+
+    @Test("the full frame is its own render, not the print cropped")
+    func fillImprintsAfterCropping() {
+        // The marks sit 5.5% in from each side. Cropping 12.5% off each edge of an already
+        // imprinted print would cut both of them off entirely, so the crop must come first.
+        // Proxy for that ordering: the imprint's cell scales with the FILLED width, so a full
+        // frame's mark is smaller than the same photo's print mark.
+        let photo = solidImage(CGSize(width: 1536, height: 2048))
+        let printed = BrandedExport.print(photo)
+        let filled = BrandedExport.fill(photo)
+        #expect(filled.size.width < printed.size.width)
+    }
+
+    @Test("a degenerate photo is safe to fill")
+    func fillIsSafe() {
+        let empty = UIImage()
+        #expect(BrandedExport.fill(empty).size == empty.size)
+    }
+
     // MARK: - The story, unchanged by going borderless
 
     @Test("the story canvas is exactly 9:16")

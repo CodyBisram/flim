@@ -409,6 +409,9 @@ struct RollDetailView: View {
                 showsReactions: true,
                 showsComments: true,
                 showsAttribution: true,
+                // The reveal's shape: film strip, credit, reactions, thread. The two screens
+                // show the same roll a few taps apart and had no reason to look unrelated.
+                showsRollRack: true,
                 memberNames: memberNames,
                 // Every photo here belongs to this roll, so the delete-confirmation name is
                 // always this roll's, regardless of the (all-identical) rollId.

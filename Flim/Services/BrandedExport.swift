@@ -355,6 +355,46 @@ enum BrandedExport {
         return 0.2126 * r + 0.7152 * g + 0.0722 * b
     }
 
+    // MARK: - The full-bleed 9:16
+
+    /// The photograph itself at 9:16, filling the frame, imprinted.
+    ///
+    /// The sibling of `story(print:)` and the opposite bargain. `story` keeps the whole frame and
+    /// spends the leftover canvas on ground; this keeps the whole canvas and spends the sides of
+    /// the frame. A 3:4 master is 0.75 wide-to-tall and 9:16 is 0.5625, so filling costs 25% of
+    /// the width, centre-cropped.
+    ///
+    /// **This is the one place the export crops**, which every other path here refuses to do. It
+    /// earns the exception by being what a story actually is: a full-bleed canvas someone puts
+    /// stickers on. The choice stays the reader's, next to a placed version that crops nothing.
+    ///
+    /// Imprinted AFTER the crop, never before: the marks sit 5.5% in from the sides, and cropping
+    /// 12.5% off each edge of an already-imprinted print would cut both of them clean off.
+    static func fill(_ photo: UIImage, caption: Caption? = nil) -> UIImage {
+        let source = photo.size
+        guard source.width > 0, source.height > 0 else { return photo }
+
+        let targetAspect = storyCanvas.width / storyCanvas.height
+        // Fit the widest 9:16 rect that the master contains, then centre it.
+        var cropSize = CGSize(width: source.height * targetAspect, height: source.height)
+        if cropSize.width > source.width {
+            cropSize = CGSize(width: source.width, height: source.width / targetAspect)
+        }
+        let crop = CGRect(x: (source.width - cropSize.width) / 2,
+                          y: (source.height - cropSize.height) / 2,
+                          width: cropSize.width, height: cropSize.height)
+
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = photo.scale
+        format.opaque = true
+
+        let cropped = UIGraphicsImageRenderer(size: cropSize, format: format).image { _ in
+            photo.draw(in: CGRect(x: -crop.minX, y: -crop.minY,
+                                  width: source.width, height: source.height))
+        }
+        return print(cropped, caption: caption)
+    }
+
     // MARK: - The story (9:16)
 
     /// Canvas, in pixels. Fixed, because a story is a designed canvas rather than a photograph.

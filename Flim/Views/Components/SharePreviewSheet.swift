@@ -19,12 +19,13 @@ struct SharedPhoto: Transferable {
 /// independent in practice — a plain photo is what you send to Messages or save to Photos, and a
 /// story is a designed canvas.
 enum ShareFormat: String, CaseIterable {
-    case print, story, plain
+    case print, story, full, plain
 
     var label: String {
         switch self {
         case .print: "Print"
         case .story: "Story"
+        case .full: "Full"
         case .plain: "Plain"
         }
     }
@@ -32,7 +33,7 @@ enum ShareFormat: String, CaseIterable {
     var ratio: String {
         switch self {
         case .print, .plain: "3:4"
-        case .story: "9:16"
+        case .story, .full: "9:16"
         }
     }
 
@@ -41,7 +42,17 @@ enum ShareFormat: String, CaseIterable {
         switch self {
         case .print: "Share print"
         case .story: "Share story"
+        case .full: "Share full frame"
         case .plain: "Share photo"
+        }
+    }
+
+    /// Whether the artifact fills its canvas edge to edge, which decides how the preview is
+    /// bounded and which of the two 9:16 outputs the reader is looking at.
+    var isFullBleed: Bool {
+        switch self {
+        case .print, .full, .plain: true
+        case .story: false
         }
     }
 }
@@ -65,6 +76,7 @@ struct SharePreviewSheet: View {
     /// Rendered once each, off-main. `plain` needs no render.
     @State private var printImage: UIImage?
     @State private var storyImage: UIImage?
+    @State private var fullImage: UIImage?
 
     private var format: ShareFormat { ShareFormat(rawValue: formatRaw) ?? .print }
 
@@ -74,6 +86,7 @@ struct SharePreviewSheet: View {
         switch format {
         case .print: printImage ?? photo
         case .story: storyImage ?? photo
+        case .full: fullImage ?? photo
         case .plain: photo
         }
     }
@@ -102,7 +115,9 @@ struct SharePreviewSheet: View {
         .flimSheetSurface()
         .task {
             migrateLegacyChoice()
-            // One decode, two renders, print first because the story is placed FROM it.
+            // One decode, three renders. The print goes first because the story is placed FROM
+            // it; the full frame is its own render off the raw photo, because it has to crop
+            // before it imprints or the marks are cut off with the sides.
             let source = photo
             let cap = caption
             let rendered = await Task.detached(priority: .userInitiated) {
@@ -111,6 +126,9 @@ struct SharePreviewSheet: View {
             printImage = rendered
             storyImage = await Task.detached(priority: .userInitiated) {
                 BrandedExport.story(print: rendered)
+            }.value
+            fullImage = await Task.detached(priority: .userInitiated) {
+                BrandedExport.fill(source, caption: cap)
             }.value
         }
     }
@@ -133,7 +151,9 @@ struct SharePreviewSheet: View {
             }
         }
         .padding(.horizontal, 16)
-        .padding(.top, 10)
+        // Clear of the drag indicator, which sits in the sheet's own top inset. At 10 the title
+        // sat level with the grabber and read as pinned to the very top of the screen.
+        .padding(.top, 26)
     }
 
     @ViewBuilder
@@ -162,6 +182,20 @@ struct SharePreviewSheet: View {
             // as a floating print rather than a designed 9:16 artifact.
             .overlay(Rectangle().strokeBorder(Color(red: 0.204, green: 0.216, blue: 0.290),
                                               lineWidth: 1))
+            .shadow(color: .black.opacity(0.55), radius: 17, y: 14)
+            .padding(.horizontal, 36)
+        case .full:
+            // Holds its 9:16 box from the first frame for the same reason the story does: the
+            // placeholder is the uncropped 3:4 photo, and letting the preview take that shape
+            // would snap when the real render lands.
+            ZStack {
+                Color.clear
+                Image(uiImage: outgoing)
+                    .resizable()
+                    .scaledToFill()
+            }
+            .aspectRatio(9.0 / 16.0, contentMode: .fit)
+            .clipped()
             .shadow(color: .black.opacity(0.55), radius: 17, y: 14)
             .padding(.horizontal, 36)
         case .plain:
@@ -245,6 +279,15 @@ struct SharePreviewSheet: View {
                 miniPrint(width: 28)
             }
             .frame(width: 36, height: 64)
+        case .full:
+            // The same 9:16 box as Story, filled rather than placed: side by side, the pair
+            // states the whole choice — keep the frame and spend the canvas, or keep the canvas
+            // and spend the sides of the frame.
+            Image(uiImage: fullImage ?? photo)
+                .resizable()
+                .scaledToFill()
+                .frame(width: 36, height: 64)
+                .clipped()
         case .plain:
             Image(uiImage: photo)
                 .resizable()
