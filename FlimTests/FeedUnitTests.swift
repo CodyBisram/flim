@@ -304,115 +304,36 @@ final class FeedUnitTests: XCTestCase {
     }
 
     // MARK: - Retention
+    //
+    // The clearing tests that lived here were deleted 2026-08-28 along with `hasCleared` and
+    // `clearedUnitIDs`. They passed, and they described a rule that could not work: they only
+    // ever exercised units whose every shot carried a mark, which is the case real reading
+    // almost never produces. A ten-shot day gets one mark per scroll-past, so it needed ten
+    // sessions to clear, and in the meantime the feed both emptied (single-shot days) and never
+    // ended (everything else). Green tests over a contradictory spec is why this took a week to
+    // find. What replaced the rule is nothing at all: the feed shows what the fetch returned.
 
-    func testUnitWithAnyUnseenShotNeverClears() {
-        // Nothing unseen expires, however long it takes: one unreached shot keeps the unit.
+    func testTheFeedShowsEveryUnitTheFetchReturned() {
+        // The guarantee that replaced clearing, and the reason a seen-state bug can no longer
+        // empty the feed or make it endless: grouping is total. Every post in, every post out,
+        // whatever the marks say.
         let mira = profile(UUID(), name: "mira")
-        let items = (0..<3).map { item(author: mira, at: date(10, 8 + $0)) }
-        let unit = FeedUnit.units(from: items, calendar: calendar)[0]
-        let marks = [items[0].post.id: date(11, 9), items[1].post.id: date(11, 9)]
+        let dev = profile(UUID(), name: "dev")
+        let items = [item(author: mira, at: date(20, 9)),
+                     item(author: mira, at: date(20, 10)),
+                     item(author: dev, at: date(21, 9))]
 
-        XCTAssertFalse(unit.hasCleared(seenAt: { marks[$0] }, now: date(22, 12), calendar: calendar))
+        let units = FeedUnit.units(from: items, calendar: calendar)
+
+        XCTAssertEqual(units.count, 2, "one unit per author per day, nothing withheld")
+        XCTAssertEqual(units.flatMap(\.items).count, items.count)
     }
 
-    func testSeenUnitClearsAtTheNextBoundaryAndNotBefore() {
-        let mira = profile(UUID(), name: "mira")
-        let items = (0..<2).map { item(author: mira, at: date(20, 8 + $0)) }
-        let unit = FeedUnit.units(from: items, calendar: calendar)[0]
-        // Both shots read at 9 PM on the 21st.
-        let marks = [items[0].post.id: date(21, 21), items[1].post.id: date(21, 21)]
-        let seenAt: (UUID) -> Date? = { marks[$0] }
-
-        // Later that night, and even at 3 AM (before the boundary): still in the feed, so
-        // the reader can go back to it for the rest of that day.
-        XCTAssertFalse(unit.hasCleared(seenAt: seenAt, now: date(21, 23), calendar: calendar))
-        XCTAssertFalse(unit.hasCleared(seenAt: seenAt, now: date(22, 3), calendar: calendar))
-        // Past 4 AM the next morning: gone.
-        XCTAssertTrue(unit.hasCleared(seenAt: seenAt, now: date(22, 5), calendar: calendar))
-    }
-
-    func testClearingUsesTheLastShotReached() {
-        // One shot read Monday, the other Tuesday evening: the unit lives until the
-        // boundary after the LAST mark, not the first.
-        let mira = profile(UUID(), name: "mira")
-        let items = (0..<2).map { item(author: mira, at: date(20, 8 + $0)) }
-        let unit = FeedUnit.units(from: items, calendar: calendar)[0]
-        let marks = [items[0].post.id: date(20, 12), items[1].post.id: date(21, 20)]
-        let seenAt: (UUID) -> Date? = { marks[$0] }
-
-        XCTAssertFalse(unit.hasCleared(seenAt: seenAt, now: date(21, 23), calendar: calendar))
-        XCTAssertTrue(unit.hasCleared(seenAt: seenAt, now: date(22, 8), calendar: calendar))
-    }
-
-    func testLegacyUndatedMarksClearImmediately() {
-        // Migrated pre-retention marks carry `.distantPast`: "seen some time before this
-        // scheme existed" clears at the first boundary, which is any `now`.
-        let mira = profile(UUID(), name: "mira")
-        let items = [item(author: mira, at: date(20, 8))]
-        let unit = FeedUnit.units(from: items, calendar: calendar)[0]
-        XCTAssertTrue(unit.hasCleared(seenAt: { _ in .distantPast }, now: date(20, 12), calendar: calendar))
-    }
-
-    // MARK: - Clear derivation (re-derive every call, never merge forward)
-
-    func testClearedUnitIDsRevealsAUnitThatGrowsToIncludeAnUnseenShot() {
-        // The bug this pins: a unit fully seen on an early, partial snapshot must not stay
-        // hidden once a straddle completion appends an unseen shot to it. `formUnion`-ing the
-        // cleared set across calls could only ever ADD ids and never retract this one; the
-        // fix is that every call re-derives from scratch.
-        let mira = profile(UUID(), name: "mira")
-        let originalItems = (0..<2).map { item(author: mira, at: date(20, 8 + $0)) }
-        let unit = FeedUnit.units(from: originalItems, calendar: calendar)[0]
-        let seenMarks: [UUID: Date] = [originalItems[0].post.id: date(21, 9), originalItems[1].post.id: date(21, 9)]
-
-        // Cleared: both shots read the night of the 20th, and it's now morning on the 22nd.
-        let clearedBefore = FeedUnit.clearedUnitIDs(
-            units: [unit], seenAt: { seenMarks[$0] }, now: date(22, 5), calendar: calendar)
-        XCTAssertTrue(clearedBefore.contains(unit.id))
-
-        // A straddle completion appends an earlier, still-unread capture from that same day.
-        let newShot = item(author: mira, at: date(20, 7))
-        let grownUnits = FeedUnit.units(from: originalItems + [newShot], calendar: calendar)
-        XCTAssertEqual(grownUnits.count, 1, "same author, same day: still one unit")
-
-        let clearedAfter = FeedUnit.clearedUnitIDs(
-            units: grownUnits, seenAt: { seenMarks[$0] }, now: date(22, 5), calendar: calendar)
-        XCTAssertFalse(clearedAfter.contains(grownUnits[0].id),
-                        "growth into an unseen shot must reveal the unit, not leave it hidden")
-    }
-
-    func testClearedUnitIDsNeverClearsMarksMadeAfterTheLastBoundary() {
-        // Marks made mid-session are always after the most recent boundary relative to `now`,
-        // so a freshly-seen unit must never come back cleared until the NEXT boundary passes.
-        let mira = profile(UUID(), name: "mira")
-        let items = (0..<2).map { item(author: mira, at: date(21, 8 + $0)) }
-        let unit = FeedUnit.units(from: items, calendar: calendar)[0]
-        let now = date(21, 20)
-        let marks = [items[0].post.id: now, items[1].post.id: now]
-
-        let cleared = FeedUnit.clearedUnitIDs(units: [unit], seenAt: { marks[$0] }, now: now, calendar: calendar)
-        XCTAssertTrue(cleared.isEmpty)
-    }
-
-    func testClearedUnitIDsShrinksWhenAnAuthorsUnitsAreRemoved() {
-        // Blocking an author removes their units from the list FeedView re-derives over; the
-        // cleared set must shrink to match, not keep referencing units that no longer render.
-        let mira = profile(UUID(), name: "mira")
-        let dev = profile(UUID(), name: "dev.k")
-        let miraItem = item(author: mira, at: date(20, 8))
-        let devItem = item(author: dev, at: date(20, 9))
-        let units = FeedUnit.units(from: [miraItem, devItem], calendar: calendar)
-        let devUnit = units.first { $0.author.id == dev.id }!
-        let marks = [miraItem.post.id: date(20, 10), devItem.post.id: date(20, 10)]
-        let now = date(21, 5)
-
-        let before = FeedUnit.clearedUnitIDs(units: units, seenAt: { marks[$0] }, now: now, calendar: calendar)
-        XCTAssertEqual(before.count, 2)
-
-        let afterBlock = units.filter { $0.author.id != dev.id }
-        let after = FeedUnit.clearedUnitIDs(units: afterBlock, seenAt: { marks[$0] }, now: now, calendar: calendar)
-        XCTAssertEqual(after.count, 1)
-        XCTAssertFalse(after.contains(devUnit.id))
+    func testRetentionWindowIsTheOnlyBoundOnLength() {
+        // Seven days, and the number that matters now that nothing else shortens the feed.
+        // Short windows drop posts that have only just become visible: this app develops on a
+        // delay, so a Saturday capture can post on Sunday and a roll can land days later.
+        XCTAssertEqual(FeedUnit.retentionWindow, 7 * 86400)
     }
 
     // MARK: - Strip cap

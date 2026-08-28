@@ -251,43 +251,40 @@ struct FeedUnit: Identifiable, Equatable {
         units.lastIndex { $0.unseenCount(isSeen: isSeen) > 0 }
     }
 
-    // MARK: - Retention (the ephemeral feed, decided 2026-08-23)
+    // MARK: - Retention
+    //
+    // `hasCleared` / `clearedUnitIDs` USED TO LIVE HERE and were removed 2026-08-28. They are
+    // gone rather than merely unused, because the rule they implemented cannot be made to work
+    // and a dormant copy would eventually get wired back in.
+    //
+    // The rule: a unit whose every shot had been reached before the last 04:00 boundary left the
+    // feed. It rested on two of the spec's own rules, which turn out to contradict each other as
+    // soon as posts are grouped per author:
+    //
+    //   NOTHING UNSEEN EXPIRES  ...  SEEN UNITS CLEAR AT THE NEXT BOUNDARY
+    //
+    // A ten-shot day where the reader looked at one shot is neither seen nor unseen, and there
+    // is no answer that honours both rules. The code chose "never clears", which is the safe
+    // direction and also means a multi-shot day never leaves. Marks are made one shot at a time,
+    // as the pager lands on each (`FeedUnitCard.maybeMarkReached`), and a unit reopens on its
+    // first unseen shot, so retiring a ten-shot day took ten separate scroll-pasts.
+    //
+    // Observed on device, all at once and all "correct": single-shot days vanished at 4am on
+    // schedule, multi-shot days piled up for the full window, and the feed was empty one morning
+    // and endless that afternoon. The two behaviours look like different bugs and were the same
+    // one.
+    //
+    // What replaced it is nothing: the feed shows what the fetch returned. `caughtUpIndex` marks
+    // where NEW ends and already-read begins, which is what the reader actually needed, and it
+    // does so without taking anything away.
 
-    /// Whether this unit has left the feed: every shot reached, and the most recent of those
-    /// marks predates the most recent 04:00 boundary. Two rules, from the spec's worked
-    /// example: NOTHING UNSEEN EXPIRES (a single unreached shot keeps the whole unit,
-    /// however long that takes, because a catch-up surface that drops things you never saw
-    /// is worse than no catch-up at all), and SEEN UNITS CLEAR AT THE NEXT BOUNDARY, which
-    /// is what gives the feed a real end rather than an accumulating scroll. A unit read
-    /// this morning therefore stays around today, so you can go back to it, and is gone
-    /// tomorrow. Leaving the feed is not deletion: the photographs live on the author's
-    /// profile and in their rolls.
-    func hasCleared(seenAt: (UUID) -> Date?, now: Date = .now, calendar: Calendar = .current) -> Bool {
-        var latest = Date.distantPast
-        for item in items {
-            guard let mark = seenAt(item.post.id) else { return false }
-            if mark > latest { latest = mark }
-        }
-        let lastBoundary = Self.dayKey(for: now, calendar: calendar)
-            .addingTimeInterval(Self.dayBoundaryHour)
-        return latest < lastBoundary
-    }
-
-    /// Every currently-cleared unit id, derived fresh from `units` and the seen marks alone.
-    /// Pure and total: no history, no accumulation, so a caller can call it as often as it
-    /// likes and always get the answer that is true of the CURRENT units, never a stale one
-    /// carried over from an earlier call. See `FeedView.snapshotLedger` for why re-deriving
-    /// on every snapshot, rather than merging forward, is what keeps a unit whose membership
-    /// grows to include an unseen shot from staying wrongly hidden.
-    static func clearedUnitIDs(units: [FeedUnit], seenAt: (UUID) -> Date?, now: Date = .now,
-                                calendar: Calendar = .current) -> Set<String> {
-        Set(units.filter { $0.hasCleared(seenAt: seenAt, now: now, calendar: calendar) }.map(\.id))
-    }
-
-    /// How far back the feed reaches: the last 7 days, so a fortnight away does not open
-    /// into a wall. Older UNSEEN shots stay reachable on the author's profile and stop
-    /// occupying the catch-up. Untested at current scale and the number most likely to need
-    /// tuning, per the spec.
+    /// How far back the feed reaches, and now the ONLY bound on its length.
+    ///
+    /// Seven days rather than two or three because this app posts on a delay: a shot captured
+    /// on Saturday can post on Sunday, and a roll from a wedding can develop on Tuesday. A short
+    /// window drops things that have only just become visible, which is the same "where did my
+    /// feed go" complaint from the other direction. What keeps the scroll short is the per-author
+    /// grouping and the caught-up seam, not the window.
     static let retentionWindow: TimeInterval = 7 * 86400
 
     /// The film strip stops at 20: 19 frames plus a `+N` tile that opens the day as a

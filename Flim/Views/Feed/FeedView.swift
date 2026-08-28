@@ -85,26 +85,40 @@ struct FeedView: View {
     }
     @State private var caughtUp: CaughtUpSeam = .pending
 
-    /// Units that have cleared under retention (fully seen before the last 04:00 boundary),
-    /// SNAPSHOTTED at load like the ledger and the seam: a unit must not vanish mid-session
-    /// under the reader, so clearing applies at the catch-up moment, not per render.
-    @State private var clearedUnitIDs: Set<String> = []
+    // RETENTION CLEARING WAS REMOVED HERE (2026-08-28). The feed no longer takes anything away.
+    //
+    // The rule was: a unit whose every shot had been reached before the last 04:00 boundary left
+    // the feed. It could not survive per-author grouping, and the failure was invisible. A shot
+    // is marked seen only when the pager lands on it (`FeedUnitCard.maybeMarkReached`), one shot
+    // at a time, while clearing demanded a mark on EVERY shot in the unit. So a ten-shot day
+    // cleared only if you swiped all ten frames, and since a unit reopens on its first unseen
+    // shot, it took ten separate scroll-pasts to retire one day.
+    //
+    // What that produced, all at once and all "correct": single-shot days vanished at 4am on
+    // schedule, multi-shot days accumulated for the whole seven, and the feed was empty one
+    // morning and endless the next afternoon. Two spec rules were in direct contradiction under
+    // grouping ("nothing unseen expires" against "seen units clear at the next boundary"), and a
+    // day that is one-tenth read is neither.
+    //
+    // The seam already says "you are caught up" without deleting anything, so seen state now
+    // drives only the pill, the ledger, the seam, and where a unit opens. The consequence of any
+    // future seen-state bug is a wrong pill rather than a feed that empties or never ends.
+    // Scrolling stays bounded by `FeedUnit.retentionWindow`, server-side, which is what actually
+    // bounded it all along.
 
-    /// Cached `FeedUnit` grouping (already filtered by `clearedUnitIDs`), the fix for the same
+    /// Cached `FeedUnit` grouping, the fix for the same
     /// scroll hitch `DarkroomView.cachedDayUnits` names (its own doc is the worked example): the
     /// `feedList` `ForEach`'s row closure reads `units.count` PER ROW (`index < units.count - 1`,
     /// deciding whether to draw a seam or the caught-up block), and `units` used to be a computed
     /// property re-running `FeedUnit.units(from:)` — a `Dictionary(grouping:)` + a sort over the
     /// whole loaded feed — on every one of those per-row reads, not once per body pass.
     ///
-    /// Recomputed via `recomputeUnits()`, called from two places: explicitly, right after
-    /// `clearedUnitIDs` is reassigned inside `snapshotLedger` (synchronous code in THAT function
-    /// reads `units` again immediately afterward, before SwiftUI's own `.onChange` below would
-    /// ever fire, so the explicit call is what keeps that read correct, not merely a redundant
-    /// belt-and-suspenders); and via `.onChange(of: feed.feed)` / `.onChange(of: clearedUnitIDs)`
-    /// as the safety net for `feed.feed` changing OUTSIDE this view's own reload path (a photo
-    /// deleted from the Darkroom calls `feed.dropPosts(forDeletedPhotoIds:)` directly on the
-    /// shared service, with no call back into this view at all).
+    /// Recomputed via `recomputeUnits()`, called explicitly from `snapshotLedger` (synchronous
+    /// code in THAT function reads `units` again immediately afterward, before SwiftUI's own
+    /// `.onChange` below would ever fire) and via `.onChange(of: feed.feed)` as the safety net
+    /// for `feed.feed` changing OUTSIDE this view's own reload path (a photo deleted from the
+    /// Darkroom calls `feed.dropPosts(forDeletedPhotoIds:)` directly on the shared service, with
+    /// no call back into this view at all).
     ///
     /// ANTI-PATTERN, do not reintroduce: `FeedUnit.units(from:)` (or anything that calls it) read
     /// from inside the `ForEach` row closure, or any other per-row path.
@@ -112,8 +126,10 @@ struct FeedView: View {
 
     private var units: [FeedUnit] { cachedUnits }
 
+    /// Every unit the fetch returned, in order. Nothing is filtered out: what the server sent is
+    /// what the reader sees.
     private func recomputeUnits() {
-        cachedUnits = FeedUnit.units(from: feed.feed).filter { !clearedUnitIDs.contains($0.id) }
+        cachedUnits = FeedUnit.units(from: feed.feed)
     }
 
     /// Whether the header ledger still has anything to stand for. Mirrors the ledger's own
@@ -181,11 +197,10 @@ struct FeedView: View {
                 containerWidth = width
             }
         })
-        // `cachedUnits`'s safety net for `feed.feed` (or `clearedUnitIDs`) changing outside this
+        // `cachedUnits`'s safety net for `feed.feed` changing outside this
         // view's own reload path; see that property's own doc for why `snapshotLedger` ALSO calls
         // `recomputeUnits()` explicitly rather than relying on this alone.
         .onChange(of: feed.feed) { _, _ in recomputeUnits() }
-        .onChange(of: clearedUnitIDs) { _, _ in recomputeUnits() }
         .navigationBarHidden(true)
         .task {
             // `feed_viewed` semantics: once per time this view genuinely appears (initial
@@ -684,28 +699,8 @@ struct FeedView: View {
     /// pull the number back down, so the held value only ever ratchets upward between
     /// genuine reloads.
     private func snapshotLedger(growOnly: Bool = false) {
-        // Clearing first, so the ledger and the seam are computed over the feed the reader
-        // will actually be shown. RE-DERIVED FROM SCRATCH on every call, growOnly included,
-        // never union-merged forward: a unit marked cleared on an early, partial snapshot
-        // (page one, before `completeStraddlingDays` finishes) must not stay cleared once the
-        // straddle completion appends the rest of that day, because the append can bring an
-        // unseen shot into a unit this exact id already got merged into the accumulated set.
-        // A `formUnion` can only ever ADD ids, so that unit and its unseen shot would vanish
-        // for the whole session, breaking "nothing unseen expires".
-        //
-        // On a growOnly pass the fresh derivation is INTERSECTED in, not taken wholesale: a
-        // growOnly pass may only ever REVEAL a unit an earlier, partial pass wrongly hid
-        // (intersection can remove ids, never add them). Taking it wholesale relied on "a
-        // mark made this session is always after the last boundary baked into `now`", which
-        // fails when the session itself is alive across 04:00 — a unit fully read at 3:55
-        // would clear on a 4:05 paging event and vanish under the reader mid-scroll. Hiding
-        // a genuinely-cleared unit therefore only happens on a full snapshot, i.e. the next
-        // explicit catch-up moment, exactly as designed.
-        let freshCleared = FeedUnit.clearedUnitIDs(
-            units: FeedUnit.units(from: feed.feed), seenAt: { seenStore.seenDate($0) })
-        clearedUnitIDs = growOnly ? clearedUnitIDs.intersection(freshCleared) : freshCleared
-        // Explicit, not left to the `.onChange(of: clearedUnitIDs)` safety net: everything below
-        // this line reads `units` (the cache) synchronously, in the same function call, before
+        // Explicit, not left to the `.onChange(of: feed.feed)` safety net: everything below this
+        // line reads `units` (the cache) synchronously, in the same function call, before
         // SwiftUI's own change-tracking would ever have a chance to fire. See `cachedUnits`'s own
         // doc.
         recomputeUnits()

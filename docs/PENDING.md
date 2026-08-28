@@ -44,15 +44,32 @@ directory, and a shared one could share one roll's photos as another's.
 
 ## Blocking a production ship
 
+### done 2026-08-28 — the ephemeral feed is gone
+
+The 04:00 clearing rule was removed. It could not survive per-author grouping: marks are made
+one shot at a time as the pager lands on each, while clearing demanded a mark on EVERY shot in
+a unit, so a ten-shot day needed ten separate scroll-pasts to retire. Single-shot days vanished
+on schedule and multi-shot days accumulated for the full window, which is why the feed read as
+empty one morning and endless the next afternoon. The two spec rules behind it contradict each
+other under grouping ("nothing unseen expires" against "seen units clear at the next boundary");
+a day that is one-tenth read is neither.
+
+The feed now shows what the fetch returned, bounded only by `FeedUnit.retentionWindow` (7 days,
+kept deliberately: this app posts on a delay, so a short window drops shots that have only just
+become visible). Seen state drives the pill, the ledger, the caught-up seam and where a unit
+opens, and nothing else. Any future seen-state bug is now a wrong pill, not a feed that empties
+or never ends.
+
 ### blocked: feed redesign is TestFlight-only until two changes land
 
 Owner gate set 2026-08-24. Neither is built. Do not push the feed to production without both.
 
 1. **Seen-store migration**, one shot: seed as seen everything posted before the device's
    `lastActivitySeen`, falling back to "everything before the most recent 04:00" when absent.
-   Dated so seeded days clear immediately. Skip any device that already holds marks (testers).
-   Fresh installs keep the everything-unseen rule. Without it, existing users open into a week
-   of pills.
+   Skip any device that already holds marks (testers). Fresh installs keep the everything-unseen
+   rule. Without it, existing users open into a week of lit pills. (Reworded 2026-08-28: the
+   original said "dated so seeded days clear immediately", which no longer means anything now
+   that nothing clears. The migration is still wanted, for the pills and the ledger.)
 2. **Digest windowing**: clamp each recipient's window with
    `max(last_digest, client_versions.updated_at)` in `send-daily-digest`'s per-user loop, so the
    10:00 push counts what arrived since they last launched, and suppresses at zero. The digest
