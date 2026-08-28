@@ -10,9 +10,6 @@ struct RollCarouselView: View {
     let photos: [Photo]                    // developed, sorted oldest → newest
     let memberNames: [UUID: String]
     var startIndex: Int = 0
-    /// The roll these photos belong to, for the exported print's caption line. Optional so the
-    /// carousel stays usable from any surface, named or not.
-    var rollName: String?
 
     @Environment(AuthService.self) private var auth
     @Environment(PhotoService.self) private var photoService
@@ -312,7 +309,7 @@ struct RollCarouselView: View {
         if let image = ImageCache.shared.object(forKey: key) {
             shareItem = ShareImage(
                 image: image,
-                caption: BrandedExport.Caption(date: photo.takenAt, rollName: rollName))
+                caption: BrandedExport.Caption(date: photo.takenAt))
             return
         }
         preparingShare = true
@@ -327,7 +324,7 @@ struct RollCarouselView: View {
             ImageCache.shared.setObject(image, forKey: key)
             shareItem = ShareImage(
                 image: image,
-                caption: BrandedExport.Caption(date: photo.takenAt, rollName: rollName))
+                caption: BrandedExport.Caption(date: photo.takenAt))
         }
     }
 

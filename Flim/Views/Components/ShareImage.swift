@@ -1,17 +1,16 @@
 import SwiftUI
 import UIKit
 
-/// Identifiable wrapper so a shared image can drive `.sheet(item:)`. Framing (the FLIM print
-/// border) is the user's choice, made live in SharePreviewSheet; this holds the untouched photo.
-/// Shared by every surface that can share a photo out (the photo pager, feed, post detail, roll
-/// carousel).
+/// Identifiable wrapper so a shared image can drive `.sheet(item:)`. Which artifact leaves (the
+/// imprinted print, the story, or the plain photo) is the user's choice, made live in
+/// SharePreviewSheet; this holds the untouched photo. Shared by every surface that can share a
+/// photo out (the photo pager, feed, post detail, roll carousel).
 struct ShareImage: Identifiable {
     let id = UUID()
     let image: UIImage
-    /// What the print's footer writes: the date the shot was taken, and the roll it belongs to
-    /// when the surface knows one. Carried here rather than passed alongside, so each surface
-    /// fills in what it already has in scope and the sheet's signature changed exactly once.
-    /// Nil draws the centred wordmark alone, which is what the frame always did.
+    /// What the imprint burns into the exposure: the date the shot was taken. Carried here rather
+    /// than passed alongside, so each surface fills in what it already has in scope and the
+    /// sheet's signature changed exactly once. Nil draws the wordmark alone, in its usual corner.
     var caption: BrandedExport.Caption?
 }
 

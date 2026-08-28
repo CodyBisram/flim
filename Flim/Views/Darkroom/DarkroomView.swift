@@ -958,12 +958,6 @@ struct DarkroomView: View {
         Button(role: .destructive) { requestDelete([photo]) } label: { Label("Delete", systemImage: "trash") }
     }
 
-    /// What the exported print's footer says. The Darkroom already resolves a photo's roll for
-    /// the pager's attribution line, so a roll shot shared from here is named the same way.
-    private func shareCaption(for photo: Photo) -> BrandedExport.Caption {
-        BrandedExport.Caption(date: photo.takenAt, rollName: rollName(for: photo.rollId))
-    }
-
     /// Pulls the full-res file down and hands it to the share composer, the same path the feed
     /// card's "Save to Camera Roll" uses.
     ///
@@ -976,7 +970,7 @@ struct DarkroomView: View {
         Haptics.tap()
         Task {
             if let raw = await DiskImageCache.loadRaw(path: photo.storagePath), let image = UIImage(data: raw) {
-                shareItem = ShareImage(image: image, caption: shareCaption(for: photo))
+                shareItem = ShareImage(image: image, caption: BrandedExport.Caption(date: photo.takenAt))
                 return
             }
             guard let url = try? await photoService.signedURL(for: photo.storagePath),
@@ -986,7 +980,7 @@ struct DarkroomView: View {
                 return
             }
             DiskImageCache.saveRaw(data, path: photo.storagePath)
-            shareItem = ShareImage(image: image, caption: shareCaption(for: photo))
+            shareItem = ShareImage(image: image, caption: BrandedExport.Caption(date: photo.takenAt))
         }
     }
 

@@ -1263,13 +1263,6 @@ struct PhotoPagerView: View {
 
     // MARK: - Actions
 
-    /// What the exported print's footer says. `rollName` is the same resolver the attribution
-    /// line already uses, so a shot shared from a roll surface carries that roll's name and a
-    /// personal one carries just its date.
-    private func shareCaption(for photo: Photo) -> BrandedExport.Caption {
-        BrandedExport.Caption(date: photo.takenAt, rollName: rollName(photo.rollId))
-    }
-
     /// Hand the photo to the share sheet, fetching it if it isn't already decoded.
     ///
     /// The cache key has to be the one `CachedImage` actually stored under, which is
@@ -1291,7 +1284,7 @@ struct PhotoPagerView: View {
         // when looked up under another.
         let key = "\(shareCacheKey)|1400" as NSString
         if let image = ImageCache.shared.object(forKey: key) {
-            shareItem = ShareImage(image: image, caption: shareCaption(for: photo))
+            shareItem = ShareImage(image: image, caption: BrandedExport.Caption(date: photo.takenAt))
             return
         }
         preparingShare = true
@@ -1309,7 +1302,7 @@ struct PhotoPagerView: View {
             // rather than pop a share sheet for a photo no longer on screen. Retryable: the
             // share button is right there on whatever photo is current now.
             guard current?.id == photo.id else { return }
-            shareItem = ShareImage(image: image, caption: shareCaption(for: photo))
+            shareItem = ShareImage(image: image, caption: BrandedExport.Caption(date: photo.takenAt))
         }
     }
 

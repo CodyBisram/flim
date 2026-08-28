@@ -226,17 +226,23 @@ struct SharePreviewSheet: View {
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
     }
 
-    /// Each thumbnail is the format's own shape, built from the photo rather than from a render:
-    /// three more full renders to fill a 48pt box would be work nobody sees.
+    /// Each thumbnail is the format's own shape.
+    ///
+    /// Print and Plain are now the SAME file except for the imprint, so at 48pt the difference is
+    /// two small orange marks. The row no longer reads as three visibly different objects and the
+    /// labels are carrying it. Flagged in the handoff as an open question rather than solved
+    /// here: the choices are to keep three (Plain is what you send when you want no mark at all)
+    /// or to drop Plain and make the imprint unconditional. Not a call to make in code, and the
+    /// `shareWithFrame` migration depends on `.plain` existing.
     @ViewBuilder
     private func thumb(_ option: ShareFormat) -> some View {
         switch option {
         case .print:
-            miniPrint(width: 48, padding: 2)
+            miniPrint(width: 48)
         case .story:
             ZStack {
                 Color(red: 0.071, green: 0.075, blue: 0.122)
-                miniPrint(width: 28, padding: 1.5)
+                miniPrint(width: 28)
             }
             .frame(width: 36, height: 64)
         case .plain:
@@ -248,21 +254,14 @@ struct SharePreviewSheet: View {
         }
     }
 
-    /// A miniature of the print: paper, the photo at 3:4, and the sliver of footer below it.
-    private func miniPrint(width: CGFloat, padding: CGFloat) -> some View {
-        VStack(spacing: 0) {
-            Image(uiImage: photo)
-                .resizable()
-                .scaledToFill()
-                .frame(width: width - padding * 2, height: (width - padding * 2) * 4 / 3)
-                .clipped()
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, padding)
-        .padding(.top, padding)
-        // 3:4, the same outer the real file has, so the thumbnail is the shape it describes.
-        .frame(width: width, height: width * 4 / 3)
-        .background(Color(red: 0.955, green: 0.945, blue: 0.915))
+    /// A miniature of the print: the photograph edge to edge, with the imprint if it has rendered
+    /// yet. No paper, no border.
+    private func miniPrint(width: CGFloat) -> some View {
+        Image(uiImage: printImage ?? photo)
+            .resizable()
+            .scaledToFill()
+            .frame(width: width, height: width * 4 / 3)
+            .clipped()
     }
 
     private var shareButton: some View {
