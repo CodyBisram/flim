@@ -675,6 +675,11 @@ struct PhotoPagerView: View {
 
                 Spacer(minLength: 8)
 
+                // Both controls carry a 40pt hit area behind a 15pt glyph. They shipped as bare
+                // `Image`s, which makes the tappable region the glyph itself: about 15pt against
+                // Apple's 44pt minimum, so the menu was effectively untappable. The other two
+                // headers in this file never showed it because their glyphs sit inside a
+                // `.padding(12).glassCapsule()` that happens to give them a real target.
                 Button { share(photo) } label: {
                     Group {
                         if preparingShare {
@@ -684,14 +689,21 @@ struct PhotoPagerView: View {
                                 .font(.system(size: 15, weight: .medium))
                         }
                     }
-                    .frame(width: 19, height: 19)
                     .foregroundStyle(Color(white: 0.7))
+                    .frame(width: 40, height: 40)
+                    .contentShape(Rectangle())
                 }
                 .disabled(preparingShare)
                 .accessibilityLabel(preparingShare ? "Preparing to share" : "Share photo")
 
-                if photo.userId == auth.currentUser?.id {
-                    Menu {
+                // Shown for every photo, not just your own. Reporting someone else's shot lives
+                // here now: a flag sitting inches from Share put a destructive action beside a
+                // positive one, and it is the kind of thing you reach for once a year. An
+                // overflow menu is where iOS puts rare and destructive actions, and it gives
+                // this control something to do on a photo that is not yours.
+                let isOwn = photo.userId == auth.currentUser?.id
+                Menu {
+                    if isOwn {
                         Button {
                             Haptics.tap()
                             Task {
@@ -706,14 +718,23 @@ struct PhotoPagerView: View {
                         Button(role: .destructive) {
                             requestDelete(photo)
                         } label: { Label("Delete photo", systemImage: "trash") }
-                    } label: {
-                        Image(systemName: "ellipsis")
-                            .font(.system(size: 15, weight: .medium))
-                            .foregroundStyle(Color(white: 0.7))
+                    } else {
+                        let reported = reportedIds.contains(photo.id)
+                        Button(role: .destructive) { reportCurrent() } label: {
+                            Label(reported ? "Reported" : "Report photo",
+                                  systemImage: reported ? "flag.fill" : "flag")
+                        }
+                        .disabled(reported)
                     }
-                    .accessibilityLabel("More")
-                    .disabled(isDeleting)
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(Color(white: 0.7))
+                        .frame(width: 40, height: 40)
+                        .contentShape(Rectangle())
                 }
+                .accessibilityLabel("More")
+                .disabled(isDeleting)
             }
             .padding(.horizontal, 16)
             // 60, matching the other two headers in this file. `pagerBody` ignores the container
@@ -795,18 +816,9 @@ struct PhotoPagerView: View {
                         .disabled(shared)
                         .accessibilityLabel(shared ? "Already shared to your page" : "Share to your page")
                     }
-
-                    if photo.userId != auth.currentUser?.id {
-                        let reported = reportedIds.contains(photo.id)
-                        Button { reportCurrent() } label: {
-                            Image(systemName: reported ? "flag.fill" : "flag")
-                                .font(.system(size: 13))
-                                .foregroundStyle(Color(white: 0.5))
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(reported)
-                        .accessibilityLabel("Report photo")
-                    }
+                    // Reporting moved to the header's overflow menu. It read badly here, an
+                    // inch from Share: a once-a-year destructive action given the same standing
+                    // as the row's whole purpose.
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 10)

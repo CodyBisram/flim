@@ -156,6 +156,14 @@ struct SharePreviewSheet: View {
         .padding(.top, 26)
     }
 
+    /// Every preview is rounded, including the ones whose file has square corners.
+    ///
+    /// It used to be Plain alone, on the handoff's reasoning that rounding made it read as a
+    /// screen object rather than as a print. That distinction died with the paper: there is no
+    /// border on any of these any more, so all four are simply photographs, and rounding one of
+    /// them looked like an oversight rather than a signal. The exported files are unaffected.
+    private static let previewCornerRadius: CGFloat = 14
+
     @ViewBuilder
     private var preview: some View {
         switch format {
@@ -163,6 +171,7 @@ struct SharePreviewSheet: View {
             Image(uiImage: outgoing)
                 .resizable()
                 .scaledToFit()
+                .clipShape(RoundedRectangle(cornerRadius: Self.previewCornerRadius))
                 .shadow(color: .black.opacity(0.55), radius: 17, y: 14)
                 .padding(.horizontal, 36)
         case .story:
@@ -178,10 +187,11 @@ struct SharePreviewSheet: View {
                     .scaledToFit()
             }
             .aspectRatio(9.0 / 16.0, contentMode: .fit)
+            .clipShape(RoundedRectangle(cornerRadius: Self.previewCornerRadius))
             // Without a hairline the canvas bounds vanish into the sheet and the story reads
             // as a floating print rather than a designed 9:16 artifact.
-            .overlay(Rectangle().strokeBorder(Color(red: 0.204, green: 0.216, blue: 0.290),
-                                              lineWidth: 1))
+            .overlay(RoundedRectangle(cornerRadius: Self.previewCornerRadius)
+                .strokeBorder(Color(red: 0.204, green: 0.216, blue: 0.290), lineWidth: 1))
             .shadow(color: .black.opacity(0.55), radius: 17, y: 14)
             .padding(.horizontal, 36)
         case .full:
@@ -195,16 +205,14 @@ struct SharePreviewSheet: View {
                     .scaledToFill()
             }
             .aspectRatio(9.0 / 16.0, contentMode: .fit)
-            .clipped()
+            .clipShape(RoundedRectangle(cornerRadius: Self.previewCornerRadius))
             .shadow(color: .black.opacity(0.55), radius: 17, y: 14)
             .padding(.horizontal, 36)
         case .plain:
             Image(uiImage: outgoing)
                 .resizable()
                 .scaledToFit()
-                // Rounded in the PREVIEW only, so it reads as a screen object rather than a
-                // print. The exported file has square corners.
-                .clipShape(RoundedRectangle(cornerRadius: 14))
+                .clipShape(RoundedRectangle(cornerRadius: Self.previewCornerRadius))
                 .shadow(color: .black.opacity(0.55), radius: 17, y: 14)
                 .padding(.horizontal, 36)
         }
@@ -230,18 +238,23 @@ struct SharePreviewSheet: View {
                 thumb(option)
                     .frame(height: 64)
                     .overlay {
+                        // Scaled down from the preview's own radius so the corner reads the same
+                        // at a sixth of the size, rather than looking like a different shape.
+                        let radius = Self.thumbCornerRadius
                         if selected {
-                            Rectangle().stroke(accent, lineWidth: 1)
+                            RoundedRectangle(cornerRadius: radius).stroke(accent, lineWidth: 1)
                                 .padding(-0.5)
                         } else {
-                            Rectangle().stroke(Color(white: 0.26), lineWidth: 1)
+                            RoundedRectangle(cornerRadius: radius)
+                                .stroke(Color(white: 0.26), lineWidth: 1)
                                 .padding(-0.5)
                         }
                     }
                     // The selection halo, outside the ring.
                     .overlay {
                         if selected {
-                            Rectangle().stroke(accent.opacity(0.18), lineWidth: 3)
+                            RoundedRectangle(cornerRadius: Self.thumbCornerRadius + 2)
+                                .stroke(accent.opacity(0.18), lineWidth: 3)
                                 .padding(-2.5)
                         }
                     }
@@ -268,33 +281,38 @@ struct SharePreviewSheet: View {
     /// here: the choices are to keep three (Plain is what you send when you want no mark at all)
     /// or to drop Plain and make the imprint unconditional. Not a call to make in code, and the
     /// `shareWithFrame` migration depends on `.plain` existing.
+    static let thumbCornerRadius: CGFloat = 4
+
     @ViewBuilder
     private func thumb(_ option: ShareFormat) -> some View {
-        switch option {
-        case .print:
-            miniPrint(width: 48)
-        case .story:
-            ZStack {
-                Color(red: 0.071, green: 0.075, blue: 0.122)
-                miniPrint(width: 28)
-            }
-            .frame(width: 36, height: 64)
-        case .full:
-            // The same 9:16 box as Story, filled rather than placed: side by side, the pair
-            // states the whole choice — keep the frame and spend the canvas, or keep the canvas
-            // and spend the sides of the frame.
-            Image(uiImage: fullImage ?? photo)
-                .resizable()
-                .scaledToFill()
+        Group {
+            switch option {
+            case .print:
+                miniPrint(width: 48)
+            case .story:
+                ZStack {
+                    Color(red: 0.071, green: 0.075, blue: 0.122)
+                    miniPrint(width: 28)
+                }
                 .frame(width: 36, height: 64)
-                .clipped()
-        case .plain:
-            Image(uiImage: photo)
-                .resizable()
-                .scaledToFill()
-                .frame(width: 48, height: 64)
-                .clipped()
+            case .full:
+                // The same 9:16 box as Story, filled rather than placed: side by side, the pair
+                // states the whole choice — keep the frame and spend the canvas, or keep the
+                // canvas and spend the sides of the frame.
+                Image(uiImage: fullImage ?? photo)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 36, height: 64)
+                    .clipped()
+            case .plain:
+                Image(uiImage: photo)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 48, height: 64)
+                    .clipped()
+            }
         }
+        .clipShape(RoundedRectangle(cornerRadius: Self.thumbCornerRadius))
     }
 
     /// A miniature of the print: the photograph edge to edge, with the imprint if it has rendered
