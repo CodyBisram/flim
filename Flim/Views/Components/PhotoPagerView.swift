@@ -1181,6 +1181,15 @@ struct PhotoPagerView: View {
     private static let rackFrameGap: CGFloat = 2
     private static let rackPitch: CGFloat = 30 + rackFrameGap
 
+    /// How wide the frames themselves are: the pitch times the count, less the trailing gap.
+    /// Deterministic from the count rather than measured, so the row can be sized on the first
+    /// layout pass instead of after one.
+    private var rackContentWidth: CGFloat {
+        let count = CGFloat(rackPhotos.count)
+        guard count > 0 else { return 0 }
+        return count * Self.rackPitch - Self.rackFrameGap
+    }
+
     /// The rack + status/actions row that replaces the caption/share-pill footer in night-rack
     /// mode.
     private var rackSection: some View {
@@ -1252,6 +1261,22 @@ struct PhotoPagerView: View {
                 }
                 DarkroomPerforationLine().frame(height: 3)
             }
+            // The road stops where the film does. A three-frame night used to draw its three
+            // frames and then a full screen width of empty perforated stock, which reads as a
+            // strip that is mostly missing rather than a strip that is short.
+            //
+            // This is the rule `DarkroomDayUnit.cutStrips` already states for the Darkroom's own
+            // grid rack, in its own words: a day that fits on one strip stays exactly as short as
+            // its frame count, no padding, "because a three-shot day is a short piece of film,
+            // not a strip nine-tenths empty". That rack obeys it; this one never did, not by
+            // decision but by inheritance.
+            //
+            // NOT the same question as the feed card's strip, which deliberately runs blank
+            // leader film to the full card width (owner's call, 2026-08-23) because a stubby
+            // strip inside a bordered card read as broken. That strip is a fixed-width element
+            // in a card; this one is a full-bleed scrubber, and when it overflows it still
+            // fills the row exactly as before.
+            //
             // The same 16pt inset the photograph itself now carries (see `photoWidth`), matching
             // the feed's own relationship between `FilmStrip` and its hero exactly: both share
             // ONE `.padding(.horizontal, 16)` on their container, so the strip's leading edge
@@ -1266,7 +1291,11 @@ struct PhotoPagerView: View {
             // viewport-relative (the `ScrollView`'s own measured width / SwiftUI's own anchor
             // scrolling), not padding-relative, so a narrower viewport from this inset is
             // already the correct input for both, no separate math to update.
-            .padding(.horizontal, 16)
+            // Content width when the film is shorter than the row, the full inset row when it
+            // is not. The outer `maxWidth` then centres a short strip under the photograph
+            // rather than parking it against the leading edge.
+            .frame(width: min(rackContentWidth, max(1, screenWidth - 32)))
+            .frame(maxWidth: .infinity)
             // Night-rack mode only. In roll mode this row said the roll's name a second time
             // (the header already has it), and its Share pill was a second copy of an action
             // that now lives in the header menu. Between them they cost about 40pt, which came

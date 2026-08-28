@@ -65,9 +65,20 @@ struct FeedUnitCard: View {
     /// is a stand-in that fails at other Dynamic Type sizes.
     @State private var clampedCaptionHeight: CGFloat = 0
     @State private var fullCaptionHeight: CGFloat = 0
-    @State private var showComments = false
-    /// Set by a preview row's Reply, read by the sheet to arm the composer on open.
-    @State private var replyToHandle: String?
+    /// The comments sheet's target, as ONE identifiable value rather than a `Bool` plus a
+    /// loose handle. Opening a reply used to be two `@State` writes in a single action
+    /// (`replyToHandle = ...` then `showComments = true`) read back by a
+    /// `.sheet(isPresented:)`, whose content closure can be captured before that pair lands, so
+    /// the composer opened empty. `.sheet(item:)` cannot: the value IS the trigger, so the
+    /// handle is guaranteed present when the sheet builds. The sheet's own reply button never
+    /// showed this because it never crosses a presentation boundary.
+    @State private var commentsTarget: CommentsTarget?
+
+    private struct CommentsTarget: Identifiable {
+        let id = UUID()
+        /// Whose comment is being replied to, when the sheet was opened by a Reply.
+        var replyHandle: String?
+    }
     @State private var showContactSheet = false
     @State private var route: ProfileRoute?
     @State private var pendingProfile: ProfileRoute?
@@ -221,12 +232,11 @@ struct FeedUnitCard: View {
             // signal that pays for staying two photographs ahead of the finger.
             Task { await resolveURLs(around: selection, radius: 2) }
         }
-        .sheet(isPresented: $showComments, onDismiss: {
+        .sheet(item: $commentsTarget, onDismiss: {
             if let pending = pendingProfile { pendingProfile = nil; route = pending }
-            replyToHandle = nil
-        }) {
+        }) { target in
             CommentsSheet(post: post, authorHandle: unit.author.handle,
-                          initialReplyHandle: replyToHandle) {
+                          initialReplyHandle: target.replyHandle) {
                 pendingProfile = ProfileRoute(id: $0)
             }
         }
@@ -477,7 +487,7 @@ struct FeedUnitCard: View {
                         text: info.comment.body,
                         handle: info.handle,
                         onHandleTap: { route = ProfileRoute(id: info.comment.userId) },
-                        onBodyTap: { showComments = true }
+                        onBodyTap: { commentsTarget = CommentsTarget() }
                     ) { username in
                         Haptics.tap()
                         Task {
@@ -494,8 +504,7 @@ struct FeedUnitCard: View {
                     if info.comment.userId != auth.currentUser?.id {
                         Button {
                             Haptics.tap()
-                            replyToHandle = info.handle
-                            showComments = true
+                            commentsTarget = CommentsTarget(replyHandle: info.handle)
                         } label: {
                             Text("Reply")
                                 .flimFont(12.5, relativeTo: .footnote)
@@ -525,7 +534,7 @@ struct FeedUnitCard: View {
             }
             // ONE line, always present, always the same destination, so a frame with no
             // thread is never a dead end.
-            Button { showComments = true } label: {
+            Button { commentsTarget = CommentsTarget() } label: {
                 Text(hasCommentsBeyondPreview(total: comments.count, shownInPreview: previewComments.count)
                      ? "View all \(comments.count) comments"
                      : "Add a comment")
