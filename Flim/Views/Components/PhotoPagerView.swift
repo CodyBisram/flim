@@ -690,20 +690,8 @@ struct PhotoPagerView: View {
                 .disabled(preparingShare)
                 .accessibilityLabel(preparingShare ? "Preparing to share" : "Share photo")
 
-                let isOwn = photo.userId == auth.currentUser?.id
-                Menu {
-                    // Posting a roll shot to your page used to be a capsule under the thread and
-                    // then a pill in the rack's status row. Both cost the photograph height that
-                    // the reveal spends on the photograph, so it lives here now.
-                    if isOwn || photo.rollId != nil {
-                        let shared = feed.myPostedPhotoIds.contains(photo.id)
-                        Button { shareToPage(photo) } label: {
-                            Label(shared ? "Shared to your page" : "Share to your page",
-                                  systemImage: shared ? "checkmark.circle.fill" : "square.and.arrow.up")
-                        }
-                        .disabled(shared)
-                    }
-                    if isOwn {
+                if photo.userId == auth.currentUser?.id {
+                    Menu {
                         Button {
                             Haptics.tap()
                             Task {
@@ -718,17 +706,21 @@ struct PhotoPagerView: View {
                         Button(role: .destructive) {
                             requestDelete(photo)
                         } label: { Label("Delete photo", systemImage: "trash") }
+                    } label: {
+                        Image(systemName: "ellipsis")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundStyle(Color(white: 0.7))
                     }
-                } label: {
-                    Image(systemName: "ellipsis")
-                        .font(.system(size: 15, weight: .medium))
-                        .foregroundStyle(Color(white: 0.7))
+                    .accessibilityLabel("More")
+                    .disabled(isDeleting)
                 }
-                .accessibilityLabel("More")
-                .disabled(isDeleting)
             }
             .padding(.horizontal, 16)
-            .padding(.top, 12)
+            // 60, matching the other two headers in this file. `pagerBody` ignores the container
+            // safe area so the photograph can run full bleed in legacy mode, which means every
+            // header here has to put the inset back itself. At 12 the title sat in the Dynamic
+            // Island's own gap.
+            .padding(.top, 60)
         }
     }
 
@@ -777,6 +769,33 @@ struct PhotoPagerView: View {
                     }
                     .buttonStyle(.plain)
                     Spacer(minLength: 8)
+
+                    // Posting to your page rides in this row rather than in a row of its own.
+                    // It answers three questions with one control: where the action went, what
+                    // it does, and whether this shot is already on your page. Burying it in the
+                    // menu answered none of them, and giving it its own row is what made the
+                    // photograph smaller than the reveal's in the first place. Opens the same
+                    // composer as before, so tagging is one tap further in, where it always was.
+                    if photo.userId == auth.currentUser?.id || photo.rollId != nil {
+                        let shared = feed.myPostedPhotoIds.contains(photo.id)
+                        Button { shareToPage(photo) } label: {
+                            HStack(spacing: 5) {
+                                Image(systemName: shared ? "checkmark.circle.fill" : "square.and.arrow.up")
+                                    .font(.system(size: 11))
+                                Text(shared ? "Shared" : "Share")
+                                    .font(.system(size: 12, weight: .medium))
+                            }
+                            .foregroundStyle(shared ? Color(white: 0.5) : accent)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 5)
+                            .overlay(Capsule().strokeBorder(shared ? Color.white.opacity(0.18) : accent,
+                                                            lineWidth: 1))
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(shared)
+                        .accessibilityLabel(shared ? "Already shared to your page" : "Share to your page")
+                    }
+
                     if photo.userId != auth.currentUser?.id {
                         let reported = reportedIds.contains(photo.id)
                         Button { reportCurrent() } label: {

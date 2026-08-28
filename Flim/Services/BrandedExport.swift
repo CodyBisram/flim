@@ -63,6 +63,14 @@ enum BrandedExport {
     /// Mean luminance above which a mark switches to the flat ink.
     static let paleCornerThreshold: CGFloat = 0.50
 
+    /// Whether the wordmark is set in type rather than drawn in the segment cell.
+    ///
+    /// Segments are the intent: the date back and the wordmark should read as one stamp. They
+    /// are hard to get right, because a segment glyph occupies only the segments it lights, so
+    /// FLIM's letters sit in different vertical bands. The typeset path is the safety net if the
+    /// segment one ever stops holding up; it shares the ink, the bloom and the baseline.
+    static let useTypesetWordmark = false
+
     static let ink = UIColor(red: 1.0, green: 0.541, blue: 0.169, alpha: 1)        // #FF8A2B
     static let flatInk = UIColor(red: 0.878, green: 0.325, blue: 0.039, alpha: 1)  // #E0530A
 
@@ -94,8 +102,16 @@ enum BrandedExport {
 
             let baseline = size.height - bottomInset
 
-            drawWordmark(rightEdge: size.width - sideInset, bottom: baseline,
-                         cell: cell, in: ctx.cgContext, over: photo, canvas: size)
+            let markText = AppInfo.appName.uppercased()
+            if useTypesetWordmark {
+                drawWordmark(rightEdge: size.width - sideInset, bottom: baseline,
+                             cell: cell, in: ctx.cgContext, over: photo, canvas: size)
+            } else if !markText.isEmpty {
+                let width = blockWidth(markText, cell: cell)
+                draw(text: markText,
+                     at: CGPoint(x: size.width - sideInset - width, y: baseline - cell.height),
+                     cell: cell, in: ctx.cgContext, over: photo, canvas: size)
+            }
 
             if !dateText.isEmpty {
                 draw(text: dateText,
@@ -283,12 +299,18 @@ enum BrandedExport {
                 let lit = glyphs[character] ?? []
                 // Letters never rest: four ghosted 8s behind FLIM reads as 8888, not as a word.
                 let rests = character.isNumber
+                // The I's two bars come in narrower than everyone else's. It is the only letter
+                // in the wordmark lighting BOTH the top and bottom bar, so at full width it
+                // carried twice the horizontal ink of its neighbours and read as a bigger
+                // letter. Narrowing them keeps it unmistakably an I (de-serifing it entirely
+                // made a bare stroke that merged into the M) while taking the weight back out.
+                let barInset: CGFloat = character == "I" ? 0.30 : 0.19
                 for segment in Segment.allCases {
                     let on = lit.contains(segment)
                     let resting = rests && restingSegments.contains(segment)
                     guard on || resting else { continue }
                     colour.withAlphaComponent(on ? 1 : ghost).setFill()
-                    fill(segment, in: box, context: ctx.cgContext)
+                    fill(segment, in: box, context: ctx.cgContext, barInset: barInset)
                 }
                 x += box.width + cellGapFraction * em
             }
@@ -319,14 +341,16 @@ enum BrandedExport {
     /// Percentages are of the cell box: horizontal ones of its width, vertical ones of its
     /// height. Taken from the design's own segment board rather than re-derived, including the
     /// rotation SIGNS, which are the opposite of what the shapes suggest.
-    private static func fill(_ segment: Segment, in box: CGRect, context: CGContext) {
+    private static func fill(_ segment: Segment, in box: CGRect, context: CGContext,
+                             barInset: CGFloat = 0.19) {
         let w = box.width, h = box.height
         var rect: CGRect
         var rotation: CGFloat = 0
+        let barWidth = (1 - barInset * 2) * w
 
         switch segment {
-        case .a:  rect = CGRect(x: 0.19 * w, y: 0, width: 0.62 * w, height: 0.09 * h)
-        case .d:  rect = CGRect(x: 0.19 * w, y: h - 0.09 * h, width: 0.62 * w, height: 0.09 * h)
+        case .a:  rect = CGRect(x: barInset * w, y: 0, width: barWidth, height: 0.09 * h)
+        case .d:  rect = CGRect(x: barInset * w, y: h - 0.09 * h, width: barWidth, height: 0.09 * h)
         case .f:  rect = CGRect(x: 0, y: 0.13 * h, width: 0.15 * w, height: 0.285 * h)
         case .b:  rect = CGRect(x: w - 0.15 * w, y: 0.13 * h, width: 0.15 * w, height: 0.285 * h)
         case .e:  rect = CGRect(x: 0, y: h - 0.13 * h - 0.285 * h, width: 0.15 * w, height: 0.285 * h)

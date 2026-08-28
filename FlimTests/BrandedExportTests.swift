@@ -71,18 +71,33 @@ struct BrandedExportTests {
         }
     }
 
-    @Test("the wordmark is typeset, not built from segments")
-    func wordmarkIsNotSegments() {
-        // It WAS segments, on the reasoning that both marks should speak one language. A segment
-        // glyph occupies only the segments it lights, so FLIM's four letters sat in four
-        // different vertical bands and the I was visibly larger; de-serifing the I to even that
-        // out turned it into a bare bar that merged with the M. Real type has even metrics and
-        // the problem stops existing. A real date back stamps a date and has no logo anyway.
-        //
-        // Nothing here asserts the drawing; this pins the reasoning so the letters are not
-        // quietly wired back into the cell. The date alphabet is what still has to be drawable.
+    @Test("the wordmark and the date share the segment cell")
+    func wordmarkIsDrawable() {
+        // The date back and the wordmark are meant to read as one stamp. A typeset fallback
+        // exists behind `useTypesetWordmark` if that ever stops holding up; this pins the
+        // intent, and the fact that the app's own name can actually be drawn in the cell.
+        #expect(BrandedExport.useTypesetWordmark == false)
+        #expect(BrandedExport.canDraw(AppInfo.appName.uppercased()),
+                "\(AppInfo.appName) has a letter the segment cell cannot draw")
         #expect(BrandedExport.canDraw("'26 08 24"))
         #expect(BrandedExport.canDraw("07/27"))
+    }
+
+    @Test("the I's bars come in narrower than everyone else's")
+    func theIIsNotHeavier() {
+        // I is the only letter in FLIM lighting BOTH horizontal bars, so at the standard width
+        // it carried twice the horizontal ink of its neighbours and read as a bigger letter.
+        // The other repair, dropping its serifs entirely, made a bare stroke that merged into
+        // the M. Narrowing the bars is the middle: still unmistakably an I, no longer heavier.
+        //
+        // Sampled at the outer ends of the bar, where F's top bar has ink and the I's no longer
+        // does.
+        let barEnd = CGRect(x: 0.20, y: 0, width: 0.08, height: 0.09)
+        #expect(ink("F", cellRect: barEnd) > 0.5, "F's top bar should reach the standard inset")
+        #expect(ink("I", cellRect: barEnd) < 0.1, "the I's bar should stop short of it")
+        // But the I still HAS bars; it is serifed, not stripped.
+        #expect(ink("I", cellRect: CGRect(x: 0.4, y: 0, width: 0.2, height: 0.09)) > 0.5)
+        #expect(ink("I", cellRect: CGRect(x: 0.4, y: 0.91, width: 0.2, height: 0.09)) > 0.5)
     }
 
     @Test("the frame index pads to the width of its total")
