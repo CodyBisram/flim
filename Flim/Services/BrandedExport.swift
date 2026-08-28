@@ -156,7 +156,16 @@ enum BrandedExport {
         "9": [.a, .b, .c, .d, .f, .g1, .g2],
         "F": [.a, .f, .e, .g1, .g2],
         "L": [.f, .e, .d],
-        "I": [.a, .i, .l, .d],
+        // DEVIATION from the design's segment board, which maps I to `a i l d`, the serifed I of
+        // a real fourteen-segment display. The serifs exist there to tell an I from a 1, an
+        // ambiguity this wordmark does not have: no digit sits beside it, and a digit 1 is the
+        // RIGHT verticals (`b c`) while this is the centre pair, so the two never collide anyway.
+        //
+        // What they cost is visible. Each letter only spans the segments it lights, and I was the
+        // only one in FLIM lighting both horizontal bars, so it alone filled the cell top to
+        // bottom (0-100%) while F ran 0-87%, L 13-100% and M only 10-87%. It read as a size
+        // difference because it was one. Dropping the serifs puts I in the verticals' own band.
+        "I": [.i, .l],
         "M": [.f, .e, .h, .j, .b, .c],
         "/": [.j, .m],
         "'": [.i],

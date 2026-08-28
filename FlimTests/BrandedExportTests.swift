@@ -161,6 +161,23 @@ struct BrandedExportTests {
         #expect(ink("7", cellRect: CGRect(x: 0, y: 0.13, width: 0.15, height: 0.285)) > 0.01)
     }
 
+    @Test("the wordmark's letters share one vertical band")
+    func wordmarkLettersAreEvenlySized() {
+        // Each letter spans only the segments it lights, so a letter lighting both horizontal
+        // bars fills the cell top to bottom while its neighbours do not. I was the only one in
+        // FLIM doing that and read as visibly larger than F, L and M, which is what this pins.
+        let topBar = CGRect(x: 0.19, y: 0, width: 0.62, height: 0.09)
+        let bottomBar = CGRect(x: 0.19, y: 0.91, width: 0.62, height: 0.09)
+
+        // The I sits in the verticals' band, lighting neither bar.
+        #expect(ink("I", cellRect: topBar) < 0.01)
+        #expect(ink("I", cellRect: bottomBar) < 0.01)
+        // It is still a letter, not an empty cell.
+        #expect(ink("I", cellRect: CGRect(x: 0.425, y: 0.13, width: 0.15, height: 0.74)) > 0.5)
+        // And it stays distinct from a digit 1, which lights the RIGHT verticals instead.
+        #expect(ink("1", cellRect: CGRect(x: 0.425, y: 0.13, width: 0.15, height: 0.74)) < 0.05)
+    }
+
     @Test("the apostrophe and the separator never rest")
     func narrowCellsDoNotGhost() {
         let whole = CGRect(x: 0, y: 0, width: 1, height: 1)

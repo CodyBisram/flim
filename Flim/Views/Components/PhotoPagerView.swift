@@ -774,25 +774,10 @@ struct PhotoPagerView: View {
                 .padding(.horizontal, 16)
                 .padding(.top, 10)
 
-                // The one thing this screen does that the reveal does not: a roll shot is
-                // yours to put on your page. Kept as a real button rather than folded into the
-                // menu, because it is the reason people open a developed roll a second time.
-                if (photo.userId == auth.currentUser?.id || photo.rollId != nil), !showShareComposer {
-                    let shared = feed.myPostedPhotoIds.contains(photo.id)
-                    Button { shareToPage(photo) } label: {
-                        Label(shared ? "Shared to your page" : "Share to your page",
-                              systemImage: shared ? "checkmark.circle.fill" : "square.and.arrow.up")
-                            .flimFont(14, weight: .semibold)
-                            .foregroundStyle(shared ? Color(white: 0.7) : accent)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 44)
-                            .overlay(Capsule().strokeBorder(shared ? Color.white.opacity(0.2) : accent,
-                                                            lineWidth: 1))
-                    }
-                    .disabled(shared)
-                    .padding(.horizontal, 16)
-                    .padding(.top, 12)
-                }
+                // No "Share to your page" capsule here. `rackSection`'s own status row already
+                // carries that action as a Share pill beside the roll's name and shared state,
+                // so a second one was the same action twice, and the ~56pt it took was what
+                // pushed the photograph off the top of the screen.
             }
         }
     }
@@ -1821,8 +1806,18 @@ private struct PageFrameModifier: ViewModifier {
                 content.frame(width: fixed.width, height: fixed.height).clipped()
             }
         } else if let aspect {
-            content.aspectRatio(aspect, contentMode: .fit)
-                .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
+            // The `Color.clear` is load-bearing, not filler. `aspectRatio` sizes from its
+            // CONTENT, and a page whose content is still a `ProgressView` has that view's tiny
+            // intrinsic size, so the box opened small and grew to full size the instant the
+            // image landed: the photo appeared to swell out of the middle of the frame on every
+            // load. A flexible layer makes the box take the space it was OFFERED instead, so the
+            // frame is the same size before and after, and the photograph simply fills it.
+            ZStack {
+                Color.clear
+                content
+            }
+            .aspectRatio(aspect, contentMode: .fit)
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
         } else {
             content.frame(maxWidth: .infinity, maxHeight: .infinity)
         }
