@@ -258,14 +258,18 @@ struct SharePreviewSheet: View {
                                 .padding(-2.5)
                         }
                     }
-                Text(option.label)
+                // Label and ratio on ONE line, at the 11pt floor. They were two lines 1.5pt
+                // apart, and the ratio was the only type in the app below the floor. Raising it
+                // to 11 would have given the cell two near-identical lines under a thumbnail;
+                // merging removes a level instead, because the ratio was never a second piece of
+                // information, only a qualifier on the label. The cell widens to fit, and three
+                // still sit across the row.
+                Text("\(option.label) · \(option.ratio)")
                     .flimFont(11, weight: .medium, relativeTo: .caption2)
                     .foregroundStyle(selected ? accent : FlimTheme.textTertiary)
-                Text(option.ratio)
-                    .flimFont(9.5, relativeTo: .caption2)
-                    .foregroundStyle(FlimTheme.textTertiary)
+                    .lineLimit(1)
             }
-            .frame(width: 56)
+            .frame(width: 66)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

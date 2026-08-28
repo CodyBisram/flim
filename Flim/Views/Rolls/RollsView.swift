@@ -112,7 +112,7 @@ struct RollsView: View {
         .overlay(alignment: .top) {
             if let toastMessage {
                 Label(toastMessage, systemImage: "exclamationmark.triangle.fill")
-                    .flimFont(13, weight: .medium)
+                    .flimFont(13.5, weight: .medium, relativeTo: .subheadline)
                     .foregroundStyle(.white)
                     .padding(.horizontal, 16).padding(.vertical, 10)
                     .background(.ultraThinMaterial, in: Capsule())
@@ -173,7 +173,7 @@ struct RollsView: View {
             Text("Rolls")
                 .flimFont(17, weight: .light, relativeTo: .body)
                 .tracking(0.5)
-                .foregroundStyle(FlimTheme.textPrimary)
+                .foregroundStyle(FlimTheme.textSecondary)
             // The ledger, taken whole from Feed's and Darkroom's bars: the urgent fact in
             // accent with the glow (a sealed roll is exactly what that treatment is reserved
             // for), the calm fact in tertiary, and never a zero. `fetchRolls` is unpaginated
@@ -181,18 +181,18 @@ struct RollsView: View {
             // server-side truth; no extra count query needed.
             if !readyRolls.isEmpty {
                 Text("·")
-                    .flimFont(12, relativeTo: .caption)
+                    .flimFont(12.5, relativeTo: .footnote)
                     .foregroundStyle(FlimTheme.textTertiary)
                 Text("\(readyRolls.count) ready")
-                    .flimFont(12, relativeTo: .caption)
+                    .flimFont(12.5, relativeTo: .footnote)
                     .foregroundStyle(accent)
                     .shadow(color: accent.opacity(0.55), radius: 6)
             } else if !openRolls.isEmpty {
                 Text("·")
-                    .flimFont(12, relativeTo: .caption)
+                    .flimFont(12.5, relativeTo: .footnote)
                     .foregroundStyle(FlimTheme.textTertiary)
                 Text("\(openRolls.count) open")
-                    .flimFont(12, relativeTo: .caption)
+                    .flimFont(12.5, relativeTo: .footnote)
                     .foregroundStyle(FlimTheme.textTertiary)
             }
             Spacer(minLength: 8)
@@ -299,10 +299,10 @@ struct RollsView: View {
             VStack(alignment: .leading, spacing: 5) {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text(roll.name)
-                        .flimFont(13, weight: .medium, relativeTo: .footnote)
+                        .flimFont(13.5, weight: .medium, relativeTo: .subheadline)
                         .foregroundStyle(selected ? FlimTheme.textPrimary : FlimTheme.textSecondary)
                     Text(pickerTime(roll, now: now))
-                        .flimFont(11, relativeTo: .caption)
+                        .flimFont(11, relativeTo: .caption2)
                         .foregroundStyle(selected ? accent : FlimTheme.textSecondary)
                 }
                 .lineLimit(1)
@@ -439,7 +439,7 @@ struct RollsView: View {
                     if overflow > 0 {
                         rackWell(sealed: sealed) {
                             Text("+\(overflow)")
-                                .flimFont(11, weight: .medium, relativeTo: .caption)
+                                .flimFont(11, weight: .medium, relativeTo: .caption2)
                                 .foregroundStyle(accent)
                         }
                     }
@@ -485,7 +485,7 @@ struct RollsView: View {
                     HStack(spacing: 4) {
                         Image(systemName: "sparkles").font(.system(size: 10, weight: .bold))
                         Text(frameCounts[roll.id].map { "Reveal · \($0)" } ?? "Reveal")
-                            .flimFont(11, weight: .medium, relativeTo: .caption)
+                            .flimFont(11, weight: .medium, relativeTo: .caption2)
                     }
                     .foregroundStyle(accent)
                     .padding(.vertical, 4).padding(.horizontal, 9)
@@ -495,7 +495,7 @@ struct RollsView: View {
                 .padding(.top, 10).padding(.leading, 16).padding(.trailing, 12).padding(.bottom, 5)
 
                 Text(readyMeta(roll))
-                    .flimFont(11.5, relativeTo: .caption)
+                    .flimFont(12.5, relativeTo: .footnote)
                     .foregroundStyle(FlimTheme.textTertiary)
                     .padding(.horizontal, 16).padding(.bottom, 5)
 
@@ -587,7 +587,7 @@ struct RollsView: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 10) {
                 Text("Developed · \(developedRolls.count)")
-                    .flimFont(10.5, weight: .semibold, relativeTo: .caption)
+                    .flimFont(11, weight: .semibold, relativeTo: .caption2)
                     .tracking(1.4)
                     .textCase(.uppercase)
                     .foregroundStyle(FlimTheme.textSecondary)
@@ -634,7 +634,7 @@ struct RollsView: View {
 
                 HStack(spacing: 5) {
                     Text(roll.name)
-                        .flimFont(13, relativeTo: .footnote)
+                        .flimFont(13.5, relativeTo: .subheadline)
                         .foregroundStyle(FlimTheme.textSecondary)
                         .lineLimit(1)
                         .truncationMode(.tail)
@@ -646,7 +646,7 @@ struct RollsView: View {
                     }
                 }
                 Text(archiveMeta(roll))
-                    .flimFont(11.5, relativeTo: .caption)
+                    .flimFont(12.5, relativeTo: .footnote)
                     .foregroundStyle(FlimTheme.textTertiary)
                     .padding(.top, -3)
             }
@@ -816,7 +816,7 @@ struct RollsView: View {
                 .flimFont(17, weight: .light, relativeTo: .body)
                 .foregroundStyle(FlimTheme.textSecondary)
             Text("Start a roll and share the code, or join one with a friend's code.")
-                .flimFont(13, relativeTo: .footnote)
+                .flimFont(13.5, relativeTo: .subheadline)
                 .foregroundStyle(FlimTheme.textTertiary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 40)

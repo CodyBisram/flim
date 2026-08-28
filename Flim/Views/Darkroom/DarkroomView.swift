@@ -290,19 +290,29 @@ struct DarkroomView: View {
 
     private var normalHeaderRow: some View {
         HStack(spacing: 6) {
-            Text("Darkroom")
-                .flimFont(17, weight: .light)
+            // Chrome, not content. This sat at `textPrimary` and 17pt light, identical to the
+            // unit titles below it (the night title, the feed handle, a ready roll's name), so
+            // the top of the hierarchy was set exactly like its third rung and read as one more
+            // row heading. The colour moved rather than the size: growing it to 22 was tried on
+            // paper and put chrome in competition with the 26pt hero on Rolls, and grew the one
+            // piece of chrome that was deliberately shrunk. Every other chrome label in the app
+            // is already secondary (the zoom crumb, the DEVELOPED rule, the closing-month row);
+            // this was the lone outlier dressed as content. Orientation is carried by the tab
+            // bar, which is always on screen and marks the selected tab in the accent, so the
+            // screen name is reinforcement and reinforcement should be quiet.
+Text("Darkroom")
+                .flimFont(17, weight: .light, relativeTo: .body)
                 .tracking(0.5)
-                .foregroundStyle(FlimTheme.textPrimary)
+                .foregroundStyle(FlimTheme.textSecondary)
 
             // The ledger: server-counted, never the loaded page count (see PhotoService's own
             // pagination trap doc). Omitted with its dot at zero, same as the old toolbar total.
             if let total = vm.totalCount, total > 0 {
                 Text("·")
-                    .flimFont(12)
+                    .flimFont(12.5, relativeTo: .footnote)
                     .foregroundStyle(FlimTheme.textTertiary)
                 Text("\(total) shot\(total == 1 ? "" : "s")")
-                    .flimFont(12)
+                    .flimFont(12.5, relativeTo: .footnote)
                     .foregroundStyle(FlimTheme.textTertiary)
             }
 
@@ -472,7 +482,7 @@ struct DarkroomView: View {
         .overlay(alignment: .top) {
             if let errorToast {
                 Label(errorToast, systemImage: "exclamationmark.triangle.fill")
-                    .flimFont(13, weight: .medium).foregroundStyle(.white)
+                    .flimFont(13.5, weight: .medium, relativeTo: .subheadline).foregroundStyle(.white)
                     .padding(.horizontal, 16).padding(.vertical, 10)
                     .background(.ultraThinMaterial, in: Capsule())
                     .padding(.top, 8)
@@ -839,7 +849,7 @@ struct DarkroomView: View {
                     .flimFont(15, weight: .light)
                     .foregroundStyle(FlimTheme.textSecondary)
                 Text("Pull down to try again, or zoom back in.")
-                    .flimFont(12)
+                    .flimFont(12.5, relativeTo: .footnote)
                     .foregroundStyle(FlimTheme.textTertiary)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 40)
@@ -1131,7 +1141,7 @@ struct DarkroomView: View {
                 .flimFont(17, weight: .light)
                 .foregroundStyle(FlimTheme.textSecondary)
             Text("Head to the camera and take your first shot. Sort it here, then keep it or share it.")
-                .flimFont(13)
+                .flimFont(13.5, relativeTo: .subheadline)
                 .foregroundStyle(FlimTheme.textTertiary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 40)

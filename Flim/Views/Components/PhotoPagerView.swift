@@ -668,7 +668,7 @@ struct PhotoPagerView: View {
 
                 if let name = rollName(photo.rollId) {
                     Text(name)
-                        .font(.system(size: 14, weight: .semibold))
+                        .flimFont(17, weight: .semibold, relativeTo: .body)
                         .foregroundStyle(.white)
                         .lineLimit(1)
                 }
@@ -764,7 +764,7 @@ struct PhotoPagerView: View {
                     .disabled(memberNames[photo.userId] == nil)
 
                     Text("\(selection + 1) of \(photos.count) · \(photo.takenAt.formatted(date: .omitted, time: .shortened))")
-                        .font(.system(size: 12))
+                        .flimFont(12.5, relativeTo: .footnote)
                         .foregroundStyle(Color(white: 0.6))
                 }
                 .padding(.top, 12)
@@ -784,7 +784,7 @@ struct PhotoPagerView: View {
                     Button { commentsPhoto = photo; showComments = true } label: {
                         HStack(spacing: 7) {
                             Image(systemName: "bubble.left").font(.system(size: 14))
-                            Text("Comments").font(.system(size: 12.5))
+                            Text("Comments").flimFont(12.5, relativeTo: .footnote)
                         }
                         .foregroundStyle(Color(white: 0.6))
                     }
@@ -804,7 +804,7 @@ struct PhotoPagerView: View {
                                 Image(systemName: shared ? "checkmark.circle.fill" : "square.and.arrow.up")
                                     .font(.system(size: 11))
                                 Text(shared ? "Shared" : "Share")
-                                    .font(.system(size: 12, weight: .medium))
+                                    .flimFont(11, weight: .medium, relativeTo: .caption2)
                             }
                             .foregroundStyle(shared ? Color(white: 0.5) : accent)
                             .padding(.horizontal, 12)

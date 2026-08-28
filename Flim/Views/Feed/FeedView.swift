@@ -282,13 +282,13 @@ struct FeedView: View {
             Text("Feed")
                 .flimFont(17, weight: .light, relativeTo: .body)
                 .tracking(0.5)
-                .foregroundStyle(FlimTheme.textPrimary)
+                .foregroundStyle(FlimTheme.textSecondary)
             if let ledger, anythingUnseen {
                 Text("·")
-                    .flimFont(12, relativeTo: .caption)
+                    .flimFont(12.5, relativeTo: .footnote)
                     .foregroundStyle(FlimTheme.textTertiary)
                 Text(ledgerLabel(ledger))
-                    .flimFont(12, relativeTo: .caption)
+                    .flimFont(12.5, relativeTo: .footnote)
                     .foregroundStyle(accent)
                     .shadow(color: accent.opacity(0.55), radius: 6)
                     .lineLimit(1)
@@ -326,7 +326,7 @@ struct FeedView: View {
                     .overlay(alignment: .topTrailing) {
                         if unreadActivity > 0 {
                             Text(unreadActivity > 9 ? "9+" : "\(unreadActivity)")
-                                .flimFont(10, weight: .bold, relativeTo: .caption)
+                                .flimFont(11, weight: .bold, relativeTo: .caption2)
                                 .foregroundStyle(.white)
                                 .padding(.horizontal, 5).padding(.vertical, 1)
                                 .background(Color.red, in: Capsule())
@@ -466,7 +466,7 @@ struct FeedView: View {
                         }
                     } label: {
                         Label("New posts", systemImage: "arrow.up")
-                            .flimFont(13, weight: .semibold)
+                            .flimFont(13.5, weight: .semibold, relativeTo: .subheadline)
                             .foregroundStyle(.black)
                             .padding(.horizontal, 16).padding(.vertical, 8)
                             .background(accent, in: Capsule())
@@ -476,7 +476,7 @@ struct FeedView: View {
                     .transition(.move(edge: .top).combined(with: .opacity))
                 } else if refreshFailedToast {
                     Label("Couldn't refresh", systemImage: "wifi.exclamationmark")
-                        .flimFont(13, weight: .semibold)
+                        .flimFont(13.5, weight: .semibold, relativeTo: .subheadline)
                         .foregroundStyle(.white)
                         .padding(.horizontal, 16).padding(.vertical, 8)
                         .background(.ultraThinMaterial, in: Capsule())
@@ -527,7 +527,7 @@ struct FeedView: View {
                 .tracking(0.4)
                 .foregroundStyle(FlimTheme.textPrimary)
             Text(caughtLine)
-                .flimFont(12, relativeTo: .caption)
+                .flimFont(12.5, relativeTo: .footnote)
                 .foregroundStyle(FlimTheme.textTertiary)
                 .multilineTextAlignment(.center)
                 .lineSpacing(3)
@@ -575,7 +575,7 @@ struct FeedView: View {
                 .tracking(0.4)
                 .foregroundStyle(FlimTheme.textPrimary)
             Text("Follow someone and their shots show up here, a day at a time.")
-                .flimFont(13, relativeTo: .subheadline)
+                .flimFont(13.5, relativeTo: .subheadline)
                 .foregroundStyle(FlimTheme.textSecondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 46)
@@ -603,7 +603,7 @@ struct FeedView: View {
             }
             .padding(.top, 9)
             Text("\(AppInfo.appName) is invite only. Nobody is suggested to you, and nobody is ranked.")
-                .flimFont(11.5, relativeTo: .caption)
+                .flimFont(12.5, relativeTo: .footnote)
                 .foregroundStyle(FlimTheme.textTertiary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 46)

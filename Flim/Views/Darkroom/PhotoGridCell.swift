@@ -93,19 +93,17 @@ struct PhotoGridCell: View {
                     AnimatedHourglass(size: 16, color: FlimTheme.textTertiary)
                 }
 
-                // Tell the user which roll this shot is developing for (or just "DEVELOPING").
-                if let rollName {
-                    Label(rollName, systemImage: "film.stack")
-                        .font(.system(size: 8, weight: .semibold))
-                        .lineLimit(1)
-                        .foregroundStyle(accent.opacity(0.9))
-                        .padding(.horizontal, 6)
-                } else {
-                    Text("DEVELOPING")
-                        .font(.system(size: 8, weight: .medium))
-                        .tracking(2)
-                        .foregroundStyle(Color(white: 0.25))
-                }
+                // The word that used to sit here is gone. The tile said "developing" twice, once
+                // as the animated hourglass above and once as an 8pt label at `white(0.25)`,
+                // which measures about 1.7:1 and is the only genuinely illegible type in the
+                // app. Raising it to the 11pt floor would have fixed the contrast and made
+                // things worse: at tracking 2 it runs about 100pt wide in a 128pt cell, on every
+                // developing tile in the grid at once. Deleting it removes the problem instead
+                // of amplifying it, the hourglass already carries the meaning as texture, and
+                // VoiceOver reads "Developing photo" from the cell's own label either way.
+                //
+                // The `rollName` branch it replaced was unreachable: the component's one call
+                // site (`RollDetailView.photoGrid`) passes no `rollName` at all.
             }
         }
     }

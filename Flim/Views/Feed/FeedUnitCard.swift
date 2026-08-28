@@ -262,7 +262,7 @@ struct FeedUnitCard: View {
                         // Derived metadata never wraps: one wrap adds a line box and pushes
                         // the unit past the fold. Generated text, so truncation is safe.
                         Text(unit.metaLine)
-                            .flimFont(11.5, relativeTo: .caption)
+                            .flimFont(12.5, relativeTo: .footnote)
                             .foregroundStyle(FlimTheme.textTertiary)
                             .lineLimit(1)
                     }
@@ -272,7 +272,7 @@ struct FeedUnitCard: View {
             Spacer(minLength: 8)
             if unseenRemaining > 0 {
                 Text("\(unseenRemaining) new")
-                    .flimFont(11, relativeTo: .caption)
+                    .flimFont(11, relativeTo: .caption2)
                     .foregroundStyle(accent)
                     .padding(.horizontal, 8).padding(.vertical, 2)
                     .overlay(Capsule().strokeBorder(accent.opacity(0.42), lineWidth: 1))
@@ -396,7 +396,7 @@ struct FeedUnitCard: View {
                         .font(.system(size: 27, weight: .light))
                         .foregroundStyle(Color.white.opacity(0.37))
                     Text("This shot didn't load")
-                        .flimFont(13, relativeTo: .subheadline)
+                        .flimFont(13.5, relativeTo: .subheadline)
                         .foregroundStyle(FlimTheme.textSecondary)
                     Button {
                         failedFrames.remove(item.post.id)
@@ -404,7 +404,7 @@ struct FeedUnitCard: View {
                         Task { urls[item.post.id] = await feed.signedURL(for: item.post.cardPath) }
                     } label: {
                         Label("Retry", systemImage: "arrow.clockwise")
-                            .flimFont(13, weight: .medium, relativeTo: .subheadline)
+                            .flimFont(13.5, weight: .medium, relativeTo: .subheadline)
                             .foregroundStyle(accent)
                             .padding(.horizontal, 16).padding(.vertical, 7)
                             .overlay(Capsule().strokeBorder(accent, lineWidth: 1))
@@ -460,7 +460,7 @@ struct FeedUnitCard: View {
                 if fullCaptionHeight > clampedCaptionHeight + 1 || captionExpanded {
                     Button { toggleCaption() } label: {
                         Text(captionExpanded ? "less" : "more")
-                            .flimFont(12, relativeTo: .caption)
+                            .flimFont(12.5, relativeTo: .footnote)
                             .foregroundStyle(FlimTheme.textTertiary)
                     }
                 }
@@ -498,7 +498,7 @@ struct FeedUnitCard: View {
                             showComments = true
                         } label: {
                             Text("Reply")
-                                .flimFont(12, relativeTo: .caption)
+                                .flimFont(12.5, relativeTo: .footnote)
                                 .foregroundStyle(FlimTheme.textTertiary)
                         }
                         .expandTapTarget(top: 7, leading: 4, bottom: 7, trailing: 4)
@@ -508,7 +508,7 @@ struct FeedUnitCard: View {
                         HStack(alignment: .firstTextBaseline, spacing: 3) {
                             if info.likeCount > 0 {
                                 Text("\(info.likeCount)")
-                                    .flimFont(11, relativeTo: .caption)
+                                    .flimFont(11, relativeTo: .caption2)
                                     .foregroundStyle(FlimTheme.textTertiary)
                                     .contentTransition(.numericText())
                             }
@@ -529,7 +529,7 @@ struct FeedUnitCard: View {
                 Text(hasCommentsBeyondPreview(total: comments.count, shownInPreview: previewComments.count)
                      ? "View all \(comments.count) comments"
                      : "Add a comment")
-                    .flimFont(12, relativeTo: .caption)
+                    .flimFont(12.5, relativeTo: .footnote)
                     .foregroundStyle(
                         hasCommentsBeyondPreview(total: comments.count, shownInPreview: previewComments.count)
                             ? FlimTheme.textSecondary : FlimTheme.textTertiary)
@@ -612,7 +612,7 @@ struct FeedUnitCard: View {
 
     private func toast(_ text: String, icon: String) -> some View {
         Label(text, systemImage: icon)
-            .flimFont(13, weight: .medium).foregroundStyle(.white)
+            .flimFont(13.5, weight: .medium, relativeTo: .subheadline).foregroundStyle(.white)
             .padding(.horizontal, 16).padding(.vertical, 10)
             .background(.ultraThinMaterial, in: Capsule())
             .transition(.move(edge: .top).combined(with: .opacity))
@@ -816,7 +816,7 @@ private struct FilmStrip: View {
                 // visible position reads as a lost place rather than an overflow.
                 Button(action: openOverflow) {
                     Text("+\(unit.stripOverflow)")
-                        .flimFont(11, weight: .semibold, relativeTo: .caption)
+                        .flimFont(11, weight: .semibold, relativeTo: .caption2)
                         .foregroundStyle(accent)
                         .frame(width: 34, height: 34 * 4 / 3)
                         .background(accent.opacity(selection >= shown ? 0.28 : 0.14))

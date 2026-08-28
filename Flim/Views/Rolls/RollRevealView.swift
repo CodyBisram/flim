@@ -174,7 +174,7 @@ struct RollRevealView: View {
             }
             .accessibilityLabel("Close")
             Text(rollName)
-                .font(.system(size: 14, weight: .semibold))
+                .flimFont(17, weight: .semibold, relativeTo: .body)
                 .foregroundStyle(.white)
                 .lineLimit(1)
             Spacer(minLength: 8)
@@ -182,7 +182,7 @@ struct RollRevealView: View {
             // they are finished, which is the only thing allowed to burn the one-shot flag.
             Button { Haptics.tap(); viewModel.finish() } label: {
                 Text("Done")
-                    .font(.system(size: 13, weight: .medium))
+                    .flimFont(15, weight: .medium, relativeTo: .body)
                     .foregroundStyle(Color(white: 0.7))
             }
         }
@@ -355,7 +355,7 @@ struct RollRevealView: View {
             }
             if let photo = currentPhoto {
                 Text("\(viewModel.index + 1) of \(viewModel.deck.count) · \(photo.takenAt.formatted(date: .omitted, time: .shortened))")
-                    .font(.system(size: 12))
+                    .flimFont(12.5, relativeTo: .footnote)
                     .foregroundStyle(Color(white: 0.6))
             }
         }
@@ -370,7 +370,7 @@ struct RollRevealView: View {
                 HStack(spacing: 7) {
                     Image(systemName: "bubble.left").font(.system(size: 14))
                     Text("Comments")
-                        .font(.system(size: 12.5))
+                        .flimFont(12.5, relativeTo: .footnote)
                 }
                 .foregroundStyle(Color(white: 0.6))
             }
@@ -433,15 +433,15 @@ struct RollRevealView: View {
                 .font(.system(size: 44, weight: .ultraLight))
                 .foregroundStyle(accent)
             Text(rollName)
-                .font(.system(size: 24, weight: .light)).foregroundStyle(.white)
+                .flimFont(26, weight: .light, relativeTo: .title3).foregroundStyle(.white)
             Text("\(viewModel.deck.count) shot\(viewModel.deck.count == 1 ? "" : "s") · developed together")
-                .font(.system(size: 14)).foregroundStyle(Color(white: 0.6))
+                .flimFont(12.5, relativeTo: .footnote).foregroundStyle(Color(white: 0.6))
 
             // The communal signal: where you land in the group's reveal, so it feels shared even
             // though everyone opens at their own time.
             if let presence = viewModel.presence {
                 Label(presenceText(presence), systemImage: presence.position == 1 ? "sparkles" : "person.2.fill")
-                    .font(.system(size: 13, weight: .medium))
+                    .flimFont(13.5, weight: .medium, relativeTo: .subheadline)
                     .foregroundStyle(accent)
                     .padding(.horizontal, 14).padding(.vertical, 8)
                     .background(accent.opacity(0.16), in: Capsule())
@@ -481,7 +481,7 @@ struct RollRevealView: View {
                             Image(systemName: "square.and.arrow.down").font(.system(size: 13))
                         }
                         Text(viewModel.savingAll ? "Getting them ready" : "Save all to Camera Roll")
-                            .font(.system(size: 14, weight: .medium))
+                            .flimFont(15, weight: .medium, relativeTo: .body)
                     }
                     .foregroundStyle(Color(white: 0.7))
                 }
@@ -494,17 +494,17 @@ struct RollRevealView: View {
                 if let error = viewModel.saveAllError {
                     HStack(spacing: 10) {
                         Text(error)
-                            .font(.system(size: 12.5))
+                            .flimFont(12.5, relativeTo: .footnote)
                             .foregroundStyle(Color(white: 0.55))
                         Button("Retry") { viewModel.saveAll() }
-                            .font(.system(size: 12.5, weight: .semibold))
+                            .flimFont(12.5, weight: .semibold, relativeTo: .footnote)
                             .foregroundStyle(accent)
                     }
                     .padding(.top, 6)
                     .transition(.opacity)
                 } else if let notice = viewModel.partialNotice {
                     Text(notice)
-                        .font(.system(size: 12.5))
+                        .flimFont(12.5, relativeTo: .footnote)
                         .foregroundStyle(Color(white: 0.55))
                         .padding(.top, 6)
                         .transition(.opacity)
@@ -531,7 +531,7 @@ struct RollRevealView: View {
                 .font(.system(size: 40, weight: .ultraLight))
                 .foregroundStyle(accent.opacity(0.8))
             Text("The shots in this roll were deleted.")
-                .font(.system(size: 16, weight: .light))
+                .flimFont(20, weight: .light, relativeTo: .title3)
                 .foregroundStyle(.white)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 40)
@@ -540,7 +540,7 @@ struct RollRevealView: View {
                 dismiss()
             } label: {
                 Text("Close")
-                    .font(.system(size: 15, weight: .semibold)).foregroundStyle(.black)
+                    .flimFont(15, weight: .semibold, relativeTo: .body).foregroundStyle(.black)
                     .padding(.horizontal, 36).padding(.vertical, 13)
                     .background(accent, in: Capsule())
             }
@@ -559,12 +559,12 @@ struct RollRevealView: View {
             // An eyebrow, because the card has to answer "why am I looking at this" before it
             // answers "what is it". Without it the title reads as a splash screen.
             Text("DEVELOPED")
-                .font(.system(size: 11, weight: .semibold))
+                .flimFont(11, weight: .semibold, relativeTo: .caption2)
                 .tracking(3.5)
                 .foregroundStyle(accent)
 
             Text(rollName)
-                .font(.system(size: 34, weight: .ultraLight))
+                .flimFont(34, weight: .ultraLight, relativeTo: .largeTitle)
                 .tracking(2)
                 .foregroundStyle(.white)
                 .multilineTextAlignment(.center)
@@ -581,13 +581,13 @@ struct RollRevealView: View {
                 .padding(.top, 20)
 
             Text(viewModel.cover.metaLine)
-                .font(.system(size: 15, weight: .medium))
+                .flimFont(15, weight: .medium, relativeTo: .body)
                 .foregroundStyle(Color(white: 0.82))
                 .padding(.top, 20)
 
             if let dateLine = viewModel.cover.dateLine() {
                 Text(dateLine)
-                    .font(.system(size: 13))
+                    .flimFont(12.5, relativeTo: .footnote)
                     .foregroundStyle(Color(white: 0.45))
                     .padding(.top, 5)
             }
