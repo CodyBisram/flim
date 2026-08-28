@@ -78,6 +78,10 @@ struct RollDetailView: View {
     @State private var shareImages: [URL] = []
     @State private var showShareAll = false
     @State private var displayName = ""
+    /// The roll's name as it should be shown right now: the locally renamed one while a rename
+    /// is still settling, otherwise the fetched one. The whole file open-codes this ternary in a
+    /// dozen places; new callers should use this.
+    private var activeRollName: String { displayName.isEmpty ? roll.name : displayName }
     @State private var showInviteShare = false
     /// The file's one top-slot toast, reused for every transient status line (cover updated,
     /// rename/leave failures) so there is a single presentation and timing to reason about
@@ -418,7 +422,8 @@ struct RollDetailView: View {
             .navigationTransition(.zoom(sourceID: photo.id, in: photoNS))
         }
         .fullScreenCover(isPresented: $showCarousel) {
-            RollCarouselView(photos: chronologicalDeveloped, memberNames: memberNames)
+            RollCarouselView(photos: chronologicalDeveloped, memberNames: memberNames,
+                             rollName: activeRollName)
         }
         .fullScreenCover(isPresented: $showReveal) {
             RollRevealView(rollId: roll.id, rollName: displayName.isEmpty ? roll.name : displayName,
@@ -435,7 +440,7 @@ struct RollDetailView: View {
         .sheet(isPresented: $showMembers) {
             RollMembersView(roll: roll)
         }
-        .sheet(item: $shareItem) { SharePreviewSheet(photo: $0.image) }
+        .sheet(item: $shareItem) { SharePreviewSheet(photo: $0.image, caption: $0.caption) }
         .sheet(isPresented: $showShareAll) {
             ActivityView(items: shareImages)
         }
@@ -754,7 +759,9 @@ struct RollDetailView: View {
                 Haptics.error()
                 return
             }
-            shareItem = ShareImage(image: image)
+            shareItem = ShareImage(
+                image: image,
+                caption: BrandedExport.Caption(date: photo.takenAt, rollName: activeRollName))
         }
     }
 

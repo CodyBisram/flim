@@ -8,6 +8,11 @@ import UIKit
 struct ShareImage: Identifiable {
     let id = UUID()
     let image: UIImage
+    /// What the print's footer writes: the date the shot was taken, and the roll it belongs to
+    /// when the surface knows one. Carried here rather than passed alongside, so each surface
+    /// fills in what it already has in scope and the sheet's signature changed exactly once.
+    /// Nil draws the centred wordmark alone, which is what the frame always did.
+    var caption: BrandedExport.Caption?
 }
 
 /// Bridges UIKit's share sheet (Save to Photos, AirDrop, Messages, …) into SwiftUI.

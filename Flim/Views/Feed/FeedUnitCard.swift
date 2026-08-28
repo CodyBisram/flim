@@ -237,7 +237,7 @@ struct FeedUnitCard: View {
             }
         }
         .navigationDestination(item: $route) { UserPageView(userId: $0.id) }
-        .sheet(item: $shareItem) { SharePreviewSheet(photo: $0.image) }
+        .sheet(item: $shareItem) { SharePreviewSheet(photo: $0.image, caption: $0.caption) }
         .sheet(isPresented: $showEditTags) {
             TagPhotoSheet(url: urls[post.id], tags: $editingTags) {
                 Task { await feed.setTags(editingTags, on: post.id) }
@@ -637,7 +637,10 @@ struct FeedUnitCard: View {
             guard let full = await feed.signedURL(for: target.storagePath),
                   let (data, _) = try? await URLSession.shared.data(from: full),
                   let image = UIImage(data: data) else { return }
-            shareItem = ShareImage(image: image)
+            // Date only: a feed post carries no roll, so the footer runs the date flush left and
+            // the wordmark flush right.
+            shareItem = ShareImage(image: image,
+                                   caption: BrandedExport.Caption(date: target.takenAt))
         }
     }
 

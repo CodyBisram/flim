@@ -10,6 +10,9 @@ struct RollCarouselView: View {
     let photos: [Photo]                    // developed, sorted oldest → newest
     let memberNames: [UUID: String]
     var startIndex: Int = 0
+    /// The roll these photos belong to, for the exported print's caption line. Optional so the
+    /// carousel stays usable from any surface, named or not.
+    var rollName: String?
 
     @Environment(AuthService.self) private var auth
     @Environment(PhotoService.self) private var photoService
@@ -112,7 +115,7 @@ struct RollCarouselView: View {
             }
         }
         .statusBarHidden()
-        .sheet(item: $shareItem) { SharePreviewSheet(photo: $0.image) }
+        .sheet(item: $shareItem) { SharePreviewSheet(photo: $0.image, caption: $0.caption) }
         // Same deferral as the pager: one sheet has to finish closing before the next opens.
         .sheet(isPresented: $showComments, onDismiss: {
             if let pending = pendingProfile { pendingProfile = nil; profileRoute = pending }
@@ -307,7 +310,9 @@ struct RollCarouselView: View {
         // Keying on the signed URL instead never hits (the token in the URL churns hourly).
         let key = "\(photo.viewPath)|1400" as NSString
         if let image = ImageCache.shared.object(forKey: key) {
-            shareItem = ShareImage(image: image)
+            shareItem = ShareImage(
+                image: image,
+                caption: BrandedExport.Caption(date: photo.takenAt, rollName: rollName))
             return
         }
         preparingShare = true
@@ -320,7 +325,9 @@ struct RollCarouselView: View {
                 return
             }
             ImageCache.shared.setObject(image, forKey: key)
-            shareItem = ShareImage(image: image)
+            shareItem = ShareImage(
+                image: image,
+                caption: BrandedExport.Caption(date: photo.takenAt, rollName: rollName))
         }
     }
 

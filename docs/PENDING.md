@@ -9,33 +9,38 @@ Statuses: `queued`, `blocked: <what on>`, `owner`, `decided: <what>`.
 
 ## Next up
 
-### queued: Share export redesign
+### done 2026-08-27 — Share export redesign
 
-Claude Design project, handed over 2026-08-27. Not started.
+Built from the handoff bundle (`~/Downloads/Rolls screen redesign.zip`, which despite the name
+contains only `design_handoff_share_export/`). Parts 1 through 4 all landed, including the
+metadata plumbing the handoff said could wait.
 
-- Project: https://claude.ai/design/p/489eee60-b5ed-4ef9-b79a-39e722480070?file=Share+export+-+redesign.dc.html
-- Import via the claude_design MCP (`https://api.anthropic.com/v1/design/mcp`, auth with
-  `/design-login`). The whole project is readable.
-- Implement: `Share export - redesign.dc.html`
-- Also read, because the selection imports them:
-  - `_ds/nocturne-ea53d284-651b-456c-baff-1ce20ca54668/_ds_bundle.js`
-  - `_ds/nocturne-ea53d284-651b-456c-baff-1ce20ca54668/styles.css`
-  - `img/cover-restaurant.jpg`
-  - `ios-frame.jsx`
-  - `support.js`
+- Project: https://claude.ai/design/p/489eee60-b5ed-4ef9-b79a-39e722480070 (named "Rolls screen
+  redesign"; the share export is a file inside it)
+- **How to read a design project from here:** `DesignSync` with `method: get_file` and an
+  explicit `projectId` works on a REGULAR design project. Only `list_projects` is filtered to
+  design-system projects, which is what made it look unreachable. No `/design-login` was needed.
 
-Design system is Nocturne, the same one the feed redesign used; FLIM's existing visual language
-wins where they conflict.
+Follow-up, explicitly out of scope in the handoff and not designed yet: **the roll contact
+sheet.** `Save all` on a roll dumps N loose JPEGs into the share sheet, which forgets the one
+idea the app is built on. The roll's frames on one print, roll name and date across the bottom.
 
-**Prerequisite, checked 2026-08-27: the claude_design MCP is NOT connected in this session.** Run
-`/design-login` first. `DesignSync` is present but is not a substitute: it only lists projects of
-type `PROJECT_TYPE_DESIGN_SYSTEM` and is filtered to writable ones, so a regular design project
-like this one is not reachable through it. If the MCP still cannot be connected, the fallback is
-the same one used for the feed canvas on 2026-08-23: the owner exports the project and drops the
-files somewhere readable.
+### queued: the share button removal (blocked on a decision)
 
-Touches `SharePreviewSheet` and the export path. Read `flim-photo-export-isolation` first: every
-export needs its own directory, and a shared one could share one roll's photos as another's.
+Owner asked for the Darkroom/grid pager's share button to be removed and a "Save to camera roll"
+item added to its three-dots menu, deferring real sharing (Instagram, Snapchat, Messages) until
+later. Two things surfaced and it was parked:
+
+1. The feed's existing "Save to Camera Roll" does NOT save; it opens `SharePreviewSheet`. So
+   mirroring it into the pager would swap a share button for a differently-labelled share button.
+   A real one-tap save is available: `CameraRollAutoSave` already writes master bytes via
+   `PHPhotoLibrary` and the add-only permission shipped.
+2. Removing the share button orphans `SharePreviewSheet` entirely, and that sheet is now the
+   whole share export redesign. Undecided: park the print, keep it reachable from the menu, or
+   change the pager only.
+
+Read `flim-photo-export-isolation` before touching the export path: every export needs its own
+directory, and a shared one could share one roll's photos as another's.
 
 ## Blocking a production ship
 

@@ -241,7 +241,7 @@ struct PostDetailView: View {
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
-        .sheet(item: $shareItem) { SharePreviewSheet(photo: $0.image) }
+        .sheet(item: $shareItem) { SharePreviewSheet(photo: $0.image, caption: $0.caption) }
         .sheet(isPresented: $showEditTags) {
             TagPhotoSheet(url: url, tags: $editingTags) {
                 Task { await feed.setTags(editingTags, on: post.id) }
@@ -385,7 +385,8 @@ struct PostDetailView: View {
     private func saveToCameraRoll() {
         Task {
             if let raw = await DiskImageCache.loadRaw(path: post.storagePath), let image = UIImage(data: raw) {
-                shareItem = ShareImage(image: image)
+                shareItem = ShareImage(image: image,
+                                   caption: BrandedExport.Caption(date: post.takenAt))
                 return
             }
             guard let saveURL = await feed.signedURL(for: post.storagePath),
@@ -395,7 +396,8 @@ struct PostDetailView: View {
                 return
             }
             DiskImageCache.saveRaw(data, path: post.storagePath)
-            shareItem = ShareImage(image: image)
+            shareItem = ShareImage(image: image,
+                                   caption: BrandedExport.Caption(date: post.takenAt))
         }
     }
 
