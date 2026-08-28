@@ -82,7 +82,7 @@ final class ShareToFeedSheetTests: XCTestCase {
     // MARK: - Consequence line
 
     func testConsequenceLineWithNobodyTagged() {
-        XCTAssertEqual(shareConsequenceLine(taggedCount: 0), "Nobody is notified until you share.")
+        XCTAssertEqual(shareConsequenceLine(taggedCount: 0), "Nobody is notified until you post.")
     }
 
     func testConsequenceLineIsSingularForOnePerson() {

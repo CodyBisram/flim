@@ -418,7 +418,7 @@ struct SortDeckView: View {
                 // someone believes they published something that never left the device. This is
                 // the one action in the deck that makes a photo public; it has to speak up.
                 Haptics.error()
-                publishError = "Couldn't share that one. It's in your Darkroom, share it from there."
+                publishError = "Couldn't post that one. It's in your Darkroom, post it from there."
             }
         case .trash:
             // No `feed.dropPost` needed here: `cards` only ever holds unsorted photos

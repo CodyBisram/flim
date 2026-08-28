@@ -177,12 +177,14 @@ final class DarkroomDayUnitTests: XCTestCase {
         XCTAssertFalse(line.contains("shared"))
     }
 
-    func testMetaLineCountsShared() {
+    func testMetaLineCountsPosted() {
         let a = photo(takenAt: date(21, 9))
         let b = photo(takenAt: date(21, 20))
         let unit = DarkroomDayUnit(dayKey: date(21, 0), photos: [a, b])
         let line = unit.metaLine(sharedIds: [a.id], calendar: calendar)
-        XCTAssertTrue(line.contains("1 shared"))
+        // "posted", not "shared": publishing to your page is Post everywhere now, and Share
+        // means sending a photo out of the app. See the copy rule in docs/COPY.md.
+        XCTAssertTrue(line.contains("1 posted"))
     }
 
     func testMetaLineSoloShotIsOneTime() {

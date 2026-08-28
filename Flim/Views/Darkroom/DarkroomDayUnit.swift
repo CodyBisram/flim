@@ -103,7 +103,7 @@ struct DarkroomDayUnit: Identifiable {
     // MARK: - Meta line
 
     /// The band's second line: `time window · n shots · n shared`, `n shared` omitted entirely
-    /// at zero (a day with nothing shared never reads "0 shared"). The time window follows the
+    /// at zero (a day with nothing posted never reads "0 posted"). The time window follows the
     /// same collapsing rule `FeedUnit.metaLine` uses: a solo shot (or an identical start/end
     /// clock reading) renders one time, never `1:15 to 1:15 PM`.
     func metaLine(sharedIds: Set<UUID>, calendar: Calendar = .current) -> String {
@@ -111,7 +111,7 @@ struct DarkroomDayUnit: Identifiable {
         var parts = [timeWindow(calendar: calendar), shotsLabel]
         let sharedCount = photos.reduce(0) { $0 + (sharedIds.contains($1.id) ? 1 : 0) }
         if sharedCount > 0 {
-            parts.append(sharedCount == 1 ? "1 shared" : "\(sharedCount) shared")
+            parts.append(sharedCount == 1 ? "1 posted" : "\(sharedCount) posted")
         }
         return parts.joined(separator: " · ")
     }

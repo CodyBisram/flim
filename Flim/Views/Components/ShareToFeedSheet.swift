@@ -60,7 +60,7 @@ func shareDestinationDayLabel(_ dayKey: Date, calendar: Calendar = .current) -> 
 /// button's outcome unsaid.
 func shareConsequenceLine(taggedCount: Int) -> String {
     switch taggedCount {
-    case 0: return "Nobody is notified until you share."
+    case 0: return "Nobody is notified until you post."
     case 1: return "1 person will be notified when this posts."
     default: return "\(taggedCount) people will be notified when this posts."
     }
@@ -149,7 +149,7 @@ struct ShareToFeedSheet: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                Text("Share to Feed")
+                Text("Post to your page")
                     .flimFont(17, weight: .light, relativeTo: .body)
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity, alignment: .center)
@@ -300,7 +300,7 @@ struct ShareToFeedSheet: View {
 
     private var shareButton: some View {
         Button { share() } label: {
-            Text("Share to Feed")
+            Text("Post to your page")
                 .flimFont(15, weight: .semibold, relativeTo: .body)
                 .foregroundStyle(accent)
                 .frame(maxWidth: .infinity)
@@ -333,7 +333,7 @@ struct ShareToFeedSheet: View {
                     // Deliberately its own string, not the legacy composer's: this flow's own
                     // viewer has a promoted "Tag" capsule once a shot is shared (`tagCapsule` in
                     // `PhotoPagerView`), and that's the retry path from here, not "Edit tags".
-                    onPartialFailure("Shared, but the tags didn't save. Tap Tag to try again.")
+                    onPartialFailure("Posted, but the tags didn't save. Tap Tag to try again.")
                 } else {
                     Haptics.success()
                     onSuccess()

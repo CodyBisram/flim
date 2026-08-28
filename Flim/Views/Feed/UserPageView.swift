@@ -668,7 +668,7 @@ struct UserPageView: View {
         VStack(spacing: 8) {
             Image(systemName: "square.stack.3d.up.slash")
                 .font(.system(size: 26, weight: .ultraLight)).foregroundStyle(FlimTheme.textTertiary)
-            Text(isSelf ? "You haven't shared anything yet" : "No shared photos yet")
+            Text(isSelf ? "You haven't posted anything yet" : "No posts yet")
                 .flimFont(14, relativeTo: .subheadline).foregroundStyle(FlimTheme.textTertiary)
         }
         .padding(.top, 40)

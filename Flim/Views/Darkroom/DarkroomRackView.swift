@@ -407,7 +407,7 @@ struct DarkroomSortBanner: View {
     /// New copy pending owner sign-off. Kept as one named constant so a reword touches exactly
     /// one place.
     private var subtitle: String {
-        "from \(nightCount) night\(nightCount == 1 ? "" : "s") \u{00B7} keep or share"
+        "from \(nightCount) night\(nightCount == 1 ? "" : "s") \u{00B7} keep or post"
     }
 
     /// 26pt-wide thumbs overlapped by 9pt (17pt visible pitch each).

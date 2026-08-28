@@ -200,7 +200,7 @@ struct RollCarouselView: View {
                             .font(.system(size: 9))
                             .foregroundStyle(Color(white: 0.68))
                             .opacity(sharedPhotoIds.contains(photo.id) ? 1 : 0)
-                            .accessibilityLabel(sharedPhotoIds.contains(photo.id) ? "Shared to a page" : "")
+                            .accessibilityLabel(sharedPhotoIds.contains(photo.id) ? "Posted to your page" : "")
                     }
                 }
                 ReactionBar(

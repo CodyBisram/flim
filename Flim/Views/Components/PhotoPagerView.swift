@@ -368,7 +368,7 @@ struct PhotoPagerView: View {
         }
         .overlay(alignment: .top) {
             if showSharedToast {
-                Label("Shared to your page", systemImage: "checkmark.circle.fill")
+                Label("Posted to your page", systemImage: "checkmark.circle.fill")
                     .flimFont(14, weight: .semibold)
                     .foregroundStyle(.white)
                     .padding(.horizontal, 18)
@@ -803,7 +803,7 @@ struct PhotoPagerView: View {
                             HStack(spacing: 5) {
                                 Image(systemName: shared ? "checkmark.circle.fill" : "square.and.arrow.up")
                                     .font(.system(size: 11))
-                                Text(shared ? "Shared" : "Share")
+                                Text(shared ? "Posted" : "Post")
                                     .flimFont(11, weight: .medium, relativeTo: .caption2)
                             }
                             .foregroundStyle(shared ? Color(white: 0.5) : accent)
@@ -814,7 +814,7 @@ struct PhotoPagerView: View {
                         }
                         .buttonStyle(.plain)
                         .disabled(shared)
-                        .accessibilityLabel(shared ? "Already shared to your page" : "Share to your page")
+                        .accessibilityLabel(shared ? "Already posted to your page" : "Post to your page")
                     }
                     // Reporting moved to the header's overflow menu. It read badly here, an
                     // inch from Share: a once-a-year destructive action given the same standing
@@ -854,7 +854,7 @@ struct PhotoPagerView: View {
                 if (photo.userId == auth.currentUser?.id || photo.rollId != nil), !showShareComposer {
                     let shared = feed.myPostedPhotoIds.contains(photo.id)
                     Button { shareToPage(photo) } label: {
-                        Label(shared ? "Shared to your page" : "Share to your page",
+                        Label(shared ? "Posted to your page" : "Post to your page",
                               systemImage: shared ? "checkmark.circle.fill" : "square.and.arrow.up")
                             .flimFont(15, weight: .semibold)
                             .foregroundStyle(shared ? .white : .black)
@@ -1363,7 +1363,7 @@ struct PhotoPagerView: View {
         guard photo.isReady else {
             return "Develops at \(FeedUnit.clockTime(photo.developsAt))"
         }
-        let base = feed.myPostedPhotoIds.contains(photo.id) ? "Shared to Feed" : "Not shared"
+        let base = feed.myPostedPhotoIds.contains(photo.id) ? "Posted" : "Not posted"
         if let roll = rollName(photo.rollId) { return "\(roll) · \(base)" }
         return base
     }
@@ -1614,7 +1614,7 @@ struct PhotoPagerView: View {
                     // "didn't reach the server" branch below: the share stands, un-marking it would
                     // claim the whole thing failed when it didn't.
                     Haptics.error()
-                    flashError("Shared, but the tags didn't save. Try again from Edit tags.")
+                    flashError("Posted, but the tags didn't save. Try again from Edit tags.")
                 } else {
                     Haptics.success()
                     withAnimation { showSharedToast = true }
