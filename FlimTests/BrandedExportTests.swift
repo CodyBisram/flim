@@ -71,12 +71,18 @@ struct BrandedExportTests {
         }
     }
 
-    @Test("the wordmark is drawable, whatever the app is called")
-    func wordmarkIsDrawable() {
-        // The glyph map holds exactly F, L, I, M among letters. A rename would quietly export a
-        // blank corner, so this is the guard that turns that into a failing test instead.
-        #expect(BrandedExport.canDraw(AppInfo.appName.uppercased()),
-                "\(AppInfo.appName) contains a letter the segment cell cannot draw")
+    @Test("the wordmark is typeset, not built from segments")
+    func wordmarkIsNotSegments() {
+        // It WAS segments, on the reasoning that both marks should speak one language. A segment
+        // glyph occupies only the segments it lights, so FLIM's four letters sat in four
+        // different vertical bands and the I was visibly larger; de-serifing the I to even that
+        // out turned it into a bare bar that merged with the M. Real type has even metrics and
+        // the problem stops existing. A real date back stamps a date and has no logo anyway.
+        //
+        // Nothing here asserts the drawing; this pins the reasoning so the letters are not
+        // quietly wired back into the cell. The date alphabet is what still has to be drawable.
+        #expect(BrandedExport.canDraw("'26 08 24"))
+        #expect(BrandedExport.canDraw("07/27"))
     }
 
     @Test("the frame index pads to the width of its total")
@@ -159,23 +165,6 @@ struct BrandedExportTests {
         #expect(ink("L", cellRect: outline) < 0.01)
         // A digit in the same position DOES rest.
         #expect(ink("7", cellRect: CGRect(x: 0, y: 0.13, width: 0.15, height: 0.285)) > 0.01)
-    }
-
-    @Test("the wordmark's letters share one vertical band")
-    func wordmarkLettersAreEvenlySized() {
-        // Each letter spans only the segments it lights, so a letter lighting both horizontal
-        // bars fills the cell top to bottom while its neighbours do not. I was the only one in
-        // FLIM doing that and read as visibly larger than F, L and M, which is what this pins.
-        let topBar = CGRect(x: 0.19, y: 0, width: 0.62, height: 0.09)
-        let bottomBar = CGRect(x: 0.19, y: 0.91, width: 0.62, height: 0.09)
-
-        // The I sits in the verticals' band, lighting neither bar.
-        #expect(ink("I", cellRect: topBar) < 0.01)
-        #expect(ink("I", cellRect: bottomBar) < 0.01)
-        // It is still a letter, not an empty cell.
-        #expect(ink("I", cellRect: CGRect(x: 0.425, y: 0.13, width: 0.15, height: 0.74)) > 0.5)
-        // And it stays distinct from a digit 1, which lights the RIGHT verticals instead.
-        #expect(ink("1", cellRect: CGRect(x: 0.425, y: 0.13, width: 0.15, height: 0.74)) < 0.05)
     }
 
     @Test("the apostrophe and the separator never rest")

@@ -88,19 +88,14 @@ enum BrandedExport {
         let bottomInset = size.width * bottomInsetFraction
 
         let dateText = caption.map(dateText) ?? ""
-        let markText = AppInfo.appName.uppercased()
 
         return UIGraphicsImageRenderer(size: size, format: format).image { ctx in
             photo.draw(in: CGRect(origin: .zero, size: size))
 
             let baseline = size.height - bottomInset
 
-            if !markText.isEmpty {
-                let width = blockWidth(markText, cell: cell)
-                draw(text: markText,
-                     at: CGPoint(x: size.width - sideInset - width, y: baseline - cell.height),
-                     cell: cell, in: ctx.cgContext, over: photo, canvas: size)
-            }
+            drawWordmark(rightEdge: size.width - sideInset, bottom: baseline,
+                         cell: cell, in: ctx.cgContext, over: photo, canvas: size)
 
             if !dateText.isEmpty {
                 draw(text: dateText,
@@ -156,16 +151,7 @@ enum BrandedExport {
         "9": [.a, .b, .c, .d, .f, .g1, .g2],
         "F": [.a, .f, .e, .g1, .g2],
         "L": [.f, .e, .d],
-        // DEVIATION from the design's segment board, which maps I to `a i l d`, the serifed I of
-        // a real fourteen-segment display. The serifs exist there to tell an I from a 1, an
-        // ambiguity this wordmark does not have: no digit sits beside it, and a digit 1 is the
-        // RIGHT verticals (`b c`) while this is the centre pair, so the two never collide anyway.
-        //
-        // What they cost is visible. Each letter only spans the segments it lights, and I was the
-        // only one in FLIM lighting both horizontal bars, so it alone filled the cell top to
-        // bottom (0-100%) while F ran 0-87%, L 13-100% and M only 10-87%. It read as a size
-        // difference because it was one. Dropping the serifs puts I in the verticals' own band.
-        "I": [.i, .l],
+        "I": [.a, .i, .l, .d],
         "M": [.f, .e, .h, .j, .b, .c],
         "/": [.j, .m],
         "'": [.i],
@@ -221,6 +207,57 @@ enum BrandedExport {
         guard let marks = segmentImage(text, cell: cell, colour: colour, ghost: ghost) else { return }
         let bloomed = pale ? marks : bloom(marks, cell: cell)
         (bloomed ?? marks).draw(in: bounds.insetBy(dx: -cell.height, dy: -cell.height))
+    }
+
+    /// The wordmark, set in the app's own light letter-spaced type rather than in segments.
+    ///
+    /// It WAS drawn as segment cells, on the reasoning that the two marks should speak one
+    /// language. On a real photograph that turned out to be the worst part of the imprint, for a
+    /// reason that is structural rather than a matter of tuning: a segment glyph only occupies
+    /// the segments it lights, so the four letters of FLIM sat in four different vertical bands
+    /// (F 0-87%, L 13-100%, I 0-100%, M 10-87%). The I was visibly larger than its neighbours.
+    /// Dropping its serifs to even that out made it a bare vertical bar that read as a divider
+    /// and merged into the M, so both versions were wrong in different directions.
+    ///
+    /// The deeper point is that a real date back stamps a DATE. It has no logo, because the
+    /// camera had no way to draw one. Segment type is right for the thing the camera printed and
+    /// invented for the thing it didn't, so the date keeps it and the wordmark does not. They
+    /// still share the ink, the bloom and the baseline, which is what actually made them read as
+    /// one mark.
+    private static func drawWordmark(rightEdge: CGFloat, bottom: CGFloat, cell: CGSize,
+                                     in context: CGContext, over photo: UIImage, canvas: CGSize) {
+        let text = AppInfo.appName.uppercased() as NSString
+        guard text.length > 0 else { return }
+
+        // Sized so the caps land near the digits' own height rather than to the ratio the design
+        // set for paper. A digit fills its cell top to bottom, and at the paper ratio the
+        // wordmark's caps came out around half that: correct beside a printed caption line,
+        // visibly timid beside a date back.
+        let size = cell.height * 0.95
+        let font = UIFont.systemFont(ofSize: size, weight: .light)
+        let kern = size * 0.4
+        let measured = text.size(withAttributes: [.font: font, .kern: kern])
+        // The trailing letter's kerning is real trailing space; drop it so the mark's last stroke
+        // lands on the inset, not the invisible gap after it.
+        let width = measured.width - kern
+        // Baseline on the date block's own bottom edge, which is where the digits sit.
+        let origin = CGPoint(x: rightEdge - width, y: bottom - font.ascender)
+        let bounds = CGRect(x: origin.x, y: origin.y, width: width, height: font.lineHeight)
+
+        let pale = meanLuminance(of: photo, in: bounds, canvas: canvas) > paleCornerThreshold
+        let colour = pale ? flatInk : ink
+
+        let pad = cell.height
+        let plateSize = CGSize(width: width + pad * 2, height: font.lineHeight + pad * 2)
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = 1
+        format.opaque = false
+        let plate = UIGraphicsImageRenderer(size: plateSize, format: format).image { _ in
+            text.draw(at: CGPoint(x: pad, y: pad),
+                      withAttributes: [.font: font, .kern: kern, .foregroundColor: colour])
+        }
+        let bloomed = pale ? plate : (bloom(plate, cell: cell) ?? plate)
+        bloomed.draw(at: CGPoint(x: origin.x - pad, y: origin.y - pad))
     }
 
     /// The segment set on transparency, with a one-cell margin so the bloom has room.

@@ -302,7 +302,13 @@ struct PhotoPagerView: View {
                 VStack(spacing: 0) {
                     header
                     Spacer(minLength: 0)
-                    pager.padding(.vertical, 8)
+                    // The same 16pt inset the rack carries, so the photograph's rounded corner
+                    // and the strip's leading edge sit on one line. Without it the photo ran
+                    // full bleed while the strip was inset, which is most of why this read as a
+                    // different screen from the reveal.
+                    pager
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
                     rackSection
                     rollFooter
                     Spacer(minLength: 0)
@@ -684,8 +690,20 @@ struct PhotoPagerView: View {
                 .disabled(preparingShare)
                 .accessibilityLabel(preparingShare ? "Preparing to share" : "Share photo")
 
-                if photo.userId == auth.currentUser?.id {
-                    Menu {
+                let isOwn = photo.userId == auth.currentUser?.id
+                Menu {
+                    // Posting a roll shot to your page used to be a capsule under the thread and
+                    // then a pill in the rack's status row. Both cost the photograph height that
+                    // the reveal spends on the photograph, so it lives here now.
+                    if isOwn || photo.rollId != nil {
+                        let shared = feed.myPostedPhotoIds.contains(photo.id)
+                        Button { shareToPage(photo) } label: {
+                            Label(shared ? "Shared to your page" : "Share to your page",
+                                  systemImage: shared ? "checkmark.circle.fill" : "square.and.arrow.up")
+                        }
+                        .disabled(shared)
+                    }
+                    if isOwn {
                         Button {
                             Haptics.tap()
                             Task {
@@ -700,14 +718,14 @@ struct PhotoPagerView: View {
                         Button(role: .destructive) {
                             requestDelete(photo)
                         } label: { Label("Delete photo", systemImage: "trash") }
-                    } label: {
-                        Image(systemName: "ellipsis")
-                            .font(.system(size: 15, weight: .medium))
-                            .foregroundStyle(Color(white: 0.7))
                     }
-                    .accessibilityLabel("More")
-                    .disabled(isDeleting)
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(Color(white: 0.7))
                 }
+                .accessibilityLabel("More")
+                .disabled(isDeleting)
             }
             .padding(.horizontal, 16)
             .padding(.top, 12)
@@ -1218,7 +1236,14 @@ struct PhotoPagerView: View {
             // scrolling), not padding-relative, so a narrower viewport from this inset is
             // already the correct input for both, no separate math to update.
             .padding(.horizontal, 16)
-            statusActionsRow
+            // Night-rack mode only. In roll mode this row said the roll's name a second time
+            // (the header already has it), and its Share pill was a second copy of an action
+            // that now lives in the header menu. Between them they cost about 40pt, which came
+            // straight out of the photograph: side by side with the reveal, the same shot was
+            // visibly smaller here for no reason a reader could see.
+            if !showsRollRack {
+                statusActionsRow
+            }
         }
     }
 
