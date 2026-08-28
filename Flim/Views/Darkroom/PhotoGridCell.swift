@@ -306,6 +306,11 @@ struct CachedImage<Content: View, Placeholder: View>: View {
     /// was deleted after a caller resolved its signed URL). Most call sites just show the built-in
     /// retry tile; a slideshow can use this to skip the frame instead.
     var onFailure: (() -> Void)? = nil
+    /// Called once the decoded image is actually on screen, whether it came from a cache or the
+    /// network. The reveal uses it to hold its develop beat until there is a real photograph to
+    /// develop INTO, rather than clearing the blur onto an upscaled thumbnail and letting the
+    /// full-resolution image arrive separately a moment later.
+    var onLoaded: (() -> Void)? = nil
     @ViewBuilder var content: (Image) -> Content
     @ViewBuilder var placeholder: () -> Placeholder
 
@@ -342,16 +347,16 @@ struct CachedImage<Content: View, Placeholder: View>: View {
         // Try the caches by stable key first, this can hit before any URL is resolved.
         if let key = cacheKey {
             let memKey = "\(key)|\(Int(maxPixel))" as NSString
-            if let cached = ImageCache.shared.object(forKey: memKey) { uiImage = cached; shown = true; return }
+            if let cached = ImageCache.shared.object(forKey: memKey) { uiImage = cached; shown = true; onLoaded?(); return }
             if let disk = await DiskImageCache.load("\(key)|\(Int(maxPixel))") {
                 ImageCache.set(disk, forKey: memKey)
-                uiImage = disk; shown = true; return
+                uiImage = disk; shown = true; onLoaded?(); return
             }
         }
         guard let url else { uiImage = nil; return }
         if cacheKey == nil {
             let memKey = "\(url.absoluteString)|\(Int(maxPixel))" as NSString
-            if let cached = ImageCache.shared.object(forKey: memKey) { uiImage = cached; shown = true; return }
+            if let cached = ImageCache.shared.object(forKey: memKey) { uiImage = cached; shown = true; onLoaded?(); return }
         }
         uiImage = nil
         shown = false
@@ -366,6 +371,7 @@ struct CachedImage<Content: View, Placeholder: View>: View {
         } else {
             withAnimation(.easeIn(duration: 0.3)) { shown = true }   // first load → gentle fade
         }
+        onLoaded?()
     }
 }
 

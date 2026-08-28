@@ -104,18 +104,21 @@ enum BrandedExport {
 
             let markText = AppInfo.appName.uppercased()
             if useTypesetWordmark {
-                drawWordmark(rightEdge: size.width - sideInset, bottom: baseline,
+                drawWordmark(rightEdge: sideInset + blockWidth(markText, cell: cell), bottom: baseline,
                              cell: cell, in: ctx.cgContext, over: photo, canvas: size)
             } else if !markText.isEmpty {
-                let width = blockWidth(markText, cell: cell)
+                // Wordmark LEFT, date RIGHT. The date back reads as the reader's own note about
+                // when, so it sits where a signature goes; the mark identifies the maker and sits
+                // where a maker's mark goes. Swapped from date-left on the owner's call.
                 draw(text: markText,
-                     at: CGPoint(x: size.width - sideInset - width, y: baseline - cell.height),
+                     at: CGPoint(x: sideInset, y: baseline - cell.height),
                      cell: cell, in: ctx.cgContext, over: photo, canvas: size)
             }
 
             if !dateText.isEmpty {
+                let dateWidth = blockWidth(dateText, cell: cell)
                 draw(text: dateText,
-                     at: CGPoint(x: sideInset, y: baseline - cell.height),
+                     at: CGPoint(x: size.width - sideInset - dateWidth, y: baseline - cell.height),
                      cell: cell, in: ctx.cgContext, over: photo, canvas: size)
 
                 // The index sits a line above the date, when it is asked for at all.
@@ -135,8 +138,14 @@ enum BrandedExport {
     static func dateText(_ caption: Caption) -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")   // Arabic numerals, always
-        formatter.dateFormat = "yy MM dd"
-        return "'" + formatter.string(from: caption.date)
+        // MONTH DAY YEAR, the order it is read aloud here, with the apostrophe marking the year
+        // so the three pairs cannot be misread as day-first. Zero padding is still load-bearing:
+        // the lattice must not change width between frames or the mark jitters across a roll.
+        formatter.dateFormat = "MM dd"
+        let yearFormatter = DateFormatter()
+        yearFormatter.locale = Locale(identifier: "en_US_POSIX")
+        yearFormatter.dateFormat = "yy"
+        return formatter.string(from: caption.date) + " '" + yearFormatter.string(from: caption.date)
     }
 
     /// `07/27`, zero-padded to the width of the total for the same reason the date is.
@@ -167,7 +176,14 @@ enum BrandedExport {
         "9": [.a, .b, .c, .d, .f, .g1, .g2],
         "F": [.a, .f, .e, .g1, .g2],
         "L": [.f, .e, .d],
-        "I": [.a, .i, .l, .d],
+        // A single centred stroke in a NARROW cell. Four shapes were tried and this is the only
+        // one that reads as a letter inside the word:
+        //   serifed (a i l d)  both horizontal bars, twice the ink of any neighbour, too heavy
+        //   centre only (i l)  correct weight, but in a full-width cell it floats as a divider
+        //   digit one  (b c)   a right-hand vertical, so it hugs the M and reads "FL IM"
+        //   this               centred stroke, narrow cell, tight to both neighbours
+        // The stroke keeps its full width even though the cell is narrow, see `fill`.
+        "I": [.i, .l],
         "M": [.f, .e, .h, .j, .b, .c],
         "/": [.j, .m],
         "'": [.i],
@@ -187,10 +203,13 @@ enum BrandedExport {
     private static let restingSegments: Set<Segment> = [.a, .b, .c, .d, .e, .f, .g1, .g2]
 
     /// Cell widths in em. The apostrophe and the separator are narrower than a digit.
-    private static func cellWidthEm(_ character: Character) -> CGFloat {
+    static func cellWidthEm(_ character: Character) -> CGFloat {
         switch character {
         case "'": 0.22
         case " ": 0.26
+        // Narrow, so the stroke sits tight against its neighbours instead of floating in the
+        // middle of a full-width cell. Its stroke is widened to compensate, see `fill`.
+        case "I": 0.34
         default: cellAspect
         }
     }
@@ -221,7 +240,7 @@ enum BrandedExport {
         // Rendered once and composited once. Drawing the segments straight into the page with a
         // shadow would lay the ink down twice and turn the ghost lattice to mud.
         guard let marks = segmentImage(text, cell: cell, colour: colour, ghost: ghost) else { return }
-        let bloomed = pale ? marks : bloom(marks, cell: cell)
+        let bloomed = bloom(marks, cell: cell, warm: !pale)
         (bloomed ?? marks).draw(in: bounds.insetBy(dx: -cell.height, dy: -cell.height))
     }
 
@@ -272,7 +291,7 @@ enum BrandedExport {
             text.draw(at: CGPoint(x: pad, y: pad),
                       withAttributes: [.font: font, .kern: kern, .foregroundColor: colour])
         }
-        let bloomed = pale ? plate : (bloom(plate, cell: cell) ?? plate)
+        let bloomed = bloom(plate, cell: cell, warm: !pale) ?? plate
         bloomed.draw(at: CGPoint(x: origin.x - pad, y: origin.y - pad))
     }
 
@@ -319,7 +338,7 @@ enum BrandedExport {
 
     /// Two soft glows, chained: the outer one is cast around the result of the inner one, which is
     /// what the board's two stacked drop-shadows do. Each pixel of ink is still laid down once.
-    private static func bloom(_ marks: UIImage, cell: CGSize) -> UIImage? {
+    private static func bloom(_ marks: UIImage, cell: CGSize, warm: Bool) -> UIImage? {
         func glow(_ image: UIImage, blur: CGFloat, colour: UIColor) -> UIImage? {
             let format = UIGraphicsImageRendererFormat.default()
             format.scale = image.scale
@@ -329,11 +348,21 @@ enum BrandedExport {
                 image.draw(at: .zero)
             }
         }
-        let inner = glow(marks, blur: cell.height * 0.05,
-                         colour: UIColor(red: 1, green: 0.510, blue: 0.157, alpha: 0.75))
+        // A tight warm glow for the lit-display read, then a DARK halo underneath it.
+        //
+        // The second pass used to be a wider warm glow, which is beautiful on a night frame and
+        // invisible on a pale one: orange ink on a light grey gym floor measured as legible in
+        // theory and read as nothing on the phone. The answer is separation, not a second ink
+        // colour. Colour variants would mean the app picking a palette per photograph, which is
+        // both unpredictable and not what a date back does: a real one has exactly one ink and
+        // gets its legibility from being burned into the emulsion. A dark halo is that, and it
+        // costs nothing on a dark frame where it simply disappears into the ground.
+        let inner = warm
+            ? glow(marks, blur: cell.height * 0.05,
+                   colour: UIColor(red: 1, green: 0.510, blue: 0.157, alpha: 0.75))
+            : marks
         guard let inner else { return nil }
-        return glow(inner, blur: cell.height * 0.17,
-                    colour: UIColor(red: 1, green: 0.314, blue: 0.039, alpha: 0.30))
+        return glow(inner, blur: cell.height * 0.14, colour: UIColor.black.withAlphaComponent(0.55))
     }
 
     /// One segment's rect inside its cell box, rotated for the diagonals.
@@ -358,9 +387,16 @@ enum BrandedExport {
                                 width: 0.15 * w, height: 0.285 * h)
         case .g1: rect = CGRect(x: 0.19 * w, y: 0.455 * h, width: 0.195 * w, height: 0.09 * h)
         case .g2: rect = CGRect(x: 0.615 * w, y: 0.455 * h, width: 0.195 * w, height: 0.09 * h)
-        case .i:  rect = CGRect(x: 0.425 * w, y: 0.13 * h, width: 0.15 * w, height: 0.285 * h)
-        case .l:  rect = CGRect(x: 0.425 * w, y: h - 0.13 * h - 0.285 * h,
-                                width: 0.15 * w, height: 0.285 * h)
+        // Centre verticals are sized from the STANDARD cell, not this one. The I lives in a
+        // narrow cell so it tucks into the word, and a stroke measured as a fraction of that
+        // narrow box would come out half the weight of every other letter's.
+        case .i:
+            let sw = 0.15 * cellAspect * h
+            rect = CGRect(x: (w - sw) / 2, y: 0.13 * h, width: sw, height: 0.285 * h)
+        case .l:
+            let sw = 0.15 * cellAspect * h
+            rect = CGRect(x: (w - sw) / 2, y: h - 0.13 * h - 0.285 * h,
+                          width: sw, height: 0.285 * h)
         case .h:
             rect = CGRect(x: 0.24 * w, y: 0.1045 * h, width: 0.15 * w, height: 0.381 * h)
             rotation = -.pi / 6

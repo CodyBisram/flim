@@ -247,10 +247,16 @@ extension DarkroomDayUnit {
     /// Cuts a night's photos into strips of at most `capacity` frames each, filled greedily in
     /// order (30 shots at capacity 9 cuts 9, 9, 9, 3).
     ///
-    /// A sheet with more than one strip pads its short final strip out to `capacity` with
-    /// unexposed slots, so every strip but the day's very own reads as a full roll; a day that
-    /// fits on ONE strip stays exactly as short as its frame count, no padding, because a
-    /// three-shot day is a short piece of film, not a strip nine-tenths empty.
+    /// NO strip is padded, including the last of several. Every strip is exactly as long as the
+    /// frames it holds, because a three-shot day is a short piece of film, not a strip
+    /// nine-tenths empty.
+    ///
+    /// A multi-strip day used to pad its final strip out to `capacity` with unexposed slots, on
+    /// the reasoning that every strip but the day's own should read as a full roll. On a real
+    /// night that is the row a reader actually notices: a Saturday cut 9, 9, 9, 3 ended with one
+    /// short row of frames trailing six blanks to the screen edge, which reads as a strip mostly
+    /// missing rather than a strip that is short. The same rule the viewer's own rack follows,
+    /// and now the only rule: the road stops where the film does.
     static func cutStrips(photos: [Photo], capacity: Int) -> [DarkroomFilmStrip] {
         guard capacity > 0, !photos.isEmpty else { return [] }
 
@@ -262,16 +268,8 @@ extension DarkroomDayUnit {
             remaining = remaining.dropFirst(take.count)
         }
 
-        let isMultiStrip = groups.count > 1
         return groups.enumerated().map { stripIndex, group in
-            var slots: [DarkroomFrameSlot] = group.map { .photo($0) }
-            if isMultiStrip {
-                let padCount = capacity - group.count
-                if padCount > 0 {
-                    slots.append(contentsOf: (0..<padCount).map { .empty(strip: stripIndex, index: $0) })
-                }
-            }
-            return DarkroomFilmStrip(index: stripIndex, slots: slots)
+            DarkroomFilmStrip(index: stripIndex, slots: group.map { .photo($0) })
         }
     }
 

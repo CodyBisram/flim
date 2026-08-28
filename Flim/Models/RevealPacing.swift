@@ -15,13 +15,17 @@ import Foundation
 /// that rhythm for agency and, for the first time, comments on a frame.
 enum RevealPacing {
 
-    /// How long the blur-to-sharp develop animation runs, the first time a frame is reached.
+    /// How long the blur-to-sharp develop animation runs, once there is a photograph to run it
+    /// on.
     ///
-    /// 0.8s, down from 1.4s: the beat no longer has to share a slide with a 5-second hold, so it
-    /// only has to read as a print coming up in a tray, not fill time. Every frame plays this
-    /// exactly once (see `RollRevealViewModel.developedFrameIds`); a backward swipe onto a frame
-    /// you have already reached shows it sharp, because it has already developed.
-    static let developDuration: TimeInterval = 0.8
+    /// 0.5s, down from 0.8. The beat used to start the moment a frame was REACHED, which meant
+    /// it usually cleared onto the 400px thumbnail underneath while the full-resolution image
+    /// was still arriving; the real photograph then faded in separately a moment later and the
+    /// whole thing read as a snap rather than a develop. The beat now waits for the image (see
+    /// `RollRevealViewModel.imageLoaded`), so the half second is spent sharpening onto the
+    /// actual print instead of onto a placeholder, and readers who want to keep swiping are not
+    /// held up by an animation that was not showing them anything yet.
+    static let developDuration: TimeInterval = 0.5
 
     /// Movement past this many points means a press is a swipe, not a tap.
     static let moveSlop: CGFloat = 10

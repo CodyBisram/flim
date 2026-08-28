@@ -870,7 +870,7 @@ struct PhotoPagerView: View {
 
     /// Inline caption composer, shown at the bottom when publishing a photo to your page.
     ///
-    /// Phase D split this: night-rack mode's promoted `Share` (`shareCapsule`) now opens
+    /// Phase D split this: night-rack mode's promoted Post capsule (`postCapsule`) now opens
     /// `ShareToFeedSheet` instead, so this composer, `shareToPage`, and `confirmShare` are dead
     /// for a Darkroom viewer. They stay exactly as they were for the ONE caller left, `bottomBar`
     /// above, which only renders when `!showsNightRack`: a roll grid's own photo, or the widget's
@@ -1326,9 +1326,10 @@ struct PhotoPagerView: View {
         withAnimation(.easeOut(duration: 0.2)) { selection = index }
     }
 
-    /// Left: a single-line status, the shot's roll (if any) prefixed on. Right: the promoted
-    /// Share/Tag capsules, dimmed and disabled while the shot is still developing (there is
-    /// nothing to share or tag yet).
+    /// Left: a single-line status, the shot's roll (if any) prefixed on. Right: ONE capsule,
+    /// whichever action is actually available: Post while the shot is unposted, Tag once it is
+    /// up. Both dim and disable while the shot is still developing, since there is nothing to
+    /// post or tag yet.
     ///
     /// No reaction count here. `FeedService.reactionsByPost` is keyed by POST id and is only
     /// populated for posts the feed has actually paged in; there is no cheap client-side map from
@@ -1345,9 +1346,13 @@ struct PhotoPagerView: View {
                 .lineLimit(1)
                 .truncationMode(.tail)
             Spacer(minLength: 8)
+            // One capsule, never two. A posted shot used to show a dead, dimmed "Shared" button
+            // beside a live Tag, with the status text an inch to the left already reading
+            // "Posted": the same word twice, one of them a control that could not be pressed.
+            // The state is the status line's job, so the capsule is only ever the thing you can
+            // actually do next. Post it, or, once it is posted, change who is in it.
             HStack(spacing: 8) {
-                shareCapsule
-                if showsTagCapsule { tagCapsule }
+                if showsTagCapsule { tagCapsule } else { postCapsule }
             }
             .opacity(current?.isReady == true ? 1 : 0.45)
             .disabled(current?.isReady != true)
@@ -1368,8 +1373,11 @@ struct PhotoPagerView: View {
         return base
     }
 
-    /// Tag only ever shows once a shot is already shared, and is ABSENT (not merely disabled) on
-    /// an unshared one: tagging an unshared shot is not offered anywhere, in any form.
+    /// Tag only ever shows once a shot is already POSTED, and is ABSENT (not merely disabled) on
+    /// an unposted one: tagging an unposted shot is not offered anywhere, in any form. It is the
+    /// only route back to a posted shot's tags, since the compose sheet that set them is no
+    /// longer reachable once the shot is up. That is why it is not redundant with the tag step
+    /// inside `ShareToFeedSheet`: one names people before the shot goes up, this one after.
     private var showsTagCapsule: Bool {
         guard let photo = current else { return false }
         return feed.myPostedPhotoIds.contains(photo.id)
@@ -1377,26 +1385,25 @@ struct PhotoPagerView: View {
 
     /// Night-rack's own share moment, Phase D: opens `ShareToFeedSheet` (see `shareSheetPhoto`),
     /// never the legacy inline composer that the roll pager's `bottomBar` still uses below.
-    private var shareCapsule: some View {
-        let shared = current.map { feed.myPostedPhotoIds.contains($0.id) } ?? false
-        return Button {
+    /// Publishes this shot to your page. Only rendered while it is NOT already posted, so it
+    /// never has a disabled state of its own to explain; `showsTagCapsule` takes the slot the
+    /// moment the shot goes up.
+    ///
+    /// "Post", not "Share": it opens `ShareToFeedSheet`, which stays inside the app. Share is
+    /// reserved for the glyph that ends at the iOS share sheet. See docs/COPY.md.
+    private var postCapsule: some View {
+        Button {
             guard let photo = current else { return }
             Haptics.tap()
             shareSheetPhoto = photo
         } label: {
-            // `shared` used to leave the label reading "Share" while the button quietly did
-            // nothing: pixel-identical to the live state, so a second look never answered
-            // whether a tap here would do anything. Both the text and the dim (matching
-            // `tagCapsuleLabel`'s own disabled treatment) now say so at a glance.
-            Text(shared ? "Shared" : "Share")
+            Text("Post")
                 .flimFont(13, weight: .medium)
                 .foregroundStyle(accent)
                 .padding(.horizontal, 14)
                 .frame(height: 32)
                 .overlay(Capsule().strokeBorder(accent.opacity(0.55), lineWidth: 1))
-                .opacity(shared ? 0.45 : 1)
         }
-        .disabled(shared)
     }
 
     private var tagCapsule: some View {

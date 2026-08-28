@@ -228,7 +228,8 @@ struct RollRevealView: View {
                     // prefetchAhead exactly: warm and view must agree on key+size, or a frame
                     // re-downloads bytes the reveal already fetched for itself.
                     CachedImage(url: url, maxPixel: 1400, cacheKey: photo.viewPath,
-                               onFailure: { viewModel.skipDeadFrame(photo.id) }) { image in
+                               onFailure: { viewModel.skipDeadFrame(photo.id) },
+                               onLoaded: { viewModel.imageLoaded(photo.id) }) { image in
                         image.resizable().scaledToFit()
                     } placeholder: {
                         // Clear, not a spinner: the thumbnail below is already showing the

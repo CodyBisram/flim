@@ -52,7 +52,9 @@ struct BrandedExportTests {
         components.day = 4
         let date = Calendar(identifier: .gregorian).date(from: components)!
         let text = BrandedExport.dateText(BrandedExport.Caption(date: date))
-        #expect(text == "'26 08 04")
+        // Month, day, year: the order it is read aloud here. The apostrophe marks the year so
+        // the three pairs cannot be misread day-first.
+        #expect(text == "08 04 '26")
         #expect(text.count == 9)
     }
 
@@ -83,36 +85,6 @@ struct BrandedExportTests {
         #expect(BrandedExport.canDraw("07/27"))
     }
 
-    @Test("the I's bars come in narrower than everyone else's")
-    func theIIsNotHeavier() {
-        // I is the only letter in FLIM lighting BOTH horizontal bars, so at the standard width
-        // it carried twice the horizontal ink of its neighbours and read as a bigger letter.
-        // The other repair, dropping its serifs entirely, made a bare stroke that merged into
-        // the M. Narrowing the bars is the middle: still unmistakably an I, no longer heavier.
-        //
-        // Sampled at the outer ends of the bar, where F's top bar has ink and the I's no longer
-        // does.
-        let barEnd = CGRect(x: 0.20, y: 0, width: 0.08, height: 0.09)
-        #expect(ink("F", cellRect: barEnd) > 0.5, "F's top bar should reach the standard inset")
-        #expect(ink("I", cellRect: barEnd) < 0.1, "the I's bar should stop short of it")
-        // But the I still HAS bars; it is serifed, not stripped.
-        #expect(ink("I", cellRect: CGRect(x: 0.4, y: 0, width: 0.2, height: 0.09)) > 0.5)
-        #expect(ink("I", cellRect: CGRect(x: 0.4, y: 0.91, width: 0.2, height: 0.09)) > 0.5)
-    }
-
-    @Test("the frame index pads to the width of its total")
-    func indexIsPadded() {
-        let index = BrandedExport.Caption.Index(frame: 7, of: 27)
-        #expect(BrandedExport.indexText(index) == "07/27")
-        #expect(BrandedExport.canDraw(BrandedExport.indexText(index)))
-    }
-
-    @Test("the frame index ships off")
-    func indexIsOffByDefault() {
-        // Two lines in a corner start to read as a caption. Built, deliberately not wired.
-        #expect(BrandedExport.Caption(date: .now).index == nil)
-    }
-
     // MARK: - Segment wiring
     //
     // A mis-mapped segment ships as a plausible-looking wrong digit, and at 54px on a photograph
@@ -122,9 +94,9 @@ struct BrandedExportTests {
     /// Mean alpha in a sub-rect expressed as fractions of the CELL box, accounting for the
     /// one-cell padding `segmentImage` leaves around the block for the bloom.
     private func ink(_ text: String, cellRect: CGRect, cell: CGFloat = 100) -> CGFloat {
-        let size = CGSize(width: cell * BrandedExport.cellAspect, height: cell)
-        guard let image = BrandedExport.segmentImage(text, cell: size,
-                                                     colour: .white, ghost: 0.17),
+        let width = BrandedExport.cellWidthEm(Character(text)) * cell
+        let size = CGSize(width: width, height: cell)
+        guard let image = BrandedExport.segmentImage(text, cell: size, colour: .white, ghost: 0.17),
               let cg = image.cgImage else { return 0 }
         let pad = cell
         let region = CGRect(x: pad + cellRect.minX * size.width,
@@ -144,18 +116,14 @@ struct BrandedExportTests {
         return CGFloat(pixel[3]) / 255
     }
 
-    /// The middle bar band, where g1 and g2 live.
-    private var middleBand: CGRect { CGRect(x: 0.19, y: 0.455, width: 0.62, height: 0.09) }
-
     @Test("the middle bar separates an 8 from a 0")
     func middleBarWiring() {
         // 0 lights the outline only; 8 adds g1 and g2. This is the exact difference that is
         // unreadable at export size, and the one most likely to be silently wrong.
-        let eight = ink("8", cellRect: middleBand)
-        let zero = ink("0", cellRect: middleBand)
-        #expect(eight > zero * 2, "an 8's middle bar is not brighter than a 0's ghost")
+        let middleBand = CGRect(x: 0.19, y: 0.455, width: 0.62, height: 0.09)
+        #expect(ink("8", cellRect: middleBand) > ink("0", cellRect: middleBand) * 2)
         // A 0 still shows the resting lattice there, faintly. That is the point of the ghost.
-        #expect(zero > 0.01, "the 0 lost its resting middle bar entirely")
+        #expect(ink("0", cellRect: middleBand) > 0.01)
     }
 
     @Test("a 1 lights only the right verticals")
@@ -167,27 +135,70 @@ struct BrandedExportTests {
 
     @Test("M lights the diagonals and L does not")
     func diagonalsAreWired() {
-        // Fourteen segments exist for exactly one reason: seven cannot draw an M. If the
-        // diagonals were dropped or mis-rotated, the wordmark is the thing that breaks.
+        // Fourteen segments exist for exactly one reason: seven cannot draw an M.
         let diagonalBand = CGRect(x: 0.24, y: 0.10, width: 0.52, height: 0.39)
         #expect(ink("M", cellRect: diagonalBand) > ink("L", cellRect: diagonalBand) * 2)
     }
 
     @Test("letters do not rest, or the wordmark reads as 8888")
     func lettersDoNotGhost() {
-        // Four ghosted 8s behind FLIM would read as a number, not a word.
         let outline = CGRect(x: 0.85, y: 0.13, width: 0.15, height: 0.285)   // b, unlit in L
         #expect(ink("L", cellRect: outline) < 0.01)
-        // A digit in the same position DOES rest.
         #expect(ink("7", cellRect: CGRect(x: 0, y: 0.13, width: 0.15, height: 0.285)) > 0.01)
     }
 
     @Test("the apostrophe and the separator never rest")
     func narrowCellsDoNotGhost() {
-        let whole = CGRect(x: 0, y: 0, width: 1, height: 1)
-        #expect(ink(" ", cellRect: whole) < 0.005)
-        // The apostrophe draws its one segment and nothing else.
+        #expect(ink(" ", cellRect: CGRect(x: 0, y: 0, width: 1, height: 1)) < 0.005)
         #expect(ink("'", cellRect: CGRect(x: 0, y: 0.6, width: 1, height: 0.4)) < 0.01)
+    }
+
+    @Test("the I is a narrow centred stroke, not a bar and not a serifed letter")
+    func theIIsTucked() {
+        // Four shapes were tried before this one. Serifed (a i l d) lit both horizontal bars,
+        // where no other letter in FLIM lights either, so it carried twice the ink of its
+        // neighbours. A digit one (b c) is a RIGHT-hand vertical, so it hugged the M and the
+        // wordmark read "FL IM". Centre-only in a full cell floated as a divider. This is
+        // centre-only in a NARROW cell, tucked against both neighbours.
+        let topBar = CGRect(x: 0.19, y: 0, width: 0.62, height: 0.09)
+        let bottomBar = CGRect(x: 0.19, y: 0.91, width: 0.62, height: 0.09)
+        #expect(ink("I", cellRect: topBar) < 0.01, "no serifs")
+        #expect(ink("I", cellRect: bottomBar) < 0.01, "no serifs")
+
+        // The stroke is centred, not against either edge, which is what separates it from a 1.
+        let centre = CGRect(x: 0.35, y: 0.13, width: 0.3, height: 0.74)
+        let rightEdge = CGRect(x: 0.85, y: 0.13, width: 0.15, height: 0.74)
+        #expect(ink("I", cellRect: centre) > 0.3)
+        #expect(ink("I", cellRect: rightEdge) < 0.05, "a 1 would light here; an I must not")
+    }
+
+    @Test("the I's cell is narrower but its stroke is not")
+    func theIKeepsItsWeight() {
+        // The cell is narrowed so the stroke tucks in; measuring the stroke as a fraction of
+        // that narrow box would have made it half the weight of every other letter, so `fill`
+        // sizes the centre verticals from the STANDARD cell instead.
+        let cell: CGFloat = 100
+        let standardStroke = 0.15 * BrandedExport.cellAspect * cell
+        guard let image = BrandedExport.segmentImage("I", cell: CGSize(width: 0.34 * cell, height: cell),
+                                                     colour: .white, ghost: 0),
+              let cg = image.cgImage else { Issue.record("no image"); return }
+        // Count lit columns across the middle of the glyph; that width IS the stroke.
+        var pixel = [UInt8](repeating: 0, count: 4)
+        var lit = 0
+        for x in 0..<cg.width {
+            guard let slice = cg.cropping(to: CGRect(x: x, y: cg.height / 2 - 20, width: 1, height: 8)),
+                  let ctx = CGContext(data: &pixel, width: 1, height: 1, bitsPerComponent: 8,
+                                      bytesPerRow: 4, space: CGColorSpaceCreateDeviceRGB(),
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+            else { continue }
+            // Clear between columns: the buffer is reused, and CGContext composites, so without
+            // this the alpha accumulates and every column after the first reads as lit.
+            ctx.clear(CGRect(x: 0, y: 0, width: 1, height: 1))
+            ctx.draw(slice, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+            if pixel[3] > 128 { lit += 1 }
+        }
+        #expect(abs(CGFloat(lit) - standardStroke) < standardStroke * 0.35,
+                "the I's stroke (\(lit)) should match a standard cell's (\(Int(standardStroke)))")
     }
 
     // MARK: - The pale-corner guard

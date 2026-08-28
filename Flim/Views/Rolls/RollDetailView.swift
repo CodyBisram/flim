@@ -86,7 +86,6 @@ struct RollDetailView: View {
     @State private var toastDismiss: Task<Void, Never>?
     @State private var toastIsError = false
     @State private var showLeaveRoll = false
-    @State private var showCarousel = false
     @State private var shareItem: ShareImage?
     @State private var isMuted = false
     @State private var showReveal = false
@@ -148,12 +147,16 @@ struct RollDetailView: View {
                                  people: Set(vm.developingPhotos.map(\.userId)).count)
                 }
 
-                // Flip through the whole developed roll, in order.
+                // The reveal, again. This used to open the carousel, a third near-identical
+                // walk through the same roll, while the actual reveal hid in the overflow menu:
+                // the ceremony the roll is built around was the harder of the two to reach.
+                // One primary control, and it plays the thing people came back for.
                 if isFullyDeveloped {
                     Button {
-                        showCarousel = true
+                        Haptics.tap()
+                        replayReveal()
                     } label: {
-                        Label("Play through the roll · \(vm.developedPhotos.count)", systemImage: "play.circle.fill")
+                        Label("Play reveal again", systemImage: "play.circle.fill")
                             .flimFont(15, weight: .semibold)
                             .foregroundStyle(.black)
                             .frame(maxWidth: .infinity)
@@ -250,13 +253,6 @@ struct RollDetailView: View {
                     // visit never clears. So the moment a roll exists to be remembered by could
                     // never be watched again, which is backwards for something built to be
                     // rewatched with the people who were there.
-                    if roll.isDeveloped, !vm.developedPhotos.isEmpty {
-                        Button {
-                            Haptics.tap()
-                            replayReveal()
-                        } label: { Label("Play reveal again", systemImage: "play.circle") }
-
-                    }
 
                     // Disabled with no reason reads as a broken menu item. A menu can hold a
                     // plain Text, so it says which of the two reasons applies instead.
@@ -419,9 +415,6 @@ struct RollDetailView: View {
                 onDelete: { Task { await vm.loadRoll(photoService: photoService, rollId: roll.id, blockedIds: feed.blockedIds) } }
             )
             .navigationTransition(.zoom(sourceID: photo.id, in: photoNS))
-        }
-        .fullScreenCover(isPresented: $showCarousel) {
-            RollCarouselView(photos: chronologicalDeveloped, memberNames: memberNames)
         }
         .fullScreenCover(isPresented: $showReveal) {
             RollRevealView(rollId: roll.id, rollName: displayName.isEmpty ? roll.name : displayName,
