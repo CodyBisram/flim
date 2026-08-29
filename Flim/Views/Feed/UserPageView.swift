@@ -106,20 +106,29 @@ struct UserPageView: View {
         return effectiveDisplayedBadgeIds.compactMap { byId[$0] }
     }
 
-    /// The two badges the header actually shows, off the front of `displayedBadges`.
+    /// The badges the header actually shows, off the front of `displayedBadges`.
     ///
-    /// Two rather than four is the design overhaul's call (2026-08-29). The order it takes them
-    /// in is already correct and must not be re-sorted here: `displayedBadges` is the owner's own
-    /// chosen order when they have picked, and the RAREST-first default when they have not, so
-    /// the front of the list is the scarcest pair either way. Sorting by anything else here would
-    /// silently override a choice made in the picker.
+    /// TWO, not four (owner call 2026-08-29, kept when the left-aligned layout was reverted): the
+    /// brief was to quiet the top down. The order it takes them in is already correct and must
+    /// not be re-sorted here. `displayedBadges` is the owner's own chosen order when they have
+    /// picked, and RAREST-first when they have not, so the front of the list is the scarcest pair
+    /// either way; sorting by anything else would silently override a choice made in the picker.
+    ///
+    /// Two costs discovery, since a stranger's pill is the only way anyone learns a badge exists.
+    /// That is the trade, and it is why which two matters.
     private var visibleBadges: [ProfileBadge] {
         Array(displayedBadges.prefix(Self.headerBadgeLimit))
     }
 
-    /// How many badges the header has room for. The picker enforces the same number, see
-    /// `BadgePickerSheet`.
+    /// How many badges the header shows. The picker enforces the same number; see
+    /// `BadgePickerSheet`, which also explains why STORAGE stays at four.
     static let headerBadgeLimit = 2
+
+    /// `visibleBadges` split into the two columns that flank the avatar; see `ProfileBadgeFlank`.
+    /// At two badges this is one a side, which is exactly the case the split was written for.
+    private var badgeFlanks: (left: [ProfileBadge], right: [ProfileBadge]) {
+        ProfileBadgeFlank.split(visibleBadges)
+    }
 
 
     var body: some View {
@@ -306,74 +315,82 @@ struct UserPageView: View {
                         ],
                         startPoint: .top, endPoint: .bottom))
                     .clipped()
-            }
-
-            // The identity block, LEFT ALIGNED against the avatar rather than stacked under a
-            // centred one (design overhaul, 2026-08-29). A column reads as one person's card:
-            // your eye lands on the avatar and runs down name, handle, badges without re-centring
-            // three times. It also retires the whole reason `AvatarBadgeFlanking` existed, which
-            // was keeping a CENTRED avatar from being shoved sideways by a badge on one side; a
-            // left-aligned avatar has no centre to lose.
-            HStack(alignment: .top, spacing: 14) {
-                Button { if avatarURL != nil { showAvatarViewer = true } } label: {
-                    avatarCircle
-                }
-                .buttonStyle(.plain)
-
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(profile?.name ?? "…")
-                        .flimFont(22, weight: .light, relativeTo: .title3).foregroundStyle(.white)
-                        .lineLimit(1)
-
-                    HStack(spacing: 8) {
-                        Text(profile?.handle ?? "@…")
-                            .flimFont(13, relativeTo: .subheadline)
-                            .foregroundStyle(FlimTheme.textTertiary)
-                        if let identity {
-                            FrameNumberLabel(number: identity.signupNumber)
-                        }
-                        Spacer(minLength: 0)
+                // Earned badges flank the avatar, two per side at most: see `ProfileBadgeFlank`
+                // for how an odd count is split so neither side ever reads as a stray, empty gap.
+                // Both `isSelf` and a stranger's profile pass the exact same `displayedBadges`
+                // list here, there is no wider "everything you've earned" view left on this page,
+                // that now lives only in `BadgePickerSheet`.
+                //
+                // Each column is an OVERLAY on the avatar's own frame, not a sibling in a shared
+                // HStack: a shared HStack centres the whole row as a group, so a single badge on
+                // one side (nothing opposite it) visibly shoves the avatar off-centre, worse the
+                // wider that one label is. See `AvatarBadgeFlanking` for why an overlay keeps the
+                // avatar's centre fixed regardless of badge count or label width.
+                AvatarBadgeFlanking(leftBadges: badgeFlanks.left, rightBadges: badgeFlanks.right,
+                                    liftedBadgeId: shownBadge?.id,
+                                    onBadgeTap: { badgeTapped($0) }) {
+                    Button { if avatarURL != nil { showAvatarViewer = true } } label: {
+                        avatarCircle
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .buttonStyle(.plain)
+                }
+                .offset(y: 44)
+            }
+            .padding(.bottom, 44)
 
-                    // TWO badges, not four. The flanking pair-per-side was the busiest thing on
-                    // the page and the overhaul's whole brief was to quiet the top down. Cutting
-                    // to two costs discovery, since a stranger's pill is the only way anyone
-                    // finds out a badge exists, so which two matters: `displayedBadges` already
-                    // hands back the owner's chosen order (or the rarest first when they have
-                    // not chosen), and taking the front of that list keeps the scarcest visible.
-                    if !visibleBadges.isEmpty {
-                        HStack(spacing: 5) {
-                            ForEach(visibleBadges) { badge in
-                                ProfileBadgePill(badge: badge,
-                                                 lifted: shownBadge?.id == badge.id,
-                                                 dimmed: shownBadge != nil && shownBadge?.id != badge.id,
-                                                 onTap: { badgeTapped($0) })
+            VStack(spacing: 4) {
+                Text(profile?.name ?? "…")
+                    .flimFont(22, weight: .light, relativeTo: .title3).foregroundStyle(.white)
+                // The handle stays visually centered; the signup number is pinned to the
+                // trailing edge of the same row instead of its own line, quiet enough that it
+                // reads like an edge number on film stock rather than a second headline.
+                //
+                // This row is also the badge swap-in's target: tap a pill and the whole line
+                // (handle AND number together) gives way to that badge's explanation, then
+                // returns. Both layers are permanently in the tree at the same single-line text
+                // size, so the ZStack's height is identical whichever is visible and the page
+                // below never shifts. The old design was a popover anchored to the pill, which
+                // sat exactly on top of the name it was annotating.
+                //
+                // ONE line is a copy constraint, not a layout accident: `BadgeSwapLineTests`
+                // fails the build if any badge's explanation cannot fit here at full size, so
+                // new copy gets shortened rather than the layout getting taller. Two earlier
+                // attempts to solve it in layout instead (scaling the longest copy to 0.52, then
+                // reserving a two-line box) each produced their own bug on device, an illegible
+                // squint and then a handle drifting away from its name.
+                ZStack {
+                    ZStack {
+                        Text(profile?.handle ?? "@…")
+                            .flimFont(13, relativeTo: .subheadline).foregroundStyle(FlimTheme.textTertiary)
+                        if let identity {
+                            HStack {
+                                Spacer()
+                                FrameNumberLabel(number: identity.signupNumber)
                             }
                         }
-                        .uniformBadgePillWidths(for: visibleBadges.map(\.kind))
                     }
-
-                    // A transparency disclosure, not a vanity badge: FLIM's feed is private and
-                    // follow-gated, so this literally means "this person can see what you post".
-                    // Neutral tone/colour on purpose, it isn't a stat to be proud of.
-                    if !isSelf && !isBlocked && FeedService.FollowRelationship.showsFollowsYouBadge(followsMe: followsMe) {
-                        Text("Follows you")
-                            .flimFont(11, weight: .medium, relativeTo: .caption)
-                            .foregroundStyle(FlimTheme.textTertiary)
-                            .padding(.horizontal, 8).padding(.vertical, 3)
-                            .background(Color.white.opacity(0.08), in: Capsule())
-                    }
+                    .opacity(handleLineVisible ? 1 : 0)
+                    .offset(y: handleLineVisible || reduceMotion ? 0 : 4)
+                    badgeSwapLine
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 28)
+                // A transparency disclosure, not a vanity badge: FLIM's feed is private and
+                // follow-gated, so this literally means "this person can see what you post".
+                // Neutral tone/colour on purpose, it isn't a stat to be proud of.
+                if !isSelf && !isBlocked && FeedService.FollowRelationship.showsFollowsYouBadge(followsMe: followsMe) {
+                    Text("Follows you")
+                        .flimFont(11, weight: .medium, relativeTo: .caption)
+                        .foregroundStyle(FlimTheme.textTertiary)
+                        .padding(.horizontal, 8).padding(.vertical, 3)
+                        .background(Color.white.opacity(0.08), in: Capsule())
                 }
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 14)
 
             if let bio = profile?.bio, !bio.isEmpty {
                 Text(bio)
                     .flimFont(14, relativeTo: .subheadline).foregroundStyle(FlimTheme.textSecondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 20)
+                    .multilineTextAlignment(.center).padding(.horizontal, 40)
             }
 
             // The only place left on the profile that announces a new badge: the badges
@@ -401,37 +418,13 @@ struct UserPageView: View {
                 }
                 .buttonStyle(.plain)
                 .expandTapTarget(by: 8)   // visual pill is ~28pt tall, +8 either side = 44
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 20)
             }
 
-            // Stats read as a sentence on one line rather than three stacked columns: at this
-            // size the stacked form was three centred blocks competing with the name above it.
-            //
-            // This row is ALSO the badge swap-in's target. Tapping a pill trades the stats for
-            // that badge's meaning and back. It used to trade the handle line instead, which no
-            // longer works: the overhaul put the handle in a column beside an 88pt avatar, and
-            // measuring it showed every one of the fourteen explanations overflowing a 251pt
-            // line by 20 to 85pt. Shortening all fourteen by a quarter to fit a layout choice
-            // would have been the copy paying for the design.
-            //
-            // The stats row solves it without a reserved gap, which was the other failed attempt
-            // here: it is already always present, already exactly one line, and being full width
-            // it gives the sentence 353pt, MORE than the 337 it had before the overhaul. Both
-            // layers stay mounted, so the header's height cannot change either way.
-            ZStack(alignment: .leading) {
-                HStack(spacing: 18) {
-                    stat(statsKnown ? "\(sharedCount)" : "–", "shared")
-                    Button { followList = .followers } label: { stat(statsKnown ? "\(followers)" : "–", "followers") }
-                    Button { followList = .following } label: { stat(statsKnown ? "\(following)" : "–", "following") }
-                    Spacer(minLength: 0)
-                }
-                .opacity(handleLineVisible ? 1 : 0)
-                .offset(y: handleLineVisible || reduceMotion ? 0 : 4)
-                .allowsHitTesting(handleLineVisible)
-                badgeSwapLine
+            HStack(spacing: 26) {
+                stat(statsKnown ? "\(sharedCount)" : "–", "shared")
+                Button { followList = .followers } label: { stat(statsKnown ? "\(followers)" : "–", "followers") }
+                Button { followList = .following } label: { stat(statsKnown ? "\(following)" : "–", "following") }
             }
-            .padding(.horizontal, 20)
 
             // No follow affordance on a blocked account, the dedicated blocked-state panel
             // below (with its own Unblock) replaces it.
@@ -627,15 +620,12 @@ struct UserPageView: View {
         }
     }
 
-    /// One stat, read as a phrase rather than a stacked column: `48 shared`. Three stacked
-    /// centred blocks under a left-aligned name were the last thing on the header still pulling
-    /// the eye back to the middle.
     private func stat(_ value: String, _ label: String) -> some View {
-        HStack(spacing: 4) {
-            Text(value).flimFont(13, weight: .medium, relativeTo: .subheadline).foregroundStyle(.white)
+        VStack(spacing: 2) {
+            Text(value).flimFont(16, weight: .medium, relativeTo: .body).foregroundStyle(.white)
                 .contentTransition(.numericText())
                 .animation(.snappy(duration: 0.28), value: value)
-            Text(label).flimFont(13, relativeTo: .subheadline).foregroundStyle(FlimTheme.textSecondary)
+            Text(label).flimFont(11, relativeTo: .caption).foregroundStyle(FlimTheme.textTertiary)
         }
     }
 
@@ -1134,15 +1124,6 @@ enum BadgeSwapMetrics {
     /// explanation is expected to render at full size, and the fit test is what keeps that true.
     /// 0.85 is roughly 11pt, the smallest this line stays comfortably legible at.
     static let minimumScale: CGFloat = 0.85
-    /// The STATS row's own horizontal padding in `pageHeader`, which is where the explanation
-    /// swaps in as of the design overhaul (2026-08-29).
-    ///
-    /// It was 28, the centred handle row's inset. The overhaul moved the handle into a column
-    /// beside the avatar, and a line there has only ~251pt: every one of the fourteen
-    /// explanations overflowed it. Rather than cut the copy to fit, the swap moved to the stats
-    /// row, which is full width, so the budget went UP from 337 to 353.
-    ///
-    /// If `BadgeSwapLineTests` fails after a copy change, shorten the badge's `explanation`; do
-    /// not raise this to make room.
-    static let horizontalPadding: CGFloat = 20
+    /// The handle row's own horizontal padding in `pageHeader`.
+    static let horizontalPadding: CGFloat = 28
 }
