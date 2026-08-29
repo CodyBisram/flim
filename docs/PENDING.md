@@ -9,31 +9,36 @@ Statuses: `queued`, `blocked: <what on>`, `owner`, `decided: <what>`.
 
 ## Next up
 
-### queued: invites, the real mechanic (design overhaul 3c)
+### done 2026-08-29 — invites, the real mechanic (design overhaul 3c)
 
-Owner chose "header now, invites next" on 2026-08-29. The profile header shipped WITHOUT any
-invite count, deliberately.
+SHIPPED and APPLIED. All three migrations are live in production and verified against the
+database, not just assumed:
 
-`users.invite_uses_remaining INT` already exists (2026-07-15_redeem_invite.sql) but is DORMANT:
-its own comment says NULL = unlimited, which is every existing row, and `redeem_invite()` does
-not read or decrement it. A count on the profile before this is wired is a scarcity mechanic
-whose number never moves, which is the one thing that breaks trust in it.
+- `2026-08-29_invite_quota.sql` — allowance of 3, defaults, non-negative CHECK, `redeem_invite`
+  decrements. Verified: 50 accounts at 3, one NULL. **`signup_ordinal = 1` keeps NULL, meaning
+  unlimited**, a deliberate seeding exception: that account had sent 26 of the app's 44 redeemed
+  invites and capping it at 3 would have throttled the main distribution channel.
+- `2026-08-29_invite_earnback.sql` — `invite_earnbacks` ledger + `AFTER INSERT` trigger on
+  `photos`. Inviter gets one back when their invitee takes a FIRST PHOTO. Inviter only, not both
+  (the design said both; every new user already starts with 3 unspent, so crediting the invitee
+  mints a net new invite from nothing).
+- `2026-08-29_invite_earnback_reset.sql` — the backfill ran and was then REVERSED, owner chose to
+  start clean. **The ledger rows were KEPT on purpose**: deleting them would re-credit those 29
+  invitees on their next photo, which is the same retroactive payout arriving later and at random.
+- `2026-08-29_get_own_invites_sent.sql` — the invite screen's history, `authenticated` only,
+  never returns an email.
 
-What it needs, in order:
-1. A starting allowance, and whether the ceiling grows with tenure. OWNER DECISION, unanswered.
-2. Read + decrement inside the existing SECURITY DEFINER `redeem_invite()`, atomic with the
-   rate-limit table already in that migration.
-3. A safe read of your OWN remaining count. The `profiles` view deliberately excludes invite
-   fields, so this is a new zero-parameter RPC pinned to `auth.uid()`, not a view column.
-4. Earn-back. The design's rule is "you both get one back when your invitee shoots their first
-   roll", which needs a first-roll trigger and must not double-fire.
+Swift: `AuthService.ownInviteQuota()` / `ownInvitesSent()`, both FAIL SOFT, so client and server
+can deploy in either order. `InviteSheet` is its own file now.
 
-COPY RULE, from the owner: never "invites left on this roll". FLIM already ships a "Share invite"
-on RollsView that means invite someone to a ROLL, so "invites on this roll" names a different,
-real feature. Say "3 invites left" and nothing about rolls.
+**Copy rules are enforced by `InviteCopyTests`, not remembered.** Nothing says "roll" (Rolls ship
+their own Share invite meaning invite someone INTO a roll), and the earn-back line must describe
+inviter-only-on-first-photo rather than the design's "you both get one back".
 
-The actions row already has an accent "Invite" button beside "Edit profile", which is the right
-place for the count to land when it becomes true.
+Measured while building: 67% of invited accounts (29 of 43) have taken at least one photo, which
+is what makes earn-back worth having.
+
+NOT DONE: the invitee half of earn-back (one UPDATE if ever wanted).
 
 ### backlogged: Chapters (design overhaul 3a shelf + 3b recap)
 
