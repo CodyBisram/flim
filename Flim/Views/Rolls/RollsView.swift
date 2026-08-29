@@ -618,10 +618,27 @@ struct RollsView: View {
                         ZStack {
                             LinearGradient(colors: Self.gradient(for: roll),
                                            startPoint: .topLeading, endPoint: .bottomTrailing)
-                            if let path = rolls.coverPaths[roll.id], let url = coverURLs[path] {
-                                CachedImage(url: url, maxPixel: 400, cacheKey: path) { image in
+                            // The URL is passed in OPTIONALLY, and the initial is the
+                            // placeholder rather than a sibling branch. That distinction is the
+                            // whole fix for the cover flashing a coloured letter on every launch.
+                            //
+                            // The bytes are almost always already on this device: `CachedImage`
+                            // keys its disk cache on the STORAGE PATH, not the signed URL, and
+                            // tries that cache before it looks at the URL at all. Gating the view's
+                            // very existence on `coverURLs[path]` meant that fast path was never
+                            // reached: the tile sat on a gradient through a roll fetch, a cover
+                            // fetch and a sign round trip, then swapped to a photo it had all
+                            // along. Handing `CachedImage` the path the moment it is known lets a
+                            // warm cover paint immediately and a cold one fall through to the
+                            // placeholder while the network catches up.
+                            if let path = rolls.coverPaths[roll.id] {
+                                CachedImage(url: coverURLs[path], maxPixel: 400, cacheKey: path) { image in
                                     image.resizable().scaledToFill()
-                                } placeholder: { Color.clear }
+                                } placeholder: {
+                                    Text(roll.name.prefix(1).uppercased())
+                                        .flimFont(26, weight: .light, relativeTo: .title3)
+                                        .foregroundStyle(.white.opacity(0.95))
+                                }
                             } else {
                                 Text(roll.name.prefix(1).uppercased())
                                     .flimFont(26, weight: .light, relativeTo: .title3)

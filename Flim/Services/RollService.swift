@@ -137,8 +137,13 @@ final class RollService {
         guard AccountEpoch.isCurrent(epoch) else { return }
         rolls = fetched
 
-        await loadMemberCounts(rollIds: rollIds, epoch: epoch)
-        await loadCovers(rollIds: rollIds, epoch: epoch)
+        // Two independent queries, so they run together rather than one after the other. Covers
+        // are what the archive tiles are waiting on, and they were queued behind a member-count
+        // query that has nothing to do with them: a full round trip of dead time before a single
+        // cover could even begin to resolve. Both still guard their own writes on `epoch`.
+        async let counts: Void = loadMemberCounts(rollIds: rollIds, epoch: epoch)
+        async let covers: Void = loadCovers(rollIds: rollIds, epoch: epoch)
+        _ = await (counts, covers)
     }
 
     /// Latest developed photo per roll → the path used for the roll cover thumbnail.

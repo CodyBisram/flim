@@ -41,7 +41,12 @@ struct AvatarView: View {
             .fill(fallbackColor)
             .frame(width: size, height: size)
             .overlay {
-                if let url {
+                // `path` is what gates this, never `url`. See the same fix on the Rolls archive
+                // tile: the disk cache is keyed on the storage PATH and is consulted before the
+                // URL is, so requiring a freshly signed URL first threw away a hit the device
+                // already had. Every avatar in the app, in feed rows, roll rosters and discover
+                // lists, showed a coloured initial for a beat on cold launch for that reason.
+                if let path {
                     CachedImage(url: url, maxPixel: size * 3, cacheKey: path) {
                         $0.resizable().scaledToFill()
                     } placeholder: {
