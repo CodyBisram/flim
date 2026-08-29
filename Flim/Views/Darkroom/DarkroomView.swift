@@ -178,17 +178,22 @@ struct DarkroomView: View {
                                              pitch: DarkroomDayUnit.photoFramePitch))
     }
 
-    /// `DarkroomYearRow`'s own per-row frame capacity: the SAME `DarkroomDayUnit.stripCapacity`
-    /// math `stripCapacity` above uses for the default rack (44x59 frames, 46pt pitch), against
-    /// the Year row's own 16pt-a-side horizontal padding (`scrollWidth - 32`, identical to the
-    /// rack's). Never a hard-coded frame count: a Pro Max's extra width earns the Year rung an
-    /// eighth frame the exact same way it earns the rack one. `scrollWidth` is shared with the
-    /// `.month` rung's own measurement (`yearScrollList`'s `.onGeometryChange` keeps it current
-    /// while `.year` is the mounted rung, same as the night list's own `ScrollView` does for
-    /// `.month`), so whichever rung was measured last is what this reads.
+    /// `DarkroomYearRow`'s own per-row frame capacity, on the SMALL 46pt pitch its sample strip
+    /// still draws at, against the Year row's own 16pt-a-side padding (`scrollWidth - 32`,
+    /// identical to the rack's). Never a hard-coded frame count: a Pro Max's extra width earns
+    /// the Year rung an eighth frame the same way it earns the rack one.
+    ///
+    /// This deliberately no longer matches `stripCapacity` above. They agreed while both racks
+    /// drew 44x59; the day rack has since grown to 88x118 for legibility, and a summary row that
+    /// grew with it would show four big photographs for a seventy-eight shot month, which reads
+    /// as a gallery of four rather than a taste of the month.
+    ///
+    /// `scrollWidth` is shared with the `.month` rung's own measurement (`yearScrollList`'s
+    /// `.onGeometryChange` keeps it current while `.year` is the mounted rung, same as the night
+    /// list's own `ScrollView` does for `.month`), so whichever rung was measured last is what
+    /// this reads.
     private var yearRowCapacity: Int {
-        max(1, DarkroomDayUnit.stripCapacity(availableWidth: scrollWidth - 32,
-                                             pitch: DarkroomDayUnit.photoFramePitch))
+        max(1, DarkroomDayUnit.stripCapacity(availableWidth: scrollWidth - 32))
     }
 
     /// One unit per night, newest first, this render's single source of truth for both the

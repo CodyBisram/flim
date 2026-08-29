@@ -89,10 +89,12 @@ struct DarkroomYearRow: View {
     /// by index: a path is stable identity, an index is not once `coverPaths` itself changes
     /// between renders.
     ///
-    /// Frame size and pitch match the default rack's own (`DarkroomDayUnit.framePitch`/
-    /// `frameGap`, 44x59 frames on a 46pt pitch, owner call 2026-08-27: take the reading trade,
-    /// a row shows what it fits): this strip is the Year rung's own contact sheet, not a
-    /// miniature of it.
+    /// 44x59 on the 46pt pitch, and deliberately NOT the day rack's larger photo frames.
+    ///
+    /// They matched while both were 44 (owner call, 2026-08-27). Once the day rack grew to 88 for
+    /// legibility they stopped wanting to: this is a SAMPLE on a summary row, and at 88 a month
+    /// shows four big photographs, which reads as a gallery of four rather than a taste of
+    /// seventy-eight. Small keeps more of them on the row and keeps the row a summary.
     ///
     /// Resolution is THIS row's own job, not `DarkroomView`'s: the `.task(id:)` below fires once
     /// as this specific row scrolls into view (a `LazyVStack` row, mounted/unmounted like any
@@ -111,8 +113,7 @@ struct DarkroomYearRow: View {
                     } placeholder: {
                         unexposedCell
                     }
-                    .frame(width: DarkroomDayUnit.photoFramePitch - DarkroomDayUnit.frameGap,
-                            height: DarkroomDayUnit.photoFrameHeight)
+                    .frame(width: DarkroomDayUnit.framePitch - DarkroomDayUnit.frameGap, height: 59)
                     .clipShape(RoundedRectangle(cornerRadius: 2))
                     .overlay(RoundedRectangle(cornerRadius: 2).stroke(FlimTheme.stroke, lineWidth: 1))
                 } else {
@@ -130,8 +131,7 @@ struct DarkroomYearRow: View {
     private var unexposedCell: some View {
         RoundedRectangle(cornerRadius: 2)
             .fill(Color(white: 0.078))
-            .frame(width: DarkroomDayUnit.photoFramePitch - DarkroomDayUnit.frameGap,
-                            height: DarkroomDayUnit.photoFrameHeight)
+            .frame(width: DarkroomDayUnit.framePitch - DarkroomDayUnit.frameGap, height: 59)
             .overlay(RoundedRectangle(cornerRadius: 2).stroke(FlimTheme.stroke, lineWidth: 1))
     }
 

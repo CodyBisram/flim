@@ -205,11 +205,18 @@ struct DarkroomFrameView: View {
     /// its own untouched static ring regardless of what's passed here.
     var developingFraction: Double? = nil
 
-    /// The list's frames are 44x59 (readable, grown from 42x56 by the owner's 2026-08-25 call on
-    /// top of PR 1 of the zoom redesign); the pager's compact rack keeps the feed strip's 30x40.
-    /// One shared `imageArea`, two geometries.
-    private var imgW: CGFloat { compact ? 30 : 44 }
-    private var imgH: CGFloat { compact ? 40 : 59 }
+    /// The list's frames come from `DarkroomDayUnit.photoFramePitch` (88x118, four across a
+    /// 393pt screen); the pager's compact rack keeps the feed strip's 30x40. One shared
+    /// `imageArea`, two geometries.
+    ///
+    /// These were hardcoded at 44x59 while the rack's CAPACITY and PERFORATION were computed
+    /// from the pitch, so raising the pitch widened the road and left the frames small: a day of
+    /// three shots drew three little photographs against a strip built for four big ones. Sizes
+    /// that have to agree must come from one number.
+    private var imgW: CGFloat {
+        compact ? 30 : DarkroomDayUnit.photoFramePitch - DarkroomDayUnit.frameGap
+    }
+    private var imgH: CGFloat { compact ? 40 : DarkroomDayUnit.photoFrameHeight }
 
     var body: some View {
         if let menu {
@@ -491,6 +498,14 @@ struct DarkroomLoadingSkeleton: View {
         (150, 78), (112, 58), (168, 92), (98, 52)
     ]
 
+    /// One full row of frames, which is what most days show.
+    private static let skeletonSlots = 4
+
+    private var skeletonRoadWidth: CGFloat {
+        DarkroomDayUnit.perforationWidth(slotCount: Self.skeletonSlots,
+                                         pitch: DarkroomDayUnit.photoFramePitch)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             ForEach(0..<4, id: \.self) { i in
@@ -504,16 +519,22 @@ struct DarkroomLoadingSkeleton: View {
                 .padding(.bottom, 5)
 
                 VStack(alignment: .leading, spacing: 0) {
-                    DarkroomPerforationLine().frame(width: DarkroomDayUnit.perforationWidth(slotCount: 3, pitch: DarkroomDayUnit.photoFramePitch), height: 3)
-                    HStack(spacing: 2) {
-                        ForEach(0..<3, id: \.self) { _ in
+                    // Four slots at the photo pitch, because that is what a real day rack draws:
+                    // a skeleton of a different count or a different frame size reflows the
+                    // moment the photographs arrive, which is the one thing a skeleton exists to
+                    // prevent. All three numbers come from `DarkroomDayUnit`, so they cannot
+                    // drift apart again.
+                    DarkroomPerforationLine().frame(width: skeletonRoadWidth, height: 3)
+                    HStack(spacing: DarkroomDayUnit.frameGap) {
+                        ForEach(0..<Self.skeletonSlots, id: \.self) { _ in
                             RoundedRectangle(cornerRadius: 2)
                                 .fill(Color.white.opacity(0.06))
-                                .frame(width: 44, height: 59)
+                                .frame(width: DarkroomDayUnit.photoFramePitch - DarkroomDayUnit.frameGap,
+                                       height: DarkroomDayUnit.photoFrameHeight)
                         }
                     }
                     .padding(.vertical, 2)
-                    DarkroomPerforationLine().frame(width: DarkroomDayUnit.perforationWidth(slotCount: 3, pitch: DarkroomDayUnit.photoFramePitch), height: 3)
+                    DarkroomPerforationLine().frame(width: skeletonRoadWidth, height: 3)
                 }
                 .padding(.horizontal, 16)
 

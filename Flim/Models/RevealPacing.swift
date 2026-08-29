@@ -99,4 +99,24 @@ enum RevealPacing {
         let start = min(max(0, index), count)
         return start..<min(start + window, count)
     }
+
+    // MARK: - The rack
+
+    /// One rack frame's width, and the gap between two of them. The reveal's rack is its own
+    /// implementation rather than the pager's, so these are stated here where the reveal's other
+    /// geometry lives, and the view reads its `frame(width:height:)` from them.
+    static let rackFrameWidth: CGFloat = 30
+    static let rackFrameHeight: CGFloat = 40
+    static let rackFrameGap: CGFloat = 2
+
+    /// How wide the strip's frames actually are, laid end to end.
+    ///
+    /// The rack is capped at this rather than taking every point it is offered, so the perforated
+    /// road stops where the film does: a four-frame roll drew four frames and then most of a screen
+    /// width of empty stock before this existed. Returns zero for an empty deck, and never counts a
+    /// trailing gap the last frame does not have.
+    static func rackWidth(frameCount: Int) -> CGFloat {
+        guard frameCount > 0 else { return 0 }
+        return CGFloat(frameCount) * (rackFrameWidth + rackFrameGap) - rackFrameGap
+    }
 }

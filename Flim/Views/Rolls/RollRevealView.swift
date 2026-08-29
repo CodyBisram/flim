@@ -45,6 +45,8 @@ struct RollRevealView: View {
     /// The frame on screen, driven by the pager. Mirrored into the view model's `index` (which
     /// the rack, the credit line and prefetching all read) through `moved(to:)`.
     @State private var selection = 0
+    /// The rack's visible width, which decides whether its edges need fading at all.
+    @State private var rackViewportWidth: CGFloat = 0
     /// The frame whose comments are open, if any.
     @State private var commentsPhoto: Photo?
     /// Reported ids, so the flag control disables the moment a report lands.
@@ -270,7 +272,7 @@ struct RollRevealView: View {
             DarkroomPerforationLine().frame(height: 3)
             ScrollViewReader { proxy in
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 2) {
+                    HStack(spacing: RevealPacing.rackFrameGap) {
                         ForEach(Array(viewModel.deck.enumerated()), id: \.element.id) { index, photo in
                             rackFrame(photo, index: index)
                                 .id(photo.id)
@@ -289,16 +291,35 @@ struct RollRevealView: View {
                     proxy.scrollTo(id, anchor: .center)
                 }
             }
-            .mask(
-                LinearGradient(stops: [
-                    .init(color: .clear, location: 0),
-                    .init(color: .black, location: 0.06),
-                    .init(color: .black, location: 0.94),
-                    .init(color: .clear, location: 1)
-                ], startPoint: .leading, endPoint: .trailing)
-            )
+            .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { rackViewportWidth = $0 }
+            .mask(rackFadeMask)
             DarkroomPerforationLine().frame(height: 3)
         }
+        // The road stops where the film does. A four-frame roll used to draw four frames and then
+        // most of a screen width of empty perforated stock, because the strip took every point it
+        // was offered; `maxWidth` caps it at its own content instead and, since that modifier
+        // centres by default, parks a short strip under the middle of the photograph rather than
+        // against the leading edge. A roll long enough to overflow is simply offered less than
+        // this, so it fills the row and scrolls exactly as it did before.
+        .frame(maxWidth: rackContentWidth)
+    }
+
+    private var rackContentWidth: CGFloat {
+        RevealPacing.rackWidth(frameCount: viewModel.deck.count)
+    }
+
+    /// Softens the two edges where the strip runs off the viewport, so the eleven frames you can
+    /// see do not read as the whole roll. A strip that fits has nothing running off either edge,
+    /// and fading it there would dim real frames for no reason, so it gets no mask at all.
+    private var rackFadeMask: some View {
+        let overflows = rackViewportWidth > 0 && rackContentWidth > rackViewportWidth + 0.5
+        let fade = overflows ? min(0.4, 26 / rackViewportWidth) : 0
+        return LinearGradient(stops: [
+            .init(color: .clear, location: 0),
+            .init(color: .black, location: fade),
+            .init(color: .black, location: 1 - fade),
+            .init(color: .clear, location: 1)
+        ], startPoint: .leading, endPoint: .trailing)
     }
 
     private func rackFrame(_ photo: Photo, index: Int) -> some View {
@@ -326,7 +347,7 @@ struct RollRevealView: View {
                     }
             }
         }
-        .frame(width: 30, height: 40)
+        .frame(width: RevealPacing.rackFrameWidth, height: RevealPacing.rackFrameHeight)
         .clipShape(RoundedRectangle(cornerRadius: 2))
         .overlay {
             if isCurrent {

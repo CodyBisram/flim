@@ -122,4 +122,41 @@ struct RevealPacingTests {
         #expect(range.isEmpty)
         #expect(range.lowerBound <= 5)
     }
+
+    // MARK: - The rack's width
+    //
+    // The rack used to take every point it was offered, so a four-frame roll drew four frames and
+    // then most of a screen width of empty perforated stock. It is now capped at its own content,
+    // which is what makes a short strip centre under the photograph the way the roll grid's does.
+
+    @Test("the strip is exactly as long as it has frames")
+    func rackWidthCountsFramesAndInnerGapsOnly() {
+        // Four frames means four widths and THREE gaps: the last frame has no trailing gap, and
+        // counting one would leave a 2pt stub of road past the end of the film.
+        let four = RevealPacing.rackWidth(frameCount: 4)
+        #expect(four == 4 * RevealPacing.rackFrameWidth + 3 * RevealPacing.rackFrameGap)
+
+        // A single frame is just itself, no gap at all.
+        #expect(RevealPacing.rackWidth(frameCount: 1) == RevealPacing.rackFrameWidth)
+    }
+
+    @Test("an empty deck draws no road")
+    func rackWidthOfNothingIsZero() {
+        // The deck is empty while it loads, and briefly if `skipDeadFrame` removes the last frame.
+        // Naive arithmetic returns a NEGATIVE width here (zero frames less one gap), which is a
+        // runtime complaint, so this is the case worth pinning.
+        #expect(RevealPacing.rackWidth(frameCount: 0) == 0)
+        #expect(RevealPacing.rackWidth(frameCount: -3) == 0)
+    }
+
+    @Test("a full roll's strip is wider than any phone, so it still scrolls")
+    func rackWidthOverflowsOnAFullRoll() {
+        // The cap must not turn the scrubber into a static row for real rolls: 47 frames at this
+        // pitch is far past the widest phone, so the ScrollView keeps its job and the centring
+        // `scrollTo` still has somewhere to go.
+        #expect(RevealPacing.rackWidth(frameCount: 47) > 440)
+
+        // And the boundary behaves: a strip that fits is smaller than the screen it fits in.
+        #expect(RevealPacing.rackWidth(frameCount: 3) < 393 - 32)
+    }
 }
