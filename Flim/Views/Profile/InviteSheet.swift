@@ -130,40 +130,69 @@ struct InviteSheet: View {
         case spent(AuthService.SentInvite)
     }
 
+    /// The strip, built as film rather than as a row of cards with a dotted line above it.
+    ///
+    /// The first version reused `DarkroomPerforationLine`, which is a repeating DASH. At the
+    /// Darkroom's 3pt scale that reads as perforation because it is tiny and there are two of them
+    /// bracketing a photograph. Blown up to a hero element with nothing else around it, a dashed
+    /// rule reads as exactly what it is: a dotted line. Real sprocket holes are punched RECTANGLES
+    /// with rounded corners, at a regular pitch, and they show the page THROUGH the film rather
+    /// than being drawn on top of it, which is why they are filled with the sheet's own background.
+    ///
+    /// The base is warmer and lighter than the page behind it. Film stock is not black; it is a
+    /// dark warm brown, and that difference is most of what makes a strip read as a physical thing
+    /// lying on a surface instead of a container drawn on one.
+    ///
+    /// It scrolls as ONE piece, sprocket rows included, rather than frames sliding under fixed
+    /// rails: you move along a length of film and the perforations travel with it. That also means
+    /// the rails take their width from the frame row between them, so a strip of eight is
+    /// perforated all the way to its end instead of stopping at the edge of the screen.
     private var filmStrip: some View {
-        VStack(spacing: 0) {
-            DarkroomPerforationLine().frame(height: 3)
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 6) {
+        ScrollView(.horizontal, showsIndicators: false) {
+            VStack(spacing: 0) {
+                SprocketRow()
+                HStack(spacing: FilmStripMetrics.frameGap) {
                     ForEach(Array(frames.enumerated()), id: \.offset) { index, frame in
                         frameView(frame, number: index + 1)
                     }
                 }
-                .padding(.vertical, 6)
-                .padding(.horizontal, 6)
+                .padding(.horizontal, FilmStripMetrics.frameGap)
+                SprocketRow()
             }
-            DarkroomPerforationLine().frame(height: 3)
+            .background(FilmStripMetrics.base)
+            .clipShape(RoundedRectangle(cornerRadius: 2))
         }
-        .background(Color.white.opacity(0.03))
-        .padding(.horizontal, 20)
+        // A strip that fits sits centred under the headline rather than against the leading edge;
+        // one that does not simply fills the row and scrolls. Same rule as the reveal's own rack.
+        .frame(maxWidth: FilmStripMetrics.width(frameCount: frames.count))
     }
 
     private func frameView(_ frame: Frame, number: Int) -> some View {
         let isUnused: Bool = if case .unused = frame { true } else { false }
-        return VStack(spacing: 5) {
-            // Two digits, mono, the way a frame number is struck on real film stock.
+        return VStack(spacing: 4) {
+            Spacer(minLength: 0)
+            // Struck on the film edge the way a frame number is: mono, small, and the same accent
+            // the app already burns its date imprints in.
             Text(String(format: "%02d", number))
-                .flimFont(15, weight: .medium, design: .monospaced, relativeTo: .subheadline)
+                .flimFont(17, weight: .medium, design: .monospaced, relativeTo: .title3)
                 .foregroundStyle(isUnused ? accent : FlimTheme.textTertiary)
             Text(label(for: frame))
-                .flimFont(11, relativeTo: .caption2)
-                .foregroundStyle(isUnused ? FlimTheme.textSecondary : FlimTheme.textTertiary)
+                .flimFont(10.5, relativeTo: .caption2)
+                .foregroundStyle(isUnused ? FlimTheme.textSecondary : FlimTheme.textTertiary.opacity(0.7))
                 .lineLimit(1)
+                .minimumScaleFactor(0.75)
+                .padding(.horizontal, 4)
+            Spacer(minLength: 0)
         }
-        .frame(width: 92, height: 104)
-        .background(isUnused ? accent.opacity(0.08) : Color.white.opacity(0.03))
-        .overlay(Rectangle().strokeBorder(isUnused ? accent.opacity(0.75) : Color.white.opacity(0.08),
-                                          lineWidth: 1))
+        .frame(width: FilmStripMetrics.frameWidth, height: FilmStripMetrics.frameHeight)
+        // An unused frame is EXPOSED: it carries the accent and a visible border. A spent one is
+        // a hole in the strip, darker than the base around it, which is what a frame you have
+        // already given away should look like.
+        .background(isUnused ? accent.opacity(0.10) : Color.black.opacity(0.35))
+        .overlay(
+            Rectangle().strokeBorder(isUnused ? accent.opacity(0.7) : Color.white.opacity(0.07),
+                                     lineWidth: 1)
+        )
     }
 
     private func label(for frame: Frame) -> String {
@@ -273,5 +302,62 @@ extension InviteCopy {
         [earnBack] + frontDoor
             + [AuthService.InviteQuota.remaining(3), .remaining(1), .remaining(0), .unlimited, .unknown]
                 .flatMap { [headline(for: $0), subhead(for: $0)] }
+    }
+}
+
+
+// MARK: - Film
+
+/// The strip's geometry and its one colour, in one place so the sprocket rows and the frames
+/// cannot drift out of proportion with each other.
+enum FilmStripMetrics {
+    static let frameWidth: CGFloat = 74
+    /// 4:5. A film frame is taller than it is wide; the first pass drew 92x104, which is close
+    /// enough to square that it read as a card.
+    static let frameHeight: CGFloat = 92
+    static let frameGap: CGFloat = 5
+
+    /// Sprocket geometry. The pitch is what sells it: real perforations are evenly spaced along
+    /// the whole edge and bear no relation to where the frames fall.
+    static let holeWidth: CGFloat = 9
+    static let holeHeight: CGFloat = 6.5
+    static let holePitch: CGFloat = 17
+    static let holeRadius: CGFloat = 1.5
+    static let railHeight: CGFloat = 15
+
+    /// Film stock, not black. A dark warm brown, lighter than the sheet behind it, which is what
+    /// makes the strip read as something lying ON the page.
+    static let base = Color(red: 0.115, green: 0.098, blue: 0.082)
+
+    /// How wide `n` frames make the strip, including the gaps between them and the film's own
+    /// margin either side. `n` frames carry `n - 1` gaps, plus one gap of margin at each end.
+    static func width(frameCount n: Int) -> CGFloat {
+        guard n > 0 else { return 0 }
+        return CGFloat(n) * frameWidth + CGFloat(n + 1) * frameGap
+    }
+}
+
+/// One edge of perforations, punched rather than drawn.
+///
+/// `Canvas` rather than an `HStack` of shapes: the holes tile at a fixed pitch across whatever
+/// width the strip happens to be, and an HStack would either stretch its spacing to fit or need
+/// the count computed from a measured width. A canvas just draws until it runs out of edge, which
+/// is also how the real thing works.
+struct SprocketRow: View {
+    var body: some View {
+        Canvas { context, size in
+            let m = FilmStripMetrics.self
+            let y = (size.height - m.holeHeight) / 2
+            // Start half a gap in, so the first hole is not flush against the cut edge.
+            var x = (m.holePitch - m.holeWidth) / 2
+            while x + m.holeWidth <= size.width {
+                let hole = CGRect(x: x, y: y, width: m.holeWidth, height: m.holeHeight)
+                context.fill(Path(roundedRect: hole, cornerRadius: m.holeRadius),
+                             with: .color(FlimTheme.bg))
+                x += m.holePitch
+            }
+        }
+        .frame(height: FilmStripMetrics.railHeight)
+        .accessibilityHidden(true)
     }
 }

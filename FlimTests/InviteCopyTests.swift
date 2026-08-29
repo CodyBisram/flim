@@ -85,4 +85,44 @@ struct InviteCopyTests {
             #expect(!line.contains("\u{2014}"))
         }
     }
+
+    // MARK: - The strip's geometry
+
+    @Test("a strip is as long as its frames, gaps and margins")
+    func stripWidthCountsGapsAndBothMargins() {
+        // n frames carry n - 1 gaps BETWEEN them, plus one gap of film margin at each end, so
+        // n + 1 gaps in total. Getting this wrong by one gap is what makes a strip's last frame
+        // sit flush against the cut edge with no film around it.
+        let m = FilmStripMetrics.self
+        #expect(m.width(frameCount: 1) == m.frameWidth + 2 * m.frameGap)
+        #expect(m.width(frameCount: 3) == 3 * m.frameWidth + 4 * m.frameGap)
+    }
+
+    @Test("an empty strip has no width, rather than two margins of nothing")
+    func emptyStripIsZero() {
+        // Reachable: an unlimited account with no spent invites has zero frames, and the sheet
+        // must not draw a bare sliver of film base with nothing in it.
+        #expect(FilmStripMetrics.width(frameCount: 0) == 0)
+        #expect(FilmStripMetrics.width(frameCount: -2) == 0)
+    }
+
+    @Test("a frame is taller than it is wide, or it stops reading as film")
+    func framesAreNotSquare() {
+        // The first pass drew 92x104, close enough to square that it read as a row of cards.
+        #expect(FilmStripMetrics.frameHeight > FilmStripMetrics.frameWidth)
+        let ratio = FilmStripMetrics.frameWidth / FilmStripMetrics.frameHeight
+        #expect(ratio > 0.6 && ratio < 0.9, "frame proportion drifted to \(ratio)")
+    }
+
+    @Test("sprocket holes are wider than they are tall and sit clear of each other")
+    func sprocketProportions() {
+        let m = FilmStripMetrics.self
+        // Real perforations are landscape rectangles, not dots.
+        #expect(m.holeWidth > m.holeHeight)
+        // And the pitch must leave film between them, or the edge reads as a dashed line, which
+        // is exactly the thing this replaced.
+        #expect(m.holePitch > m.holeWidth)
+        // The rail has to be tall enough to contain a hole with margin above and below.
+        #expect(m.railHeight > m.holeHeight)
+    }
 }
