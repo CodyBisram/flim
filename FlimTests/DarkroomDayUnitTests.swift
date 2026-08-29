@@ -49,31 +49,58 @@ final class DarkroomDayUnitTests: XCTestCase {
 
     // MARK: - Frame pitch
 
-    func testPhotoFramesGoFourAcrossAndWellsStayEight() {
-        // 393pt phone, 16pt inset each side.
+    func testPhotoFramesFillTheWidthExactlyAtThreeAcross() {
+        // The point of deriving the width from a fixed column count rather than fixing the pitch:
+        // a full row ends exactly on the trailing margin, on every device, with no remainder. A
+        // fixed 90pt pitch left 12pt over on a 402pt phone and nearly 50pt on a Pro Max, which is
+        // the "real estate on the right" that sent four across back.
+        for screen in [375.0, 393.0, 402.0, 430.0, 440.0] as [CGFloat] {
+            let available = screen - 32
+            let width = DarkroomDayUnit.photoFrameWidth(availableWidth: available)
+            let pitch = DarkroomDayUnit.photoFramePitch(frameWidth: width)
+            let occupied = CGFloat(DarkroomDayUnit.photoColumns) * pitch - DarkroomDayUnit.frameGap
+            XCTAssertEqual(occupied, available, accuracy: 0.001,
+                           "a full row must land on the margin at \(screen)pt")
+        }
+    }
+
+    func testPhotoFramesGoThreeAcrossAndWellsKeepTheirOwnGeometry() {
         let available: CGFloat = 393 - 32
-        let photos = DarkroomDayUnit.stripCapacity(availableWidth: available,
-                                                    pitch: DarkroomDayUnit.photoFramePitch)
-        let wells = DarkroomDayUnit.stripCapacity(availableWidth: available)
-        XCTAssertEqual(photos, 4, "the Darkroom's photo frames go four across")
-        XCTAssertEqual(wells, 7, "the Rolls ready band's sealed wells keep their own geometry")
-        // The two are deliberately different: a well is never a photograph, so there is nothing
-        // in it to see bigger, and growing it would push the ready band off its own row.
-        XCTAssertGreaterThan(DarkroomDayUnit.photoFramePitch, DarkroomDayUnit.framePitch)
+        XCTAssertEqual(DarkroomDayUnit.photoColumns, 3,
+                       "the Darkroom matches the profile, roll and feed grids")
+
+        // The wells are the other geometry and must NOT follow: they are sealed, never
+        // photographs, so there is nothing in them to see bigger, and growing one would push the
+        // Rolls ready band off its own row.
+        XCTAssertEqual(DarkroomDayUnit.stripCapacity(availableWidth: available), 7)
+        XCTAssertGreaterThan(DarkroomDayUnit.photoFrameWidth(availableWidth: available),
+                             DarkroomDayUnit.framePitch - DarkroomDayUnit.frameGap)
     }
 
     func testPhotoFrameKeepsItsProportion() {
-        // 44x59 was the small frame's shape; the big one holds it rather than drifting square.
-        let width = DarkroomDayUnit.photoFramePitch - DarkroomDayUnit.frameGap
-        XCTAssertEqual(width / DarkroomDayUnit.photoFrameHeight, 44.0 / 59.0, accuracy: 0.001)
+        // 44x59 was the small frame's shape; the big one holds it rather than drifting square,
+        // at whatever width the screen hands it.
+        for width in [80.0, 118.0, 122.0, 136.0] as [CGFloat] {
+            XCTAssertEqual(width / DarkroomDayUnit.photoFrameHeight(frameWidth: width),
+                           44.0 / 59.0, accuracy: 0.001)
+        }
     }
 
-    func testNarrowScreenTakesThreeRatherThanOverflowing() {
-        // An SE-width phone simply fits one fewer. Capacity has always fallen out of the width,
-        // which is what keeps a fixed pitch safe across devices.
-        let se = DarkroomDayUnit.stripCapacity(availableWidth: 375 - 32,
-                                                pitch: DarkroomDayUnit.photoFramePitch)
-        XCTAssertEqual(se, 3)
+    func testNarrowScreenKeepsThreeAcrossAndShrinksTheFrame() {
+        // The reverse of the old rule. Capacity used to fall out of the width, so an SE fitted one
+        // fewer frame; now the count is fixed and the FRAME is what gives, which is how every
+        // other grid in the app behaves and why they line up with each other.
+        let se = DarkroomDayUnit.photoFrameWidth(availableWidth: 375 - 32)
+        let pro = DarkroomDayUnit.photoFrameWidth(availableWidth: 402 - 32)
+        XCTAssertLessThan(se, pro)
+        XCTAssertGreaterThan(se, 0)
+    }
+
+    func testDegenerateWidthYieldsNoFrameRatherThanANegativeOne() {
+        // SwiftUI proposes zero mid-transition, and a negative frame is a runtime complaint.
+        XCTAssertEqual(DarkroomDayUnit.photoFrameWidth(availableWidth: 0), 0)
+        XCTAssertEqual(DarkroomDayUnit.photoFrameWidth(availableWidth: -100), 0)
+        XCTAssertEqual(DarkroomDayUnit.photoFrameWidth(availableWidth: 361, columns: 0), 0)
     }
 
     func testFourShotsIsOneUnpaddedStrip() {

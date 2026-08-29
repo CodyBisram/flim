@@ -9,6 +9,9 @@ import SwiftUI
 struct DarkroomDayUnitView: View {
     let unit: DarkroomDayUnit
     let capacity: Int
+    /// One frame's width, measured from the screen by `DarkroomView` so a full row of `capacity`
+    /// frames ends exactly on the margin. See `DarkroomDayUnit.photoFrameWidth`.
+    let frameWidth: CGFloat
     let accent: Color
     let signedURLCache: [UUID: URL]
     let sharedIds: Set<UUID>
@@ -126,22 +129,24 @@ struct DarkroomDayUnitView: View {
                 onTap: { onTapDeveloped(photo) },
                 onToggleSelect: { onToggleSelect(photo.id) },
                 menu: { photo.isReady ? developedMenu(photo) : developingMenu(photo) },
-                developingFraction: developingFraction
+                developingFraction: developingFraction,
+                frameWidth: frameWidth
             )
             .task { await onFrameAppear(photo) }
         case .empty:
             // An unexposed slot: holds its space, draws nothing, no hit target.
             Color.clear
-                .frame(width: DarkroomDayUnit.photoFramePitch - DarkroomDayUnit.frameGap,
-                       height: DarkroomDayUnit.photoFrameHeight)
+                .frame(width: frameWidth,
+                       height: DarkroomDayUnit.photoFrameHeight(frameWidth: frameWidth))
                 .accessibilityHidden(true)
         }
     }
 
     private func perforation(slotCount: Int) -> some View {
         DarkroomPerforationLine()
-            .frame(width: DarkroomDayUnit.perforationWidth(slotCount: slotCount,
-                                                           pitch: DarkroomDayUnit.photoFramePitch), height: 3)
+            .frame(width: DarkroomDayUnit.perforationWidth(
+                slotCount: slotCount,
+                pitch: DarkroomDayUnit.photoFramePitch(frameWidth: frameWidth)), height: 3)
     }
 }
 
@@ -205,18 +210,33 @@ struct DarkroomFrameView: View {
     /// its own untouched static ring regardless of what's passed here.
     var developingFraction: Double? = nil
 
-    /// The list's frames come from `DarkroomDayUnit.photoFramePitch` (88x118, four across a
-    /// 393pt screen); the pager's compact rack keeps the feed strip's 30x40. One shared
-    /// `imageArea`, two geometries.
+    /// The list frame's width, handed down from whoever measured the screen, because three
+    /// across is a share of the available width rather than a fixed size. Ignored under
+    /// `compact`, which is the pager's own rack and keeps the feed strip's 30x40.
     ///
-    /// These were hardcoded at 44x59 while the rack's CAPACITY and PERFORATION were computed
-    /// from the pitch, so raising the pitch widened the road and left the frames small: a day of
-    /// three shots drew three little photographs against a strip built for four big ones. Sizes
-    /// that have to agree must come from one number.
-    private var imgW: CGFloat {
-        compact ? 30 : DarkroomDayUnit.photoFramePitch - DarkroomDayUnit.frameGap
-    }
-    private var imgH: CGFloat { compact ? 40 : DarkroomDayUnit.photoFrameHeight }
+    /// Passed in rather than read from a constant here: these WERE hardcoded at 44x59 while the
+    /// rack's capacity and perforation were computed from the pitch, so raising the pitch
+    /// widened the road and left the frames small. Sizes that have to agree must come from one
+    /// number, and the only place that knows this one is the view that measured the width.
+    var frameWidth: CGFloat = 0
+
+    private var imgW: CGFloat { compact ? 30 : frameWidth }
+    private var imgH: CGFloat { compact ? 40 : DarkroomDayUnit.photoFrameHeight(frameWidth: frameWidth) }
+
+    /// Decode target, in POINTS of the long edge: `downsample` multiplies by the screen scale, so
+    /// asking for the frame's own height is asking for exactly the pixels that land on screen.
+    ///
+    /// This was a hardcoded 120 while the frames were 44pt tall, and stayed 120 when they grew,
+    /// which decodes to 360px on a 3x screen and drew it into a ~490px slot. That is the same
+    /// class of bug as the hardcoded 44x59 above, and it is why bigger frames looked soft rather
+    /// than bigger.
+    ///
+    /// It costs no egress. The source is the 500px `thumbPath` rendition either way, and
+    /// `CachedImage` files the raw bytes under the stable `displayPath` and re-downsamples them
+    /// locally for a new size without touching the network, so every already-cached photograph
+    /// re-renders sharper for free. 490px is also right at that rendition's own ceiling, so
+    /// asking for more would buy nothing.
+    private var decodeSize: CGFloat { compact ? 120 : imgH }
 
     var body: some View {
         if let menu {
@@ -262,7 +282,7 @@ struct DarkroomFrameView: View {
                     .strokeBorder(FlimTheme.stroke, lineWidth: 1)
                     .frame(width: imgW, height: imgH)
             } else if photo.isReady {
-                CachedImage(url: signedURL, maxPixel: 120, cacheKey: photo.displayPath) { image in
+                CachedImage(url: signedURL, maxPixel: decodeSize, cacheKey: photo.displayPath) { image in
                     image.resizable().scaledToFill()
                 } placeholder: {
                     Color.white.opacity(0.06)
@@ -498,12 +518,13 @@ struct DarkroomLoadingSkeleton: View {
         (150, 78), (112, 58), (168, 92), (98, 52)
     ]
 
-    /// One full row of frames, which is what most days show.
-    private static let skeletonSlots = 4
+    /// One full row, at the same width the real racks will draw, so nothing reflows when the
+    /// photographs arrive. That is the entire job of a skeleton.
+    let frameWidth: CGFloat
 
     private var skeletonRoadWidth: CGFloat {
-        DarkroomDayUnit.perforationWidth(slotCount: Self.skeletonSlots,
-                                         pitch: DarkroomDayUnit.photoFramePitch)
+        DarkroomDayUnit.perforationWidth(slotCount: DarkroomDayUnit.photoColumns,
+                                         pitch: DarkroomDayUnit.photoFramePitch(frameWidth: frameWidth))
     }
 
     var body: some View {
@@ -519,18 +540,18 @@ struct DarkroomLoadingSkeleton: View {
                 .padding(.bottom, 5)
 
                 VStack(alignment: .leading, spacing: 0) {
-                    // Four slots at the photo pitch, because that is what a real day rack draws:
+                    // One full row at the photo pitch, because that is what a real day rack draws:
                     // a skeleton of a different count or a different frame size reflows the
                     // moment the photographs arrive, which is the one thing a skeleton exists to
                     // prevent. All three numbers come from `DarkroomDayUnit`, so they cannot
                     // drift apart again.
                     DarkroomPerforationLine().frame(width: skeletonRoadWidth, height: 3)
                     HStack(spacing: DarkroomDayUnit.frameGap) {
-                        ForEach(0..<Self.skeletonSlots, id: \.self) { _ in
+                        ForEach(0..<DarkroomDayUnit.photoColumns, id: \.self) { _ in
                             RoundedRectangle(cornerRadius: 2)
                                 .fill(Color.white.opacity(0.06))
-                                .frame(width: DarkroomDayUnit.photoFramePitch - DarkroomDayUnit.frameGap,
-                                       height: DarkroomDayUnit.photoFrameHeight)
+                                .frame(width: frameWidth,
+                                       height: DarkroomDayUnit.photoFrameHeight(frameWidth: frameWidth))
                         }
                     }
                     .padding(.vertical, 2)

@@ -173,9 +173,18 @@ struct DarkroomView: View {
     @State private var cachedDayUnits: [DarkroomDayUnit] = []
     @State private var cachedMonthScopedUnits: [DarkroomDayUnit] = []
 
-    private var stripCapacity: Int {
-        max(1, DarkroomDayUnit.stripCapacity(availableWidth: scrollWidth - 32,
-                                             pitch: DarkroomDayUnit.photoFramePitch))
+    /// Three across, always, the same count the profile, roll and feed grids use. Not measured:
+    /// the COUNT is the fixed thing now and the frame width is what falls out of the screen, which
+    /// is the reverse of the well geometry below and the reason a full row ends flush on the
+    /// margin instead of somewhere short of it.
+    private var stripCapacity: Int { DarkroomDayUnit.photoColumns }
+
+    /// One frame's width against the rack's own 16pt-a-side padding. `scrollWidth` starts at a
+    /// sensible 393 and is corrected by `onGeometryChange` before anything is on screen, so this
+    /// is never asked for a width of zero in practice, and returns zero rather than a negative
+    /// frame if it ever is.
+    private var photoFrameWidth: CGFloat {
+        DarkroomDayUnit.photoFrameWidth(availableWidth: scrollWidth - 32)
     }
 
     /// `DarkroomYearRow`'s own per-row frame capacity, on the SMALL 46pt pitch its sample strip
@@ -184,9 +193,9 @@ struct DarkroomView: View {
     /// the Year rung an eighth frame the same way it earns the rack one.
     ///
     /// This deliberately no longer matches `stripCapacity` above. They agreed while both racks
-    /// drew 44x59; the day rack has since grown to 88x118 for legibility, and a summary row that
-    /// grew with it would show four big photographs for a seventy-eight shot month, which reads
-    /// as a gallery of four rather than a taste of the month.
+    /// drew 44x59; the day rack has since gone to three across for legibility, and a summary row
+    /// that grew with it would show three big photographs for a seventy-eight shot month, which
+    /// reads as a gallery of three rather than a taste of the month.
     ///
     /// `scrollWidth` is shared with the `.month` rung's own measurement (`yearScrollList`'s
     /// `.onGeometryChange` keeps it current while `.year` is the mounted rung, same as the night
@@ -560,7 +569,7 @@ Text("Darkroom")
             // isLoading/isEmpty gate would render an essentially blank night list (nothing
             // matches the new anchor) with no affordance until the fetch resolves. The
             // skeleton is the honest state for that window.
-            ScrollView { DarkroomLoadingSkeleton().padding(.top, 8) }
+            ScrollView { DarkroomLoadingSkeleton(frameWidth: photoFrameWidth).padding(.top, 8) }
                 .scrollDisabled(true)
         } else if let error = vm.error, vm.photos.isEmpty {
             ErrorState(message: error) { await reload() }
@@ -637,6 +646,7 @@ Text("Darkroom")
                 DarkroomDayUnitView(
                     unit: unit,
                     capacity: stripCapacity,
+                    frameWidth: photoFrameWidth,
                     accent: accent,
                     signedURLCache: vm.signedURLCache,
                     sharedIds: feed.myPostedPhotoIds,

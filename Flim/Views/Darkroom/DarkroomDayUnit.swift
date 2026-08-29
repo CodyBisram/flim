@@ -237,24 +237,40 @@ extension DarkroomDayUnit {
     static let framePitch: CGFloat = 46
     static let frameGap: CGFloat = 2
 
-    /// The pitch the Darkroom's own PHOTO frames use, as distinct from the 46pt well geometry
-    /// above.
+    /// The Darkroom's photo frames go THREE across, and unlike the 46pt well geometry above the
+    /// pitch is DERIVED from the width rather than fixed.
     ///
-    /// 90 puts four frames across a 393pt screen (88pt each) instead of eight at 44, which is
-    /// the whole point: 44 is an index size, big enough to spot a photograph you already know
-    /// and too small to recognise one you don't, and the Darkroom is where you go to FIND
-    /// something. Capacity still falls out of the width, so a narrower phone simply takes three.
+    /// That distinction is the whole fix. A fixed pitch means the count falls out of the width
+    /// and whatever does not divide evenly is left over: four 90pt frames on a 402pt phone ended
+    /// 12pt short of the margin, and on a Pro Max nearly 50pt short, so every strip stopped in a
+    /// different place and none of them lined up with anything else on screen. Dividing the width
+    /// by a fixed column count instead means a full row always ends exactly on the margin, which
+    /// is what makes the profile grid, the roll grid and the feed grid read as one system. Cody
+    /// took four across on 2026-08-27 and reversed it the next day on seeing it: the four was
+    /// legible but "there's a lot of real estate on the right side", and three is what every
+    /// other grid in the app already does.
     ///
-    /// NOT three across, which is what the profile and roll grids use. Those hold a curated few
-    /// dozen; this holds the whole archive, and at three a 96-shot month is about five thousand
-    /// points of scrolling. Four doubles the photograph and roughly doubles the scroll, rather
-    /// than multiplying it by seven.
+    /// The cost is real and was accepted: three roughly doubles a month's scroll again over four.
+    /// The egress that comes with bigger renditions is to be answered with caching, not with
+    /// smaller photographs.
     ///
-    /// The Rolls ready band's sealed wells keep `framePitch`: they are never photographs, so
-    /// there is nothing in them to see bigger.
-    static let photoFramePitch: CGFloat = 90
-    /// Frame height at the photo pitch, holding the 44x59 proportion the small frames had.
-    static let photoFrameHeight: CGFloat = (photoFramePitch - frameGap) * 59 / 44
+    /// A short strip still stops where its film does. Only a FULL row reaches the margin; a
+    /// three-shot day on a four-wide screen was never the case this fixes.
+    static let photoColumns = 3
+
+    /// The frame width that puts `columns` frames plus their inner gaps in exactly
+    /// `availableWidth`. `n` frames occupy `n * (width + gap) - gap`, so solving for width at
+    /// `n == columns` lands the last frame flush on the trailing margin.
+    static func photoFrameWidth(availableWidth: CGFloat, columns: Int = photoColumns) -> CGFloat {
+        guard availableWidth > 0, columns > 0 else { return 0 }
+        return (availableWidth + frameGap) / CGFloat(columns) - frameGap
+    }
+
+    /// The pitch that goes with a derived frame width, for `perforationWidth`.
+    static func photoFramePitch(frameWidth: CGFloat) -> CGFloat { frameWidth + frameGap }
+
+    /// Frame height, holding the 44x59 proportion the small frames have always had.
+    static func photoFrameHeight(frameWidth: CGFloat) -> CGFloat { frameWidth * 59 / 44 }
 
     /// How many whole frames fit `availableWidth` at the fixed pitch. Always measured from the
     /// real content width, never hard-coded: `n * pitch - gap <= availableWidth`.
