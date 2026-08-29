@@ -327,7 +327,18 @@ CREATE TRIGGER credit_invite_earnback_trigger
 
 
 -- ============================================================
--- 3. THE BACKFILL. Read the header's "BACKFILL DECISION" section before
+-- 3. THE BACKFILL. *** THIS RAN, AND WAS THEN REVERSED. ***
+--    Applied 2026-08-29, then undone the same day by
+--    2026-08-29_invite_earnback_reset.sql, because the owner chose to start
+--    clean. The ledger rows it wrote were KEPT on purpose, so those 29
+--    invitees stay accounted for and can never be credited later; only the
+--    invites were taken back. Do not delete those rows, and read that file
+--    before touching this section. Re-running this section today is a no-op
+--    (ON CONFLICT DO NOTHING finds every row already present).
+--
+--    Original note follows.
+--
+--    Read the header's "BACKFILL DECISION" section before
 --    running. Recommendation: INCLUDE (this block is left in). Delete this
 --    entire numbered section (down to the blank line before "Verify" at the
 --    bottom) if the owner disagrees; nothing else in this file depends on it.
