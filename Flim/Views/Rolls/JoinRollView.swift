@@ -53,7 +53,7 @@ struct JoinRollView: View {
             Spacer()
 
             VStack(alignment: .leading, spacing: 6) {
-                Text("INVITE CODE")
+                Text("ROLL CODE")
                     .flimFont(11, weight: .medium, relativeTo: .caption)
                     .tracking(2)
                     .foregroundStyle(Color(white: 0.4))
@@ -88,7 +88,7 @@ struct JoinRollView: View {
             // The placeholder was the only hint, and it vanishes the moment they type. A
             // disabled button with no stated reason is the pattern this release is removing.
             if (1...5).contains(code.count) {
-                Text("Invite codes are 6 characters.")
+                Text("Roll codes are 6 characters.")
                     .flimFont(13, relativeTo: .subheadline)
                     .foregroundStyle(FlimTheme.textTertiary)
                     .padding(.bottom, 4)

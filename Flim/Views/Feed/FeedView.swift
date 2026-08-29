@@ -23,6 +23,10 @@ struct FeedView: View {
     /// How far into the UNITS the prefetch window currently reaches. Reset with the feed
     /// itself: a pull-to-refresh replaces the list, so a cursor into the old one would skip
     /// warming the new top.
+    /// Whether this account can still let anyone in, so the empty state's invite button is not
+    /// offered once the invites are spent. `.unknown` until read, which deliberately still offers
+    /// the button: a failed lookup must never hide a code that works.
+    @State private var inviteQuota: AuthService.InviteQuota = .unknown
     @State private var prefetchedThrough = 0
     @State private var showDiscover = false
     @State private var showActivity = false
@@ -208,6 +212,10 @@ struct FeedView: View {
             // appearance note on `CameraViewModel.start()`. Riding `.task` keeps it from
             // firing on re-renders or scene-phase changes.
             Usage.log(.feedViewed)
+            // Only the empty state reads this, and it fails soft to `.unknown`, which still
+            // offers the invite. Cheap enough to ride the existing appear rather than earn a
+            // task of its own.
+            inviteQuota = await auth.ownInviteQuota()
             if let path = auth.currentUser?.avatarPath { myAvatarURL = await feed.signedURL(for: path) }
             if feed.feed.isEmpty {
                 await reload()
@@ -591,7 +599,14 @@ struct FeedView: View {
                 }
                 // Not a screen: the system share sheet carrying an invite link, which keeps
                 // invites out of the app rather than growing a referrals surface.
-                if let code = auth.currentUser?.inviteCode {
+                // Gated on quota, the same way InviteSheet is. Without this, someone who has
+                // spent all three invites keeps being offered a share button that sends a friend
+                // a code which now fails, and neither of them can tell why. This empty state is
+                // exactly where that happens: it stays on screen while a new person invites their
+                // circle BEFORE they have posted anything, so it is the likeliest place in the
+                // app to hand out a dead code. `.unknown` and `.unlimited` both still offer it:
+                // never hide a working code because a lookup failed.
+                if inviteQuota != .remaining(0), let code = auth.currentUser?.inviteCode {
                     ShareLink(item: AppInfo.personalInviteMessage(code: code)) {
                         Label("Invite someone", systemImage: "paperplane")
                             .flimFont(14, weight: .medium, relativeTo: .subheadline)

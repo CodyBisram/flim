@@ -203,7 +203,15 @@ struct EmailAuthView: View {
             // A code entered up front is redeemed as part of the SAME tap. This is the path that
             // removes the old two-round-trip dance: previously you were rejected, then shown the
             // field, then had to redeem, then send again.
-            if !inviteCode.isEmpty {
+            // Skip a redemption that already succeeded for THIS email.
+            //
+            // redeem_invite is idempotent server-side, so a repeat costs the inviter nothing.
+            // What is not free is the shape underneath: redemption succeeds, the sendOTP right
+            // after it fails on a network blip, and the person retries. Re-asking is pointless
+            // work on the app's own front door, and it puts a second call through a globally
+            // rate-gated RPC for a person who is already allowlisted. `redeemedEmails` is the
+            // record the sign-up flow already keeps for exactly this address.
+            if !inviteCode.isEmpty, !PendingInviteRedeemed.isRedeemed(for: email) {
                 guard try await auth.redeemInvite(code: inviteCode, email: email) else {
                     Haptics.error()
                     // Says BOTH things that can be true, because the server cannot tell you

@@ -30,6 +30,14 @@ enum PendingInviteRedeemed {
         store.set(email, forKey: key)
     }
 
+    /// Whether a redemption already succeeded for this address and is still awaiting its OTP.
+    ///
+    /// A non-destructive peek, unlike `take`: the sign-up flow reads this BEFORE deciding whether
+    /// to call `redeem_invite` again, and must not consume the record merely by asking.
+    static func isRedeemed(for email: String) -> Bool {
+        store.string(forKey: key) == email
+    }
+
     /// Reads and clears in one step, unconditionally, so this can never fire twice no matter the
     /// outcome: a match consumes the flag it was checking for, and a miss (nothing saved, or
     /// saved for a different email) also drops whatever was there, so a stale entry left behind
