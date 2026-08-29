@@ -50,7 +50,9 @@ When the invite list opens, the pair below is worth revisiting. Its real gain is
 Both fields are metadata, editable on any submission, so this costs nothing to defer.
 
 ## Promotional text (170 char max, editable anytime without review)
-> New: badges for how you shoot, a Darkroom widget, a widget that resurfaces last month's frames, and a one-tap shutter on your Lock Screen. (135 chars, for the 1.4.2 window)
+> The reveal lost its timer: page a developed roll at your own speed. Invites are finite now, three each, and you earn one back when the friend you brought in shoots theirs. (169 chars, for the 1.5 window)
+>
+> Superseded, 1.4.2 window: New: badges for how you shoot, a Darkroom widget, a widget that resurfaces last month's frames, and a one-tap shutter on your Lock Screen. (135 chars)
 >
 > Evergreen, switch back anytime: Shoot together, wait together, see them together. FLIM is a disposable camera for your group. No filters to pick, no likes to chase, no feed to fall into.
 >
@@ -125,6 +127,67 @@ without either word appearing here.
 
 Two rules if this is edited again: never repeat a word across name, subtitle and keywords, and do
 not add plurals of words already present. Apple handles both.
+
+## What's New (version 1.5)
+
+> **PASTE ONLY THE INDENTED BLOCK BELOW.** Everything under "Ship notes" is internal.
+
+    The reveal is yours now. The timer is gone. When a roll develops you page through it at your own speed, and every frame still develops in front of you the first time you reach it. A strip along the bottom holds the whole roll at a glance, so you can jump to any frame and come back. Nothing moves on without you.
+
+    Rolls got a screen worth opening. The roll you are shooting into sits at the top with its own countdown, the ones ready to open are gathered under it, and everything you have already seen keeps its place in an album below. Shooting into a roll takes one tap from anywhere on the page.
+
+    The Darkroom got bigger. Your photographs are three across now and roughly twice the size, laid out as film: rows of frames on a perforated strip that ends where your shots end. Your profile and every roll read the same way.
+
+    Every photograph shows its whole frame. Grids used to crop a quarter off the top and bottom of every shot to make it square. They do not any more, so what you framed is what you see, everywhere in the app.
+
+    The feed stops taking things away. It used to clear itself as you read it. Now a week of your friends' photographs stays where you left it.
+
+    Invites are real. Everyone has three. When someone you brought in takes their first photo, that invite comes back to you. Your page says how many you are holding, and the invite screen shows them as frames on a strip, with the spent ones marked by who they went to.
+
+    And underneath: every word on screen answers to your text size, sharing a photo now says plainly whether it is going to your page or leaving the app, and covers and avatars stop flashing a letter at a photograph your phone already had.
+
+### Ship notes (internal, do NOT paste)
+
+**Promotional text for the 1.5 window** (170 char max, editable anytime without review):
+
+> The reveal lost its timer: page a developed roll at your own speed. Invites are finite now, three each, and you earn one back when the friend you brought in shoots theirs. (169 chars)
+
+**What was deliberately left out of the copy.** The security fix (any signed-in user could claim
+the owner's email and reach the admin surface) is not mentioned: it was never exploited, disclosing
+the shape of it in release notes helps nobody, and Apple does not require it. The invite-quota
+mechanics beyond "three each and you earn one back" are also out, because the earn-back rule
+(inviter only, on the invitee's FIRST PHOTO) is more detail than a release note should carry and
+is stated in the app itself.
+
+**Chapters is NOT in this release.** It was backlogged 2026-08-29. If it appears in any copy, that
+copy is wrong.
+
+**The look did not change in 1.5.** If flash falloff and grain land before submission, this
+section needs a paragraph and the screenshots need reshooting, because renditions are never
+rewritten and the store screenshots would otherwise show a look the build no longer produces.
+
+**MARKETING_VERSION must be 1.5.0 on BOTH targets in `project.yml`** before the submitted build is
+made. Releasing closes the train, so the first upload after approval must carry the next bump or
+ASC rejects it with "Invalid Pre-Release Train".
+
+After the release goes READY_FOR_SALE, arm the update nudge (the field is `latest_version`, NOT
+`minimum_version`):
+
+    update app_release_gate set latest_version = '1.5.0';
+
+`minimum_version` stays 0.0.0. Raising it above a build someone is still running hard-blocks that
+install with no client-side recovery.
+
+**Release option:** choose "Manually release" at submission, so the release moment is predictable
+and the update nudge can be armed the same hour.
+
+**Screenshots need reshooting for this train.** The Darkroom is three across, every grid is 3:4
+rather than square, the Rolls screen was rebuilt, and the reveal has no progress bar. Existing
+screenshots show none of that. `05-roll-invite-code.png` in particular now misrepresents the
+invite mechanic, which is finite and shown as a film strip.
+
+**Reviewer path:** FLIM is invite-only, so confirm `ReviewerSignInSheet` still works against the
+current build before submitting. A reviewer who cannot get in is an automatic rejection.
 
 ## What's New (version 1.4.2)
 
