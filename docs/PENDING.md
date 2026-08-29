@@ -9,6 +9,25 @@ Statuses: `queued`, `blocked: <what on>`, `owner`, `decided: <what>`.
 
 ## Next up
 
+### queued: renaming a roll leaves the widget and Live Activity stale
+
+Found by the 2026-08-28 race/concurrency audit, NOT fixed, and unrelated to anything shipped
+that day. Two halves:
+
+- `RollService.renameRoll` and `setRollCover` never call `WidgetSync.refresh()`, unlike
+  `createRoll` / `joinRoll` / `forget`, which all do. The widget's subtitle is sourced live from
+  roll names, so a rename shows the old name until some unrelated refresh happens to fire.
+- Worse structurally: `RollLiveActivity.sync` bakes `rollName` into `RollRevealAttributes`, and
+  ActivityKit treats attributes as immutable after `Activity.request`. The update path only
+  touches `content.state`, so even calling `sync` again cannot change the displayed name. The
+  only fix is to `end()` the activity and request a fresh one, which nothing does on rename.
+  Net: rename a still-developing roll and its lock-screen countdown keeps the old name for the
+  rest of the countdown.
+
+Cosmetic staleness, not data loss and not cross-account, but it is a direct gap against the
+project rule that any mutation changing what a widget or Live Activity shows must refresh the
+snapshot or end the activity.
+
 ### done 2026-08-27 — Share export redesign
 
 Built from the handoff bundle (`~/Downloads/Rolls screen redesign.zip`, which despite the name
@@ -109,6 +128,12 @@ first push after any App Store release must carry the bump or it is rejected wit
 - Colophon in the Profile footer.
 - Confirmations: undo capsule and consequence sheets on a real TestFlight pass.
 - Photos-permission explainer row under the toggle needs the on-device permission-timing pass.
+- The film-strip rows on the profile and roll grids (build 319): the perforated road between rows
+  has never been seen on device on either surface.
+- Three-across Darkroom sharpness (build 317): the decode now derives from the frame height, and
+  whether that actually reads sharp is the part tests cannot answer.
+- `skipDeadFrame`'s correction (build 319) needs a real mid-reveal image failure on a frame BEHIND
+  the reader to confirm the pager no longer retargets. Tests cover the arithmetic, not the wiring.
 
 ## 1.5, wanted but unbuilt
 
