@@ -432,6 +432,70 @@ CREATE POLICY "users: visible to co-members"
         )
     );
 
+-- Defence in depth, added by 2026-08-29_close_users_privilege_escalation.sql:
+-- "users: own row" above is ROW-level only (auth.uid() = id) and cannot by
+-- itself stop a signed-in user from rewriting a COLUMN of their own row that
+-- a future grant mistake accidentally opens up — which is exactly how that
+-- migration's hole existed (Supabase's default table-wide grants, never
+-- taken back for INSERT/UPDATE/DELETE the way they now are just above).
+-- This trigger pins id/email/invite_code unconditionally (no legitimate
+-- UPDATE path exists for any of the three anywhere in this codebase) and
+-- invite_uses_remaining conditionally, via current_user, so redeem_invite()
+-- and credit_invite_earnback() (both SECURITY DEFINER) keep working. Full
+-- reasoning, including why this function must stay SECURITY INVOKER, lives
+-- in that migration file and is repeated in the function body below.
+CREATE OR REPLACE FUNCTION public.lock_users_privileged_columns()
+RETURNS TRIGGER
+-- Deliberately SECURITY INVOKER (the default — no SECURITY DEFINER clause).
+-- Do NOT add SECURITY DEFINER here "for consistency" with
+-- lock_signup_ordinal_trigger. SECURITY DEFINER would swap current_user to
+-- THIS function's own owner for the whole of its execution, permanently
+-- masking who actually issued the firing UPDATE, and silently turning the
+-- invite_uses_remaining branch below into a no-op that never pins it again.
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    -- id, email, invite_code: no legitimate UPDATE path exists anywhere in
+    -- this codebase for any of the three. id is the auth.users-FK'd primary
+    -- key. email and invite_code are written exactly once, at signup (the
+    -- INSERT grant just above), and never touched again by any RPC or
+    -- trigger. Pinned UNCONDITIONALLY — current_user does not matter for
+    -- these three, because no role, trusted or not, has a live reason to
+    -- change them via a normal UPDATE. A genuine one-off correction follows
+    -- the same convention as lock_signup_ordinal_trigger: disable this
+    -- trigger by hand, make the edit, re-enable it.
+    NEW.id          := OLD.id;
+    NEW.email       := OLD.email;
+    NEW.invite_code := OLD.invite_code;
+
+    -- invite_uses_remaining IS legitimately mutated today, by two live
+    -- SECURITY DEFINER functions — redeem_invite() (decrement) and
+    -- credit_invite_earnback() (increment) — so it cannot be pinned
+    -- unconditionally without breaking both on every call. Because this
+    -- function is SECURITY INVOKER, current_user here is whoever is truly
+    -- driving the firing UPDATE: `authenticated`/`anon` for a direct client
+    -- PostgREST write, or that SECURITY DEFINER function's owner (not
+    -- authenticated/anon) when the write happens inside redeem_invite() or
+    -- credit_invite_earnback() — SECURITY DEFINER holds that identity for
+    -- its entire execution, including statements and triggers it fires
+    -- internally. So this distinguishes "a client updated their own row
+    -- directly" from "a trusted definer function did this on the client's
+    -- behalf", independent of table/column GRANTs entirely — the actual
+    -- point of this layer.
+    IF current_user IN ('anon', 'authenticated') THEN
+        NEW.invite_uses_remaining := OLD.invite_uses_remaining;
+    END IF;
+
+    RETURN NEW;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.lock_users_privileged_columns() FROM PUBLIC, anon, authenticated;
+
+DROP TRIGGER IF EXISTS lock_users_privileged_columns_trigger ON public.users;
+CREATE TRIGGER lock_users_privileged_columns_trigger
+    BEFORE UPDATE ON public.users
+    FOR EACH ROW EXECUTE FUNCTION public.lock_users_privileged_columns();
+
 -- ROLLS ------------------------------------------------------
 DROP POLICY IF EXISTS "rolls: members can read" ON public.rolls;
 CREATE POLICY "rolls: members can read"
@@ -798,12 +862,19 @@ CREATE POLICY "follows: delete own"
 -- his request. This fires on public.users, not auth.users / a Supabase Auth
 -- hook: public.users is the row the app actually inserts on first login
 -- (AuthService.completeOnboarding's `INSERT INTO users`), and it already
--- carries `email`, so the owner is resolved by email here the same way
--- is_owner()/is_owner(uuid) do, rather than a pinned UUID that would go
--- stale if the owner's row is ever recreated. Defined here (right after the
--- follows table it targets) because, unlike is_blocked_either_way's
--- consumers, nothing about this function needs anything defined later in
--- this file.
+-- carries `email`, so the owner is resolved by email here. Defined here
+-- (right after the follows table it targets) because, unlike
+-- is_blocked_either_way's consumers, nothing about this function needs
+-- anything defined later in this file.
+--
+-- NOTE (2026-08-29_close_users_privilege_escalation.sql): is_owner() and
+-- is_owner(uuid) below no longer resolve by email, precisely because email
+-- was a client-writable column an attacker could set to the owner's to gain
+-- admin access. THIS trigger still resolves by email and was left alone —
+-- unlike is_owner(), it grants no privilege, only an auto-follow row, so a
+-- forged email here produces at worst a wrong follow target, not an
+-- escalation. Still worth an id-based fix later for correctness; not done
+-- in that migration to keep an urgent security fix minimal.
 --
 -- Resilience, each one deliberate:
 --   1. No owner row yet (fresh database, or the owner hasn't completed
@@ -1334,6 +1405,31 @@ CREATE POLICY "users: profiles readable" ON public.users FOR SELECT TO authentic
 REVOKE SELECT ON public.users FROM anon, authenticated;
 GRANT SELECT (id, username, avatar_path, bio, created_at, display_name, cover_path) ON public.users TO authenticated;
 
+-- INSERT/UPDATE/DELETE: column-scoped, same discipline as SELECT above.
+-- Supabase's default privileges hand INSERT/UPDATE/DELETE to anon AND
+-- authenticated on every new table in public, TABLE-WIDE (every column,
+-- including email/invite_code/invite_uses_remaining/id) unless explicitly
+-- taken back — this REVOKE + re-GRANT is that takeback. Closed as
+-- 2026-08-29_close_users_privilege_escalation.sql: the table-wide UPDATE
+-- combined with the row-level-only "users: own row" policy let any signed-in
+-- user PATCH their own row's `email` to the owner's, which is the sole input
+-- is_owner() used to trust (see that function below). REVOKE must run before
+-- each GRANT, every time this file re-runs, for the same reason the SELECT
+-- REVOKE above does: a bare GRANT does not remove the wider default.
+REVOKE INSERT, UPDATE, DELETE ON public.users FROM anon, authenticated;
+-- Signup only (AuthService.setUsername's InsertUser). The caller already
+-- holds a session before this INSERT runs, so `anon` never needs it.
+GRANT INSERT (id, email, username, invite_code, display_name) ON public.users TO authenticated;
+-- Every column the client legitimately updates directly. displayed_badges
+-- goes through set_displayed_badges() (SECURITY DEFINER); signup_ordinal,
+-- invite_uses_remaining, email, invite_code and id have no direct-UPDATE
+-- client path at all, by design, and are deliberately not listed here.
+GRANT UPDATE (username, display_name, bio, avatar_path, cover_path) ON public.users TO authenticated;
+-- No DELETE grant to anyone: account deletion runs through the SECURITY
+-- DEFINER public.delete_account() RPC, whose `DELETE FROM auth.users`
+-- cascades to this table via the id column's own FK, with the function
+-- OWNER's privileges — independent of what authenticated/anon hold here.
+
 -- Your OWN full row (incl. email + invite_code) via a locked-down RPC.
 CREATE OR REPLACE FUNCTION public.get_own_profile()
 RETURNS public.users
@@ -1474,6 +1570,16 @@ ALTER TABLE public.covered_post_windows ENABLE ROW LEVEL SECURITY;
 -- unaffected. Created here defensively with CREATE OR REPLACE rather than
 -- assumed to already exist, so this file has no ordering dependency on any
 -- other migration having run first.
+--
+-- Re-pointed at the owner's immutable auth id by
+-- 2026-08-29_close_users_privilege_escalation.sql, replacing a
+-- lower(email) = lower('codyysb@gmail.com') comparison: email was a plain
+-- client-writable column (AuthService.setUsername's signup INSERT accepts
+-- an arbitrary email), so any signed-in account could make this TRUE for
+-- itself with one write. id is the primary key, is pinned to auth.uid() by
+-- the "users: own row" RLS policy, and is what every foreign key in this
+-- schema actually references — it cannot be claimed by another account the
+-- way email could.
 CREATE OR REPLACE FUNCTION public.is_owner(p_user UUID)
 RETURNS BOOLEAN
 LANGUAGE sql
@@ -1481,11 +1587,7 @@ STABLE
 SECURITY DEFINER
 SET search_path = public
 AS $$
-    SELECT EXISTS (
-        SELECT 1 FROM public.users
-        WHERE id = p_user
-          AND lower(email) = lower('codyysb@gmail.com')
-    );
+    SELECT p_user = 'f43287d4-f239-415b-af45-650bbee62e83'::uuid;
 $$;
 REVOKE ALL ON FUNCTION public.is_owner(uuid) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.is_owner(uuid) FROM anon;
@@ -2011,13 +2113,28 @@ CREATE TABLE IF NOT EXISTS public.digest_state (
 ALTER TABLE public.digest_state ENABLE ROW LEVEL SECURITY;
 
 -- ============================================================
--- Owner gate. Same identity check send-social-push uses for its OWNER_EMAIL
--- constant: resolve against public.users.email, case insensitively, rather
--- than pinning a UUID that would go stale if the owner's row is ever
--- recreated. auth.uid() with no session is NULL, which matches nothing here
--- and returns FALSE, not an error. Everything owner-gated below (the invite
--- queue, the report queue, feedback) calls this, so it must be defined first.
--- Applied separately as supabase/migrations/2026-08-07_admin_dashboard.sql.
+-- Owner gate. Everything owner-gated below (the invite queue, the report
+-- queue, feedback, every admin_* analytics RPC) calls this, so it must be
+-- defined first. Applied separately as
+-- supabase/migrations/2026-08-07_admin_dashboard.sql.
+--
+-- Re-pointed at the owner's immutable auth id by
+-- 2026-08-29_close_users_privilege_escalation.sql. This used to resolve
+-- against lower(public.users.email) = lower('codyysb@gmail.com') (same
+-- identity check send-social-push's OWNER_EMAIL constant still uses,
+-- unrelated to this function) "rather than pinning a UUID that would go
+-- stale if the owner's row is ever recreated" — that rationale did not
+-- account for `email` being an ordinary client-writable column: with
+-- public.users' table-wide UPDATE grant (also closed by that migration),
+-- any signed-in user could PATCH their own row's email to the owner's and
+-- make this function return TRUE for them, unlocking the entire admin
+-- surface. id is the primary key, is pinned to auth.uid() by the
+-- "users: own row" RLS policy, and is what every foreign key in this schema
+-- actually references — accept a manual update to this constant on the
+-- rare, owner-initiated event of the owner's auth row being recreated, in
+-- exchange for removing a live, universally-reachable escalation.
+-- auth.uid() with no session is NULL, which does not equal the pinned uuid
+-- and returns FALSE, not an error.
 -- ============================================================
 CREATE OR REPLACE FUNCTION public.is_owner()
 RETURNS BOOLEAN
@@ -2026,11 +2143,7 @@ STABLE
 SECURITY DEFINER
 SET search_path = public
 AS $$
-    SELECT EXISTS (
-        SELECT 1 FROM public.users
-        WHERE id = auth.uid()
-          AND lower(email) = lower('codyysb@gmail.com')
-    );
+    SELECT auth.uid() = 'f43287d4-f239-415b-af45-650bbee62e83'::uuid;
 $$;
 REVOKE ALL ON FUNCTION public.is_owner() FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.is_owner() FROM anon;

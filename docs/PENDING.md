@@ -9,6 +9,45 @@ Statuses: `queued`, `blocked: <what on>`, `owner`, `decided: <what>`.
 
 ## Next up
 
+### owner: APPLY THE PRIVILEGE ESCALATION FIX
+
+`supabase/migrations/2026-08-29_close_users_privilege_escalation.sql`. Live and exploitable
+against production until it is run. Does not depend on any app release.
+
+Found 2026-08-29 by a security pass, then confirmed directly against the live database:
+`authenticated` held TABLE-WIDE UPDATE on `public.users` (every column: `email`, `id`,
+`invite_code`, `invite_uses_remaining`, `signup_ordinal`), the RLS policy is row-level so it
+permits writing any column of your OWN row, and `is_owner()` resolved the entire admin surface by
+matching `users.email`. So any signed-in user could PATCH their own email to the owner's and gain
+`approve_invite_request()` (insert any address into `allowed_emails`, a total bypass of the
+invite-only gate), every requester's raw email, and the moderation queue.
+
+Three layers: column-scoped grants replacing the table-wide ones; `is_owner()` re-pointed at the
+owner's immutable UUID; and a BEFORE UPDATE trigger pinning `id`/`email`/`invite_code`/
+`invite_uses_remaining` as defence in depth against a future GRANT mistake.
+
+Verified in a throwaway Postgres container: the exploit reproduces before and fails after, a
+simulated future grant-mistake is still blocked by the trigger alone, and signup INSERT plus
+profile UPDATE still work. Verified against production: the pinned UUID is cody / ordinal 1, and
+`redeem_invite` / `credit_invite_earnback` / `delete_account` are all postgres-owned SECURITY
+DEFINER, which is what makes the trigger's `current_user` exemption correct.
+
+AFTER APPLYING, re-verify: signup still works, profile edit still works, invite redemption still
+decrements.
+
+### follow-up: other places that resolve "the owner" by email
+
+Same false assumption the fix above disproved, but none of these grant privilege, so they were
+left out of the urgent fix: `supabase/functions/send-social-push/index.ts`,
+`send-daily-digest/index.ts`, and the auto-follow-owner trigger in `schema.sql` all compare
+`lower(email)`. Worst case is a wrong push recipient or a wrong auto-follow, not escalation.
+
+### follow-up: `invite_sent` analytics event is dead
+
+Zero rows ever, despite 6 people sending 44 real invites. Never wired on the client. Wire it or
+delete it before any dashboard comes to depend on it reading zero.
+
+
 ### done 2026-08-29 — invites, the real mechanic (design overhaul 3c)
 
 SHIPPED and APPLIED. All three migrations are live in production and verified against the
