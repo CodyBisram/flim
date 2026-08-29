@@ -683,66 +683,66 @@ struct PhotoPagerView: View {
 
                 Spacer(minLength: 8)
 
-                // Both controls carry a 40pt hit area behind a 15pt glyph. They shipped as bare
-                // `Image`s, which makes the tappable region the glyph itself: about 15pt against
-                // Apple's 44pt minimum, so the menu was effectively untappable. The other two
-                // headers in this file never showed it because their glyphs sit inside a
-                // `.padding(12).glassCapsule()` that happens to give them a real target.
-                Button { share(photo) } label: {
-                    Group {
-                        if preparingShare {
-                            ProgressView().tint(.white).controlSize(.small)
-                        } else {
-                            Image(systemName: "square.and.arrow.up")
-                                .font(.system(size: 15, weight: .medium))
-                        }
-                    }
-                    .foregroundStyle(Color(white: 0.7))
-                    .frame(width: 40, height: 40)
-                    .contentShape(Rectangle())
-                }
-                .disabled(preparingShare)
-                .accessibilityLabel(preparingShare ? "Preparing to share" : "Share photo")
-
-                // Shown for every photo, not just your own. Reporting someone else's shot lives
-                // here now: a flag sitting inches from Share put a destructive action beside a
-                // positive one, and it is the kind of thing you reach for once a year. An
-                // overflow menu is where iOS puts rare and destructive actions, and it gives
-                // this control something to do on a photo that is not yours.
-                let isOwn = photo.userId == auth.currentUser?.id
-                Menu {
-                    if isOwn {
-                        Button {
-                            Haptics.tap()
-                            Task {
-                                if await auth.setAvatar(fromPhotoPath: photo.storagePath) {
-                                    Haptics.success()
-                                } else {
-                                    Haptics.error()
-                                    flashError("Couldn't update your profile photo. Check your connection and try again.")
-                                }
+                // The same single accent capsule the night-rack header carries, and the same pair
+                // the Rolls toolbar renders. One control group in one language, everywhere a
+                // photograph is open full screen. The glyphs keep a real hit area inside it:
+                // they shipped as bare `Image`s, whose tappable region is the glyph itself, about
+                // 15pt against Apple's 44pt minimum, so the menu could barely be pressed.
+                HStack(spacing: 18) {
+                    Button { share(photo) } label: {
+                        Group {
+                            if preparingShare {
+                                ProgressView().tint(accent).controlSize(.small)
+                            } else {
+                                Image(systemName: "square.and.arrow.up")
+                                    .font(.system(size: 15, weight: .medium))
                             }
-                        } label: { Label("Set as profile photo", systemImage: "person.crop.circle") }
-                        Button(role: .destructive) {
-                            requestDelete(photo)
-                        } label: { Label("Delete photo", systemImage: "trash") }
-                    } else {
-                        let reported = reportedIds.contains(photo.id)
-                        Button(role: .destructive) { reportCurrent() } label: {
-                            Label(reported ? "Reported" : "Report photo",
-                                  systemImage: reported ? "flag.fill" : "flag")
                         }
-                        .disabled(reported)
-                    }
-                } label: {
-                    Image(systemName: "ellipsis")
-                        .font(.system(size: 15, weight: .medium))
-                        .foregroundStyle(Color(white: 0.7))
-                        .frame(width: 40, height: 40)
+                        .frame(width: 19, height: 19)
+                        .foregroundStyle(accent)
                         .contentShape(Rectangle())
+                    }
+                    .disabled(preparingShare)
+                    .accessibilityLabel(preparingShare ? "Preparing to share" : "Share photo")
+
+                    let isOwn = photo.userId == auth.currentUser?.id
+                    Menu {
+                        if isOwn {
+                            Button {
+                                Haptics.tap()
+                                Task {
+                                    if await auth.setAvatar(fromPhotoPath: photo.storagePath) {
+                                        Haptics.success()
+                                    } else {
+                                        Haptics.error()
+                                        flashError("Couldn't update your profile photo. Check your connection and try again.")
+                                    }
+                                }
+                            } label: { Label("Set as profile photo", systemImage: "person.crop.circle") }
+                            Button(role: .destructive) {
+                                requestDelete(photo)
+                            } label: { Label("Delete photo", systemImage: "trash") }
+                        } else {
+                            let reported = reportedIds.contains(photo.id)
+                            Button(role: .destructive) { reportCurrent() } label: {
+                                Label(reported ? "Reported" : "Report photo",
+                                      systemImage: reported ? "flag.fill" : "flag")
+                            }
+                            .disabled(reported)
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundStyle(accent)
+                            .frame(width: 19, height: 19)
+                            .contentShape(Rectangle())
+                    }
+                    .accessibilityLabel("More")
+                    .disabled(isDeleting)
                 }
-                .accessibilityLabel("More")
-                .disabled(isDeleting)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 11)
+                .glassCapsule(interactive: true)
             }
             .padding(.horizontal, 16)
             // 60, matching the other two headers in this file. `pagerBody` ignores the container

@@ -15,16 +15,14 @@ import Foundation
 /// that rhythm for agency and, for the first time, comments on a frame.
 enum RevealPacing {
 
-    /// How long the blur-to-sharp develop animation runs.
+    /// How long a frame takes to register as reached, which is now only what the RACK reads:
+    /// a frame you have not got to is a well, and it fills in behind you as you page.
     ///
-    /// 0.35s. It has been 1.4, then 0.8, then 0.5, and every complaint about it has been the
-    /// same one: too slow. The treatment itself (blur, washed out, then sharp) is the part worth
-    /// keeping, so what changes is only how long it takes.
-    ///
-    /// It runs on ARRIVAL, not on the image landing. Holding it until the full-resolution frame
-    /// loaded made the slow case worse, which is the case that was already the complaint. The
-    /// thumbnail underneath carries the beat, and the real photograph cross-fades in over it on
-    /// the reveal's own `fadeIn` curve, so the swap is not a second transition.
+    /// The photograph itself no longer animates. The develop beat (blur, washed out, then sharp)
+    /// was tried at 1.4s, 0.8s, 0.5s and 0.35s and the note was the same every time: it is in the
+    /// way of the thing you opened the reveal to look at. What replaced it is what the first
+    /// version actually did well, a photograph fading in, on the reveal's own `fadeIn` curve.
+    /// Do not reinstate the blur without new evidence; four durations is enough.
     static let developDuration: TimeInterval = 0.35
 
     /// Movement past this many points means a press is a swipe, not a tap.
@@ -38,9 +36,11 @@ enum RevealPacing {
     /// center-crops every capture to, so this is the shape of every photograph that can reach a
     /// roll. `FeedUnitCard` boxes its photos the same way.
     ///
-    /// The box is not decoration. The develop beat blurs the print at `openingBlurRadius`, and
-    /// `.blur` RENDERS OUTSIDE the bounds of the view it is applied to, so without a box to clip
-    /// against, the beat washed a blurred copy of the photograph up under the reveal's header.
+    /// The box is not decoration: it is what keeps the print clear of the header and rounds it
+    /// the way every other photo surface is rounded. It was originally forced by the develop
+    /// beat's blur, which renders OUTSIDE the bounds of the view it is applied to and washed a
+    /// blurred copy of the photograph up under the header. The blur is gone; the box earned its
+    /// keep on its own.
     static let frameAspectRatio: CGFloat = 3.0 / 4.0
 
     /// Corner radius of the print, matching `FeedUnitCard`'s photo.
@@ -53,9 +53,6 @@ enum RevealPacing {
 
     /// Vertical breathing room above and below the print.
     static let frameVerticalInset: CGFloat = 14
-
-    /// The opening blur of the develop beat, in points.
-    static let openingBlurRadius: CGFloat = 26
 
     /// The size a print actually renders at, given the space the pager offers it.
     ///

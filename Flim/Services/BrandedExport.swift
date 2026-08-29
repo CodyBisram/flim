@@ -324,7 +324,7 @@ enum BrandedExport {
                 // letter. Narrowing them keeps it unmistakably an I (de-serifing it entirely
                 // made a bare stroke that merged into the M) while taking the weight back out.
                 let barInset: CGFloat = character == "I" ? 0.30 : 0.19
-                // LETTERS get continuous full-height stems; digits keep the split ones.
+                // LETTERS keep the digits' SPLIT verticals, extended to the cell's own edges.
                 //
                 // A segment glyph only occupies the segments it lights, so FLIM's four letters
                 // sat in four different vertical bands: F reached the top bar and stopped at 87%,
@@ -332,10 +332,15 @@ enum BrandedExport {
                 // wordmark that is exactly "the F and the L are different sizes than the I and the
                 // M", because the ink genuinely was.
                 //
-                // Merging each split pair (f+e, b+c, i+l) into one stem running the full cell
-                // height puts every letter in the same band, and is also what these letters
-                // actually look like: F, L, I and M all have full-height stems. Digits must keep
-                // the split, or a 2's upper-right stem would run to the floor and stop being a 2.
+                // The first repair merged each split pair into one continuous stem. That put the
+                // letters in one band and lost the thing that made them belong to the date: a
+                // digit is two strokes with a gap at the middle bar, and a solid stem reads as a
+                // stencil font standing next to an LED display. So the split stays and the
+                // INSET goes: a letter's verticals run to the cell's own top and bottom instead
+                // of stopping 13% short, which is what puts every letter in the same band while
+                // keeping the rhythm the numerals have. Digits keep the inset, because their
+                // bars cap the verticals and a 2 whose upper-right stem reached the floor would
+                // stop being a 2.
                 // LETTERS only. The apostrophe also lights `i`, and it is a mark at the top of
                 // the cell, not a stem: giving it full height ran it floor to ceiling.
                 let stems = character.isLetter
@@ -343,13 +348,9 @@ enum BrandedExport {
                     let on = lit.contains(segment)
                     let resting = rests && restingSegments.contains(segment)
                     guard on || resting else { continue }
-                    // The lower half of a merged pair is already drawn by its upper half.
-                    if stems, segment == .e, lit.contains(.f) { continue }
-                    if stems, segment == .c, lit.contains(.b) { continue }
-                    if stems, segment == .l, lit.contains(.i) { continue }
                     colour.withAlphaComponent(on ? 1 : ghost).setFill()
                     fill(segment, in: box, context: ctx.cgContext, barInset: barInset,
-                         fullHeightStem: stems && [.f, .b, .i].contains(segment))
+                         edgeToEdgeStems: stems)
                 }
                 x += box.width + cellGapFraction * em
             }
@@ -391,7 +392,7 @@ enum BrandedExport {
     /// height. Taken from the design's own segment board rather than re-derived, including the
     /// rotation SIGNS, which are the opposite of what the shapes suggest.
     private static func fill(_ segment: Segment, in box: CGRect, context: CGContext,
-                             barInset: CGFloat = 0.19, fullHeightStem: Bool = false) {
+                             barInset: CGFloat = 0.19, edgeToEdgeStems: Bool = false) {
         let w = box.width, h = box.height
         var rect: CGRect
         var rotation: CGFloat = 0
@@ -400,15 +401,17 @@ enum BrandedExport {
         switch segment {
         case .a:  rect = CGRect(x: barInset * w, y: 0, width: barWidth, height: 0.09 * h)
         case .d:  rect = CGRect(x: barInset * w, y: h - 0.09 * h, width: barWidth, height: 0.09 * h)
-        case .f:  rect = fullHeightStem
-                    ? CGRect(x: 0, y: 0, width: 0.15 * w, height: h)
-                    : CGRect(x: 0, y: 0.13 * h, width: 0.15 * w, height: 0.285 * h)
-        case .b:  rect = fullHeightStem
-                    ? CGRect(x: w - 0.15 * w, y: 0, width: 0.15 * w, height: h)
-                    : CGRect(x: w - 0.15 * w, y: 0.13 * h, width: 0.15 * w, height: 0.285 * h)
-        case .e:  rect = CGRect(x: 0, y: h - 0.13 * h - 0.285 * h, width: 0.15 * w, height: 0.285 * h)
-        case .c:  rect = CGRect(x: w - 0.15 * w, y: h - 0.13 * h - 0.285 * h,
-                                width: 0.15 * w, height: 0.285 * h)
+        case .f:  rect = CGRect(x: 0, y: edgeToEdgeStems ? 0 : 0.13 * h,
+                                width: 0.15 * w, height: edgeToEdgeStems ? 0.415 * h : 0.285 * h)
+        case .b:  rect = CGRect(x: w - 0.15 * w, y: edgeToEdgeStems ? 0 : 0.13 * h,
+                                width: 0.15 * w, height: edgeToEdgeStems ? 0.415 * h : 0.285 * h)
+        case .e:  rect = edgeToEdgeStems
+                    ? CGRect(x: 0, y: h - 0.415 * h, width: 0.15 * w, height: 0.415 * h)
+                    : CGRect(x: 0, y: h - 0.13 * h - 0.285 * h, width: 0.15 * w, height: 0.285 * h)
+        case .c:  rect = edgeToEdgeStems
+                    ? CGRect(x: w - 0.15 * w, y: h - 0.415 * h, width: 0.15 * w, height: 0.415 * h)
+                    : CGRect(x: w - 0.15 * w, y: h - 0.13 * h - 0.285 * h,
+                             width: 0.15 * w, height: 0.285 * h)
         case .g1: rect = CGRect(x: 0.19 * w, y: 0.455 * h, width: 0.195 * w, height: 0.09 * h)
         case .g2: rect = CGRect(x: 0.615 * w, y: 0.455 * h, width: 0.195 * w, height: 0.09 * h)
         // Centre verticals are sized from the STANDARD cell, not this one. The I lives in a
@@ -416,13 +419,13 @@ enum BrandedExport {
         // narrow box would come out half the weight of every other letter's.
         case .i:
             let sw = 0.15 * cellAspect * h
-            rect = fullHeightStem
-                ? CGRect(x: (w - sw) / 2, y: 0, width: sw, height: h)
-                : CGRect(x: (w - sw) / 2, y: 0.13 * h, width: sw, height: 0.285 * h)
+            rect = CGRect(x: (w - sw) / 2, y: edgeToEdgeStems ? 0 : 0.13 * h,
+                          width: sw, height: edgeToEdgeStems ? 0.415 * h : 0.285 * h)
         case .l:
             let sw = 0.15 * cellAspect * h
-            rect = CGRect(x: (w - sw) / 2, y: h - 0.13 * h - 0.285 * h,
-                          width: sw, height: 0.285 * h)
+            rect = edgeToEdgeStems
+                ? CGRect(x: (w - sw) / 2, y: h - 0.415 * h, width: sw, height: 0.415 * h)
+                : CGRect(x: (w - sw) / 2, y: h - 0.13 * h - 0.285 * h, width: sw, height: 0.285 * h)
         case .h:
             rect = CGRect(x: 0.24 * w, y: 0.1045 * h, width: 0.15 * w, height: 0.381 * h)
             rotation = -.pi / 6

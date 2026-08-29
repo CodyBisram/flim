@@ -204,7 +204,6 @@ struct RollRevealView: View {
     /// what put the frame against the header even once the bleed is cut.
     @ViewBuilder
     private func frame(_ photo: Photo) -> some View {
-        let developed = viewModel.hasDeveloped(photo)
         Group {
             if let url = viewModel.urls[photo.viewPath] {
                 // Two layers, sharing one set of develop modifiers.
@@ -240,9 +239,11 @@ struct RollRevealView: View {
                     }
                 }
                 .compositingGroup()
-                .blur(radius: developed ? 0 : RevealPacing.openingBlurRadius, opaque: true)
-                .saturation(developed ? 1 : 1.7)
-                .opacity(developed ? 1 : 0.65)
+                // NO BLUR. It was tried at 1.4s, 0.8s, 0.5s and 0.35s and the note was the same
+                // every time: it is in the way. What survives is the part of the first reveal
+                // that people actually liked, a photograph fading in, which the reveal's own
+                // `fadeIn` curve does on the layer above. Everything else about the ceremony is
+                // untouched: the cover card, the rack, the wells ahead of you, the one-shot flag.
             } else {
                 ProgressView().tint(.white)
             }

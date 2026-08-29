@@ -78,12 +78,14 @@ struct RevealPacingTests {
         #expect(RevealPacing.printSize(inWidth: 500, height: 20) == .zero)   // shorter than the insets
     }
 
-    @Test("the develop beat's opening blur is wide enough to need clipping")
-    func openingBlurIsWideEnoughToBleed() {
-        // Not a style assertion. This radius is the reason the box exists: at 26pt the bleed
-        // reached the header from a full-bleed print. If it were ever tuned near zero the box
-        // would still be correct, but this test is what records WHY it is there.
-        #expect(RevealPacing.openingBlurRadius > 8)
+    @Test("the frame box survives the blur that first required it")
+    func theBoxOutlivesTheBlur() {
+        // The 3:4 box was originally forced by the develop beat: `.blur` renders outside its
+        // view's bounds and washed the photograph up under the header. The blur is gone and the
+        // box stays, because it is also what keeps the print off the chrome and rounds it the
+        // way every other photo surface is rounded.
+        #expect(RevealPacing.frameAspectRatio == 3.0 / 4.0)
+        #expect(RevealPacing.frameCornerRadius > 0)
     }
 
     // MARK: - Prefetch
