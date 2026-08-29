@@ -197,6 +197,41 @@ final class AuthService {
             .value
     }
 
+    /// How many invites the signed-in account has left.
+    ///
+    /// Three states, and the difference between the last two matters to the UI: a real count, an
+    /// account deliberately granted unlimited (the server stores NULL for that), and "we do not
+    /// know", which is what a network failure or a server that has not run the quota migration
+    /// yet both look like.
+    enum InviteQuota: Equatable {
+        case remaining(Int)
+        case unlimited
+        /// Never render a number for this. Not zero: showing "0 invites left" to someone whose
+        /// request merely failed would tell them they are out when they are not.
+        case unknown
+    }
+
+    /// Reads the caller's OWN remaining invites.
+    ///
+    /// An RPC rather than a column read on purpose: `invite_uses_remaining` is not in the
+    /// `GRANT SELECT` column list on `users`, so it is unreadable by direct select even for the
+    /// row's own owner. `get_own_invite_quota()` is pinned to `auth.uid()` inside its body and
+    /// takes no parameters, so there is nothing to point at another account.
+    ///
+    /// FAILS SOFT, deliberately. The server must run the quota migration before this function
+    /// exists, and a client that shipped first would otherwise throw on a missing function. Any
+    /// failure returns `.unknown` and the invite screen simply says nothing about counts, which
+    /// makes the deploy order between this build and that migration a non-issue.
+    func ownInviteQuota() async -> InviteQuota {
+        do {
+            let remaining: Int? = try await supabase.rpc("get_own_invite_quota").execute().value
+            guard let remaining else { return .unlimited }
+            return .remaining(max(0, remaining))
+        } catch {
+            return .unknown
+        }
+    }
+
     /// Redeems an invite code for `email`, allowlisting it server-side. Returns `true` if the
     /// code was valid (also `true`, idempotently, if the email was already allowlisted).
     /// `false` means the code doesn't exist. The caller is responsible for proceeding via

@@ -114,11 +114,22 @@ ALTER TABLE public.redeem_invite_rate ENABLE ROW LEVEL SECURITY;
 -- this row is readable/writable only from inside redeem_invite()'s definer body.
 REVOKE ALL ON public.redeem_invite_rate FROM PUBLIC, anon, authenticated;
 
--- Forward-compat hook for scarce invites (e.g. "this code works N times").
--- NULL = unlimited, which is what every existing row gets and what v1 enforces
--- for everyone, redeem_invite() does not read or decrement this column yet.
--- Wiring it in later is additive: no shape change needed when that ships.
+-- Invite quota (wired 2026-08-29, supabase/migrations/2026-08-29_invite_quota.sql).
+-- Every existing row was backfilled to 3 (the design's "You have 3 invites
+-- left" number) and new rows default to 3. NULL's meaning CHANGED here: it no
+-- longer means "everyone, because nothing reads this column" (that was true
+-- only before this wiring landed); it is now reclaimed as a deliberate,
+-- manually-set "this account has unlimited invites" marker an operator sets
+-- by hand (e.g. the owner's own account), never something redeem_invite()
+-- itself produces. The decrement logic below treats NULL as unlimited: never
+-- decremented, never blocks. A CHECK floor keeps the column from ever going
+-- negative while still allowing the NULL/unlimited state.
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS invite_uses_remaining INT;
+ALTER TABLE public.users ALTER COLUMN invite_uses_remaining SET DEFAULT 3;
+ALTER TABLE public.users
+    DROP CONSTRAINT IF EXISTS users_invite_uses_remaining_nonneg,
+    ADD CONSTRAINT users_invite_uses_remaining_nonneg
+        CHECK (invite_uses_remaining IS NULL OR invite_uses_remaining >= 0);
 
 CREATE OR REPLACE FUNCTION public.redeem_invite(p_code TEXT, p_email TEXT)
 RETURNS BOOLEAN
@@ -128,11 +139,13 @@ SET search_path = public
 VOLATILE
 AS $$
 DECLARE
-    v_email    TEXT := LOWER(TRIM(p_email));
-    v_code     TEXT := UPPER(TRIM(p_code));
-    v_inviter  UUID;
-    v_window   TIMESTAMPTZ;
-    v_attempts INT;
+    v_email      TEXT := LOWER(TRIM(p_email));
+    v_code       TEXT := UPPER(TRIM(p_code));
+    v_inviter    UUID;
+    v_remaining  INT;
+    v_did_insert BOOLEAN;
+    v_window     TIMESTAMPTZ;
+    v_attempts   INT;
 BEGIN
     -- Global rate gate. FOR UPDATE serializes concurrent callers on the single
     -- row so two requests can't both read attempts=29 and both slip through.
@@ -150,10 +163,31 @@ BEGIN
     END IF;
 
     -- Case/whitespace-insensitive match against the inviting user's own code.
-    SELECT id INTO v_inviter FROM public.users WHERE invite_code = v_code LIMIT 1;
+    -- FOR UPDATE locks the inviter's row for the rest of this call: a second,
+    -- concurrent redemption of the same code blocks here until this one
+    -- commits, then re-reads the post-decrement remaining count instead of a
+    -- stale one. Same discipline as the rate gate above.
+    SELECT id, invite_uses_remaining INTO v_inviter, v_remaining
+    FROM public.users
+    WHERE invite_code = v_code
+    FOR UPDATE;
 
     IF v_inviter IS NULL THEN
         RETURN FALSE;
+    END IF;
+
+    -- Exhausted (0, not NULL/unlimited). Still must be a free, TRUE-returning
+    -- no-op for a replay of an email that already got through -- either from
+    -- this inviter earlier or from someone else entirely -- so check for that
+    -- before treating this as a spend attempt. Only a genuinely NEW email
+    -- against a genuinely exhausted inviter comes back FALSE, identical to a
+    -- bad code, so exhaustion can never be distinguished from a wrong code.
+    IF v_remaining IS NOT NULL AND v_remaining <= 0 THEN
+        IF EXISTS (SELECT 1 FROM public.allowed_emails WHERE email = v_email) THEN
+            RETURN TRUE;
+        ELSE
+            RETURN FALSE;
+        END IF;
     END IF;
 
     -- note stores the inviter's UUID, not their username: usernames are
@@ -161,16 +195,28 @@ BEGIN
     -- be missing entirely. The UUID is a stable, permanent audit trail back to
     -- `users.id` no matter what the inviter later renames themselves to.
     --
-    -- ON CONFLICT DO NOTHING + unconditional RETURN TRUE: whether v_email was
-    -- already on the allowlist or was just added is indistinguishable to the
-    -- caller, by design. This is what makes the RPC idempotent, redeeming the
-    -- same valid code for the same email twice (double-tap, client retry) is
-    -- always safe, never errors, and never writes a second row, and it also
-    -- closes an email-enumeration side channel: a caller can't use the return
-    -- value to learn whether an email was allowed before they submitted it.
+    -- RETURNING TRUE INTO v_did_insert is the load-bearing idempotency check:
+    -- it is only non-NULL/true when this call actually added a NEW row. A
+    -- repeat call for an email already on the allowlist hits ON CONFLICT DO
+    -- NOTHING, returns zero rows, leaves v_did_insert NULL, and costs nothing.
+    -- This is what makes the RPC idempotent AND makes the decrement below
+    -- exact: redeeming the same valid code for the same email twice
+    -- (double-tap, client retry) is always safe, never errors, never writes a
+    -- second row, and never burns a second invite, while also closing an
+    -- email-enumeration side channel: "already allowed" and "freshly allowed"
+    -- still look identical to the caller.
+    v_did_insert := FALSE;
     INSERT INTO public.allowed_emails (email, note)
     VALUES (v_email, 'invited_by:' || v_inviter::text)
-    ON CONFLICT (email) DO NOTHING;
+    ON CONFLICT (email) DO NOTHING
+    RETURNING TRUE INTO v_did_insert;
+
+    -- Decrement only on a genuine new admission, and only for a finite
+    -- allowance. NULL (unlimited, manually granted -- see column comment
+    -- above) is never decremented and never blocks.
+    IF v_did_insert IS TRUE AND v_remaining IS NOT NULL THEN
+        UPDATE public.users SET invite_uses_remaining = invite_uses_remaining - 1 WHERE id = v_inviter;
+    END IF;
 
     RETURN TRUE;
 END;
@@ -179,12 +225,17 @@ $$;
 -- Explicit REVOKE-then-GRANT-to-both, not just one role: the outage lesson
 -- documented at is_blocked_either_way below is that a client-callable
 -- function's EXECUTE grants must be spelled out for every role that calls it,
--- because SECURITY DEFINER only changes whose privileges the BODY runs with, 
+-- because SECURITY DEFINER only changes whose privileges the BODY runs with,
 -- it does not substitute for the caller needing EXECUTE. redeem_invite is
 -- called pre-sign-in (anon) and is harmless to also allow post-sign-in
 -- (authenticated), same shape as is_email_allowed.
 REVOKE ALL ON FUNCTION public.redeem_invite(TEXT, TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.redeem_invite(TEXT, TEXT) TO anon, authenticated;
+
+-- Deliberately NOT built here: earn-back (crediting an invite when the
+-- invitee shoots their first roll). No trigger for it exists in this file.
+-- That is a separate, later change with its own decision about what event
+-- fires it and whether it should ever push a finite count back past 3.
 
 -- ============================================================
 -- Helper: membership check as SECURITY DEFINER.
@@ -1188,6 +1239,23 @@ SET search_path = public
 AS $$ SELECT * FROM public.users WHERE id = auth.uid() $$;
 REVOKE ALL ON FUNCTION public.get_own_profile() FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.get_own_profile() TO authenticated;
+
+-- Your OWN remaining invite count, and nothing else's. Zero parameters and
+-- auth.uid() pinned inside the SECURITY DEFINER body, so there is no argument
+-- a caller could pass to read someone else's row. An RPC rather than a
+-- `profiles` column because that view deliberately excludes every invite
+-- field, same leak class the view already closed for email/invite_code.
+-- NULL return means unlimited (see the invite_uses_remaining column comment
+-- above); any other value, including 0, is the caller's real remaining count.
+CREATE OR REPLACE FUNCTION public.get_own_invite_quota()
+RETURNS INT
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+STABLE
+AS $$ SELECT invite_uses_remaining FROM public.users WHERE id = auth.uid() $$;
+REVOKE ALL ON FUNCTION public.get_own_invite_quota() FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.get_own_invite_quota() TO authenticated;
 
 -- Function hygiene: pin the one mutable search_path; internal functions unreachable via RPC;
 -- signed-in-only actions closed to anon. is_email_allowed stays anon-callable BY DESIGN

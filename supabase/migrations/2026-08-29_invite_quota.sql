@@ -86,6 +86,31 @@ ALTER TABLE public.users
     ADD CONSTRAINT users_invite_uses_remaining_nonneg
         CHECK (invite_uses_remaining IS NULL OR invite_uses_remaining >= 0);
 
+-- 1b. THE SEEDING EXCEPTION. Read this before running, and delete it if you
+--     disagree: it is deliberately one statement so it is easy to drop.
+--
+--     Measured against production on 2026-08-29, before any of this was
+--     applied: 51 users, 44 invites ever redeemed through a code, and only 6
+--     accounts have ever sent one. The distribution is not flat. Account
+--     signup_ordinal 1 has sent 26 of those 44, and the next most active has
+--     sent 9. Everyone else is at 3 or below.
+--
+--     Nobody is debited for history: the decrement below only fires on FUTURE
+--     redemptions, so a flat backfill of 3 cannot push anyone negative. The
+--     problem is forward-looking. Capping the account that has personally
+--     brought in more than half the app at 3 would throttle the app's main
+--     distribution channel the moment this runs, which is the opposite of
+--     what a growth mechanic is for.
+--
+--     So ordinal 1 keeps NULL, the unlimited marker. Keyed on signup_ordinal
+--     rather than a pasted UUID because signup_ordinal is permanent,
+--     gap-free and immutable by trigger, so this statement says WHY that
+--     account is exempt instead of just naming it.
+--
+--     This is a policy choice, not a technical requirement. Delete this
+--     statement and the owner is capped at 3 like everyone else.
+UPDATE public.users SET invite_uses_remaining = NULL WHERE signup_ordinal = 1;
+
 -- 2. redeem_invite() rewrite: same signature, same rate gate, same
 --    case/whitespace handling, plus the read-lock/decrement/exhaustion logic
 --    described above. See the header for why the ordering here is not

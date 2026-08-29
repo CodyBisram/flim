@@ -582,18 +582,62 @@ struct InviteSheet: View {
     @Environment(AuthService.self) private var auth
     @Environment(\.dismiss) private var dismiss
     @State private var codeCopied = false
+    /// Starts `.unknown`, which renders no count at all. See `AuthService.ownInviteQuota`.
+    @State private var quota: AuthService.InviteQuota = .unknown
+
+    /// Whether the code can still let anyone in. `.unknown` and `.unlimited` both count as yes:
+    /// never hide a working code because a lookup failed.
+    private var codeStillWorks: Bool {
+        if case .remaining(0) = quota { return false }
+        return true
+    }
+
+    /// The scarcity, said plainly and only when it is actually known.
+    ///
+    /// Never says "roll". FLIM already ships a Share invite on the Rolls screen that means invite
+    /// someone to a ROLL, so "invites left on this roll" would name a different, real feature.
+    ///
+    /// Nothing here promises more invites arrive later. Earning one back is a separate piece that
+    /// is not built, and copy that implies a refill nobody has written would be a lie with a
+    /// delivery date.
+    @ViewBuilder
+    private var quotaLine: some View {
+        switch quota {
+        case .remaining(let left) where left > 0:
+            Text(left == 1 ? "1 invite left" : "\(left) invites left")
+                .flimFont(13, weight: .semibold, relativeTo: .footnote)
+                .foregroundStyle(accent)
+                .padding(.horizontal, 12).padding(.vertical, 5)
+                .background(accent.opacity(0.12), in: Capsule())
+        case .remaining:
+            Text("No invites left")
+                .flimFont(13, weight: .semibold, relativeTo: .footnote)
+                .foregroundStyle(FlimTheme.textTertiary)
+                .padding(.horizontal, 12).padding(.vertical, 5)
+                .background(Color.white.opacity(0.08), in: Capsule())
+        // Unlimited says nothing rather than boasting, and unknown must never render a number:
+        // "0 invites left" for someone whose lookup merely failed is a lie in the worst direction.
+        case .unlimited, .unknown:
+            EmptyView()
+        }
+    }
 
     var body: some View {
         NavigationStack {
             ZStack {
                 VStack(spacing: 20) {
-                    Text("Share this code so friends can add you on \(AppInfo.appName).")
+                    Text(codeStillWorks
+                         ? "Share this code so friends can add you on \(AppInfo.appName)."
+                         : "Your code will not let anyone else in.")
                         .flimFont(14, relativeTo: .subheadline)
                         .foregroundStyle(FlimTheme.textSecondary)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 40)
                         .padding(.top, 12)
 
+                    quotaLine
+
+                    if codeStillWorks {
                     HStack(spacing: 12) {
                         Button {
                             UIPasteboard.general.string = auth.currentUser?.inviteCode
@@ -628,9 +672,11 @@ struct InviteSheet: View {
                             .simultaneousGesture(TapGesture().onEnded { Haptics.tap() })
                         }
                     }
+                    }
                     Spacer()
                 }
                 .padding(.horizontal, 24)
+                .task { quota = await auth.ownInviteQuota() }
             }
             .navigationBarTitleDisplayMode(.inline)
             .flimInlineTitle("Invite friends")
