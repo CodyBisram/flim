@@ -111,7 +111,8 @@ struct DarkroomYearRow: View {
                     } placeholder: {
                         unexposedCell
                     }
-                    .frame(width: DarkroomDayUnit.framePitch - DarkroomDayUnit.frameGap, height: 59)
+                    .frame(width: DarkroomDayUnit.photoFramePitch - DarkroomDayUnit.frameGap,
+                            height: DarkroomDayUnit.photoFrameHeight)
                     .clipShape(RoundedRectangle(cornerRadius: 2))
                     .overlay(RoundedRectangle(cornerRadius: 2).stroke(FlimTheme.stroke, lineWidth: 1))
                 } else {
@@ -129,7 +130,8 @@ struct DarkroomYearRow: View {
     private var unexposedCell: some View {
         RoundedRectangle(cornerRadius: 2)
             .fill(Color(white: 0.078))
-            .frame(width: DarkroomDayUnit.framePitch - DarkroomDayUnit.frameGap, height: 59)
+            .frame(width: DarkroomDayUnit.photoFramePitch - DarkroomDayUnit.frameGap,
+                            height: DarkroomDayUnit.photoFrameHeight)
             .overlay(RoundedRectangle(cornerRadius: 2).stroke(FlimTheme.stroke, lineWidth: 1))
     }
 

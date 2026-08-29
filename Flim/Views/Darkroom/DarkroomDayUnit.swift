@@ -237,11 +237,30 @@ extension DarkroomDayUnit {
     static let framePitch: CGFloat = 46
     static let frameGap: CGFloat = 2
 
+    /// The pitch the Darkroom's own PHOTO frames use, as distinct from the 46pt well geometry
+    /// above.
+    ///
+    /// 90 puts four frames across a 393pt screen (88pt each) instead of eight at 44, which is
+    /// the whole point: 44 is an index size, big enough to spot a photograph you already know
+    /// and too small to recognise one you don't, and the Darkroom is where you go to FIND
+    /// something. Capacity still falls out of the width, so a narrower phone simply takes three.
+    ///
+    /// NOT three across, which is what the profile and roll grids use. Those hold a curated few
+    /// dozen; this holds the whole archive, and at three a 96-shot month is about five thousand
+    /// points of scrolling. Four doubles the photograph and roughly doubles the scroll, rather
+    /// than multiplying it by seven.
+    ///
+    /// The Rolls ready band's sealed wells keep `framePitch`: they are never photographs, so
+    /// there is nothing in them to see bigger.
+    static let photoFramePitch: CGFloat = 90
+    /// Frame height at the photo pitch, holding the 44x59 proportion the small frames had.
+    static let photoFrameHeight: CGFloat = (photoFramePitch - frameGap) * 59 / 44
+
     /// How many whole frames fit `availableWidth` at the fixed pitch. Always measured from the
     /// real content width, never hard-coded: `n * pitch - gap <= availableWidth`.
-    static func stripCapacity(availableWidth: CGFloat) -> Int {
-        guard availableWidth > 0 else { return 0 }
-        return max(0, Int(((availableWidth + frameGap) / framePitch).rounded(.down)))
+    static func stripCapacity(availableWidth: CGFloat, pitch: CGFloat = framePitch) -> Int {
+        guard availableWidth > 0, pitch > 0 else { return 0 }
+        return max(0, Int(((availableWidth + frameGap) / pitch).rounded(.down)))
     }
 
     /// Cuts a night's photos into strips of at most `capacity` frames each, filled greedily in
@@ -275,8 +294,8 @@ extension DarkroomDayUnit {
 
     /// A strip's perforation length in points: however many slots it actually holds (padded, in
     /// a multi-strip sheet; frames-only, in a single-strip day) at the fixed pitch.
-    static func perforationWidth(slotCount: Int) -> CGFloat {
+    static func perforationWidth(slotCount: Int, pitch: CGFloat = framePitch) -> CGFloat {
         guard slotCount > 0 else { return 0 }
-        return CGFloat(slotCount) * framePitch - frameGap
+        return CGFloat(slotCount) * pitch - frameGap
     }
 }

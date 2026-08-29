@@ -47,6 +47,35 @@ final class DarkroomDayUnitTests: XCTestCase {
         }
     }
 
+    // MARK: - Frame pitch
+
+    func testPhotoFramesGoFourAcrossAndWellsStayEight() {
+        // 393pt phone, 16pt inset each side.
+        let available: CGFloat = 393 - 32
+        let photos = DarkroomDayUnit.stripCapacity(availableWidth: available,
+                                                    pitch: DarkroomDayUnit.photoFramePitch)
+        let wells = DarkroomDayUnit.stripCapacity(availableWidth: available)
+        XCTAssertEqual(photos, 4, "the Darkroom's photo frames go four across")
+        XCTAssertEqual(wells, 7, "the Rolls ready band's sealed wells keep their own geometry")
+        // The two are deliberately different: a well is never a photograph, so there is nothing
+        // in it to see bigger, and growing it would push the ready band off its own row.
+        XCTAssertGreaterThan(DarkroomDayUnit.photoFramePitch, DarkroomDayUnit.framePitch)
+    }
+
+    func testPhotoFrameKeepsItsProportion() {
+        // 44x59 was the small frame's shape; the big one holds it rather than drifting square.
+        let width = DarkroomDayUnit.photoFramePitch - DarkroomDayUnit.frameGap
+        XCTAssertEqual(width / DarkroomDayUnit.photoFrameHeight, 44.0 / 59.0, accuracy: 0.001)
+    }
+
+    func testNarrowScreenTakesThreeRatherThanOverflowing() {
+        // An SE-width phone simply fits one fewer. Capacity has always fallen out of the width,
+        // which is what keeps a fixed pitch safe across devices.
+        let se = DarkroomDayUnit.stripCapacity(availableWidth: 375 - 32,
+                                                pitch: DarkroomDayUnit.photoFramePitch)
+        XCTAssertEqual(se, 3)
+    }
+
     func testFourShotsIsOneUnpaddedStrip() {
         let photos = (0..<4).map { photo(takenAt: date(21, 4).addingTimeInterval(Double($0) * 60)) }
         let strips = DarkroomDayUnit.cutStrips(photos: photos, capacity: 9)

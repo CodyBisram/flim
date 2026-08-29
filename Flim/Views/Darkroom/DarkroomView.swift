@@ -174,7 +174,8 @@ struct DarkroomView: View {
     @State private var cachedMonthScopedUnits: [DarkroomDayUnit] = []
 
     private var stripCapacity: Int {
-        max(1, DarkroomDayUnit.stripCapacity(availableWidth: scrollWidth - 32))
+        max(1, DarkroomDayUnit.stripCapacity(availableWidth: scrollWidth - 32,
+                                             pitch: DarkroomDayUnit.photoFramePitch))
     }
 
     /// `DarkroomYearRow`'s own per-row frame capacity: the SAME `DarkroomDayUnit.stripCapacity`
@@ -186,7 +187,8 @@ struct DarkroomView: View {
     /// while `.year` is the mounted rung, same as the night list's own `ScrollView` does for
     /// `.month`), so whichever rung was measured last is what this reads.
     private var yearRowCapacity: Int {
-        max(1, DarkroomDayUnit.stripCapacity(availableWidth: scrollWidth - 32))
+        max(1, DarkroomDayUnit.stripCapacity(availableWidth: scrollWidth - 32,
+                                             pitch: DarkroomDayUnit.photoFramePitch))
     }
 
     /// One unit per night, newest first, this render's single source of truth for both the

@@ -629,8 +629,13 @@ struct RollsView: View {
                             }
                         }
                     }
-                    .clipShape(RoundedRectangle(cornerRadius: 2))
-                    .overlay(RoundedRectangle(cornerRadius: 2).strokeBorder(FlimTheme.stroke, lineWidth: 1))
+                    // 12, the app's photograph radius (the feed hero, the reveal's print, the
+                    // pager's box). These tiles had the rack well's 2, which they inherited
+                    // rather than chose: a well is a 44pt film frame and square is right for it,
+                    // while this is a ~180pt photograph with the roll's name underneath. The
+                    // wells keep their 2, so the film language is intact where it belongs.
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(FlimTheme.stroke, lineWidth: 1))
 
                 HStack(spacing: 5) {
                     Text(roll.name)

@@ -132,14 +132,16 @@ struct DarkroomDayUnitView: View {
         case .empty:
             // An unexposed slot: holds its space, draws nothing, no hit target.
             Color.clear
-                .frame(width: DarkroomDayUnit.framePitch - DarkroomDayUnit.frameGap, height: 59)
+                .frame(width: DarkroomDayUnit.photoFramePitch - DarkroomDayUnit.frameGap,
+                       height: DarkroomDayUnit.photoFrameHeight)
                 .accessibilityHidden(true)
         }
     }
 
     private func perforation(slotCount: Int) -> some View {
         DarkroomPerforationLine()
-            .frame(width: DarkroomDayUnit.perforationWidth(slotCount: slotCount), height: 3)
+            .frame(width: DarkroomDayUnit.perforationWidth(slotCount: slotCount,
+                                                           pitch: DarkroomDayUnit.photoFramePitch), height: 3)
     }
 }
 
@@ -502,7 +504,7 @@ struct DarkroomLoadingSkeleton: View {
                 .padding(.bottom, 5)
 
                 VStack(alignment: .leading, spacing: 0) {
-                    DarkroomPerforationLine().frame(width: DarkroomDayUnit.perforationWidth(slotCount: 3), height: 3)
+                    DarkroomPerforationLine().frame(width: DarkroomDayUnit.perforationWidth(slotCount: 3, pitch: DarkroomDayUnit.photoFramePitch), height: 3)
                     HStack(spacing: 2) {
                         ForEach(0..<3, id: \.self) { _ in
                             RoundedRectangle(cornerRadius: 2)
@@ -511,7 +513,7 @@ struct DarkroomLoadingSkeleton: View {
                         }
                     }
                     .padding(.vertical, 2)
-                    DarkroomPerforationLine().frame(width: DarkroomDayUnit.perforationWidth(slotCount: 3), height: 3)
+                    DarkroomPerforationLine().frame(width: DarkroomDayUnit.perforationWidth(slotCount: 3, pitch: DarkroomDayUnit.photoFramePitch), height: 3)
                 }
                 .padding(.horizontal, 16)
 
