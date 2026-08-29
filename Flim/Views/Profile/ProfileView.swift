@@ -615,9 +615,19 @@ struct InviteSheet: View {
                 .foregroundStyle(FlimTheme.textTertiary)
                 .padding(.horizontal, 12).padding(.vertical, 5)
                 .background(Color.white.opacity(0.08), in: Capsule())
-        // Unlimited says nothing rather than boasting, and unknown must never render a number:
-        // "0 invites left" for someone whose lookup merely failed is a lie in the worst direction.
-        case .unlimited, .unknown:
+        case .unlimited:
+            // Said quietly, but said. Silence here is indistinguishable from the screen being
+            // broken, and the accounts holding NULL are exactly the ones who need to be able to
+            // tell that the quota system is working at all.
+            Text("Unlimited invites")
+                .flimFont(13, weight: .semibold, relativeTo: .footnote)
+                .foregroundStyle(FlimTheme.textSecondary)
+                .padding(.horizontal, 12).padding(.vertical, 5)
+                .background(Color.white.opacity(0.08), in: Capsule())
+        case .unknown:
+            // Must never render a number. "0 invites left" for someone whose lookup merely failed
+            // is a lie in the worst direction, and this is also the state a client sees when it
+            // is running ahead of the server migration.
             EmptyView()
         }
     }

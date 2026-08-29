@@ -232,10 +232,114 @@ $$;
 REVOKE ALL ON FUNCTION public.redeem_invite(TEXT, TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.redeem_invite(TEXT, TEXT) TO anon, authenticated;
 
--- Deliberately NOT built here: earn-back (crediting an invite when the
--- invitee shoots their first roll). No trigger for it exists in this file.
--- That is a separate, later change with its own decision about what event
--- fires it and whether it should ever push a finite count back past 3.
+-- ============================================================
+-- Invite earn-back (wired 2026-08-29, supabase/migrations/2026-08-29_invite_earnback.sql
+-- -- read that file's header for the full reasoning behind every choice
+-- below). When an invitee takes their FIRST PHOTO (not "shoots a roll" --
+-- a roll is a shared container others can shoot into, a photo's user_id is
+-- unambiguous and RLS-enforced), their INVITER gets one invite back. Only
+-- the inviter is credited, never the invitee (every new account already
+-- starts with 3 unspent invites; see the migration header for why crediting
+-- both sides would mint supply from nothing).
+--
+-- invite_earnbacks is keyed on invitee_id alone (PRIMARY KEY) -- that is the
+-- entire exactly-once-per-invitee guarantee, leaned on directly by the
+-- trigger's `INSERT ... ON CONFLICT (invitee_id) DO NOTHING RETURNING`,
+-- never a separate count-then-act check (racy) or a count query (slow,
+-- forever, on every photo). inviter_id carries NO foreign key on purpose,
+-- same shape as allowed_emails.note: a later-deleted inviter can never
+-- block or cascade away the invitee's ledger row, they just silently stop
+-- being creditable (WHERE id = v_credited matches zero rows).
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.invite_earnbacks (
+    invitee_id  UUID PRIMARY KEY REFERENCES public.users(id) ON DELETE CASCADE,
+    inviter_id  UUID NOT NULL,
+    credited_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS invite_earnbacks_inviter_idx
+    ON public.invite_earnbacks (inviter_id);
+ALTER TABLE public.invite_earnbacks ENABLE ROW LEVEL SECURITY;
+-- No policies; every role's implicit table privileges are stripped below,
+-- same shape as redeem_invite_rate -- reachable only from inside the
+-- trigger's SECURITY DEFINER body.
+REVOKE ALL ON public.invite_earnbacks FROM PUBLIC, anon, authenticated;
+
+CREATE OR REPLACE FUNCTION public.credit_invite_earnback()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_note     TEXT;
+    v_inviter  UUID;
+    v_credited UUID;
+BEGIN
+    -- FAST PATH 1: already credited. Single PRIMARY KEY probe.
+    IF EXISTS (SELECT 1 FROM public.invite_earnbacks WHERE invitee_id = NEW.user_id) THEN
+        RETURN NEW;
+    END IF;
+
+    -- FAST PATH 2: was this photo's owner ever admitted via an invite code,
+    -- and if so whose? One statement, two PRIMARY KEY-indexed point lookups
+    -- (users.id, then allowed_emails.email) in a nested loop -- the OPPOSITE
+    -- direction from the badge system's inviter-to-invitees join, which
+    -- filters allowed_emails by note (unindexed) and would be wrong to run
+    -- on every photo insert forever.
+    SELECT ae.note INTO v_note
+    FROM public.users u
+    LEFT JOIN public.allowed_emails ae ON ae.email = lower(u.email)
+    WHERE u.id = NEW.user_id;
+
+    -- No allowed_emails row at all (admitted some other way), or a note
+    -- that doesn't match the exact 'invited_by:<uuid>' shape redeem_invite()
+    -- writes. Both are silent no-ops.
+    IF v_note IS NULL OR v_note !~ '^invited_by:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$' THEN
+        RETURN NEW;
+    END IF;
+
+    v_inviter := substring(v_note FROM 12)::UUID; -- strip the 11-char 'invited_by:' prefix
+
+    -- The ledger insert IS the exactly-once guard: whichever concurrent
+    -- photo insert for this invitee wins the PRIMARY KEY conflict is the
+    -- only one that gets a non-NULL v_credited back.
+    INSERT INTO public.invite_earnbacks (invitee_id, inviter_id)
+    VALUES (NEW.user_id, v_inviter)
+    ON CONFLICT (invitee_id) DO NOTHING
+    RETURNING inviter_id INTO v_credited;
+
+    IF v_credited IS NULL THEN
+        RETURN NEW;
+    END IF;
+
+    -- WHERE id = v_credited silently matches zero rows if the inviter's
+    -- account was since deleted. AND invite_uses_remaining IS NOT NULL keeps
+    -- NULL ("unlimited") from ever becoming finite by way of an increment.
+    UPDATE public.users
+    SET invite_uses_remaining = invite_uses_remaining + 1
+    WHERE id = v_credited
+      AND invite_uses_remaining IS NOT NULL;
+
+    RETURN NEW;
+EXCEPTION WHEN OTHERS THEN
+    -- Fires on every photo insert, forever. Must never be the reason a
+    -- photo upload fails. Same discipline as auto_follow_owner().
+    RETURN NEW;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.credit_invite_earnback() FROM PUBLIC, anon, authenticated;
+
+DROP TRIGGER IF EXISTS credit_invite_earnback_trigger ON public.photos;
+CREATE TRIGGER credit_invite_earnback_trigger
+    AFTER INSERT ON public.photos
+    FOR EACH ROW EXECUTE FUNCTION public.credit_invite_earnback();
+
+-- The one-time backfill (crediting invitees who already had a first photo
+-- before this trigger existed) is deliberately NOT mirrored here -- it is a
+-- data migration against production's existing rows, not bootstrap DDL, and
+-- would be a no-op on any fresh environment anyway. See
+-- supabase/migrations/2026-08-29_invite_earnback.sql section 3 if you need
+-- to re-run it.
 
 -- ============================================================
 -- Helper: membership check as SECURITY DEFINER.
