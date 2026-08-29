@@ -1,0 +1,258 @@
+import SwiftUI
+
+/// Invites, shown as a length of film: the ones you still hold, and the ones already spent with
+/// who they went to.
+///
+/// The scarcity IS the mechanic, so the count is the headline rather than a detail under a code.
+/// A number that is wrong in the pessimistic direction would tell someone they cannot bring a
+/// friend in when they can, which is why `.unknown` renders no strip at all rather than guessing.
+struct InviteSheet: View {
+    @Environment(\.flimAccent) private var accent
+    @Environment(AuthService.self) private var auth
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var codeCopied = false
+    @State private var quota: AuthService.InviteQuota = .unknown
+    @State private var sent: [AuthService.SentInvite] = []
+    /// Both reads have answered, whichever way. Until then the strip stays out of the way rather
+    /// than flashing a wrong number of frames and then correcting itself.
+    @State private var loaded = false
+
+    private var remaining: Int? {
+        if case .remaining(let n) = quota { return n }
+        return nil
+    }
+
+    /// Whether the code can still let anyone in. Unknown and unlimited both count as yes: never
+    /// hide a working code because a lookup failed.
+    private var codeStillWorks: Bool { remaining != 0 }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 0) {
+                    Text("INVITE-ONLY")
+                        .flimFont(11, weight: .medium, design: .monospaced, relativeTo: .caption2)
+                        .tracking(3)
+                        .foregroundStyle(accent)
+                        .padding(.top, 18)
+
+                    Text(headline)
+                        .flimFont(28, weight: .light, relativeTo: .title)
+                        .foregroundStyle(.white)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 24)
+                        .padding(.top, 10)
+
+                    Text(subhead)
+                        .flimFont(14, relativeTo: .subheadline)
+                        .foregroundStyle(FlimTheme.textSecondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 32)
+                        .padding(.top, 10)
+
+                    if loaded, !frames.isEmpty {
+                        filmStrip
+                            .padding(.top, 22)
+                    }
+
+                    if codeStillWorks, let code = auth.currentUser?.inviteCode {
+                        ShareLink(item: AppInfo.personalInviteMessage(code: code)) {
+                            Text("Send an invite")
+                                .flimFont(15, weight: .semibold, relativeTo: .subheadline)
+                                .foregroundStyle(.black)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 14)
+                                .background(accent, in: Capsule())
+                        }
+                        .simultaneousGesture(TapGesture().onEnded { Haptics.tap() })
+                        .padding(.horizontal, 40)
+                        .padding(.top, 24)
+
+                        codeRow(code)
+                            .padding(.top, 14)
+                    }
+
+                    // Only ever says what the server actually does. Earning one back credits the
+                    // INVITER only, on the invitee's first PHOTO. The design's "you both get one
+                    // back when they shoot their first roll" describes neither: the invitee half
+                    // was not built, and a roll is a shared container that other people shoot
+                    // into, so it never named whose activity it measured.
+                    Text(InviteCopy.earnBack)
+                        .flimFont(12, relativeTo: .caption)
+                        .foregroundStyle(FlimTheme.textTertiary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 36)
+                        .padding(.top, 20)
+
+                    Spacer(minLength: 24)
+                }
+            }
+            .scrollBounceBehavior(.basedOnSize)
+            .navigationBarTitleDisplayMode(.inline)
+            .flimInlineTitle("Invites")
+            .toolbarColorScheme(.dark, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }.foregroundStyle(.white)
+                }
+            }
+            .task {
+                quota = await auth.ownInviteQuota()
+                sent = await auth.ownInvitesSent()
+                loaded = true
+            }
+        }
+        .flimSheetSurface()
+    }
+
+    // MARK: - Copy
+
+    private var headline: String { InviteCopy.headline(for: quota) }
+    private var subhead: String { InviteCopy.subhead(for: quota) }
+
+    // MARK: - The strip
+
+    /// One frame per invite: the ones still in hand, then the ones already spent.
+    ///
+    /// Spent frames come from the server's record of who redeemed the caller's code, so the strip
+    /// is a history as well as a balance. Unlimited accounts show only the spent ones, because
+    /// there is no honest number of unused frames to draw.
+    private var frames: [Frame] {
+        let unused = (remaining ?? 0)
+        var out: [Frame] = (0..<unused).map { _ in .unused }
+        out.append(contentsOf: sent.map { Frame.spent($0) })
+        return out
+    }
+
+    private enum Frame {
+        case unused
+        case spent(AuthService.SentInvite)
+    }
+
+    private var filmStrip: some View {
+        VStack(spacing: 0) {
+            DarkroomPerforationLine().frame(height: 3)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(Array(frames.enumerated()), id: \.offset) { index, frame in
+                        frameView(frame, number: index + 1)
+                    }
+                }
+                .padding(.vertical, 6)
+                .padding(.horizontal, 6)
+            }
+            DarkroomPerforationLine().frame(height: 3)
+        }
+        .background(Color.white.opacity(0.03))
+        .padding(.horizontal, 20)
+    }
+
+    private func frameView(_ frame: Frame, number: Int) -> some View {
+        let isUnused: Bool = if case .unused = frame { true } else { false }
+        return VStack(spacing: 5) {
+            // Two digits, mono, the way a frame number is struck on real film stock.
+            Text(String(format: "%02d", number))
+                .flimFont(15, weight: .medium, design: .monospaced, relativeTo: .subheadline)
+                .foregroundStyle(isUnused ? accent : FlimTheme.textTertiary)
+            Text(label(for: frame))
+                .flimFont(11, relativeTo: .caption2)
+                .foregroundStyle(isUnused ? FlimTheme.textSecondary : FlimTheme.textTertiary)
+                .lineLimit(1)
+        }
+        .frame(width: 92, height: 104)
+        .background(isUnused ? accent.opacity(0.08) : Color.white.opacity(0.03))
+        .overlay(Rectangle().strokeBorder(isUnused ? accent.opacity(0.75) : Color.white.opacity(0.08),
+                                          lineWidth: 1))
+    }
+
+    private func label(for frame: Frame) -> String {
+        switch frame {
+        case .unused: "unused"
+        case .spent(let invite):
+            // A handle only exists once they have actually made an account. Until then the invite
+            // is genuinely spent but has nobody's name on it yet, and the server deliberately
+            // never returns the email it was sent to.
+            if let handle = invite.handle {
+                invite.activated ? "@\(handle)" : "@\(handle), yet to shoot"
+            } else {
+                "sent, not joined"
+            }
+        }
+    }
+
+    private func codeRow(_ code: String) -> some View {
+        Button {
+            UIPasteboard.general.string = code
+            Haptics.tap()
+            withAnimation { codeCopied = true }
+            Task {
+                try? await Task.sleep(for: .seconds(2))
+                withAnimation { codeCopied = false }
+            }
+        } label: {
+            HStack(spacing: 8) {
+                Text(code)
+                    .flimFont(15, weight: .light, design: .monospaced, relativeTo: .subheadline)
+                    .tracking(4)
+                    .foregroundStyle(FlimTheme.textSecondary)
+                Image(systemName: codeCopied ? "checkmark.circle.fill" : "doc.on.doc")
+                    .font(.system(size: 13))
+                    .foregroundStyle(codeCopied ? accent : FlimTheme.textTertiary)
+            }
+        }
+        .buttonStyle(.plain)
+        .expandTapTarget(by: 12)
+    }
+}
+
+
+/// Everything this screen says, lifted out of the view so the rules about it can be tested.
+///
+/// Two rules hold across all of it, and `InviteCopyTests` enforces both:
+///
+/// 1. **It never says "roll".** The design handed over "You have 3 invites left on this roll",
+///    and a roll is a real, different thing in this app: the Rolls screen has its own Share
+///    invite that means invite somebody INTO a roll. Borrowing the word here would name a
+///    shipped feature this screen has nothing to do with.
+/// 2. **No em dashes**, per the house copy rule.
+enum InviteCopy {
+
+    static func headline(for quota: AuthService.InviteQuota) -> String {
+        switch quota {
+        case .remaining(let n) where n > 0:
+            n == 1 ? "You have 1 invite left." : "You have \(n) invites left."
+        case .remaining:
+            "You are out of invites."
+        case .unlimited:
+            "You have unlimited invites."
+        // Nothing is known, so nothing is claimed. This is also what a client running ahead of
+        // the server migration sees.
+        case .unknown:
+            "Invite a friend."
+        }
+    }
+
+    static func subhead(for quota: AuthService.InviteQuota) -> String {
+        switch quota {
+        case .remaining(let n) where n > 0:
+            "Each one lets a friend in. \(AppInfo.appName) only grows when someone gives one up."
+        // No refill promised with a date on it. One can come back, but only if somebody already
+        // brought in picks up a camera, and that may never happen.
+        case .remaining:
+            "Your code will not let anyone else in until an invite comes back."
+        case .unlimited, .unknown:
+            "Share this code so friends can add you on \(AppInfo.appName)."
+        }
+    }
+
+    /// Says exactly what the server does: the INVITER only, on the invitee's first PHOTO.
+    static let earnBack = "When someone you invited takes their first photo, you get that invite back."
+
+    /// Every user-facing string here, for the rule tests to sweep.
+    static var all: [String] {
+        [earnBack]
+            + [AuthService.InviteQuota.remaining(3), .remaining(1), .remaining(0), .unlimited, .unknown]
+                .flatMap { [headline(for: $0), subhead(for: $0)] }
+    }
+}

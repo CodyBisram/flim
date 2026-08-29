@@ -45,6 +45,7 @@
 		24C89EABBAFF98261AEB3ABB /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 6D3CAAA6097E82270360343F /* Assets.xcassets */; };
 		26EDF41D19D62C74C82BA3FE /* EmojiBackfillTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B1D734336418D8747D99B43 /* EmojiBackfillTests.swift */; };
 		287023347895E167ECC91920 /* Haptics.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA04DBB3261C344B5DD64806 /* Haptics.swift */; };
+		28A3798A57DB37D863E6F4B2 /* InviteSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9EF7F0986371C90133D658A /* InviteSheet.swift */; };
 		293CC0DB094A96F35B68C6D7 /* CommentPreviewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5187733F2549E32AAD048816 /* CommentPreviewTests.swift */; };
 		29A5B8A988AD5C1A12DA61E2 /* RollActivityWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0DE0ABF140C6FF15019136C /* RollActivityWidgetBundle.swift */; };
 		2AE813EB776EADC01EEF7A24 /* ActivityFeedViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D86D048DA64F5454E17D0F34 /* ActivityFeedViewTests.swift */; };
@@ -244,6 +245,7 @@
 		F61C62F3A0DFCBF91078F2A1 /* UndoCapsule.swift in Sources */ = {isa = PBXBuildFile; fileRef = 633694E1E73B65F0E57EA591 /* UndoCapsule.swift */; };
 		F62C33EF31441786B7C91033 /* KeyboardDismissPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0563C97C3D9EAAFA438E4E07 /* KeyboardDismissPolicyTests.swift */; };
 		F63EEF7D9CF0A8333B587BE8 /* ColorProfileTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1BCF6EBC279A8B682333548 /* ColorProfileTests.swift */; };
+		F6B15F91283ECA5D96863B3C /* InviteCopyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D7E1E82FB605D750C08C5D1 /* InviteCopyTests.swift */; };
 		F745F000026F745A673ECF41 /* AvatarBadgeCenteringTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C79CEA8F4E41B389C1CFB5C /* AvatarBadgeCenteringTests.swift */; };
 		F7DB8CBEBE8B5B6A7FA4EEA9 /* CubeLUT.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EF884AA4C8711AA4738DA8C /* CubeLUT.swift */; };
 		F8B7B0BD9EA2812E69282C03 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8118D8FA0343F18F835415D3 /* Theme.swift */; };
@@ -326,6 +328,7 @@
 		1BFC8CFD92B4F94277E5880B /* ShareToFeedSheetTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareToFeedSheetTests.swift; sourceTree = "<group>"; };
 		1C79CEA8F4E41B389C1CFB5C /* AvatarBadgeCenteringTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AvatarBadgeCenteringTests.swift; sourceTree = "<group>"; };
 		1C99D91A50FAB51B03509135 /* DevelopDelayPhraseTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevelopDelayPhraseTests.swift; sourceTree = "<group>"; };
+		1D7E1E82FB605D750C08C5D1 /* InviteCopyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InviteCopyTests.swift; sourceTree = "<group>"; };
 		1EA7BE7861AAE3A37C3729F8 /* ReviewerSignInTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReviewerSignInTests.swift; sourceTree = "<group>"; };
 		205B55808CBE7AF5FF43024B /* CameraRollAutoSaveTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraRollAutoSaveTests.swift; sourceTree = "<group>"; };
 		207687A2D2C8D45CDE4E9D76 /* LiveActivityReachTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveActivityReachTests.swift; sourceTree = "<group>"; };
@@ -504,6 +507,7 @@
 		D7299D16CD74851BA0C29495 /* PhotoServiceGradedRenditionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoServiceGradedRenditionTests.swift; sourceTree = "<group>"; };
 		D86D048DA64F5454E17D0F34 /* ActivityFeedViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityFeedViewTests.swift; sourceTree = "<group>"; };
 		D9927EBDE8E7056C4DA31EF2 /* AuthHelpersTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthHelpersTests.swift; sourceTree = "<group>"; };
+		D9EF7F0986371C90133D658A /* InviteSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InviteSheet.swift; sourceTree = "<group>"; };
 		DAA0E399F7BB8A6CE10FC207 /* FeedSeenStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedSeenStore.swift; sourceTree = "<group>"; };
 		DB2A4DF8A1879B929C3C4CB4 /* FilmStockTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilmStockTests.swift; sourceTree = "<group>"; };
 		DC34A455324DEE2A431A7720 /* ProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileView.swift; sourceTree = "<group>"; };
@@ -705,6 +709,7 @@
 				4391C801DD418F969E730432 /* BadgePickerSheet.swift */,
 				2DBDD795E7211D298DCFEB50 /* BlockedUsersSheet.swift */,
 				A251B6DCFD8210DF89FD18B3 /* FeedbackSheet.swift */,
+				D9EF7F0986371C90133D658A /* InviteSheet.swift */,
 				DC8AD03A8D1B86B86365239A /* PhotoPickerSheet.swift */,
 				DFDDFBCCC6F6F043DCE3C4D7 /* ProfileIdentityView.swift */,
 				DC34A455324DEE2A431A7720 /* ProfileView.swift */,
@@ -891,6 +896,7 @@
 				0B10C6663F963898FEE63F64 /* FlimAppTests.swift */,
 				1A1DF3242DF37C9E6E0DDB68 /* FocusCommentsDecisionTests.swift */,
 				18CA22877447A7870546FAFB /* GrainCompositeSweep.swift */,
+				1D7E1E82FB605D750C08C5D1 /* InviteCopyTests.swift */,
 				FC61300D9F1F110EB65F4A89 /* InviteQuotaTests.swift */,
 				0563C97C3D9EAAFA438E4E07 /* KeyboardDismissPolicyTests.swift */,
 				207687A2D2C8D45CDE4E9D76 /* LiveActivityReachTests.swift */,
@@ -1129,6 +1135,7 @@
 				81394B1696E7CFC55018DF51 /* FlimAppTests.swift in Sources */,
 				E08486964EB7755AF68AAE46 /* FocusCommentsDecisionTests.swift in Sources */,
 				55B5718300D138F542351FCE /* GrainCompositeSweep.swift in Sources */,
+				F6B15F91283ECA5D96863B3C /* InviteCopyTests.swift in Sources */,
 				CD4060FCC087579949288FAB /* InviteQuotaTests.swift in Sources */,
 				F62C33EF31441786B7C91033 /* KeyboardDismissPolicyTests.swift in Sources */,
 				480A7F9CE307F6711822BF6B /* LiveActivityReachTests.swift in Sources */,
@@ -1269,6 +1276,7 @@
 				F184E9E2AABA6A9F4F29EE52 /* FollowingList.swift in Sources */,
 				287023347895E167ECC91920 /* Haptics.swift in Sources */,
 				F5701A740A6BFD822B551A03 /* InstantFilmProcessor.swift in Sources */,
+				28A3798A57DB37D863E6F4B2 /* InviteSheet.swift in Sources */,
 				6013474B6F35E06F049139DD /* JoinRollView.swift in Sources */,
 				1B95A6133C27944647107AC7 /* KeyboardDismiss.swift in Sources */,
 				A6A16540ECB673E92104DDC7 /* LiveRefresh.swift in Sources */,

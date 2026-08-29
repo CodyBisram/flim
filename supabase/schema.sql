@@ -1361,6 +1361,39 @@ AS $$ SELECT invite_uses_remaining FROM public.users WHERE id = auth.uid() $$;
 REVOKE ALL ON FUNCTION public.get_own_invite_quota() FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.get_own_invite_quota() TO authenticated;
 
+-- Your OWN invite history: who you've invited (handle, or NULL if they have
+-- not signed up yet), when, and whether they've taken a photo since. Full
+-- reasoning (the note-match regex, why allowed_emails.email never leaves this
+-- function, the account-deletion behavior, and why blocking is deliberately
+-- NOT applied here) lives in
+-- supabase/migrations/2026-08-29_get_own_invites_sent.sql -- read that before
+-- touching this function.
+CREATE OR REPLACE FUNCTION public.get_own_invites_sent()
+RETURNS TABLE (
+    handle    TEXT,
+    sent_at   TIMESTAMPTZ,
+    activated BOOLEAN
+)
+LANGUAGE sql
+SECURITY DEFINER
+STABLE
+SET search_path = public
+AS $$
+    SELECT
+        u.username AS handle,
+        ae.added_at AS sent_at,
+        EXISTS (
+            SELECT 1 FROM public.photos p WHERE p.user_id = u.id
+        ) AS activated
+    FROM public.allowed_emails ae
+    LEFT JOIN public.users u ON lower(u.email) = ae.email
+    WHERE auth.uid() IS NOT NULL
+      AND ae.note ~ ('^invited_by:' || auth.uid()::text || '$')
+    ORDER BY ae.added_at ASC;
+$$;
+REVOKE ALL ON FUNCTION public.get_own_invites_sent() FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.get_own_invites_sent() TO authenticated;
+
 -- Function hygiene: pin the one mutable search_path; internal functions unreachable via RPC;
 -- signed-in-only actions closed to anon. is_email_allowed stays anon-callable BY DESIGN
 -- (the invite gate runs before sign-in; it returns only a boolean).

@@ -211,6 +211,38 @@ final class AuthService {
         case unknown
     }
 
+    /// One invite the caller has already spent, and who it went to.
+    ///
+    /// `handle` is nil when the person was allowlisted but has not created an account yet. The
+    /// server NEVER returns the email an invite was sent to: `allowed_emails` is otherwise
+    /// unreadable by clients and this read path must not become the hole that exposes it.
+    struct SentInvite: Decodable, Identifiable, Equatable {
+        let handle: String?
+        let sentAt: Date
+        /// Whether they have taken a photo, which is what earns the inviter one back.
+        let activated: Bool
+
+        /// `sentAt` is the stable identity here, not the handle: a pending invite has no handle,
+        /// and two of them would collide into one row.
+        var id: Date { sentAt }
+
+        enum CodingKeys: String, CodingKey {
+            case handle
+            case sentAt = "sent_at"
+            case activated
+        }
+    }
+
+    /// The people this account has invited, oldest first.
+    ///
+    /// FAILS SOFT to an empty list for the same reason `ownInviteQuota` does: the server must run
+    /// the migration that adds `get_own_invites_sent()` before this can succeed, and a client that
+    /// shipped first would otherwise throw. An empty list is also a perfectly ordinary answer, so
+    /// the screen already has to render it well.
+    func ownInvitesSent() async -> [SentInvite] {
+        (try? await supabase.rpc("get_own_invites_sent").execute().value) ?? []
+    }
+
     /// Reads the caller's OWN remaining invites.
     ///
     /// An RPC rather than a column read on purpose: `invite_uses_remaining` is not in the
