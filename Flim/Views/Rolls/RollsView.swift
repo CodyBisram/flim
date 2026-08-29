@@ -609,11 +609,11 @@ struct RollsView: View {
     private func archiveTile(_ roll: Roll) -> some View {
         NavigationLink(value: roll) {
             VStack(alignment: .leading, spacing: 5) {
-                // The square takes its size from the COLUMN (Color.clear + fit), never from
+                // The cover takes its size from the COLUMN (Color.clear + fit), never from
                 // the image: a scaledToFill photo in a bare container inflates past its grid
                 // cell and paints over the header, the gutters, and its own caption row.
                 Color.clear
-                    .aspectRatio(1, contentMode: .fit)
+                    .aspectRatio(FlimTheme.frameAspect, contentMode: .fit)
                     .overlay {
                         ZStack {
                             LinearGradient(colors: Self.gradient(for: roll),
@@ -631,8 +631,8 @@ struct RollsView: View {
                     }
                     // 12, the app's photograph radius (the feed hero, the reveal's print, the
                     // pager's box). These tiles had the rack well's 2, which they inherited
-                    // rather than chose: a well is a 44pt film frame and square is right for it,
-                    // while this is a ~180pt photograph with the roll's name underneath. The
+                    // rather than chose: a well is a small sealed film frame and 2 is right
+                    // for it, while this is a ~180pt photograph with the roll's name underneath. The
                     // wells keep their 2, so the film language is intact where it belongs.
                     .clipShape(RoundedRectangle(cornerRadius: 12))
                     .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(FlimTheme.stroke, lineWidth: 1))

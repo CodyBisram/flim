@@ -49,11 +49,17 @@ final class RenditionBudgetTests: XCTestCase {
     }
 
     func testTheThumbnailStillCoversAGridCellOnA3xScreen() {
-        // The grid square-crops each cell, so the dimension that has to cover it is the
-        // thumbnail's SHORT edge, not its long edge. A 500px-long-edge thumbnail on our 3:4
-        // capture aspect (see `LookFixture.pixelSize`, and `source` below) has a short edge of
-        // 500 * 3/4 = 375, not 500 — asserting the LONG edge against 384 was checking a number
-        // the thumbnail can never fail on, since the long edge is always the full 500.
+        // The dimension that has to cover the cell is the thumbnail's SHORT edge, not its long
+        // edge. A 500px-long-edge thumbnail on our 3:4 capture aspect (see `LookFixture.pixelSize`,
+        // and `source` below) has a short edge of 500 * 3/4 = 375, not 500 — asserting the LONG
+        // edge against 384 was checking a number the thumbnail can never fail on, since the long
+        // edge is always the full 500.
+        //
+        // This used to say the grid "square-crops each cell". It does not any more: the cells went
+        // to `FlimTheme.frameAspect` on 2026-08-28, which is the SAME 3:4 as the capture, so
+        // `scaledToFill` now crops nothing. The arithmetic below is unaffected — matching aspects
+        // means both axes scale by one factor, so the short edge still covers the cell's width and
+        // the long edge its height in exactly the same ratio.
         let thumb = InstantFilmProcessor.thumbnail(from: source)!.data
         let measuredShortEdge = shortEdge(ofEncodedImage: thumb)
         XCTAssertEqual(measuredShortEdge, 375, "thumbnail short edge moved off the 3:4 assumption this test's arithmetic depends on")

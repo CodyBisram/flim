@@ -20,11 +20,11 @@ struct PhotoGridCell: View {
     var isShared: Bool = false
 
     var body: some View {
-        // A clear square anchor sizes each cell to exactly 1/3 of the grid width; the image
+        // A clear 3:4 anchor sizes each cell from the COLUMN width, never from the image
         // fills it as an overlay and is clipped, so a `scaledToFill` photo can never overflow
         // its slot and overlap neighbours.
         Color.clear
-            .aspectRatio(1, contentMode: .fit)
+            .aspectRatio(FlimTheme.frameAspect, contentMode: .fit)
             .overlay {
                 if photo.isReady {
                     CachedImage(url: signedURL, maxPixel: 400, cacheKey: photo.displayPath) { image in
@@ -128,7 +128,7 @@ struct LoadingGrid: View {
         LazyVGrid(columns: columns, spacing: 2) {
             ForEach(0..<12, id: \.self) { _ in
                 ShimmerPlaceholder(cornerRadius: 4)
-                    .aspectRatio(1, contentMode: .fit)
+                    .aspectRatio(FlimTheme.frameAspect, contentMode: .fit)
             }
         }
         .padding(.horizontal, 2)

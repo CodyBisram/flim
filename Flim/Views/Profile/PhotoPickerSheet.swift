@@ -63,6 +63,11 @@ struct PhotoPickerSheet: View {
                                 Button {
                                     choose(photo)
                                 } label: {
+                                    // THE deliberate 1:1 in the app, and not a holdout: this
+                                    // picks an avatar or a cover, both of which are cropped
+                                    // square on the way out, so a square tile previews what you
+                                    // are actually about to get. Every OTHER photo surface is
+                                    // `FlimTheme.frameAspect`; do not "fix" this one to match.
                                     Color.clear
                                         .aspectRatio(1, contentMode: .fit)
                                         .overlay {

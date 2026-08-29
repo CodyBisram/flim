@@ -650,14 +650,14 @@ struct UserPageView: View {
         }
     }
 
-    /// Three columns of shimmer squares, standing in for the grid before the first fetch lands.
+    /// Three columns of shimmer frames, standing in for the grid before the first fetch lands.
     /// Same column count and spacing as `monthSection`'s real grid, so the page doesn't reflow
     /// once actual posts replace it.
     private var skeletonGrid: some View {
         LazyVGrid(columns: columns, spacing: 3) {
             ForEach(0..<12, id: \.self) { _ in
                 Color.clear
-                    .aspectRatio(1, contentMode: .fit)
+                    .aspectRatio(FlimTheme.frameAspect, contentMode: .fit)
                     .overlay { ShimmerPlaceholder(cornerRadius: 3) }
             }
         }
@@ -863,7 +863,7 @@ struct PostThumb: View {
 
     var body: some View {
         Color.clear
-            .aspectRatio(1, contentMode: .fit)
+            .aspectRatio(FlimTheme.frameAspect, contentMode: .fit)
             .overlay {
                 if let url {
                     CachedImage(url: url, maxPixel: 400, cacheKey: path) { $0.resizable().scaledToFill() } placeholder: { ShimmerPlaceholder(cornerRadius: 3) }

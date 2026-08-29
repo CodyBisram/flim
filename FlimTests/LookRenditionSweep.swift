@@ -53,9 +53,10 @@ struct LookRenditionSweep {
     /// 1050px width, so one is a slight downscale and the other a slight magnification, and a
     /// recommendation that only looked at one of them would be flattering itself.
     static let cardDisplayWidthCompact: CGFloat = 999
-    /// A 3-column Darkroom cell is ~128pt, so ~384px at 3x. The cell square-crops (`aspectRatio(1,
-    /// .fit)` with `scaledToFill`), so what has to cover it is the thumbnail's SHORT edge, which is
-    /// the axis measured here.
+    /// A 3-column cell is ~128pt, so ~384px at 3x. The cell is `FlimTheme.frameAspect`, the same
+    /// 3:4 as the capture, so `scaledToFill` crops nothing and both axes scale by one factor: what
+    /// has to cover the cell's WIDTH is the thumbnail's SHORT edge, which is the axis measured
+    /// here. (It said "square-crops" while the grids were 1:1; the number is the same either way.)
     static let thumbDisplayWidth: CGFloat = 384
 
     static let scenes: [String] = LookFixture.allCases.map(\.rawValue)

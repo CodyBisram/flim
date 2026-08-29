@@ -3,6 +3,21 @@ import SwiftUI
 /// Brand palette + reusable Liquid Glass helpers. Centralised so every surface stays
 /// cohesive and the iOS 26 `#available` fallbacks live in exactly one place.
 enum FlimTheme {
+    /// THE frame aspect, width over height. Every surface that shows a photograph uses it.
+    ///
+    /// The camera is portrait-only and `CapturedPhotoCropper` center-crops every capture to 3:4,
+    /// so this is not a styling choice, it is the shape of the negative. A square tile is a
+    /// SECOND crop that throws away a quarter of a photograph nobody asked to lose, and it makes
+    /// the same shot a different shape depending on which screen you happen to be looking at it
+    /// from. The feed, the reveal, the day contact sheet and the Darkroom's film frames were
+    /// already 3:4; the grids were the holdouts, and are not any more (owner call 2026-08-28,
+    /// covers included: "one rule, no exceptions").
+    ///
+    /// The ONE deliberate exception is `PhotoPickerSheet`, which picks an avatar or a cover. Its
+    /// output really is square, so its tiles preview the square crop you are about to get.
+    /// Anything else that shows a photo at 1:1 is a bug.
+    static let frameAspect: CGFloat = 3.0 / 4.0
+
     static let bg = Color(red: 0.04, green: 0.04, blue: 0.04)
     static let bgElevated = Color(white: 0.08)
     static let stroke = Color(white: 0.14)
