@@ -9,6 +9,37 @@ Statuses: `queued`, `blocked: <what on>`, `owner`, `decided: <what>`.
 
 ## Next up
 
+### queued: invites, the real mechanic (design overhaul 3c)
+
+Owner chose "header now, invites next" on 2026-08-29. The profile header shipped WITHOUT any
+invite count, deliberately.
+
+`users.invite_uses_remaining INT` already exists (2026-07-15_redeem_invite.sql) but is DORMANT:
+its own comment says NULL = unlimited, which is every existing row, and `redeem_invite()` does
+not read or decrement it. A count on the profile before this is wired is a scarcity mechanic
+whose number never moves, which is the one thing that breaks trust in it.
+
+What it needs, in order:
+1. A starting allowance, and whether the ceiling grows with tenure. OWNER DECISION, unanswered.
+2. Read + decrement inside the existing SECURITY DEFINER `redeem_invite()`, atomic with the
+   rate-limit table already in that migration.
+3. A safe read of your OWN remaining count. The `profiles` view deliberately excludes invite
+   fields, so this is a new zero-parameter RPC pinned to `auth.uid()`, not a view column.
+4. Earn-back. The design's rule is "you both get one back when your invitee shoots their first
+   roll", which needs a first-roll trigger and must not double-fire.
+
+COPY RULE, from the owner: never "invites left on this roll". FLIM already ships a "Share invite"
+on RollsView that means invite someone to a ROLL, so "invites on this roll" names a different,
+real feature. Say "3 invites left" and nothing about rolls.
+
+The actions row already has an accent "Invite" button beside "Edit profile", which is the right
+place for the count to land when it becomes true.
+
+### backlogged: Chapters (design overhaul 3a shelf + 3b recap)
+
+Month covers on the profile and the monthly recap. Owner backlogged it on 2026-08-29 to get the
+header landed. It is the only part of the overhaul needing new data (month rollups).
+
 ### queued: renaming a roll leaves the widget and Live Activity stale
 
 Found by the 2026-08-28 race/concurrency audit, NOT fixed, and unrelated to anything shipped
@@ -128,6 +159,8 @@ first push after any App Store release must carry the bump or it is rejected wit
 - Colophon in the Profile footer.
 - Confirmations: undo capsule and consequence sheets on a real TestFlight pass.
 - Photos-permission explainer row under the toggle needs the on-device permission-timing pass.
+- The new left-aligned profile header (build 320): two badges, inline stats, and the badge
+  explanation now swapping the STATS row rather than the handle line.
 - The film-strip rows on the profile and roll grids (build 319): the perforated road between rows
   has never been seen on device on either surface.
 - Three-across Darkroom sharpness (build 317): the decode now derives from the frame height, and
