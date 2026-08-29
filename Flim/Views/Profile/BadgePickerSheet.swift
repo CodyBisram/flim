@@ -26,14 +26,14 @@ import SwiftUI
 /// SELECTION METHOD: tap-to-append with a visible position number, not drag-to-reorder. FLIM has
 /// no drag-reorder primitive anywhere else in the app, and a cap of four makes tap-order
 /// genuinely competitive with drag:
-/// building 1-2-3-4 by tapping in the order you want is about as many gestures either way, this
+/// building the order by tapping is about as many gestures either way, this
 /// needs no new component, and it comes with ordinary VoiceOver semantics for free — a drag
 /// handle needs its own accessibility actions to be usable at all, tapping doesn't.
 ///
 /// THE THREE STATES, preserved exactly, never collapsed (see `AppUser.displayedBadges`):
 ///   Automatic segment          -> saves `nil`  ("no choice made, fall back to the rarest four")
 ///   Custom segment, 0 picked   -> saves `[]`    ("deliberately show none")
-///   Custom segment, 1-4 picked -> saves the tapped order
+///   Custom segment, 1-2 picked -> saves the tapped order
 /// `mode` alone decides which of the first two a save with an empty `order` means, which is
 /// exactly why mode is its own piece of state rather than inferred from whether `order` is empty.
 ///
@@ -41,6 +41,14 @@ import SwiftUI
 /// and takes plain values rather than the services, precisely so it can be previewed without a
 /// live `AuthService`/`FeedService` — this file has no other way to preview real data, there is
 /// no fixture/mock convention for either service anywhere else in the app.
+/// **The header shows TWO badges as of the design overhaul (2026-08-29), and this picker caps at
+/// the same number via `UserPageView.headerBadgeLimit`.** The STORAGE cap stays at four, both the
+/// `displayed_badges` CHECK constraint and the rarest-first RPC's `LIMIT 4`, deliberately: some
+/// accounts already chose four, and tightening the constraint would mean trimming their rows,
+/// which is an irreversible edit to a choice they made. Storing four and leading with the first
+/// two preserves the order they picked, costs nothing, and means going back to four is a display
+/// change rather than a migration.
+
 struct BadgePickerSheet: View {
     /// Fired the moment a save COMMITS, before the sheet starts dismissing, so the presenter can
     /// refresh the profile behind the sheet's cover. Refreshing on dismiss instead meant the new
@@ -247,7 +255,7 @@ private struct BadgePickerContent: View {
             }
             .overlay(alignment: .top) {
                 if showCapNotice {
-                    Label("Up to 4 badges. Remove one to add another.", systemImage: "exclamationmark.circle.fill")
+                    Label("Up to 2 badges. Remove one to add another.", systemImage: "exclamationmark.circle.fill")
                         .flimFont(13, weight: .medium).foregroundStyle(.white)
                         .padding(.horizontal, 16).padding(.vertical, 10)
                         .background(.ultraThinMaterial, in: Capsule())
@@ -284,7 +292,7 @@ private struct BadgePickerContent: View {
     private var explanation: some View {
         switch (mode, order.isEmpty) {
         case (.automatic, _):
-            Text("Your profile leads with your 4 rarest badges automatically. This updates on its own as you earn more, and nobody's chosen it for you yet.")
+            Text("Your profile leads with your 2 rarest badges automatically. This updates on its own as you earn more, and nobody's chosen it for you yet.")
                 .flimFont(13, relativeTo: .subheadline)
                 .foregroundStyle(FlimTheme.textSecondary)
                 .multilineTextAlignment(.center)
@@ -294,7 +302,7 @@ private struct BadgePickerContent: View {
                 .foregroundStyle(FlimTheme.textSecondary)
                 .multilineTextAlignment(.center)
         case (.custom, false):
-            Text("Tap to add or remove, up to 4. The order you tap them in is the order shown, leading badge first.")
+            Text("Tap to add or remove, up to 2. The order you tap them in is the order shown, leading badge first.")
                 .flimFont(13, relativeTo: .subheadline)
                 .foregroundStyle(FlimTheme.textSecondary)
                 .multilineTextAlignment(.center)
@@ -614,7 +622,7 @@ private struct BadgePickerContent: View {
         if let idx = order.firstIndex(of: id) {
             order.remove(at: idx)
             Haptics.tap()
-        } else if order.count < 4 {
+        } else if order.count < UserPageView.headerBadgeLimit {
             order.append(id)
             Haptics.tap()
         } else {
