@@ -114,11 +114,6 @@ struct RollDetailView: View {
         roll.isDeveloped && rollFullyPaged && !vm.developedPhotos.isEmpty
     }
 
-    private let columns = [
-        GridItem(.flexible(), spacing: 2),
-        GridItem(.flexible(), spacing: 2),
-        GridItem(.flexible(), spacing: 2)
-    ]
 
     var body: some View {
         ZStack {
@@ -767,8 +762,11 @@ struct RollDetailView: View {
     }
 
     private func photoGrid(_ list: [Photo], triggersLoadMore: Bool) -> some View {
-        LazyVGrid(columns: columns, spacing: 2) {
-            ForEach(list) { photo in
+        // A roll IS a strip of film, so its grid is laid out as one: rows of frames on a
+        // perforated road, ending where the roll's own last frame does rather than ruling a line
+        // out to the margin. Same atom the Darkroom's day racks draw.
+        FilmStripGrid(items: list, gap: 2) { photo in
+            Group {
                 // The reveal banner above already shows "Develops in Xh Xm" for the whole roll
                 // (every shot in it develops together), so developing tiles here don't repeat it.
                 PhotoGridCell(photo: photo, signedURL: vm.signedURLCache[photo.id], showsCountdown: false)

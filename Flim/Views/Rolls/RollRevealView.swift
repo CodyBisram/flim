@@ -146,6 +146,16 @@ struct RollRevealView: View {
                 // scroll past its own last page, so the footer's own Done handles that side.
                 viewModel.moved(to: newValue)
             }
+            // The other direction, and it is NOT redundant. `selection` is a positional tag, so
+            // when `skipDeadFrame` removes a frame from behind the reader the tag silently comes
+            // to mean the next photograph. The model corrects its own index for that; without
+            // this the pager would not follow, and the two would disagree about which frame is
+            // on screen. `moved(to:)` already no-ops when the value matches, so the pair cannot
+            // loop.
+            .onChange(of: viewModel.index) { _, newValue in
+                guard selection != newValue else { return }
+                selection = newValue
+            }
 
             rackScrubber
                 .padding(.horizontal, 16)

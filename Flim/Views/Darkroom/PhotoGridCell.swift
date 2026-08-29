@@ -340,7 +340,17 @@ struct CachedImage<Content: View, Placeholder: View>: View {
             }
         }
         // Re-run when the URL resolves (nil → signed) too, not just when the stable key changes.
-        .task(id: "\(cacheKey ?? "")|\(url?.absoluteString ?? "")") { await load() }
+        //
+        // `maxPixel` is in here because it is no longer always a literal. The Darkroom rack now
+        // derives it from a MEASURED width, and a measured value can change while the view stays
+        // mounted, whereas SwiftUI keeps a child's `@State` across a body re-evaluation that only
+        // changes a non-identity parameter. Without this the first decode would be kept and the
+        // view would go on showing a photograph rendered for a different size: not the wrong
+        // photograph, but the wrong resolution, and it would never self-correct until the cell
+        // was scrolled out of the lazy stack's mounted range and rebuilt. `Int` because that is
+        // exactly what the cache keys are truncated to, so this can never re-run for a change
+        // too small to produce a different cache entry.
+        .task(id: "\(cacheKey ?? "")|\(url?.absoluteString ?? "")|\(Int(maxPixel))") { await load() }
     }
 
     private func load() async {

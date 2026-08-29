@@ -300,7 +300,21 @@ final class RollRevealViewModel {
             beginIfReady()
             return
         }
-        if index >= deck.count { index = deck.count - 1 }
+        // Keep pointing at the SAME photograph. Removing a frame from before the reader's
+        // position shifts every later frame down one slot, so an unchanged `index` now names the
+        // NEXT photo: the reveal would silently jump forward a frame, and `develop(at:)` below
+        // would burn that frame's once-ever develop beat for a frame nobody has reached. The old
+        // clamp only caught the other case, an index left past the end of a shrunk deck.
+        //
+        // Three cases, and only the first two move anything:
+        //   dead BEFORE us  -> everything shifted down, follow it down
+        //   dead IS us      -> the next frame slid into this slot, stay put and develop it
+        //   dead AFTER us   -> nothing before us moved, stay put
+        if deadIndex < index {
+            index -= 1
+        } else if index >= deck.count {
+            index = deck.count - 1
+        }
         develop(at: index)
     }
 

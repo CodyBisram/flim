@@ -111,7 +111,6 @@ struct UserPageView: View {
         ProfileBadgeFlank.split(displayedBadges)
     }
 
-    private let columns = Array(repeating: GridItem(.flexible(), spacing: 3), count: 3)
 
     var body: some View {
         GeometryReader { geo in
@@ -621,8 +620,11 @@ struct UserPageView: View {
             }
             .padding(.horizontal, 16)
 
-            LazyVGrid(columns: columns, spacing: 3) {
-                ForEach(posts) { post in
+            // Film, not a grid: rows of frames on a perforated road, the way the Darkroom
+            // reads. The month is the strip, so a month of eight photographs ends its last
+            // strip after two frames rather than ruling a line out to the margin.
+            FilmStripGrid(items: posts) { post in
+                Group {
                     if let author = profile {
                         // DO NOT add a zoom transition here. This grid opened the wrong photo
                         // through four attempted fixes, and the only thing the broken versions
@@ -650,19 +652,21 @@ struct UserPageView: View {
         }
     }
 
-    /// Three columns of shimmer frames, standing in for the grid before the first fetch lands.
-    /// Same column count and spacing as `monthSection`'s real grid, so the page doesn't reflow
-    /// once actual posts replace it.
+    /// Twelve shimmer frames on the same perforated road `monthSection` draws, so the page does
+    /// not reflow when the real posts replace it. Twelve is four full strips, which means the
+    /// skeleton never shows a SHORT last strip and so never promises a month that ends where this
+    /// one happens to.
     private var skeletonGrid: some View {
-        LazyVGrid(columns: columns, spacing: 3) {
-            ForEach(0..<12, id: \.self) { _ in
-                Color.clear
-                    .aspectRatio(FlimTheme.frameAspect, contentMode: .fit)
-                    .overlay { ShimmerPlaceholder(cornerRadius: 3) }
-            }
+        FilmStripGrid(items: (0..<12).map(SkeletonFrame.init)) { _ in
+            Color.clear
+                .aspectRatio(FlimTheme.frameAspect, contentMode: .fit)
+                .overlay { ShimmerPlaceholder(cornerRadius: 3) }
         }
         .padding(.horizontal, 3)
     }
+
+    /// `FilmStripGrid` lays out identified items; the skeleton has none, so this stands in.
+    private struct SkeletonFrame: Identifiable { let id: Int }
 
     private var emptyState: some View {
         VStack(spacing: 8) {
