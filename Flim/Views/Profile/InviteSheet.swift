@@ -249,9 +249,28 @@ enum InviteCopy {
     /// Says exactly what the server does: the INVITER only, on the invitee's first PHOTO.
     static let earnBack = "When someone you invited takes their first photo, you get that invite back."
 
+    /// Shown at the FRONT DOOR when `redeem_invite` returns false. Lives here, beside the rest of
+    /// the invite copy, so the same rules sweep it.
+    ///
+    /// It must name BOTH possibilities without distinguishing them. The server returns one answer
+    /// for "no such code" and for "the code is real but its owner has none left", deliberately, so
+    /// a stranger cannot probe which codes exist. Copy that asserts a typo is therefore wrong half
+    /// the time, and wrong at the worst moment: a person holding a genuinely valid code from a real
+    /// friend, being told to re-check something that is not wrong.
+    static let redeemFailed = "That code isn't working. Double-check it, or ask your friend for another one in case theirs has run out."
+
+    /// The global gate is 30 attempts an hour across everyone, so this is rare, and whoever hits
+    /// it did nothing wrong.
+    static let redeemRateLimited = "Too many attempts right now. Give it a minute and try again."
+}
+
+extension InviteCopy {
+    /// Both front-door strings, swept by the same rules as the screen's own copy.
+    static var frontDoor: [String] { [redeemFailed, redeemRateLimited] }
+
     /// Every user-facing string here, for the rule tests to sweep.
     static var all: [String] {
-        [earnBack]
+        [earnBack] + frontDoor
             + [AuthService.InviteQuota.remaining(3), .remaining(1), .remaining(0), .unlimited, .unknown]
                 .flatMap { [headline(for: $0), subhead(for: $0)] }
     }

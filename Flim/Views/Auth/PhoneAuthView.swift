@@ -206,7 +206,23 @@ struct EmailAuthView: View {
             if !inviteCode.isEmpty {
                 guard try await auth.redeemInvite(code: inviteCode, email: email) else {
                     Haptics.error()
-                    inviteError = "That code didn't work. Check it and try again."
+                    // Says BOTH things that can be true, because the server cannot tell you
+                    // which, and must not.
+                    //
+                    // Since invites became finite (2026-08-29) a `false` here means one of two
+                    // things: the code does not exist, or it exists and its owner has spent all
+                    // theirs. `redeem_invite` deliberately returns the same answer for both, so a
+                    // stranger cannot probe which codes are real. That is the right call and is
+                    // not changing.
+                    //
+                    // What WAS wrong is the copy. "Check it and try again" asserts a typo, which
+                    // is only one of the two cases: someone handed a genuinely correct code by a
+                    // real friend, typed correctly, was told to go re-check a code that is not
+                    // wrong, and re-typing it would never work. With three invites a head, that
+                    // case is not an edge, it is what scarcity is FOR. This wording accuses
+                    // nobody, leaks nothing (it is one string either way), and gives a next step
+                    // that can actually succeed.
+                    inviteError = InviteCopy.redeemFailed
                     return
                 }
                 Haptics.success()
@@ -222,6 +238,13 @@ struct EmailAuthView: View {
                 inviteExpanded = true
             }
             codeFocused = true
+        } catch AuthError.rateLimited where !inviteCode.isEmpty {
+            // Shown against the CODE field, not the email field. The person was acting on the
+            // code; putting the reason next to an input they did not touch reads as the email
+            // being at fault. The global gate is 30/hour across everyone, so this is rare, and
+            // rarer still is the person who sees it understanding why without being told.
+            Haptics.error()
+            inviteError = InviteCopy.redeemRateLimited
         } catch {
             self.error = error.localizedDescription
         }

@@ -62,4 +62,27 @@ struct InviteCopyTests {
             #expect(!both.lowercased().contains(forbidden), "implies a refill schedule: \(both)")
         }
     }
+
+    @Test("the front door never accuses someone of a typo it cannot have detected")
+    func redeemFailureDoesNotAssertATypo() {
+        // `redeem_invite` returns the SAME false for "no such code" and for "real code, owner
+        // is out", on purpose, so nobody can probe which codes exist. Copy that says only
+        // "check it and try again" is therefore wrong half the time, and wrong at the worst
+        // moment: someone holding a genuinely valid code from a real friend, told to re-check
+        // something that is not wrong, where re-typing can never work.
+        let line = InviteCopy.redeemFailed
+        #expect(line.lowercased().contains("run out"),
+                "must name the exhausted-inviter case, not just a typo")
+        // And it must stay ONE string for both cases, or it becomes an enumeration oracle.
+        #expect(!line.lowercased().contains("does not exist"))
+        #expect(!line.lowercased().contains("invalid"))
+    }
+
+    @Test("front door copy obeys the same rules as the rest")
+    func frontDoorFollowsTheHouseRules() {
+        for line in InviteCopy.frontDoor {
+            #expect(!line.lowercased().contains("roll"))
+            #expect(!line.contains("\u{2014}"))
+        }
+    }
 }
