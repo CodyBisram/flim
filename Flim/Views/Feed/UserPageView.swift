@@ -80,6 +80,9 @@ struct UserPageView: View {
     /// is what lets a genuinely new badge raise the pill next time.
     @State private var badgesLocallySeenUntil: Date?
     @State private var showInvite = false
+    /// Drives the count on the Invite button. `.unknown` until read, which shows a plain
+    /// "Invite" rather than risking a number that is wrong in the pessimistic direction.
+    @State private var inviteQuota: AuthService.InviteQuota = .unknown
     @State private var showAvatarViewer = false
     @Environment(\.dismiss) private var dismiss
 
@@ -200,7 +203,12 @@ struct UserPageView: View {
                 }
             }
         }
-        .task { await load() }
+        .task {
+            await load()
+            // Only the owner's own page shows a count, and it fails soft to `.unknown`, which
+            // renders a plain "Invite" rather than a number that could be wrong.
+            if isSelf { inviteQuota = await auth.ownInviteQuota() }
+        }
         .sheet(item: $followList) { list in
             FollowListView(userId: userId, mode: list)
         }
@@ -452,9 +460,14 @@ struct UserPageView: View {
                             .background(Color.white.opacity(0.12), in: Capsule())
                             .overlay(Capsule().strokeBorder(Color.white.opacity(0.2), lineWidth: 1))
                     }
+                    // Carries the COUNT once it is known, because a number on the profile is what
+                    // makes the scarcity real rather than a rule you discover after tapping. It
+                    // falls back to a plain "Invite" while the read is in flight and for an
+                    // account with an unlimited allowance, where there is no honest number.
                     Button { showInvite = true } label: {
-                        Label("Invite", systemImage: "person.badge.plus")
+                        Label(InviteCopy.inviteButton(for: inviteQuota), systemImage: "person.badge.plus")
                             .flimFont(14, weight: .semibold).foregroundStyle(.black)
+                            .lineLimit(1).minimumScaleFactor(0.8)
                             .frame(maxWidth: .infinity).padding(.vertical, 11)
                             .background(accent, in: Capsule())
                     }

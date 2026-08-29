@@ -275,6 +275,20 @@ enum InviteCopy {
         }
     }
 
+    /// The profile's Invite button. Says the number when there is an honest one to say.
+    ///
+    /// Not "3 left", which reads as a warning, and not a bare "3", which reads as a badge count.
+    /// "3 invites left" says the noun, so the button explains the mechanic to someone who has
+    /// never opened the sheet. Unlimited and unknown both fall back to the plain verb: an
+    /// unlimited account has no number, and a failed read must never claim one.
+    static func inviteButton(for quota: AuthService.InviteQuota) -> String {
+        switch quota {
+        case .remaining(let n) where n > 0: n == 1 ? "1 invite left" : "\(n) invites left"
+        case .remaining: "No invites left"
+        case .unlimited, .unknown: "Invite"
+        }
+    }
+
     /// Says exactly what the server does: the INVITER only, on the invitee's first PHOTO.
     static let earnBack = "When someone you invited takes their first photo, you get that invite back."
 
@@ -300,6 +314,8 @@ extension InviteCopy {
     /// Every user-facing string here, for the rule tests to sweep.
     static var all: [String] {
         [earnBack] + frontDoor
+            + [AuthService.InviteQuota.remaining(3), .remaining(1), .remaining(0), .unlimited, .unknown]
+                .map(inviteButton(for:))
             + [AuthService.InviteQuota.remaining(3), .remaining(1), .remaining(0), .unlimited, .unknown]
                 .flatMap { [headline(for: $0), subhead(for: $0)] }
     }

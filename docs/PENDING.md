@@ -9,6 +9,18 @@ Statuses: `queued`, `blocked: <what on>`, `owner`, `decided: <what>`.
 
 ## Next up
 
+### resolved 2026-08-29 — there is no 20-uploads-per-day cap
+
+A UX pass asked what a person sees when they hit it. Answer: nothing, because it does not exist.
+Searched the camera, PhotoService, every storage migration and the Cloudflare worker: no counter,
+no RPC, no RLS check, no client message. The only traces are two comments in already-applied
+migrations (`2026-08-17_usage_events.sql:88`, `2026-08-17_profile_identity.sql:275`) that refer to
+it as real. Those migrations are history and were left untouched; this note is the correction.
+
+Owner confirmed 2026-08-29 he never approved it. Nothing to remove in code. The memory files that
+asserted it, including the badge rule that cited it as a design constraint, are corrected.
+
+
 ### owner: APPLY THE PRIVILEGE ESCALATION FIX
 
 `supabase/migrations/2026-08-29_close_users_privilege_escalation.sql`. Live and exploitable
