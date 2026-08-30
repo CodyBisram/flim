@@ -7,6 +7,85 @@ doc drift, provably dead code). Product work, gates and owner steps had no home.
 
 Statuses: `queued`, `blocked: <what on>`, `owner`, `decided: <what>`.
 
+## 1.5.1, ranked
+
+Written 2026-08-30, with 1.5.0 (build 327) submitted and in review.
+
+### 1. The look: flash falloff, then grain
+
+**The argument for doing this FIRST inverted when 1.5 shipped.** It used to be "land it before
+1.5 or the feed carries two looks permanently". That gate is closed, so the seam is now certain
+wherever the change lands, and every day 1.5 is live adds photographs to the old side of it.
+Do it early in 1.5.1 to keep the seam as small as it can still be.
+
+- **Flash falloff** is the single largest gap between FLIM and an actual disposable, and it is
+  absent rather than mistuned: flash frames have 0.00% of pixels below 0.04 where a real disposable
+  has 15 to 35%. Simulable from a single capture because the falloff physically happened and the
+  ISP tone-mapped it away; blur luminance to a coarse illumination map, apply a downward gamma
+  keyed off it, GATE ON THE EXIF FLASH-FIRED BIT or it crushes ambient night scenes. ~1 day.
+- **Grain** is the inverse of pushed 400/800 on all three axes: monochrome where it should be
+  chroma, midtone-peaked where it should be shadow-peaked, fixed where it should scale with
+  exposure. ~1 day. Where it sits in the pipeline is right and hard-won; only the mask, saturation
+  and amount are wrong.
+
+Neither needs a LUT refit, which matters: a refit has already been MEASURED as a regression.
+Both trip the look-regression pin, so it needs re-recording, and flash needs a NEW synthetic
+fixture or it is pinned by exactly one photograph.
+
+DO NOT open colour. Warmth, greens and the black floor all need the cube, and the cube was fitted
+to match Lapse rather than film. Changing the target is a calibration shoot, not a task.
+
+### 2. Ask the 26 people who were never asked about notifications
+
+51 accounts, 26 hold no device token and were NEVER PROMPTED. Only 2 have actually declined. The
+product's own design note says no notification means no reveal, so half the userbase structurally
+cannot be pulled back for the thing the app is built around. This is pure absence rather than a
+preference to respect, which makes it the highest-leverage and lowest-risk retention work
+available. Re-read [[flim-onboarding-camera-permission]]'s checklist before touching the primer.
+
+### 3. Screenshots
+
+Owner deferred these from 1.5 deliberately. They show a square-grid Darkroom, a Rolls screen that
+no longer exists, and a reveal with a progress bar; the invite screenshot misdescribes a mechanic
+that is now finite. Reshoot AFTER the look work, or they get shot twice.
+
+### 4. Finish the on-device caching
+
+The tile and avatar gating is fixed. What remains: persist `RollService.coverPaths` per account so
+the first frame can attempt a disk-cache hit before any network call returns. MUST be scoped to the
+signed-in user and dropped in `resetForAccountChange()`, or one account's cover leaks into
+another's tile.
+
+### 5. Hygiene, cheap and worth doing together
+
+- Delete the `invite_sent` analytics event. Zero rows ever against 44 real invites; ground truth is
+  `allowed_emails.note`. Deleting removes a trap, wiring it creates a second source that can
+  disagree.
+- The three owner-by-email sites (two edge functions, the auto-follow trigger). Nothing exploitable,
+  but three copies of an assumption already disproven is how it comes back.
+- `CachedImage.load()` needs a staleness guard on its three terminal writes; its decode runs in a
+  detached task outside the cancelled tree, so a stale result can overwrite a fresh one. Cosmetic.
+- `FilmStripGrid` keys rows by array position; deleting a photo mid-roll rebuilds later cells.
+  Key on `row.first?.id`. Cosmetic.
+- `RollCarouselView` is 331 lines with no entry point. Delete pending an owner call.
+
+### 6. After review clears, not before
+
+- `public.profiles` / `security_invoker`. The precondition changed without anyone noticing:
+  `authenticated` now HAS column-scoped SELECT on `users` (schema.sql:1406), so the only remaining
+  blocker is `anon`, which reads profiles but has no SELECT on users. No app caller appears to read
+  profiles without a session, but confirm against API logs before revoking, then flip. See
+  [[flim-profiles-view-security]], which is stale on exactly this point.
+- Roll rename leaves the widget and Live Activity stale. `renameRoll`/`setRollCover` never call
+  `WidgetSync.refresh()`, and `rollName` is baked into immutable Live Activity attributes so the
+  only fix is ending and re-requesting the activity.
+
+### The strategic one, not a task
+
+Rolls hold 291 of 1,627 photos. Four in five shots never touch one, and rolls are positioned as the
+differentiator. Either the shared path becomes the default or the strategy follows what people
+actually do. Worth deciding before more is built on top of rolls.
+
 ## Next up
 
 ### resolved 2026-08-29 — there is no 20-uploads-per-day cap
