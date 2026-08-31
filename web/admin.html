@@ -287,6 +287,12 @@
     }
     .stat__l { font-size: 12px; color: var(--muted); margin-top: 2px; }
     .stat__sub { font-size: 11px; color: var(--faint); margin-top: 3px; }
+    /* Week-over-week delta, coloured by direction. Every headline overview metric is
+       more-is-better (new users, shooters, shots, reveals, posts, redemptions), so up is
+       unambiguously green and down red; flat stays quiet. */
+    .stat__delta--up   { color: var(--ok-fg); font-weight: 500; }
+    .stat__delta--down { color: var(--bad-fg); font-weight: 500; }
+    .stat__delta--flat { color: var(--faint); }
     .stat--warn .stat__n { color: var(--accent); }
 
     .sect { margin: 22px 0 10px; font-size: 13px; font-weight: 600; }
@@ -756,10 +762,16 @@
         function metric(m, label) {
           m = m || {};
           var now = Number(m.now) || 0, prev = Number(m.prev) || 0, diff = now - prev;
-          var arrow = diff > 0 ? "▲ +" + diff
-                    : diff < 0 ? "▼ " + diff
-                    : "– no change";
-          return statCard(now, label, arrow + "  ·  " + prev + " the week before", false);
+          var tone = diff > 0 ? "up" : diff < 0 ? "down" : "flat";
+          var arrow = diff > 0 ? "\u25B2 +" + diff
+                    : diff < 0 ? "\u25BC " + diff
+                    : "\u2013 no change";
+          var c = el("div", "stat");
+          c.appendChild(el("div", "stat__n", String(now)));
+          c.appendChild(el("div", "stat__l", label));
+          c.appendChild(el("div", "stat__sub stat__delta--" + tone,
+                            arrow + "  \u00b7  " + prev + " the week before"));
+          return c;
         }
         section(host, "This week", "the last 7 days, each number against the 7 before it");
         host.appendChild(statRow([
