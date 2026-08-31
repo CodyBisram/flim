@@ -128,6 +128,25 @@ struct InviteSheet: View {
     private enum Frame {
         case unused
         case spent(AuthService.SentInvite)
+
+        /// The handle to print on its own line, or nil when there is nobody to name yet: an
+        /// unused frame, or a spent one whose recipient has not finished making an account.
+        var handle: String? {
+            if case .spent(let invite) = self, let h = invite.handle { return "@\(h)" }
+            return nil
+        }
+
+        /// Which status word the frame carries, kept separate from the handle so the copy can be
+        /// swept by the rule tests in `InviteCopy`.
+        var statusKind: InviteCopy.SpentStatus {
+            switch self {
+            case .unused: .unused
+            case .spent(let invite):
+                if invite.handle == nil { .invited }        // redeemed, no account with a name yet
+                else if invite.activated { .cameBack }      // shot their first frame; invite is back
+                else { .yetToShoot }                        // has an account, no photo yet
+            }
+        }
     }
 
     /// The strip, built as film rather than as a row of cards with a dotted line above it.
@@ -169,19 +188,35 @@ struct InviteSheet: View {
 
     private func frameView(_ frame: Frame, number: Int) -> some View {
         let isUnused: Bool = if case .unused = frame { true } else { false }
-        return VStack(spacing: 4) {
+        let status = InviteCopy.spentStatus(for: frame.statusKind)
+        return VStack(spacing: 2) {
             Spacer(minLength: 0)
             // Struck on the film edge the way a frame number is: mono, small, and the same accent
             // the app already burns its date imprints in.
             Text(String(format: "%02d", number))
-                .flimFont(17, weight: .medium, design: .monospaced, relativeTo: .title3)
+                .flimFont(16, weight: .medium, design: .monospaced, relativeTo: .title3)
                 .foregroundStyle(isUnused ? accent : FlimTheme.textTertiary)
-            Text(label(for: frame))
-                .flimFont(10.5, relativeTo: .caption2)
-                .foregroundStyle(isUnused ? FlimTheme.textSecondary : FlimTheme.textTertiary.opacity(0.7))
+            // The handle and its status are on SEPARATE lines. A 74pt frame cannot hold
+            // "@arielkarina, yet to shoot" on one line, so the old single label truncated a long
+            // handle to noise. The name gets its own line and shrinks to fit; the status is a
+            // short word that never needs to.
+            if let handle = frame.handle {
+                Text(handle)
+                    .flimFont(11, relativeTo: .caption2)
+                    .foregroundStyle(FlimTheme.textSecondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+                    .padding(.horizontal, 3)
+            }
+            Text(status.text)
+                .flimFont(9, weight: .medium, relativeTo: .caption2)
+                // Accent when the invite has come BACK: the person shot their first frame, which is
+                // the good news this screen exists to report.
+                .foregroundStyle(isUnused ? FlimTheme.textSecondary
+                                 : status.returned ? accent : FlimTheme.textTertiary.opacity(0.75))
                 .lineLimit(1)
-                .minimumScaleFactor(0.75)
-                .padding(.horizontal, 4)
+                .minimumScaleFactor(0.7)
+                .padding(.horizontal, 3)
             Spacer(minLength: 0)
         }
         .frame(width: FilmStripMetrics.frameWidth, height: FilmStripMetrics.frameHeight)
@@ -193,21 +228,6 @@ struct InviteSheet: View {
             Rectangle().strokeBorder(isUnused ? accent.opacity(0.7) : Color.white.opacity(0.07),
                                      lineWidth: 1)
         )
-    }
-
-    private func label(for frame: Frame) -> String {
-        switch frame {
-        case .unused: "unused"
-        case .spent(let invite):
-            // A handle only exists once they have actually made an account. Until then the invite
-            // is genuinely spent but has nobody's name on it yet, and the server deliberately
-            // never returns the email it was sent to.
-            if let handle = invite.handle {
-                invite.activated ? "@\(handle)" : "@\(handle), yet to shoot"
-            } else {
-                "sent, not joined"
-            }
-        }
     }
 
     private func codeRow(_ code: String) -> some View {
@@ -337,21 +357,47 @@ enum InviteCopy {
     static func revealOfferVisible(for quota: AuthService.InviteQuota) -> Bool {
         quota != .remaining(0)
     }
+
+    // MARK: - A spent invite's status
+
+    /// What one spent frame on the strip is doing. Kept as its own word, separate from the handle,
+    /// because a 74pt film frame cannot hold "@arielkarina, yet to shoot" on a single line.
+    enum SpentStatus {
+        case unused        // not spent at all
+        case invited       // redeemed the code, has not finished making an account
+        case yetToShoot    // has an account, no first photo yet, so the invite is still out
+        case cameBack      // took their first photo; the invite has returned
+    }
+
+    /// The short status word for a frame, and whether it is the GOOD outcome (the invite came
+    /// back), which the view draws in accent. Words are kept brief enough to never truncate in a
+    /// narrow frame; `yetToShoot` matches the earn-back line's own "takes their first photo".
+    static func spentStatus(for kind: SpentStatus) -> (text: String, returned: Bool) {
+        switch kind {
+        case .unused:     ("unused", false)
+        case .invited:    ("invited", false)
+        case .yetToShoot: ("yet to shoot", false)
+        case .cameBack:   ("shot it", true)
+        }
+    }
 }
 
 extension InviteCopy {
     /// Both front-door strings, swept by the same rules as the screen's own copy.
     static var frontDoor: [String] { [redeemFailed, redeemRateLimited] }
 
-    /// Every user-facing string here, for the rule tests to sweep.
+    /// Every user-facing string here, for the rule tests to sweep. Assembled in named steps
+    /// rather than one chained expression: the whole thing together tripped the Swift
+    /// type-checker's timeout.
     static var all: [String] {
-        [earnBack, revealPrompt] + frontDoor
-            + [AuthService.InviteQuota.remaining(3), .remaining(1), .remaining(0), .unlimited, .unknown]
-                .map(inviteButton(for:))
-            + [AuthService.InviteQuota.remaining(3), .remaining(1), .remaining(0), .unlimited, .unknown]
-                .flatMap { [headline(for: $0), subhead(for: $0)] }
-            + [AuthService.InviteQuota.remaining(3), .remaining(1), .remaining(0), .unlimited, .unknown]
-                .compactMap(revealQuotaLine(for:))
+        let quotas: [AuthService.InviteQuota] = [.remaining(3), .remaining(1), .remaining(0), .unlimited, .unknown]
+        var out: [String] = [earnBack, revealPrompt]
+        out += frontDoor
+        out += quotas.map(inviteButton(for:))
+        out += quotas.flatMap { [headline(for: $0), subhead(for: $0)] }
+        out += quotas.compactMap(revealQuotaLine(for:))
+        out += [SpentStatus.unused, .invited, .yetToShoot, .cameBack].map { spentStatus(for: $0).text }
+        return out
     }
 }
 
