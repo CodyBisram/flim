@@ -647,6 +647,7 @@ struct FeedView: View {
                             .frame(width: 212, height: 38)
                             .overlay(Capsule().strokeBorder(Color.white.opacity(0.2), lineWidth: 1))
                     }
+                    .simultaneousGesture(TapGesture().onEnded { Activation.log(.inviteSent) })
                 }
             }
             .padding(.top, 9)

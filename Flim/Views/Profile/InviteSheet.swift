@@ -65,7 +65,12 @@ struct InviteSheet: View {
                                 .padding(.vertical, 14)
                                 .background(accent, in: Capsule())
                         }
-                        .simultaneousGesture(TapGesture().onEnded { Haptics.tap() })
+                        // The growth funnel's "sent an invite" milestone. Fires on the share-sheet
+                        // open, the only signal iOS gives (ShareLink reports no completion); one-time
+                        // per user server-side, so it reads as "has ever tried to invite someone".
+                        .simultaneousGesture(TapGesture().onEnded {
+                            Haptics.tap(); Activation.log(.inviteSent)
+                        })
                         .padding(.horizontal, 40)
                         .padding(.top, 24)
 

@@ -576,7 +576,12 @@ struct RollRevealView: View {
                         }
                     }
                 }
-                .simultaneousGesture(TapGesture().onEnded { Haptics.tap() })
+                // Same growth-funnel milestone as the profile and feed shares. Firing it here too
+                // is what lets the invite funnel see that this reveal-close surface converts at all,
+                // which is the whole point of putting an invite on the reveal.
+                .simultaneousGesture(TapGesture().onEnded {
+                    Haptics.tap(); Activation.log(.inviteSent)
+                })
                 .padding(.top, 14)
             }
         }
