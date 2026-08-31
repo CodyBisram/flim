@@ -21,6 +21,12 @@ enum UsageEvent: String {
     case postShared = "post_shared"
     case feedViewed = "feed_viewed"
     case revealWatched = "reveal_watched"
+    // The invite share, tagged by the surface it happened on. `invite_sent` (activation) still
+    // fires the once-ever milestone alongside these; these carry the volume and the source, which
+    // is what tells us whether the reveal's closing invite converts against the profile and feed.
+    case inviteSharedProfile = "invite_shared_profile"
+    case inviteSharedFeed = "invite_shared_feed"
+    case inviteSharedReveal = "invite_shared_reveal"
 }
 
 /// Fire-and-forget frequency/retention instrumentation, mirroring `Activation.log(_:)` exactly

@@ -69,7 +69,9 @@ struct InviteSheet: View {
                         // open, the only signal iOS gives (ShareLink reports no completion); one-time
                         // per user server-side, so it reads as "has ever tried to invite someone".
                         .simultaneousGesture(TapGesture().onEnded {
-                            Haptics.tap(); Activation.log(.inviteSent)
+                            Haptics.tap()
+                            Activation.log(.inviteSent)
+                            Usage.log(.inviteSharedProfile)
                         })
                         .padding(.horizontal, 40)
                         .padding(.top, 24)

@@ -580,7 +580,9 @@ struct RollRevealView: View {
                 // is what lets the invite funnel see that this reveal-close surface converts at all,
                 // which is the whole point of putting an invite on the reveal.
                 .simultaneousGesture(TapGesture().onEnded {
-                    Haptics.tap(); Activation.log(.inviteSent)
+                    Haptics.tap()
+                    Activation.log(.inviteSent)
+                    Usage.log(.inviteSharedReveal)
                 })
                 .padding(.top, 14)
             }
