@@ -445,6 +445,11 @@ struct FeedView: View {
                 LazyVStack(spacing: 0) {
                     Color.clear.frame(height: 0).id("top")
 
+                    // Standing nudge for anyone who never turned notifications on. It gates and
+                    // hides itself; here it just needs to be the first thing on the feed so it is
+                    // seen on landing and scrolls away as you browse. See NotificationNudgeBanner.
+                    NotificationNudgeBanner()
+
                     // Nothing anywhere was unseen at load: the block sits at the top of the
                     // scroll with the days already seen below it.
                     if caughtUp == .top {
