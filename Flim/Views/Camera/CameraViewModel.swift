@@ -442,6 +442,12 @@ final class CameraViewModel: NSObject {
 
     /// Switches between the back and front cameras.
     func flipCamera() {
+        // Not while a capture is in flight. Flipping reconfigures the session (remove/add inputs)
+        // under an outstanding `capturePhoto`, and low-light AE convergence can keep one running
+        // for seconds. The shot then comes back with nil data and is dropped with only a buzz, no
+        // retry queued. The shutter button already disables during a capture; the flip control and
+        // the double-tap-to-flip gesture did not, so the guard lives here to cover both.
+        guard !isCapturing else { return }
         cameraPosition = isFront ? .back : .front
         // A pending handback belongs to the lens being swapped out; `addVideoInput` puts the new
         // one into continuous focus itself.
@@ -592,6 +598,14 @@ final class CameraViewModel: NSObject {
     @MainActor
     func capturePhoto() {
         guard !isCapturing else { return }
+        // Never fire the output at a session that is not running. The self-timer's countdown runs
+        // in a Task that outlives the view: leaving the Camera tab mid-countdown calls stopRunning
+        // (see `CameraView.onDisappear`) but the countdown keeps ticking and eventually calls here.
+        // `AVCapturePhotoOutput.capturePhoto` on a stopped session is AVFoundation misuse whose
+        // canonical result is an uncatchable Objective-C exception, i.e. a crash; at best the shot
+        // is silently lost. A safe no-op is the right answer for every path that could reach this
+        // after a stop, not only the timer.
+        guard session.isRunning else { return }
         // Before anything can fail. The whole point is to count the ATTEMPT: if this lands near
         // the number of people with a ready camera while `firstShot` stays far below it, captures
         // are breaking, which is a different bug from anybody deciding not to shoot.

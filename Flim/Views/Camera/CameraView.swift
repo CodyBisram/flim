@@ -253,7 +253,15 @@ struct CameraView: View {
         .onChange(of: hasOnboarded) { _, done in
             if done { startCameraFlow() }
         }
-        .onDisappear { camera.stopRunning() }
+        .onDisappear {
+            camera.stopRunning()
+            // Cancel any running self-timer. Its countdown lives in a Task that SwiftUI does not
+            // auto-cancel (it is a bare Task, not a `.task`), and `countdown` is `@State` that
+            // survives a tab switch, so without this the timer keeps ticking off-screen and fires
+            // a capture into a stopped session. Clearing it makes the Task's own `countdown != nil`
+            // guard return; `capturePhoto`'s `session.isRunning` check covers the final-tick race.
+            countdown = nil
+        }
         .onChange(of: selectedRoll) { persistSelectedRoll() }
         // `personalFallbackCount` only ever goes up, so every genuine fallback is its own change
         // even if two land back to back with identical copy. Fires for both a fresh capture that
