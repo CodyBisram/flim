@@ -196,16 +196,24 @@ struct InviteSheet: View {
             Text(String(format: "%02d", number))
                 .flimFont(16, weight: .medium, design: .monospaced, relativeTo: .title3)
                 .foregroundStyle(isUnused ? accent : FlimTheme.textTertiary)
+                // Shares the same shrink contract as the lines below it: without this, the number
+                // alone grows unchecked at accessibility text sizes and pushes the three-line
+                // stack past the fixed 92pt frame, bleeding into the sprocket rail.
+                .minimumScaleFactor(0.7)
             // The handle and its status are on SEPARATE lines. A 74pt frame cannot hold
             // "@arielkarina, yet to shoot" on one line, so the old single label truncated a long
             // handle to noise. The name gets its own line and shrinks to fit; the status is a
             // short word that never needs to.
             if let handle = frame.handle {
+                // Two lines, not one: the max username is 20 characters (`AuthService`), so
+                // "@" + 20 needs to shrink below the 0.6 floor to fit ONE line and would truncate
+                // with an ellipsis instead. It has the vertical room to wrap, so it wraps.
                 Text(handle)
                     .flimFont(11, relativeTo: .caption2)
                     .foregroundStyle(FlimTheme.textSecondary)
-                    .lineLimit(1)
+                    .lineLimit(2)
                     .minimumScaleFactor(0.6)
+                    .multilineTextAlignment(.center)
                     .padding(.horizontal, 3)
             }
             Text(status.text)
