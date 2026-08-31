@@ -85,6 +85,26 @@ final class FeedSeenStore {
         persist(for: activeUserId)
     }
 
+    /// Seeds a batch of already-seen marks as a one-time backlog migration, each dated at the
+    /// supplied instant rather than `.now`.
+    ///
+    /// The date matters for retention: a fully-seen unit leaves the feed at the first 04:00 after
+    /// its seen date. Dating a seeded mark at the post's OWN creation time lets an old, seeded unit
+    /// age out at the next boundary the way a genuinely-old seen unit would, instead of lingering a
+    /// full extra day as "seen just now". The cap and the write happen ONCE for the whole batch,
+    /// not per mark; ids already carrying a mark are left untouched.
+    func seedBacklog(_ marks: [(id: UUID, seenAt: Date)]) {
+        guard let activeUserId, !marks.isEmpty else { return }
+        for (id, date) in marks where seenAt[id] == nil {
+            seenAt[id] = date
+        }
+        if seenAt.count > Self.cap {
+            let evictable = seenAt.sorted { $0.value < $1.value }.prefix(seenAt.count - Self.cap)
+            for (id, _) in evictable { seenAt.removeValue(forKey: id) }
+        }
+        persist(for: activeUserId)
+    }
+
     private static func datesKey(for userId: UUID) -> String { datesKeyPrefix + userId.uuidString }
 
     private func loadMarks(for userId: UUID) -> [UUID: Date] {
@@ -165,4 +185,53 @@ final class FeedSeenStore {
         defaults.removeObject(forKey: Self.legacyIdsKey)
     }
     #endif
+}
+
+/// The one-time decision of whether, and up to when, to seed the feed's backlog as already-seen
+/// the first time a user reaches the redesigned feed.
+///
+/// The redesigned feed lights an unseen pill on every unit a viewer has not opened. Seen-marks are
+/// a 1.5 feature, so on a first 1.5 launch an UPGRADING user holds none, and their whole backlog,
+/// up to the retention window of it, would open as a wall of lit pills for content they saw days
+/// ago in an older build. Seeding those old units as seen makes the feed open calm. Three cases,
+/// and getting any of them wrong is a visible bug:
+///
+///  - **Upgrader**: seed everything older than a sensible cutoff. The common case.
+///  - **Tester** (or a mid-session reinstall) who already holds real marks: never touch them, or
+///    genuinely-unseen units get marked seen.
+///  - **Fresh signup**: seed NOTHING, so a brand-new user meets the feed as designed, unseen until
+///    opened. A just-created account is a new user; an old account on a mark-less device is an
+///    upgrade or a reinstall, both of which want the seed. Account age is the discriminator.
+enum FeedSeenSeed {
+    enum Decision: Equatable {
+        case skip
+        case seedOlderThan(Date)
+    }
+
+    /// An account younger than this is treated as a fresh signup and left unseeded. Wide enough
+    /// that onboarding and a first look around cannot age a genuinely new user past it, narrow
+    /// enough that any returning user clears it comfortably.
+    static let freshAccountWindow: TimeInterval = 2 * 3600
+
+    /// - Parameters:
+    ///   - alreadySeeded: the per-account one-shot flag; once set, normal per-open marking owns
+    ///     seen-state and this never runs again.
+    ///   - storeHasMarks: whether the account already holds any seen-marks on this device.
+    ///   - accountAge: how long the signed-in account has existed, the fresh-signup discriminator.
+    ///   - lastActivitySeen: the Activity feed's last-seen epoch from a prior version, 0 if never.
+    static func decide(alreadySeeded: Bool,
+                       storeHasMarks: Bool,
+                       accountAge: TimeInterval,
+                       lastActivitySeen: TimeInterval,
+                       now: Date) -> Decision {
+        guard !alreadySeeded else { return .skip }
+        guard !storeHasMarks else { return .skip }
+        guard accountAge > freshAccountWindow else { return .skip }
+        // The cutoff: the moment a prior version last recorded them as active, if it did, else the
+        // most recent 04:00 day boundary, i.e. mark yesterday-and-older seen and keep today fresh.
+        let cutoff = lastActivitySeen > 0
+            ? Date(timeIntervalSince1970: lastActivitySeen)
+            : FeedUnit.dayKey(for: now)
+        return .seedOlderThan(cutoff)
+    }
 }

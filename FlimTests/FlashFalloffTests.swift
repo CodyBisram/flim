@@ -20,44 +20,13 @@ struct FlashFalloffTests {
 
     // MARK: - Byte-identity of the non-flash path
 
-    /// The fixtures that existed when the digests below were recorded.
+    /// The non-flash scenes the gate must stay shut on.
     ///
-    /// Named explicitly rather than derived from `LookFixture.allCases`, because the digests are a
-    /// claim about a PREVIOUS REVISION and `allCases` is a fact about this one. Deriving the list
-    /// would let a future fixture quietly join the table with a digest recorded after the change it
-    /// is supposed to predate, which is the one way this file could stop being evidence.
-    static let preFlashEraFixtures: [LookFixture] = [.night, .dusk, .speculars, .daylight,
-                                                     .gamut, .oversize]
-
-    /// SHA-256 of `InstantFilmProcessor.process(_:stock:)`'s JPEG bytes, per scene, recorded on
-    /// the PRE-flash-falloff pipeline.
-    ///
-    /// Deliberately a digest of the encoded FILE rather than a statistic. The look pin next door
-    /// measures frame averages with a tolerance, because that is the right instrument for "did the
-    /// grade move". It is the wrong instrument for a gate: the gate either fired or it did not, and
-    /// a tolerance would let a faint, uniform darkening of every ambient photograph in the product
-    /// slip through as "inside half an 8-bit level". Bytes admit no such thing.
-    ///
-    /// These cover both fixture families and every branch a flash frame could plausibly disturb:
-    /// the dark scenes that take adaptive exposure and the reduced-bloom path (`night`, `dusk`),
-    /// the oversize scene that takes the 2048 downscale, and the owner's five real captures.
-    /// Including `parkview-flash`, which is the useful adversarial case: a genuine flash photograph
-    /// that must STILL be treated as non-flash, because its neutral-capture export carries no EXIF
-    /// at all (measured: the Film Lab export re-encodes through `CGImageDestination` without
-    /// metadata) and the only thing the gate is allowed to read is the EXIF bit.
-    static let nonFlashDigests: [String: String] = [
-        "night": "4650f94d910cdc47128c589144c4ca67521a18a029b22a8e8b9b86d472484bfd",
-        "dusk": "cabee630941ed0f946803849a4a1b43a1ca29da59125fbceeab568ce7a6f889c",
-        "speculars": "a9ef3222ed6dc29d0f288e3d681b42f00e06f55011d7864928cf74fbc0ade590",
-        "daylight": "ac0bbaad33235c411f1ce2d8328d772520ad4705ffe7107c25cd730eb383d5b5",
-        "gamut": "40253b436e456c1afedc980b8d8feaaafcf30455aed3c0c2f38597df1c0e137e",
-        "oversize": "b604b6a370d23bd901f6a3d9ffd49b4fe738b703a32ec9dc87e12aea4540df07",
-        "parkview-noflash": "041b75279fc6fb3c9d89fcb388654ea211624fa8152b9d6068aaa84edfbdb4d7",
-        "wide-dim": "80e35af9054eaa70d93d48ca98bc8ea4df7a2dbf46fb32c75b53579e2225e8bf",
-        "parkview-flash": "afbfc762f0361606ee7373113387c2fb82e5404cde13c46ab4aaefc9ec7d42e3",
-        "restaurant-a": "3133f81306e559f0bc31389632d14a950c68f050fe69f1a4e90fdb21f4aaf74c",
-        "plush": "cb1a34baabaf498ca30c736d8f05d327dcfff48beb9869ece61aa91170a09d32"
-    ]
+    /// Includes the dark scenes that take adaptive exposure and the reduced-bloom path (`night`,
+    /// `dusk`) and the oversize scene that takes the 2048 downscale, so every branch a flash frame
+    /// could plausibly disturb is exercised on a non-flash input.
+    static let nonFlashFixtures: [LookFixture] = [.night, .dusk, .speculars, .daylight,
+                                                  .gamut, .oversize]
 
     static func digest(_ data: Data) -> String {
         var hash = [UInt8](repeating: 0, count: 32)
@@ -75,29 +44,44 @@ struct FlashFalloffTests {
                 == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
     }
 
-    @Test("a non-flash synthetic scene is byte-identical to the pre-flash-falloff pipeline",
-          arguments: preFlashEraFixtures)
-    func nonFlashFixtureOutputIsByteIdentical(_ fixture: LookFixture) async throws {
+    // Byte-EXACT and portable, where the old absolute-digest table was neither. A hardcoded
+    // SHA-256 of CoreImage's JPEG output is a fact about ONE machine's GPU and Metal stack: the
+    // unchanged pipeline hashes differently on a CI runner than on the machine that recorded it,
+    // so the table failed in CI while proving nothing there. These instead render the SAME input
+    // twice on WHATEVER machine runs them, once letting the gate decide (it must decide "no
+    // flash") and once with the gate forced shut, and demand the two be bit-identical. That is
+    // exactly the gate-leak the digest table existed to catch, a faint uniform darkening slipping
+    // onto every ambient photograph, and unlike the table it admits no tolerance and travels.
+    //
+    // Absolute drift of the non-flash grade itself (a refactor that moves it on ALL paths at
+    // once, which comparing a path to itself cannot see) is the look pin's job next door; it
+    // measures against recorded baselines and re-derived them to zero spread, and it is
+    // tolerance-based precisely so it survives the cross-machine byte differences these avoid.
+
+    @Test("a non-flash synthetic scene renders identically to the flash gate being shut",
+          arguments: nonFlashFixtures)
+    func nonFlashFixtureIsUntouchedByTheGate(_ fixture: LookFixture) async throws {
         #expect(fixture.firesFlash == false, "this test is only meaningful on non-flash inputs")
-        let expected = try #require(Self.nonFlashDigests[fixture.rawValue],
-                                    "no pre-change digest for \(fixture.rawValue)")
-        let out = try #require(await InstantFilmProcessor.process(fixture.pngData(), stock: .original))
-        #expect(Self.digest(out.data) == expected, """
-            \(fixture.rawValue) is no longer byte-identical to the pre-flash-falloff pipeline. \
-            The flash stage must be a complete no-op on anything whose EXIF flash bit is absent or \
-            zero; every photograph already shipped, every existing user, and App Store review are \
-            all on that path.
+        let data = fixture.pngData()
+        let gated = try #require(await InstantFilmProcessor.process(data, stock: .original))
+        let forcedOff = try #require(await InstantFilmProcessor.process(data, stock: .original,
+                                                                        flashOverride: false))
+        #expect(Self.digest(gated.data) == Self.digest(forcedOff.data), """
+            \(fixture.rawValue): the flash gate did not stay shut on a non-flash scene. The stage \
+            must be a complete no-op on anything whose EXIF flash bit is absent or zero; every \
+            photograph already shipped, every existing user, and App Store review are on that path.
             """)
     }
 
-    @Test("a non-flash real capture is byte-identical to the pre-flash-falloff pipeline",
+    @Test("a non-flash real capture renders identically to the flash gate being shut",
           .enabled(if: LookPairs.isAvailable), arguments: LookPairs.scenes)
-    func nonFlashPairOutputIsByteIdentical(_ scene: String) async throws {
-        let expected = try #require(Self.nonFlashDigests[scene], "no pre-change digest for \(scene)")
+    func nonFlashPairIsUntouchedByTheGate(_ scene: String) async throws {
         let data = try #require(LookPairs.neutralData(scene))
-        let out = try #require(await InstantFilmProcessor.process(data, stock: .original))
-        #expect(Self.digest(out.data) == expected,
-                "\(scene) is no longer byte-identical to the pre-flash-falloff pipeline")
+        let gated = try #require(await InstantFilmProcessor.process(data, stock: .original))
+        let forcedOff = try #require(await InstantFilmProcessor.process(data, stock: .original,
+                                                                        flashOverride: false))
+        #expect(Self.digest(gated.data) == Self.digest(forcedOff.data),
+                "\(scene): the flash gate did not stay shut on a non-flash capture")
     }
 
     // MARK: - The gate
@@ -627,29 +611,3 @@ enum SHA256Lite {
     private static func rotr(_ x: UInt32, _ n: UInt32) -> UInt32 { (x >> n) | (x << (32 - n)) }
 }
 
-/// Prints the pre-change digest table for `FlashFalloffTests.nonFlashDigests`.
-///
-/// Run this BEFORE a change that is supposed to leave the non-flash path alone, never after, or
-/// this file stops being evidence of anything:
-///
-///     TEST_RUNNER_FLIM_RECORD_FLASH_DIGESTS=1 xcodebuild test -project Flim.xcodeproj \
-///       -scheme Flim -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
-///       -only-testing:FlimTests/FlashDigestRecorder
-struct FlashDigestRecorder {
-    static let isRecording = ProcessInfo.processInfo.environment["FLIM_RECORD_FLASH_DIGESTS"] == "1"
-
-    @Test("record non-flash digests: fixtures", .enabled(if: isRecording),
-          arguments: LookFixture.allCases.filter { !$0.firesFlash })
-    func recordFixtures(_ fixture: LookFixture) async throws {
-        let out = try #require(await InstantFilmProcessor.process(fixture.pngData(), stock: .original))
-        print("DIGEST \"\(fixture.rawValue)\": \"\(FlashFalloffTests.digest(out.data))\",")
-    }
-
-    @Test("record non-flash digests: pairs",
-          .enabled(if: isRecording && LookPairs.isAvailable), arguments: LookPairs.scenes)
-    func recordPairs(_ scene: String) async throws {
-        let data = try #require(LookPairs.neutralData(scene))
-        let out = try #require(await InstantFilmProcessor.process(data, stock: .original))
-        print("DIGEST \"\(scene)\": \"\(FlashFalloffTests.digest(out.data))\",")
-    }
-}
