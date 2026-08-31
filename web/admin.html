@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <meta name="theme-color" content="#1c1917">
+  <meta name="theme-color" content="#f8fafc">
   <!-- Not a public page. Nothing here is secret, since every call is gated server
        side by is_owner(), but there is no reason for it to sit in a search index. -->
   <meta name="robots" content="noindex, nofollow">
@@ -33,9 +33,10 @@
       --accent-soft: #fffbeb;
       --accent-border: #fde68a;
 
-      --side: #1c1917;
-      --side-text: #d6d3d1;
-      --side-active: #292524;
+      --side: #f1f5f9;
+      --side-text: #475569;
+      --side-active: #ffffff;
+      --side-hover: #e5e9ef;
 
       --ok-bg: #ecfdf5; --ok-fg: #047857; --ok-br: #a7f3d0;
       --bad-bg: #fef2f2; --bad-fg: #b91c1c; --bad-br: #fecaca;
@@ -70,8 +71,9 @@
       width: 224px;
       flex-shrink: 0;
       background: var(--side);
-      color: #fff;
+      color: var(--text);
       padding: 12px 8px;
+      border-right: 1px solid var(--border);
       display: flex;
       flex-direction: column;
       position: sticky;
@@ -109,12 +111,13 @@
       cursor: pointer;
       transition: background-color 0.15s ease, color 0.15s ease;
     }
-    .navitem:hover { background: var(--side-active); color: #fff; }
+    .navitem:hover { background: var(--side-hover); color: var(--text); }
     .navitem[aria-current="true"] {
       background: var(--side-active);
-      color: #fff;
+      color: var(--text);
       border-left-color: #f59e0b;
       font-weight: 500;
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
     }
 
     /* The count is the reason to click, so it is not decoration: zero goes quiet,
@@ -124,13 +127,13 @@
       font-size: 11px;
       padding: 1px 7px;
       border-radius: 999px;
-      background: rgba(255, 255, 255, 0.08);
-      color: var(--side-text);
+      background: #e2e8f0;
+      color: var(--muted);
     }
-    .navitem__count[data-any="true"] { background: #f59e0b; color: #1c1917; font-weight: 500; }
+    .navitem__count[data-any="true"] { background: #f59e0b; color: #1c1917; font-weight: 600; }
 
-    .side__foot { padding: 8px 2px 0; border-top: 1px solid rgba(255,255,255,0.08); }
-    .side__who { font-family: var(--mono); font-size: 11px; color: #78716c; padding: 6px 8px; overflow-wrap: anywhere; }
+    .side__foot { padding: 8px 2px 0; border-top: 1px solid var(--border); }
+    .side__who { font-family: var(--mono); font-size: 11px; color: var(--faint); padding: 6px 8px; overflow-wrap: anywhere; }
 
     /* ---- Content ---------------------------------------------------------- */
 
@@ -770,6 +773,28 @@
           metric(wk.invites_redeemed, "invites redeemed")
         ]));
 
+        section(host, "New users, 14 days", "the growth line, oldest day first");
+        bars(host, (d.signups_daily || []).map(function (r) {
+          return { label: r.day, value: r.n, dim: r.n === 0,
+                   note: r.n === 1 ? "1 signup" : r.n + " signups" };
+        }));
+
+        section(host, "Invites by surface",
+                "the reveal experiment: which of the three placements gets used");
+        var src = d.invite_sources || {};
+        var srcTotal = (src.profile || 0) + (src.feed || 0) + (src.reveal || 0);
+        bars(host, [
+          { label: "Profile sheet",    value: src.profile || 0 },
+          { label: "Feed empty state", value: src.feed || 0 },
+          { label: "Reveal close",     value: src.reveal || 0 }
+        ].map(function (r) {
+          return { label: r.label, value: r.value, dim: r.value === 0,
+                   note: r.value + (srcTotal ? "  ·  " + pct(r.value, srcTotal) : "") };
+        }));
+        if (!srcTotal) {
+          host.appendChild(el("div", "empty", "No source-tagged shares yet. This fills in as 1.5.1 rolls out."));
+        }
+
         section(host, "All time", "the ground the week moves against");
         host.appendChild(statRow([
           statCard(t.users, "users"),
@@ -784,7 +809,7 @@
           statCard(at.never_asked_notifications, "never asked about notifications",
                    "cannot be pulled back by a reveal", at.never_asked_notifications > 0),
           statCard(at.invite_senders_ever, "have ever invited anyone",
-                   t.users ? "of " + t.users + " — growth runs through this few" : "",
+                   t.users ? "of " + t.users + ", the accounts growth runs through" : "",
                    t.users && at.invite_senders_ever < t.users * 0.25),
           statCard(at.days_since_last_roll === null ? "–" : at.days_since_last_roll,
                    "days since the last roll",
