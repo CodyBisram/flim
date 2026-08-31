@@ -374,11 +374,12 @@
   <aside class="side hide" id="side">
     <div class="side__brand">FL<span>I</span>M</div>
     <ul class="side__nav" id="nav">
-      <li><button class="navitem" data-panel="invites" aria-current="true">Invites <span class="navitem__count" id="c-invites">0</span></button></li>
+      <li><button class="navitem" data-panel="invites">Invites <span class="navitem__count" id="c-invites">0</span></button></li>
       <li><button class="navitem" data-panel="photos">Reported photos <span class="navitem__count" id="c-photos">0</span></button></li>
       <li><button class="navitem" data-panel="users">Reported people <span class="navitem__count" id="c-users">0</span></button></li>
       <li><button class="navitem" data-panel="feedback">Feedback <span class="navitem__count" id="c-feedback">0</span></button></li>
       <li class="side__label">Analytics</li>
+      <li><button class="navitem" data-panel="overview" aria-current="true">Overview</button></li>
       <li><button class="navitem" data-panel="traffic">Traffic</button></li>
       <li><button class="navitem" data-panel="pulse">Pulse</button></li>
       <li><button class="navitem" data-panel="funnel">Funnel</button></li>
@@ -421,16 +422,17 @@
     /* Analytics live beside the queues rather than in them: a queue is a list of
        rows to act on, and every one of these is a different shape. Null until
        loaded, so a panel can tell "still fetching" from "the answer is nothing". */
-    var stats = { funnel: null, reach: null, stuck: null, pulse: null,
+    var stats = { overview: null, funnel: null, reach: null, stuck: null, pulse: null,
                   retention: null, storage: null, campaigns: null, versions: null,
                   traffic: null };
-    var ANALYTICS = ["traffic", "pulse", "funnel", "reach", "stuck", "retention", "versions"];
-    var panel = "invites";
+    var ANALYTICS = ["overview", "traffic", "pulse", "funnel", "reach", "stuck", "retention", "versions"];
+    var panel = "overview";
     var TITLES = {
       invites: "Invites",
       photos: "Reported photos",
       users: "Reported people",
       feedback: "Feedback",
+      overview: "Overview",
       traffic: "Traffic",
       pulse: "Pulse",
       funnel: "Funnel",
@@ -741,6 +743,56 @@
         return;
       }
       $("page-sub").textContent = "";
+
+      if (panel === "overview") {
+        var t = d.totals || {}, wk = d.week || {}, at = d.attention || {};
+        /* One headline metric: this week's number, with last week's beside it and an arrow.
+           Up is not automatically good and down is not automatically bad for every metric, so
+           the arrow only ever states the direction; it never colours the card. The red cards
+           are reserved for the standing facts below, which ARE unambiguously "act on this". */
+        function metric(m, label) {
+          m = m || {};
+          var now = Number(m.now) || 0, prev = Number(m.prev) || 0, diff = now - prev;
+          var arrow = diff > 0 ? "▲ +" + diff
+                    : diff < 0 ? "▼ " + diff
+                    : "– no change";
+          return statCard(now, label, arrow + "  ·  " + prev + " the week before", false);
+        }
+        section(host, "This week", "the last 7 days, each number against the 7 before it");
+        host.appendChild(statRow([
+          metric(wk.new_users, "new users"),
+          metric(wk.active_shooters, "people who shot"),
+          metric(wk.shots, "shots")
+        ]));
+        host.appendChild(statRow([
+          metric(wk.reveals, "reveals watched"),
+          metric(wk.posts, "posts shared"),
+          metric(wk.invites_redeemed, "invites redeemed")
+        ]));
+
+        section(host, "All time", "the ground the week moves against");
+        host.appendChild(statRow([
+          statCard(t.users, "users"),
+          statCard(t.ever_shot, "have ever shot",
+                   t.users ? pct(t.ever_shot, t.users) + " of everyone" : ""),
+          statCard(t.photos, "photos"),
+          statCard(t.rolls, "rolls")
+        ]));
+
+        section(host, "Worth acting on", "the standing facts, not this week's motion");
+        host.appendChild(statRow([
+          statCard(at.never_asked_notifications, "never asked about notifications",
+                   "cannot be pulled back by a reveal", at.never_asked_notifications > 0),
+          statCard(at.invite_senders_ever, "have ever invited anyone",
+                   t.users ? "of " + t.users + " — growth runs through this few" : "",
+                   t.users && at.invite_senders_ever < t.users * 0.25),
+          statCard(at.days_since_last_roll === null ? "–" : at.days_since_last_roll,
+                   "days since the last roll",
+                   "rolls are the stated differentiator",
+                   at.days_since_last_roll !== null && at.days_since_last_roll > 7)
+        ]));
+        return;
+      }
 
       if (panel === "traffic") {
         /* Every breakdown comes back the same shape, keyed by its own dimension:
@@ -1067,13 +1119,13 @@
       /* Analytics ride the same allSettled pass. They are separate RPCs so one
          heavy or not-yet-deployed query cannot take the queues down with it,
          which is the whole reason this was allSettled to begin with. */
-      var statNames = ["admin_pulse", "admin_funnel", "admin_reach", "admin_stuck",
+      var statNames = ["admin_overview", "admin_pulse", "admin_funnel", "admin_reach", "admin_stuck",
                        "admin_retention", "admin_storage", "admin_campaigns", "admin_versions"];
       /* One key longer than statNames: traffic is the trailing entry, because it
          is a plain fetch rather than an RPC and is appended to the promise list
          below. The two must stay aligned, so anything new goes in BOTH arrays,
          above traffic, and never between them. */
-      var statKeys = ["pulse", "funnel", "reach", "stuck", "retention", "storage", "campaigns",
+      var statKeys = ["overview", "pulse", "funnel", "reach", "stuck", "retention", "storage", "campaigns",
                       "versions", "traffic"];
 
       var settled = await Promise.allSettled(
