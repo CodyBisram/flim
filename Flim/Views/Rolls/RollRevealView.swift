@@ -42,6 +42,10 @@ struct RollRevealView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var profileRoute: ProfileRoute?
+    /// Read once, on appear, purely for the summary's own invite prompt. Fails soft to `.unknown`
+    /// like every other reader of this call: the offer still shows, it just says nothing about a
+    /// count until the read lands.
+    @State private var inviteQuota: AuthService.InviteQuota = .unknown
     /// The frame on screen, driven by the pager. Mirrored into the view model's `index` (which
     /// the rack, the credit line and prefetching all read) through `moved(to:)`.
     @State private var selection = 0
@@ -111,6 +115,11 @@ struct RollRevealView: View {
             viewModel.reduceMotion = reduceMotion
             viewModel.displayScale = displayScale
             await viewModel.loadDeck(photoService: photoService, auth: auth, rollService: rollService)
+        }
+        // Its own task, independent of the deck: the summary can render long before this
+        // answers, and a slow quota read must never hold up the reveal itself.
+        .task {
+            inviteQuota = await auth.ownInviteQuota()
         }
         .onChange(of: reduceMotion) { _, newValue in
             viewModel.reduceMotion = newValue
@@ -544,6 +553,31 @@ struct RollRevealView: View {
                         .padding(.top, 6)
                         .transition(.opacity)
                 }
+            }
+
+            // The invite, at the one moment someone would actually want a friend in the next
+            // one: after they have watched the whole roll come back, not two taps into the
+            // profile where this otherwise lives alone. Quiet on purpose, same weight as Save
+            // all above it rather than the accent-filled primary above that: this is the end of
+            // a calm beat, not a growth-hack CTA, and it must never delay View the roll or Done.
+            if InviteCopy.revealOfferVisible(for: inviteQuota), let code = auth.currentUser?.inviteCode {
+                ShareLink(item: AppInfo.personalInviteMessage(code: code)) {
+                    VStack(spacing: 2) {
+                        HStack(spacing: 7) {
+                            Image(systemName: "person.badge.plus").font(.system(size: 13))
+                            Text(InviteCopy.revealPrompt)
+                                .flimFont(15, weight: .medium, relativeTo: .body)
+                        }
+                        .foregroundStyle(Color(white: 0.7))
+                        if let quotaLine = InviteCopy.revealQuotaLine(for: inviteQuota) {
+                            Text(quotaLine)
+                                .flimFont(12, relativeTo: .footnote)
+                                .foregroundStyle(Color(white: 0.5))
+                        }
+                    }
+                }
+                .simultaneousGesture(TapGesture().onEnded { Haptics.tap() })
+                .padding(.top, 14)
             }
         }
         .transition(.opacity)

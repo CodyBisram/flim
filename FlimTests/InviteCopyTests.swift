@@ -125,4 +125,34 @@ struct InviteCopyTests {
         // The rail has to be tall enough to contain a hole with margin above and below.
         #expect(m.railHeight > m.holeHeight)
     }
+
+    // MARK: - The reveal's own invite
+
+    @Test("the reveal offer is hidden only when the count is a genuine, known zero")
+    func revealOfferHiddenOnlyAtGenuineZero() {
+        // Same rule as the profile sheet and the feed empty state: a failed lookup (`.unknown`)
+        // and a deliberately unmetered account (`.unlimited`) must never hide a code that still
+        // works. Only `.remaining(0)`, a real known count, may hide it.
+        #expect(InviteCopy.revealOfferVisible(for: .remaining(3)))
+        #expect(InviteCopy.revealOfferVisible(for: .remaining(1)))
+        #expect(!InviteCopy.revealOfferVisible(for: .remaining(0)))
+        #expect(InviteCopy.revealOfferVisible(for: .unlimited))
+        #expect(InviteCopy.revealOfferVisible(for: .unknown))
+    }
+
+    @Test("the reveal's quota line never claims a number it does not have")
+    func revealQuotaLineClaimsNoUnearnedNumber() {
+        // `.remaining(0)` is never shown in the first place (the offer is hidden), and `.unknown`
+        // must not be dressed up as a real count either.
+        #expect(InviteCopy.revealQuotaLine(for: .remaining(0)) == nil)
+        #expect(InviteCopy.revealQuotaLine(for: .unknown) == nil)
+        #expect(InviteCopy.revealQuotaLine(for: .remaining(1)) == "1 invite left")
+        #expect(InviteCopy.revealQuotaLine(for: .remaining(2)) == "2 invites left")
+    }
+
+    @Test("the reveal prompt names the next roll without saying the banned word")
+    func revealPromptFollowsHouseRules() {
+        #expect(!InviteCopy.revealPrompt.lowercased().contains("roll"))
+        #expect(!InviteCopy.revealPrompt.contains("\u{2014}"))
+    }
 }

@@ -305,6 +305,38 @@ enum InviteCopy {
     /// The global gate is 30 attempts an hour across everyone, so this is rare, and whoever hits
     /// it did nothing wrong.
     static let redeemRateLimited = "Too many attempts right now. Give it a minute and try again."
+
+    // MARK: - The reveal's own invite
+
+    /// Shown on the reveal's closing summary, after the whole roll has been watched. The peak
+    /// moment for wanting a friend in the next one is right here, not two taps into the profile,
+    /// which is where this used to live alone. Deliberately does not say the word this file
+    /// otherwise bans: "the next one" names the same thing without borrowing the Rolls screen's
+    /// own vocabulary.
+    static let revealPrompt = "Bring someone into the next one."
+
+    /// The honest count under the reveal prompt, or nothing when there is nothing honest to say.
+    /// `nil` for `.remaining(0)` and `.unknown` on purpose: the caller already hides the whole
+    /// offer at zero, and an unknown count must never be dressed up as a real one.
+    static func revealQuotaLine(for quota: AuthService.InviteQuota) -> String? {
+        switch quota {
+        case .remaining(let n) where n > 0:
+            n == 1 ? "1 invite left" : "\(n) invites left"
+        case .remaining:
+            nil
+        case .unlimited:
+            "Unlimited invites"
+        case .unknown:
+            nil
+        }
+    }
+
+    /// Whether the reveal should offer the invite at all. `.unknown` and `.unlimited` both still
+    /// offer it, same rule as the profile sheet and the feed's empty state: a failed lookup must
+    /// never hide a code that still works. Only a genuine, known zero hides it.
+    static func revealOfferVisible(for quota: AuthService.InviteQuota) -> Bool {
+        quota != .remaining(0)
+    }
 }
 
 extension InviteCopy {
@@ -313,11 +345,13 @@ extension InviteCopy {
 
     /// Every user-facing string here, for the rule tests to sweep.
     static var all: [String] {
-        [earnBack] + frontDoor
+        [earnBack, revealPrompt] + frontDoor
             + [AuthService.InviteQuota.remaining(3), .remaining(1), .remaining(0), .unlimited, .unknown]
                 .map(inviteButton(for:))
             + [AuthService.InviteQuota.remaining(3), .remaining(1), .remaining(0), .unlimited, .unknown]
                 .flatMap { [headline(for: $0), subhead(for: $0)] }
+            + [AuthService.InviteQuota.remaining(3), .remaining(1), .remaining(0), .unlimited, .unknown]
+                .compactMap(revealQuotaLine(for:))
     }
 }
 
