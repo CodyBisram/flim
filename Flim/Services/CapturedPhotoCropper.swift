@@ -147,7 +147,29 @@ enum CapturedPhotoCropper {
         guard let croppedCG = normalizedCG.cropping(to: cropRect.integral.intersection(bounds))
         else { return nil }
 
-        return encodeJPEG(croppedCG, quality: quality)
+        return encodeJPEG(croppedCG, quality: quality, exifFlash: exifFlash(in: data))
+    }
+
+    /// The capture's raw EXIF `Flash` value (tag 0x9209), if it carried one.
+    ///
+    /// This crop re-encodes through `CGImageDestination`, which writes NO metadata unless it is
+    /// handed some, so before this the crop silently deleted the whole EXIF block. That did not
+    /// matter while nothing downstream read it. It matters now: `InstantFilmProcessor` gates the
+    /// disposable-flash falloff on this exact tag, so a cropped capture would arrive looking like
+    /// an ambient frame and the flash look would just not happen, intermittently and invisibly,
+    /// depending on whether the viewfinder's measured aspect ratio happened to differ from the
+    /// sensor's by more than the epsilon above.
+    ///
+    /// Only this one tag is carried, on purpose. Copying the source's whole EXIF/TIFF block would
+    /// also copy its ORIENTATION, and this function's entire contract is that it has already baked
+    /// orientation into the pixels and returns plain "up" bytes; re-attaching the original tag
+    /// would rotate every cropped photo. One value, no ambiguity.
+    static func exifFlash(in data: Data) -> Int? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let exif = properties[kCGImagePropertyExifDictionary] as? [CFString: Any]
+        else { return nil }
+        return exif[kCGImagePropertyExifFlash] as? Int
     }
 
     /// Encodes a `CGImage` as JPEG via `CGImageDestination`, carrying the image's OWN color
@@ -158,12 +180,15 @@ enum CapturedPhotoCropper {
     /// pins its output to sRGB, which this crop step must NOT do (it must preserve whatever
     /// wide-gamut tag the camera actually delivered). Falls back to `UIImage.jpegData` only if
     /// the destination can't be built at all, a photo must not be lost to this fallback path.
-    private static func encodeJPEG(_ cg: CGImage, quality: CGFloat) -> Data? {
+    private static func encodeJPEG(_ cg: CGImage, quality: CGFloat, exifFlash: Int? = nil) -> Data? {
         let out = NSMutableData()
         guard let dest = CGImageDestinationCreateWithData(out, "public.jpeg" as CFString, 1, nil) else {
             return UIImage(cgImage: cg).jpegData(compressionQuality: quality)
         }
-        let props: [CFString: Any] = [kCGImageDestinationLossyCompressionQuality: quality]
+        var props: [CFString: Any] = [kCGImageDestinationLossyCompressionQuality: quality]
+        if let exifFlash {
+            props[kCGImagePropertyExifDictionary] = [kCGImagePropertyExifFlash: exifFlash] as [CFString: Any]
+        }
         CGImageDestinationAddImage(dest, cg, props as CFDictionary)
         guard CGImageDestinationFinalize(dest) else {
             return UIImage(cgImage: cg).jpegData(compressionQuality: quality)

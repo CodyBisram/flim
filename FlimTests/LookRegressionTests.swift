@@ -71,13 +71,26 @@ struct LookRegressionTests {
     /// smooths the fine high-frequency texture that IS our grain, and `localContrast` fell on all
     /// eleven scenes (worst: daylight 0.02026 → 0.01640, night -78%). Restored. The encoder is a
     /// look decision, so it has to clear these tolerances like any other look change.
+    ///
+    /// `flash` and `flashAmbient` were ADDED on 2026-08-30 with the disposable flash falloff. Only
+    /// those two rows are new; the six that were already here re-recorded to their committed values
+    /// EXACTLY, to the last digit, on the same run, which is the pin's own confirmation that the
+    /// flash work did not move any scene the flash does not reach. THE TWO NEW ROWS HAVE NOT BEEN
+    /// SEEN BY THE OWNER. They record what the pipeline currently produces, which makes them a
+    /// regression guard immediately; they are not an aesthetic approval, and the strength they
+    /// encode (`FilmParams.flashFalloff`) is expected to move once real flash photographs have been
+    /// looked at on a device. Re-record these two, and only these two, when it does.
     static let fixtureBaselines: [String: LookStats] = [
         "night": LookStats(meanR: 0.07909, meanG: 0.09388, meanB: 0.10222, lumP5: 0.05490, lumP50: 0.09020, lumP95: 0.10980, meanSaturation: 0.24303, localContrast: 0.00208),
         "dusk": LookStats(meanR: 0.14011, meanG: 0.14412, meanB: 0.16046, lumP5: 0.05882, lumP50: 0.14118, lumP95: 0.23529, meanSaturation: 0.17906, localContrast: 0.00465),
         "speculars": LookStats(meanR: 0.47148, meanG: 0.43835, meanB: 0.37905, lumP5: 0.15686, lumP50: 0.27451, lumP95: 0.90588, meanSaturation: 0.25325, localContrast: 0.04366),
         "daylight": LookStats(meanR: 0.42324, meanG: 0.47464, meanB: 0.44737, lumP5: 0.36078, lumP50: 0.45882, lumP95: 0.52549, meanSaturation: 0.38283, localContrast: 0.02026),
         "gamut": LookStats(meanR: 0.38223, meanG: 0.40034, meanB: 0.38638, lumP5: 0.09804, lumP50: 0.41176, lumP95: 0.76863, meanSaturation: 0.51417, localContrast: 0.01375),
-        "oversize": LookStats(meanR: 0.36473, meanG: 0.33832, meanB: 0.31042, lumP5: 0.24706, lumP50: 0.34118, lumP95: 0.42745, meanSaturation: 0.14235, localContrast: 0.01027)
+        "oversize": LookStats(meanR: 0.36473, meanG: 0.33832, meanB: 0.31042, lumP5: 0.24706, lumP50: 0.34118, lumP95: 0.42745, meanSaturation: 0.14235, localContrast: 0.01027),
+        // NEW 2026-08-30, awaiting owner sign-off. The pair is the same pixels; the difference
+        // between these two rows IS the flash stage at `flashFalloff` 1.0.
+        "flash": LookStats(meanR: 0.15819, meanG: 0.14549, meanB: 0.13397, lumP5: 0.02353, lumP50: 0.06667, lumP95: 0.56078, meanSaturation: 0.10840, localContrast: 0.00374),
+        "flashAmbient": LookStats(meanR: 0.24452, meanG: 0.23669, meanB: 0.21725, lumP5: 0.07843, lumP50: 0.17255, lumP95: 0.66275, meanSaturation: 0.14545, localContrast: 0.00682)
     ]
 
     /// Recorded from the owner's real neutral captures, on the current pipeline.
@@ -102,7 +115,12 @@ struct LookRegressionTests {
         "speculars": LookStats(meanR: 0.44728, meanG: 0.43667, meanB: 0.41886, lumP5: 0.08235, lumP50: 0.23529, lumP95: 0.96863, meanSaturation: 0.13693, localContrast: 0.05224),
         "daylight": LookStats(meanR: 0.45574, meanG: 0.50639, meanB: 0.48814, lumP5: 0.42745, lumP50: 0.47843, lumP95: 0.55294, meanSaturation: 0.37600, localContrast: 0.00101),
         "gamut": LookStats(meanR: 0.40648, meanG: 0.40648, meanB: 0.40634, lumP5: 0.07059, lumP50: 0.39608, lumP95: 0.86667, meanSaturation: 0.55260, localContrast: 0.00065),
-        "oversize": LookStats(meanR: 0.38167, meanG: 0.35410, meanB: 0.32741, lumP5: 0.28235, lumP50: 0.35294, lumP95: 0.43529, meanSaturation: 0.13572, localContrast: 0.00097)
+        "oversize": LookStats(meanR: 0.38167, meanG: 0.35410, meanB: 0.32741, lumP5: 0.28235, lumP50: 0.35294, lumP95: 0.43529, meanSaturation: 0.13572, localContrast: 0.00097),
+        // Identical to each other on purpose, and that identity is load-bearing: the flash pair is
+        // the same pixels and differs only by an EXIF tag, so if these two rows ever diverge the
+        // fixture has stopped being a controlled comparison.
+        "flash": LookStats(meanR: 0.25072, meanG: 0.22804, meanB: 0.21138, lumP5: 0.07059, lumP50: 0.16471, lumP95: 0.69804, meanSaturation: 0.13046, localContrast: 0.00079),
+        "flashAmbient": LookStats(meanR: 0.25072, meanG: 0.22804, meanB: 0.21138, lumP5: 0.07059, lumP50: 0.16471, lumP95: 0.69804, meanSaturation: 0.13046, localContrast: 0.00079)
     ]
 
     // MARK: - Comparison
@@ -225,6 +243,10 @@ struct LookRegressionTests {
         #expect(p.grain == 0.06)
         #expect(p.vignetteIntensity == 0.75)
         #expect(p.vignetteRadius == 1.7)
+        // Flash falloff, which reaches only captures whose EXIF says the flash fired. Pinned here
+        // like everything else, and additionally pinned next to its own evidence in
+        // `FlashFalloffTests.shippedStrengthIsPinned`.
+        #expect(p.flashFalloff == 1.0)
         #expect(p.lut == "flim")
         #expect(p.monochrome == false)
         // The parametric fallback, used only if flim.cube fails to load. Pinned too, because a

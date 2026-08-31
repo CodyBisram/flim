@@ -157,14 +157,16 @@ enum LookMeasure {
 ///
 /// These fixtures are chosen to cover exactly what the photographs cannot:
 ///
-/// | fixture   | input mean luminance | what it pins                                        |
-/// |-----------|----------------------|-----------------------------------------------------|
-/// | night     | 0.055                | adaptive EV at its 0.5 clamp, bloom at its 0.35 floor |
-/// | dusk      | 0.133                | adaptive EV on its linear slope, bloom mid-ramp      |
-/// | oversize  | 0.366                | the >2048 downscale, and grain averaged by it       |
-/// | daylight  | 0.504                | no EV, full bloom, ordinary content                  |
-/// | gamut     | 0.529                | the LUT across the whole colour cube                 |
-/// | speculars | 0.613                | halation intensity and warmth (see below)           |
+/// | fixture      | input mean luminance | what it pins                                     |
+/// |--------------|----------------------|--------------------------------------------------|
+/// | night        | 0.055                | adaptive EV at its 0.5 clamp, bloom at its 0.35 floor |
+/// | dusk         | 0.133                | adaptive EV on its linear slope, bloom mid-ramp   |
+/// | flash        | 0.315                | the flash falloff stage, with the EXIF gate OPEN  |
+/// | flashAmbient | 0.315                | the same pixels with the gate SHUT (see below)    |
+/// | oversize     | 0.366                | the >2048 downscale, and grain averaged by it     |
+/// | daylight     | 0.504                | no EV, full bloom, ordinary content               |
+/// | gamut        | 0.529                | the LUT across the whole colour cube              |
+/// | speculars    | 0.613                | halation intensity and warmth (see below)         |
 ///
 /// (Measured, not intended: those are the values `CIAreaAverage` reports for each fixture, which
 /// is the number `processSync` branches on. `night` and `dusk` are the only two below 0.22.)
@@ -179,8 +181,29 @@ enum LookMeasure {
 /// Because they are generated rather than stored, this generator is itself part of the pinned
 /// contract. `fixtureInputsAreStable` measures the UNGRADED fixtures against their own baseline, so
 /// a change here fails as "the fixture moved" instead of masquerading as "the look moved".
+/// `flash` and `flashAmbient` were added when disposable-flash falloff landed, and they are a
+/// MATCHED PAIR: byte-for-byte the same pixels, differing only in whether the PNG carries an EXIF
+/// `Flash` tag with bit 0 set. That is the whole point of them. The flash stage is gated on that
+/// one bit and on nothing else, so a pair whose only difference IS that bit turns "the gate works"
+/// from an argument into a measurement: their INPUT baselines must be identical to each other, and
+/// their OUTPUT baselines must differ by exactly the stage.
+///
+/// The scene is a flash portrait: a lit subject sitting off-centre (deliberately not in the middle,
+/// so a centred radial darkening could not reproduce it and would fail the pin), a wall behind it
+/// falling away with distance, and corners that are already dim. The background is NOT black in the
+/// fixture. It is a lifted, flat 0.2-ish, because that is what the thing under test actually
+/// receives: the falloff physically happened at capture and the ISP tone-mapped it back up, so the
+/// stage's job is to re-expand a flattened gradient rather than to darken a frame that is already
+/// dark. A fixture with a black background would pin nothing.
 enum LookFixture: String, CaseIterable {
-    case night, dusk, speculars, daylight, gamut, oversize
+    case night, dusk, speculars, daylight, gamut, oversize, flash, flashAmbient
+
+    /// Whether this fixture's PNG carries an EXIF `Flash` tag with the fired bit set, i.e. whether
+    /// the real gate in `InstantFilmProcessor.flashFired` will open for it.
+    var firesFlash: Bool { self == .flash }
+
+    /// Which fixture's pixels this one is made of. Only the flash pair differs from itself.
+    private var pixelSource: LookFixture { self == .flashAmbient ? .flash : self }
 
     var pixelSize: (width: Int, height: Int) {
         switch self {
@@ -237,7 +260,7 @@ enum LookFixture: String, CaseIterable {
         let v = Double(y) / Double(height - 1)
         let texture = LookFixture.noise(x, y, cell: 24) - 0.5
 
-        switch self {
+        switch pixelSource {
         case .night:
             // A dark street: near-black cool base, a handful of blown point lights.
             let base = 0.020 + 0.045 * (1 - v) + 0.020 * texture
@@ -327,6 +350,45 @@ enum LookFixture: String, CaseIterable {
             let value = 0.20 + 0.75 * Double(row / 4) / 2
             return LookFixture.hsv(hue: hue, saturation: saturation, value: value)
 
+        case .flash, .flashAmbient:
+            // A flash portrait AS THE ISP HANDS IT OVER: subject hot, wall behind lifted flat.
+            //
+            // The subject is an ellipse centred at (0.40, 0.58), off to the left of frame on
+            // purpose. A centred radial darkening is the wrong answer to this problem and it is
+            // the easy wrong answer, so the fixture is built so that the wrong answer cannot pass:
+            // anything centred would darken the subject's left side and spare the empty right.
+            //
+            // The surround falls off from the SUBJECT, not from the frame's centre, and it bottoms
+            // out well above black, which is the flattening this stage exists to undo.
+            //
+            // Every constant below is fitted to the owner's real `parkview-flash` capture rather
+            // than chosen: measured on that photograph's own coarse illumination map (a 10%
+            // Lanczos downscale, the same map the stage builds), it runs p5 0.073, p50 0.291,
+            // peak 1.00. This fixture lands p5 0.072, p50 0.166, peak 1.00 — the same shadow end
+            // and the same blown peak, on a portrait with more dark surround than that scene has.
+            // Its mean scene luminance by `CIAreaAverage`'s route is ~0.33, comfortably above both
+            // the 0.22 dark-bloom threshold and the 0.18 adaptive-exposure one, so this fixture
+            // pins the falloff alone and does not also drag in branches `night` and `dusk`
+            // already pin.
+            let su = (u - 0.40) / 0.30, sv = (v - 0.58) / 0.34
+            let subject = max(0, 1 - (su * su + sv * sv))
+            // Distance from the lit subject, as a stand-in for distance from the flash.
+            let du = (u - 0.40) / 0.85, dv = (v - 0.58) / 1.10
+            let reach = max(0, 1 - (du * du + dv * dv).squareRoot())
+            let wall = 0.05 + 0.34 * reach * reach + 0.030 * texture
+            var r = wall * 1.06, g = wall * 1.00, b = wall * 0.94
+            // Skin on the subject, brighter and warmer, with a hot near shoulder.
+            let lit = subject * subject
+            r += lit * 0.62; g += lit * 0.50; b += lit * 0.44
+            // A blown specular on the nearest surface, the thing a bare flash tube always leaves,
+            // and what puts the illumination map's peak at 1.0 the way a real capture's is.
+            let hot = LookFixture.spot(u, v, 0.34, 0.50, 0.09)
+            r += hot * 0.60; g += hot * 0.58; b += hot * 0.55
+            // A corner the flash never reached at all.
+            let corner = LookFixture.spot(u, v, 0.97, 0.03, 0.45)
+            r -= corner * 0.030; g -= corner * 0.028; b -= corner * 0.022
+            return (r, g, b)
+
         case .oversize:
             // A mid-bright interior with fine structure, large enough to cross the storage cap.
             let base = 0.30 + 0.14 * (1 - v) + 0.06 * texture
@@ -388,7 +450,21 @@ enum LookFixture: String, CaseIterable {
         let cg = ctx.makeImage()!
         let out = NSMutableData()
         let dest = CGImageDestinationCreateWithData(out, UTType.png.identifier as CFString, 1, nil)!
-        CGImageDestinationAddImage(dest, cg, nil)
+        // PNG carries EXIF in an `eXIf` chunk, and ImageIO both writes and reads it (verified by
+        // `flashFixtureReallyCarriesTheEXIFBit`). That matters: it means the flash fixture goes
+        // through `InstantFilmProcessor.process` and hits the REAL gate, reading the REAL tag,
+        // rather than being waved through by a test-only override. The lossless container is kept
+        // for the reason the class comment gives, so the pinned numbers stay a function of the
+        // pipeline and not of whatever libjpeg the toolchain ships.
+        //
+        // 0x09 is "flash fired, compulsory firing", what an iPhone writes for a deliberate flash
+        // shot. Bit 0 is the only bit the gate reads; the rest is here so the fixture is an honest
+        // sample of what a real capture carries rather than a synthetic 1.
+        let properties: CFDictionary? = firesFlash
+            ? ([kCGImagePropertyExifDictionary: [kCGImagePropertyExifFlash: 0x09] as [CFString: Any]]
+               as [CFString: Any] as CFDictionary)
+            : nil
+        CGImageDestinationAddImage(dest, cg, properties)
         CGImageDestinationFinalize(dest)
         return out as Data
     }
