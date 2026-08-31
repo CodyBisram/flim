@@ -136,6 +136,39 @@ struct FeedView: View {
         cachedUnits = FeedUnit.units(from: feed.feed)
     }
 
+    /// One-time, per account: seed the pre-1.5 backlog as already-seen so an UPGRADING user does
+    /// not open the redesigned feed into a wall of lit pills for content they saw days ago in an
+    /// older build. See `FeedSeenSeed` for the decision and why a fresh signup is left unseeded.
+    ///
+    /// Runs at the top of `snapshotLedger`, so the ledger and pills computed just after it reflect
+    /// the seed. It does NOT call back into `snapshotLedger` (that would recurse), and the flag is
+    /// set on EVERY outcome, a skip included, so a seed can never re-run on a later launch and mark
+    /// posts that have since aged past the cutoff as seen.
+    ///
+    /// It seeds only what is loaded when it first runs. The feed's first page covers the retention
+    /// window, which is the whole visible backlog, so at this scale that is the whole job; a
+    /// date watermark would be the upgrade if a much longer feed ever made a later page matter.
+    private func seedFeedBacklogIfNeeded() {
+        guard let user = auth.currentUser else { return }
+        let key = "feedBacklogSeeded.\(user.id.uuidString)"
+        guard !UserDefaults.standard.bool(forKey: key) else { return }
+
+        let decision = FeedSeenSeed.decide(
+            alreadySeeded: false,
+            storeHasMarks: !seenStore.seenAt.isEmpty,
+            accountAge: Date().timeIntervalSince(user.createdAt),
+            lastActivitySeen: lastActivitySeen,
+            now: .now)
+
+        if case .seedOlderThan(let cutoff) = decision {
+            let backlog = feed.feed
+                .filter { $0.post.createdAt < cutoff }
+                .map { (id: $0.post.id, seenAt: $0.post.createdAt) }
+            seenStore.seedBacklog(backlog)
+        }
+        UserDefaults.standard.set(true, forKey: key)
+    }
+
     /// Whether the header ledger still has anything to stand for. Mirrors the ledger's own
     /// author exclusion (you are not your own friend): the ledger must go out when the last
     /// FRIEND mark clears. Counting your own units here kept a stale friend count lit
@@ -714,6 +747,10 @@ struct FeedView: View {
     /// pull the number back down, so the held value only ever ratchets upward between
     /// genuine reloads.
     private func snapshotLedger(growOnly: Bool = false) {
+        // Before the units are built and the ledger read: on an upgrader's first pass this seeds
+        // the backlog seen, so what is computed below already reflects it. One-shot and guarded,
+        // a cheap no-op every time after.
+        seedFeedBacklogIfNeeded()
         // Explicit, not left to the `.onChange(of: feed.feed)` safety net: everything below this
         // line reads `units` (the cache) synchronously, in the same function call, before
         // SwiftUI's own change-tracking would ever have a chance to fire. See `cachedUnits`'s own
