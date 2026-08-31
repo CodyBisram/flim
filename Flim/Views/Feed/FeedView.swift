@@ -155,9 +155,9 @@ struct FeedView: View {
 
         let decision = FeedSeenSeed.decide(
             alreadySeeded: false,
+            keepFullyUnseen: FeedSeenSeed.keptFullyUnseen.contains(user.id),
             storeHasMarks: !seenStore.seenAt.isEmpty,
             accountAge: Date().timeIntervalSince(user.createdAt),
-            lastActivitySeen: lastActivitySeen,
             now: .now)
 
         if case .seedOlderThan(let cutoff) = decision {

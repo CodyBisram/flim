@@ -213,25 +213,38 @@ enum FeedSeenSeed {
     /// enough that any returning user clears it comfortably.
     static let freshAccountWindow: TimeInterval = 2 * 3600
 
+    /// How much of the tail stays unseen. Everything older than this is seeded seen, so an
+    /// upgrading user lands on just the last couple of days rather than having to scroll back
+    /// through a week of pills (owner call, 2026-08-31).
+    static let recentWindow: TimeInterval = 2 * 86400
+
+    /// Accounts that keep the FULL unseen feed and are never seeded: the core users who want to
+    /// see everything, not a two-day window. Hardcoded by id the way `is_owner` fixes the owner,
+    /// because this is four specific people in the alpha, not a rule the app can derive.
+    static let keptFullyUnseen: Set<UUID> = [
+        UUID(uuidString: "f43287d4-f239-415b-af45-650bbee62e83")!,   // cody
+        UUID(uuidString: "080f892f-38ac-447c-83ca-29509f54706f")!,   // tristan
+        UUID(uuidString: "ea265423-f657-4d05-9282-b55163bfc803")!,   // lele
+        UUID(uuidString: "32327763-23da-40c7-ae9d-fbabb0939eed")!,   // stephenxnyc
+    ]
+
     /// - Parameters:
     ///   - alreadySeeded: the per-account one-shot flag; once set, normal per-open marking owns
     ///     seen-state and this never runs again.
+    ///   - keepFullyUnseen: this account is in `keptFullyUnseen`, so it is never seeded.
     ///   - storeHasMarks: whether the account already holds any seen-marks on this device.
     ///   - accountAge: how long the signed-in account has existed, the fresh-signup discriminator.
-    ///   - lastActivitySeen: the Activity feed's last-seen epoch from a prior version, 0 if never.
     static func decide(alreadySeeded: Bool,
+                       keepFullyUnseen: Bool,
                        storeHasMarks: Bool,
                        accountAge: TimeInterval,
-                       lastActivitySeen: TimeInterval,
                        now: Date) -> Decision {
         guard !alreadySeeded else { return .skip }
+        guard !keepFullyUnseen else { return .skip }
         guard !storeHasMarks else { return .skip }
         guard accountAge > freshAccountWindow else { return .skip }
-        // The cutoff: the moment a prior version last recorded them as active, if it did, else the
-        // most recent 04:00 day boundary, i.e. mark yesterday-and-older seen and keep today fresh.
-        let cutoff = lastActivitySeen > 0
-            ? Date(timeIntervalSince1970: lastActivitySeen)
-            : FeedUnit.dayKey(for: now)
-        return .seedOlderThan(cutoff)
+        // Everything older than the recent window is marked seen; the last two days stay unseen,
+        // so the feed opens on a short recent set instead of a backlog to scroll through.
+        return .seedOlderThan(now.addingTimeInterval(-recentWindow))
     }
 }

@@ -10,56 +10,62 @@ struct FeedSeenSeedTests {
     private let oldAccount: TimeInterval = 30 * 86400          // clearly a returning user
     private let now = Date(timeIntervalSince1970: 1_756_600_000)
 
-    @Test("an upgrader with a recorded last-activity seeds up to that instant")
-    func upgraderWithLastActivity() {
-        let last: TimeInterval = 1_756_000_000
-        let d = FeedSeenSeed.decide(alreadySeeded: false, storeHasMarks: false,
-                                    accountAge: oldAccount, lastActivitySeen: last, now: now)
-        #expect(d == .seedOlderThan(Date(timeIntervalSince1970: last)))
+    private func decide(alreadySeeded: Bool = false, keepFullyUnseen: Bool = false,
+                        storeHasMarks: Bool = false, accountAge: TimeInterval) -> FeedSeenSeed.Decision {
+        FeedSeenSeed.decide(alreadySeeded: alreadySeeded, keepFullyUnseen: keepFullyUnseen,
+                            storeHasMarks: storeHasMarks, accountAge: accountAge, now: now)
     }
 
-    @Test("an upgrader with no last-activity seeds up to the most recent 04:00 boundary")
-    func upgraderWithoutLastActivity() {
-        let d = FeedSeenSeed.decide(alreadySeeded: false, storeHasMarks: false,
-                                    accountAge: oldAccount, lastActivitySeen: 0, now: now)
-        // The same boundary the feed itself buckets by, so "yesterday and older" is marked seen
-        // and today stays fresh.
-        #expect(d == .seedOlderThan(FeedUnit.dayKey(for: now)))
+    @Test("an upgrader is seeded up to the recent window, leaving the last two days unseen")
+    func upgraderSeedsToRecentWindow() {
+        let d = decide(accountAge: oldAccount)
+        #expect(d == .seedOlderThan(now.addingTimeInterval(-FeedSeenSeed.recentWindow)))
     }
 
-    @Test("a device already holding marks is never seeded, even for an active old account")
+    @Test("the recent window really is two days")
+    func recentWindowIsTwoDays() {
+        #expect(FeedSeenSeed.recentWindow == 2 * 86400)
+    }
+
+    @Test("a device already holding marks is never seeded")
     func testerWithMarksIsUntouched() {
-        let d = FeedSeenSeed.decide(alreadySeeded: false, storeHasMarks: true,
-                                    accountAge: oldAccount, lastActivitySeen: 1_756_000_000, now: now)
-        #expect(d == .skip, "seeding on top of real marks would mark genuinely-unseen units seen")
+        #expect(decide(storeHasMarks: true, accountAge: oldAccount) == .skip,
+                "seeding on top of real marks would mark genuinely-unseen units seen")
     }
 
     @Test("a brand-new signup is left entirely unseen")
     func freshSignupIsNotSeeded() {
-        let d = FeedSeenSeed.decide(alreadySeeded: false, storeHasMarks: false,
-                                    accountAge: 60, lastActivitySeen: 0, now: now)
-        #expect(d == .skip, "a new user must meet the feed as designed, unseen until opened")
+        #expect(decide(accountAge: 60) == .skip,
+                "a new user must meet the feed as designed, unseen until opened")
+    }
+
+    @Test("an excluded account keeps the full unseen feed")
+    func keptFullyUnseenIsNeverSeeded() {
+        // The core users see everything, not a two-day window, even as long-tenured accounts.
+        #expect(decide(keepFullyUnseen: true, accountAge: oldAccount) == .skip)
+    }
+
+    @Test("the four named accounts are the excluded set")
+    func excludedSetIsExactlyTheFour() {
+        // A guard on the hardcoded ids: getting one wrong silently seeds a power user, or spares
+        // someone who should have been seeded.
+        #expect(FeedSeenSeed.keptFullyUnseen.count == 4)
+        #expect(FeedSeenSeed.keptFullyUnseen.contains(
+            UUID(uuidString: "f43287d4-f239-415b-af45-650bbee62e83")!))   // cody
     }
 
     @Test("the one-shot flag wins over every other input")
     func alreadySeededAlwaysSkips() {
         // Even a textbook upgrader is skipped once the migration has run: normal per-open marking
         // owns seen-state from then on, and a re-run would mark newly-aged posts seen.
-        let d = FeedSeenSeed.decide(alreadySeeded: true, storeHasMarks: false,
-                                    accountAge: oldAccount, lastActivitySeen: 1_756_000_000, now: now)
-        #expect(d == .skip)
+        #expect(decide(alreadySeeded: true, accountAge: oldAccount) == .skip)
     }
 
     @Test("the fresh-account window is a strict boundary")
     func accountAgeBoundary() {
         let w = FeedSeenSeed.freshAccountWindow
-        // Exactly at the window is still too fresh (the guard is a strict >).
-        #expect(FeedSeenSeed.decide(alreadySeeded: false, storeHasMarks: false,
-                                    accountAge: w, lastActivitySeen: 0, now: now) == .skip)
-        // A moment past it is a returning user.
-        if case .seedOlderThan = FeedSeenSeed.decide(alreadySeeded: false, storeHasMarks: false,
-                                                     accountAge: w + 1, lastActivitySeen: 0, now: now) {
-        } else {
+        #expect(decide(accountAge: w) == .skip, "exactly at the window is still too fresh")
+        if case .seedOlderThan = decide(accountAge: w + 1) {} else {
             Issue.record("just past the window should seed")
         }
     }
