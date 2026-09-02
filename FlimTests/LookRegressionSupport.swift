@@ -161,6 +161,7 @@ enum LookMeasure {
 /// |--------------|----------------------|--------------------------------------------------|
 /// | night        | 0.055                | adaptive EV at its 0.5 clamp, bloom at its 0.35 floor |
 /// | dusk         | 0.133                | adaptive EV on its linear slope, bloom mid-ramp   |
+/// | shadowRamp   | 0.300                | WHERE grain lands on the tone curve (see below)   |
 /// | flash        | 0.315                | the flash falloff stage, with the EXIF gate OPEN  |
 /// | flashAmbient | 0.315                | the same pixels with the gate SHUT (see below)    |
 /// | oversize     | 0.366                | the >2048 downscale, and grain averaged by it     |
@@ -170,6 +171,12 @@ enum LookMeasure {
 ///
 /// (Measured, not intended: those are the values `CIAreaAverage` reports for each fixture, which
 /// is the number `processSync` branches on. `night` and `dusk` are the only two below 0.22.)
+///
+/// `shadowRamp` exists for the same reason `speculars` does, one stage later. Grain's tone mask was
+/// inverted in 1.5.1 (midtone-peaked to shadow-peaked) and NO fixture here could see it: the dark
+/// ones are uniformly dark and also sit on the adaptive-EV branch, and the bright ones have no
+/// shadows at all. It is a flat ramp from near-black to a light midtone plus a bright band, so
+/// `localContrast` on it is almost entirely grain and reads the mask directly.
 ///
 /// `speculars` exists because of a measurement, not a hunch. With ordinary scenes (including the
 /// owner's real captures) a +0.02 change to bloom moves every frame-average statistic by less than
@@ -196,7 +203,7 @@ enum LookMeasure {
 /// stage's job is to re-expand a flattened gradient rather than to darken a frame that is already
 /// dark. A fixture with a black background would pin nothing.
 enum LookFixture: String, CaseIterable {
-    case night, dusk, speculars, daylight, gamut, oversize, flash, flashAmbient
+    case night, dusk, shadowRamp, speculars, daylight, gamut, oversize, flash, flashAmbient
 
     /// Whether this fixture's PNG carries an EXIF `Flash` tag with the fired bit set, i.e. whether
     /// the real gate in `InstantFilmProcessor.flashFired` will open for it.
@@ -292,6 +299,29 @@ enum LookFixture: String, CaseIterable {
                 r += s * 1.00; g += s * 0.86; b += s * 0.52
             }
             return (r, g, b)
+
+        case .shadowRamp:
+            // A smooth ramp from near-black to a light midtone, plus a bright band, and nothing
+            // else. Added 2026-09-01 with the shadow-peaked grain, for the reason `speculars` was
+            // added for halation: the pin could not see WHERE grain lands.
+            //
+            // Every other fixture is either uniformly dark (`night`, `dusk`, which also sit on the
+            // adaptive-EV branch and so cannot separate "the mask moved" from "the amount law
+            // moved") or has no shadows at all (`daylight` 0.42-0.58, `oversize` 0.30-0.44). A
+            // grain mask could be inverted end to end and every one of them would move by less
+            // than the pin's tolerance in `localContrast`, because none of them contains both ends
+            // of the curve in flat, gradient-free content.
+            //
+            // Flat is the operative word: the ramp changes by about one 8-bit level every 15 rows,
+            // so essentially all of this frame's high-frequency energy IS the grain, and
+            // `localContrast` reads the mask almost directly. The bright band is what keeps the
+            // frame's mean luminance clear of the 0.22 dark-bloom and 0.18 adaptive-exposure
+            // thresholds (measured: 0.30 by `CIAreaAverage`'s route, the number the recorder
+            // prints), so this fixture pins the mask and the mask alone.
+            let band = v > 0.86
+            let ramp = band ? 0.75 : 0.018 + 0.50 * (v / 0.86)
+            let base = ramp + 0.012 * texture
+            return (base * 1.04, base * 1.00, base * 0.95)
 
         case .speculars:
             // A field of small blown highlights on a dim surround: city lights, or bokeh.

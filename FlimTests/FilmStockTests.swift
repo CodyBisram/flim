@@ -48,6 +48,19 @@ final class FilmStockTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(params.grain, 0)
         XCTAssertLessThan(params.grain, 0.2)
         XCTAssertGreaterThanOrEqual(params.bloom, 0)
+        // The grain profile is three more look numbers, so it gets the same sanity band the rest
+        // of them get. Exact values live in the look pin; this only catches a profile that could
+        // not be a film at all.
+        let grain = params.grainProfile
+        XCTAssertEqual(grain.anchors.count, 5, "CIToneCurve takes exactly five control points")
+        XCTAssertGreaterThanOrEqual(grain.chroma, 0)
+        XCTAssertLessThanOrEqual(grain.chroma, 1)
+        XCTAssertGreaterThanOrEqual(grain.evPush, 0)
+        XCTAssertLessThanOrEqual(grain.evPush, 2)
+        for anchor in grain.anchors {
+            XCTAssertGreaterThanOrEqual(anchor.visibility, 0)
+            XCTAssertLessThanOrEqual(anchor.visibility, 1)
+        }
     }
 
     func testEverySwatchHasTwoStops() {

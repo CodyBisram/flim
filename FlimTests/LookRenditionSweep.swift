@@ -107,7 +107,10 @@ struct LookRenditionSweep {
         guard !extent.isEmpty else { return nil }
         let params = FilmStock.original.params
         var image = InstantFilmProcessor.filtered(source, params: params, extent: extent)
-        if grain { image = InstantFilmProcessor.grainOverlay(on: image, amount: params.grain) }
+        if grain {
+            image = InstantFilmProcessor.grainOverlay(on: image, amount: params.grain,
+                                                      profile: params.grainProfile)
+        }
         // The storage cap, matching `InstantFilmProcessor.maxStoredEdge` (private). If this ever
         // disagrees with the processor, the byte-identity check below fails and says so.
         let longEdge = max(extent.width, extent.height)

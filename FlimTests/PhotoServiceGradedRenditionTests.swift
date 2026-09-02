@@ -13,7 +13,17 @@ import XCTest
 /// grain) a second JPEG generation attacks first.
 final class PhotoServiceGradedRenditionTests: XCTestCase {
 
-    private var source: Data { LookFixture.daylight.pngData() }
+    /// `shadowRamp`, where this used to be `daylight`, and the swap is a consequence of the 1.5.1
+    /// grain rather than a preference.
+    ///
+    /// This whole class measures generation loss on ONE statistic, `localContrast`, because grain is
+    /// what a second JPEG pass smooths away first. That only works on a frame that HAS grain. Grain
+    /// is now shadow-peaked, so a bright flat frame is the one place it deliberately barely lands:
+    /// `daylight`'s own `localContrast` fell from 0.02026 to 0.00298 with the new profile, and the
+    /// comparison stopped being measurable on it (the two drifts landed 0.0002 apart, which is
+    /// noise). `shadowRamp` is flat, spans black to a light midtone, and therefore carries the new
+    /// grain where the new grain goes, which is what this test needs to see.
+    private var source: Data { LookFixture.shadowRamp.pngData() }
 
     override func tearDown() {
         // `gradeForCapture`'s calibration branch reads this key directly; a test that sets it
@@ -81,15 +91,47 @@ final class PhotoServiceGradedRenditionTests: XCTestCase {
         let fromMasterStats = try XCTUnwrap(LookMeasure.stats(ofJPEG: fromMaster.data))
         let fromGradedStats = try XCTUnwrap(LookMeasure.stats(ofJPEG: fromGraded.data))
 
-        // `localContrast` is the statistic that sees grain, and grain is exactly what a second
-        // JPEG generation smooths away first (same reasoning as the HEIC finding pinned in
-        // `InstantFilmProcessor.EncodeSpec`'s own doc). The single-generation source must not
-        // drift from the reference MORE than the two-generation source does.
-        let driftFromMaster = abs(fromMasterStats.localContrast - referenceStats.localContrast)
-        let driftFromGraded = abs(fromGradedStats.localContrast - referenceStats.localContrast)
+        // PER-PIXEL distance from the reference, where this used to compare `localContrast`.
+        //
+        // The old metric was a proxy: grain is the first thing a second JPEG generation smooths, so
+        // "whose texture statistic is closer to the near-lossless reference" stood in for "which
+        // card is closer to the truth". Measured with the 1.5.1 grain, that proxy inverts, and it
+        // inverts for a reason that has nothing to do with fidelity: a q0.85 master carries its own
+        // DCT ringing, that ringing is high-frequency energy, and `localContrast` cannot tell it
+        // apart from grain. On `shadowRamp` the two-generation card measures 0.00084 from the
+        // reference and the one-generation card 0.00142, i.e. the artifacts flatter it.
+        //
+        // A mean absolute pixel difference cannot be flattered that way: artifacts are error, and
+        // error is what it counts. It is also a stricter statement of the same claim the
+        // architecture rests on, so this pins more than it did before rather than less.
+        let referenceLuma = try Self.luma(reference.data)
+        let masterLuma = try Self.luma(fromMaster.data)
+        let gradedLuma = try Self.luma(fromGraded.data)
+        let errorFromMaster = Self.meanAbsoluteDifference(masterLuma, referenceLuma)
+        let errorFromGraded = Self.meanAbsoluteDifference(gradedLuma, referenceLuma)
         XCTAssertLessThan(
-            driftFromGraded, driftFromMaster,
-            "encoding from the graded pixels should drift less from the reference than encoding from the lossy master (localContrast: graded=\(driftFromGraded), master=\(driftFromMaster))"
+            errorFromGraded, errorFromMaster,
+            "encoding from the graded pixels should land closer to the reference than encoding from the lossy master (mean |luma| error: graded=\(errorFromGraded), master=\(errorFromMaster); localContrast graded=\(fromGradedStats.localContrast), master=\(fromMasterStats.localContrast), reference=\(referenceStats.localContrast))"
         )
+    }
+
+    /// Rec.601 luma per pixel, 0...1, for two same-size renditions.
+    private static func luma(_ jpeg: Data) throws -> [Double] {
+        let cg = try XCTUnwrap(LookMeasure.decode(jpeg))
+        let px = try XCTUnwrap(FlashFalloffTests.pixels(of: cg))
+        var out = [Double]()
+        out.reserveCapacity(px.count / 4)
+        for i in stride(from: 0, to: px.count, by: 4) {
+            let r = Double(px[i]) / 255
+            let g = Double(px[i + 1]) / 255
+            let b = Double(px[i + 2]) / 255
+            out.append(0.299 * r + 0.587 * g + 0.114 * b)
+        }
+        return out
+    }
+
+    private static func meanAbsoluteDifference(_ a: [Double], _ b: [Double]) -> Double {
+        guard a.count == b.count, !a.isEmpty else { return .infinity }
+        return zip(a, b).reduce(0.0) { $0 + abs($1.0 - $1.1) } / Double(a.count)
     }
 }

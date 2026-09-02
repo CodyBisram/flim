@@ -101,6 +101,11 @@ enum InstantFilmProcessor {
     ///
     /// 0.79 satisfies both, and is worth about 4% of the most-fetched object in the app.
     ///
+    /// STALE IN ONE RESPECT since the 1.5.1 grain: that test's metric changed with it (from a
+    /// texture statistic, which the new grain made unmeasurable on a bright fixture, to a per-pixel
+    /// distance), and the 0.78 floor above has not been re-derived against the new metric or the
+    /// new grain. It still passes at 0.79. Re-run both sweeps before moving this number.
+    ///
     /// Note what this is NOT: the card cannot be made smaller in PIXELS. It is full-bleed and 3:4,
     /// so a 440pt phone at 3x needs a 1760px long edge and is already served 1400, and every phone
     /// above the SE is in the same position. Shrinking the long edge would soften every portrait
@@ -208,7 +213,7 @@ enum InstantFilmProcessor {
     /// codec; production always takes the default.
     static func process(_ data: Data, stock: FilmStock,
                         encoding: EncodeSpec = fullEncoding,
-                        grain: GrainComposite = .sourceOver,
+                        grain: GrainComposite = .meanPreserving,
                         flashOverride: Bool? = nil) async -> EncodedImage? {
         await Task.detached(priority: .userInitiated) {
             processSync(data, stock: stock, encoding: encoding, grain: grain,
@@ -301,7 +306,7 @@ enum InstantFilmProcessor {
     /// vary only the stage, and the pin has to be able to render a flash frame from bytes that
     /// arrived without metadata. Production always takes the default and reads the EXIF.
     private static func processSync(_ data: Data, stock: FilmStock, encoding: EncodeSpec,
-                                    grain: GrainComposite = .sourceOver,
+                                    grain: GrainComposite = .meanPreserving,
                                     flashOverride: Bool? = nil) -> EncodedImage? {
         // Apply embedded EXIF orientation so the output is upright.
         guard let source = CIImage(data: data, options: [.applyOrientationProperty: true]) else {
@@ -348,7 +353,7 @@ enum InstantFilmProcessor {
     /// the only way the drift it reports is attributable to the encoder and nothing else. The
     /// shipping path is unchanged: `processSync` is exactly this plus `encodeImage`.
     static func gradedPixels(_ data: Data, stock: FilmStock,
-                             grain: GrainComposite = .sourceOver,
+                             grain: GrainComposite = .meanPreserving,
                              flashOverride: Bool? = nil) -> CGImage? {
         guard let source = CIImage(data: data, options: [.applyOrientationProperty: true]) else {
             return nil
@@ -360,7 +365,7 @@ enum InstantFilmProcessor {
     }
 
     private static func gradedPixels(_ source: CIImage, extent: CGRect, stock: FilmStock,
-                                     grain: GrainComposite = .sourceOver,
+                                     grain: GrainComposite = .meanPreserving,
                                      flashFired: Bool = false) -> CGImage? {
         // Scene-adaptive exposure, deliberately GENTLE, night must stay night (a city
         // skyline can't get daylighted), so only truly underexposed scenes get a nudge.
@@ -395,7 +400,14 @@ enum InstantFilmProcessor {
         // dirt or sensor dust rather than grain, worst of all on flat evenly-lit surfaces where
         // there is no detail to sit inside. Reducing the amount only made it fainter dirt; the
         // problem was never the strength, it was the scale.
-        image = grainOverlay(on: image, amount: params.grain, composite: grain)
+        //
+        // The amount is scaled by the EV this frame actually took (see `grainAmount`), so a lifted
+        // night frame carries more grain than a daylight one, the way a pushed film does. `ev` is
+        // the value computed above and nothing else; no second exposure decision is made here.
+        image = grainOverlay(on: image,
+                             amount: grainAmount(base: params.grain, ev: ev,
+                                                 profile: params.grainProfile),
+                             composite: grain, profile: params.grainProfile)
 
         // Downscale the finished image to the storage cap (keeps egress sane, look intact).
         let longEdge = max(extent.width, extent.height)
@@ -767,46 +779,109 @@ enum InstantFilmProcessor {
 
     /// Grain visibility by luminance, as (input, multiplier) anchor points.
     ///
-    /// On real film the grain you see IS the silver halide crystals that formed the image, so
-    /// where no image formed there is nothing to see: deep shadow holds little, blown highlights
-    /// hold almost none, and midtones hold the most. Grain that ignores this is uniform speckle,
-    /// and it shows up worst on skies, which should be clean and instead get the same texture as
-    /// a face.
+    /// WHAT SHIPPED FIRST, and why it was wrong. `GrainProfile.midtone` peaks at the midtone, on
+    /// the argument that the grain you see IS the silver halide crystals that formed the image, so
+    /// where no image formed there is nothing to see. That is a true statement about a correctly
+    /// exposed black-and-white negative, and FLIM is not simulating one: it is simulating a
+    /// single-use camera, which is ISO 400 or 800 colour negative shot indoors at night and pushed.
+    /// A pushed frame's shadows are the part of the emulsion that received least light and had to
+    /// be amplified most, so they are where the grain LIVES.
     ///
-    /// Midtones sit at exactly 1.0 on purpose. The grain character at midtone was signed off after
-    /// the ordering fix (full resolution, before the storage downscale), so this must not change
-    /// it: this curve only takes grain AWAY from the two ends where it was never meant to be.
-    static let grainAnchors: [(luminance: CGFloat, visibility: CGFloat)] = [
-        (0.00, 0.30),   // deep shadow: present, but sunk
-        (0.25, 0.80),
-        (0.50, 1.00),   // midtone: unchanged from the approved look
-        (0.75, 0.62),
-        (1.00, 0.10)    // blown highlight: all but gone
-    ]
+    /// MEASURED, 2026-08-14, across the owner's 13 calibration pairs: Lapse's grain peaks at
+    /// 1.00 over 0-0.15 luma and carries 2.7x to 11x FLIM's shadow texture, where `midtone` peaks
+    /// 0.96 at 0.30-0.45. FLIM was the exact inverse of its own target. This curve is that finding
+    /// applied: flat and full over the shadows, falling through the midtone, all but gone in a
+    /// blown highlight (grain in a bright sky is the one place it reads as a fault rather than as
+    /// film, and the highlight end is unchanged in spirit from the original curve).
+    ///
+    /// WHAT WAS NOT CHANGED, because it was measured and rejected: the spatial scale. Both FLIM's
+    /// grain and Lapse's are essentially white noise with 0.6-0.9px autocorrelation, so the gap is
+    /// not clumping. Coarsening the noise, or pre-upscaling it, reads as dirt and is not what this
+    /// is short of.
+    ///
+    /// THE ANCHORS ARE WRITTEN IN COVERAGE, not in curve control points, and that distinction is
+    /// load-bearing rather than cosmetic: the mask's value is linearised twice on its way from
+    /// `CIToneCurve` to `CIBlendWithMask`, so the old curve's "0.30 in deep shadow" was landing
+    /// 0.0054. Half of why the shadows were empty was that nobody had measured what the numbers
+    /// did. See `grainCoverage`.
+    ///
+    /// The midtone no longer sits at the peak, and `FilmParams.grain` did NOT go up to compensate.
+    /// It did not need to: at the same 0.06 amplitude, moving shadow coverage from 0.005 to 0.35
+    /// lands the shadow texture at 1.04x Lapse's across the owner's twelve in-sample pairs, because
+    /// the same linear-light modulation is worth several times more encoded contrast near black
+    /// than it is at a midtone. Grain got redistributed, not louder.
+    static func grainAnchors(_ profile: GrainProfile) -> [GrainAnchor] { profile.anchors }
 
     /// The anchor curve as a function, for tests and for reasoning about a luminance value.
     ///
     /// Piecewise-linear between the anchors. `CIToneCurve` interpolates the same anchors with a
     /// spline, so this agrees exactly AT the anchors and approximates between them; assert on the
-    /// anchors and on the shape (rises to the midtone, falls after it), not on intermediate values.
-    static func grainVisibility(luminance: CGFloat) -> CGFloat {
+    /// anchors and on the shape (falls away from the shadows), not on intermediate values.
+    static func grainVisibility(luminance: CGFloat, profile: GrainProfile) -> CGFloat {
+        let anchors = profile.anchors
         let l = min(1, max(0, luminance))
-        for i in 1..<grainAnchors.count {
-            let (x1, y1) = grainAnchors[i]
+        for i in 1..<anchors.count {
+            let (x1, y1) = (anchors[i].luminance, anchors[i].visibility)
             guard l <= x1 else { continue }
-            let (x0, y0) = grainAnchors[i - 1]
+            let (x0, y0) = (anchors[i - 1].luminance, anchors[i - 1].visibility)
             guard x1 > x0 else { return y1 }
             return y0 + (y1 - y0) * (l - x0) / (x1 - x0)
         }
-        return grainAnchors[grainAnchors.count - 1].visibility
+        return anchors[anchors.count - 1].visibility
+    }
+
+    /// The coverage the mask ACTUALLY lands at a luminance, which is not the anchor value.
+    ///
+    /// MEASURED (`GrainCompositeProbe.maskByTone`, which renders the mask and reads back both the
+    /// stored value and the blend's real effect): between `CIToneCurve` and `CIBlendWithMask` the
+    /// mask's value is linearised TWICE. The curve's x is the sRGB-encoded luminance, as the
+    /// anchors look like they say, but its y is treated as encoded data on the way out, and the
+    /// coverage the blend applies is that value put through the sRGB transfer function twice.
+    ///
+    /// The size of it is not a rounding detail. The curve FLIM shipped through 1.5.0 asks for 0.30
+    /// in deep shadow and lands 0.0054; it asks for 0.10 at white and lands under 0.001. Every
+    /// reading of that curve, including the comment that called deep shadow "present, but sunk",
+    /// was describing a number far larger than what reached the photograph. It is also most of why
+    /// the shadows were empty: the anchor said a third and the frame got a two-hundredth.
+    ///
+    /// So the shipped profile's anchors are written as coverage and converted through
+    /// `curvePoint(forCoverage:)`, and this function is how any anchor set is read back honestly.
+    /// `maskLandsTheCoverageItAsksFor` renders the mask and holds this to what it measures.
+    static func grainCoverage(luminance: CGFloat, profile: GrainProfile) -> CGFloat {
+        GrainAnchor.coverage(forCurvePoint: grainVisibility(luminance: luminance, profile: profile))
+    }
+
+    /// How much grain this frame gets, given the stock's amount and the adaptive exposure lift the
+    /// frame already took.
+    ///
+    /// The third axis of the same physical claim. A pushed film grains more the harder it is
+    /// pushed, and FLIM already knows how hard it pushed each frame: the adaptive EV computed in
+    /// `gradedPixels` IS the push, in stops, and it is the only per-frame signal in the pipeline
+    /// that says "this was a dark scene". A daylight frame takes 0 EV and gets exactly the amount
+    /// the stock asks for; a frame at the 0.5 clamp gets `1 + evPush` times it.
+    ///
+    /// Linear in EV rather than in luminance, because EV is already logarithmic in light and
+    /// because it is the quantity that was actually applied. NOTE what this must never become: a
+    /// reason to lift exposure. The EV clamp stays where it is (night stays night); this only
+    /// reads it.
+    static func grainAmount(base: CGFloat, ev: CGFloat, profile: GrainProfile) -> CGFloat {
+        // 0.5 is the adaptive EV clamp in `gradedPixels`; a frame there is as pushed as FLIM
+        // pushes anything, so that is what "fully pushed" means.
+        let push = min(1, max(0, ev / 0.5))
+        return base * (1 + profile.evPush * push)
     }
 
     /// A mask whose ALPHA is `grainVisibility` of the image's luminance, for `CIBlendWithMask`.
-    private static func grainLuminanceMask(for image: CIImage) -> CIImage {
+    ///
+    /// Internal rather than private so a probe can render it and read the alpha back per tone. That
+    /// is not a convenience: the mask is the one part of grain whose CODE and whose EFFECT can
+    /// disagree without anything failing, because `CIToneCurve` inside a linear working space does
+    /// not put the anchors where the numbers appear to say. See `grainAnchors`.
+    static func grainLuminanceMask(for image: CIImage, profile: GrainProfile) -> CIImage {
         // Rec.601 luma into all three channels, matching averageLuminance above so "midtone"
         // means the same thing in both places.
         let luma = CIVector(x: 0.299, y: 0.587, z: 0.114, w: 0)
-        let curve = grainAnchors.map { CIVector(x: $0.luminance, y: $0.visibility) }
+        let curve = profile.anchors.map { CIVector(x: $0.luminance, y: $0.visibility) }
         return image
             .applyingFilter("CIColorMatrix", parameters: [
                 "inputRVector": luma, "inputGVector": luma, "inputBVector": luma,
@@ -829,16 +904,30 @@ enum InstantFilmProcessor {
     /// light, the mean-preserving form does not. Both cases stay in the code so switching is a
     /// default-argument change rather than a rewrite.
     ///
-    /// Currently `.sourceOver`, i.e. the shipped look, DESPITE `.meanPreserving` being measured
-    /// better on 2026-08-17 (median saturation gap to Lapse −0.079 → −0.028, mean lift +0.019 → 0,
-    /// texture 1.26x). It is held back deliberately: renditions are never rewritten, so the first
-    /// build that ships `.meanPreserving` splits the feed into two looks permanently, and Cody
-    /// wanted an unrelated profile change tested on TestFlight without that confound. Flipping it
-    /// means changing the default on ALL FIVE signatures below, not just `grainOverlay`, since the
-    /// outer entry points pass their own default down and would override it.
+    /// `.meanPreserving` since 1.5.1, where every build before it shipped `.sourceOver`, and the
+    /// flip was FORCED by the shadow-peaked grain rather than chosen alongside it.
     ///
-    /// The 11 look-regression baselines are recorded against `.sourceOver`, so they pass as-is and
-    /// must be re-recorded (`FLIM_RECORD_LOOK_BASELINE=1`) at the same time as any flip.
+    /// It was already measured better on 2026-08-17 (median saturation gap to Lapse −0.079 →
+    /// −0.028, mean lift +0.019 → 0, texture 1.26x) and held back anyway, because renditions are
+    /// never rewritten so the first build that ships it splits the feed into two looks permanently.
+    /// 1.5 shipped with that split still ahead of us; this release spends it once, on all of the
+    /// grain work at the same time, rather than twice.
+    ///
+    /// WHY IT IS NOT OPTIONAL NOW. Under `.sourceOver` the layer is a white veil, so the light it
+    /// adds and the texture it delivers are the same random variable: mean = amount·veil·m(L)·(1−base)
+    /// and RMS ∝ amount·m(L)·(1−base), locked at a fixed ratio by the mask value m(L). Raising the
+    /// shadow end of the mask from 0.30 to 1.00, which is what `GrainProfile.pushed` does, therefore
+    /// multiplies the shadow LIFT by the same 3.3x it multiplies the shadow texture by. Measured on
+    /// the crushed region of a flash frame that is exactly a grey veil at ~0.19 sRGB where the
+    /// falloff had just put black. There is no version of shadow-peaked grain on a mean-shifting
+    /// composite that leaves night looking like night.
+    ///
+    /// Flipping BACK means changing the default on ALL FIVE signatures below, not just
+    /// `grainOverlay`, since the outer entry points pass their own default down and would override
+    /// it, and it only makes sense together with `GrainProfile.midtone`.
+    ///
+    /// The look-regression baselines are recorded against whatever ships, so they are re-recorded
+    /// (`FLIM_RECORD_LOOK_BASELINE=1`) at the same time as any flip.
     enum GrainComposite {
         /// What shipped up to 2026-08-17: the layer composited straight over the frame. Measured,
         /// that layer is a WHITE veil at random opacity rather than grey noise (see
@@ -872,14 +961,28 @@ enum InstantFilmProcessor {
     /// tint maths was right and its compositing silently lifted the whole frame, and only a
     /// render-and-measure test caught it.
     static func grainOverlay(on image: CIImage, amount: CGFloat,
-                             composite: GrainComposite = .sourceOver) -> CIImage {
+                             composite: GrainComposite = .meanPreserving,
+                             profile: GrainProfile = .pushed) -> CIImage {
         let extent = image.extent
         guard amount > 0, !extent.isInfinite, !extent.isEmpty,
               let noise = CIFilter(name: "CIRandomGenerator")?.outputImage else { return image }
         let grainLayer = noise
             .cropped(to: extent)
+            // `profile.chroma`, where this was hardcoded to 0. `CIRandomGenerator` emits four
+            // INDEPENDENT random channels, so the colour is already there and desaturating it was
+            // throwing it away: above 0 the three channels move apart per pixel, the way three dye
+            // clouds do on a colour negative rather than one silver layer. The hue is neutral in
+            // expectation (the generator's channels are identically distributed), so this adds
+            // chroma noise and not a cast, and the composite's DC term is unmoved by it (measured,
+            // see `precompensated`).
+            //
+            // What this does NOT do, despite being expected to: recover the saturation grain was
+            // costing. That cost was the white veil lifting all three channels together, and
+            // removing the veil is what returned it. Measured at the shipped strength, chroma 0 to
+            // 0.5 moves the median saturation gap to Lapse by under 0.0005. The numbers are on
+            // `GrainProfile.pushed`.
             .applyingFilter("CIColorControls", parameters: [
-                kCIInputSaturationKey: 0,
+                kCIInputSaturationKey: profile.chroma,
                 kCIInputContrastKey: 1
             ])
             .applyingFilter("CIColorMatrix", parameters: [
@@ -890,7 +993,8 @@ enum InstantFilmProcessor {
         // to the veil's average opacity; `meanPreserving` cancels exactly that in the background
         // beforehand, which leaves the noise term itself — amplitude, spatial scale, distribution,
         // and the tone mask below — completely untouched. See `precompensated`.
-        let background = composite == .meanPreserving ? precompensated(image, amount: amount) : image
+        let background = composite == .meanPreserving
+            ? precompensated(image, amount: amount) : image
         let grained = grainLayer.applyingFilter("CISourceOverCompositing", parameters: [
             kCIInputBackgroundImageKey: background
         ])
@@ -905,7 +1009,7 @@ enum InstantFilmProcessor {
         // own, so any mix of the two is unbiased too.
         return grained.applyingFilter("CIBlendWithMask", parameters: [
             kCIInputBackgroundImageKey: image,
-            kCIInputMaskImageKey: grainLuminanceMask(for: image)
+            kCIInputMaskImageKey: grainLuminanceMask(for: image, profile: profile)
         ])
     }
 
@@ -967,6 +1071,12 @@ enum InstantFilmProcessor {
     ///
     /// This one changes the noise term not at all, so the fix stays interpretable.
     private static func precompensated(_ image: CIImage, amount: CGFloat) -> CIImage {
+        // Unchanged by chroma, and that is measured rather than assumed. The composite is
+        // out_c = amount·r_c + base_c·(1 − amount·u), where r_c is the generator's own channel and
+        // u its alpha channel, so E[out_c] = base_c·(1 − amount/2) + amount/2 whatever the layer's
+        // saturation is: `GrainCompositeProbe.chromaAnatomy` measures the layer's premultiplied
+        // mean at 0.497 of `amount` at every chroma from 0 to 1. What chroma changes is that the
+        // three r_c stop being the same number per pixel, not what they average to.
         let gain = 1 / (1 - amount / 2)
         let bias = -(amount / 2) * gain
         return image.applyingFilter("CIColorMatrix", parameters: [

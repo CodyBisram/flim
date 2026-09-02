@@ -25,8 +25,8 @@ struct FlashFalloffTests {
     /// Includes the dark scenes that take adaptive exposure and the reduced-bloom path (`night`,
     /// `dusk`) and the oversize scene that takes the 2048 downscale, so every branch a flash frame
     /// could plausibly disturb is exercised on a non-flash input.
-    static let nonFlashFixtures: [LookFixture] = [.night, .dusk, .speculars, .daylight,
-                                                  .gamut, .oversize]
+    static let nonFlashFixtures: [LookFixture] = [.night, .dusk, .shadowRamp, .speculars,
+                                                  .daylight, .gamut, .oversize]
 
     static func digest(_ data: Data) -> String {
         var hash = [UInt8](repeating: 0, count: 32)
@@ -184,12 +184,14 @@ struct FlashFalloffTests {
 
     @Test("the stage is subject-shaped, not a centred radial")
     func falloffFollowsTheSubjectNotTheFrameCentre() throws {
-        // Measured on the STAGE, not end to end, and that is deliberate. End to end this is
-        // unmeasurable in exactly the region it matters: the shipped grain composite is
-        // `.sourceOver`, which is a white veil rather than grey noise (see `precompensated`), so
-        // any region the falloff crushes toward black gets lifted back to roughly 0.09 by the
-        // grain alone. Two crushed corners then read as the same number whatever the falloff did
-        // to them. Isolating the stage measures the thing the test is about.
+        // Measured on the STAGE, not end to end, and that is deliberate. Until 1.5.1 this was
+        // unmeasurable end to end in exactly the region it matters: the grain composite was
+        // `.sourceOver`, a white veil rather than grey noise (see `precompensated`), so any region
+        // the falloff crushed toward black was lifted back to roughly 0.09 by the grain alone and
+        // two crushed corners read as the same number whatever the falloff had done to them. The
+        // shipped composite is `.meanPreserving` now, so the veil is gone, but this stays isolated:
+        // the stage is what this test is about, and measuring it directly does not re-open when
+        // grain changes.
         let source = try #require(CIImage(data: LookFixture.flash.pngData()))
         let extent = source.extent
         let out = InstantFilmProcessor.flashFalloff(on: source, exponent: 1.0, extent: extent)
@@ -221,16 +223,16 @@ struct FlashFalloffTests {
 
     /// How deep the falloff's blacks are ALLOWED to go, which is not a property of the falloff.
     ///
-    /// The shipped grain composite is `.sourceOver`, and measured (`precompensated` has the
-    /// numbers) that layer is a white veil at random opacity rather than grey noise, so it can only
-    /// ever add light and it adds the most where there is least. Applied after this stage, it puts
-    /// a floor under every region the falloff crushes: an area taken to true black comes back out
-    /// at roughly 0.09 on the shipped path.
+    /// Until 1.5.1 the grain composite was `.sourceOver`, and measured (`precompensated` has the
+    /// numbers) that layer is a white veil at random opacity rather than grey noise, so it could
+    /// only ever add light and it added the most where there was least. Applied after this stage it
+    /// put a floor under every region the falloff crushed: an area taken to true black came back out
+    /// at roughly 0.09.
     ///
-    /// This is recorded as a test rather than a comment because it is the ceiling on the whole
-    /// feature. `.meanPreserving` already exists and is deliberately parked (flipping it splits the
-    /// feed into two looks permanently), and this measures exactly what the flash look would gain
-    /// if it is ever unparked. It is an observation, not a demand, so it asserts only the direction.
+    /// That ceiling is what the shadow-peaked grain work removed, and this is the measurement of it,
+    /// kept as a test rather than a comment because it is the property the flash look depends on:
+    /// the two composites still exist side by side and the mean-preserving one must stay the deeper
+    /// of the two. It asserts only the direction, which is all it ever claimed.
     @Test("the grain composite, not the falloff, sets how deep the shadows land")
     func grainCompositeBoundsTheShadowDepth() async throws {
         let data = LookFixture.flash.pngData()
@@ -256,9 +258,17 @@ struct FlashFalloffTests {
                                                                     stock: .original))
         let before = try #require(Self.shadowFraction(ambient.data))
         let after = try #require(Self.shadowFraction(flash.data))
-        #expect(before < 0.01, "the ungated frame already has deep shadows; the fixture is wrong")
+        // The ambient half is allowed its own deep shadows now, and the number moved for a known
+        // reason: it was 0.000 when the grain composite was a white veil that lifted every crushed
+        // pixel, and it is 0.055 with the mean-preserving composite that replaced it in 1.5.1. What
+        // must stay true is that this is the FIXTURE's own dark corner and not a flash effect, so
+        // the bound is loose and the gap to the flash half is what carries the meaning.
+        #expect(before < 0.08,
+                "the ungated frame has \(before) below 0.04; that is a flash frame, not an ambient one")
         #expect(after >= 0.15 && after <= 0.35,
                 "flash frame has \(after) of its pixels below 0.04, want 0.15...0.35")
+        #expect(after > before * 2.5,
+                "the flash half (\(after)) is not meaningfully deeper than the ambient half (\(before))")
     }
 
     @Test("the shipped flash strength is the value the sweep settled on")
@@ -487,11 +497,12 @@ struct FlashFalloffSweep {
         for exponent in Self.exponents {
             try await Self.row(scene, data, exponent, grain: .sourceOver)
         }
-        // One extra row per scene with the mean-preserving grain composite, which is built,
-        // measured better, and parked (see `GrainComposite`). It is the ceiling this feature is
-        // being measured against: the shipped veil holds crushed blacks up at about 0.09, so this
-        // row says what the flash look would gain if that decision is ever revisited.
-        try await Self.row(scene, data, 1.0, grain: .meanPreserving)
+        // One extra row per scene with the OLD source-over grain composite. It was the shipped one
+        // when this sweep was written and the mean-preserving row was the hypothetical; 1.5.1
+        // swapped which is which (see `GrainComposite`). Keeping both rows is what lets a flash
+        // strength measured before that swap be compared with one measured after it, since the
+        // composite moved the shadow depth this whole sweep is reported in.
+        try await Self.row(scene, data, 1.0, grain: .sourceOver)
     }
 
     private static func row(_ scene: String, _ data: Data, _ exponent: CGFloat,
