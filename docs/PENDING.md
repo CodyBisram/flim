@@ -117,7 +117,8 @@ Not verified: on-device first-frame timing. Needs an airplane-mode relaunch on a
   identically in all three cases, `deno check` passes on both functions. Owner step: apply the
   migration FIRST, then `supabase functions deploy send-social-push --no-verify-jwt` and the same
   for `send-daily-digest`. Deploying functions first only degrades (no owner push tokens, covered-
-  post exemption fails closed) rather than errors. Status: `owner: apply + deploy`.
+  post exemption fails closed) rather than errors. Applied to production and both functions deployed 2026-09-02 (verified:
+  `owner_user_id()` returns the pinned id, the trigger no longer reads email). Status: `done`.
 - `CachedImage.load()` staleness guard: DONE. A `loadGeneration` counter bumped at the top of
   `load()`; each of the three post-await writes checks its captured generation before touching
   state. No testable seam, so no test.
@@ -130,7 +131,8 @@ Not verified: on-device first-frame timing. Needs an airplane-mode relaunch on a
 
 Both items below were only gated on 1.5 App Review, which cleared 2026-09-01. Both are now built.
 
-- `public.profiles` / `security_invoker`: DONE as a migration 2026-09-02, NOT YET APPLIED.
+- `public.profiles` / `security_invoker`: DONE and APPLIED to production 2026-09-02 (verified:
+  `security_invoker=on`, anon has no grant on the view, the widened column grant is live).
   `supabase/migrations/2026-09-02_profiles_security_invoker.sql` grants `hidden_from_discovery`
   to `authenticated` (the view exposes it and the column grant did not; flipping without this
   breaks every profile read for everyone), sets `security_invoker = on`, and revokes `anon`
@@ -140,7 +142,7 @@ Both items below were only gated on 1.5 App Review, which cleared 2026-09-01. Bo
   is the evidence. Verified in a local Supabase stack: authenticated reads another user's row
   with all eight columns, `email`/`invite_code` stay denied, anon is denied, UPDATE/DELETE
   through the view stay denied, applies twice cleanly. Independent of the 2026-09-01
-  owner-identity migration. No Swift change. Status: `owner: apply`.
+  owner-identity migration. No Swift change. Status: `done`.
 - `schema.sql` never folded in `2026-08-17_profile_identity.sql`: no `signup_ordinal` column,
   trigger, or grant exists in schema.sql, though production has all three. A from-scratch
   environment built from schema.sql alone lacks the column. Found 2026-09-02 while mirroring the
