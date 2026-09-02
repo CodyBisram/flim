@@ -62,9 +62,25 @@ const supabase = createClient(
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
 );
 
-// Mirrors the constant in send-social-push. There is one owner, and this is their address, not
-// something worth deriving from a table.
-const OWNER_EMAIL = "codyysb@gmail.com";
+// Resolved from the same pinned identity is_owner()/the auto-follow trigger use
+// (public.owner_user_id(), supabase/migrations/2026-09-01_pin_owner_identity_everywhere.sql), not
+// by matching a client-writable email column. This function runs under the SERVICE ROLE, so it
+// calls owner_user_id() by RPC rather than is_owner(uuid) (authenticated-only, and the wrong
+// shape besides: it answers "is this them", not "who is it"). Mirrors the same call in
+// send-social-push. Cached for the life of this invocation: the id never changes mid-run.
+let ownerUserIdCache: string | null | undefined; // undefined = not fetched yet this invocation
+
+async function ownerUserId(): Promise<string | null> {
+  if (ownerUserIdCache !== undefined) return ownerUserIdCache;
+  const { data, error } = await supabase.rpc("owner_user_id");
+  if (error || !data) {
+    console.warn(JSON.stringify({ at: "owner_user_id_rpc_failed", error: error?.message }));
+    ownerUserIdCache = null;
+    return null;
+  }
+  ownerUserIdCache = data as string;
+  return ownerUserIdCache;
+}
 
 // ---- Covered posts --------------------------------------------------------
 //
@@ -121,15 +137,12 @@ async function loadCoveredPostContext(): Promise<CoveredPostContext> {
     if (active) allowedViewers.add(userId);
   }
 
-  const { data: ownerRows, error: ownerError } = await supabase
-    .from("users")
-    .select("id")
-    .ilike("email", OWNER_EMAIL);
-  if (ownerError) {
-    console.warn(JSON.stringify({ at: "covered_post_owner_lookup_failed", error: ownerError.message }));
+  const ownerId = await ownerUserId();
+  if (!ownerId) {
+    console.warn(JSON.stringify({ at: "covered_post_owner_lookup_failed" }));
     return { loaded: false, windowByAuthor, allowedViewers };
   }
-  for (const o of ownerRows ?? []) allowedViewers.add(o.id as string);
+  allowedViewers.add(ownerId);
 
   return { loaded: true, windowByAuthor, allowedViewers };
 }

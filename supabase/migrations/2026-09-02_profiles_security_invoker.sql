@@ -1,0 +1,150 @@
+-- ============================================================
+-- Flip public.profiles to security_invoker = on
+-- Paste into Supabase Dashboard -> SQL Editor and run, or apply via the
+-- Management API. Safe to re-run (every statement is idempotent).
+--
+-- BACKGROUND
+-- ----------
+-- schema.sql has carried two "DO NOT ENABLE" comment blocks
+-- (2026-08-05_profiles_view_read_only.sql's header, and the
+-- "Security-advisor hardening (2026-07)" block) explaining that turning
+-- security_invoker on would break every profile read, because the querying
+-- role had no SELECT privilege on public.users at all -- it only had
+-- privileges on the profiles VIEW, which ran as the view owner and so could
+-- read users regardless of the caller's own grants.
+--
+-- That premise stopped being true on 2026-08-05
+-- (2026-08-05_profiles_view_read_only.sql, folded into schema.sql's
+-- "Security-advisor hardening (2026-07)" block): `authenticated` now holds a
+-- column-scoped SELECT grant directly on public.users --
+-- id, username, avatar_path, bio, created_at, display_name, cover_path --
+-- alongside the "users: profiles readable" policy (FOR SELECT TO
+-- authenticated USING (true)). An authenticated caller running AS ITSELF
+-- (security_invoker) can already read every one of those columns, for every
+-- row, directly. The one column profiles exposes that the grant does not
+-- cover is hidden_from_discovery -- this migration adds it, additively, so
+-- the invoker-mode view keeps working for every column it already returns.
+--
+-- What still protects `email` and `invite_code`: nothing to do with the view
+-- at all, in either mode. They are simply never in the column grant, and
+-- never appear in the view's SELECT list. Flipping security_invoker changes
+-- whose privileges the READ runs with; it was never what kept those two
+-- columns out of `profiles`, and it still is not.
+--
+-- Why flip it at all, given the 2026-08-05 mitigation already closed the
+-- write hole: the outstanding Supabase linter finding ("Security Definer
+-- View") is a standing false-positive-shaped alert that has to be
+-- re-explained by comment forever otherwise, and it is no longer accurate --
+-- the view can safely run as invoker now. Flipping it retires the finding
+-- for good instead of continuing to document around it. docs/PENDING.md item
+-- 6a tracks this as the pending action; this migration is that action.
+--
+-- ANON: today's production GRANT SELECT ON public.profiles TO authenticated,
+-- anon predates the column-scoped grant on `users` and was never re-examined
+-- against it. No SQL function or view in this project selects from
+-- `profiles` without a session (is_email_allowed, redeem_invite,
+-- request_invite and app_release_gate all read other tables, or none), and
+-- every app read of `profiles` (FeedService, RollService) already requires a
+-- signed-in session. Anon holding SELECT on `profiles` was unused surface,
+-- not a feature. Under invoker mode, anon has no SELECT grant on `users` at
+-- all, so an anon profiles read would fail with "permission denied for table
+-- users" the moment it tried -- rather than let that be an accidental,
+-- confusing failure mode, this migration revokes it explicitly, up front.
+-- ============================================================
+
+BEGIN;
+
+-- ------------------------------------------------------------
+-- 1. Additive: the one profiles column not already covered by the
+--    2026-08-05 column-scoped grant on public.users. Every other column
+--    profiles selects (id, username, avatar_path, bio, created_at,
+--    display_name, cover_path) is already granted to authenticated -- see
+--    schema.sql's "Security-advisor hardening (2026-07)" block. Deliberately
+--    NOT re-issuing that whole GRANT list here: production also carries
+--    GRANT SELECT (signup_ordinal) ON public.users TO authenticated
+--    (2026-08-17_profile_identity.sql), and restating a shorter list would
+--    only ever ADD privileges via a bare GRANT, never remove the ones this
+--    statement doesn't mention -- but restating it as a REVOKE-then-GRANT
+--    pair, the way the base grant does, would drop signup_ordinal by
+--    accident. A single additive GRANT on the one new column avoids that
+--    trap entirely.
+-- ------------------------------------------------------------
+GRANT SELECT (hidden_from_discovery) ON public.users TO authenticated;
+
+-- ------------------------------------------------------------
+-- 2. The flip itself. Safe now because of step 1 plus the pre-existing
+--    2026-08-05 grant: every column public.profiles selects is directly
+--    readable by `authenticated` on public.users, so running the view AS
+--    THE CALLER no longer loses access to anything it used to see as the
+--    view owner.
+-- ------------------------------------------------------------
+ALTER VIEW public.profiles SET (security_invoker = on);
+
+-- ------------------------------------------------------------
+-- 3. Anon's SELECT on profiles is revoked explicitly, as its own statement,
+--    so the loss of anon access is a deliberate line in this migration
+--    rather than an accidental side effect people have to reconstruct from
+--    the GRANT below. This is also what retires the linter finding for
+--    good: a security-definer view grantable to anon was the flagged shape.
+-- ------------------------------------------------------------
+REVOKE SELECT ON public.profiles FROM anon;
+
+-- ------------------------------------------------------------
+-- 4. Restate the 2026-08-05 discipline: REVOKE ahead of GRANT, because
+--    schema.sql is re-run in production and a re-created view (CREATE OR
+--    REPLACE VIEW picks a fresh set of default privileges) would otherwise
+--    pick the wide-open INSERT/UPDATE/DELETE-to-anon-and-authenticated
+--    defaults back up. Only `authenticated` is re-granted SELECT now --
+--    `anon` is deliberately absent from this GRANT's target list, on top of
+--    the explicit REVOKE in step 3, so a future re-run of this file can
+--    never silently re-add it.
+-- ------------------------------------------------------------
+REVOKE ALL ON public.profiles FROM anon, authenticated;
+GRANT SELECT ON public.profiles TO authenticated;
+
+COMMIT;
+
+-- ============================================================
+-- Verify after running
+-- ============================================================
+--
+-- 1. security_invoker is on:
+--
+--   SELECT relname, reloptions FROM pg_class WHERE relname = 'profiles';
+--   -- expect: reloptions contains security_invoker=on
+--
+-- 2. Grants: authenticated has SELECT on profiles, anon has none:
+--
+--   SELECT grantee, privilege_type
+--   FROM information_schema.role_table_grants
+--   WHERE table_schema = 'public' AND table_name = 'profiles'
+--     AND grantee IN ('anon','authenticated');
+--   -- expect: authenticated/SELECT only, no anon row
+--
+-- 3. hidden_from_discovery is readable by authenticated on users directly:
+--
+--   SELECT grantee, column_name
+--   FROM information_schema.column_privileges
+--   WHERE table_schema = 'public' AND table_name = 'users'
+--     AND privilege_type = 'SELECT' AND grantee = 'authenticated'
+--     AND column_name = 'hidden_from_discovery';
+--   -- expect: one row
+--
+-- 4. signup_ordinal's pre-existing grant (2026-08-17_profile_identity.sql)
+--    is untouched by this migration:
+--
+--   SELECT grantee, column_name
+--   FROM information_schema.column_privileges
+--   WHERE table_schema = 'public' AND table_name = 'users'
+--     AND privilege_type = 'SELECT' AND grantee = 'authenticated'
+--     AND column_name = 'signup_ordinal';
+--   -- expect: one row (unchanged by this migration either way)
+--
+-- 5. As an authenticated session (SET ROLE authenticated; SET
+--    request.jwt.claims to a real user id), SELECT * FROM public.profiles
+--    still returns every column for every user's row, including
+--    hidden_from_discovery, and email/invite_code stay unreachable via
+--    public.users directly. As anon, SELECT * FROM public.profiles is
+--    permission denied. UPDATE/DELETE on profiles stay denied for
+--    authenticated (2026-08-05's property, untouched by this migration).
+-- ============================================================

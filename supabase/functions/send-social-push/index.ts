@@ -249,18 +249,31 @@ async function notify(
   return sent;
 }
 
-// --- App owner: the single place the owner is named. Matches the `note = 'owner'`
-//     seed in allowed_emails (schema.sql). Report notifications go to whichever
-//     account(s) sign in with this email; resolved by email (case-insensitive) so
-//     no raw user UUID is hardcoded. If the owner has no registered device, the
+// --- App owner: resolved from the same pinned identity is_owner()/the auto-follow trigger use
+//     (public.owner_user_id(), supabase/migrations/2026-09-01_pin_owner_identity_everywhere.sql),
+//     not by matching a client-writable email column. This function runs under the SERVICE ROLE,
+//     so it calls owner_user_id() by RPC rather than is_owner(uuid) (authenticated-only, and the
+//     wrong shape besides: it answers "is this them", not "who is it"). Cached for the life of
+//     this invocation: the id never changes mid-run. If the owner has no registered device, the
 //     report still sits in the table for the daily-check query in the migration.
-const OWNER_EMAIL = "codyysb@gmail.com";
+let ownerUserIdCache: string | null | undefined; // undefined = not fetched yet this invocation
+
+async function ownerUserId(): Promise<string | null> {
+  if (ownerUserIdCache !== undefined) return ownerUserIdCache;
+  const { data, error } = await supabase.rpc("owner_user_id");
+  if (error || !data) {
+    console.warn(JSON.stringify({ at: "owner_user_id_rpc_failed", error: error?.message }));
+    ownerUserIdCache = null;
+    return null;
+  }
+  ownerUserIdCache = data as string;
+  return ownerUserIdCache;
+}
 
 async function ownerTokens(): Promise<string[]> {
-  const { data: owners } = await supabase.from("users").select("id").ilike("email", OWNER_EMAIL);
-  const tokens: string[] = [];
-  for (const o of owners ?? []) tokens.push(...(await tokensFor(o.id)));
-  return [...new Set(tokens)];
+  const id = await ownerUserId();
+  if (!id) return [];
+  return [...new Set(await tokensFor(id))];
 }
 
 // --- Covered posts. This function runs with the SERVICE ROLE, so RLS is bypassed entirely
@@ -317,15 +330,12 @@ async function loadCoveredPostContext(): Promise<CoveredPostContext> {
     if (active) allowedViewers.add(userId);
   }
 
-  const { data: ownerRows, error: ownerError } = await supabase
-    .from("users")
-    .select("id")
-    .ilike("email", OWNER_EMAIL);
-  if (ownerError) {
-    console.warn(JSON.stringify({ at: "covered_post_owner_lookup_failed", error: ownerError.message }));
+  const ownerId = await ownerUserId();
+  if (!ownerId) {
+    console.warn(JSON.stringify({ at: "covered_post_owner_lookup_failed" }));
     return { loaded: false, windowByAuthor, allowedViewers };
   }
-  for (const o of ownerRows ?? []) allowedViewers.add(o.id as string);
+  allowedViewers.add(ownerId);
 
   return { loaded: true, windowByAuthor, allowedViewers };
 }

@@ -803,30 +803,35 @@ CREATE OR REPLACE VIEW public.profiles AS
            hidden_from_discovery
     FROM public.users;
 
--- READ ONLY, and the REVOKE is the part that matters.
+-- security_invoker = on as of 2026-09-02 (supabase/migrations/2026-09-02_profiles_security_invoker.sql).
+-- The view now runs with the CALLING role's own privileges, not the view owner's. That is safe
+-- because every column profiles selects is also directly readable by `authenticated` on
+-- public.users, via the column-scoped SELECT grant immediately below in the
+-- "Security-advisor hardening" block (id, username, avatar_path, bio, created_at, display_name,
+-- cover_path, hidden_from_discovery). email and invite_code stay unreachable through profiles for
+-- a reason that has nothing to do with invoker vs definer: they are simply never in that grant and
+-- never in this view's SELECT list, in either mode.
 --
--- This view is the door clients read identities through: `users` deliberately withholds SELECT
--- from anon and authenticated (only service_role has it), because RLS is row-level and cannot
--- hide the email and invite_code COLUMNS. Exposing a narrower view instead is the whole design,
--- and it depends on the view running as its owner rather than as the caller. That is what
--- Supabase's linter reports as "Security Definer View", and here it is load-bearing: adding
--- `security_invoker = true` would make every profile read fail, because the caller has no SELECT
--- on `users`.
+-- READ ONLY, and the REVOKE is the part that matters, independent of invoker mode.
 --
--- The danger is the other half of that same property. A single-table view like this one is
--- AUTO-UPDATABLE, so a write through it also runs as the owner and also bypasses RLS. Supabase's
--- default privileges grant INSERT/UPDATE/DELETE to anon and authenticated on every new object in
--- `public`, and a bare `GRANT SELECT` does not take those away. That combination meant anyone
--- holding the publishable key (which ships inside the app binary) could PATCH or DELETE any
--- user's row through this view, bypassing the "users: own row" policy entirely. Verified against
--- production on 2026-08-05: an unauthenticated PATCH returned 200, not 403.
+-- A single-table view like this one is AUTO-UPDATABLE, so a write through it runs with whatever
+-- privileges are in force for the read (the caller's, now) and could otherwise bypass the
+-- intended write path entirely. Supabase's default privileges grant INSERT/UPDATE/DELETE to anon
+-- and authenticated on every new object in `public`, and a bare `GRANT SELECT` does not take those
+-- away. That combination meant anyone holding the publishable key (which ships inside the app
+-- binary) could PATCH or DELETE any user's row through this view, bypassing the "users: own row"
+-- policy entirely. Verified against production on 2026-08-05: an unauthenticated PATCH returned
+-- 200, not 403.
 --
 -- Nothing reads or writes profiles except SELECTs (the app writes profile fields to `users`,
--- where RLS gates them), so the view is revoked down to SELECT. Keep the REVOKE ahead of the
--- GRANT: this file is re-run in production as the standing workflow, and a re-created view picks
--- the default privileges back up.
+-- where RLS gates them), so the view is revoked down to SELECT, for `authenticated` only. `anon`
+-- held SELECT here from 2026-08-05 until 2026-09-02; nothing ever depended on it (no SQL function
+-- or view reachable pre-session selects from profiles, and every app read already carries a
+-- session), and under invoker mode it would only fail anyway, since anon has no SELECT grant on
+-- `users` at all. Keep the REVOKE ahead of the GRANT: this file is re-run in production as the
+-- standing workflow, and a re-created view picks the default privileges back up.
 REVOKE ALL ON public.profiles FROM anon, authenticated;
-GRANT SELECT ON public.profiles TO authenticated, anon;
+GRANT SELECT ON public.profiles TO authenticated;
 
 -- TRUNCATE is not subject to row level security, so the "users: own row" policy does not contain
 -- it. PostgREST cannot issue one, which is the only reason this was not reachable, and that is
@@ -861,26 +866,29 @@ CREATE POLICY "follows: delete own"
 -- Every new account should follow the owner from the moment it exists, at
 -- his request. This fires on public.users, not auth.users / a Supabase Auth
 -- hook: public.users is the row the app actually inserts on first login
--- (AuthService.completeOnboarding's `INSERT INTO users`), and it already
--- carries `email`, so the owner is resolved by email here. Defined here
+-- (AuthService.completeOnboarding's `INSERT INTO users`). Defined here
 -- (right after the follows table it targets) because, unlike
 -- is_blocked_either_way's consumers, nothing about this function needs
 -- anything defined later in this file.
 --
--- NOTE (2026-08-29_close_users_privilege_escalation.sql): is_owner() and
--- is_owner(uuid) below no longer resolve by email, precisely because email
--- was a client-writable column an attacker could set to the owner's to gain
--- admin access. THIS trigger still resolves by email and was left alone —
--- unlike is_owner(), it grants no privilege, only an auto-follow row, so a
--- forged email here produces at worst a wrong follow target, not an
--- escalation. Still worth an id-based fix later for correctness; not done
--- in that migration to keep an urgent security fix minimal.
+-- Resolved by public.owner_user_id() (defined near is_owner(uuid) further
+-- down this file) since 2026-09-01_pin_owner_identity_everywhere.sql. Before
+-- that it matched lower(email) = lower('codyysb@gmail.com') directly: left
+-- alone by 2026-08-29_close_users_privilege_escalation.sql because, unlike
+-- is_owner(), this trigger grants no privilege, only an auto-follow row, so
+-- a forged email here produced at worst a wrong follow target, not an
+-- escalation, but three copies of "trust email" already proved to be one
+-- too many, so this one was finished too.
 --
 -- Resilience, each one deliberate:
 --   1. No owner row yet (fresh database, or the owner hasn't completed
---      onboarding on this environment) -> v_owner_id is NULL -> RETURN NEW
---      immediately, no INSERT attempted. A signup must NEVER fail because
---      this could not find someone to follow.
+--      onboarding on this environment) -> the EXISTS check below is FALSE ->
+--      RETURN NEW immediately, no INSERT attempted. A signup must NEVER fail
+--      because this could not find someone to follow. (owner_user_id()
+--      always returns the same constant regardless of whether that row
+--      exists here yet, unlike the old lower(email) lookup which naturally
+--      returned NULL in that case, hence the explicit EXISTS check now,
+--      to keep this exact early-return behaviour.)
 --   2. The row being inserted IS the owner's own account -> skip before
 --      attempting the INSERT. follows already has CHECK (follower_id <>
 --      following_id), which would abort the very transaction that creates
@@ -914,18 +922,13 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 DECLARE
-    v_owner_id UUID;
+    v_owner_id UUID := public.owner_user_id();
 BEGIN
-    SELECT id INTO v_owner_id
-    FROM public.users
-    WHERE lower(email) = lower('codyysb@gmail.com')
-    LIMIT 1;
-
-    IF v_owner_id IS NULL THEN
+    IF NEW.id = v_owner_id THEN
         RETURN NEW;
     END IF;
 
-    IF NEW.id = v_owner_id THEN
+    IF NOT EXISTS (SELECT 1 FROM public.users WHERE id = v_owner_id) THEN
         RETURN NEW;
     END IF;
 
@@ -1380,21 +1383,25 @@ CREATE INDEX IF NOT EXISTS blocks_blocker_idx          ON public.blocks (blocker
 -- ============================================================
 -- Security-advisor hardening (2026-07). All applied live; kept here as source of truth.
 -- ============================================================
--- profiles deliberately runs with the VIEW OWNER's rights, not the querying user's.
+-- profiles ran with the VIEW OWNER's rights, not the querying user's, from when this view was
+-- introduced through 2026-09-01. That was load-bearing at the time: the column-level grants on
+-- `users` below did not yet cover every column the view selected, so a caller running as itself
+-- (security_invoker) could not have read them directly, and turning it on would have made every
+-- profile read fail with "permission denied for table users" -- no handles, no avatars, no
+-- mentions, no profile pages, app-wide. (Verified against production 2026-08-08:
+-- pg_class.reloptions for this view was NULL, i.e. security_invoker was OFF and always had been,
+-- despite once being listed under a header claiming "all applied live".)
 --
--- Do not turn security_invoker on. The line below is what Supabase's security advisor asks for
--- when it flags "Security Definer View", and it is wrong for this view: `profiles` reads
--- `public.users`, which the querying role cannot read directly, so invoker rights make every
--- profile read fail with "permission denied for table users". No handles, no avatars, no
--- mentions, no profile pages, app-wide. The safe columns are already constrained by the
--- column-level grants on `users` immediately below, which is what makes owner rights safe here.
---
--- Verified against production 2026-08-08: pg_class.reloptions for this view is NULL, i.e.
--- security_invoker is OFF and always has been. The statement was listed under a header claiming
--- "all applied live" but never was, so running this file as written would have been the first
--- time it took effect, and it would have broken profile reads for everyone.
---
--- ALTER VIEW public.profiles SET (security_invoker = on);   -- DO NOT ENABLE, see above
+-- As of 2026-09-02 (supabase/migrations/2026-09-02_profiles_security_invoker.sql), that premise no
+-- longer holds: the GRANT immediately below now covers every column public.profiles selects,
+-- hidden_from_discovery included, so the view is safe to run as invoker and now does. The reason
+-- it is now SAFE is exactly this GRANT plus the "users: profiles readable" USING (true) policy
+-- below -- not anything about the view itself. What still keeps `email` and `invite_code` out of
+-- reach is unrelated to invoker vs definer in either direction: they are simply never listed in
+-- this GRANT and never in the view's SELECT list. `anon` has no profile access at all now, by
+-- design (see the view's own comment above): it never had a SELECT grant on `users`, so an anon
+-- profiles read fails immediately under invoker mode instead of silently running as the owner.
+ALTER VIEW public.profiles SET (security_invoker = on);
 
 -- users: any signed-in user may read rows, but ONLY the safe profile columns.
 -- email + invite_code are excluded from the grant → unreadable via the API for OTHER users
@@ -1403,7 +1410,22 @@ DROP POLICY IF EXISTS "users: visible to co-members" ON public.users;
 DROP POLICY IF EXISTS "users: profiles readable" ON public.users;
 CREATE POLICY "users: profiles readable" ON public.users FOR SELECT TO authenticated USING (true);
 REVOKE SELECT ON public.users FROM anon, authenticated;
-GRANT SELECT (id, username, avatar_path, bio, created_at, display_name, cover_path) ON public.users TO authenticated;
+-- hidden_from_discovery: added 2026-09-02 so this list covers every column public.profiles
+-- selects, matching the view's own security_invoker note above.
+--
+-- NOTE ON signup_ordinal: production also carries GRANT SELECT (signup_ordinal) ON public.users
+-- TO authenticated, from 2026-08-17_profile_identity.sql. That migration's column, backfill and
+-- trigger were never folded into this file at all (schema.sql has no `signup_ordinal` column
+-- definition anywhere), so its grant is deliberately NOT added to this list either -- doing so
+-- would make a from-scratch run of this file fail here with "column signup_ordinal does not
+-- exist" (confirmed against a fresh container 2026-09-02), since REVOKE SELECT above runs before
+-- any such column would exist. This is pre-existing drift between schema.sql and production,
+-- outside the scope of the security_invoker change this comment block otherwise documents; it
+-- means a from-scratch schema.sql load does not yet match production for that one column, and a
+-- production re-run of schema.sql's REVOKE SELECT line would still (already, before this change)
+-- strip signup_ordinal's grant unless 2026-08-17_profile_identity.sql's GRANT is re-applied after.
+GRANT SELECT (id, username, avatar_path, bio, created_at, display_name, cover_path,
+              hidden_from_discovery) ON public.users TO authenticated;
 
 -- INSERT/UPDATE/DELETE: column-scoped, same discipline as SELECT above.
 -- Supabase's default privileges hand INSERT/UPDATE/DELETE to anon AND
@@ -1563,6 +1585,36 @@ ALTER TABLE public.covered_post_windows ENABLE ROW LEVEL SECURITY;
 -- allowed_emails above. Readable only through the SECURITY DEFINER helpers
 -- below; writable only via the SQL editor / service role.
 
+-- The single pinned owner constant, added by
+-- 2026-09-01_pin_owner_identity_everywhere.sql. Same UUID
+-- 2026-08-29_close_users_privilege_escalation.sql pinned directly into
+-- is_owner()/is_owner(uuid); f43287d4-f239-415b-af45-650bbee62e83, signup_ordinal
+-- 1, per the owner. Both is_owner() and is_owner(uuid) below read it from
+-- here instead of repeating the literal, and so do the auto-follow trigger
+-- further down this file and send-social-push/send-daily-digest (via RPC,
+-- since those run under the service role, not `authenticated`): one place
+-- spells out the UUID, everything else calls this. It carries no privilege
+-- by itself (it returns an identifier, not a boolean gate), and that
+-- identifier is already discoverable by any authenticated client today:
+-- every account auto-follows the owner at signup, and "follows: readable by
+-- authenticated" already exposes every row of public.follows. Even so, anon
+-- is revoked, same as every other signed-in-only RPC in this schema: nothing
+-- needs it (no unauthenticated Swift call path exists, and both edge
+-- functions run as service_role), so it stays narrow on general
+-- least-privilege grounds rather than because holding it back is load
+-- bearing. Plain SECURITY INVOKER SQL: it touches no table, so there is
+-- nothing for a caller's privileges to matter to.
+CREATE OR REPLACE FUNCTION public.owner_user_id()
+RETURNS UUID
+LANGUAGE sql
+STABLE
+AS $$
+    SELECT 'f43287d4-f239-415b-af45-650bbee62e83'::uuid;
+$$;
+REVOKE ALL ON FUNCTION public.owner_user_id() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.owner_user_id() FROM anon;
+GRANT EXECUTE ON FUNCTION public.owner_user_id() TO authenticated, service_role;
+
 -- Owner exemption, tested by uuid so it composes inside a two-argument
 -- visibility predicate the same way is_blocked_either_way(a, b) does. This
 -- is a NEW OVERLOAD of is_owner() (no args, defined further down this file
@@ -1579,7 +1631,9 @@ ALTER TABLE public.covered_post_windows ENABLE ROW LEVEL SECURITY;
 -- itself with one write. id is the primary key, is pinned to auth.uid() by
 -- the "users: own row" RLS policy, and is what every foreign key in this
 -- schema actually references — it cannot be claimed by another account the
--- way email could.
+-- way email could. Body updated by
+-- 2026-09-01_pin_owner_identity_everywhere.sql to read the constant from
+-- owner_user_id() instead of repeating the literal; behaviour unchanged.
 CREATE OR REPLACE FUNCTION public.is_owner(p_user UUID)
 RETURNS BOOLEAN
 LANGUAGE sql
@@ -1587,7 +1641,7 @@ STABLE
 SECURITY DEFINER
 SET search_path = public
 AS $$
-    SELECT p_user = 'f43287d4-f239-415b-af45-650bbee62e83'::uuid;
+    SELECT p_user = public.owner_user_id();
 $$;
 REVOKE ALL ON FUNCTION public.is_owner(uuid) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.is_owner(uuid) FROM anon;
@@ -2135,6 +2189,15 @@ ALTER TABLE public.digest_state ENABLE ROW LEVEL SECURITY;
 -- exchange for removing a live, universally-reachable escalation.
 -- auth.uid() with no session is NULL, which does not equal the pinned uuid
 -- and returns FALSE, not an error.
+--
+-- Body updated by 2026-09-01_pin_owner_identity_everywhere.sql to read the
+-- constant from public.owner_user_id() (defined earlier in this file, next
+-- to is_owner(uuid)) instead of repeating the literal a second time;
+-- behaviour unchanged. That same migration also finished the job this
+-- comment describes: send-social-push's OWNER_EMAIL constant, referenced two
+-- paragraphs up, no longer exists: it and send-daily-digest's copy both
+-- resolve the owner via RPC to owner_user_id() now, and the auto-follow
+-- trigger further down this file no longer resolves by email either.
 -- ============================================================
 CREATE OR REPLACE FUNCTION public.is_owner()
 RETURNS BOOLEAN
@@ -2143,7 +2206,7 @@ STABLE
 SECURITY DEFINER
 SET search_path = public
 AS $$
-    SELECT auth.uid() = 'f43287d4-f239-415b-af45-650bbee62e83'::uuid;
+    SELECT auth.uid() = public.owner_user_id();
 $$;
 REVOKE ALL ON FUNCTION public.is_owner() FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.is_owner() FROM anon;
