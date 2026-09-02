@@ -11,13 +11,52 @@ final class RollService {
     var isLoading = false
     var error: String?
 
+    /// The account `rolls`/`coverPaths` currently describe, if known. Set by `restore(for:)` and
+    /// by `fetchRolls(for:)`; used only to name the file `persistSnapshot()` writes to, never to
+    /// decide what to fetch. `resetForAccountChange()` clears it so a mutation that somehow fires
+    /// after a reset but before the next `fetchRolls`/`restore` cannot write under the departing
+    /// account's id.
+    private var snapshotUserId: UUID?
+
     /// Drops everything cached for the previous account. Called on `flimAccountDidChange`.
+    ///
+    /// Deliberately does NOT load the next account's on-disk snapshot itself: that would make
+    /// this function's correctness depend on being called with the new account already current,
+    /// which it isn't. Only `restore(for:)`, given the id explicitly, or `fetchRolls(for:)`'s own
+    /// restore-before-fetch, ever reads a snapshot back in.
     func resetForAccountChange() {
         rolls = []
         memberCounts = [:]
         coverPaths = [:]
         error = nil
         isLoading = false
+        snapshotUserId = nil
+    }
+
+    /// Restores `userId`'s persisted cover-path/roll-list snapshot into memory, synchronously, so
+    /// a view reading `rolls`/`coverPaths` on its very first render already has something to
+    /// paint instead of nothing while the network fetch is still in flight.
+    ///
+    /// Skipped once `rolls` already holds anything, so this can never clobber fresher in-memory
+    /// state, a live fetch's result or an earlier restore, with the (necessarily older) disk
+    /// snapshot. Safe to call more than once, and safe to call for an account that turns out to
+    /// have no snapshot yet (a first-ever sign-in): `RollSnapshotStore.load` just returns nil.
+    func restore(for userId: UUID) {
+        snapshotUserId = userId
+        guard rolls.isEmpty, coverPaths.isEmpty,
+              let snapshot = RollSnapshotStore.load(for: userId) else { return }
+        rolls = snapshot.rolls
+        coverPaths = snapshot.coverPaths
+    }
+
+    /// Rewrites the on-disk snapshot from the current in-memory state. Called after every
+    /// mutation that changes `rolls` or `coverPaths`, so the snapshot never lags a local change a
+    /// user just made. A no-op if no account is known yet, which should not happen in practice
+    /// (every mutation site is reachable only once `fetchRolls`/`restore` has run) but is cheap
+    /// to guard against rather than assume.
+    private func persistSnapshot() {
+        guard let snapshotUserId else { return }
+        RollSnapshotStore.save(.init(rolls: rolls, coverPaths: coverPaths), for: snapshotUserId)
     }
 
     // MARK: - Create
@@ -61,6 +100,7 @@ final class RollService {
         // A brand new roll is developing from this second, and the widget and shutter are the two
         // surfaces most likely to be looked at before the app is opened again.
         WidgetSync.refresh()
+        persistSnapshot()
         return roll
     }
 
@@ -84,6 +124,7 @@ final class RollService {
             }
             // Same reason as createRoll: joining is the other way a countdown starts existing.
             WidgetSync.refresh()
+            persistSnapshot()
             return roll
         } catch {
             // Map the function's RAISE EXCEPTION messages to friendly errors.
@@ -106,6 +147,13 @@ final class RollService {
 
     func fetchRolls(for userId: UUID) async throws {
         let epoch = AccountEpoch.current
+        // Before the first await: restoring here (rather than only relying on a caller like
+        // ContentView having already called `restore(for:)`) means every call site listed at the
+        // top of this file gets the same first-frame benefit, not just the ones that happen to
+        // run after an account-change handler. `restore(for:)` itself is a no-op once `rolls`
+        // already holds anything, so this can never overwrite fresher in-memory state with the
+        // (necessarily older) disk snapshot on a routine refetch.
+        restore(for: userId)
         isLoading = true
         defer { isLoading = false }
 
@@ -125,7 +173,11 @@ final class RollService {
         guard AccountEpoch.isCurrent(epoch) else { return }
 
         let rollIds = memberRows.map(\.rollId.uuidString)
-        guard !rollIds.isEmpty else { rolls = []; memberCounts = [:]; return }
+        guard !rollIds.isEmpty else {
+            rolls = []; memberCounts = [:]; coverPaths = [:]
+            persistSnapshot()
+            return
+        }
 
         let fetched: [Roll] = try await supabase
             .from("rolls")
@@ -144,6 +196,12 @@ final class RollService {
         async let counts: Void = loadMemberCounts(rollIds: rollIds, epoch: epoch)
         async let covers: Void = loadCovers(rollIds: rollIds, epoch: epoch)
         _ = await (counts, covers)
+        // The network result is the source of truth once it lands; rewrite the snapshot from it
+        // wholesale so a restore never lags a fetch that already came back. Guarded the same way
+        // every other write in this function is: a stale call must not overwrite the CURRENT
+        // account's just-written snapshot with an old account's result.
+        guard AccountEpoch.isCurrent(epoch) else { return }
+        persistSnapshot()
     }
 
     /// Latest developed photo per roll → the path used for the roll cover thumbnail.
@@ -283,6 +341,11 @@ final class RollService {
             let r = rolls[i]
             rolls[i] = Roll(id: r.id, name: name, inviteCode: r.inviteCode,
                             createdBy: r.createdBy, createdAt: r.createdAt, coverPath: r.coverPath)
+            // The widget's subtitle is sourced live from roll names, and a still-developing
+            // roll's Live Activity has the old name baked into its (immutable) attributes.
+            WidgetSync.refresh()
+            RollLiveActivity.rename(rollId: rollId, to: name)
+            persistSnapshot()
         }
     }
 
@@ -297,6 +360,10 @@ final class RollService {
             rolls[i] = Roll(id: r.id, name: r.name, inviteCode: r.inviteCode,
                             createdBy: r.createdBy, createdAt: r.createdAt, coverPath: path)
         }
+        // The widget's cover tile is sourced live from coverPaths; the Live Activity doesn't
+        // show the cover, so there's nothing there to touch.
+        WidgetSync.refresh()
+        persistSnapshot()
     }
 
     /// Deletes a roll (creator only, enforced by RLS) and removes it locally.
@@ -328,6 +395,7 @@ final class RollService {
         coverPaths[rollId] = nil
         RollLiveActivity.end(rollId: rollId)
         WidgetSync.refresh()
+        persistSnapshot()
     }
 
     /// Removes a member from a roll. RLS allows this only for the member themselves

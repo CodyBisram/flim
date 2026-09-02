@@ -166,6 +166,7 @@
 		A978696CD65F86349FBA2EFD /* ClockWindowTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4727E0F91D5CBF486124674F /* ClockWindowTests.swift */; };
 		AB3249CE1029C5382B7C55A6 /* PhotoGridCell.swift in Sources */ = {isa = PBXBuildFile; fileRef = A34B801CAAD6D2C6557DD581 /* PhotoGridCell.swift */; };
 		AD24F3CB906A687FED7FE687 /* DevelopTimingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F61787FFCEE49A74368FF8C /* DevelopTimingTests.swift */; };
+		AD4926555CC9EFA49CCB8C06 /* RollSnapshotStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E55D7D1D90A614F669F3462 /* RollSnapshotStore.swift */; };
 		ADEF290E26FE90C6180B00BA /* FeedUnitTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F285153E18C4C15E482E0B0A /* FeedUnitTests.swift */; };
 		AF555464F31E9D0BE6670059 /* FeedSeenStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAA0E399F7BB8A6CE10FC207 /* FeedSeenStore.swift */; };
 		AF5C20B2C6E0933A53FA1134 /* RollActivityWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = BF5AF4446D3DC691556A0EDD /* RollActivityWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -175,6 +176,7 @@
 		B09880D2185738A73550E7C6 /* RollService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 633F60D6D348ADEA4D94D263 /* RollService.swift */; };
 		B163C6D33D32933E1570FD67 /* PhotoTags.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24DE0B6E57BFD6B0DE4804A0 /* PhotoTags.swift */; };
 		B24553011D30469838CCA923 /* RollTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B7E5F0D581D43A4722CD6D9 /* RollTests.swift */; };
+		B41748B01C12B5094E9B9BF2 /* RollSnapshotStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59600C468EC84C1B685DC31D /* RollSnapshotStoreTests.swift */; };
 		B41C5A5F6F23A802A9298F70 /* PostDetailSwipeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 950384B61AF8316D3517594E /* PostDetailSwipeTests.swift */; };
 		B55F9D476602872837F6CCDA /* NotificationAuthorizationStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22ABBF2BC75AB4F195F7798E /* NotificationAuthorizationStateTests.swift */; };
 		B5E40248AEAEF1C69C495751 /* CameraView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BF0928EB05A780C49AC79C8 /* CameraView.swift */; };
@@ -401,6 +403,7 @@
 		5698D3272C4A1C9EAAFBAC56 /* EmojiCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmojiCatalog.swift; sourceTree = "<group>"; };
 		57C3947082A0D5033379C318 /* SoundFX.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoundFX.swift; sourceTree = "<group>"; };
 		5800B0C3519E670DCF2D7E54 /* FeedPreviewDemoHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedPreviewDemoHost.swift; sourceTree = "<group>"; };
+		59600C468EC84C1B685DC31D /* RollSnapshotStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollSnapshotStoreTests.swift; sourceTree = "<group>"; };
 		5A194AB5EE948FBA8903D086 /* AppInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppInfo.swift; sourceTree = "<group>"; };
 		5AC2BCF4765864C0FBC18FD1 /* MentionSuggestions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MentionSuggestions.swift; sourceTree = "<group>"; };
 		5CCFCD9A339AA06647B7A1E1 /* RollCarouselView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollCarouselView.swift; sourceTree = "<group>"; };
@@ -421,6 +424,7 @@
 		6D27190BB76B91D0B8A60887 /* CommentComposer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommentComposer.swift; sourceTree = "<group>"; };
 		6D3CAAA6097E82270360343F /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		6DFDB4DE1DC1004D009E8E05 /* VersionGateDecisionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VersionGateDecisionTests.swift; sourceTree = "<group>"; };
+		6E55D7D1D90A614F669F3462 /* RollSnapshotStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollSnapshotStore.swift; sourceTree = "<group>"; };
 		6F68633DB99EF94E78C8EB57 /* RenditionBudgetTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RenditionBudgetTests.swift; sourceTree = "<group>"; };
 		70A90D72A092EB706FDA25E4 /* PhotoPagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoPagerTests.swift; sourceTree = "<group>"; };
 		7148B48A915D24BFBDEB23E0 /* NotificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationService.swift; sourceTree = "<group>"; };
@@ -814,6 +818,7 @@
 				7B6C985931C1B2E532B36448 /* RestorableOverride.swift */,
 				C4E4408D99715C85F7767AC1 /* RollLiveActivity.swift */,
 				633F60D6D348ADEA4D94D263 /* RollService.swift */,
+				6E55D7D1D90A614F669F3462 /* RollSnapshotStore.swift */,
 				85C6F9C983DFB1E2ECF57092 /* SignedURLStore.swift */,
 				C5CF40AEDBC8243F837F246F /* UndoCenter.swift */,
 				3CCBDC1090FC4BA019AF8114 /* Usage.swift */,
@@ -958,6 +963,7 @@
 				AF40E37CA14E67865D69A9FF /* RollPickerDestinationsTests.swift */,
 				86B99F48D57C1AE3CE9295E3 /* RollRevealAttributesTests.swift */,
 				8160A75F102252932FFC426A /* RollServiceTests.swift */,
+				59600C468EC84C1B685DC31D /* RollSnapshotStoreTests.swift */,
 				4B7E5F0D581D43A4722CD6D9 /* RollTests.swift */,
 				1BFC8CFD92B4F94277E5880B /* ShareToFeedSheetTests.swift */,
 				0468434B3C641D2DCB6BE2D7 /* SignedURLStoreTests.swift */,
@@ -1200,6 +1206,7 @@
 				C58842FF37430F328241A087 /* RollPickerDestinationsTests.swift in Sources */,
 				232A43F389F6547C475A1F7B /* RollRevealAttributesTests.swift in Sources */,
 				0BA7F7EE88D072B80A399232 /* RollServiceTests.swift in Sources */,
+				B41748B01C12B5094E9B9BF2 /* RollSnapshotStoreTests.swift in Sources */,
 				B24553011D30469838CCA923 /* RollTests.swift in Sources */,
 				55270E18B1D6C49F02C7C77D /* ShareToFeedSheetTests.swift in Sources */,
 				974360CA7307549DBE96DC56 /* SignedURLStoreTests.swift in Sources */,
@@ -1346,6 +1353,7 @@
 				4BE42F2FEEBD084E5CF3A4D9 /* RollRevealView.swift in Sources */,
 				4713DA3E90251C2890E86E86 /* RollRevealViewModel.swift in Sources */,
 				B09880D2185738A73550E7C6 /* RollService.swift in Sources */,
+				AD4926555CC9EFA49CCB8C06 /* RollSnapshotStore.swift in Sources */,
 				322A5492683DD8B6D58B77C6 /* RollsView.swift in Sources */,
 				BB6BDEA19FBF1F3F069D1B18 /* ShareImage.swift in Sources */,
 				4D1C56A98C6D0528C19AF61D /* SharePreviewSheet.swift in Sources */,

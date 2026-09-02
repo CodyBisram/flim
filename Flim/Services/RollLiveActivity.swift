@@ -44,6 +44,35 @@ enum RollLiveActivity {
         }
     }
 
+    /// Ends and re-requests this roll's activity so a fresh `rollName` takes effect.
+    ///
+    /// `rollName` lives on `RollRevealAttributes`, not `ContentState`, and ActivityKit attributes
+    /// are immutable for the life of an activity: `update()` can only touch `content.state`. So a
+    /// rename of a still-developing roll has exactly one way to reach the lock screen, ending the
+    /// old activity and requesting a new one, which is what this does, carrying over every other
+    /// field from the running activity's own state (shot count, reveal time, develop-from, accent)
+    /// so nothing but the name changes.
+    ///
+    /// A no-op if nothing is currently running for this roll: there is no card to fix, and
+    /// starting one fresh here would show a lock-screen card for a roll nobody has opened since it
+    /// started developing, which `sync` already deliberately avoids doing on its own.
+    static func rename(rollId: UUID, to newName: String) {
+        guard let activity = running(rollId) else { return }
+        guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
+        let state = activity.content.state
+        guard !RollRevealAttributes.hasRevealed(state.revealAt) else { return }
+        Task {
+            await activity.end(nil, dismissalPolicy: .immediate)
+            let attributes = RollRevealAttributes(rollId: rollId.uuidString, rollName: newName)
+            do {
+                _ = try Activity.request(attributes: attributes,
+                                         content: .init(state: state, staleDate: state.revealAt))
+            } catch {
+                // Same as sync(): nothing to recover from if the system declines a fresh request.
+            }
+        }
+    }
+
     /// Called opportunistically once a roll is seen to have developed, there's no push-driven
     /// lifecycle here, so a roll's Live Activity only ends the next time the app is opened after
     /// it develops, not the instant it does. A no-op if nothing is running (never started, or

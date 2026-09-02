@@ -110,6 +110,12 @@ struct ContentView: View {
             photos.resetForAccountChange()
             feed.resetForAccountChange()
             rolls.resetForAccountChange()
+            // Restored synchronously, right here, rather than waiting for RollsView's own
+            // `fetchRolls` call: this runs before MainTabView (and so RollsView) ever mounts for
+            // the new account, so the Rolls tab's very first render already has cover paths to
+            // paint instead of a blank tile through the whole first network round trip. Named
+            // for `newId` only, never the departing `previousId`.
+            if let newId { rolls.restore(for: newId) }
             // Covers launch with a restored session (previousId starts nil), sign-in, and a
             // straight account-to-account switch; see FeedSeenStore's own doc for why marks
             // must be namespaced by whoever is actually signed in.
