@@ -9,28 +9,55 @@ Statuses: `queued`, `blocked: <what on>`, `owner`, `decided: <what>`.
 
 ## 1.5.1, ranked
 
-Written 2026-08-30, with 1.5.0 (build 327) submitted and in review.
+Written 2026-08-30, with 1.5.0 (build 327) submitted and in review. Review cleared 2026-09-01.
 
 ### 1. The look: flash falloff, then grain
 
-**The argument for doing this FIRST inverted when 1.5 shipped.** It used to be "land it before
-1.5 or the feed carries two looks permanently". That gate is closed, so the seam is now certain
-wherever the change lands, and every day 1.5 is live adds photographs to the old side of it.
-Do it early in 1.5.1 to keep the seam as small as it can still be.
+**Flash falloff SHIPPED 2026-08-31** (`dec7b57`). It was the single largest gap between FLIM and
+an actual disposable, and was absent rather than mistuned: flash frames had 0.00% of pixels below
+0.04 where a real disposable has 15 to 35%. Blur luminance to a coarse illumination map, apply a
+downward gamma keyed off it, gated on the EXIF flash-fired bit so it does not crush ambient night
+scenes.
 
-- **Flash falloff** is the single largest gap between FLIM and an actual disposable, and it is
-  absent rather than mistuned: flash frames have 0.00% of pixels below 0.04 where a real disposable
-  has 15 to 35%. Simulable from a single capture because the falloff physically happened and the
-  ISP tone-mapped it away; blur luminance to a coarse illumination map, apply a downward gamma
-  keyed off it, GATE ON THE EXIF FLASH-FIRED BIT or it crushes ambient night scenes. ~1 day.
-- **Grain** is the inverse of pushed 400/800 on all three axes: monochrome where it should be
-  chroma, midtone-peaked where it should be shadow-peaked, fixed where it should scale with
-  exposure. ~1 day. Where it sits in the pipeline is right and hard-won; only the mask, saturation
-  and amount are wrong.
+**Grain is BUILT, 2026-09-01, sitting in the working tree, pending owner sign-off on the
+previews.**
 
-Neither needs a LUT refit, which matters: a refit has already been MEASURED as a regression.
-Both trip the look-regression pin, so it needs re-recording, and flash needs a NEW synthetic
-fixture or it is pinned by exactly one photograph.
+- `GrainProfile` (`FilmStock.swift`): the shipped stock uses `.pushed` (shadow-peaked anchors
+  written in coverage, chroma 0.25, evPush 0.35); the old profile is kept as `.midtone`.
+  `flim.cube` is untouched. `grain` amplitude stays 0.06.
+- `GrainComposite`'s default flipped from `.sourceOver` to `.meanPreserving` on all five
+  signatures. This was the change parked on 2026-08-17 for the seam reason that flash falloff has
+  since made moot.
+- The measurement that reframed the work: the tone mask was linearised twice between
+  `CIToneCurve` and `CIBlendWithMask`, so the shipped curve asked for 0.30 shadow coverage and
+  landed 0.0054. Half of "no grain in shadows" was a unit error. Anchors are now written in
+  coverage, and a test holds the code to the rendered mask.
+- Two hypotheses the measurement contradicted: chroma grain does NOT recover saturation (moves
+  the gap by less than 0.0005); removing the white veil (the mean-preserving composite) is what
+  did (median saturation gap -0.086 to -0.032). Shadow-peaked grain on the old source-over
+  composite is impossible (saturation gap -0.212, p5 0.153 on parkview-noflash), so the composite
+  flip was forced, not chosen. evPush is bounded, not fitted: the calibration set has no exposure
+  spread.
+- Results, median over 12 in-sample pairs: shadow texture ratio to Lapse 0.37 to 1.04; whole-frame
+  localContrast ratio 0.67 to 1.01; saturation gap -0.086 to -0.032; mean gap -0.023 to -0.043
+  (every frame about 0.02 darker, the veil was hiding a LUT-side tone gap, which belongs to
+  colour, and colour stays closed). Hold-out hallway-flash shadow ratio 0.14 to 0.86.
+- Costs: feed card bytes median +5.7%, worst +44% on dark scenes; flash night masters can nearly
+  double. Four scenes now slightly overshoot Lapse saturation (worst wide-dim +0.070).
+- Look pin re-recorded, new `shadowRamp` synthetic fixture. Full suite green except the two
+  pre-existing EmojiCatalogTests Flags failures.
+- Owner feel-test shots: a flat bright wall or sky (midtone grain is deliberately about 5x lower,
+  risk of reading digitally smooth, the dial is the 0.40 anchor's coverage), a black object in a
+  lit room, a flash shot in a dark room, a night street with point lights, and an old photo beside
+  a new one in the feed.
+- Previews: `pairs/_grain_preview/` (gitignored), `{wide-lit, restaurant-a, parkview-flash,
+  hallway-flash, steering, plush}_before.jpg`, `_after.jpg`, `_crop-darkest-1to1.png`.
+- Revert: `grainProfile: .pushed` to `.midtone` in `FilmStock.original`, plus
+  `GrainComposite = .meanPreserving` back to `.sourceOver` on the five processor signatures, then
+  re-record the pin.
+- Status: `owner` (look at the previews, approve or name a dial).
+
+Neither needed a LUT refit, which matters: a refit has already been MEASURED as a regression.
 
 DO NOT open colour. Warmth, greens and the black floor all need the cube, and the cube was fitted
 to match Lapse rather than film. Changing the target is a calibration shoot, not a task.
@@ -49,36 +76,84 @@ Owner deferred these from 1.5 deliberately. They show a square-grid Darkroom, a 
 no longer exists, and a reveal with a progress bar; the invite screenshot misdescribes a mechanic
 that is now finite. Reshoot AFTER the look work, or they get shot twice.
 
-### 4. Finish the on-device caching
+The look work they were waiting on is now built (grain, see item 1) and waiting on owner
+sign-off, not on more engineering. Screenshots can follow that sign-off.
 
-The tile and avatar gating is fixed. What remains: persist `RollService.coverPaths` per account so
-the first frame can attempt a disk-cache hit before any network call returns. MUST be scoped to the
-signed-in user and dropped in `resetForAccountChange()`, or one account's cover leaks into
-another's tile.
+### 4. Finish the on-device caching (DONE 2026-09-01)
+
+`RollSnapshotStore` persists `rolls` and `coverPaths` as one JSON file per account, under
+Application Support at `RollSnapshots/<uid>.json`. `RollService.restore(for:)` loads
+synchronously, keyed on the explicit uid, and is a no-op once memory already holds anything;
+`ContentView` calls it right after `resetForAccountChange()` on account change, and
+`fetchRolls(for:)` calls it before its first `await`. Every mutation (fetch, create, join,
+rename, `setRollCover`, forget) rewrites the file under the epoch guard.
+
+Tests: `RollSnapshotStoreTests` and `RollServiceSnapshotTests` (cross-account isolation,
+stale-epoch write cannot overwrite the current account's state).
+
+Known gap, mirrors `FailedUploadStore`/`FeedSeenStore`: no purge on sign-out or delete-account;
+`RollSnapshotStore.delete(for:)` exists and is unwired.
+
+Not verified: on-device first-frame timing. Needs an airplane-mode relaunch on a device.
 
 ### 5. Hygiene, cheap and worth doing together
 
-- Delete the `invite_sent` analytics event. Zero rows ever against 44 real invites; ground truth is
-  `allowed_emails.note`. Deleting removes a trap, wiring it creates a second source that can
-  disagree.
-- The three owner-by-email sites (two edge functions, the auto-follow trigger). Nothing exploitable,
-  but three copies of an assumption already disproven is how it comes back.
-- `CachedImage.load()` needs a staleness guard on its three terminal writes; its decode runs in a
-  detached task outside the cancelled tree, so a stale result can overwrite a fresh one. Cosmetic.
-- `FilmStripGrid` keys rows by array position; deleting a photo mid-roll rebuilds later cells.
-  Key on `row.first?.id`. Cosmetic.
-- `RollCarouselView` is 331 lines with no entry point. Delete pending an owner call.
+- `invite_sent`: the deletion above is REVERSED, do not delete it. The 2026-08-29 note said "never
+  wired on the client"; that was wrong. It has fired from the two roll share sheets' `onComplete`
+  since 2026-08-08 (`03cfcee`), and 2026-08-31 (`f7ec75b`) deliberately added three tap-fired sites
+  (reveal, profile invite sheet, feed empty state) alongside per-surface `usage_events`;
+  `2026-08-31_invite_source_events.sql` documents that `invite_sent` "still fires the once-ever
+  funnel milestone", and `docs/METRICS.md`'s invite funnel reads it as the sent step. Production
+  still holds zero rows as of 2026-09-01, which is consistent: the tap-fired sites are post-1.5.0
+  and unshipped, and the older share-sheet `onComplete` path evidently never fires (`ShareLink`
+  reports no completion). Expect rows once 1.5.1 ships; if none arrive, that is the bug to chase,
+  not the event. Status: `decided: keep`.
+- The three owner-by-email sites: DONE as a migration, NOT YET DEPLOYED.
+  `supabase/migrations/2026-09-01_pin_owner_identity_everywhere.sql` adds `public.owner_user_id()`
+  (the single pinned UUID), rewrites both `is_owner` variants and `auto_follow_owner()` to read
+  from it, and `send-social-push` / `send-daily-digest` now call it by RPC with a fail-closed
+  fallback, cached per invocation. Verified in a throwaway Postgres container: applies twice
+  cleanly, grants correct (authenticated + service_role, not anon), the auto-follow trigger behaves
+  identically in all three cases, `deno check` passes on both functions. Owner step: apply the
+  migration FIRST, then `supabase functions deploy send-social-push --no-verify-jwt` and the same
+  for `send-daily-digest`. Deploying functions first only degrades (no owner push tokens, covered-
+  post exemption fails closed) rather than errors. Status: `owner: apply + deploy`.
+- `CachedImage.load()` staleness guard: DONE. A `loadGeneration` counter bumped at the top of
+  `load()`; each of the three post-await writes checks its captured generation before touching
+  state. No testable seam, so no test.
+- `FilmStripGrid` row keys: DONE. `FilmStripLayout.rowKey(for:offset:)` keys rows on the first
+  item's id with a non-colliding empty-row fallback; tests in `FilmStripLayoutTests` include the
+  deletion scenario.
+- `RollCarouselView` deletion: unchanged, still an owner call.
 
-### 6. After review clears, not before
+### 6. Now queued: 1.5 review cleared 2026-09-01
 
-- `public.profiles` / `security_invoker`. The precondition changed without anyone noticing:
-  `authenticated` now HAS column-scoped SELECT on `users` (schema.sql:1406), so the only remaining
-  blocker is `anon`, which reads profiles but has no SELECT on users. No app caller appears to read
-  profiles without a session, but confirm against API logs before revoking, then flip. See
-  [[flim-profiles-view-security]], which is stale on exactly this point.
-- Roll rename leaves the widget and Live Activity stale. `renameRoll`/`setRollCover` never call
-  `WidgetSync.refresh()`, and `rollName` is baked into immutable Live Activity attributes so the
-  only fix is ending and re-requesting the activity.
+Both items below were only gated on 1.5 App Review, which cleared 2026-09-01. Both are now built.
+
+- `public.profiles` / `security_invoker`: DONE as a migration 2026-09-02, NOT YET APPLIED.
+  `supabase/migrations/2026-09-02_profiles_security_invoker.sql` grants `hidden_from_discovery`
+  to `authenticated` (the view exposes it and the column grant did not; flipping without this
+  breaks every profile read for everyone), sets `security_invoker = on`, and revokes `anon`
+  SELECT on the view. Anon losing profiles is by design: the site only calls RPCs, no SQL
+  function reads `profiles`, and every app read is in FeedService/RollService under a session.
+  The API log endpoint on this plan returns too few rows to prove it from traffic; the code audit
+  is the evidence. Verified in a local Supabase stack: authenticated reads another user's row
+  with all eight columns, `email`/`invite_code` stay denied, anon is denied, UPDATE/DELETE
+  through the view stay denied, applies twice cleanly. Independent of the 2026-09-01
+  owner-identity migration. No Swift change. Status: `owner: apply`.
+- `schema.sql` never folded in `2026-08-17_profile_identity.sql`: no `signup_ordinal` column,
+  trigger, or grant exists in schema.sql, though production has all three. A from-scratch
+  environment built from schema.sql alone lacks the column. Found 2026-09-02 while mirroring the
+  profiles change (adding `signup_ordinal` to the mirrored grant broke a fresh load). Fold it in
+  as its own change. Status: `queued`.
+- Roll rename leaves the widget and Live Activity stale: DONE. `renameRoll` and `setRollCover` now
+  call `WidgetSync.refresh()`. `RollLiveActivity.rename(rollId:to:)` ends the running activity for
+  that roll and re-requests it with the new name, carrying over the running activity's own content
+  state (shot count, reveal time, develop-from, accent); no-op if none is running. Release build
+  passes. Not verified on device: that the lock-screen card actually swaps names mid-countdown, and
+  that the widget visibly refreshes on rename or re-cover. Known edge: if the fresh
+  `Activity.request` is declined, the roll has no card until the next `sync()`, same as any other
+  request failure.
 
 ### The strategic one, not a task
 
@@ -100,10 +175,12 @@ Owner confirmed 2026-08-29 he never approved it. Nothing to remove in code. The 
 asserted it, including the badge rule that cited it as a design constraint, are corrected.
 
 
-### owner: APPLY THE PRIVILEGE ESCALATION FIX
+### done: the privilege escalation fix is APPLIED (verified against production 2026-09-01)
 
-`supabase/migrations/2026-08-29_close_users_privilege_escalation.sql`. Live and exploitable
-against production until it is run. Does not depend on any app release.
+`supabase/migrations/2026-08-29_close_users_privilege_escalation.sql`. Confirmed live by querying
+the database: `lock_users_privileged_columns_trigger` exists, `is_owner()` no longer mentions
+`email`, and `authenticated` holds UPDATE on exactly `avatar_path, bio, cover_path, display_name,
+username` with no table-wide grant. The hole is closed.
 
 Found 2026-08-29 by a security pass, then confirmed directly against the live database:
 `authenticated` held TABLE-WIDE UPDATE on `public.users` (every column: `email`, `id`,
@@ -123,20 +200,16 @@ profile UPDATE still work. Verified against production: the pinned UUID is cody 
 `redeem_invite` / `credit_invite_earnback` / `delete_account` are all postgres-owned SECURITY
 DEFINER, which is what makes the trigger's `current_user` exemption correct.
 
-AFTER APPLYING, re-verify: signup still works, profile edit still works, invite redemption still
-decrements.
+Still owed, on device rather than in SQL: signup still works, profile edit still works, invite
+redemption still decrements. One TestFlight check each.
 
 ### follow-up: other places that resolve "the owner" by email
 
-Same false assumption the fix above disproved, but none of these grant privilege, so they were
-left out of the urgent fix: `supabase/functions/send-social-push/index.ts`,
-`send-daily-digest/index.ts`, and the auto-follow-owner trigger in `schema.sql` all compare
-`lower(email)`. Worst case is a wrong push recipient or a wrong auto-follow, not escalation.
+Superseded, see item 5 in "1.5.1, ranked" above: done as a migration, not yet deployed.
 
 ### follow-up: `invite_sent` analytics event is dead
 
-Zero rows ever, despite 6 people sending 44 real invites. Never wired on the client. Wire it or
-delete it before any dashboard comes to depend on it reading zero.
+Superseded, see item 5 in "1.5.1, ranked" above: the event is not dead, keep it.
 
 
 ### done 2026-08-29 — invites, the real mechanic (design overhaul 3c)
