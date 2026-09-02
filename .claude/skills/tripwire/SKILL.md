@@ -1,6 +1,6 @@
 ---
 name: tripwire
-description: Weekly production health check — egress vs the 5GB launch gate, Disk IO and pg_net bloat, cron cadences, push backlog. Read-only; reports PASS/ALERT per check and logs one line to docs/TRIPWIRE.md.
+description: Weekly production health check, egress run-rate against the R2 trigger, Disk IO and pg_net bloat, cron cadences, push backlog. Read-only; reports PASS/ALERT per check and logs one line to docs/TRIPWIRE.md.
 ---
 
 # FLIM tripwire
@@ -51,7 +51,7 @@ Then append exactly one line to `docs/TRIPWIRE.md` (create the file with a one-l
 header if missing):
 
 ```
-- 2026-08-31: egress 1.2GB (proj 2.9GB) PASS · pg_net 4MB PASS · crons PASS · backlog 0 PASS · db 412MB (+2%)
+- 2026-08-31: egress mtd 1.2GB, run-rate 2.9GB/mo PASS · pg_net 4MB PASS · crons PASS · backlog 0 PASS · db 412MB (+2%)
 ```
 
 The log line is the trend memory for check 5 and for spotting slow drift; never skip it.

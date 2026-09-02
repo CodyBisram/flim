@@ -31,11 +31,12 @@ Never push on your own initiative.
 Refuse to push until all are true:
 1. The owner explicitly asked to push.
 2. `sim-verifier` supplied green RELEASE evidence for the current revision.
-3. Any new database table or column has been applied through `schema.sql`, confirmed by
-   the owner.
+3. Any migration in `supabase/migrations/` that a change depends on has been applied to
+   production, confirmed by the owner.
 4. Risky or broad changes received a `SHIP` or accepted `SHIP WITH NITS` verdict.
 5. Staged files contain no secrets or personal photos.
-6. Commit messages contain no Claude or AI references and no em dashes.
+6. Commit subjects and bodies are in the owner's voice, with no em dashes and no tool or
+   assistant mentions outside the trailer the tooling appends.
 7. Entitlement and signing prerequisites are complete.
 
 Do not independently repeat a full simulator pass. Validate that the supplied evidence
@@ -55,19 +56,16 @@ step logs needed for diagnosis rather than dumping the entire workflow.
 `gh run view <id> --json status` and poll until `completed` rather than trusting a
 single watch invocation.
 
-A green "Deploy to TestFlight" proves DELIVERY, not existence: the lane uses
-`skip_waiting_for_build_processing`, so registration happens later, unwatched. Build 237
-took over NINETY MINUTES to appear in App Store Connect on 2026-08-20 while its run sat
-green; the owner tested the previous build believing it was the fix, and a redundant
-redelivery was dispatched against a "phantom" that was merely slow. After any deploy:
-read the run log for "Latest upload for version X is build: N" (the new build is N+1),
-then poll App Store Connect until that number appears as PROCESSING or VALID before
-telling the owner it exists, and treat absence as slowness before treating it as loss.
+A green "Deploy to TestFlight" proves delivery, not existence: the lane uses
+`skip_waiting_for_build_processing`, so App Store Connect registers the build later,
+unwatched, and has taken over ninety minutes. After any deploy, read the run log for
+"Latest upload for version X is build: N" (the new build is N+1), then poll App Store
+Connect until that number appears as PROCESSING or VALID before telling the owner it
+exists. Absence is slowness until proven otherwise; do not redeliver against it.
 
-Never map runs to builds by "newest in ASC after the run finished"; with pushes minutes
-apart that attributes the previous run's build to the new run. Match the log's computed
-number, and parse ASC timestamps with their UTC offsets (`uploadedDate` carries -07:00;
-truncating it cost an hour of debugging against impossible timelines).
+Map runs to builds by the log's computed number, never by "newest in ASC after the run
+finished", which attributes the previous run's build when pushes are minutes apart. Parse
+ASC timestamps with their UTC offsets (`uploadedDate` carries -07:00).
 
 ## App Store Connect API
 
@@ -82,11 +80,10 @@ number, which only the owner can fetch.
 ## The update nudge
 
 `app_release_gate` (`minimum_version`, `latest_version`) is read by VersionGateService
-on launch and foreground, and ships dormant at `0.0.0`/`0.0.0`: the nudge has never
-fired for anyone. When a version goes live on the App Store, set `latest_version` to
-that string so existing installs see the nudge. NEVER raise `minimum_version` above a
-build already approved and released; it hard-blocks those installs with no client-side
-recovery.
+on launch and foreground. When a version goes live on the App Store, set `latest_version`
+to that string so existing installs see the nudge; `minimum_version` stays `0.0.0`.
+Never raise `minimum_version` above a build already approved and released: it
+hard-blocks those installs with no client-side recovery.
 
 ## Signing constraints
 
@@ -122,8 +119,8 @@ weaken that gate.
 
 ## Safety
 
-Never print secrets. Supabase may pause or hit free-tier egress limits, so surface the
-production-tier decision at submission time without changing billing.
+Never print secrets. Never change billing or the Supabase plan; the project is on Pro
+and the weekly tripwire owns the egress decision.
 
 Never use em dashes in user-facing release copy or any repository documentation (owner rule, extended 2026-07-18).
 

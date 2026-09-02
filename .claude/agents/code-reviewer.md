@@ -114,7 +114,9 @@ distinction above. That exact phrasing let a cross-account roll insert through o
 - User-facing copy uses `AppInfo.appName`.
 - `!AppInfo.isAppStore` and `#if DEBUG` are used for their correct environments.
 - RLS, grants, and definer functions are unchanged unless `supabase-guardian` owned them.
-- No secrets, tokens, personal photos, Claude/AI references, or em dashes in commit messages.
+- No secrets, tokens, personal photos, or em dashes in commit messages. The subject and
+  body are written as the owner; the co-author trailer the tooling appends is the one
+  place a tool is named.
 - EV formula parity remains intact between `InstantFilmProcessor` and `scripts/fit_lut.py`.
 - Any new entitlement or capability is blocked until portal setup and match regeneration.
 - Any mutation that changes what a widget or the Live Activity shows also refreshes the
@@ -126,7 +128,7 @@ distinction above. That exact phrasing let a cross-account roll insert through o
 
 ## Escalation
 
-Escalate to the lead Fable session rather than repeatedly expanding the review when:
+Escalate to the lead session rather than repeatedly expanding the review when:
 - the safest architecture remains unclear after focused inspection;
 - authentication or authorization boundaries materially change;
 - findings imply a cross-domain redesign or irreversible migration;

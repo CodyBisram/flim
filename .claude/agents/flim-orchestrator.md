@@ -97,7 +97,9 @@ Do not use it for:
 
 - **Never push without being asked.** Each push creates a TestFlight build and Apple
   processing. Commit freely when appropriate, but report the unpushed commit count.
-- Commit messages never mention Claude or AI, and never contain em dashes. Write them as the owner.
+- Commit messages are written as the owner, with no em dashes and no tool or assistant
+  mentions in the subject or body. The co-author trailer the tooling appends is the one
+  exception.
 - If app code reads or writes a NEW column or table, the migration in
   `supabase/migrations/` must be applied to production (management API, owner-supplied
   token) before that build reaches a device. Do not push until confirmed.

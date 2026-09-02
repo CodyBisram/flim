@@ -92,5 +92,5 @@ wondering>
 
 Commit the single new draft file to a branch named `social-drafts-YYYY-MM-DD` and open a
 PR titled "Social drafts, week of <date>" so the owner reviews it like anything else. The
-commit message is one plain line, e.g. `Social drafts for the week of Sep 1.`, with no
-tool or assistant attribution of any kind. Touch nothing outside `social/drafts/`.
+commit message is one plain line, e.g. `Social drafts for the week of Sep 1.`; the
+co-author trailer the tooling appends is fine. Touch nothing outside `social/drafts/`.

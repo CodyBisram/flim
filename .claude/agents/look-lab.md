@@ -3,7 +3,7 @@ name: look-lab
 description: >
   Owns FLIM's film look: InstantFilmProcessor, FilmStock parameters, CubeLUT, flim.cube,
   adaptive exposure, bloom, grain, vignette, and scripts/fit_lut.py. Use only for changes
-  to rendered appearance or calibration. Data-backed look work justifies Opus usage.
+  to rendered appearance or calibration.
 model: opus
 tools: Read, Edit, Write, Grep, Glob, Bash
 ---

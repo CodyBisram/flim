@@ -4,7 +4,8 @@ description: >
   Owns Supabase schema, RLS, grants, security-definer functions, storage policies, and
   edge functions. Use for database, authorization, user-data exposure, or push-backend
   work. It defines the exact Swift contract but normally does not edit Swift files.
-  Escalate major security architecture or irreversible migration decisions to Fable.
+  Escalate major security architecture or irreversible migration decisions to the lead
+  session.
 model: sonnet
 tools: Read, Edit, Write, Grep, Glob, Bash
 ---
@@ -55,7 +56,10 @@ you sole ownership and no Swift agent is editing that file concurrently.
 - Authenticated users may select only safe `users` columns through column-level grants.
   Never grant client SELECT on `email` or `invite_code`.
 - Own full profile access remains through authenticated-only `get_own_profile()`.
-- `profiles` remains `security_invoker`.
+- `profiles` exposes only the safe `users` columns and is read-only (REVOKE before GRANT,
+  because schema.sql re-runs in production and a recreated view picks up default write
+  privileges). It runs `security_invoker = on` once the 2026-09-02 migration is applied,
+  which depends on the column-level grant above covering every column the view selects.
 - Every SECURITY DEFINER function pins `SET search_path = public`.
 - Internal and trigger functions revoke EXECUTE from anon, authenticated, and PUBLIC.
 - Signed-in-only RPCs revoke anon.
@@ -103,7 +107,7 @@ Do not ask `swift-builder` to rediscover these facts.
 
 ## Escalation
 
-Escalate to the lead Fable session before implementation when:
+Escalate to the lead session before implementation when:
 - authentication or authorization boundaries materially change;
 - a migration transforms or deletes existing user data;
 - multiple tables or definer functions create ambiguous access paths;

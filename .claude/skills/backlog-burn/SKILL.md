@@ -1,6 +1,6 @@
 ---
 name: backlog-burn
-description: One bounded iteration of mechanical cleanup — tests for untested pure logic, doc drift, provably dead code — on a branch, verified, never pushed. Run as `/loop /backlog-burn` for a burn session. Never features, never product judgment.
+description: One bounded iteration of mechanical cleanup (tests for untested pure logic, doc drift, provably dead code) on a branch, verified, never pushed. Run as `/loop /backlog-burn` for a burn session. Never features, never product judgment.
 ---
 
 # FLIM backlog burn
@@ -47,8 +47,8 @@ skill; when in doubt about whether an item qualifies, it does not.
 4. Verify before every commit: full build plus FlimTests via the sim-verifier toolkit
    commands. A test-only item must FAIL before the fix exists or PASS for new coverage;
    a dead-code item must build clean after removal.
-5. Commits: one per item, one plain line in the repo's voice, no tool or assistant
-   attribution of any kind.
+5. Commits: one per item, one plain line in the repo's voice. The co-author trailer the
+   tooling appends is fine.
 6. Report per iteration using the agent-completion contract (STATUS / CHANGED /
    VERIFIED / NOT VERIFIED / RISKS / HANDOFF).
 

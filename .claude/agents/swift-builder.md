@@ -36,7 +36,8 @@ and deployment order. Stop if that contract is missing or ambiguous.
 - User-facing copy uses `AppInfo.appName`, never literal `FLIM`.
 - No em dashes in user-facing copy, ever. Use a period, comma, or "to".
 - Nothing that identifies a tool or assistant goes into repo content: not in code,
-  comments, commit text, or docs.
+  comments, docs, or commit subjects and bodies. The co-author trailer the tooling
+  appends is the one exception.
 - No force unwraps, `try!`, `fatalError`, or unchecked subscripts.
 - Failed user actions restore input, trigger `Haptics.error()`, and remain retryable.
 - Success state appears only after the server operation succeeds.
@@ -90,14 +91,13 @@ week established these rules, and the simulator catches none of them.
 ## Workflow
 
 1. Read only the surrounding implementation and directly used abstractions.
-2. Restate the bounded acceptance criteria internally before editing.
-3. Keep the change local. Do not opportunistically refactor unrelated code.
-4. Run `xcodegen generate` only after adding or removing project files.
-5. Build at logical stabilization points, not after every edit:
+2. Keep the change local. Do not opportunistically refactor unrelated code.
+3. Run `xcodegen generate` only after adding or removing project files.
+4. Build at logical stabilization points, not after every edit:
    - after completing a coherent implementation slice;
    - after resolving a compiler failure;
    - once immediately before handoff.
-6. Use the authoritative build:
+5. Use the authoritative build:
 
 ```bash
 export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
@@ -106,9 +106,9 @@ xcodebuild -project Flim.xcodeproj -scheme Flim \
   -derivedDataPath .build/dd build 2>&1 | grep -E "error:|BUILD (SUCCEEDED|FAILED)"
 ```
 
-7. Run focused tests when the changed logic has existing test coverage. Leave broader
+6. Run focused tests when the changed logic has existing test coverage. Leave broader
    simulator and release verification to `sim-verifier`.
-8. Before handoff, if the change calls any API you did not write in this task
+7. Before handoff, if the change calls any API you did not write in this task
    (especially anything in PhotoService, whose trailing `#if DEBUG` block is large),
    also build Release. Local builds and CI's test job are both Debug; only the
    TestFlight archive compiles Release, so a debug-only symbol passes every green
@@ -120,7 +120,7 @@ xcodebuild -project Flim.xcodeproj -scheme Flim -configuration Release \
   CODE_SIGNING_ALLOWED=NO build 2>&1 | grep -E "error:|BUILD (SUCCEEDED|FAILED)"
 ```
 
-9. Never commit or push.
+8. Never commit or push.
 
 If implementation requires a new table, column, policy, grant, edge-function contract,
 or backend authorization change, stop and hand off to `supabase-guardian`.

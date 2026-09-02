@@ -1,6 +1,6 @@
 ---
 name: babysit
-description: Post-push verification loop — watches origin/main and CI, rebuilds and tests locally on every new push, periodically does a Release-config build. Reports breakage only, fixes nothing. Run as `/loop /babysit` during work sessions.
+description: Post-push verification loop that watches origin/main and CI, rebuilds and tests locally on every new push, and periodically does a Release-config build. Reports breakage only, fixes nothing. Run as `/loop /babysit` during work sessions.
 ---
 
 # FLIM post-push babysitter
@@ -35,7 +35,7 @@ Keep the last-verified commit SHA in the session scratchpad directory as
    tests). Report compile failures; this is the check that otherwise waits for
    TestFlight to fail.
 4. On success: record the new SHA and stay quiet. One short line at most ("main at
-   <short-sha> builds, 338 tests pass, CI green"). The loop's value is silence that
+   <short-sha> builds, <N> tests pass, CI green"). The loop's value is silence that
    means something.
 
 ## Loop pacing
