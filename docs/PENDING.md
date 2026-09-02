@@ -153,6 +153,90 @@ Both items below were only gated on 1.5 App Review, which cleared 2026-09-01. Bo
   end-and-rerequest helper built for it the day before are gone; `setRollCover` keeps its widget
   refresh. The `rolls: creator can update` policy stays because cover selection uses it. Do not
   re-propose renaming.
+
+### The strategic one, not a task
+
+Rolls hold 291 of 1,627 photos. Four in five shots never touch one, and rolls are positioned as the
+differentiator. Either the shared path becomes the default or the strategy follows what people
+actually do. Worth deciding before more is built on top of rolls.
+
+## Next up
+
+### done 2026-09-02: "still-no-shot" push sent to 7
+
+Second touch to everyone reachable who has never taken a photograph (six of them had the straight
+"Take a shot." on 2026-08-19). Copy chosen by the owner from four drafts: "We checked." / "Not a
+single shot. The camera is right there, and the first one can be of literally anything." Lands on
+the camera. Delivered to arielkarina, branb, hoodsplice, ksultan15, liza, madison, nibs; the other
+eight never-shot accounts hold no device token and cannot be reached.
+
+Found and fixed on the way: `send-one-shot-push` derived "has shot" by fetching photo rows, and
+PostgREST caps a select at 1000. With `photos` at 1808 rows the dry run named 13 people, six of
+whom had shot. Both cohorts now count per person with exact HEAD counts. The August send predates
+the cap and was correct. Any edge function that fetches rows from `photos` to derive a fact about
+users has this bug; `send-social-push` and `send-daily-digest` were not audited for it.
+
+### queued: `send-one-shot-push` accepts any caller
+
+Deployed with `--no-verify-jwt` and the handler checks nothing: anyone holding the function URL
+can trigger a campaign send. Bounded by the ledger (once per campaign name per person) and by the
+campaign allowlist, so the worst case is one early send of a known campaign, not arbitrary copy.
+Fix is a shared-secret header checked in the handler and set with `supabase secrets set`.
+
+### resolved 2026-08-29 — there is no 20-uploads-per-day cap
+
+A UX pass asked what a person sees when they hit it. Answer: nothing, because it does not exist.
+Searched the camera, PhotoService, every storage migration and the Cloudflare worker: no counter,
+no RPC, no RLS check, no client message. The only traces are two comments in already-applied
+migrations (`2026-08-17_usage_events.sql:88`, `2026-08-17_profile_identity.sql:275`) that refer to
+it as real. Those migrations are history and were left untouched; this note is the correction.
+
+Owner confirmed 2026-08-29 he never approved it. Nothing to remove in code. The memory files that
+asserted it, including the badge rule that cited it as a design constraint, are corrected.
+
+
+### done: the privilege escalation fix is APPLIED (verified against production 2026-09-01)
+
+`supabase/migrations/2026-08-29_close_users_privilege_escalation.sql`. Confirmed live by querying
+the database: `lock_users_privileged_columns_trigger` exists, `is_owner()` no longer mentions
+`email`, and `authenticated` holds UPDATE on exactly `avatar_path, bio, cover_path, display_name,
+username` with no table-wide grant. The hole is closed.
+
+Found 2026-08-29 by a security pass, then confirmed directly against the live database:
+`authenticated` held TABLE-WIDE UPDATE on `public.users` (every column: `email`, `id`,
+`invite_code`, `invite_uses_remaining`, `signup_ordinal`), the RLS policy is row-level so it
+permits writing any column of your OWN row, and `is_owner()` resolved the entire admin surface by
+matching `users.email`. So any signed-in user could PATCH their own email to the owner's and gain
+`approve_invite_request()` (insert any address into `allowed_emails`, a total bypass of the
+invite-only gate), every requester's raw email, and the moderation queue.
+
+Three layers: column-scoped grants replacing the table-wide ones; `is_owner()` re-pointed at the
+owner's immutable UUID; and a BEFORE UPDATE trigger pinning `id`/`email`/`invite_code`/
+`invite_uses_remaining` as defence in depth against a future GRANT mistake.
+
+Verified in a throwaway Postgres container: the exploit reproduces before and fails after, a
+simulated future grant-mistake is still blocked by the trigger alone, and signup INSERT plus
+profile UPDATE still work. Verified against production: the pinned UUID is cody / ordinal 1, and
+`redeem_invite` / `credit_invite_earnback` / `delete_account` are all postgres-owned SECURITY
+DEFINER, which is what makes the trigger's `current_user` exemption correct.
+
+Still owed, on device rather than in SQL: signup still works, profile edit still works, invite
+redemption still decrements. One TestFlight check each.
+
+### follow-up: other places that resolve "the owner" by email
+
+Superseded, see item 5 in "1.5.1, ranked" above: done as a migration, not yet deployed.
+
+### follow-up: `invite_sent` analytics event is dead
+
+Superseded, see item 5 in "1.5.1, ranked" above: the event is not dead, keep it.
+
+
+### done 2026-08-29 — invites, the real mechanic (design overhaul 3c)
+
+SHIPPED and APPLIED. All three migrations are live in production and verified against the
+database, not just assumed:
+
 - `2026-08-29_invite_quota.sql` — allowance of 3, defaults, non-negative CHECK, `redeem_invite`
   decrements. Verified: 50 accounts at 3, one NULL. **`signup_ordinal = 1` keeps NULL, meaning
   unlimited**, a deliberate seeding exception: that account had sent 26 of the app's 44 redeemed

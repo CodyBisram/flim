@@ -51,6 +51,7 @@ type Recipient = { userId: string; title: string; body: string; route: unknown }
 /// sendable, so a typo in the query string cannot invent one and bypass the claim ledger.
 const CAMPAIGNS: Record<string, () => Promise<Recipient[]>> = {
   "first-shot": firstShotCohort,
+  "still-no-shot": stillNoShotCohort,
   "waiting-to-sort": waitingToSortCohort,
 };
 
@@ -63,15 +64,26 @@ const CAMPAIGNS: Record<string, () => Promise<Recipient[]>> = {
 /// No minimum account age. Considered and rejected: a brand new account that has not shot yet is
 /// arguably mid-onboarding rather than disengaged, but the userbase is small enough that leaving
 /// people out costs more than the risk of nudging someone early.
-async function firstShotCohort(): Promise<Recipient[]> {
+/// Counted per person, server-side, never by fetching photo rows: PostgREST caps a select at
+/// 1000 rows, and once `photos` passed that (1808 rows on 2026-09-02) a row fetch silently
+/// dropped the shooters past the cap and reported them as never having shot. A dry run showed 13
+/// where the database said 7, and six people who had taken photographs would have been told they
+/// had not. One HEAD request per reachable account is a few dozen requests, once, by hand.
+async function neverShot(): Promise<string[]> {
   const reachable = await reachableUsers();
-  if (reachable.length === 0) return [];
+  const out: string[] = [];
+  for (const id of reachable) {
+    const { count, error } = await supabase
+      .from("photos").select("id", { count: "exact", head: true }).eq("user_id", id);
+    // An error is not a zero: a failed count must never turn into "never shot".
+    if (error || count === null) continue;
+    if (count === 0) out.push(id);
+  }
+  return out;
+}
 
-  const { data: shooters } = await supabase
-    .from("photos").select("user_id").in("user_id", reachable);
-  const hasShot = new Set(((shooters ?? []) as { user_id: string }[]).map((r) => r.user_id));
-
-  return reachable.filter((id) => !hasShot.has(id)).map((userId) => ({
+async function firstShotCohort(): Promise<Recipient[]> {
+  return (await neverShot()).map((userId) => ({
     userId,
     title: "Take a shot.",
     // Names the thing, on purpose. Saying "you haven't taken one yet" to somebody who has not is
@@ -94,6 +106,23 @@ async function firstShotCohort(): Promise<Recipient[]> {
   }));
 }
 
+/// The same cohort, a second touch. Sent 2026-09-02 to the seven people still reachable and still
+/// at zero, six of whom had the straight "Take a shot." two weeks earlier and did not bite.
+///
+/// A second nudge to the least engaged people on the platform has to be lighter than the first,
+/// not louder: the objection the first one answered (exposure) is answered again by "literally
+/// anything", and the rest is a joke at the app's expense rather than theirs. Owner picked this
+/// copy from four drafts. Its own campaign name so the ledger keeps the two touches apart, and so
+/// a re-run of `first-shot` still sends nothing.
+async function stillNoShotCohort(): Promise<Recipient[]> {
+  return (await neverShot()).map((userId) => ({
+    userId,
+    title: "We checked.",
+    body: "Not a single shot. The camera is right there, and the first one can be of literally anything.",
+    route: { t: "camera" },
+  }));
+}
+
 /// How long a deck has to have been sitting before it is worth mentioning.
 ///
 /// The point of the floor is the person it excludes. The heaviest poster on the platform had four
@@ -111,18 +140,18 @@ async function waitingToSortCohort(): Promise<Recipient[]> {
   const reachable = await reachableUsers();
   if (reachable.length === 0) return [];
 
-  const { data: rows } = await supabase
-    .from("photos").select("user_id, taken_at")
-    .in("user_id", reachable).eq("is_sorted", false);
-
+  // Same per-person counting as `neverShot`, for the same reason: a row fetch is capped at
+  // 1000 and would under-count decks past it. One request per person returns the exact count
+  // and the oldest unsorted frame together.
   const cutoff = Date.now() - STALE_DECK_HOURS * 3600_000;
   const decks = new Map<string, { count: number; oldest: number }>();
-  for (const r of (rows ?? []) as { user_id: string; taken_at: string }[]) {
-    const at = new Date(r.taken_at).getTime();
-    const d = decks.get(r.user_id) ?? { count: 0, oldest: at };
-    d.count++;
-    d.oldest = Math.min(d.oldest, at);
-    decks.set(r.user_id, d);
+  for (const id of reachable) {
+    const { data, count, error } = await supabase
+      .from("photos").select("taken_at", { count: "exact" })
+      .eq("user_id", id).eq("is_sorted", false)
+      .order("taken_at", { ascending: true }).limit(1);
+    if (error || !count || !data?.length) continue;
+    decks.set(id, { count, oldest: new Date((data[0] as { taken_at: string }).taken_at).getTime() });
   }
 
   const out: Recipient[] = [];
