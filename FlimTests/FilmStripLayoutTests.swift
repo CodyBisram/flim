@@ -86,4 +86,47 @@ final class FilmStripLayoutTests: XCTestCase {
         // Not a real layout, but the arithmetic must not go negative on the way there.
         XCTAssertGreaterThanOrEqual(FilmStripLayout.cellWidth(availableWidth: 4, columns: 3, gap: 40), 0)
     }
+
+    // MARK: - Row keys
+
+    private struct StubItem: Identifiable { let id: Int }
+
+    func testARowsKeyIsItsFirstItemsId() {
+        let row = [StubItem(id: 7), StubItem(id: 8), StubItem(id: 9)]
+        XCTAssertEqual(FilmStripLayout.rowKey(for: row, offset: 3), .item(7))
+    }
+
+    func testAnEmptyRowFallsBackToItsOffset() {
+        let row: [StubItem] = []
+        XCTAssertEqual(FilmStripLayout.rowKey(for: row, offset: 5), .empty(5))
+    }
+
+    func testDeletingAPhotoFromAnEarlierRowChangesOnlyThatRowsKey() {
+        // The bug this fixes: rows used to be keyed by array position, so removing frame 0 from a
+        // 6-photo roll shifted every later frame's row and `ForEach` treated every one of them as
+        // "changed", not just the first. Keyed on the row's own first id, only the row that lost
+        // its leading frame gets a new key; every row after it keeps the key it always had, because
+        // its first item's id never moved.
+        let before = (0..<6).map { StubItem(id: $0) }
+        let beforeRows = FilmStripLayout.strips(count: before.count, columns: 3).map { Array(before[$0]) }
+        let beforeKeys = beforeRows.enumerated().map { FilmStripLayout.rowKey(for: $1, offset: $0) }
+
+        let after = before.filter { $0.id != 1 }   // delete the 2nd photo, mid-first-row
+        let afterRows = FilmStripLayout.strips(count: after.count, columns: 3).map { Array(after[$0]) }
+        let afterKeys = afterRows.enumerated().map { FilmStripLayout.rowKey(for: $1, offset: $0) }
+
+        // Row 0 still starts with id 0: unchanged, same key.
+        XCTAssertEqual(beforeKeys[0], afterKeys[0])
+        // Row 1 used to start with id 3; after the delete it starts with id 4, a different key,
+        // which is exactly what tells `ForEach` this row's CONTENT changed (rather than nothing
+        // at all, the false read a position-keyed `ForEach` gave).
+        XCTAssertNotEqual(beforeKeys[1], afterKeys[1])
+    }
+
+    func testItemAndEmptyKeysNeverCollide() {
+        // `.empty`'s offset and `.item`'s id share no case, by construction, but pin it anyway:
+        // an id that happens to equal some row's offset must not read as that empty row's key.
+        XCTAssertNotEqual(FilmStripLayout.rowKey(for: [StubItem(id: 5)], offset: 5),
+                          FilmStripLayout.rowKey(for: [StubItem](), offset: 5))
+    }
 }

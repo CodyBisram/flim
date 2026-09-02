@@ -35,6 +35,14 @@ struct FilmStripGrid<Item: Identifiable, Cell: View>: View {
         FilmStripLayout.strips(count: items.count, columns: columns).map { Array(items[$0]) }
     }
 
+    /// Each row paired with the id `ForEach` hangs it on. Was `\.offset` (array position): deleting
+    /// a photo mid-roll shifts every later frame into an earlier row, and a position-keyed `ForEach`
+    /// reads that as "this row's identity is unchanged, its content changed", rebuilding every row
+    /// from the deletion point on instead of the one row that actually lost a frame.
+    private var keyedRows: [(key: FilmStripLayout.RowKey<Item.ID>, row: [Item])] {
+        rows.enumerated().map { offset, row in (FilmStripLayout.rowKey(for: row, offset: offset), row) }
+    }
+
     private func perforation(_ count: Int) -> some View {
         let cell = FilmStripLayout.cellWidth(availableWidth: width, columns: columns, gap: gap)
         return DarkroomPerforationLine()
@@ -44,7 +52,7 @@ struct FilmStripGrid<Item: Identifiable, Cell: View>: View {
 
     var body: some View {
         LazyVStack(alignment: .leading, spacing: 0) {
-            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+            ForEach(keyedRows, id: \.key) { _, row in
                 // One line between two strips, not two: each strip draws the road ABOVE it, and
                 // the single trailing one below closes the last. Drawing both per strip would
                 // double every interior line.
@@ -75,6 +83,22 @@ struct FilmStripGrid<Item: Identifiable, Cell: View>: View {
 /// only the SwiftUI wrapper around these two answers: how the frames cut into strips, and how long
 /// the road under a strip is.
 enum FilmStripLayout {
+
+    /// The id `FilmStripGrid` hangs a row on. `.item` for the ordinary case (keyed on the row's own
+    /// first photo, so a delete only rebuilds the row that actually changed); `.empty` is a fallback
+    /// for a row `strips` should never produce but the array type doesn't forbid, keyed on that
+    /// row's offset so it can never collide with a real photo id, which lives in the other case
+    /// entirely, nor with another empty row's offset.
+    enum RowKey<ID: Hashable>: Hashable {
+        case item(ID)
+        case empty(Int)
+    }
+
+    /// `row`'s `ForEach` key: its first item's id, or `offset` if the row is empty. Pure so the
+    /// no-collision claim is testable without mounting a view.
+    static func rowKey<Item: Identifiable>(for row: [Item], offset: Int) -> RowKey<Item.ID> {
+        row.first.map { RowKey.item($0.id) } ?? .empty(offset)
+    }
 
     /// Cuts `count` frames into strips of at most `columns`, filled in order, and returns each
     /// strip's range. 8 frames at 3 columns cuts 3, 3, 2.

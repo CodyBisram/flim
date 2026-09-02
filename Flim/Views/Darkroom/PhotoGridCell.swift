@@ -318,6 +318,13 @@ struct CachedImage<Content: View, Placeholder: View>: View {
     @State private var uiImage: UIImage?
     @State private var shown = false
     @State private var failed = false
+    // Bumped at the start of every `load()` call and captured locally by that call. The decode
+    // underneath `DiskImageCache.load`/`ImageLoader.fetch` runs on `Task.detached`, which is NOT
+    // part of the tree `.task(id:)` cancels, so an old call's awaits can still resolve after a
+    // newer one already started (a fast id change while a slow network fetch is in flight). Each
+    // of the three writes below that follow an `await` checks its own captured generation is
+    // still current before touching state, so only the load the view actually wants can win.
+    @State private var loadGeneration = 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.displayScale) private var displayScale
 
@@ -354,12 +361,15 @@ struct CachedImage<Content: View, Placeholder: View>: View {
     }
 
     private func load() async {
+        loadGeneration += 1
+        let generation = loadGeneration
         failed = false
         // Try the caches by stable key first, this can hit before any URL is resolved.
         if let key = cacheKey {
             let memKey = "\(key)|\(Int(maxPixel))" as NSString
             if let cached = ImageCache.shared.object(forKey: memKey) { uiImage = cached; shown = true; return }
             if let disk = await DiskImageCache.load("\(key)|\(Int(maxPixel))") {
+                guard generation == loadGeneration else { return }
                 ImageCache.set(disk, forKey: memKey)
                 uiImage = disk; shown = true; return
             }
@@ -372,10 +382,12 @@ struct CachedImage<Content: View, Placeholder: View>: View {
         uiImage = nil
         shown = false
         guard let image = await ImageLoader.fetch(url: url, maxPixel: maxPixel, scale: displayScale, cacheKey: cacheKey) else {
+            guard generation == loadGeneration else { return }
             failed = true   // network/decode failed → show retry, not endless shimmer
             onFailure?()
             return
         }
+        guard generation == loadGeneration else { return }
         uiImage = image
         if reduceMotion {
             shown = true
