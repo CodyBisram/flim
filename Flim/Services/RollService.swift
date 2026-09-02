@@ -329,26 +329,6 @@ final class RollService {
         return rows.map(\.user_id)
     }
 
-    /// Renames a roll (creator only, enforced by RLS) and updates the local copy.
-    func renameRoll(rollId: UUID, name: String) async throws {
-        struct Update: Encodable { let name: String }
-        try await supabase
-            .from("rolls")
-            .update(Update(name: name))
-            .eq("id", value: rollId.uuidString)
-            .execute()
-        if let i = rolls.firstIndex(where: { $0.id == rollId }) {
-            let r = rolls[i]
-            rolls[i] = Roll(id: r.id, name: name, inviteCode: r.inviteCode,
-                            createdBy: r.createdBy, createdAt: r.createdAt, coverPath: r.coverPath)
-            // The widget's subtitle is sourced live from roll names, and a still-developing
-            // roll's Live Activity has the old name baked into its (immutable) attributes.
-            WidgetSync.refresh()
-            RollLiveActivity.rename(rollId: rollId, to: name)
-            persistSnapshot()
-        }
-    }
-
     /// The creator picks a specific photo as the roll's cover (RLS: creator-only update).
     func setRollCover(rollId: UUID, path: String) async {
         struct U: Encodable { let cover_path: String }

@@ -148,77 +148,11 @@ Both items below were only gated on 1.5 App Review, which cleared 2026-09-01. Bo
   environment built from schema.sql alone lacks the column. Found 2026-09-02 while mirroring the
   profiles change (adding `signup_ordinal` to the mirrored grant broke a fresh load). Fold it in
   as its own change. Status: `queued`.
-- Roll rename leaves the widget and Live Activity stale: DONE. `renameRoll` and `setRollCover` now
-  call `WidgetSync.refresh()`. `RollLiveActivity.rename(rollId:to:)` ends the running activity for
-  that roll and re-requests it with the new name, carrying over the running activity's own content
-  state (shot count, reveal time, develop-from, accent); no-op if none is running. Release build
-  passes. Not verified on device: that the lock-screen card actually swaps names mid-countdown, and
-  that the widget visibly refreshes on rename or re-cover. Known edge: if the fresh
-  `Activity.request` is declined, the roll has no card until the next `sync()`, same as any other
-  request failure.
-
-### The strategic one, not a task
-
-Rolls hold 291 of 1,627 photos. Four in five shots never touch one, and rolls are positioned as the
-differentiator. Either the shared path becomes the default or the strategy follows what people
-actually do. Worth deciding before more is built on top of rolls.
-
-## Next up
-
-### resolved 2026-08-29 — there is no 20-uploads-per-day cap
-
-A UX pass asked what a person sees when they hit it. Answer: nothing, because it does not exist.
-Searched the camera, PhotoService, every storage migration and the Cloudflare worker: no counter,
-no RPC, no RLS check, no client message. The only traces are two comments in already-applied
-migrations (`2026-08-17_usage_events.sql:88`, `2026-08-17_profile_identity.sql:275`) that refer to
-it as real. Those migrations are history and were left untouched; this note is the correction.
-
-Owner confirmed 2026-08-29 he never approved it. Nothing to remove in code. The memory files that
-asserted it, including the badge rule that cited it as a design constraint, are corrected.
-
-
-### done: the privilege escalation fix is APPLIED (verified against production 2026-09-01)
-
-`supabase/migrations/2026-08-29_close_users_privilege_escalation.sql`. Confirmed live by querying
-the database: `lock_users_privileged_columns_trigger` exists, `is_owner()` no longer mentions
-`email`, and `authenticated` holds UPDATE on exactly `avatar_path, bio, cover_path, display_name,
-username` with no table-wide grant. The hole is closed.
-
-Found 2026-08-29 by a security pass, then confirmed directly against the live database:
-`authenticated` held TABLE-WIDE UPDATE on `public.users` (every column: `email`, `id`,
-`invite_code`, `invite_uses_remaining`, `signup_ordinal`), the RLS policy is row-level so it
-permits writing any column of your OWN row, and `is_owner()` resolved the entire admin surface by
-matching `users.email`. So any signed-in user could PATCH their own email to the owner's and gain
-`approve_invite_request()` (insert any address into `allowed_emails`, a total bypass of the
-invite-only gate), every requester's raw email, and the moderation queue.
-
-Three layers: column-scoped grants replacing the table-wide ones; `is_owner()` re-pointed at the
-owner's immutable UUID; and a BEFORE UPDATE trigger pinning `id`/`email`/`invite_code`/
-`invite_uses_remaining` as defence in depth against a future GRANT mistake.
-
-Verified in a throwaway Postgres container: the exploit reproduces before and fails after, a
-simulated future grant-mistake is still blocked by the trigger alone, and signup INSERT plus
-profile UPDATE still work. Verified against production: the pinned UUID is cody / ordinal 1, and
-`redeem_invite` / `credit_invite_earnback` / `delete_account` are all postgres-owned SECURITY
-DEFINER, which is what makes the trigger's `current_user` exemption correct.
-
-Still owed, on device rather than in SQL: signup still works, profile edit still works, invite
-redemption still decrements. One TestFlight check each.
-
-### follow-up: other places that resolve "the owner" by email
-
-Superseded, see item 5 in "1.5.1, ranked" above: done as a migration, not yet deployed.
-
-### follow-up: `invite_sent` analytics event is dead
-
-Superseded, see item 5 in "1.5.1, ranked" above: the event is not dead, keep it.
-
-
-### done 2026-08-29 — invites, the real mechanic (design overhaul 3c)
-
-SHIPPED and APPLIED. All three migrations are live in production and verified against the
-database, not just assumed:
-
+- Roll rename: the FEATURE IS REMOVED (owner decision 2026-09-02, "I don't want the feature to
+  rename a roll at all"). The menu item, alert, `RollService.renameRoll`, and the Live Activity
+  end-and-rerequest helper built for it the day before are gone; `setRollCover` keeps its widget
+  refresh. The `rolls: creator can update` policy stays because cover selection uses it. Do not
+  re-propose renaming.
 - `2026-08-29_invite_quota.sql` — allowance of 3, defaults, non-negative CHECK, `redeem_invite`
   decrements. Verified: 50 accounts at 3, one NULL. **`signup_ordinal = 1` keeps NULL, meaning
   unlimited**, a deliberate seeding exception: that account had sent 26 of the app's 44 redeemed
@@ -250,24 +184,9 @@ NOT DONE: the invitee half of earn-back (one UPDATE if ever wanted).
 Month covers on the profile and the monthly recap. Owner backlogged it on 2026-08-29 to get the
 header landed. It is the only part of the overhaul needing new data (month rollups).
 
-### queued: renaming a roll leaves the widget and Live Activity stale
+### resolved 2026-09-02: roll renaming is removed as a feature
 
-Found by the 2026-08-28 race/concurrency audit, NOT fixed, and unrelated to anything shipped
-that day. Two halves:
-
-- `RollService.renameRoll` and `setRollCover` never call `WidgetSync.refresh()`, unlike
-  `createRoll` / `joinRoll` / `forget`, which all do. The widget's subtitle is sourced live from
-  roll names, so a rename shows the old name until some unrelated refresh happens to fire.
-- Worse structurally: `RollLiveActivity.sync` bakes `rollName` into `RollRevealAttributes`, and
-  ActivityKit treats attributes as immutable after `Activity.request`. The update path only
-  touches `content.state`, so even calling `sync` again cannot change the displayed name. The
-  only fix is to `end()` the activity and request a fresh one, which nothing does on rename.
-  Net: rename a still-developing roll and its lock-screen countdown keeps the old name for the
-  rest of the countdown.
-
-Cosmetic staleness, not data loss and not cross-account, but it is a direct gap against the
-project rule that any mutation changing what a widget or Live Activity shows must refresh the
-snapshot or end the activity.
+See item 6 above. The staleness bug it carried is moot.
 
 ### done 2026-08-27 — Share export redesign
 

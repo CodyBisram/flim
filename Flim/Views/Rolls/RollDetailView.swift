@@ -66,8 +66,6 @@ struct RollDetailView: View {
     @Namespace private var photoNS
     @State private var selectedPhoto: Photo?
     @State private var memberNames: [UUID: String] = [:]   // userId → username, for attribution
-    @State private var showRename = false
-    @State private var renameDraft = ""
     /// The grid long-press delete flow: the photo held, and the consequence sheet for it.
     @State private var gridDeletePhoto: Photo?
     @State private var gridDeleteConsequence: RollConsequence?
@@ -77,7 +75,6 @@ struct RollDetailView: View {
     /// File URLs, not UIImages: see PhotoExport for why the roll is not held in memory.
     @State private var shareImages: [URL] = []
     @State private var showShareAll = false
-    @State private var displayName = ""
     @State private var showInviteShare = false
     /// The file's one top-slot toast, reused for every transient status line (cover updated,
     /// rename/leave failures) so there is a single presentation and timing to reason about
@@ -120,7 +117,7 @@ struct RollDetailView: View {
             FlimTheme.bg.ignoresSafeArea()
 
             VStack(spacing: 0) {
-                FlimNavTitle(displayName.isEmpty ? roll.name : displayName)
+                FlimNavTitle(roll.name)
 
                 if let count = rollService.memberCounts[roll.id] {
                     Label("\(count) member\(count == 1 ? "" : "s")", systemImage: "person.2.fill")
@@ -277,10 +274,6 @@ struct RollDetailView: View {
                     }
 
                     if isCreator {
-                        Button {
-                            renameDraft = roll.name
-                            showRename = true
-                        } label: { Label("Rename roll", systemImage: "pencil") }
                         Button(role: .destructive) {
                             showDeleteRoll = true
                         } label: { Label("Delete roll", systemImage: "trash") }
@@ -364,7 +357,7 @@ struct RollDetailView: View {
                 let myCount = vm.photos.filter { $0.userId == auth.currentUser?.id }.count
                 await notifications.requestAuthorizationIfNeeded()
                 notifications.scheduleRollDevelopNotification(
-                    rollId: roll.id, rollName: displayName.isEmpty ? roll.name : displayName,
+                    rollId: roll.id, rollName: roll.name,
                     developsAt: roll.revealAt, photoCount: myCount
                 )
             }
@@ -376,7 +369,7 @@ struct RollDetailView: View {
             if roll.isDeveloped {
                 RollLiveActivity.end(rollId: roll.id)
             } else {
-                RollLiveActivity.sync(rollId: roll.id, rollName: displayName.isEmpty ? roll.name : displayName,
+                RollLiveActivity.sync(rollId: roll.id, rollName: roll.name,
                                       revealAt: roll.revealAt, shotCount: vm.developingPhotos.count,
                                       developFrom: roll.createdAt)
             }
@@ -406,13 +399,13 @@ struct RollDetailView: View {
                 memberNames: memberNames,
                 // Every photo here belongs to this roll, so the delete-confirmation name is
                 // always this roll's, regardless of the (all-identical) rollId.
-                rollName: { _ in displayName.isEmpty ? roll.name : displayName },
+                rollName: { _ in roll.name },
                 onDelete: { Task { await vm.loadRoll(photoService: photoService, rollId: roll.id, blockedIds: feed.blockedIds) } }
             )
             .navigationTransition(.zoom(sourceID: photo.id, in: photoNS))
         }
         .fullScreenCover(isPresented: $showReveal) {
-            RollRevealView(rollId: roll.id, rollName: displayName.isEmpty ? roll.name : displayName,
+            RollRevealView(rollId: roll.id, rollName: roll.name,
                            photos: chronologicalDeveloped, memberNames: memberNames,
                            onCompleted: { UserDefaults.standard.set(true, forKey: revealSeenKey) })
         }
@@ -464,7 +457,7 @@ struct RollDetailView: View {
             }
         }
         .sheet(isPresented: $showInviteShare) {
-            ActivityView(items: [AppInfo.rollInviteMessage(rollName: displayName.isEmpty ? roll.name : displayName,
+            ActivityView(items: [AppInfo.rollInviteMessage(rollName: roll.name,
                                                            code: roll.inviteCode)],
                         onComplete: { Activation.log(.inviteSent) })
         }
@@ -474,7 +467,7 @@ struct RollDetailView: View {
         // that asks these questions, so the answers can never drift apart again.
         .sheet(isPresented: $showDeleteRoll) {
             ConsequenceSheet(consequence: .deleteRoll(
-                name: displayName.isEmpty ? roll.name : displayName,
+                name: roll.name,
                 people: rollService.memberCounts[roll.id]
                     ?? (memberNames.isEmpty ? nil : memberNames.count))) {
                 notifications.cancelRollDevelopNotification(rollId: roll.id)
@@ -489,7 +482,7 @@ struct RollDetailView: View {
         }
         .sheet(isPresented: $showLeaveRoll) {
             ConsequenceSheet(consequence: .leave(
-                name: displayName.isEmpty ? roll.name : displayName,
+                name: roll.name,
                 myShots: myShotCount)) {
                 guard let uid = auth.currentUser?.id else { return }
                 Task {
@@ -505,26 +498,6 @@ struct RollDetailView: View {
                     }
                 }
             }
-        }
-        .alert("Rename roll", isPresented: $showRename) {
-            TextField("Roll name", text: $renameDraft)
-            Button("Save") {
-                let name = renameDraft.trimmingCharacters(in: .whitespaces)
-                guard !name.isEmpty else { return }
-                displayName = name
-                Task {
-                    do {
-                        try await rollService.renameRoll(rollId: roll.id, name: name)
-                    } catch {
-                        // The rename never landed; restore the input so it stays retryable
-                        // instead of showing a name the server never accepted.
-                        displayName = roll.name
-                        Haptics.error()
-                        showToast("Couldn't rename the roll. Check your connection and try again.", isError: true)
-                    }
-                }
-            }
-            Button("Cancel", role: .cancel) {}
         }
     }
 
@@ -618,7 +591,7 @@ struct RollDetailView: View {
                 .filter { $0.userId == uid && $0.id != photo.id }.count
         }
         gridDeleteConsequence = .deleteShot(
-            rollName: displayName.isEmpty ? roll.name : displayName,
+            rollName: roll.name,
             people: rollService.memberCounts[roll.id],
             myOtherShots: mine)
     }

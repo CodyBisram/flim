@@ -48,8 +48,8 @@ enum RollSnapshotStore {
     }
 
     /// Fire-and-forget write, off the main actor: called after every mutation that changes
-    /// `rolls` or `coverPaths` (a fresh fetch, `setRollCover`, `forget`, `createRoll`, `joinRoll`,
-    /// `renameRoll`), never awaited by the caller. `snapshot` is a value type captured at the call
+    /// `rolls` or `coverPaths` (a fresh fetch, `setRollCover`, `forget`, `createRoll`, `joinRoll`),
+    /// never awaited by the caller. `snapshot` is a value type captured at the call
     /// site, so this never reaches back into `RollService`'s `@MainActor` state from the
     /// background task.
     static func save(_ snapshot: Snapshot, for userId: UUID, root: URL = defaultRoot()) {
