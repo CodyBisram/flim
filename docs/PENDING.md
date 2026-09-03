@@ -205,7 +205,11 @@ when the posters in a window share more than 1000 followers). All four functions
 view column, the grant), verified by a fresh load in a local stack. Found while doing it: the
 BADGE SYSTEM (`profile_badges`, `profile_film_stats`, and roughly ten follow-on badge migrations
 from 2026-08-17/18) is entirely absent from `schema.sql` too. Live and called by the app, so a
-fresh environment lacks it outright. Its own fold, not started. Status: `queued`.
+fresh environment lacks it outright. FOLDED 2026-09-03: all twelve badge functions, `earned_badges`,
+`users.displayed_badges`, `photos_roll_user_idx`, and `usage_events` + `log_usage_event()` (also
+missing, and the `regular` badge reads it). Every function body, constraint, index and grant
+verified byte-identical to production after stripping comments; fresh load twice, clean. Status:
+`done`.
 
 The one-shot campaign `islands` now routes to the Rolls tab (`{"t": "rolls"}`, a push
 destination added to the app 2026-09-03; older builds open the app as before).

@@ -1450,6 +1450,15 @@ CREATE INDEX IF NOT EXISTS posts_user_created_idx      ON public.posts (user_id,
 CREATE INDEX IF NOT EXISTS posts_photo_idx             ON public.posts (photo_id);
 CREATE INDEX IF NOT EXISTS photos_user_idx             ON public.photos (user_id, taken_at DESC);
 CREATE INDEX IF NOT EXISTS photos_roll_idx             ON public.photos (roll_id, develops_at DESC);
+-- photos_roll_user_idx: folded in from supabase/migrations/2026-08-17_profile_identity.sql
+-- alongside the badge system further down this file (see "Badges" below). Neither
+-- photos_user_idx nor photos_roll_idx above serves "this user's photos within this
+-- specific roll" well, which is the shape the full_roll/cover_to_cover badge predicates
+-- run on every profile view. Partial on roll_id IS NOT NULL since that's the only case
+-- either predicate ever hits.
+CREATE INDEX IF NOT EXISTS photos_roll_user_idx
+    ON public.photos (roll_id, user_id)
+    WHERE roll_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS post_comments_post_idx      ON public.post_comments (post_id);
 CREATE INDEX IF NOT EXISTS post_reactions_post_idx     ON public.post_reactions (post_id);
 CREATE INDEX IF NOT EXISTS follows_follower_idx        ON public.follows (follower_id);
@@ -2298,6 +2307,979 @@ $$;
 REVOKE ALL ON FUNCTION public.is_owner() FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.is_owner() FROM anon;
 GRANT EXECUTE ON FUNCTION public.is_owner() TO authenticated;
+
+-- ============================================================
+-- Usage events: day-bucketed, privacy-preserving instrumentation.
+-- Folded in from supabase/migrations/2026-08-17_usage_events.sql, CHECK widened by
+-- 2026-08-31_invite_source_events.sql. Production has carried this table since
+-- 2026-08-17; this file did not, until now -- found while folding the badge system
+-- below (2026-09-03), whose 'regular' badge (see _ratchet_badges) reads usage_events
+-- directly and would fail at call time on a fresh load without it.
+--
+-- Day buckets (user_id, event, day) with a counter, never a timestamped row per
+-- occurrence: a stamped stream would reconstruct a behavioural timeline (when someone
+-- opens the app, down to the minute), which is exactly what FLIM's "no algorithm, no
+-- strangers" posture is about. ON CONFLICT DO UPDATE lets the client fire this
+-- carelessly on every occurrence; the database is what keeps it to one row per user
+-- per event per day.
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.usage_events (
+    user_id     UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE DEFAULT auth.uid(),
+    event       TEXT NOT NULL,
+    -- UTC, not the user's local day -- FLIM has no timezone column, and inventing one
+    -- to make buckets prettier would collect location-adjacent data to improve a chart.
+    day         DATE NOT NULL DEFAULT (now() AT TIME ZONE 'utc')::date,
+    occurrences INT  NOT NULL DEFAULT 1,
+    PRIMARY KEY (user_id, event, day),
+    CONSTRAINT usage_events_event_check CHECK (event IN (
+        'app_open', 'photo_captured', 'post_shared', 'feed_viewed', 'reveal_watched',
+        -- invite_shared_*: which surface an invite share came from, added by
+        -- 2026-08-31_invite_source_events.sql. invite_sent (activation_events) still
+        -- fires the once-ever funnel milestone; these carry the per-surface volume.
+        'invite_shared_profile', 'invite_shared_feed', 'invite_shared_reveal'
+    ))
+);
+CREATE INDEX IF NOT EXISTS usage_events_day_event_idx ON public.usage_events (day, event);
+
+-- RLS: owner-only SELECT, and deliberately NO INSERT/UPDATE/DELETE policy for anyone --
+-- RLS default-denies any command with no matching policy, so the increment inside
+-- log_usage_event() below is the only way this table ever moves, even though this
+-- project's stock default privileges also grant table-level INSERT/UPDATE/DELETE to
+-- anon/authenticated (as they do on every new table in public).
+ALTER TABLE public.usage_events ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "usage_events: owner reads" ON public.usage_events;
+CREATE POLICY "usage_events: owner reads"
+    ON public.usage_events FOR SELECT TO authenticated
+    USING (public.is_owner());
+
+CREATE OR REPLACE FUNCTION public.log_usage_event(p_event TEXT)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    IF auth.uid() IS NULL THEN
+        RETURN;
+    END IF;
+
+    -- Unqualified `usage_events` here: ON CONFLICT DO UPDATE binds the target by the
+    -- name used in the INSERT, and schema-qualifying it is a syntax error.
+    INSERT INTO public.usage_events (user_id, event, occurrences)
+    VALUES (auth.uid(), p_event, 1)
+    ON CONFLICT (user_id, event, day)
+    DO UPDATE SET occurrences = usage_events.occurrences + 1;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.log_usage_event(TEXT) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.log_usage_event(TEXT) FROM anon;
+GRANT EXECUTE ON FUNCTION public.log_usage_event(TEXT) TO authenticated;
+
+-- ============================================================
+-- Badges: a permanent, earned-only achievement ledger, plus the four-slot profile
+-- display picker built on top of it.
+--
+-- Folded in from the migration chain dated 2026-08-17/2026-08-18 --
+-- profile_identity.sql (signup_ordinal is folded separately, above; this is PARTS 2&3),
+-- earned_badges.sql, five_more_badges.sql, displayed_badges.sql,
+-- own_effective_displayed_badges.sql, nine_more_badges.sql, retire_test_roll.sql,
+-- medal_ladder_seven_more.sql, good_company_five.sql, good_company_ten.sql,
+-- full_set_twenty.sql, one_year_still_shooting.sql, earned_badges_push_sent.sql --
+-- roughly a dozen files that each amended the one before by CREATE OR REPLACE, three
+-- of them (full_set_twenty, good_company_five, good_company_ten) with a narrow,
+-- explicitly-reasoned DELETE against rows the ledger itself had just written, when a
+-- threshold changed under badges less than a day old that nobody had been notified
+-- about yet. Production has carried the FINAL shape below since 2026-08-18; this file
+-- did not, until now -- found 2026-09-03 alongside signup_ordinal, which
+-- profile_badges also depends on for the founding_100 predicate.
+--
+-- This block lands the CURRENT shape only, verified directly against production
+-- (pg_get_functiondef / pg_get_constraintdef), not a replay of that file-by-file
+-- history -- a fresh load gets the twenty-nine-badge catalog production actually
+-- serves today, never an intermediate rung like the original ten-badge full_set or
+-- the one-follower good_company.
+--
+-- THE RATCHET. earned_badges is append-only: a predicate-earned row, once inserted,
+-- is never deleted or re-evaluated on the strength of its predicate going false
+-- later. PRIMARY KEY (user_id, badge_id) is what makes every INSERT below an
+-- "ON CONFLICT DO NOTHING" no-op after the first time it fires. The one documented
+-- exception is revoke_badge, an owner-only admin undo scoped to granted_by IS NOT
+-- NULL -- it can undo a MISTAKEN GRANT, never touch a predicate-earned row.
+--
+-- WHO CAN SEE WHAT. profile_badges(uuid) is SECURITY DEFINER, callable about ANY
+-- profile by any authenticated caller, and deliberately bypasses the normal
+-- roll-membership RLS boundary -- badges are identity elements, the same posture
+-- signup_ordinal already takes. The profile's OWNER always sees every badge they
+-- hold. Anyone else sees that profile's chosen four (set_displayed_badges) or, if
+-- nothing has been chosen, an automatic default: founder, then founding_crew, then
+-- founding_100 (whichever of the three the profile actually holds, in that order --
+-- see _resolve_effective_displayed_badges' slot_rank), then its rarest remaining
+-- badges by holder count. Both branches omit a 'shared' row a covered-post viewer is
+-- not allowed to know about (public.covered_post_visible, 2026-08-12_covered_posts.sql)
+-- -- filtered inside the same WHERE that feeds the LIMIT 4, never after it, so an
+-- invisible badge can never crowd out a visible one from the four slots.
+--
+-- two_up (a two-CONTRIBUTOR roll badge) shipped in the original design and was CUT
+-- before the ledger existed: an exact "=" contributor-count predicate cannot be a
+-- ratchet (a later third contributor makes it re-evaluate false), which is exactly
+-- why every threshold badge below (full_house, packed_house, front_row, patron,
+-- open_door, cover_to_cover, kept_one, regular, ten_frames, good_company, full_set)
+-- is written as "rank the Nth qualifying event, ON CONFLICT DO NOTHING" instead --
+-- once the Nth thing happens, a later N+1th can never un-rank it. Do not reintroduce
+-- an exact-count predicate.
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.earned_badges (
+    user_id    UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+    badge_id   TEXT NOT NULL,
+    earned_at  TIMESTAMPTZ NOT NULL,
+    -- NULL = earned by a predicate in _ratchet_badges below; a uuid = hand-granted by
+    -- that owner via grant_badge. Must never surface to any other reader -- every
+    -- function below selects only (badge_id, earned_at), and this table carries no
+    -- policies at all (see the RLS note further down), so there is no direct grant to
+    -- leak it through even from a typo.
+    granted_by UUID REFERENCES public.users(id) ON DELETE SET NULL,
+    -- NULL = earned but never shown to its owner. Only mark_own_badges_seen() moves
+    -- this, and only for auth.uid()'s own rows.
+    seen_at    TIMESTAMPTZ,
+    -- push_sent: added by 2026-08-18_earned_badges_push_sent.sql so send-social-push
+    -- can notify a newly-earned badge, the same way it already does posts/tags/
+    -- reactions/follows. No backfill runs here -- a fresh table starts empty, so
+    -- there is no pre-existing row that would otherwise fire a burst of pushes for
+    -- badges "earned" before this column existed (that migration's own backfill was
+    -- the one-time fix for production's already-populated table; it has no
+    -- equivalent needed on a from-scratch load).
+    push_sent  BOOLEAN NOT NULL DEFAULT FALSE,
+    PRIMARY KEY (user_id, badge_id),
+    -- The full automatic + grantable catalog, verified against production's live
+    -- constraint 2026-09-03. test_roll is NOT in this list: it was retired into
+    -- founding_crew by 2026-08-18_retire_test_roll.sql and no longer exists anywhere.
+    CONSTRAINT earned_badges_badge_id_check CHECK (badge_id IN (
+        'brought_someone', 'chimed_in', 'chipped_in', 'cover_to_cover', 'darkroom',
+        'first_in', 'first_light', 'founder', 'founding_100', 'founding_crew',
+        'front_row', 'full_house', 'full_roll', 'full_set', 'good_company', 'in_frame',
+        'joined_in', 'kept_one', 'one_year', 'open_door', 'packed_house', 'patron',
+        'regular', 'roll_maker', 'said_it', 'shared', 'spotter', 'ten_frames', 'well_met'
+    )),
+    -- The table-level backstop for grant_badge: a granted row (granted_by IS NOT
+    -- NULL) may only ever carry one of these two ids, enforced here so even a future
+    -- rewrite of grant_badge that forgets its own early check cannot mint one of the
+    -- twenty-seven predicate-only ids.
+    CONSTRAINT earned_badges_grantable_check CHECK (
+        granted_by IS NULL OR badge_id IN ('founding_crew', 'founder')
+    )
+);
+
+-- granted_by is the one foreign key here without index coverage from the primary key
+-- (user_id, badge_id) -- partial, since it is only ever non-NULL for the small
+-- minority of hand-granted rows.
+CREATE INDEX IF NOT EXISTS earned_badges_granted_by_idx
+    ON public.earned_badges (granted_by)
+    WHERE granted_by IS NOT NULL;
+
+-- Supports the rarity subquery inside _resolve_effective_displayed_badges below
+-- (GROUP BY badge_id) -- the primary key leads with user_id and does not serve that
+-- scan, which runs on every non-owner profile view with no explicit selection set.
+CREATE INDEX IF NOT EXISTS earned_badges_badge_id_idx
+    ON public.earned_badges (badge_id);
+
+-- RLS ON, deliberately NO policies -- same shape as allowed_emails and usage_events
+-- above: a table that must never be readable or writable directly by any client
+-- role, only through the SECURITY DEFINER functions below.
+ALTER TABLE public.earned_badges ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.earned_badges FROM PUBLIC, anon, authenticated;
+
+-- users.displayed_badges: the profile owner's chosen four badge ids, in their own
+-- chosen order. NULL ("no choice made, fall back to the automatic default computed
+-- in _resolve_effective_displayed_badges") and '{}' ("chose to show nothing") are
+-- distinct, persisted states -- see set_displayed_badges below for how a caller moves
+-- between all three. Readable through get_own_profile() (SELECT * FROM users) for
+-- the caller's own row automatically; deliberately NOT added to public.profiles or to
+-- any column-level grant on users for OTHER people's rows -- profile_badges /
+-- own_effective_displayed_badges below are the only sanctioned way anyone else ever
+-- learns what a selection resolves to.
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS displayed_badges TEXT[];
+ALTER TABLE public.users DROP CONSTRAINT IF EXISTS users_displayed_badges_check;
+ALTER TABLE public.users ADD CONSTRAINT users_displayed_badges_check
+    CHECK (displayed_badges IS NULL OR COALESCE(array_length(displayed_badges, 1), 0) <= 4);
+
+-- _ratchet_badges(p_user_id): the one and only place every predicate lives. Both
+-- profile_badges and refresh_own_badges call this, then each does its own read
+-- afterward -- see PART header above for why this must never be reproduced a second
+-- time inline. INTERNAL ONLY: EXECUTE is revoked from PUBLIC, anon, AND authenticated,
+-- since a SECURITY DEFINER function always retains implicit EXECUTE on another
+-- function owned by the same role regardless of that REVOKE -- the REVOKE only ever
+-- stops a different role from calling it directly.
+CREATE OR REPLACE FUNCTION public._ratchet_badges(p_user_id UUID)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    -- first_light: their first frame ever, full stop.
+    INSERT INTO public.earned_badges (user_id, badge_id, earned_at)
+    SELECT p_user_id, 'first_light', MIN(p.taken_at)
+    FROM public.photos p
+    WHERE p.user_id = p_user_id
+    HAVING MIN(p.taken_at) IS NOT NULL
+    ON CONFLICT (user_id, badge_id) DO NOTHING;
+
+    -- full_roll: shot into the roll on both sides of its halfway point, on a
+    -- roll that actually developed.
+    INSERT INTO public.earned_badges (user_id, badge_id, earned_at)
+    SELECT p_user_id, 'full_roll', MIN(agg.earned_at)
+    FROM (
+        SELECT
+            BOOL_OR(p.taken_at < r.created_at + INTERVAL '6 hours') AS shot_early,
+            MIN(p.taken_at) FILTER (WHERE p.taken_at >= r.created_at + INTERVAL '6 hours') AS earned_at
+        FROM public.rolls r
+        JOIN public.photos p ON p.roll_id = r.id AND p.user_id = p_user_id
+        WHERE public.is_roll_developed(r.id)
+        GROUP BY r.id, r.created_at
+    ) agg
+    WHERE agg.shot_early AND agg.earned_at IS NOT NULL
+    HAVING MIN(agg.earned_at) IS NOT NULL
+    ON CONFLICT (user_id, badge_id) DO NOTHING;
+
+    -- darkroom: had a perfect reveal-opening streak at some point, across
+    -- every developed roll they were ever a member of. Frozen the instant
+    -- this INSERT first lands -- a later skipped reveal no longer removes it.
+    INSERT INTO public.earned_badges (user_id, badge_id, earned_at)
+    SELECT p_user_id, 'darkroom', MAX(v.viewed_at)
+    FROM public.roll_members rm
+    JOIN public.rolls r ON r.id = rm.roll_id
+    LEFT JOIN public.roll_reveal_views v
+        ON v.roll_id = rm.roll_id AND v.user_id = rm.user_id
+    WHERE rm.user_id = p_user_id
+      AND public.is_roll_developed(r.id)
+    HAVING COUNT(r.id) > 0 AND COUNT(r.id) = COUNT(v.viewed_at)
+    ON CONFLICT (user_id, badge_id) DO NOTHING;
+
+    -- founding_100: signup_ordinal <= 100. earned_at = the account's own
+    -- created_at (the ordinal was decided at signup), never now().
+    INSERT INTO public.earned_badges (user_id, badge_id, earned_at)
+    SELECT u.id, 'founding_100', u.created_at
+    FROM public.users u
+    WHERE u.id = p_user_id AND u.signup_ordinal <= 100
+    ON CONFLICT (user_id, badge_id) DO NOTHING;
+
+    -- first_in: first to open a roll's reveal, on a roll with >= 2 MEMBERS
+    -- (an empty race beats no one). Ranked with a deterministic tiebreak so
+    -- this is stable forever once earned.
+    INSERT INTO public.earned_badges (user_id, badge_id, earned_at)
+    WITH ranked AS (
+        SELECT roll_id, user_id, viewed_at,
+               ROW_NUMBER() OVER (PARTITION BY roll_id ORDER BY viewed_at ASC, user_id ASC) AS rn
+        FROM public.roll_reveal_views
+    ), qualifying_rolls AS (
+        SELECT roll_id FROM public.roll_members GROUP BY roll_id HAVING COUNT(*) >= 2
+    )
+    SELECT p_user_id, 'first_in', MIN(r.viewed_at)
+    FROM ranked r
+    JOIN qualifying_rolls qr ON qr.roll_id = r.roll_id
+    WHERE r.user_id = p_user_id AND r.rn = 1
+    HAVING MIN(r.viewed_at) IS NOT NULL
+    ON CONFLICT (user_id, badge_id) DO NOTHING;
+
+    -- roll_maker: created a roll that went on to hold at least one photo
+    -- from anyone. The photo requirement keeps this from being farmable by
+    -- creating and abandoning empty rolls.
+    INSERT INTO public.earned_badges (user_id, badge_id, earned_at)
+    SELECT p_user_id, 'roll_maker', MIN(r.created_at)
+    FROM public.rolls r
+    WHERE r.created_by = p_user_id
+      AND EXISTS (SELECT 1 FROM public.photos p WHERE p.roll_id = r.id)
+    HAVING MIN(r.created_at) IS NOT NULL
+    ON CONFLICT (user_id, badge_id) DO NOTHING;
+
+    -- brought_someone: someone signed up using this user's invite code.
+    -- Records only that it happened and when (u.created_at), never who.
+    INSERT INTO public.earned_badges (user_id, badge_id, earned_at)
+    SELECT p_user_id, 'brought_someone', MIN(u.created_at)
+    FROM public.allowed_emails ae
+    JOIN public.users u ON lower(u.email) = ae.email
+    WHERE ae.note = 'invited_by:' || p_user_id::text
+    HAVING MIN(u.created_at) IS NOT NULL
+    ON CONFLICT (user_id, badge_id) DO NOTHING;
+
+    -- joined_in: joined a roll (roll_members) that somebody ELSE created.
+    INSERT INTO public.earned_badges (user_id, badge_id, earned_at)
+    SELECT p_user_id, 'joined_in', MIN(rm.joined_at)
+    FROM public.roll_members rm
+    JOIN public.rolls r ON r.id = rm.roll_id
+    WHERE rm.user_id = p_user_id
+      AND r.created_by <> p_user_id
+    HAVING MIN(rm.joined_at) IS NOT NULL
+    ON CONFLICT (user_id, badge_id) DO NOTHING;
+
+    -- chipped_in: shot at least one photo into a roll they did not create.
+    INSERT INTO public.earned_badges (user_id, badge_id, earned_at)
+    SELECT p_user_id, 'chipped_in', MIN(p.taken_at)
+    FROM public.photos p
+    JOIN public.rolls r ON r.id = p.roll_id
+    WHERE p.user_id = p_user_id
+      AND r.created_by <> p_user_id
+    HAVING MIN(p.taken_at) IS NOT NULL
+    ON CONFLICT (user_id, badge_id) DO NOTHING;
+
+    -- shared: posted a frame to the feed, full stop. earned_at is the
+    -- honest global first posts.created_at; the covered-post gate is
+    -- applied at READ time by profile_badges, not here.
+    INSERT INTO public.earned_badges (user_id, badge_id, earned_at)
+    SELECT p_user_id, 'shared', MIN(po.created_at)
+    FROM public.posts po
+    WHERE po.user_id = p_user_id
+    HAVING MIN(po.created_at) IS NOT NULL
+    ON CONFLICT (user_id, badge_id) DO NOTHING;
+
+    -- well_met: somebody ELSE reacted to one of their photos. Excludes
+    -- self-reactions. Deliberately photo_reactions (not post_reactions) --
+    -- reactions can happen long before a photo is ever posted, so
+    -- post_reactions would carry no reliable correlation to whether a post
+    -- was covered.
+    INSERT INTO public.earned_badges (user_id, badge_id, earned_at)
+    SELECT p_user_id, 'well_met', MIN(pr.created_at)
+    FROM public.photo_reactions pr
+    JOIN public.photos p ON p.id = pr.photo_id
+    WHERE p.user_id = p_user_id
+      AND pr.user_id <> p_user_id
+    HAVING MIN(pr.created_at) IS NOT NULL
+    ON CONFLICT (user_id, badge_id) DO NOTHING;
+
+    -- full_house: a roll reaches >= 5 DISTINCT CONTRIBUTORS, and this user
+    -- is one of them. >= not =, and ranked by the 5th contributor's own
+    -- first-shot time, so a later 6th contributor can never un-earn it --
+    -- this exact shape is why two_up (an exact-count predicate) was cut.
+    INSERT INTO public.earned_badges (user_id, badge_id, earned_at)
+    WITH roll_contributors AS (
+        SELECT p.roll_id, p.user_id AS contributor_id, MIN(p.taken_at) AS first_shot
+        FROM public.photos p
+        WHERE p.roll_id IS NOT NULL
+        GROUP BY p.roll_id, p.user_id
+    ), ranked AS (
+        SELECT roll_id, contributor_id, first_shot,
+               ROW_NUMBER() OVER (PARTITION BY roll_id ORDER BY first_shot ASC, contributor_id ASC) AS rn
+        FROM roll_contributors
+    ), roll_threshold AS (
+        SELECT roll_id, first_shot AS threshold_at
+        FROM ranked
+        WHERE rn = 5
+    )
+    SELECT p_user_id, 'full_house', MIN(rt.threshold_at)
+    FROM roll_threshold rt
+    JOIN ranked me ON me.roll_id = rt.roll_id AND me.contributor_id = p_user_id
+    HAVING MIN(rt.threshold_at) IS NOT NULL
+    ON CONFLICT (user_id, badge_id) DO NOTHING;
+
+    -- front_row: first to open the reveal, on FIVE separate qualifying rolls
+    -- (first_in above is the same race, once).
+    INSERT INTO public.earned_badges (user_id, badge_id, earned_at)
+    WITH ranked AS (
+        SELECT roll_id, user_id, viewed_at,
+               ROW_NUMBER() OVER (PARTITION BY roll_id ORDER BY viewed_at ASC, user_id ASC) AS rn
+        FROM public.roll_reveal_views
+    ), qualifying_rolls AS (
+        SELECT roll_id FROM public.roll_members GROUP BY roll_id HAVING COUNT(*) >= 2
+    ), my_wins AS (
+        SELECT r.roll_id, r.viewed_at,
+               ROW_NUMBER() OVER (ORDER BY r.viewed_at ASC, r.roll_id ASC) AS frn
+        FROM ranked r
+        JOIN qualifying_rolls qr ON qr.roll_id = r.roll_id
+        WHERE r.user_id = p_user_id AND r.rn = 1
+    )
+    SELECT p_user_id, 'front_row', viewed_at
+    FROM my_wins
+    WHERE frn = 5
+    ON CONFLICT (user_id, badge_id) DO NOTHING;
+
+    -- packed_house: identical to full_house above, rn = 10 not 5.
+    INSERT INTO public.earned_badges (user_id, badge_id, earned_at)
+    WITH roll_contributors AS (
+        SELECT p.roll_id, p.user_id AS contributor_id, MIN(p.taken_at) AS first_shot
+        FROM public.photos p
+        WHERE p.roll_id IS NOT NULL
+        GROUP BY p.roll_id, p.user_id
+    ), ranked AS (
+        SELECT roll_id, contributor_id, first_shot,
+               ROW_NUMBER() OVER (PARTITION BY roll_id ORDER BY first_shot ASC, contributor_id ASC) AS rn
+        FROM roll_contributors
+    ), roll_threshold AS (
+        SELECT roll_id, first_shot AS threshold_at
+        FROM ranked
+        WHERE rn = 10
+    )
+    SELECT p_user_id, 'packed_house', MIN(rt.threshold_at)
+    FROM roll_threshold rt
+    JOIN ranked me ON me.roll_id = rt.roll_id AND me.contributor_id = p_user_id
+    HAVING MIN(rt.threshold_at) IS NOT NULL
+    ON CONFLICT (user_id, badge_id) DO NOTHING;
+
+    -- patron: identical lineage join to brought_someone above, rn = 5 over
+    -- this caller's own invitees ordered by their own created_at.
+    INSERT INTO public.earned_badges (user_id, badge_id, earned_at)
+    WITH invitees AS (
+        SELECT u.id AS invitee_id, u.created_at
+        FROM public.allowed_emails ae
+        JOIN public.users u ON lower(u.email) = ae.email
+        WHERE ae.note = 'invited_by:' || p_user_id::text
+    ), ranked AS (
+        SELECT created_at,
+               ROW_NUMBER() OVER (ORDER BY created_at ASC, invitee_id ASC) AS rn
+        FROM invitees
+    )
+    SELECT p_user_id, 'patron', created_at
+    FROM ranked
+    WHERE rn = 5
+    ON CONFLICT (user_id, badge_id) DO NOTHING;
+
+    -- cover_to_cover: ten rolls shot into before they developed, counted
+    -- cumulatively (not "every developed roll ever been a member of" --
+    -- that version had a floor of one roll and was unearnable forever after
+    -- a single miss). Ranked so a later eleventh roll can never displace
+    -- the recorded earned_at.
+    INSERT INTO public.earned_badges (user_id, badge_id, earned_at)
+    WITH mine AS (
+        SELECT p.roll_id, MIN(p.taken_at) AS first_shot
+        FROM public.photos p
+        JOIN public.rolls r ON r.id = p.roll_id
+        WHERE p.user_id = p_user_id
+          AND public.is_roll_developed(r.id)
+        GROUP BY p.roll_id
+    ), ranked AS (
+        SELECT first_shot,
+               ROW_NUMBER() OVER (ORDER BY first_shot ASC, roll_id ASC) AS rn
+        FROM mine
+    )
+    SELECT p_user_id, 'cover_to_cover', first_shot
+    FROM ranked
+    WHERE rn = 10
+    ON CONFLICT (user_id, badge_id) DO NOTHING;
+
+    -- kept_one: let TEN developed photos go unshared. develops_at <= now(),
+    -- not is_developed (a cron-maintained cache that can lag the real
+    -- deadline). No covered-post gate needed: a kept photo was never posted,
+    -- so it can never be a covered post.
+    INSERT INTO public.earned_badges (user_id, badge_id, earned_at)
+    WITH kept AS (
+        SELECT p.taken_at, p.id,
+               ROW_NUMBER() OVER (ORDER BY p.taken_at ASC, p.id ASC) AS rn
+        FROM public.photos p
+        WHERE p.user_id = p_user_id
+          AND p.develops_at <= now()
+          AND NOT EXISTS (SELECT 1 FROM public.posts po WHERE po.photo_id = p.id)
+    )
+    SELECT p_user_id, 'kept_one', taken_at
+    FROM kept
+    WHERE rn = 10
+    ON CONFLICT (user_id, badge_id) DO NOTHING;
+
+    -- regular: seven distinct app_open days (public.usage_events, above).
+    -- Not retroactive before usage_events began collecting app_open.
+    INSERT INTO public.earned_badges (user_id, badge_id, earned_at)
+    WITH days AS (
+        SELECT DISTINCT day
+        FROM public.usage_events
+        WHERE user_id = p_user_id AND event = 'app_open'
+    ), ranked AS (
+        SELECT day, ROW_NUMBER() OVER (ORDER BY day ASC) AS rn
+        FROM days
+    )
+    SELECT p_user_id, 'regular', day::timestamptz
+    FROM ranked
+    WHERE rn = 7
+    ON CONFLICT (user_id, badge_id) DO NOTHING;
+
+    -- one_year: a year old, AND still shooting -- needs a frame taken ON OR
+    -- AFTER the first anniversary, not pure tenure (which would have made
+    -- this the only badge in the catalog reachable by doing nothing at all).
+    -- Monotonic and never blocked: miss the anniversary week and any later
+    -- frame still earns it. earned_at is that qualifying frame, never now().
+    INSERT INTO public.earned_badges (user_id, badge_id, earned_at)
+    SELECT p_user_id, 'one_year', MIN(p.taken_at)
+    FROM public.photos p
+    JOIN public.users u ON u.id = p.user_id
+    WHERE p.user_id = p_user_id
+      AND p.taken_at >= u.created_at + INTERVAL '1 year'
+    HAVING MIN(p.taken_at) IS NOT NULL
+    ON CONFLICT (user_id, badge_id) DO NOTHING;
+
+    -- open_door: same lineage join as patron/brought_someone, rn = 10.
+    INSERT INTO public.earned_badges (user_id, badge_id, earned_at)
+    WITH invitees AS (
+        SELECT u.id AS invitee_id, u.created_at
+        FROM public.allowed_emails ae
+        JOIN public.users u ON lower(u.email) = ae.email
+        WHERE ae.note = 'invited_by:' || p_user_id::text
+    ), ranked AS (
+        SELECT created_at,
+               ROW_NUMBER() OVER (ORDER BY created_at ASC, invitee_id ASC) AS rn
+        FROM invitees
+    )
+    SELECT p_user_id, 'open_door', created_at
+    FROM ranked
+    WHERE rn = 10
+    ON CONFLICT (user_id, badge_id) DO NOTHING;
+
+    -- chimed_in: reacted to SOMEBODY ELSE'S photo -- the mirror of well_met.
+    INSERT INTO public.earned_badges (user_id, badge_id, earned_at)
+    SELECT p_user_id, 'chimed_in', MIN(pr.created_at)
+    FROM public.photo_reactions pr
+    JOIN public.photos p ON p.id = pr.photo_id
+    WHERE pr.user_id = p_user_id
+      AND p.user_id <> p_user_id
+    HAVING MIN(pr.created_at) IS NOT NULL
+    ON CONFLICT (user_id, badge_id) DO NOTHING;
+
+    -- in_frame: somebody tagged you in a photo. Nothing you can do to cause
+    -- it, by design -- it marks being part of someone else's roll.
+    INSERT INTO public.earned_badges (user_id, badge_id, earned_at)
+    SELECT p_user_id, 'in_frame', MIN(pt.created_at)
+    FROM public.post_tags pt
+    WHERE pt.tagged_user_id = p_user_id
+    HAVING MIN(pt.created_at) IS NOT NULL
+    ON CONFLICT (user_id, badge_id) DO NOTHING;
+
+    -- spotter: you tagged someone else in one of your own posts. Self-tags
+    -- excluded, or this would fire for anyone who tapped their own face once.
+    INSERT INTO public.earned_badges (user_id, badge_id, earned_at)
+    SELECT p_user_id, 'spotter', MIN(pt.created_at)
+    FROM public.post_tags pt
+    JOIN public.posts po ON po.id = pt.post_id
+    WHERE po.user_id = p_user_id
+      AND pt.tagged_user_id <> p_user_id
+    HAVING MIN(pt.created_at) IS NOT NULL
+    ON CONFLICT (user_id, badge_id) DO NOTHING;
+
+    -- said_it: wrote a caption. Reads posts.caption, NOT photos.caption -- a
+    -- caption is typed when a frame is posted, so photos.caption is unused.
+    INSERT INTO public.earned_badges (user_id, badge_id, earned_at)
+    SELECT p_user_id, 'said_it', MIN(po.created_at)
+    FROM public.posts po
+    WHERE po.user_id = p_user_id
+      AND po.caption IS NOT NULL
+      AND btrim(po.caption) <> ''
+    HAVING MIN(po.created_at) IS NOT NULL
+    ON CONFLICT (user_id, badge_id) DO NOTHING;
+
+    -- ten_frames: the tenth frame ever shot, ranked so a later eleventh can
+    -- never move the recorded earned_at.
+    INSERT INTO public.earned_badges (user_id, badge_id, earned_at)
+    WITH ranked AS (
+        SELECT p.taken_at,
+               ROW_NUMBER() OVER (ORDER BY p.taken_at ASC, p.id ASC) AS rn
+        FROM public.photos p
+        WHERE p.user_id = p_user_id
+    )
+    SELECT p_user_id, 'ten_frames', taken_at
+    FROM ranked
+    WHERE rn = 10
+    ON CONFLICT (user_id, badge_id) DO NOTHING;
+
+    -- good_company: TEN people follow you. Ranked by the tenth follow so an
+    -- eleventh can never move it. (Started as "somebody followed you", which
+    -- every account held on arrival via the auto-follow-the-owner backfill;
+    -- ten is where the holder curve actually flattens.)
+    INSERT INTO public.earned_badges (user_id, badge_id, earned_at)
+    WITH ranked_follows AS (
+        SELECT f.created_at,
+               ROW_NUMBER() OVER (ORDER BY f.created_at ASC, f.follower_id ASC) AS rn
+        FROM public.follows f
+        WHERE f.following_id = p_user_id
+    )
+    SELECT p_user_id, 'good_company', created_at
+    FROM ranked_follows
+    WHERE rn = 10
+    ON CONFLICT (user_id, badge_id) DO NOTHING;
+
+    -- full_set: TWENTY other badge ids, LAST -- the only predicate that reads
+    -- the ledger it writes to, so it must run after every predicate above in
+    -- this same pass. WHERE badge_id <> 'full_set' is the explicit
+    -- cannot-count-itself guarantee. Twenty (not the original ten) is 80% of
+    -- the twenty-five a normal account can actually obtain (founder/
+    -- founding_crew are hand-granted, founding_100's window is shut).
+    INSERT INTO public.earned_badges (user_id, badge_id, earned_at)
+    WITH ranked AS (
+        SELECT eb.earned_at,
+               ROW_NUMBER() OVER (ORDER BY eb.earned_at ASC, eb.badge_id ASC) AS rn
+        FROM public.earned_badges eb
+        WHERE eb.user_id = p_user_id AND eb.badge_id <> 'full_set'
+    )
+    SELECT p_user_id, 'full_set', earned_at
+    FROM ranked
+    WHERE rn = 20
+    ON CONFLICT (user_id, badge_id) DO NOTHING;
+END;
+$$;
+REVOKE ALL ON FUNCTION public._ratchet_badges(UUID) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public._ratchet_badges(UUID) FROM anon;
+REVOKE ALL ON FUNCTION public._ratchet_badges(UUID) FROM authenticated;
+
+-- _resolve_effective_displayed_badges(p_profile_id, p_viewer): the shared
+-- non-owner resolution -- "stored selection, else the automatic default, gated on
+-- covered-shared" lives in exactly this one place, called by profile_badges'
+-- non-owner branch (with p_viewer = the real caller) and by
+-- own_effective_displayed_badges (with p_viewer = NULL, standing in for "a
+-- stranger" -- see that function's own comment for why NULL, specifically, is what
+-- makes that true). INTERNAL ONLY, same REVOKE posture as _ratchet_badges: p_viewer
+-- is a trusted argument only because both callers pin it themselves.
+--
+-- slot_rank pins founder, then founding_crew, then founding_100 (whichever the
+-- profile holds) ahead of the ordinary rarity sort in the automatic default -- the
+-- two hand-granted badges exist because someone decided this account mattered, which
+-- says more about the specific profile than founding_100 does once most accounts
+-- hold it. When none of the three is held, every row gets the same slot_rank and the
+-- ORDER BY reduces to the plain rarity sort, so this is a superset of the original
+-- behaviour, not a divergent rewrite.
+CREATE OR REPLACE FUNCTION public._resolve_effective_displayed_badges(p_profile_id UUID, p_viewer UUID)
+RETURNS TABLE (badge_id TEXT, earned_at TIMESTAMPTZ)
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_selection TEXT[];
+BEGIN
+    SELECT u.displayed_badges INTO v_selection
+    FROM public.users u
+    WHERE u.id = p_profile_id;
+
+    IF v_selection IS NULL THEN
+        RETURN QUERY
+        SELECT c.badge_id, c.earned_at
+        FROM (
+            SELECT eb.badge_id, eb.earned_at,
+                   CASE eb.badge_id
+                       WHEN 'founder'       THEN 0
+                       WHEN 'founding_crew' THEN 1
+                       WHEN 'founding_100'  THEN 2
+                       ELSE 3
+                   END AS slot_rank,
+                   rarity.holder_count
+            FROM public.earned_badges eb
+            JOIN (
+                SELECT eb2.badge_id, COUNT(DISTINCT eb2.user_id) AS holder_count
+                FROM public.earned_badges eb2
+                GROUP BY eb2.badge_id
+            ) rarity ON rarity.badge_id = eb.badge_id
+            WHERE eb.user_id = p_profile_id
+              AND (
+                  eb.badge_id <> 'shared'
+                  OR public.covered_post_visible(p_viewer, p_profile_id, eb.earned_at)
+              )
+        ) c
+        ORDER BY c.slot_rank ASC, c.holder_count ASC, c.earned_at ASC, c.badge_id ASC
+        LIMIT 4;
+        RETURN;
+    END IF;
+
+    -- Explicit selection, possibly '{}' (show none). Never reordered.
+    RETURN QUERY
+    SELECT eb.badge_id, eb.earned_at
+    FROM unnest(v_selection) WITH ORDINALITY AS sel(badge_id, ord)
+    JOIN public.earned_badges eb
+        ON eb.user_id = p_profile_id AND eb.badge_id = sel.badge_id
+    WHERE eb.badge_id <> 'shared'
+       OR public.covered_post_visible(p_viewer, p_profile_id, eb.earned_at)
+    ORDER BY sel.ord ASC;
+END;
+$$;
+REVOKE ALL ON FUNCTION public._resolve_effective_displayed_badges(UUID, UUID) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public._resolve_effective_displayed_badges(UUID, UUID) FROM anon;
+REVOKE ALL ON FUNCTION public._resolve_effective_displayed_badges(UUID, UUID) FROM authenticated;
+
+-- profile_badges(p_profile_id): the earned-badge list, callable about ANY profile by
+-- any authenticated caller (see the "Badges" header above for why). The profile's
+-- own owner sees every earned badge unfiltered (still covered-post gated on
+-- 'shared', which is always a no-op for a self-view -- covered_post_visible is TRUE
+-- whenever the viewer equals the covered account itself). Anyone else gets
+-- _resolve_effective_displayed_badges' resolved four.
+CREATE OR REPLACE FUNCTION public.profile_badges(p_profile_id UUID)
+RETURNS TABLE (badge_id TEXT, earned_at TIMESTAMPTZ)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    PERFORM public._ratchet_badges(p_profile_id);
+
+    IF p_profile_id = auth.uid() THEN
+        RETURN QUERY
+        SELECT eb.badge_id, eb.earned_at
+        FROM public.earned_badges eb
+        WHERE eb.user_id = p_profile_id
+          AND (
+              eb.badge_id <> 'shared'
+              OR public.covered_post_visible(auth.uid(), p_profile_id, eb.earned_at)
+          )
+        ORDER BY eb.earned_at ASC;
+        RETURN;
+    END IF;
+
+    RETURN QUERY
+    SELECT r.badge_id, r.earned_at
+    FROM public._resolve_effective_displayed_badges(p_profile_id, auth.uid()) r;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.profile_badges(UUID) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.profile_badges(UUID) FROM anon;
+GRANT EXECUTE ON FUNCTION public.profile_badges(UUID) TO authenticated;
+
+-- profile_film_stats(p_profile_id): frames shot / rolls developed / shooting since,
+-- replacing follower/following counts on the profile by design -- those can only
+-- ever look like failure on a new account; these three numbers only ever go up.
+-- Same SECURITY DEFINER / callable-about-anyone posture as profile_badges.
+-- shooting_since is NULL for an account with zero photos; the client should simply
+-- not render the line rather than treating NULL as an error.
+CREATE OR REPLACE FUNCTION public.profile_film_stats(p_profile_id UUID)
+RETURNS TABLE (
+    frames_shot     BIGINT,
+    rolls_developed BIGINT,
+    shooting_since  TIMESTAMPTZ
+)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+    SELECT
+        COUNT(*)::BIGINT AS frames_shot,
+        COUNT(DISTINCT p.roll_id) FILTER (
+            WHERE p.roll_id IS NOT NULL AND public.is_roll_developed(p.roll_id)
+        )::BIGINT AS rolls_developed,
+        MIN(p.taken_at) AS shooting_since
+    FROM public.photos p
+    WHERE p.user_id = p_profile_id;
+$$;
+REVOKE ALL ON FUNCTION public.profile_film_stats(UUID) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.profile_film_stats(UUID) FROM anon;
+GRANT EXECUTE ON FUNCTION public.profile_film_stats(UUID) TO authenticated;
+
+-- set_displayed_badges(p_badge_ids): the only write path for a user's own
+-- displayed_badges selection. Zero-trust on input: pinned to auth.uid() (no
+-- p_user_id argument exists, so nothing to spoof), NULL clears back to the
+-- automatic default, '{}' is accepted and stored as "show none", at most 4 ids, no
+-- NULL element, no duplicates, and every id must already be held in earned_badges --
+-- validated against the ledger directly rather than any badge catalog, so this stays
+-- correct with no edit needed whenever the catalog above grows. The caller's own
+-- given order is preserved exactly as provided.
+CREATE OR REPLACE FUNCTION public.set_displayed_badges(p_badge_ids TEXT[])
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_len   INT;
+    v_distinct_count INT;
+    v_held_count     INT;
+BEGIN
+    IF p_badge_ids IS NULL THEN
+        UPDATE public.users SET displayed_badges = NULL WHERE id = auth.uid();
+        RETURN;
+    END IF;
+
+    IF array_position(p_badge_ids, NULL) IS NOT NULL THEN
+        RAISE EXCEPTION 'displayed_badges: badge id cannot be null';
+    END IF;
+
+    v_len := COALESCE(array_length(p_badge_ids, 1), 0);
+
+    IF v_len > 4 THEN
+        RAISE EXCEPTION 'displayed_badges: at most 4 badges, got %', v_len;
+    END IF;
+
+    SELECT COUNT(DISTINCT x) INTO v_distinct_count FROM unnest(p_badge_ids) AS x;
+    IF v_distinct_count <> v_len THEN
+        RAISE EXCEPTION 'displayed_badges: duplicate badge id';
+    END IF;
+
+    SELECT COUNT(*) INTO v_held_count
+    FROM public.earned_badges eb
+    WHERE eb.user_id = auth.uid() AND eb.badge_id = ANY(p_badge_ids);
+    IF v_held_count <> v_len THEN
+        RAISE EXCEPTION 'displayed_badges: caller has not earned every selected badge';
+    END IF;
+
+    UPDATE public.users SET displayed_badges = p_badge_ids WHERE id = auth.uid();
+END;
+$$;
+REVOKE ALL ON FUNCTION public.set_displayed_badges(TEXT[]) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.set_displayed_badges(TEXT[]) FROM anon;
+GRANT EXECUTE ON FUNCTION public.set_displayed_badges(TEXT[]) TO authenticated;
+
+-- own_effective_displayed_badges(): the caller's own resolved "what a stranger sees
+-- on my profile right now" list, in display order, own profile only, no argument.
+-- Zero arguments, hard-pinned to auth.uid() -- same non-negotiable rule every other
+-- "own state" function in this file follows. Calls the shared resolver with
+-- p_viewer = NULL (a stranger, never the caller themselves -- see
+-- _resolve_effective_displayed_badges' own header) so a profile owner can answer
+-- "which four actually show" without the resolver's covered-post gate reading as
+-- "can I see my own badge," which is always yes. Does NOT ratchet -- profile_badges
+-- and refresh_own_badges already own recording.
+CREATE OR REPLACE FUNCTION public.own_effective_displayed_badges()
+RETURNS TABLE (badge_id TEXT)
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT r.badge_id
+    FROM public._resolve_effective_displayed_badges(auth.uid(), NULL::uuid) WITH ORDINALITY
+        AS r(badge_id, earned_at, ord)
+    ORDER BY r.ord ASC;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.own_effective_displayed_badges() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.own_effective_displayed_badges() FROM anon;
+GRANT EXECUTE ON FUNCTION public.own_effective_displayed_badges() TO authenticated;
+
+-- refresh_own_badges(): ratchets the CALLER's own predicates (profile_badges only
+-- ever ratchets the profile being VIEWED, so nothing ever recorded a badge for the
+-- person who earned it unless somebody else happened to open their profile first).
+-- Zero arguments, hard-pinned to auth.uid(). Returns the caller's own unseen count
+-- in the same round trip. Call this right after finishing a reveal, posting to the
+-- feed, or on an app-foreground check -- anywhere the client wants to make sure
+-- anything just-earned actually gets recorded, not just displayed.
+CREATE OR REPLACE FUNCTION public.refresh_own_badges()
+RETURNS BIGINT
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    PERFORM public._ratchet_badges(auth.uid());
+
+    RETURN (
+        SELECT COUNT(*)::BIGINT
+        FROM public.earned_badges
+        WHERE user_id = auth.uid() AND seen_at IS NULL
+    );
+END;
+$$;
+REVOKE ALL ON FUNCTION public.refresh_own_badges() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.refresh_own_badges() FROM anon;
+GRANT EXECUTE ON FUNCTION public.refresh_own_badges() TO authenticated;
+
+-- mark_own_badges_seen() / unseen_badge_count() / own_unseen_badges(): all three
+-- take NO p_profile_id argument, on purpose, and resolve everything from
+-- auth.uid() -- profile_badges can write to ANY profile's earned_badges as a side
+-- effect of being viewed, so if any of these three trusted a caller-supplied
+-- profile id instead, a caller could mark ANOTHER user's badge seen before that
+-- user ever saw it, or read another user's unseen state outright.
+CREATE OR REPLACE FUNCTION public.mark_own_badges_seen()
+RETURNS void
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+    UPDATE public.earned_badges
+    SET seen_at = now()
+    WHERE user_id = auth.uid() AND seen_at IS NULL;
+$$;
+
+CREATE OR REPLACE FUNCTION public.unseen_badge_count()
+RETURNS BIGINT
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+    SELECT COUNT(*)::BIGINT
+    FROM public.earned_badges
+    WHERE user_id = auth.uid() AND seen_at IS NULL;
+$$;
+
+-- badge_id ONLY -- no earned_at, no seen_at -- because the one thing this answers
+-- is "which ids animate" at render time. Do not use earned_at ordering as a proxy
+-- for "which are new": it is the date the thing HAPPENED, not when the ratchet
+-- recorded it, so a badge inserted today can carry an old earned_at.
+CREATE OR REPLACE FUNCTION public.own_unseen_badges()
+RETURNS TABLE (badge_id TEXT)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+    SELECT eb.badge_id
+    FROM public.earned_badges eb
+    WHERE eb.user_id = auth.uid() AND eb.seen_at IS NULL;
+$$;
+
+REVOKE ALL ON FUNCTION public.mark_own_badges_seen() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.mark_own_badges_seen() FROM anon;
+GRANT EXECUTE ON FUNCTION public.mark_own_badges_seen() TO authenticated;
+
+REVOKE ALL ON FUNCTION public.unseen_badge_count() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.unseen_badge_count() FROM anon;
+GRANT EXECUTE ON FUNCTION public.unseen_badge_count() TO authenticated;
+
+REVOKE ALL ON FUNCTION public.own_unseen_badges() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.own_unseen_badges() FROM anon;
+GRANT EXECUTE ON FUNCTION public.own_unseen_badges() TO authenticated;
+
+-- grant_badge / revoke_badge: owner-only hand-grant and its undo, for the two
+-- badges with no predicate at all (founder, founding_crew). Same owner gate as
+-- every other admin RPC in this schema: `IF NOT is_owner() THEN RAISE EXCEPTION`,
+-- not a REVOKE, so a non-owner's call fails with a clean error rather than a
+-- permission-denied at the transport layer. The grantable allow-list is checked
+-- here AND enforced independently by earned_badges_grantable_check on the table
+-- itself (the real backstop). revoke_badge is scoped to granted_by IS NOT NULL, so
+-- it can only ever undo a hand-grant, never strip a predicate-earned badge -- the
+-- "a badge, once earned, is never removed" guarantee holds even with an admin undo
+-- tool in place. test_roll (retired into founding_crew) is no longer grantable.
+CREATE OR REPLACE FUNCTION public.grant_badge(p_user_id UUID, p_badge_id TEXT)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    IF NOT public.is_owner() THEN
+        RAISE EXCEPTION 'owner only';
+    END IF;
+
+    IF p_badge_id NOT IN ('founding_crew', 'founder') THEN
+        RAISE EXCEPTION 'badge % is not grantable', p_badge_id;
+    END IF;
+
+    INSERT INTO public.earned_badges (user_id, badge_id, earned_at, granted_by)
+    VALUES (p_user_id, p_badge_id, now(), auth.uid())
+    ON CONFLICT (user_id, badge_id) DO NOTHING;
+
+    RETURN TRUE;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.revoke_badge(p_user_id UUID, p_badge_id TEXT)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    IF NOT public.is_owner() THEN
+        RAISE EXCEPTION 'owner only';
+    END IF;
+
+    DELETE FROM public.earned_badges
+    WHERE user_id = p_user_id
+      AND badge_id = p_badge_id
+      AND granted_by IS NOT NULL;
+
+    RETURN TRUE;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.grant_badge(UUID, TEXT) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.grant_badge(UUID, TEXT) FROM anon;
+GRANT EXECUTE ON FUNCTION public.grant_badge(UUID, TEXT) TO authenticated;
+
+REVOKE ALL ON FUNCTION public.revoke_badge(UUID, TEXT) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.revoke_badge(UUID, TEXT) FROM anon;
+GRANT EXECUTE ON FUNCTION public.revoke_badge(UUID, TEXT) TO authenticated;
 
 -- ============================================================
 -- Remote push: device token storage. Needed only for REMOTE push (a roll-mate's
