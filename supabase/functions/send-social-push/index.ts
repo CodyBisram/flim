@@ -58,6 +58,33 @@ const supabase = createClient(
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
 );
 
+// PostgREST caps any select at 1000 rows. `photos` crossed that (1808 rows on 2026-09-02) and a
+// row fetch silently dropped everything past the cap; see send-one-shot-push's `neverShot` for the
+// incident. The only query in this file with no filter narrowing it to "this run" is the
+// covered_post_windows read below (loadCoveredPostContext), so it pages through `.range()` instead
+// of one unbounded select. `failed` lets a caller that must fail CLOSED on an unreadable table
+// (covered_post_windows) tell "we saw zero rows" apart from "we couldn't read the table."
+const PAGE_SIZE = 1000;
+async function fetchAllPages<T>(
+  page: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
+  label: string,
+): Promise<{ rows: T[]; failed: boolean }> {
+  const out: T[] = [];
+  let from = 0;
+  for (;;) {
+    const { data, error } = await page(from, from + PAGE_SIZE - 1);
+    if (error) {
+      console.warn(JSON.stringify({ at: "fetch_all_pages_failed", label, from, error: error.message }));
+      return { rows: out, failed: true };
+    }
+    if (!data || data.length === 0) break;
+    out.push(...data);
+    if (data.length < PAGE_SIZE) break;
+    from += PAGE_SIZE;
+  }
+  return { rows: out, failed: false };
+}
+
 // --- APNs auth token (ES256 JWT), cached for <1h per Apple's guidance ---
 let cachedToken: { jwt: string; issuedAt: number } | null = null;
 
@@ -312,14 +339,25 @@ async function loadCoveredPostContext(): Promise<CoveredPostContext> {
   const windowByAuthor = new Map<string, CoveredWindow>();
   const allowedViewers = new Set<string>();
 
-  const { data: windowRows, error: windowsError } = await supabase
-    .from("covered_post_windows")
-    .select("user_id, window_start, window_end, active");
-  if (windowsError) {
-    console.warn(JSON.stringify({ at: "covered_post_windows_fetch_failed", error: windowsError.message }));
+  // No filter narrows this to "this run": it is the WHOLE table, so it pages through
+  // fetchAllPages (see its header, above) rather than risk PostgREST's 1000-row cap silently
+  // dropping a covered author. The table is one row per user (PK on user_id) and is meant to stay
+  // tiny (the owner's named-account feature), so this is unlikely to ever page past once, but
+  // "unlikely" is exactly the reasoning that let the photos bug happen.
+  const { rows: windowRows, failed: windowsFailed } = await fetchAllPages<
+    { user_id: string; window_start: string; window_end: string; active: boolean }
+  >(
+    (from, to) =>
+      supabase.from("covered_post_windows")
+        .select("user_id, window_start, window_end, active")
+        .order("user_id", { ascending: true })
+        .range(from, to),
+    "covered_post_windows",
+  );
+  if (windowsFailed) {
     return { loaded: false, windowByAuthor, allowedViewers };
   }
-  for (const row of windowRows ?? []) {
+  for (const row of windowRows) {
     const userId = row.user_id as string;
     const active = Boolean(row.active);
     windowByAuthor.set(userId, {

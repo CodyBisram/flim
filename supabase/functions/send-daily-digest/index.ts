@@ -62,6 +62,40 @@ const supabase = createClient(
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
 );
 
+// PostgREST caps any select at 1000 rows. `photos` crossed that (1808 rows on 2026-09-02) and a
+// row fetch silently dropped everything past the cap; see send-one-shot-push's `neverShot` for the
+// incident. Every query in this file that has no filter narrowing it to "this run's backlog" (i.e.
+// it reads the WHOLE table: `device_tokens`, `digest_state`, `blocks`, `covered_post_windows`) is
+// exactly that shape, so all four page through `.range()` instead of a single unbounded select.
+// Ordered by a stable, unique column so a page boundary can't skip or repeat a row if the table is
+// written to mid-pagination.
+const PAGE_SIZE = 1000;
+/// `failed` is true only when a page errored, so a caller that must fail CLOSED on an unreadable
+/// table (covered_post_windows below) can tell "we saw zero rows" apart from "we couldn't read the
+/// table," the same distinction `windowsError` used to make before this paged. Callers that already
+/// treated a query error as "no rows" (device_tokens, digest_state, blocks: none of them ever
+/// checked `error` before this change) keep that behavior unchanged; `rows` is whatever was
+/// collected before the failing page, same as `data ?? []` would have been for a one-shot select.
+async function fetchAllPages<T>(
+  page: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
+  label: string,
+): Promise<{ rows: T[]; failed: boolean }> {
+  const out: T[] = [];
+  let from = 0;
+  for (;;) {
+    const { data, error } = await page(from, from + PAGE_SIZE - 1);
+    if (error) {
+      console.warn(JSON.stringify({ at: "fetch_all_pages_failed", label, from, error: error.message }));
+      return { rows: out, failed: true };
+    }
+    if (!data || data.length === 0) break;
+    out.push(...data);
+    if (data.length < PAGE_SIZE) break;
+    from += PAGE_SIZE;
+  }
+  return { rows: out, failed: false };
+}
+
 // Resolved from the same pinned identity is_owner()/the auto-follow trigger use
 // (public.owner_user_id(), supabase/migrations/2026-09-01_pin_owner_identity_everywhere.sql), not
 // by matching a client-writable email column. This function runs under the SERVICE ROLE, so it
@@ -119,14 +153,25 @@ async function loadCoveredPostContext(): Promise<CoveredPostContext> {
   const windowByAuthor = new Map<string, CoveredWindow>();
   const allowedViewers = new Set<string>();
 
-  const { data: windowRows, error: windowsError } = await supabase
-    .from("covered_post_windows")
-    .select("user_id, window_start, window_end, active");
-  if (windowsError) {
-    console.warn(JSON.stringify({ at: "covered_post_windows_fetch_failed", error: windowsError.message }));
+  // No filter narrows this to "this run's backlog": it is the WHOLE table, so it pages through
+  // fetchAllPages the same as device_tokens/digest_state/blocks below rather than risk PostgREST's
+  // 1000-row cap silently dropping a covered author. The table is one row per user (PK on
+  // user_id) and is meant to stay tiny (the owner's named-account feature), so this is unlikely to
+  // ever page past once, but "unlikely" is exactly the reasoning that let the photos bug happen.
+  const { rows: windowRows, failed: windowsFailed } = await fetchAllPages<
+    { user_id: string; window_start: string; window_end: string; active: boolean }
+  >(
+    (from, to) =>
+      supabase.from("covered_post_windows")
+        .select("user_id, window_start, window_end, active")
+        .order("user_id", { ascending: true })
+        .range(from, to),
+    "covered_post_windows",
+  );
+  if (windowsFailed) {
     return { loaded: false, windowByAuthor, allowedViewers };
   }
-  for (const row of windowRows ?? []) {
+  for (const row of windowRows) {
     const userId = row.user_id as string;
     const active = Boolean(row.active);
     windowByAuthor.set(userId, {
@@ -323,19 +368,34 @@ Deno.serve(async () => {
   // section above for the fail-closed contract.
   const coveredCtx = await loadCoveredPostContext();
 
-  // Everyone with a registered device is a candidate; nobody else can be notified anyway.
-  const { data: tokenRows } = await supabase.from("device_tokens").select("user_id, token");
+  // Everyone with a registered device is a candidate; nobody else can be notified anyway. No
+  // filter narrows this to "this run": it is the WHOLE table, one row per device across every
+  // account, so it pages through fetchAllPages rather than risk PostgREST's 1000-row cap silently
+  // dropping devices past it, the same shape the photos-select bug (see the header on
+  // fetchAllPages above) already taught this codebase once.
+  const { rows: tokenRows } = await fetchAllPages<{ user_id: string; token: string }>(
+    (from, to) =>
+      supabase.from("device_tokens").select("user_id, token").order("token", { ascending: true }).range(from, to),
+    "device_tokens",
+  );
   const tokensByUser = new Map<string, string[]>();
-  for (const row of tokenRows ?? []) {
+  for (const row of tokenRows) {
     const list = tokensByUser.get(row.user_id) ?? [];
     list.push(row.token);
     tokensByUser.set(row.user_id, list);
   }
   if (tokensByUser.size === 0) return new Response("no devices");
 
-  const { data: stateRows } = await supabase.from("digest_state").select("user_id, last_sent_at");
+  // Same shape: one row per account that has EVER received a digest, so this grows with the whole
+  // user base over time, not with anything scoped to this run.
+  const { rows: stateRows } = await fetchAllPages<{ user_id: string; last_sent_at: string }>(
+    (from, to) =>
+      supabase.from("digest_state").select("user_id, last_sent_at").order("user_id", { ascending: true })
+        .range(from, to),
+    "digest_state",
+  );
   const lastSent = new Map<string, number>(
-    (stateRows ?? []).map((r) => [r.user_id as string, new Date(r.last_sent_at).getTime()]),
+    stateRows.map((r) => [r.user_id, new Date(r.last_sent_at).getTime()]),
   );
 
   // Posts inside the widest window any user could need. Fetched once, then filtered per user,
@@ -363,9 +423,17 @@ Deno.serve(async () => {
     followingByUser.set(f.follower_id, set);
   }
 
-  const { data: blockRows } = await supabase.from("blocks").select("blocker_id, blocked_id");
+  // Same shape again: every block system-wide, not scoped to this run's candidates, so it grows
+  // with total blocks across the whole platform over time.
+  const { rows: blockRows } = await fetchAllPages<{ blocker_id: string; blocked_id: string }>(
+    (from, to) =>
+      supabase.from("blocks").select("blocker_id, blocked_id")
+        .order("blocker_id", { ascending: true }).order("blocked_id", { ascending: true })
+        .range(from, to),
+    "blocks",
+  );
   const blockPairs = new Set<string>();
-  for (const b of blockRows ?? []) {
+  for (const b of blockRows) {
     blockPairs.add(`${b.blocker_id}|${b.blocked_id}`);
     blockPairs.add(`${b.blocked_id}|${b.blocker_id}`);
   }

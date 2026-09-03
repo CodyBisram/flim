@@ -49,6 +49,32 @@ const supabase = createClient(
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
 );
 
+// PostgREST caps any select at 1000 rows. `photos` crossed that (1808 rows on 2026-09-02) and a
+// row fetch silently dropped everything past the cap; see send-one-shot-push's `neverShot` for the
+// incident. The only query in this file with no filter narrowing it to "this run" is the full
+// `blocks` read below (loadBlockPairs), so it pages through `.range()` instead of one unbounded
+// select.
+const PAGE_SIZE = 1000;
+async function fetchAllPages<T>(
+  page: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
+  label: string,
+): Promise<T[]> {
+  const out: T[] = [];
+  let from = 0;
+  for (;;) {
+    const { data, error } = await page(from, from + PAGE_SIZE - 1);
+    if (error) {
+      console.warn(JSON.stringify({ at: "fetch_all_pages_failed", label, from, error: error.message }));
+      break;
+    }
+    if (!data || data.length === 0) break;
+    out.push(...data);
+    if (data.length < PAGE_SIZE) break;
+    from += PAGE_SIZE;
+  }
+  return out;
+}
+
 // --- APNs auth token (ES256 JWT), cached for <1h per Apple's guidance ---
 let cachedToken: { jwt: string; issuedAt: number } | null = null;
 
@@ -186,9 +212,17 @@ async function sendPush(
 // shape as send-daily-digest's blockPairs (many recipients x many sources, unlike
 // send-social-push's single-notify()-call door).
 async function loadBlockPairs(): Promise<Set<string>> {
-  const { data } = await supabase.from("blocks").select("blocker_id, blocked_id");
+  // Every block system-wide, not scoped to this run's recipients, so it grows with total blocks
+  // across the whole platform over time; see the fetchAllPages header above.
+  const rows = await fetchAllPages<{ blocker_id: string; blocked_id: string }>(
+    (from, to) =>
+      supabase.from("blocks").select("blocker_id, blocked_id")
+        .order("blocker_id", { ascending: true }).order("blocked_id", { ascending: true })
+        .range(from, to),
+    "blocks",
+  );
   const pairs = new Set<string>();
-  for (const b of data ?? []) {
+  for (const b of rows) {
     pairs.add(`${b.blocker_id}|${b.blocked_id}`);
     pairs.add(`${b.blocked_id}|${b.blocker_id}`);
   }

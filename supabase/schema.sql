@@ -798,9 +798,101 @@ ALTER TABLE public.users
 CREATE INDEX IF NOT EXISTS users_hidden_from_discovery_idx
     ON public.users (id) WHERE hidden_from_discovery;
 
+-- signup_ordinal: a permanent "you are the Nth member" number, folded in from
+-- supabase/migrations/2026-08-17_profile_identity.sql. Production has carried this column, its
+-- backfill, both triggers below, and its GRANT since that migration ran; this file did not, until
+-- now (see the NOTE this replaces, near the users column-level SELECT GRANT further down).
+--
+-- Nullable at first, same reason every other folded ADD COLUMN in this file is: the backfill
+-- immediately below needs real NULL rows to target before NOT NULL is enforced. On a from-scratch
+-- load the table is empty, so the backfill matches zero rows and the NOT NULL step is a trivial
+-- no-op; both are safe to run every time this file re-runs.
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS signup_ordinal INT;
+
+-- One-time backfill for EXISTING users, folded here as executable SQL (unlike the is_sorted
+-- backfill above, which is commented out) because this one already only touches rows where
+-- signup_ordinal IS NULL: re-running it against a fully-backfilled production database, or
+-- running it against a brand-new empty table, both match zero rows and change nothing. Ordered by
+-- created_at ascending, id as a deterministic tiebreaker for any exact-same-timestamp rows, and
+-- must run before the assignment trigger below exists: that trigger derives its next number from
+-- MAX(signup_ordinal), so if it started assigning to brand-new signups while older rows were still
+-- NULL, a new signup could grab "#1" out from under the actual first member.
+WITH ranked AS (
+    SELECT id, ROW_NUMBER() OVER (ORDER BY created_at ASC, id ASC) AS rn
+    FROM public.users
+    WHERE signup_ordinal IS NULL
+)
+UPDATE public.users u
+SET signup_ordinal = ranked.rn
+FROM ranked
+WHERE u.id = ranked.id;
+
+ALTER TABLE public.users ALTER COLUMN signup_ordinal SET NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS users_signup_ordinal_unique_idx ON public.users (signup_ordinal);
+
+-- Assignment, BEFORE INSERT. Overwrites NEW.signup_ordinal unconditionally, even if a caller
+-- supplied one, so the server is the only source of truth regardless of what a crafted INSERT
+-- body contains. pg_advisory_xact_lock is transaction-scoped (acquired here, released
+-- automatically at COMMIT or ROLLBACK of the inserting transaction), so a second concurrent
+-- signup's trigger blocks on the SAME lock until the first finishes before it can read
+-- MAX(signup_ordinal), which is what makes two simultaneous signups structurally unable to
+-- observe the same MAX and hand out the same number. Full sequence-vs-lock tradeoff (why a plain
+-- SEQUENCE was rejected: nextval() is not transactional, so a rolled-back signup would burn a
+-- number forever) lives in 2026-08-17_profile_identity.sql.
+CREATE OR REPLACE FUNCTION public.assign_signup_ordinal()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_next INT;
+BEGIN
+    PERFORM pg_advisory_xact_lock(hashtext('public.users.signup_ordinal'));
+    SELECT COALESCE(MAX(signup_ordinal), 0) + 1 INTO v_next FROM public.users;
+    NEW.signup_ordinal := v_next;
+    RETURN NEW;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.assign_signup_ordinal() FROM PUBLIC, anon, authenticated;
+
+DROP TRIGGER IF EXISTS assign_signup_ordinal_trigger ON public.users;
+CREATE TRIGGER assign_signup_ordinal_trigger
+    BEFORE INSERT ON public.users
+    FOR EACH ROW EXECUTE FUNCTION public.assign_signup_ordinal();
+
+-- Immutability, BEFORE UPDATE. Pins signup_ordinal to its OLD value on every UPDATE,
+-- unconditionally: table-level UPDATE on `users` is granted to `authenticated` (see the GRANT
+-- UPDATE further down) and RLS is row-level, not column-level, so nothing else in this schema
+-- stops a signed-in user from rewriting their own number without this trigger. This is a
+-- SEPARATE BEFORE UPDATE trigger from lock_users_privileged_columns_trigger above (that one pins
+-- id/email/invite_code/invite_uses_remaining; this one pins only signup_ordinal); Postgres runs
+-- both on every UPDATE with no ordering hazard between them since they touch disjoint columns.
+-- Manual correction (owner only, SQL editor):
+--   ALTER TABLE public.users DISABLE TRIGGER lock_signup_ordinal_trigger;
+--   UPDATE public.users SET signup_ordinal = <n> WHERE id = '<uuid>';
+--   ALTER TABLE public.users ENABLE TRIGGER lock_signup_ordinal_trigger;
+CREATE OR REPLACE FUNCTION public.lock_signup_ordinal()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    NEW.signup_ordinal := OLD.signup_ordinal;
+    RETURN NEW;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.lock_signup_ordinal() FROM PUBLIC, anon, authenticated;
+
+DROP TRIGGER IF EXISTS lock_signup_ordinal_trigger ON public.users;
+CREATE TRIGGER lock_signup_ordinal_trigger
+    BEFORE UPDATE ON public.users
+    FOR EACH ROW EXECUTE FUNCTION public.lock_signup_ordinal();
+
 CREATE OR REPLACE VIEW public.profiles AS
     SELECT id, username, avatar_path, bio, created_at, display_name, cover_path,
-           hidden_from_discovery
+           hidden_from_discovery, signup_ordinal
     FROM public.users;
 
 -- security_invoker = on as of 2026-09-02 (supabase/migrations/2026-09-02_profiles_security_invoker.sql).
@@ -1394,7 +1486,8 @@ CREATE INDEX IF NOT EXISTS blocks_blocker_idx          ON public.blocks (blocker
 --
 -- As of 2026-09-02 (supabase/migrations/2026-09-02_profiles_security_invoker.sql), that premise no
 -- longer holds: the GRANT immediately below now covers every column public.profiles selects,
--- hidden_from_discovery included, so the view is safe to run as invoker and now does. The reason
+-- hidden_from_discovery and signup_ordinal included, so the view is safe to run as invoker and
+-- now does. The reason
 -- it is now SAFE is exactly this GRANT plus the "users: profiles readable" USING (true) policy
 -- below -- not anything about the view itself. What still keeps `email` and `invite_code` out of
 -- reach is unrelated to invoker vs definer in either direction: they are simply never listed in
@@ -1413,19 +1506,13 @@ REVOKE SELECT ON public.users FROM anon, authenticated;
 -- hidden_from_discovery: added 2026-09-02 so this list covers every column public.profiles
 -- selects, matching the view's own security_invoker note above.
 --
--- NOTE ON signup_ordinal: production also carries GRANT SELECT (signup_ordinal) ON public.users
--- TO authenticated, from 2026-08-17_profile_identity.sql. That migration's column, backfill and
--- trigger were never folded into this file at all (schema.sql has no `signup_ordinal` column
--- definition anywhere), so its grant is deliberately NOT added to this list either -- doing so
--- would make a from-scratch run of this file fail here with "column signup_ordinal does not
--- exist" (confirmed against a fresh container 2026-09-02), since REVOKE SELECT above runs before
--- any such column would exist. This is pre-existing drift between schema.sql and production,
--- outside the scope of the security_invoker change this comment block otherwise documents; it
--- means a from-scratch schema.sql load does not yet match production for that one column, and a
--- production re-run of schema.sql's REVOKE SELECT line would still (already, before this change)
--- strip signup_ordinal's grant unless 2026-08-17_profile_identity.sql's GRANT is re-applied after.
+-- signup_ordinal: folded in here (found 2026-09-03) alongside its column, backfill, and both
+-- triggers, added earlier in this file next to the `profiles` view definition -- see the block
+-- starting "signup_ordinal: a permanent 'you are the Nth member' number" above. Production has
+-- carried this exact GRANT since 2026-08-17_profile_identity.sql; this file previously did not,
+-- so a from-scratch load used to diverge from production on this one column. It no longer does.
 GRANT SELECT (id, username, avatar_path, bio, created_at, display_name, cover_path,
-              hidden_from_discovery) ON public.users TO authenticated;
+              hidden_from_discovery, signup_ordinal) ON public.users TO authenticated;
 
 -- INSERT/UPDATE/DELETE: column-scoped, same discipline as SELECT above.
 -- Supabase's default privileges hand INSERT/UPDATE/DELETE to anon AND

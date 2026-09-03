@@ -14,12 +14,23 @@
 //      function dies mid-run the claims stay and those people are skipped, which is the right
 //      direction to fail: one missed nudge beats a second one.
 //
+// A THIRD guard, because this deploys with --no-verify-jwt: every request must carry a shared
+// secret header, `x-one-shot-secret`, matching the ONE_SHOT_PUSH_SECRET function secret. Without
+// this, anyone holding the URL (it is not otherwise secret, but it should not need to be) could
+// trigger a known campaign, dry run or for real. Checked FIRST, before anything else in the
+// handler runs, and FAILS CLOSED: an unset ONE_SHOT_PUSH_SECRET refuses every request with 503
+// rather than silently reopening the hole the first time this function is deployed before the
+// secret exists.
+//
 // Deploy:
 //   supabase functions deploy send-one-shot-push --no-verify-jwt
 // Requires: supabase/migrations/2026-08-19_one_shot_push.sql
+// Requires the ONE_SHOT_PUSH_SECRET function secret (see the guard above); set it with
+//   supabase secrets set ONE_SHOT_PUSH_SECRET=<a long random value>
+// then redeploy so the running function picks it up.
 //
-// Invoke (dry run):   curl -s "<fn url>?campaign=first-shot"
-// Invoke (for real):  curl -s "<fn url>?campaign=first-shot&send=true"
+// Invoke (dry run):   curl -s -H "x-one-shot-secret: <secret>" "<fn url>?campaign=first-shot"
+// Invoke (for real):  curl -s -H "x-one-shot-secret: <secret>" "<fn url>?campaign=first-shot&send=true"
 //
 // Uses the SAME APNs secrets as the other push functions (APNS_KEY_ID, APNS_TEAM_ID,
 // APNS_PRIVATE_KEY, APNS_BUNDLE_ID, APNS_ENVIRONMENT).
@@ -41,6 +52,28 @@ const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
 );
+
+// Read once, not through a helper called per-request, so a missing secret is decided the same way
+// for the life of this instance rather than re-reading the environment on every hit.
+const ONE_SHOT_PUSH_SECRET = Deno.env.get("ONE_SHOT_PUSH_SECRET");
+
+/// Constant-time string comparison. Hashes both inputs to a fixed-length digest first (SHA-256,
+/// 32 bytes always) so the comparison never has an early exit or a length check to time against;
+/// a naive `a === b` or a byte loop that returns on the first mismatch leaks how many leading
+/// characters were guessed correctly, and `x-one-shot-secret` is exactly the kind of static
+/// bearer credential that leak matters for.
+async function timingSafeEqual(a: string, b: string): Promise<boolean> {
+  const enc = new TextEncoder();
+  const [aHash, bHash] = await Promise.all([
+    crypto.subtle.digest("SHA-256", enc.encode(a)),
+    crypto.subtle.digest("SHA-256", enc.encode(b)),
+  ]);
+  const aBytes = new Uint8Array(aHash);
+  const bBytes = new Uint8Array(bHash);
+  let diff = 0;
+  for (let i = 0; i < aBytes.length; i++) diff |= aBytes[i] ^ bBytes[i];
+  return diff === 0;
+}
 
 /// A person to contact, and the exact words for them. Copy is resolved PER RECIPIENT because
 /// some of it is about their own state ("4 frames waiting"), and a campaign that rounded that to
@@ -140,9 +173,8 @@ async function checkedAgainCohort(): Promise<Recipient[]> {
 
 /// A named group rather than a rule: the owner's Islands of Adventure day, 2026-09-03. Copy
 /// chosen by the owner. Usernames are resolved at run time so the list reads as people, and
-/// anyone on it without a registered device simply does not appear in the dry run. No route:
-/// "make a roll" lives on the Rolls tab and there is no push destination for it yet, and landing
-/// on the camera would be the wrong place, so the app opens where it opens.
+/// anyone on it without a registered device simply does not appear in the dry run. Routes to the
+/// Rolls tab, where making a roll lives; the camera would be the wrong doorstep.
 const ISLANDS_GROUP = ["cody", "tristan", "lele", "sabs", "ricky", "branb", "trina"];
 
 async function islandsCohort(): Promise<Recipient[]> {
@@ -155,7 +187,9 @@ async function islandsCohort(): Promise<Recipient[]> {
       userId: u.id,
       title: "Islands of Adventure.",
       body: "Ready? Someone make the roll before we go, or the whole day ends up split across everyone's phones.",
-      route: null,
+      // Lands on the Rolls tab on builds that know the route (added 2026-09-03); older builds
+      // treat an unknown destination as "just open the app", which is what this sent before.
+      route: { t: "rolls" },
     }));
 }
 
@@ -276,6 +310,21 @@ async function push(token: string, title: string, body: string, route: unknown):
 // ------------------------------------------------------------
 
 Deno.serve(async (req) => {
+  // Checked before anything else, including which campaign was asked for: this function deploys
+  // with --no-verify-jwt, so nothing upstream of this handler stops an anonymous request. FAILS
+  // CLOSED: an unset secret refuses EVERY request, dry run included, rather than let a deploy that
+  // lands before `supabase secrets set ONE_SHOT_PUSH_SECRET=...` has run reopen the hole.
+  if (!ONE_SHOT_PUSH_SECRET) {
+    return Response.json(
+      { error: "ONE_SHOT_PUSH_SECRET is not set. Refusing every request until it is." },
+      { status: 503 },
+    );
+  }
+  const provided = req.headers.get("x-one-shot-secret") ?? "";
+  if (!(await timingSafeEqual(provided, ONE_SHOT_PUSH_SECRET))) {
+    return Response.json({ error: "unauthorized" }, { status: 401 });
+  }
+
   const url = new URL(req.url);
   const name = url.searchParams.get("campaign") ?? "";
   const send = url.searchParams.get("send") === "true";

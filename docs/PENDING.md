@@ -176,12 +176,29 @@ whom had shot. Both cohorts now count per person with exact HEAD counts. The Aug
 the cap and was correct. Any edge function that fetches rows from `photos` to derive a fact about
 users has this bug; `send-social-push` and `send-daily-digest` were not audited for it.
 
-### queued: `send-one-shot-push` accepts any caller
+### done 2026-09-03: the push functions survive table growth, and one-shot sends need a secret
 
-Deployed with `--no-verify-jwt` and the handler checks nothing: anyone holding the function URL
-can trigger a campaign send. Bounded by the ledger (once per campaign name per person) and by the
-campaign allowlist, so the worst case is one early send of a known campaign, not arbitrary copy.
-Fix is a shared-secret header checked in the handler and set with `supabase secrets set`.
+`send-one-shot-push` now requires an `x-one-shot-secret` header matching the `ONE_SHOT_PUSH_SECRET`
+project secret (constant-time compare, 503 if the secret is unset, 401 on mismatch). Set and
+deployed 2026-09-03; the value lives in the owner's home directory, never in the repo, and
+`supabase secrets set` issues a new one any time. Invocation is now
+`curl -H "x-one-shot-secret: <secret>" "<fn url>?campaign=<name>[&user=<uuid>][&send=true]"`.
+
+The 1000-row audit across `send-social-push`, `send-daily-digest`, `send-develop-push`: four
+whole-table fetches with no bound at all (`covered_post_windows` twice, `device_tokens`,
+`digest_state`, `blocks` twice) now page through `fetchAllPages`. Everything else is bounded by
+an unsent backlog or a per-post/per-roll scope; the nearest real limits are the digest's 48h
+`posts` window (breaks past 1000 posts platform-wide in 48h) and its `follows` fan-out (breaks
+when the posters in a window share more than 1000 followers). All four functions redeployed.
+
+`schema.sql` now carries `signup_ordinal` (column, backfill, unique index, both triggers, the
+view column, the grant), verified by a fresh load in a local stack. Found while doing it: the
+BADGE SYSTEM (`profile_badges`, `profile_film_stats`, and roughly ten follow-on badge migrations
+from 2026-08-17/18) is entirely absent from `schema.sql` too. Live and called by the app, so a
+fresh environment lacks it outright. Its own fold, not started. Status: `queued`.
+
+The one-shot campaign `islands` now routes to the Rolls tab (`{"t": "rolls"}`, a push
+destination added to the app 2026-09-03; older builds open the app as before).
 
 ### resolved 2026-08-29 — there is no 20-uploads-per-day cap
 
