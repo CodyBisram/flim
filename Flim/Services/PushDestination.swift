@@ -9,6 +9,9 @@ import Foundation
 ///     "post"     id = post id  -> that post, optionally with "comments": true
 ///     "profile"  id = user id  -> that user's page
 ///     "feed"     no id         -> the feed tab
+///     "rolls"    no id         -> the Rolls tab. Builds older than this one treat "rolls" as an
+///                                 unrecognized destination and simply open the app, so the server
+///                                 is free to send it without a compatibility window.
 ///
 /// Named for WHERE TO GO rather than for what happened, so a future notification reusing a
 /// destination needs no client change.
@@ -34,6 +37,8 @@ enum PushDestination: Codable, Equatable {
     /// opening long before, or without ever, being posted.
     case photo(photoId: UUID)
     case feed
+    /// The Rolls tab. Carries no id: it lands on the tab's own list, not any one roll.
+    case rolls
 
     static func parse(userInfo: [AnyHashable: Any]) -> PushDestination? {
         guard let flim = userInfo["flim"] as? [String: Any],
@@ -41,6 +46,8 @@ enum PushDestination: Codable, Equatable {
         switch type {
         case "feed":
             return .feed
+        case "rolls":
+            return .rolls
         case "reveal":
             guard let id = uuid(flim["id"]) else { return nil }
             return .reveal(rollId: id)
@@ -110,6 +117,8 @@ enum PushDestination: Codable, Equatable {
             return ["t": "photo", "id": photoId.uuidString]
         case .feed:
             return ["t": "feed"]
+        case .rolls:
+            return ["t": "rolls"]
         }
     }
 }

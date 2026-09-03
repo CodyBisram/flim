@@ -45,6 +45,12 @@ struct PushDestinationTests {
         #expect(PushDestination.parse(userInfo: userInfo) == .feed)
     }
 
+    @Test("rolls carries no id")
+    func rollsDecodes() {
+        let userInfo: [AnyHashable: Any] = ["flim": ["t": "rolls"]]
+        #expect(PushDestination.parse(userInfo: userInfo) == .rolls)
+    }
+
     // MARK: - The mandatory fallback
 
     @Test("no flim key at all falls back, exactly today's pushes and every pre-existing local notification")
@@ -100,6 +106,12 @@ struct PushDestinationTests {
         let payload = PushDestination.post(postId: UUID(), comments: false).wireValue
         #expect(payload["comments"] == nil)
     }
+
+    @Test("rolls' wireValue round-trips through parse")
+    func rollsWireValueRoundTrips() {
+        let userInfo: [AnyHashable: Any] = ["flim": PushDestination.rolls.wireValue]
+        #expect(PushDestination.parse(userInfo: userInfo) == .rolls)
+    }
 }
 
 /// `PendingPushDestination` is what makes a tap survive to be consumed later: a cold launch, or a
@@ -149,7 +161,8 @@ struct PendingPushDestinationTests {
             .darkroom,
             .sortDeck,
             .photo(photoId: UUID()),
-            .feed
+            .feed,
+            .rolls
         ]
         for destination in cases {
             PendingPushDestination.store(destination)
@@ -189,6 +202,10 @@ struct WidgetLinkRoutingTests {
     /// The reason `parse(url:)` is scoped to our own scheme. Invite links arrive as https
     /// universal links and are checked AFTER the widget routes in `FlimApp.onOpenURL`, so a
     /// parser that answered for them would swallow every invite in the product.
+    ///
+    /// `"rolls"` is included here on purpose: no widget builds that link (there is no Rolls-tab
+    /// tile), only the push payload does, so its host has no `WidgetLink` constructor and the URL
+    /// form must keep declining it.
     @Test("it declines anything that is not a widget link")
     func declinesEverythingElse() {
         let declined = [
@@ -200,6 +217,7 @@ struct WidgetLinkRoutingTests {
             "com.lapse.app://photo/not-a-uuid",
             "com.lapse.app://reveal",
             "com.lapse.app://somewhere-new",
+            "com.lapse.app://rolls",
             "flim://camera"
         ]
         for raw in declined {

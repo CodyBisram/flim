@@ -374,6 +374,10 @@ struct MainTabView: View {
         case .feed:
             selected = 3
 
+        case .rolls:
+            selected = 2
+            rollsPath = NavigationPath()   // land on the tab's root, not whatever detail was pushed
+
         case .reveal(let rollId):
             selected = 2
             Task {
