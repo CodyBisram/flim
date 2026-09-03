@@ -425,9 +425,8 @@ The bump this section used to ask for has already happened. Status: `done`.
   kept), no manual swapping yet.
   - Data: `profile_chapters(p_profile_id)` and `chapter_photos(p_profile_id, p_month_start)` in
     `2026-09-03_chapters.sql`, folded into schema.sql, container-verified for every visibility
-    case and cross-checked against production counts. NOT YET APPLIED to production (the write
-    was blocked from the session; owner applies, or retry). Apply BEFORE any build with the shelf
-    reaches a device; until then the shelf fails soft and simply does not render.
+    case and cross-checked against production counts. APPLIED to production 2026-09-03 on the
+    owner's word; both functions present, authenticated-only, definer, index in place.
   - App: `ChapterService`, `ChapterShelfView` (3a, between the profile actions and the grid),
     `ChapterRecapView` (3b opening card plus native-paging playback reusing the reveal's beat),
     `ChapterCurator` (pure selection, tested) and `ChapterCuration` (the Vision actor).
