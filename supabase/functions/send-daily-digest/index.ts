@@ -360,7 +360,13 @@ async function sendPush(deviceToken: string, title: string, body: string): Promi
 
 // ---- Run ----------------------------------------------------------------
 
-Deno.serve(async () => {
+Deno.serve(async (req: Request) => {
+  // `?dry=true` runs every read exactly as a real run would, but never calls APNs and never
+  // writes digest_state, so the owner can see the windowing effect below before the next real
+  // 10:00 run. Defaults to a real send: the pg_cron job that actually drives this in production
+  // calls the function URL with no query string at all, and that path must keep sending.
+  const isDry = new URL(req.url).searchParams.get("dry") === "true";
+
   const now = Date.now();
   const maxWindowStart = new Date(now - MAX_WINDOW_HOURS * 3600_000);
 
@@ -396,6 +402,29 @@ Deno.serve(async () => {
   );
   const lastSent = new Map<string, number>(
     stateRows.map((r) => [r.user_id, new Date(r.last_sent_at).getTime()]),
+  );
+
+  // The owed half of the feed gate (docs/PENDING.md): the digest is server-computed and has no
+  // visibility into device-local "seen" state, and must never gain any, that's a published
+  // privacy stance, not a preference. `client_versions.updated_at` is the closest proxy that
+  // already exists for "this account looked at the feed since then": report_client_version
+  // fires once per MainTabView appearance (Flim/Views/Main/MainTabView.swift), and the table is
+  // one row per user, PRIMARY KEY (user_id) (supabase/migrations/2026-08-21_client_versions.sql),
+  // so there is no per-device fan-out to reduce over, one lookup per recipient is the whole
+  // answer. Scoped to just this run's recipients (tokensByUser's keys), not the whole table, and
+  // paged the same way as the other whole/large reads above in case that set ever exceeds
+  // PostgREST's 1000-row cap.
+  const recipientIds = [...tokensByUser.keys()];
+  const { rows: clientVersionRows } = await fetchAllPages<{ user_id: string; updated_at: string }>(
+    (from, to) =>
+      supabase.from("client_versions").select("user_id, updated_at")
+        .in("user_id", recipientIds)
+        .order("user_id", { ascending: true })
+        .range(from, to),
+    "client_versions",
+  );
+  const lastLaunch = new Map<string, number>(
+    clientVersionRows.map((r) => [r.user_id, new Date(r.updated_at).getTime()]),
   );
 
   // Posts inside the widest window any user could need. Fetched once, then filtered per user,
@@ -452,8 +481,16 @@ Deno.serve(async () => {
 
     // Window starts at the last digest actually sent, so a missed run rolls into the next one.
     // A user with no state yet gets the default window rather than their whole history.
-    const since = Math.max(lastSent.get(userId) ?? 0, now - MAX_WINDOW_HOURS * 3600_000);
-    if (now - (lastSent.get(userId) ?? 0) < DIGEST_INTERVAL_HOURS * 3600_000) continue;
+    const lastSentAt = lastSent.get(userId) ?? 0;
+    if (now - lastSentAt < DIGEST_INTERVAL_HOURS * 3600_000) continue;
+
+    const baseSince = Math.max(lastSentAt, now - MAX_WINDOW_HOURS * 3600_000);
+    // Clamp to this user's last known launch, so the 10:00 push counts only what arrived since
+    // they last opened the feed, not since their last digest, those two can differ by hours. A
+    // recipient with no client_versions row (never on a build that reports, or hasn't relaunched
+    // since updating) falls back to `baseSince` unchanged, exactly the pre-clamp behavior.
+    const launchAt = lastLaunch.get(userId);
+    const since = launchAt !== undefined ? Math.max(baseSince, launchAt) : baseSince;
 
     considered++;
 
@@ -469,6 +506,30 @@ Deno.serve(async () => {
       if (!coveredPostVisibleTo(coveredCtx, userId, poster, p.created_at as string)) return false;
       return new Date(p.created_at).getTime() > since;
     });
+
+    if (isDry) {
+      // Never sends, never touches digest_state: same reads, same filter, logged instead of
+      // acted on, so the owner can see the clamp's effect before the next real 10:00 run.
+      console.log(JSON.stringify({
+        at: "digest_dry_run",
+        userId,
+        since: new Date(since).toISOString(),
+        baseSince: new Date(baseSince).toISOString(),
+        launchAt: launchAt !== undefined ? new Date(launchAt).toISOString() : null,
+        count: theirs.length,
+        outcome: theirs.length === 0 ? "suppressed" : "would_send",
+      }));
+      continue;
+    }
+
+    // Zero after the clamp is suppressed exactly like zero was before this change (no followee
+    // posted in the window at all): digest_state is deliberately left untouched, the same
+    // invariant this file already had. Advancing it here would buy nothing, `since` is
+    // recomputed fresh every run from client_versions, so a post the user already saw stays
+    // suppressed on every later run too, without needing digest_state to remember why. It would
+    // also cost something: the DIGEST_INTERVAL_HOURS gate above reads lastSentAt from
+    // digest_state, and bumping it on a suppressed run would push back the next chance to
+    // reconsider this user even after they open the app to something genuinely new.
     if (theirs.length === 0) continue;
 
     // Posters most-recent first, deduped: `recentPosts` is already ordered that way.
@@ -492,7 +553,9 @@ Deno.serve(async () => {
     if (delivered) sent++;
   }
 
-  const summary = `digest: ${sent} sent, ${considered} considered`;
-  console.log(JSON.stringify({ at: "digest_run", sent, considered }));
+  const summary = isDry
+    ? `digest dry run: ${considered} considered, see digest_dry_run logs for per-recipient outcome`
+    : `digest: ${sent} sent, ${considered} considered`;
+  console.log(JSON.stringify({ at: "digest_run", dry: isDry, sent, considered }));
   return new Response(summary);
 });

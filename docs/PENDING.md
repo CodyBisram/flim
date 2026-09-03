@@ -350,39 +350,39 @@ become visible). Seen state drives the pill, the ledger, the caught-up seam and 
 opens, and nothing else. Any future seen-state bug is now a wrong pill, not a feed that empties
 or never ends.
 
-### blocked: feed redesign is TestFlight-only until two changes land
+### done 2026-09-03: the feed redesign is live and digest windowing shipped
 
-Owner gate set 2026-08-24. Neither is built. Do not push the feed to production without both.
+Owner gate set 2026-08-24, on two changes before the feed redesign left TestFlight. 1.5.0
+shipped to the App Store WITH the feed redesign, so the gate as originally written has been
+crossed. Status of the two items:
 
-1. **Seen-store migration**, one shot: seed as seen everything posted before the device's
-   `lastActivitySeen`, falling back to "everything before the most recent 04:00" when absent.
-   Skip any device that already holds marks (testers). Fresh installs keep the everything-unseen
-   rule. Without it, existing users open into a week of lit pills. (Reworded 2026-08-28: the
-   original said "dated so seeded days clear immediately", which no longer means anything now
-   that nothing clears. The migration is still wanted, for the pills and the ledger.)
-2. **Digest windowing**: clamp each recipient's window with
-   `max(last_digest, client_versions.updated_at)` in `send-daily-digest`'s per-user loop, so the
-   10:00 push counts what arrived since they last launched, and suppresses at zero. The digest
-   is server-computed and knows nothing about device-local seen state, so today it over-promises
-   against an app that opens showing only what is truly unseen. Seen state must NOT go
-   server-side; that is a published privacy stance, not a preference.
+1. **Seen-store migration, one shot: SHIPPED 2026-08-31** (`81d7c9c`, "Seed the feed backlog as
+   seen", and `e95e7ad`, "The feed seed leaves two days unseen, and spares the four who want
+   everything"). Seeded as seen everything posted before the device's `lastActivitySeen`, falling
+   back to "everything before the most recent 04:00" when absent, skipping any device that
+   already held marks.
+2. **Digest windowing: SHIPPED and DEPLOYED 2026-09-03.** Each recipient's window start is now
+   `max(last digest, that user's client_versions.updated_at)`, so the push counts only what
+   arrived since they last launched, and a zero count suppresses without advancing digest state
+   (the file's existing invariant for "nothing to send"). Users with no `client_versions` row
+   (5 of 29 eligible at deploy time) keep the old window. `?dry=true` logs per-recipient window
+   and outcome without sending or writing. Checked against production before deploy: three
+   recipients (trina, cody, stephenxnyc) who had opened the app after the posts landed would
+   have been pushed about content they had already seen; all three now suppress. Seen state
+   stays device-local; that is a published privacy stance, not a preference.
 
-Both are implement-at-production-push-time. Do not build early.
+### done: version decision
 
-### owner: version decision
-
-`MARKETING_VERSION` is still 1.4.3 in `project.yml` (both targets, lines ~74 and ~147). The
-1.4.3 train has since absorbed the entire feed redesign, the rolls redesign and the
-confirmations redesign, which is 1.5-sized content on what was opened as a polish train.
-Bumping means editing both targets. Releasing a version closes its train immediately, so the
-first push after any App Store release must carry the bump or it is rejected with
-"Invalid Pre-Release Train".
+`MARKETING_VERSION` is `1.5.1` on both targets in `project.yml` (lines 74 and 147). 1.5.0
+(build 327) was released to the App Store and its train closed (`f8d1dd8`, "1.5.1 opens").
+The bump this section used to ask for has already happened. Status: `done`.
 
 ## Owner actions
 
 - **owner** — Device-test the rolls redesign (batches 1 and 2, `06b08ea` through `51dcae5`).
   Not reachable in the simulator: the develop beat animating, the 3g summary card, and the
-  completion-flag behaviour, all of which need taps.
+  completion-flag behaviour, all of which need taps. 1.5.0 shipped this work to the App Store;
+  strike this entry if it has already been seen on a release build.
 - **owner** — `mark_developed_photos` cron cadence is untracked in the repo. Read it off
   Dashboard → Database → Cron Jobs and record it in the next cron-touching migration.
 - **owner** — Seamlessness wave device checks: darkroom scroll with many nights plus delete/undo
@@ -412,7 +412,9 @@ first push after any App Store release must carry the bump or it is rejected wit
 
 - **Chapters**: monthly recaps, playable like a reveal. Confirmed want.
 - **Look colour pass**: see `flim-look-gap-vs-lapse`. Decide the two-looks-in-the-feed question
-  before the first parameter moves.
+  before the first parameter moves. Grain was tried and reverted 2026-09-03 (see item 1 at the
+  top of this file). The two-looks question has been answered by events: flash falloff shipped
+  in 1.5.1, so the seam exists regardless.
 - **decided: no** — Home merge (Feed + Activity). In the audit's plan, owner is UNSURE, do not
   build without an explicit yes.
 - **Naming**: shots / frames / flims / instances. Copy says "shot" as a placeholder. The grouped
