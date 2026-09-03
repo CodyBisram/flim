@@ -7,6 +7,7 @@ struct UserPageView: View {
     let userId: UUID
     @Environment(AuthService.self) private var auth
     @Environment(FeedService.self) private var feed
+    @Environment(ChapterService.self) private var chapterService
 
     @State private var profile: UserProfile?
     @State private var identity: ProfileIdentity?
@@ -51,6 +52,19 @@ struct UserPageView: View {
     @State private var showBadgePicker = false
     /// The storage path behind `coverURL`, whichever of its three sources produced it. See load().
     @State private var coverPath: String?
+
+    // MARK: Chapters shelf
+
+    /// This profile's months, newest first. Read from `chapterService.chaptersByProfile`, never
+    /// held as this view's own source of truth: the service is keyed per profile id so a shelf
+    /// re-opened for a different `userId` this session never shows the last profile's months for
+    /// even a frame.
+    private var chapters: [ChapterSummary] { chapterService.chaptersByProfile[userId] ?? [] }
+    /// Signed URLs for the shelf's own covers, keyed by storage path, minted in one batched call
+    /// once `chapters` loads. Mirrors `postThumbURLs`' own pattern for the grid below it.
+    @State private var chapterCoverURLs: [String: URL] = [:]
+    /// The chapter whose recap is open, if any.
+    @State private var openChapter: ChapterSummary?
 
     // MARK: Badge swap-in
 
@@ -141,6 +155,14 @@ struct UserPageView: View {
                 ScrollView {
                     VStack(spacing: 18) {
                         pageHeader(topInset: geo.safeAreaInsets.top)
+                        // Between the actions row and the grid, per the design handoff. Not shown
+                        // at all for a blocked account (the dedicated blocked panel replaces the
+                        // whole rest of the page) or for a profile with no months yet.
+                        if !isBlocked {
+                            ChapterShelfView(chapters: chapters, coverURLs: chapterCoverURLs) { chapter in
+                                openChapter = chapter
+                            }
+                        }
                         if isBlocked {
                             blockedState
                         } else if loaded && profile == nil {
@@ -209,6 +231,12 @@ struct UserPageView: View {
             // renders a plain "Invite" rather than a number that could be wrong.
             if isSelf { inviteQuota = await auth.ownInviteQuota() }
         }
+        // Its own task, independent of `load()`: a missing/slow `profile_chapters` RPC must
+        // never hold up the rest of the profile, and this fails soft to "no shelf" on its own.
+        .task {
+            await chapterService.fetchChapters(for: userId)
+            await mintChapterCoverURLs()
+        }
         .sheet(item: $followList) { list in
             FollowListView(userId: userId, mode: list)
         }
@@ -251,6 +279,9 @@ struct UserPageView: View {
         }
         .fullScreenCover(isPresented: $showAvatarViewer) {
             ImageViewer(url: avatarURL, cacheKey: profile?.avatarPath)
+        }
+        .fullScreenCover(item: $openChapter) { chapter in
+            ChapterRecapView(profileId: userId, chapter: chapter, chapterCoverURLs: chapterCoverURLs)
         }
     }
 
@@ -866,6 +897,14 @@ struct UserPageView: View {
         guard !unresolved.isEmpty else { return }
         let resolved = await feed.signedURLs(for: Array(unresolved))
         for (path, url) in resolved { postThumbURLs[path] = url }
+    }
+
+    /// One batched call for every cover across the whole shelf, mirroring `mintThumbURLs`.
+    private func mintChapterCoverURLs() async {
+        let paths = Set(chapters.flatMap(\.coverPaths)).subtracting(chapterCoverURLs.keys)
+        guard !paths.isEmpty else { return }
+        let resolved = await feed.signedURLs(for: Array(paths))
+        for (path, url) in resolved { chapterCoverURLs[path] = url }
     }
 
     private func toggleFollow() {

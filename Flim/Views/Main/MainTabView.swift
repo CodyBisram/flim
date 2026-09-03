@@ -76,6 +76,7 @@ struct MainTabView: View {
     @Environment(AuthService.self) private var auth
     @Environment(RollService.self) private var rolls
     @Environment(FeedService.self) private var feed
+    @Environment(ChapterService.self) private var chapters
     /// Owned here (not in RollsView) so a `reveal` push destination, and `-openRollId` in DEBUG,
     /// can push straight into a roll's detail without the Rolls tab needing to already be open.
     @State private var rollsPath = NavigationPath()
@@ -267,6 +268,9 @@ struct MainTabView: View {
             // Deterministic Simulator verification (no camera in the sim):
             //   -seedDemo : jump to the Darkroom, which auto-seeds personal photos.
             //   -seedRoll : jump to Rolls and seed the first roll (for cover thumbnails).
+            //   -seedChapters : jump to own profile with a fixture Chapters shelf + recap, built
+            //                   from the same demo images `-seedDemo` uploads, before
+            //                   `profile_chapters`/`chapter_photos` exist server-side.
             if args.contains("-seedDemo") { selected = 1 }
             if args.contains("-tabFeed") { selected = 3 }   // jump to Feed for screenshots
             if args.contains("-seedRoll") {
@@ -278,6 +282,15 @@ struct MainTabView: View {
                         await photos.seedDemoPhotos(userId: uid, rollId: first.id)
                         try? await rolls.fetchRolls(for: uid)   // refresh coverPaths
                     }
+                }
+            }
+            if args.contains("-seedChapters") {
+                selected = 3
+                Task {
+                    guard let uid = auth.currentUser?.id else { return }
+                    if photos.loadedPhotos.isEmpty { await photos.seedDemoPhotos(userId: uid) }
+                    chapters.installDemoFixture(profileId: uid, from: photos.loadedPhotos)
+                    feedPath.append(ProfileRoute(id: uid))
                 }
             }
             //   -openRollId <uuid>          : push straight into that roll's detail.

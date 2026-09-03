@@ -5,6 +5,7 @@ struct ContentView: View {
     @Environment(PhotoService.self) private var photos
     @Environment(FeedService.self) private var feed
     @Environment(RollService.self) private var rolls
+    @Environment(ChapterService.self) private var chapters
     @Environment(NotificationService.self) private var notifications
     @Environment(VersionGateService.self) private var versionGate
     @Environment(\.scenePhase) private var scenePhase
@@ -32,6 +33,10 @@ struct ContentView: View {
                 // Same idea for the per-author feed: sign-in is OTP-only, so the redesign is
                 // unwatchable without this. Fixture units + cache-planted images, no network.
                 FeedPreviewDemoHost()
+            } else if ProcessInfo.processInfo.arguments.contains("-chaptersPreviewDemo") {
+                // Same idea again, for the Chapters shelf + recap: fixture months + cache-planted
+                // covers, no network, no account. See ChapterPreviewDemoHost.
+                ChapterPreviewDemoHost()
             } else {
                 authGate
             }
@@ -110,6 +115,7 @@ struct ContentView: View {
             photos.resetForAccountChange()
             feed.resetForAccountChange()
             rolls.resetForAccountChange()
+            chapters.resetForAccountChange()
             // Restored synchronously, right here, rather than waiting for RollsView's own
             // `fetchRolls` call: this runs before MainTabView (and so RollsView) ever mounts for
             // the new account, so the Rolls tab's very first render already has cover paths to
@@ -156,6 +162,7 @@ struct ContentView: View {
             photos.resetForAccountChange()
             feed.resetForAccountChange()
             rolls.resetForAccountChange()
+            chapters.resetForAccountChange()
             FeedSeenStore.shared.activeUserId = nil
             Task { await notifications.cancelAllRollDevelopNotifications() }
             RollLiveActivity.endAll()
