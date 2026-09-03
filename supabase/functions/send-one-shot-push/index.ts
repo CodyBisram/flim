@@ -53,6 +53,7 @@ const CAMPAIGNS: Record<string, () => Promise<Recipient[]>> = {
   "first-shot": firstShotCohort,
   "still-no-shot": stillNoShotCohort,
   "checked-again": checkedAgainCohort,
+  "islands": islandsCohort,
   "waiting-to-sort": waitingToSortCohort,
 };
 
@@ -135,6 +136,27 @@ async function checkedAgainCohort(): Promise<Recipient[]> {
     body: "Still nothing. That's fine. The camera can wait. It's a camera.",
     route: { t: "camera" },
   }));
+}
+
+/// A named group rather than a rule: the owner's Islands of Adventure day, 2026-09-03. Copy
+/// chosen by the owner. Usernames are resolved at run time so the list reads as people, and
+/// anyone on it without a registered device simply does not appear in the dry run. No route:
+/// "make a roll" lives on the Rolls tab and there is no push destination for it yet, and landing
+/// on the camera would be the wrong place, so the app opens where it opens.
+const ISLANDS_GROUP = ["cody", "tristan", "lele", "sabs", "ricky", "branb", "trina"];
+
+async function islandsCohort(): Promise<Recipient[]> {
+  const reachable = new Set(await reachableUsers());
+  const { data } = await supabase
+    .from("users").select("id, username").in("username", ISLANDS_GROUP);
+  return ((data ?? []) as { id: string; username: string }[])
+    .filter((u) => reachable.has(u.id))
+    .map((u) => ({
+      userId: u.id,
+      title: "Islands of Adventure.",
+      body: "Ready? Someone make the roll before we go, or the whole day ends up split across everyone's phones.",
+      route: null,
+    }));
 }
 
 /// How long a deck has to have been sitting before it is worth mentioning.
