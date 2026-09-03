@@ -154,25 +154,26 @@ struct GrainRenderTests {
         #expect(highlight < midtone * 0.5)
     }
 
-    /// The 1.5.1 inversion, measured through the real graph rather than off the curve: a pushed
-    /// colour negative grains most where it received least light. This is the rendered proof that
-    /// the mask is wired the way `GrainProfile.pushed` describes, which is exactly the failure the
-    /// halation rewrite taught (right maths, wrong wiring, and only a render caught it).
-    @Test("deep shadow carries MORE grain than a midtone, which is what a pushed film does")
-    func shadowsCarryTheGrain() {
+    /// The shipped shape, measured through the real graph rather than off the curve: grain sinks
+    /// into the shadows and stays there. This is the rendered proof that the mask is wired the way
+    /// `GrainProfile.midtone` describes, which is exactly the failure the halation rewrite taught
+    /// (right maths, wrong wiring, and only a render caught it).
+    @Test("deep shadow gets less grain than a midtone, but isn't scrubbed clean")
+    func shadowsAreSunk() {
         let midtone = grainEnergy(luminance: 0.5)
-        let shadow = grainEnergy(luminance: 0.06)
-        #expect(shadow > midtone)
+        let shadow = grainEnergy(luminance: 0.02)
+        #expect(shadow < midtone)
     }
 
-    /// And the profile it replaced still behaves the way it always did, since it is the control
-    /// every measurement of the new one was made against and a silent change to it would
-    /// invalidate the comparison retrospectively.
-    @Test("the profile that shipped through 1.5 still sinks its shadows")
-    func legacyProfileIsUnchangedInShape() {
-        let midtone = grainEnergy(luminance: 0.5, profile: .midtone)
-        let shadow = grainEnergy(luminance: 0.02, profile: .midtone)
-        #expect(shadow < midtone)
+    /// And the dormant profile still inverts that, since it is the alternative every measurement of
+    /// the shipped grain was made against and a silent change to it would invalidate the comparison
+    /// retrospectively. It shipped as 1.5.1 and was reverted on 2026-09-03; this keeps it honest
+    /// where it sits.
+    @Test("the pushed profile still carries its grain in the shadows")
+    func pushedProfileStillInvertsTheMask() {
+        let midtone = grainEnergy(luminance: 0.5, profile: .pushed)
+        let shadow = grainEnergy(luminance: 0.06, profile: .pushed)
+        #expect(shadow > midtone)
     }
 
     @Test("zero amount is a true no-op")
@@ -240,7 +241,7 @@ struct HalationTintTests {
 struct GrainVisibilityTests {
 
     /// The profile the product actually ships, read from the stock rather than restated, so these
-    /// follow a revert instead of contradicting one.
+    /// follow a change to the shipped look instead of contradicting one.
     static let shipping = FilmStock.original.params.grainProfile
 
     /// Everything here reads `grainCoverage`, not `grainVisibility`, and that is the point rather
@@ -248,14 +249,27 @@ struct GrainVisibilityTests {
     /// is linearised twice on the way to the blend, so the two differ by up to a factor of fifty.
     /// Asserting on the control point is how a curve came to claim 0.30 of grain in deep shadow and
     /// deliver 0.005 through every release up to 1.5.0, with every test green.
-    @Test("the shipped curve peaks in the SHADOWS, which is the 1.5.1 inversion")
-    func peaksInTheShadows() {
-        // Measured on the owner's 13 pairs: Lapse's grain peaks over 0-0.15 luma and carries 2.7x
-        // to 11x FLIM's shadow texture, where the curve FLIM shipped with peaked at 0.30-0.45 and
-        // put a two-hundredth of its coverage at black. FLIM was the exact inverse of its own
-        // target. If this ever drops back below the midtone, that inversion has been undone.
+    @Test("the shipped curve peaks in the MIDTONES, and its shadows are quiet")
+    func peaksInTheMidtones() {
+        // The shipped shape, stated in the units that land. Deep shadow asks for 0.30 and delivers
+        // 0.0057, which is documented rather than intended (see `grainCoverage`) and is part of the
+        // look the owner has approved: 1.5.1 corrected it and was reverted. If the shadow end ever
+        // rises above the midtone again, `GrainProfile.pushed` has been shipped without being asked
+        // for.
         let shadow = InstantFilmProcessor.grainCoverage(luminance: 0.05, profile: Self.shipping)
         let midtone = InstantFilmProcessor.grainCoverage(luminance: 0.5, profile: Self.shipping)
+        #expect(shadow < midtone)
+        #expect(shadow > 0, "the shadow end is scrubbed completely clean")
+    }
+
+    /// The dormant profile, held to the shape it was fitted to, so a comparison made against it
+    /// later is made against the same thing that was measured in 1.5.1.
+    @Test("the pushed profile peaks in the SHADOWS, at the coverage it was fitted to")
+    func pushedPeaksInTheShadows() {
+        // Measured on the owner's 13 pairs: Lapse's grain peaks over 0-0.15 luma and carries 2.7x
+        // to 11x the shipped curve's shadow texture. That measurement is what `pushed` encodes.
+        let shadow = InstantFilmProcessor.grainCoverage(luminance: 0.05, profile: .pushed)
+        let midtone = InstantFilmProcessor.grainCoverage(luminance: 0.5, profile: .pushed)
         #expect(shadow > midtone)
         #expect(shadow > 0.25, "the shadow end carries only \(shadow) of coverage")
     }
@@ -265,19 +279,23 @@ struct GrainVisibilityTests {
         #expect(InstantFilmProcessor.grainCoverage(luminance: 1.0, profile: Self.shipping) < 0.05)
     }
 
-    @Test("the midtone keeps real grain, it is not just a shadow effect")
-    func midtoneStillCarriesGrain() {
-        // The mask came down at the midtone so the shadows could sit above it, and the amount did
-        // NOT go up to compensate (it did not need to; see `GrainProfile.pushed`). What this
-        // guards is the other direction: a midtone taken to zero would make flat walls and skies
-        // digitally smooth, which is not what a film stock does.
+    @Test("the midtone carries the grain, which is where the shipped curve puts it")
+    func midtoneCarriesTheGrain() {
+        // A midtone taken toward zero would make flat walls and skies digitally smooth, which is
+        // not what a film stock does. This is where the shipped mask is at its full value.
         #expect(InstantFilmProcessor.grainCoverage(luminance: 0.5, profile: Self.shipping) > 0.08)
     }
 
-    @Test("coverage falls monotonically from the shadows to the highlights")
-    func fallsMonotonically() {
-        var previous = CGFloat.infinity
-        for step in stride(from: 0.0, through: 1.0, by: 0.05) {
+    @Test("the shipped coverage rises into the midtone and falls away above it")
+    func risesThenFalls() {
+        let peak = InstantFilmProcessor.grainCoverage(luminance: 0.5, profile: Self.shipping)
+        for step in stride(from: 0.0, to: 0.5, by: 0.05) {
+            #expect(InstantFilmProcessor.grainCoverage(luminance: CGFloat(step),
+                                                       profile: Self.shipping) <= peak + 0.0001,
+                    "coverage exceeded the midtone below it, at luminance \(step)")
+        }
+        var previous = peak
+        for step in stride(from: 0.5, through: 1.0, by: 0.05) {
             let value = InstantFilmProcessor.grainCoverage(luminance: CGFloat(step),
                                                            profile: Self.shipping)
             #expect(value <= previous + 0.0001, "coverage rose again at luminance \(step)")
@@ -285,10 +303,23 @@ struct GrainVisibilityTests {
         }
     }
 
-    @Test("the curve FLIM shipped through 1.5 delivered a fiftieth of what it asked for")
-    func theLegacyCurveDidNotMeanWhatItSaid() {
-        // Kept as a test, not a comment, because it is the measurement that reframed this whole
-        // change: half of "the shadows have no grain" was a unit error nobody had rendered.
+    @Test("the pushed profile's coverage falls monotonically from the shadows to the highlights")
+    func pushedFallsMonotonically() {
+        var previous = CGFloat.infinity
+        for step in stride(from: 0.0, through: 1.0, by: 0.05) {
+            let value = InstantFilmProcessor.grainCoverage(luminance: CGFloat(step),
+                                                           profile: .pushed)
+            #expect(value <= previous + 0.0001, "coverage rose again at luminance \(step)")
+            previous = value
+        }
+    }
+
+    @Test("the shipped curve delivers a fiftieth of what it asks for in the shadows")
+    func theShippedCurveDoesNotMeanWhatItSays() {
+        // Kept as a test, not a comment, because it is the measurement that reframed the 1.5.1
+        // grain work: half of "the shadows have no grain" was a unit error nobody had rendered.
+        // The correction was reverted with the rest of that work, so this is now a pinned property
+        // of the shipped look and it must not move by accident.
         #expect(GrainProfile.midtone.anchors[0].visibility == 0.30)
         let landed = InstantFilmProcessor.grainCoverage(luminance: 0, profile: .midtone)
         #expect(abs(landed - 0.0057) < 0.001, "deep-shadow coverage was \(landed), expected ~0.006")
@@ -333,10 +364,10 @@ struct GrainVisibilityTests {
         }
     }
 
-    @Test("the profile that shipped through 1.5 is still the midtone-peaked one")
-    func legacyProfileStillPeaksAtTheMidtone() {
-        // The control for every measurement of the new grain, and what every photograph taken
-        // before 1.5.1 was developed with. It must not drift.
+    @Test("the shipped profile is still the midtone-peaked one, in its literal control points")
+    func shippedProfileStillPeaksAtTheMidtone() {
+        // What every photograph in the app was developed with, apart from the 1.5.1 TestFlight
+        // build. It must not drift.
         let profile = GrainProfile.midtone
         #expect(InstantFilmProcessor.grainVisibility(luminance: 0.5, profile: profile) == 1.0)
         #expect(InstantFilmProcessor.grainVisibility(luminance: 0.0, profile: profile) == 0.30)
@@ -347,38 +378,43 @@ struct GrainVisibilityTests {
 }
 
 /// The third axis: a pushed film grains more the harder it was pushed, and the adaptive EV is how
-/// hard this frame was pushed.
+/// hard this frame was pushed. INERT on the shipped profile, whose `evPush` is 0, so the first test
+/// pins that and the rest exercise the law itself through `GrainProfile.pushed`.
 struct GrainAmountTests {
 
     static let shipping = FilmStock.original.params.grainProfile
 
+    @Test("the SHIPPED profile ignores EV entirely, so this stage is an identity in production")
+    func shippedProfileIsFixed() {
+        // `evPush` is 0 on the shipped profile, which makes the whole axis inert on every
+        // photograph the app takes. Pinned, because the axis is still wired and a non-zero value
+        // arriving here would change the look of dark frames only, where it is hardest to see.
+        #expect(Self.shipping.evPush == 0)
+        for ev in [0, 0.25, 0.5, 4] as [CGFloat] {
+            #expect(InstantFilmProcessor.grainAmount(base: 0.06, ev: ev,
+                                                     profile: Self.shipping) == 0.06)
+        }
+    }
+
     @Test("a daylight frame gets exactly the stock's amount")
     func noLiftMeansNoExtraGrain() {
-        #expect(InstantFilmProcessor.grainAmount(base: 0.10, ev: 0, profile: Self.shipping) == 0.10)
+        #expect(InstantFilmProcessor.grainAmount(base: 0.10, ev: 0, profile: .pushed) == 0.10)
     }
 
     @Test("a fully lifted frame gets the full push and no more")
     func fullLiftIsBounded() {
-        let full = InstantFilmProcessor.grainAmount(base: 0.10, ev: 0.5, profile: Self.shipping)
-        #expect(abs(full - 0.10 * (1 + Self.shipping.evPush)) < 1e-9)
+        let full = InstantFilmProcessor.grainAmount(base: 0.10, ev: 0.5, profile: .pushed)
+        #expect(abs(full - 0.10 * (1 + GrainProfile.pushed.evPush)) < 1e-9)
         // The EV is clamped to 0.5 upstream, but the law must not extrapolate if that ever moves:
         // more push than FLIM applies cannot buy more grain than FLIM measured.
-        #expect(InstantFilmProcessor.grainAmount(base: 0.10, ev: 4, profile: Self.shipping) == full)
-        #expect(InstantFilmProcessor.grainAmount(base: 0.10, ev: -1,
-                                                 profile: Self.shipping) == 0.10)
+        #expect(InstantFilmProcessor.grainAmount(base: 0.10, ev: 4, profile: .pushed) == full)
+        #expect(InstantFilmProcessor.grainAmount(base: 0.10, ev: -1, profile: .pushed) == 0.10)
     }
 
     @Test("it is linear in EV, so half the push is half the extra grain")
     func linearInEV() {
-        let half = InstantFilmProcessor.grainAmount(base: 0.10, ev: 0.25, profile: Self.shipping)
-        let full = InstantFilmProcessor.grainAmount(base: 0.10, ev: 0.5, profile: Self.shipping)
+        let half = InstantFilmProcessor.grainAmount(base: 0.10, ev: 0.25, profile: .pushed)
+        let full = InstantFilmProcessor.grainAmount(base: 0.10, ev: 0.5, profile: .pushed)
         #expect(abs((half - 0.10) - (full - 0.10) / 2) < 1e-9)
-    }
-
-    @Test("the profile that shipped through 1.5 ignores EV entirely")
-    func legacyProfileIsFixed() {
-        for ev in [0, 0.25, 0.5] as [CGFloat] {
-            #expect(InstantFilmProcessor.grainAmount(base: 0.06, ev: ev, profile: .midtone) == 0.06)
-        }
     }
 }

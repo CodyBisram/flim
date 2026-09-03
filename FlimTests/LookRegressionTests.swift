@@ -74,52 +74,52 @@ struct LookRegressionTests {
     ///
     /// `flash` and `flashAmbient` were ADDED on 2026-08-30 with the disposable flash falloff.
     ///
-    /// RE-RECORDED IN FULL on 2026-09-01 with the 1.5.1 grain, and unlike the flash work this one
-    /// moves EVERY scene, because grain reaches every pixel of every frame. What moved, and why the
-    /// direction is the intended one:
+    /// RE-RECORDED IN FULL on 2026-09-01 for the 1.5.1 grain, then RESTORED on 2026-09-03 when that
+    /// grain was reverted after the owner saw it on a device. Every row here except `shadowRamp` is
+    /// literally the value that was committed before the grain change, restored from that revision
+    /// rather than re-recorded, and the pipeline was then run against them WITHOUT the record flag.
+    /// They passed unchanged, to the last digit, on all eight fixtures and all five real scenes.
+    /// That is the proof the revert is exact rather than approximate: had it left the grain amount,
+    /// the mask, the chroma, or the composite a hair off, `localContrast` and `lumP5` would have
+    /// moved first and these numbers are recorded to five decimals.
     ///
-    ///   - `localContrast` is up on the dark scenes and down on the bright ones, which IS the
-    ///     change: night 0.00208 → 0.05450, dusk 0.00465 → 0.03810, daylight 0.02026 → 0.00298.
-    ///     Grain moved from the midtones to the shadows.
-    ///   - `lumP5` fell on every scene (night 0.05490 → 0.00392, flash 0.02353 → 0.00392), because
-    ///     the grain composite stopped adding light. Blacks are deeper, not lifted.
-    ///   - `meanSaturation` rose on every scene for the same reason: a veil that lifted all three
-    ///     channels together was flattening measured saturation, and it is gone.
-    ///   - the frame means fell by roughly 0.01, the veil's own contribution.
-    ///
-    /// NONE OF THIS IS AN AESTHETIC APPROVAL. These rows are a regression guard from the moment
-    /// they are committed; the look they encode has been measured against Lapse and NOT yet looked
-    /// at on a device by the owner. `GrainProfile.pushed` and `GrainComposite` carry the numbers and
-    /// the revert.
+    /// `shadowRamp` is the one row recorded fresh, because the fixture did not exist before the
+    /// grain change. It was added to see WHERE grain lands, and it is kept: the measurement is
+    /// still worth having, and it is the only fixture that would notice a mask inversion at all.
     static let fixtureBaselines: [String: LookStats] = [
-        "night": LookStats(meanR: 0.06770, meanG: 0.07871, meanB: 0.08851, lumP5: 0.00392, lumP50: 0.07843, lumP95: 0.14902, meanSaturation: 0.40580, localContrast: 0.05450),
-        "dusk": LookStats(meanR: 0.12399, meanG: 0.12758, meanB: 0.14610, lumP5: 0.00784, lumP50: 0.13333, lumP95: 0.21961, meanSaturation: 0.27022, localContrast: 0.03810),
-        "shadowRamp": LookStats(meanR: 0.30035, meanG: 0.29520, meanB: 0.27239, lumP5: 0.03922, lumP50: 0.29804, lumP95: 0.57647, meanSaturation: 0.15537, localContrast: 0.01550),
-        "speculars": LookStats(meanR: 0.45997, meanG: 0.42383, meanB: 0.35962, lumP5: 0.13333, lumP50: 0.25098, lumP95: 0.90588, meanSaturation: 0.30273, localContrast: 0.04969),
-        "daylight": LookStats(meanR: 0.38593, meanG: 0.44610, meanB: 0.40961, lumP5: 0.32941, lumP50: 0.42745, lumP95: 0.49020, meanSaturation: 0.44622, localContrast: 0.00298),
-        "gamut": LookStats(meanR: 0.35474, meanG: 0.37189, meanB: 0.35857, lumP5: 0.07059, lumP50: 0.34902, lumP95: 0.76863, meanSaturation: 0.60689, localContrast: 0.01516),
-        "oversize": LookStats(meanR: 0.33889, meanG: 0.30833, meanB: 0.27617, lumP5: 0.22745, lumP50: 0.31373, lumP95: 0.39216, meanSaturation: 0.17664, localContrast: 0.00504),
-        "flash": LookStats(meanR: 0.16147, meanG: 0.14772, meanB: 0.13522, lumP5: 0.00392, lumP50: 0.09020, lumP95: 0.54510, meanSaturation: 0.20909, localContrast: 0.03571),
-        "flashAmbient": LookStats(meanR: 0.22783, meanG: 0.21991, meanB: 0.19969, lumP5: 0.03529, lumP50: 0.16078, lumP95: 0.65882, meanSaturation: 0.20064, localContrast: 0.02535)
+        "night": LookStats(meanR: 0.07909, meanG: 0.09388, meanB: 0.10222, lumP5: 0.05490, lumP50: 0.09020, lumP95: 0.10980, meanSaturation: 0.24303, localContrast: 0.00208),
+        "dusk": LookStats(meanR: 0.14011, meanG: 0.14412, meanB: 0.16046, lumP5: 0.05882, lumP50: 0.14118, lumP95: 0.23529, meanSaturation: 0.17906, localContrast: 0.00465),
+        "shadowRamp": LookStats(meanR: 0.32184, meanG: 0.31816, meanB: 0.29752, lumP5: 0.06667, lumP50: 0.32941, lumP95: 0.59216, meanSaturation: 0.10923, localContrast: 0.01202),
+        "speculars": LookStats(meanR: 0.47148, meanG: 0.43835, meanB: 0.37905, lumP5: 0.15686, lumP50: 0.27451, lumP95: 0.90588, meanSaturation: 0.25325, localContrast: 0.04366),
+        "daylight": LookStats(meanR: 0.42324, meanG: 0.47464, meanB: 0.44737, lumP5: 0.36078, lumP50: 0.45882, lumP95: 0.52549, meanSaturation: 0.38283, localContrast: 0.02026),
+        "gamut": LookStats(meanR: 0.38223, meanG: 0.40034, meanB: 0.38638, lumP5: 0.09804, lumP50: 0.41176, lumP95: 0.76863, meanSaturation: 0.51417, localContrast: 0.01375),
+        "oversize": LookStats(meanR: 0.36473, meanG: 0.33832, meanB: 0.31042, lumP5: 0.24706, lumP50: 0.34118, lumP95: 0.42745, meanSaturation: 0.14235, localContrast: 0.01027),
+        "flash": LookStats(meanR: 0.15819, meanG: 0.14549, meanB: 0.13397, lumP5: 0.02353, lumP50: 0.06667, lumP95: 0.56078, meanSaturation: 0.10840, localContrast: 0.00374),
+        "flashAmbient": LookStats(meanR: 0.24452, meanG: 0.23669, meanB: 0.21725, lumP5: 0.07843, lumP50: 0.17255, lumP95: 0.66275, meanSaturation: 0.14545, localContrast: 0.00682)
     ]
 
-    /// Recorded from the owner's real neutral captures, on the current pipeline. Re-recorded
-    /// 2026-09-01 with the fixtures above, and moved in the same directions for the same reasons.
+    /// Recorded from the owner's real neutral captures, on the current pipeline. Restored on
+    /// 2026-09-03 with the fixtures above, and verified the same way: these are the pre-1.5.1
+    /// values, and the reverted pipeline reproduces all five of them without a re-record.
     ///
     /// These are statistics, not photographs, so committing them keeps the calibration set private
     /// (`pairs/` is gitignored) while still pinning the real scenes. The test that reads them is
     /// skipped anywhere the photographs are absent, which is everywhere except the owner's machine.
     /// JPEG-era numbers, restored 2026-08-07 for the same reason as `fixtureBaselines` above.
     static let pairBaselines: [String: LookStats] = [
-        "parkview-noflash": LookStats(meanR: 0.12592, meanG: 0.11820, meanB: 0.09542, lumP5: 0.00392, lumP50: 0.09804, lumP95: 0.33725, meanSaturation: 0.43273, localContrast: 0.04777),
-        "wide-dim": LookStats(meanR: 0.24879, meanG: 0.20314, meanB: 0.15259, lumP5: 0.00784, lumP50: 0.18039, lumP95: 0.56471, meanSaturation: 0.42078, localContrast: 0.03060),
-        "parkview-flash": LookStats(meanR: 0.28978, meanG: 0.26826, meanB: 0.23934, lumP5: 0.07843, lumP50: 0.25490, lumP95: 0.57647, meanSaturation: 0.31036, localContrast: 0.02748),
-        "restaurant-a": LookStats(meanR: 0.36189, meanG: 0.38108, meanB: 0.33373, lumP5: 0.10196, lumP50: 0.30196, lumP95: 0.80784, meanSaturation: 0.30721, localContrast: 0.03862),
-        "plush": LookStats(meanR: 0.55020, meanG: 0.48586, meanB: 0.29605, lumP5: 0.16078, lumP50: 0.53725, lumP95: 0.73333, meanSaturation: 0.52217, localContrast: 0.01726)
+        "parkview-noflash": LookStats(meanR: 0.13883, meanG: 0.13350, meanB: 0.11274, lumP5: 0.05098, lumP50: 0.09412, lumP95: 0.37255, meanSaturation: 0.30310, localContrast: 0.01832),
+        "wide-dim": LookStats(meanR: 0.26269, meanG: 0.22216, meanB: 0.17774, lumP5: 0.04706, lumP50: 0.20000, lumP95: 0.58039, meanSaturation: 0.32334, localContrast: 0.01584),
+        "parkview-flash": LookStats(meanR: 0.31100, meanG: 0.29107, meanB: 0.26586, lumP5: 0.10196, lumP50: 0.27843, lumP95: 0.59216, meanSaturation: 0.24872, localContrast: 0.02131),
+        "restaurant-a": LookStats(meanR: 0.38381, meanG: 0.39908, meanB: 0.35645, lumP5: 0.11765, lumP50: 0.33333, lumP95: 0.81176, meanSaturation: 0.25978, localContrast: 0.03629),
+        "plush": LookStats(meanR: 0.56715, meanG: 0.50175, meanB: 0.32926, lumP5: 0.18431, lumP50: 0.56078, lumP95: 0.73725, meanSaturation: 0.45317, localContrast: 0.01896)
     ]
 
     /// The ungraded fixtures themselves, so a change to the generator fails as "the fixture moved"
     /// rather than looking like a look regression.
+    ///
+    /// The `flash` and `flashAmbient` rows are identical to each other on purpose, and that
+    /// identity is load-bearing: the flash pair is the same pixels and differs only by an EXIF tag,
+    /// so if those two rows ever diverge the fixture has stopped being a controlled comparison.
     static let fixtureInputBaselines: [String: LookStats] = [
         "night": LookStats(meanR: 0.04029, meanG: 0.04225, meanB: 0.05478, lumP5: 0.01961, lumP50: 0.03922, lumP95: 0.06275, meanSaturation: 0.30315, localContrast: 0.00037),
         "dusk": LookStats(meanR: 0.12269, meanG: 0.10914, meanB: 0.13148, lumP5: 0.02745, lumP50: 0.10980, lumP95: 0.22745, meanSaturation: 0.22296, localContrast: 0.00037),
@@ -250,17 +250,18 @@ struct LookRegressionTests {
         #expect(p.bloom == 0.18)
         #expect(p.halationWarmth == 0.75)
         #expect(p.grain == 0.06)
-        // The 1.5.1 grain profile, pinned the same way and for the same reason: these five numbers
-        // are the shape of the grain, and a range check would pass while someone flattened it.
-        // Written in coverage, so they are compared as coverage.
+        // The grain profile, pinned the same way and for the same reason: these numbers are the
+        // SHAPE of the grain, and a range check would pass while someone flattened it. Compared as
+        // literal control points, because that is how the shipped profile is written and the
+        // literals are what every photograph in the app was developed with.
+        //
+        // This is also the assertion that fails if `GrainProfile.pushed` is put back without the
+        // owner having asked for it. It shipped here as 1.5.1 and was reverted on 2026-09-03.
         let grain = p.grainProfile
-        #expect(grain.anchors.map(\.luminance) == [0.00, 0.15, 0.40, 0.70, 1.00])
-        let coverage = grain.anchors.map { GrainAnchor.coverage(forCurvePoint: $0.visibility) }
-        for (measured, expected) in zip(coverage, [0.35, 0.35, 0.20, 0.07, 0.02] as [CGFloat]) {
-            #expect(abs(measured - expected) < 0.0001)
-        }
-        #expect(grain.chroma == 0.25)
-        #expect(grain.evPush == 0.35)
+        #expect(grain.anchors.map(\.luminance) == [0.00, 0.25, 0.50, 0.75, 1.00])
+        #expect(grain.anchors.map(\.visibility) == [0.30, 0.80, 1.00, 0.62, 0.10])
+        #expect(grain.chroma == 0)
+        #expect(grain.evPush == 0)
         #expect(p.vignetteIntensity == 0.75)
         #expect(p.vignetteRadius == 1.7)
         // Flash falloff, which reaches only captures whose EXIF says the flash fired. Pinned here

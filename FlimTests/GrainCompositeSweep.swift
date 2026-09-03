@@ -65,11 +65,12 @@ struct GrainCompositeProbe {
                 "level \(level): grain moved the linear mean by \(String(format: "%+.5f", shift))")
     }
 
-    /// The bug, stated as a test so the fix is not measured against a moving target: the composite
-    /// that shipped until 1.5.1 is a white veil at random opacity, so it only ever ADDS light, and
-    /// it adds most of it where the picture has least. It is still in the code as the other half of
-    /// the revert, so this still has something to measure.
-    @Test("the source-over composite really does add light, which is why this changed")
+    /// The property, stated as a test so nothing is measured against a moving target: the SHIPPED
+    /// composite is a white veil at random opacity, so it only ever ADDS light, and it adds most of
+    /// it where the picture has least. Measured, known, and shipped: `.meanPreserving` removes it,
+    /// was the default for the length of 1.5.1, and was reverted with the rest of that grain work
+    /// on 2026-09-03.
+    @Test("the source-over composite really does add light, which is what meanPreserving removes")
     func sourceOverBiasIsReal() {
         func shift(_ level: Int) -> Double {
             let patch = Self.patch(level: level)
@@ -776,8 +777,8 @@ struct GrainProfileSweep {
 
     // MARK: Candidates
 
-    /// A candidate grain: an amount, a profile, and a composite. `legacy` is what shipped through
-    /// 1.5.0 and every other row is measured against it.
+    /// A candidate grain: an amount, a profile, and a composite. `legacy` is what ships and every
+    /// other row is measured against it.
     struct Candidate {
         var label: String
         var amount: CGFloat
@@ -792,6 +793,9 @@ struct GrainProfileSweep {
         }
     }
 
+    /// The shipped grain, and the control every other row is measured against. It carries the
+    /// `legacy` name it was given when it was expected to be replaced; 1.5.1 replaced it for one
+    /// release and was reverted, so this is production again.
     static let legacy = Candidate(label: "legacy", amount: 0.06, profile: .midtone,
                                   composite: .sourceOver)
 
@@ -912,10 +916,19 @@ struct GrainProfileSweep {
         // only for genuinely white noise, and the grain that reaches the stored image is not white
         // any more. It was generated at capture resolution and averaged down to 2048, so
         // neighbouring pixels are positively correlated (0.6-0.9px, measured 2026-08-14) and the
-        // Laplacian cancels part of it. Measured here at ~0.45 of the controlled value. That is
-        // fine for the thing this is used for, because FLIM and Lapse are measured the identical
-        // way and their grain has the same spatial scale, so the bias divides out of the RATIO.
-        #expect(estimated > truth * 0.25 && estimated < truth * 1.2, """
+        // Laplacian cancels part of it.
+        //
+        // THE FACTOR DEPENDS ON THE GRAIN, which is why the band is wide. Measured on `wide-lit`:
+        // 0.45 of the controlled value with `GrainProfile.pushed` (2026-09-01) and 0.15 with the
+        // shipped `.midtone` (2026-09-03, after the revert). The difference is not the estimator
+        // getting worse, it is the quadrature subtraction having less to recover: the shipped grain
+        // leaves the scene's own flat-region energy at 0.00534 against 0.00660 with grain, so most
+        // of what the tiles measure is the photograph rather than the noise. That is fine for the
+        // thing this is used for, because FLIM and Lapse are measured the identical way and their
+        // grain has the same spatial scale, so the bias divides out of the RATIO. What the bound
+        // catches is the estimator reading zero, or reading MORE than the truth, either of which
+        // would mean it is measuring something other than grain.
+        #expect(estimated > truth * 0.10 && estimated < truth * 1.2, """
             the flat-region estimator says \(estimated) where subtracting the two renders says \
             \(truth). Outside a constant factor it is measuring something other than grain.
             """)
@@ -930,9 +943,13 @@ struct GrainProfileSweep {
     @Test("before and after on every valid pair", .enabled(if: isReporting && LookPairs.isAvailable),
           arguments: allValid)
     func report(_ scene: String) async throws {
+        // The composite is not carried on `FilmParams`, so it has to be restated here, and it must
+        // match `InstantFilmProcessor.GrainComposite`'s default or this reports a look nobody
+        // ships. Since the 1.5.1 revert this row is `legacy` by construction; it stays separate so
+        // that a trial candidate put on the stock shows up here without editing the sweep.
         let shipping = Candidate(label: "shipping", amount: FilmStock.original.params.grain,
                                  profile: FilmStock.original.params.grainProfile,
-                                 composite: .meanPreserving)
+                                 composite: .sourceOver)
         try await Self.reportScene(scene, candidates: [Self.legacy, shipping])
     }
 
@@ -958,12 +975,15 @@ struct GrainProfileSweep {
         }
     }
 
-    /// Before/after renders for the owner, through the production path, old grain and new.
+    /// Before/after renders for the owner, through the production path: the shipped grain against
+    /// whatever is on the stock.
     ///
-    /// The numbers can say the shadow texture now matches Lapse and the saturation gap closed. They
-    /// cannot say whether the photograph is better, and grain in particular is a thing nobody has
-    /// ever settled with a statistic: the failure mode this change risks is "it reads as dirt", and
-    /// dirt and film grain measure the same.
+    /// THIS IS THE TEST THAT SETTLED IT. The numbers said the shadow texture matched Lapse and the
+    /// saturation gap closed; the owner looked at these frames on a device and did not want them,
+    /// and 1.5.1 was reverted on 2026-09-03. Grain is the thing nobody has ever settled with a
+    /// statistic, because the failure mode is "it reads as dirt" and dirt and film grain measure
+    /// the same. Since the revert both halves render the same look by construction, which is itself
+    /// the check that a revert is complete.
     ///
     ///     TEST_RUNNER_FLIM_GRAIN_PREVIEW=1 xcodebuild test -project Flim.xcodeproj -scheme Flim \
     ///       -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
@@ -987,9 +1007,11 @@ struct GrainProfileSweep {
         let directory = LookPairs.directory.appendingPathComponent("_grain_preview")
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let data = try #require(GrainCompositeSweep.upscaledNeutral(scene))
+        // Same restatement as `report`, same requirement: this has to be the default in
+        // `InstantFilmProcessor.GrainComposite` or the "after" frame is not what a capture makes.
         let shipping = Candidate(label: "after", amount: FilmStock.original.params.grain,
                                  profile: FilmStock.original.params.grainProfile,
-                                 composite: .meanPreserving)
+                                 composite: .sourceOver)
         let flash = scene.hasSuffix("-flash")
 
         var renders: [String: CGImage] = [:]

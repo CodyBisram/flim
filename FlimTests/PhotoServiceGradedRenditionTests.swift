@@ -13,16 +13,15 @@ import XCTest
 /// grain) a second JPEG generation attacks first.
 final class PhotoServiceGradedRenditionTests: XCTestCase {
 
-    /// `shadowRamp`, where this used to be `daylight`, and the swap is a consequence of the 1.5.1
-    /// grain rather than a preference.
+    /// `shadowRamp`, where this used to be `daylight`. The swap came in with the 1.5.1 grain, which
+    /// was reverted on 2026-09-03, and it is KEPT deliberately rather than swapped back.
     ///
-    /// This whole class measures generation loss on ONE statistic, `localContrast`, because grain is
-    /// what a second JPEG pass smooths away first. That only works on a frame that HAS grain. Grain
-    /// is now shadow-peaked, so a bright flat frame is the one place it deliberately barely lands:
-    /// `daylight`'s own `localContrast` fell from 0.02026 to 0.00298 with the new profile, and the
-    /// comparison stopped being measurable on it (the two drifts landed 0.0002 apart, which is
-    /// noise). `shadowRamp` is flat, spans black to a light midtone, and therefore carries the new
-    /// grain where the new grain goes, which is what this test needs to see.
+    /// This class measures generation loss on a frame that has to carry grain, since grain is what
+    /// a second JPEG pass smooths away first. `shadowRamp` is flat and spans black to a light
+    /// midtone, so it carries grain wherever on the tone curve a profile puts it; `daylight` only
+    /// works for a midtone-peaked one. The metric moved at the same time, from `localContrast` to a
+    /// per-pixel distance, and that is also kept: see the comparison below for why the texture
+    /// statistic was the weaker claim of the two whatever the grain is doing.
     private var source: Data { LookFixture.shadowRamp.pngData() }
 
     override func tearDown() {
@@ -95,11 +94,12 @@ final class PhotoServiceGradedRenditionTests: XCTestCase {
         //
         // The old metric was a proxy: grain is the first thing a second JPEG generation smooths, so
         // "whose texture statistic is closer to the near-lossless reference" stood in for "which
-        // card is closer to the truth". Measured with the 1.5.1 grain, that proxy inverts, and it
-        // inverts for a reason that has nothing to do with fidelity: a q0.85 master carries its own
-        // DCT ringing, that ringing is high-frequency energy, and `localContrast` cannot tell it
-        // apart from grain. On `shadowRamp` the two-generation card measures 0.00084 from the
-        // reference and the one-generation card 0.00142, i.e. the artifacts flatter it.
+        // card is closer to the truth". Measured with the 1.5.1 grain, that proxy inverted, and it
+        // inverted for a reason that has nothing to do with fidelity: a q0.85 master carries its
+        // own DCT ringing, that ringing is high-frequency energy, and `localContrast` cannot tell
+        // it apart from grain. On `shadowRamp` the two-generation card measured 0.00084 from the
+        // reference and the one-generation card 0.00142, i.e. the artifacts flattered it. The grain
+        // that exposed that has been reverted; the flaw in the proxy has not gone anywhere.
         //
         // A mean absolute pixel difference cannot be flattered that way: artifacts are error, and
         // error is what it counts. It is also a stricter statement of the same claim the

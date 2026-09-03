@@ -13,6 +13,16 @@ Written 2026-08-30, with 1.5.0 (build 327) submitted and in review. Review clear
 
 ### 1. The look: flash falloff, then grain
 
+**Grain REVERTED 2026-09-03.** The owner saw the shadow-peaked grain on device and did not want
+it ("I don't like the new train, let's revert"). `FilmStock.original` ships `.midtone` again and
+the composite default is back to `.sourceOver`; the rendered look is byte-identical to 1.5.0
+(the 58c674f look-pin baselines pass unchanged, production renders match the 1.5.0 files by md5).
+`GrainProfile.pushed`, the sweep, the probes and the `shadowRamp` fixture stay in the code,
+dormant, with the measurements in their comments. Flash falloff (dec7b57) stays shipped. Do not
+re-propose shadow grain without a new owner ask; if it ever comes back, the double-linearised
+mask and the composite veil are the two facts to start from.
+
+
 **Flash falloff SHIPPED 2026-08-31** (`dec7b57`). It was the single largest gap between FLIM and
 an actual disposable, and was absent rather than mistuned: flash frames had 0.00% of pixels below
 0.04 where a real disposable has 15 to 35%. Blur luminance to a coarse illumination map, apply a

@@ -50,8 +50,13 @@ struct GrainAnchor: Hashable {
 /// gets. Everything about grain except its amplitude, which stays `FilmParams.grain`.
 ///
 /// This is a type rather than three loose constants for the same reason `GrainComposite` is: both
-/// the shipped profile and the one it replaced stay in the code, so a sweep can hold the rest of
-/// the pipeline fixed and vary only this, and so a revert is one word in `FilmStock`.
+/// the shipped profile and the one that was tried and rejected stay in the code, so a sweep can
+/// hold the rest of the pipeline fixed and vary only this, and so the switch either way is one word
+/// in `FilmStock`.
+///
+/// The shipped profile is `.midtone`. `.pushed` was measured, built, shipped to TestFlight as
+/// 1.5.1, looked at on a device by the owner, and turned down on 2026-09-03. It stays here because
+/// the measurement behind it is real and re-usable, not because it is queued to return.
 struct GrainProfile: Hashable {
     /// Exactly five, ascending, spanning 0...1: `CIToneCurve` takes five points and the mask is
     /// built straight from these.
@@ -60,19 +65,24 @@ struct GrainProfile: Hashable {
     /// Saturation of the noise layer, 0...1. 0 is the monochrome layer FLIM shipped with; higher
     /// values let the three channels vary independently, which is what colour negative grain does
     /// (three dye clouds, not one silver one). Measured, this is NOT what recovers the saturation
-    /// grain was costing; see `pushed` for the numbers and for what actually did.
+    /// grain was costing; see `pushed` for the numbers and for what actually did. The shipped
+    /// profile is monochrome, so this is 0 on everything that reaches a photograph today.
     var chroma: CGFloat
 
     /// How much more grain a fully lifted frame carries than an unlifted one, as a fraction.
     /// 0.5 means a frame at the adaptive-exposure clamp gets 1.5x the amplitude of a daylight
-    /// frame; 0 restores the fixed amount FLIM shipped with. See `InstantFilmProcessor.grainAmount`.
+    /// frame; 0 is the fixed amount FLIM ships. See `InstantFilmProcessor.grainAmount`.
     var evPush: CGFloat
 
-    /// What FLIM shipped from the beginning through 1.5.0: monochrome, midtone-peaked, fixed.
+    /// THE SHIPPED PROFILE: monochrome, midtone-peaked, fixed. What FLIM has carried from the
+    /// beginning, and what it carries again after the 1.5.1 grain was reverted on 2026-09-03.
     ///
-    /// Kept in the code, not deleted, because it is what every photograph taken before 1.5.1 was
-    /// developed with, and because it is the control every measurement of the new profile is made
-    /// against. Setting `FilmStock.original`'s `grainProfile` back to this is the revert path.
+    /// The anchors are literal `CIToneCurve` control points rather than coverage, and they must
+    /// stay that way: they are the exact numbers every photograph in the app was developed with, so
+    /// writing them any other way risks moving the look by a rounding step. What they LAND is a
+    /// different number from what they say (see `InstantFilmProcessor.grainCoverage`); that is a
+    /// real measurement and it is documented there, but it is a property of the shipped look now,
+    /// not a bug queued for fixing. The owner has seen both and chose this one.
     static let midtone = GrainProfile(
         anchors: [
             GrainAnchor(luminance: 0.00, visibility: 0.30),   // deep shadow: present, but sunk
@@ -85,8 +95,15 @@ struct GrainProfile: Hashable {
         evPush: 0
     )
 
-    /// 1.5.1: pushed colour negative. Written in COVERAGE, which is what lands, rather than in
-    /// curve control points. See `InstantFilmProcessor.grainAnchors` for the shape's argument.
+    /// NOT SHIPPED. Pushed colour negative, written in COVERAGE, which is what lands, rather than
+    /// in curve control points. See `InstantFilmProcessor.grainAnchors` for the shape's argument.
+    ///
+    /// REJECTED ON DEVICE, 2026-09-03. It shipped as 1.5.1, the owner looked at it on a phone and
+    /// did not want it, and the whole change was reverted the same day: `FilmStock.original` is
+    /// back on `.midtone` and `GrainComposite` is back on `.sourceOver`. Everything below is still
+    /// true as measurement and none of it is an argument for putting this back. It is kept because
+    /// the fit cost thirteen calibration pairs to make and because it is the control any future
+    /// grain work should be measured against, dormant and reachable in one word.
     ///
     /// THE STRENGTH IS FITTED, not chosen. `GrainProfileSweep` renders every valid calibration pair
     /// through the production path and measures grain amplitude in flat regions per tone band, on
@@ -150,9 +167,9 @@ struct FilmParams: Hashable {
     var vignetteRadius: CGFloat
     var grain: CGFloat              // 0...~0.12, opacity of the baked grain layer
     /// Where that grain lands, what colour it is, and whether a lifted frame gets more of it.
-    /// Defaulted so every existing construction of `FilmParams` keeps compiling; the shipping
-    /// stock sets it explicitly below.
-    var grainProfile: GrainProfile = .pushed
+    /// Defaulted to the shipped profile so every existing construction of `FilmParams` keeps
+    /// compiling and gets the real look; the shipping stock sets it explicitly below anyway.
+    var grainProfile: GrainProfile = .midtone
     var bloom: CGFloat              // halation / glow on highlights
     /// How far the halation glow is tinted toward red. 0 reproduces the neutral white bloom this
     /// used to be; 1 is fully warm. Real halation is warm because light passes through the
@@ -238,24 +255,21 @@ struct FilmStock: Identifiable, Hashable {
             // was originally signed off with, and it now gets averaged down by the downscale the
             // way it was meant to.
             //
-            // STILL 0.06 after the 1.5.1 grain work, and that is a result rather than an omission:
-            // the whole gap to Lapse turned out to be in WHERE the grain was going, not in how much
-            // of it there was. Once the mask stopped putting essentially nothing in the shadows,
-            // the fitted shadow texture landed at 1.04x Lapse's at this same amplitude. The dial
-            // for "more grain everywhere" is still this number and it should stay untouched unless
-            // a measurement asks for it; the dial for "more grain WHERE film has it" is
-            // `grainProfile` below.
+            // Untouched by the 1.5.1 grain work and by its revert. The dial for "more grain
+            // everywhere" is this number and it should stay where it is unless a measurement asks
+            // for it; the dial for "more grain WHERE film has it" is `grainProfile` below.
             grain: 0.06,
-            // The 1.5.1 grain: shadow-peaked, faintly chromatic, scaled by how hard the frame was
-            // pushed. Measured against the owner's calibration pairs; every number and its evidence
-            // is on `GrainProfile.pushed`.
+            // The grain FLIM has always had: midtone-peaked, monochrome, the same amount whatever
+            // the frame's exposure.
             //
-            // THE REVERT IS THIS ONE WORD. `.midtone` is the grain every photograph before 1.5.1
-            // was developed with, kept in the code for exactly this. It has to move together with
-            // the composite default in `InstantFilmProcessor` (`.meanPreserving` back to
-            // `.sourceOver`, five signatures), because shadow-peaked grain and a mean-shifting
-            // composite cannot both be right: see `GrainComposite`.
-            grainProfile: .pushed,
+            // `.pushed` (shadow-peaked, faintly chromatic, scaled by the adaptive EV) shipped here
+            // as 1.5.1 and was REVERTED on 2026-09-03: the owner looked at it on a device and did
+            // not want it. It is still in the code with all of its measurement, so putting it back
+            // is one word, but it does not go back alone. It only makes sense together with
+            // `GrainComposite.meanPreserving` in `InstantFilmProcessor` (five signatures), because
+            // shadow-peaked grain on a mean-shifting composite lifts crushed blacks by the same
+            // factor it adds texture. The shipped pair is `.midtone` + `.sourceOver`.
+            grainProfile: .midtone,
             bloom: 0.18, halationWarmth: 0.75,
             // Flash falloff. Fitted, not chosen. `FlashFalloffSweep` walks this exponent across
             // both of the owner's real flash captures and the synthetic flash fixture and reports

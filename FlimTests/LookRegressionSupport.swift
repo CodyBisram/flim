@@ -161,7 +161,7 @@ enum LookMeasure {
 /// |--------------|----------------------|--------------------------------------------------|
 /// | night        | 0.055                | adaptive EV at its 0.5 clamp, bloom at its 0.35 floor |
 /// | dusk         | 0.133                | adaptive EV on its linear slope, bloom mid-ramp   |
-/// | shadowRamp   | 0.300                | WHERE grain lands on the tone curve (see below)   |
+/// | shadowRamp   | 0.410                | WHERE grain lands on the tone curve (see below)   |
 /// | flash        | 0.315                | the flash falloff stage, with the EXIF gate OPEN  |
 /// | flashAmbient | 0.315                | the same pixels with the gate SHUT (see below)    |
 /// | oversize     | 0.366                | the >2048 downscale, and grain averaged by it     |
@@ -176,7 +176,9 @@ enum LookMeasure {
 /// inverted in 1.5.1 (midtone-peaked to shadow-peaked) and NO fixture here could see it: the dark
 /// ones are uniformly dark and also sit on the adaptive-EV branch, and the bright ones have no
 /// shadows at all. It is a flat ramp from near-black to a light midtone plus a bright band, so
-/// `localContrast` on it is almost entirely grain and reads the mask directly.
+/// `localContrast` on it is almost entirely grain and reads the mask directly. The inversion was
+/// reverted on 2026-09-03 and this fixture stays: it is the only one that could ever have caught
+/// it, which is the whole argument for keeping it.
 ///
 /// `speculars` exists because of a measurement, not a hunch. With ordinary scenes (including the
 /// owner's real captures) a +0.02 change to bloom moves every frame-average statistic by less than
@@ -303,7 +305,9 @@ enum LookFixture: String, CaseIterable {
         case .shadowRamp:
             // A smooth ramp from near-black to a light midtone, plus a bright band, and nothing
             // else. Added 2026-09-01 with the shadow-peaked grain, for the reason `speculars` was
-            // added for halation: the pin could not see WHERE grain lands.
+            // added for halation: the pin could not see WHERE grain lands. Kept after that grain
+            // was reverted, because the blind spot it covers is a property of the other fixtures
+            // and not of the change that exposed it.
             //
             // Every other fixture is either uniformly dark (`night`, `dusk`, which also sit on the
             // adaptive-EV branch and so cannot separate "the mask moved" from "the amount law
@@ -316,8 +320,8 @@ enum LookFixture: String, CaseIterable {
             // so essentially all of this frame's high-frequency energy IS the grain, and
             // `localContrast` reads the mask almost directly. The bright band is what keeps the
             // frame's mean luminance clear of the 0.22 dark-bloom and 0.18 adaptive-exposure
-            // thresholds (measured: 0.30 by `CIAreaAverage`'s route, the number the recorder
-            // prints), so this fixture pins the mask and the mask alone.
+            // thresholds (measured: 0.410 by `CIAreaAverage`'s route, the number the recorder
+            // prints as INPUTLUM), so this fixture pins the mask and the mask alone.
             let band = v > 0.86
             let ramp = band ? 0.75 : 0.018 + 0.50 * (v / 0.86)
             let base = ramp + 0.012 * texture
