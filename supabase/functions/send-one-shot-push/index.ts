@@ -52,6 +52,7 @@ type Recipient = { userId: string; title: string; body: string; route: unknown }
 const CAMPAIGNS: Record<string, () => Promise<Recipient[]>> = {
   "first-shot": firstShotCohort,
   "still-no-shot": stillNoShotCohort,
+  "checked-again": checkedAgainCohort,
   "waiting-to-sort": waitingToSortCohort,
 };
 
@@ -119,6 +120,19 @@ async function stillNoShotCohort(): Promise<Recipient[]> {
     userId,
     title: "We checked.",
     body: "Not a single shot. The camera is right there, and the first one can be of literally anything.",
+    route: { t: "camera" },
+  }));
+}
+
+/// The sequel to "We checked.", minutes later, to one person. Sent 2026-09-03 to a day-old account
+/// the owner wanted to needle twice, with `?user=` so nobody else in the cohort is swept up.
+/// Same rule as every second touch: drier than the first, never louder, and the joke stays at the
+/// camera's expense. Owner picked this from three drafts.
+async function checkedAgainCohort(): Promise<Recipient[]> {
+  return (await neverShot()).map((userId) => ({
+    userId,
+    title: "We checked again.",
+    body: "Still nothing. That's fine. The camera can wait. It's a camera.",
     route: { t: "camera" },
   }));
 }
@@ -251,7 +265,12 @@ Deno.serve(async (req) => {
     );
   }
 
-  const recipients = await unclaimed(name, await resolve());
+  // `?user=<uuid>` narrows any campaign to one person. For the owner's hand-aimed sends: the
+  // campaign still defines the copy and the eligibility rule, the filter only stops everyone
+  // else who qualifies from being swept up in a send meant for one account.
+  const only = url.searchParams.get("user");
+  const resolved = (await resolve()).filter((r) => !only || r.userId === only);
+  const recipients = await unclaimed(name, resolved);
   if (!send) {
     return Response.json({
       dryRun: true, campaign: name, wouldSend: recipients.length,
