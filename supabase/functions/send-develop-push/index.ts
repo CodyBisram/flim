@@ -233,15 +233,24 @@ Deno.serve(async () => {
   // 1. Photos that have developed, belong to a roll, and haven't pushed yet.
   //    Personal instants (roll_id NULL) are excluded, they develop immediately
   //    and never generate a remote push.
-  const { data: photos, error } = await supabase
-    .from("photos")
-    .select("id, user_id, roll_id, rolls(name)")
-    .lte("develops_at", new Date().toISOString())
-    .eq("push_sent", false)
-    .not("roll_id", "is", null);
+  //    Bounded by the unsent backlog today, but paged anyway for the same reason as
+  //    loadBlockPairs: a row past PostgREST's 1000-row cap would only be delayed to the
+  //    next run, never lost, but there's no reason to leave an unbounded select in place
+  //    once the pattern exists. `.order("id")` gives `.range()` a stable cursor.
+  const photos = await fetchAllPages(
+    (from, to) =>
+      supabase
+        .from("photos")
+        .select("id, user_id, roll_id, rolls(name)")
+        .lte("develops_at", new Date().toISOString())
+        .eq("push_sent", false)
+        .not("roll_id", "is", null)
+        .order("id", { ascending: true })
+        .range(from, to),
+    "photos",
+  );
 
-  if (error) return new Response(`query failed: ${error.message}`, { status: 500 });
-  if (!photos?.length) return new Response("nothing to send");
+  if (!photos.length) return new Response("nothing to send");
 
   const blockPairs = await loadBlockPairs();
 
