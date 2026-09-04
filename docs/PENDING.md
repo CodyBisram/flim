@@ -174,6 +174,22 @@ actually do. Worth deciding before more is built on top of rolls.
 
 ### done 2026-09-03: three device-found bugs from the Islands roll
 
+- **The 100-of-122 was caused by a hand SQL edit the same day**, not only the viewer copy: the
+  Islands roll's `develops_at` was set with MICROSECONDS, the app's keyset cursor formats to
+  milliseconds, so `eq` never matched and the tail was lost. Data repaired
+  (`date_trunc('milliseconds', ...)` on every roll photo); the cursor in both PhotoService and
+  FeedService now uses a one-millisecond band and can no longer loop on a cursor that does not
+  advance (`KeysetPagination`, tested with a 122-way tie). RULE: hand SQL on `develops_at`,
+  `taken_at`, or `posts.created_at` must truncate to milliseconds.
+- **Roll grid order was random.** Every shot in a roll shares one `develops_at`, so the server's
+  tie-break (`id DESC`) decided the order. Grid, viewer and Save all now show oldest shot first,
+  the order the reveal already used; the load-more sentinel stays anchored to the server's tail.
+  The DEVELOPING section keeps server order (no image to read yet).
+- **"Duplicate photos" in rolls: not a rendering defect.** Every roll surface was audited and
+  cannot show one row twice; the database has no duplicate rows. The reporter took 15 of her 34
+  shots within three seconds of the previous one, so burst pairs a second apart are the
+  explanation. Would be settled by a screenshot; a same-id repeat is not possible today.
+
 - The roll viewer opened with 100 of 122 photographs. The roll fetch pages at 100, the viewer
   took the grid's list at the tap and could never grow it, and a starved drain of page two left
   it there. The viewer now merges an independent whole-roll fetch (the reveal's own snapshot

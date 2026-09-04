@@ -298,8 +298,33 @@ final class FeedServiceTests: XCTestCase {
         let filter = FeedService.keysetFilter(after: cursor)
         XCTAssertEqual(
             filter,
-            "created_at.lt.2023-11-14T22:13:20.000Z,and(created_at.eq.2023-11-14T22:13:20.000Z,id.lt.\(id.uuidString))"
+            "created_at.lt.2023-11-14T22:13:20.000Z,and(created_at.gte.2023-11-14T22:13:20.000Z,"
+                + "created_at.lt.2023-11-14T22:13:20.001Z,id.lt.\(id.uuidString))"
         )
+    }
+
+    /// Same immunity `PhotoServicePaginationTests` pins for `PhotoService`'s twin: a `created_at`
+    /// value finer than the millisecond precision the client itself ever writes must still fall
+    /// inside the cursor's own tie band, not slip past the `eq`-only branch this replaced.
+    func testKeysetFilterBandContainsAMicrosecondPrecisionCursorValue() {
+        let id = UUID()
+        let cursor = FeedService.FeedCursor(createdAt: Date(timeIntervalSince1970: 1_700_000_000.411792), id: id)
+        let filter = FeedService.keysetFilter(after: cursor)
+        XCTAssertEqual(
+            filter,
+            "created_at.lt.2023-11-14T22:13:20.411Z,and(created_at.gte.2023-11-14T22:13:20.411Z,"
+                + "created_at.lt.2023-11-14T22:13:20.412Z,id.lt.\(id.uuidString))"
+        )
+    }
+
+    /// The band's upper bound is exclusive: the ceiling millisecond appears only as an `lt`
+    /// bound in the filter, never as a `gte`/`eq` bound.
+    func testKeysetFilterBandUpperBoundIsExclusive() {
+        let id = UUID()
+        let cursor = FeedService.FeedCursor(createdAt: Date(timeIntervalSince1970: 1_700_000_000), id: id)
+        let filter = FeedService.keysetFilter(after: cursor)
+        XCTAssertTrue(filter.contains("created_at.lt.2023-11-14T22:13:20.001Z"))
+        XCTAssertFalse(filter.contains("created_at.gte.2023-11-14T22:13:20.001Z"))
     }
 
     /// Two posts sharing the exact boundary timestamp (the real case `created_at`'s missing
@@ -311,6 +336,21 @@ final class FeedServiceTests: XCTestCase {
         let a = FeedService.FeedCursor(createdAt: ts, id: UUID())
         let b = FeedService.FeedCursor(createdAt: ts, id: UUID())
         XCTAssertNotEqual(FeedService.keysetFilter(after: a), FeedService.keysetFilter(after: b))
+    }
+
+    // MARK: - KeysetPagination.cursorAdvanced(from:to:)
+
+    /// Same guard `PhotoServicePaginationTests` pins for `PhotoService`: a non-empty page whose
+    /// last row equals the cursor it was fetched after must not look like progress, or
+    /// `loadMoreFeed`'s `while hasMoreFeed` loop would spin on one page forever.
+    func testCursorDidNotAdvanceWhenNextEqualsPrevious() {
+        let cursor = FeedService.FeedCursor(createdAt: .now, id: UUID())
+        XCTAssertFalse(KeysetPagination.cursorAdvanced(from: cursor, to: cursor))
+    }
+
+    func testCursorAdvancedFromNilAlwaysAdvances() {
+        let next = FeedService.FeedCursor(createdAt: .now, id: UUID())
+        XCTAssertTrue(KeysetPagination.cursorAdvanced(from: nil, to: next))
     }
 
     private func feedItem(post: Post) -> FeedItem {

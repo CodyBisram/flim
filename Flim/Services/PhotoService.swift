@@ -1709,18 +1709,15 @@ final class PhotoService {
     }
 
     /// Raw PostgREST filter syntax for "strictly after `cursor` in `<column> DESC, id DESC`
-    /// order": `<column> < cursor.sortDate`, OR tied on `<column>` and `id < cursor.id`. Same
-    /// shape as `FeedService.keysetFilter(after:)`; see `PhotoCursor`'s own doc for why the tie
-    /// branch is load-bearing far more often here than it is for the feed.
+    /// order": `<column>` strictly before the cursor's millisecond floor, OR `<column>` inside
+    /// that floor's millisecond band and `id < cursor.id`. Same shape as
+    /// `FeedService.keysetFilter(after:)`; see `PhotoCursor`'s own doc for why the tie branch is
+    /// load-bearing far more often here than it is for the feed, and `KeysetPagination.bandFilter`'s
+    /// own doc for why a millisecond BAND, not an exact equality, is what the tie compares
+    /// against (a hand-edited `develops_at` once carried microsecond precision no client write
+    /// ever produces, and the equality branch could never match it).
     static func keysetFilter(after cursor: PhotoCursor) -> String {
-        // Same explicit formatting `FeedService.keysetFilter(after:)` uses, for the same reason:
-        // `.rawValue` is ambiguous between PostgREST's and Realtime's `*FilterValue`
-        // conformances for `Date`, both visible through `import Supabase`.
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let ts = formatter.string(from: cursor.sortDate)
-        let col = cursor.column.column
-        return "\(col).lt.\(ts),and(\(col).eq.\(ts),id.lt.\(cursor.id.uuidString))"
+        KeysetPagination.bandFilter(column: cursor.column.column, sortDate: cursor.sortDate, id: cursor.id)
     }
 
     /// `page`, minus anything already in `existingIds`.
@@ -1819,7 +1816,17 @@ final class PhotoService {
             // Advanced from the RAW page, before blocked-user filtering or dedup: the cursor must
             // move past every row this page looked at, even the ones filtered out, or the next
             // fetch would just ask for the same page again.
-            if let next = PhotoService.nextPhotoCursor(afterPage: page, orderBy: column) { photoCursor = next }
+            //
+            // Guarded against a cursor that fails to move at all: a page came back non-empty (so
+            // `next` is non-nil) but landed on the exact same row the cursor already pointed at.
+            // That should be unreachable given `keysetFilter(after:)`'s own `id <` comparison, but
+            // it is exactly the shape of the bug this whole file exists to be immune to (a filter
+            // that stops discriminating rows), and a cursor that never advances spins this `while`
+            // loop on one page forever instead of failing safely.
+            if let next = PhotoService.nextPhotoCursor(afterPage: page, orderBy: column) {
+                if !KeysetPagination.cursorAdvanced(from: photoCursor, to: next) { hasMore = false }
+                photoCursor = next
+            }
             if page.count < limit { hasMore = false }
 
             let candidates = blockedIds.isEmpty ? page : page.filter { !blockedIds.contains($0.userId) }

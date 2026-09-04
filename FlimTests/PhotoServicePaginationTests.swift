@@ -66,7 +66,8 @@ final class PhotoServicePaginationTests: XCTestCase {
         let filter = PhotoService.keysetFilter(after: cursor)
         XCTAssertEqual(
             filter,
-            "develops_at.lt.2023-11-14T22:13:20.000Z,and(develops_at.eq.2023-11-14T22:13:20.000Z,id.lt.\(id.uuidString))"
+            "develops_at.lt.2023-11-14T22:13:20.000Z,and(develops_at.gte.2023-11-14T22:13:20.000Z,"
+                + "develops_at.lt.2023-11-14T22:13:20.001Z,id.lt.\(id.uuidString))"
         )
     }
 
@@ -78,8 +79,42 @@ final class PhotoServicePaginationTests: XCTestCase {
         let filter = PhotoService.keysetFilter(after: cursor)
         XCTAssertEqual(
             filter,
-            "taken_at.lt.2023-11-14T22:13:20.000Z,and(taken_at.eq.2023-11-14T22:13:20.000Z,id.lt.\(id.uuidString))"
+            "taken_at.lt.2023-11-14T22:13:20.000Z,and(taken_at.gte.2023-11-14T22:13:20.000Z,"
+                + "taken_at.lt.2023-11-14T22:13:20.001Z,id.lt.\(id.uuidString))"
         )
+    }
+
+    /// The bug this whole file exists to be immune to: a `develops_at` value carrying MORE
+    /// precision than any client write ever produces (a hand-edited row held
+    /// `00:23:56.411792`, six fractional digits, while the client's own `ISO8601DateFormatter`
+    /// writes three). The cursor is built from exactly that finer value (as it would be, read
+    /// straight off the row), and the resulting band must still contain it: `gte` the floor and
+    /// strictly `lt` the ceiling one millisecond later, both formatted to millisecond precision.
+    func testKeysetFilterBandContainsAMicrosecondPrecisionCursorValue() {
+        let microsecondValue = Date(timeIntervalSince1970: 1_700_000_000.411792)
+        let id = UUID()
+        let cursor = PhotoService.PhotoCursor(column: .developsAt, sortDate: microsecondValue, id: id)
+        let filter = PhotoService.keysetFilter(after: cursor)
+        XCTAssertEqual(
+            filter,
+            "develops_at.lt.2023-11-14T22:13:20.411Z,and(develops_at.gte.2023-11-14T22:13:20.411Z,"
+                + "develops_at.lt.2023-11-14T22:13:20.412Z,id.lt.\(id.uuidString))"
+        )
+    }
+
+    /// The band's upper bound is exclusive: a value exactly one millisecond past the cursor's
+    /// floor (i.e. the very next millisecond, a genuinely different, newer instant) must NOT be
+    /// swept into the same tie band as the cursor. Checked the only way a pure filter string can
+    /// be: the ceiling text itself, not a value strictly less than it, is what the filter emits
+    /// as the exclusive `lt` bound.
+    func testKeysetFilterBandUpperBoundIsExclusive() {
+        let id = UUID()
+        let cursor = PhotoService.PhotoCursor(column: .developsAt, sortDate: Date(timeIntervalSince1970: 1_700_000_000), id: id)
+        let filter = PhotoService.keysetFilter(after: cursor)
+        // The band's own ceiling appears only as an `lt` bound, never a `gte`/`eq` bound, which is
+        // what makes it exclusive rather than inclusive.
+        XCTAssertTrue(filter.contains("develops_at.lt.2023-11-14T22:13:20.001Z"))
+        XCTAssertFalse(filter.contains("develops_at.gte.2023-11-14T22:13:20.001Z"))
     }
 
     /// The case this table hits routinely, not rarely: every shot in a roll shares the exact same
@@ -100,6 +135,29 @@ final class PhotoServicePaginationTests: XCTestCase {
         let a = PhotoService.PhotoCursor(column: .takenAt, sortDate: ts, id: UUID())
         let b = PhotoService.PhotoCursor(column: .takenAt, sortDate: ts, id: UUID())
         XCTAssertNotEqual(PhotoService.keysetFilter(after: a), PhotoService.keysetFilter(after: b))
+    }
+
+    // MARK: - KeysetPagination.cursorAdvanced(from:to:)
+
+    /// The very first page (no previous cursor) always counts as advancing.
+    func testCursorAdvancedFromNilAlwaysAdvances() {
+        let next = PhotoService.PhotoCursor(column: .developsAt, sortDate: .now, id: UUID())
+        XCTAssertTrue(KeysetPagination.cursorAdvanced(from: nil, to: next))
+    }
+
+    /// The ordinary case: a page landed on a different row than the one it was fetched after.
+    func testCursorAdvancedToADifferentCursorAdvances() {
+        let previous = PhotoService.PhotoCursor(column: .developsAt, sortDate: .now, id: UUID())
+        let next = PhotoService.PhotoCursor(column: .developsAt, sortDate: .now.addingTimeInterval(-1), id: UUID())
+        XCTAssertTrue(KeysetPagination.cursorAdvanced(from: previous, to: next))
+    }
+
+    /// The stall this guard exists to catch: a non-empty page whose last row is the exact same
+    /// row the cursor already pointed to. `fetchPage` must flip `hasMore` false here rather than
+    /// ask the same filter for the same page forever.
+    func testCursorDidNotAdvanceWhenNextEqualsPrevious() {
+        let cursor = PhotoService.PhotoCursor(column: .developsAt, sortDate: .now, id: UUID())
+        XCTAssertFalse(KeysetPagination.cursorAdvanced(from: cursor, to: cursor))
     }
 
     // MARK: - dedupedPhotos(_:excluding:)
@@ -143,7 +201,84 @@ final class PhotoServicePaginationTests: XCTestCase {
         let filter = PhotoService.keysetFilter(after: cursor)
         XCTAssertEqual(
             filter,
-            "taken_at.lt.2023-11-14T22:13:20.000Z,and(taken_at.eq.2023-11-14T22:13:20.000Z,id.lt.FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF)"
+            "taken_at.lt.2023-11-14T22:13:20.000Z,and(taken_at.gte.2023-11-14T22:13:20.000Z,"
+                + "taken_at.lt.2023-11-14T22:13:20.001Z,id.lt.FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF)"
         )
+    }
+
+    // MARK: - Tie-band pure simulation (122 identical timestamps, one shared `develops_at`)
+
+    /// A pure, in-memory stand-in for `fetchPage`'s keyset loop against a Postgres-shaped table:
+    /// given a sorted array (already `<column> DESC, id DESC`, exactly the query's own order) and
+    /// a raw filter string in `col.lt.X,and(col.gte.X,col.lt.Y,id.lt.Z)` shape, returns the rows
+    /// that satisfy it. This is deliberately dumb (string-parsed, not a real predicate) so the
+    /// test is pinned to the ACTUAL filter `keysetFilter(after:)` emits, not to a hand-written
+    /// equivalent that could silently diverge from it.
+    private func rowsMatching(_ filter: String, in rows: [(date: Date, id: UUID)], column: String) -> [(date: Date, id: UUID)] {
+        // "col.lt.A,and(col.gte.B,col.lt.C,id.lt.D)" -> the four operands, in order.
+        let iso = ISO8601DateFormatter()
+        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let parts = filter
+            .replacingOccurrences(of: "\(column).lt.", with: "")
+            .replacingOccurrences(of: "and(\(column).gte.", with: "")
+            .replacingOccurrences(of: "\(column).lt.", with: "")
+            .replacingOccurrences(of: "id.lt.", with: "")
+            .replacingOccurrences(of: ")", with: "")
+            .split(separator: ",")
+            .map(String.init)
+        guard parts.count == 4,
+              let lowerBound = iso.date(from: parts[0]),
+              let bandFloor = iso.date(from: parts[1]),
+              let bandCeiling = iso.date(from: parts[2]),
+              let idBound = UUID(uuidString: parts[3])
+        else {
+            XCTFail("unparseable keyset filter: \(filter)")
+            return []
+        }
+        return rows.filter { row in
+            row.date < lowerBound || (row.date >= bandFloor && row.date < bandCeiling && row.id.uuidString < idBound.uuidString)
+        }
+    }
+
+    /// 122 photos sharing ONE `develops_at` (an ordinary roll reveal, per `PhotoCursor`'s own
+    /// doc), paged 100 at a time exactly like `fetchRollPhotos`. Two pages, 100 then 22, must
+    /// cover every row exactly once: nothing repeated (the old `eq`-based tie could re-serve the
+    /// whole first page), nothing skipped (it could also drop the tail).
+    func testTiedRollPhotosPageCorrectlyAcrossTwoPages() {
+        let sharedInstant = Date(timeIntervalSince1970: 1_700_000_000)
+        // Sorted `id DESC` (as the query's own secondary `.order` would produce), the same shape
+        // `nextPhotoCursor`/`keysetFilter` are built to walk.
+        let all = (0..<122).map { _ in (date: sharedInstant, id: UUID()) }
+            .sorted { $0.id.uuidString > $1.id.uuidString }
+
+        let column = "develops_at"
+        var covered: [UUID] = []
+        var remaining = all
+        var pageSizes: [Int] = []
+        var cursor: PhotoService.PhotoCursor?
+        var hasMore = true
+        var iterations = 0
+        while hasMore, iterations < 10 {
+            iterations += 1
+            let filtered: [(date: Date, id: UUID)]
+            if let cursor {
+                let filter = PhotoService.keysetFilter(after: cursor)
+                filtered = rowsMatching(filter, in: remaining, column: column)
+            } else {
+                filtered = remaining
+            }
+            let page = Array(filtered.prefix(100))
+            pageSizes.append(page.count)
+            covered.append(contentsOf: page.map(\.id))
+            if let last = page.last {
+                cursor = PhotoService.PhotoCursor(column: .developsAt, sortDate: last.date, id: last.id)
+            }
+            remaining.removeAll { row in page.contains { $0.id == row.id } }
+            if page.count < 100 { hasMore = false }
+        }
+
+        XCTAssertEqual(pageSizes, [100, 22])
+        XCTAssertEqual(Set(covered), Set(all.map(\.id)))
+        XCTAssertEqual(covered.count, 122)
     }
 }

@@ -71,4 +71,41 @@ final class DarkroomViewModelTests: XCTestCase {
         XCTAssertTrue(filterHiddenPhotos(photos, hiding: [id]).isEmpty)
         XCTAssertEqual(filterHiddenPhotos(photos, hiding: []).map(\.id), [id])
     }
+
+    // MARK: - chronologicalDeveloped: the roll-reading-order convention
+    //
+    // `fetchRollPhotos` orders by `develops_at DESC, id DESC`, and every shot in a roll shares
+    // ONE `develops_at` (see `PhotoService.PhotoCursor`'s own doc), so what the server hands
+    // `photos` back in is really just `id DESC`, i.e. random. `chronologicalDeveloped` is the one
+    // place that reorders it into something meant to be read: oldest shot first, like a roll of
+    // film. `RollRevealViewModel.loadDeck` re-derives the same ordering independently (its own
+    // `.sorted { $0.takenAt < $1.takenAt }` on a snapshot fetch that has no `ORDER BY` at all), so
+    // this pins the SAME convention on the Darkroom/RollDetailView side.
+
+    /// A roll of photos sharing one `develops_at`, assigned in shuffled-id order exactly the way
+    /// `fetchRollPhotos`'s own `id DESC` tiebreak would hand them back, must still expose
+    /// `chronologicalDeveloped` sorted oldest -> newest by `takenAt`, regardless of that id order.
+    @MainActor
+    func testChronologicalDevelopedSortsByTakenAtRegardlessOfShuffledIdOrder() {
+        let vm = DarkroomViewModel()
+        let sharedDevelopsAt = Date.now.addingTimeInterval(-1000)
+        func rollPhoto(secondsBeforeShared: TimeInterval) -> Photo {
+            Photo(id: UUID(), userId: UUID(), rollId: UUID(), storagePath: "p/\(UUID()).jpg",
+                  thumbPath: nil, feedPath: nil,
+                  takenAt: sharedDevelopsAt.addingTimeInterval(-secondsBeforeShared),
+                  developsAt: sharedDevelopsAt, isDeveloped: true, caption: nil, isSorted: true)
+        }
+        let oldest = rollPhoto(secondsBeforeShared: 300)
+        let middle = rollPhoto(secondsBeforeShared: 150)
+        let newest = rollPhoto(secondsBeforeShared: 0)
+        // Deliberately NOT in `takenAt` order: this is the server's own tie-broken `id DESC`
+        // order, unrelated to when each shot was actually taken.
+        vm.photos = [middle, newest, oldest]
+
+        XCTAssertEqual(vm.chronologicalDeveloped.map(\.id), [oldest.id, middle.id, newest.id])
+        // `developedPhotos` (the grid's own bucket, pre-reorder) stays in server order: this test
+        // would be vacuous if the reorder happened earlier, in `assign`/`recomputeSplits`'s
+        // `developedPhotos` itself, rather than only in `chronologicalDeveloped`.
+        XCTAssertEqual(vm.developedPhotos.map(\.id), [middle.id, newest.id, oldest.id])
+    }
 }

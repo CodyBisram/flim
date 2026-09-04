@@ -772,7 +772,8 @@ final class FeedService {
     }
 
     /// Raw PostgREST filter syntax for "strictly after `cursor` in `created_at DESC, id DESC`
-    /// order": `created_at < cursor.createdAt`, OR tied on `created_at` and `id < cursor.id`.
+    /// order": `created_at` strictly before the cursor's millisecond floor, OR `created_at`
+    /// inside that floor's millisecond band and `id < cursor.id`.
     ///
     /// The tie branch is not defensive padding. `posts.created_at` has no uniqueness constraint, so
     /// two posts sharing the exact timestamp (the same insert transaction: a seed script, or two
@@ -781,15 +782,13 @@ final class FeedService {
     /// the same direction as the query's own secondary `.order`, turns the pair into a strict total
     /// order: a tie is resolved the same way on every page, so nothing at or before the cursor is
     /// ever re-fetched, and nothing strictly after it is ever skipped.
+    ///
+    /// The band (not an exact equality against `cursor.createdAt`) is what makes this immune to a
+    /// database value finer than the millisecond precision every client write uses, see
+    /// `KeysetPagination.bandFilter`'s own doc and `PhotoService.keysetFilter(after:)`, this
+    /// function's twin on the photos table.
     static func keysetFilter(after cursor: FeedCursor) -> String {
-        // `.rawValue` (the encoding `.lt`/`.eq`/etc. use for a `Date` argument) is ambiguous here:
-        // both PostgREST's and Realtime's `*FilterValue` conformances for `Date` are visible through
-        // `import Supabase`. Formatted explicitly instead, with the same options PostgREST's own
-        // conformance uses, so the two stay in sync.
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let ts = formatter.string(from: cursor.createdAt)
-        return "created_at.lt.\(ts),and(created_at.eq.\(ts),id.lt.\(cursor.id.uuidString))"
+        KeysetPagination.bandFilter(column: "created_at", sortDate: cursor.createdAt, id: cursor.id)
     }
 
     /// `page`, minus anything already in `existingIds`.
@@ -910,7 +909,15 @@ final class FeedService {
             // old offset advanced by the raw `posts.count`: the cursor must move past every row this
             // page looked at, even the ones that end up filtered out, or the next fetch would just
             // ask for the same page again.
-            if let next = FeedService.nextFeedCursor(afterPage: posts) { feedCursor = next }
+            //
+            // Guarded against a cursor that fails to move at all, same reasoning and same shape as
+            // `PhotoService.fetchPage`'s twin guard: a non-empty page landing on the exact row the
+            // cursor already pointed at should be unreachable, but if it ever happened this `while`
+            // loop must stop rather than spin on one page forever.
+            if let next = FeedService.nextFeedCursor(afterPage: posts) {
+                if !KeysetPagination.cursorAdvanced(from: feedCursor, to: next) { hasMoreFeed = false }
+                feedCursor = next
+            }
             if posts.count < feedPageSize { hasMoreFeed = false }
 
             let visible = posts.filter { !blockedIds.contains($0.userId) }

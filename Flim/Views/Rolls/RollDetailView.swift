@@ -152,6 +152,15 @@ struct RollDetailView: View {
         return mergePhotoSnapshot(paged: vm.developedPhotos, snapshot: rollSnapshot)
     }
 
+    /// `pagerPhotos` in the order the grid shows them, oldest shot first, so the viewer's roll
+    /// rack and the grid are the same strip of film. Ties on `takenAt` break on id so the order
+    /// is total and stable across re-evaluations.
+    private var pagerPhotosChronological: [Photo] {
+        pagerPhotos.sorted { a, b in
+            a.takenAt != b.takenAt ? a.takenAt < b.takenAt : a.id.uuidString < b.id.uuidString
+        }
+    }
+
 
     var body: some View {
         ZStack {
@@ -233,7 +242,15 @@ struct RollDetailView: View {
                                 }
                                 if !vm.developedPhotos.isEmpty {
                                     sectionHeader("DEVELOPED")
-                                    photoGrid(vm.developedPhotos, triggersLoadMore: true)
+                                    // Oldest to newest: a roll reads like a strip of film, not the
+                                    // server's `id DESC` append order (every shot in a roll shares
+                                    // one `develops_at`, so that order is random ids). The load-more
+                                    // sentinel still anchors to the SERVER's tail, which is the one
+                                    // cell guaranteed to be freshly mounted on every new page; the
+                                    // chronological tail can be a cell that mounted pages ago and
+                                    // would never re-arm.
+                                    photoGrid(chronologicalDeveloped, triggersLoadMore: true,
+                                              loadMoreAnchorId: vm.developedPhotos.last?.id)
                                 }
                             }
                         }
@@ -444,8 +461,8 @@ struct RollDetailView: View {
         }
         .fullScreenCover(item: $selectedPhoto) { photo in
             PhotoPagerView(
-                photos: pagerPhotos,
-                startIndex: pagerPhotos.firstIndex(where: { $0.id == photo.id }) ?? 0,
+                photos: pagerPhotosChronological,
+                startIndex: pagerPhotosChronological.firstIndex(where: { $0.id == photo.id }) ?? 0,
                 signedURLs: vm.signedURLCache,
                 showsReactions: true,
                 showsComments: true,
@@ -600,7 +617,9 @@ struct RollDetailView: View {
             // Its own directory: this Task outlives the view, so a second export started from
             // another roll must not be able to touch these files. See PhotoExport.
             let exportDir = PhotoExport.begin()
-            let deck = vm.developedPhotos
+            // Same order the reveal's own Save all exports in, oldest shot first, so the two
+            // Save all buttons on one roll number their files the same way.
+            let deck = chronologicalDeveloped
             // The 1400px rendition, not the 2048px original.
             //
             // These two Save all buttons disagreed: the reveal's saved `viewPath` and this one
@@ -816,7 +835,7 @@ struct RollDetailView: View {
         .padding(.horizontal, 6).padding(.top, 18).padding(.bottom, 8)
     }
 
-    private func photoGrid(_ list: [Photo], triggersLoadMore: Bool) -> some View {
+    private func photoGrid(_ list: [Photo], triggersLoadMore: Bool, loadMoreAnchorId: UUID? = nil) -> some View {
         // A roll IS a strip of film, so its grid is laid out as one: rows of frames on a
         // perforated road, ending where the roll's own last frame does rather than ruling a line
         // out to the margin. Same atom the Darkroom's day racks draw.
@@ -836,7 +855,7 @@ struct RollDetailView: View {
                         if photo.isReady, vm.signedURLCache[photo.id] == nil {
                             _ = await vm.signedURL(for: photo, photoService: photoService)
                         }
-                        if triggersLoadMore, photo.id == list.last?.id {
+                        if triggersLoadMore, photo.id == (loadMoreAnchorId ?? list.last?.id) {
                             await vm.loadMoreRoll(photoService: photoService, rollId: roll.id, blockedIds: feed.blockedIds)
                         }
                     }
