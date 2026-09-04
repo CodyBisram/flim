@@ -76,12 +76,8 @@ struct ChapterRecapView: View {
                 .padding(.horizontal, 20)
                 .padding(.top, 12)
 
-                segmentBars
-                    .padding(.horizontal, 24)
-                    .padding(.top, 18)
-
                 // Two flexible spacers, not one: the header/prints block sits roughly centred
-                // in the space below the segment bars, and the controls stay pinned near the
+                // in the space below the close button, and the controls stay pinned near the
                 // bottom, rather than the content pinning to the top and leaving one enormous
                 // gap above the buttons on a tall device.
                 Spacer(minLength: 12)
@@ -115,16 +111,6 @@ struct ChapterRecapView: View {
         }
         .swipeToDismiss(offset: $cardOffset) { Haptics.tap(); dismiss() }
         .transition(.opacity)
-    }
-
-    /// Four decorative bars, matching the design's segmented header. Static, not a progress
-    /// indicator: the opening card has no timeline of its own to measure.
-    private var segmentBars: some View {
-        HStack(spacing: 4) {
-            ForEach(0..<4, id: \.self) { _ in
-                Capsule().fill(Color.white.opacity(0.18)).frame(height: 2.5)
-            }
-        }
     }
 
     private var radialWash: some View {
