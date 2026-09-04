@@ -179,8 +179,8 @@ actually do. Worth deciding before more is built on top of rolls.
   `comments: true`; the app opens the roll, waits for the photo to arrive (first page or
   whole-roll snapshot, bounded), opens the viewer on it and the thread if flagged, and if the
   roll's one-shot reveal has not been watched, plays the reveal first and opens the photo after.
-  Older builds read only the roll id and land where they always did. Server side is committed,
-  NOT deployed (token). Chapters visibility, asked the same day: other people see a shelf built
+  Older builds read only the roll id and land where they always did. Server side deployed 2026-09-04
+  (send-social-push and send-develop-push). Chapters visibility, asked the same day: other people see a shelf built
   only from what you POSTED, with the profile grid's exact visibility; only you see every shot.
 
 Three read-only passes (correctness, flows, production data). The data pass is BLOCKED on a fresh
@@ -193,7 +193,7 @@ management token; the other two came back SHIP WITH NITS plus one BLOCK, all fix
   long-press leave also cancels the reminder now.
 - **Joining a developed roll** silently succeeded and the app promised a reveal that had already
   happened, then auto-played it. `join_roll` now raises `roll_developed` (migration
-  `2026-09-04_join_roll_refuses_developed.sql`, NOT YET APPLIED); the app maps it to copy, and
+  `2026-09-04_join_roll_refuses_developed.sql`, APPLIED 2026-09-04); the app maps it to copy, and
   the join success screen no longer promises a reveal for a developed roll.
 - **Camera** no longer selects a developed roll from the join notification, the pill shows
   "· developed" if it ever holds one, and a refused roll shot says the roll "isn't accepting
@@ -209,7 +209,8 @@ management token; the other two came back SHIP WITH NITS plus one BLOCK, all fix
   `require(toFail:)` against the pager's scroll view; its own item if wanted.
 
 **Recommended for stable roll use, in order:**
-1. Next 1.5.1 build: everything above. Apply the join migration first; deploy send-develop-push.
+1. Next 1.5.1 build: everything above. Join migration applied and both push functions deployed
+   2026-09-04; nothing gates the push.
 2. 1.5.2: a real `rolls.reveal_at` column as the single source of truth. Today the reveal is
    `created_at + 12h` computed in three places (a client constant, `is_roll_developed()`, and each
    photo's `develops_at` written by the client), which is why extending a roll needed two hand
