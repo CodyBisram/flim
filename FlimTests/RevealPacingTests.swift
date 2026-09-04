@@ -88,6 +88,36 @@ struct RevealPacingTests {
         #expect(RevealPacing.frameCornerRadius > 0)
     }
 
+    // MARK: - Swipe-to-dismiss
+    //
+    // `shouldDismiss` is the one decision every full-screen photo surface that isn't a paging
+    // `TabView` shares (`View.swipeToDismiss`, used by `ImageViewer` and the chapter recap's
+    // opening card, as well as this reveal's own `dismissThreshold`).
+
+    @Test("a drag short of the threshold springs back, not dismisses")
+    func shortDragDoesNotDismiss() {
+        #expect(!RevealPacing.shouldDismiss(translation: CGSize(width: 0, height: RevealPacing.dismissThreshold - 1)))
+        #expect(!RevealPacing.shouldDismiss(translation: CGSize(width: 0, height: -(RevealPacing.dismissThreshold - 1))))
+    }
+
+    @Test("a drag past the threshold dismisses, in either vertical direction")
+    func longDragDismisses() {
+        #expect(RevealPacing.shouldDismiss(translation: CGSize(width: 0, height: RevealPacing.dismissThreshold + 1)))
+        #expect(RevealPacing.shouldDismiss(translation: CGSize(width: 0, height: -(RevealPacing.dismissThreshold + 1))))
+    }
+
+    @Test("a mostly-horizontal drag never dismisses on width alone")
+    func horizontalDragAloneDoesNotDismiss() {
+        // Width plays no part in the decision: a wide, flat drag with no real vertical travel
+        // must not close the surface out from under a horizontal gesture elsewhere.
+        #expect(!RevealPacing.shouldDismiss(translation: CGSize(width: 300, height: 10)))
+    }
+
+    @Test("the boundary itself does not dismiss, only past it")
+    func exactThresholdDoesNotDismiss() {
+        #expect(!RevealPacing.shouldDismiss(translation: CGSize(width: 0, height: RevealPacing.dismissThreshold)))
+    }
+
     // MARK: - Prefetch
 
     @Test("the prefetch window starts at the CURRENT frame, not the next one")

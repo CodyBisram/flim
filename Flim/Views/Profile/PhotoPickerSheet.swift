@@ -197,8 +197,10 @@ struct ImageViewer: View {
                 // and `Photo.viewPath`).
                 CachedImage(url: url, maxPixel: 1400, cacheKey: cacheKey) { image in
                     image.resizable().scaledToFit()
-                        .scaleEffect(scale, anchor: zoomAnchor).offset(offset)
-                        .gesture(dragGesture).gesture(pinch)
+                        .scaleEffect(scale, anchor: zoomAnchor)
+                        .gesture(panWhileZoomed, including: scale > 1 ? .all : .none)
+                        .swipeToDismiss(offset: $offset, isEnabled: scale <= 1) { dismiss() }
+                        .gesture(pinch)
                         .onTapGesture(count: 2) {
                             zoomAnchor = .center
                             withAnimation(.spring(duration: 0.3)) {
@@ -223,19 +225,16 @@ struct ImageViewer: View {
         .statusBarHidden()
     }
 
-    private var dragGesture: some Gesture {
+    /// Pan while a pinch-zoom is held open, same shape as `PhotoPagerView.panWhileZoomed`. Stands
+    /// down (via the `including:` gate where this is attached) the moment the photo is back at
+    /// rest, handing the drag to `swipeToDismiss` instead.
+    private var panWhileZoomed: some Gesture {
         DragGesture()
             .onChanged { value in
-                if scale > 1 {
-                    offset = CGSize(width: lastOffset.width + value.translation.width,
-                                    height: lastOffset.height + value.translation.height)
-                } else { offset = value.translation }
+                offset = CGSize(width: lastOffset.width + value.translation.width,
+                                height: lastOffset.height + value.translation.height)
             }
-            .onEnded { value in
-                if scale > 1 { lastOffset = offset }
-                else if abs(value.translation.height) > 120 { dismiss() }
-                else { withAnimation(.spring(duration: 0.3)) { offset = .zero } }
-            }
+            .onEnded { _ in lastOffset = offset }
     }
 
     /// Transient, matching every other photo in the app: pinch to look closer, let go and it

@@ -27,6 +27,10 @@ struct ChapterRecapView: View {
     /// Whether the "coming soon" line under Share as a contact sheet has been revealed this
     /// visit.
     @State private var showContactSheetNotice = false
+    /// Drives the opening card's swipe-to-dismiss (see `View.swipeToDismiss`). Not read by the
+    /// player: a native `TabView(.page)` pager gets no competing drag gesture, the same as
+    /// `RollRevealView`'s own playback and `PhotoPagerView`.
+    @State private var cardOffset: CGSize = .zero
 
     init(profileId: UUID, chapter: ChapterSummary, chapterCoverURLs: [String: URL]) {
         self.profileId = profileId
@@ -110,6 +114,7 @@ struct ChapterRecapView: View {
                     .padding(.bottom, 24)
             }
         }
+        .swipeToDismiss(offset: $cardOffset) { Haptics.tap(); dismiss() }
         .transition(.opacity)
     }
 
@@ -244,6 +249,11 @@ struct ChapterRecapView: View {
 
     // MARK: - Player
 
+    /// No `swipeToDismiss` here, deliberately, matching `RollRevealView`'s own playback and
+    /// `PhotoPagerView`: a vertical drag riding alongside a native `TabView(.page)` pager, even
+    /// one gated to only act on vertical movement, visibly damps the pager's own physics on
+    /// device. The close button in `playerHeader` is the only way out while playing, the same as
+    /// both of those.
     private var player: some View {
         VStack(spacing: 0) {
             playerHeader

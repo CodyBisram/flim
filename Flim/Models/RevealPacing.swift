@@ -78,6 +78,14 @@ enum RevealPacing {
     /// Vertical travel that dismisses the reveal.
     static let dismissThreshold: CGFloat = 120
 
+    /// Whether a released drag travelled far enough vertically to dismiss rather than spring
+    /// back. Shared by every full-screen photo surface that isn't a paging `TabView` (see
+    /// `View.swipeToDismiss`), so the avatar/photo-picker viewer and the chapter recap's opening
+    /// card let go at the same point this reveal always has.
+    static func shouldDismiss(translation: CGSize) -> Bool {
+        abs(translation.height) > dismissThreshold
+    }
+
     // MARK: - Prefetch
 
     /// How many frames ahead to warm.
