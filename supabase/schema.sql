@@ -3066,31 +3066,34 @@ GRANT EXECUTE ON FUNCTION public.profile_film_stats(UUID) TO authenticated;
 
 -- ============================================================
 -- Chapters: profile_chapters() + chapter_photos(), folded from
--- supabase/migrations/2026-09-03_chapters.sql. The profile's monthly recap --
--- a shelf of month covers on the profile (design 3a) and a per-month
--- reveal-style playback (design 3b). See that migration file for the full
--- rationale (visibility split, month-boundary convention, cover selection);
+-- supabase/migrations/2026-09-03_chapters.sql and rewritten posted-only by
+-- supabase/migrations/2026-09-04_chapters_posted_only.sql. The profile's
+-- monthly recap -- a shelf of month covers on the profile (design 3a) and
+-- a per-month reveal-style playback (design 3b). See the 2026-09-04
+-- migration for the full rationale (the self-case proof in particular);
 -- summarized here so a fresh run needs no other file.
 --
 -- MONTHS ARE COMPUTED, NOT STORED: no backfill table, no data migration --
--- a month exists purely because photos/posts rows fall in it, LIVE AND
--- GROWING (the current month included), all the way back to a person's
--- first shot.
+-- a month exists purely because posts rows fall in it, LIVE AND GROWING
+-- (the current month included), all the way back to a person's first
+-- post.
 --
--- VISIBILITY: own page (p_profile_id = auth.uid()) is every DEVELOPED
--- photo the caller shot that month (develops_at <= now(), the app's
--- time-derived developed predicate everywhere else -- RollService,
--- darkroom_month_summary above), private roll shots included, undeveloped
--- roll shots excluded even from their own shooter. is_sorted is
--- deliberately not checked (it is a Darkroom triage flag, not a
--- shot/developed one); photos.hidden is deliberately not checked either,
--- matching "photos: own photos" -- a caller always sees their own photos
--- regardless of moderation state. Someone else's page is only what they
--- POSTED, gated by the exact predicate "posts: readable by authenticated"
--- already enforces (not hidden, not blocked either way, not covered),
--- confirmed live via FeedService.fetchUserPosts (the profile grid's own
--- query), reusing the same covered_post_visible/is_blocked_either_way
--- helpers that policy calls rather than re-deriving the rule.
+-- VISIBILITY (OWNER DECISION 2026-09-04, one rule for every viewer,
+-- including the profile's own owner): a chapter is what you shared. Only
+-- POSTED photos count -- unposted developed photos and private roll shots
+-- are excluded even from the shooter's own page now -- gated by the exact
+-- predicate "posts: readable by authenticated" already enforces (not
+-- hidden, not blocked either way, not covered), confirmed live via
+-- FeedService.fetchUserPosts (the profile grid's own query), reusing the
+-- same covered_post_visible/is_blocked_either_way helpers that policy
+-- calls rather than re-deriving the rule. shot_count means posted shots;
+-- roll_count means distinct rolls among those posted shots. The viewer
+-- looking at their own page needs no special-casing: covered_post_visible
+-- resolves to TRUE for viewer = author regardless of is_owner (the
+-- covered_post_windows row that makes post_is_covered true for the author
+-- is the SAME row the third disjunct's EXISTS checks for viewer = author),
+-- and is_blocked_either_way(x, x) is always FALSE because public.blocks
+-- carries CHECK (blocker_id <> blocked_id).
 --
 -- MONTH BOUNDARY: taken_at shifted back 4 hours (FeedUnit.dayBoundaryHour)
 -- before truncating to month, same shift darkroom_month_summary applies,
@@ -3106,13 +3109,14 @@ GRANT EXECUTE ON FUNCTION public.profile_film_stats(UUID) TO authenticated;
 -- latest activity), COALESCE(thumb_path, storage_path) for the same
 -- pre-thumb-column fallback every other cover path in this schema uses.
 --
--- SECURITY DEFINER on both: required for the someone-else branch, which
--- must read public.photos for roll_id (posts does not denormalize it) for
--- a viewer who is not that photo's owner or roll member. The own-page
--- branch is separately gated by auth.uid() = p_profile_id in its WHERE
--- clause, so the elevated rights can never read another account's private,
--- un-posted photos. chapter_photos is capped at 1000 rows (PostgREST caps
--- a SETOF result anyway; this makes it explicit).
+-- SECURITY DEFINER on both: required to read public.photos for roll_id
+-- (posts does not denormalize it), for a viewer who is not that photo's
+-- owner or roll member -- public.photos' own RLS would otherwise hide it.
+-- There is no own-page branch anymore, so there is nothing for the
+-- elevated rights to leak: every row returned already passed the exact
+-- posts-visibility predicate RLS enforces for every caller. chapter_photos
+-- is capped at 1000 rows (PostgREST caps a SETOF result anyway; this makes
+-- it explicit).
 -- ============================================================
 
 CREATE OR REPLACE FUNCTION public.profile_chapters(p_profile_id UUID)
@@ -3130,21 +3134,17 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
     WITH source AS (
-        SELECT p.id, p.taken_at, p.roll_id,
-               COALESCE(p.thumb_path, p.storage_path) AS display_path
-        FROM public.photos p
-        WHERE auth.uid() = p_profile_id
-          AND p.user_id = p_profile_id
-          AND p.develops_at <= now()
-
-        UNION ALL
-
+        -- Posted photos only, one rule for every viewer including the
+        -- profile's own owner -- see the header above for why the self
+        -- case needs no special handling. Joined to photos only for
+        -- roll_id, which posts does not denormalize; the join is safe
+        -- because the row is only reachable once the post itself has
+        -- passed the visibility gate below.
         SELECT p.id, po.taken_at, p.roll_id,
                COALESCE(po.thumb_path, po.storage_path) AS display_path
         FROM public.posts po
         JOIN public.photos p ON p.id = po.photo_id
-        WHERE auth.uid() <> p_profile_id
-          AND po.user_id = p_profile_id
+        WHERE po.user_id = p_profile_id
           AND NOT po.hidden
           AND NOT public.is_blocked_either_way(auth.uid(), po.user_id)
           AND public.covered_post_visible(auth.uid(), po.user_id, po.created_at)
@@ -3197,19 +3197,11 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
     WITH source AS (
-        SELECT p.id, p.taken_at, p.thumb_path, p.feed_path, p.storage_path, p.roll_id
-        FROM public.photos p
-        WHERE auth.uid() = p_profile_id
-          AND p.user_id = p_profile_id
-          AND p.develops_at <= now()
-
-        UNION ALL
-
+        -- Same posted-only rule as profile_chapters above.
         SELECT p.id, po.taken_at, po.thumb_path, po.feed_path, po.storage_path, p.roll_id
         FROM public.posts po
         JOIN public.photos p ON p.id = po.photo_id
-        WHERE auth.uid() <> p_profile_id
-          AND po.user_id = p_profile_id
+        WHERE po.user_id = p_profile_id
           AND NOT po.hidden
           AND NOT public.is_blocked_either_way(auth.uid(), po.user_id)
           AND public.covered_post_visible(auth.uid(), po.user_id, po.created_at)
