@@ -129,12 +129,17 @@ async function importPrivateKey(pem: string): Promise<CryptoKey> {
 
 // Names the DESTINATION the notification opens, not the event that caused it, so a future
 // notification type that opens something already reachable needs no client change. `id` is
-// omitted for destinations that need none (the daily digest, elsewhere). `comments` is set only
-// on "post" pushes that are specifically about a comment, so the client can open with the
-// comment thread already showing.
+// omitted for destinations that need none (the daily digest, elsewhere). `comments` is set on
+// "post" pushes that are specifically about a comment (opens the thread already showing), and
+// now also on "reveal" pushes about a comment on a roll photo, for the same reason. `photo` is
+// "reveal"-only: the specific roll-photo id a comment/mention/reaction landed on, so the client
+// can open straight to that photo inside the roll instead of just the roll itself. Older app
+// builds parse only `t` and `id`, ignore fields they don't recognize, and keep landing on the
+// roll, so this is additive and backward compatible, not a breaking change.
 interface FlimRoute {
   t: "reveal" | "post" | "profile" | "feed";
   id?: string;
+  photo?: string;
   comments?: true;
 }
 
@@ -993,11 +998,15 @@ Deno.serve(async () => {
         title = `${fromOthers.length} new comments`;
         body = "on a roll photo";
       }
-      // Routes into the roll itself (no per-photo destination exists in the contract), built
-      // fresh per photo group from that group's own rollId, so it can't drift onto another
-      // photo's roll. Omitted entirely when a photo somehow has no roll_id, leaving the client's
-      // safe "no routing data" fallback instead of a guess.
-      const route: FlimRoute | undefined = g.rollId ? { t: "reveal", id: g.rollId } : undefined;
+      // Routes into the roll AND straight to this photo inside it, `comments: true` so the
+      // client opens with the photo's comment thread already showing, matching the "post" +
+      // comments treatment above. Built fresh per photo group from that group's own rollId and
+      // photoId, so it can't drift onto another photo's roll. Omitted entirely when a photo
+      // somehow has no roll_id, leaving the client's safe "no routing data" fallback instead of
+      // a guess; `photo` is only ever set alongside a present `id`, never on its own.
+      const route: FlimRoute | undefined = g.rollId
+        ? { t: "reveal", id: g.rollId, photo: photoId, comments: true }
+        : undefined;
       // `fromOthers[0].userId` is the sole/most recent commenter; blocks are checked against
       // them, so a blocked person can't reach you through a roll photo either.
       sent += await notify(recipient, fromOthers[0].userId, title, body, route);
@@ -1017,13 +1026,13 @@ Deno.serve(async () => {
     .eq("push_sent", false);
 
   const rxByKey = new Map<string, {
-    ownerId?: string; rollId?: string; reactorId: string; emojis: string[]; ids: string[];
+    ownerId?: string; rollId?: string; photoId: string; reactorId: string; emojis: string[]; ids: string[];
   }>();
   for (const r of photoReactions ?? []) {
     const meta = (r as { photos?: { user_id?: string; roll_id?: string } }).photos;
     const key = `${r.photo_id}|${r.user_id}`;
     const g = rxByKey.get(key) ??
-      { ownerId: meta?.user_id, rollId: meta?.roll_id, reactorId: r.user_id,
+      { ownerId: meta?.user_id, rollId: meta?.roll_id, photoId: r.photo_id, reactorId: r.user_id,
         emojis: [] as string[], ids: [] as string[] };
     g.emojis.push(r.emoji);
     g.ids.push(r.id);
@@ -1049,13 +1058,15 @@ Deno.serve(async () => {
       // emoji in this batch only when it's safe for every FLIM user (see "Reaction emoji safety"
       // above), otherwise falls back to exactly today's "to your photo". Route omission (no
       // `flim` payload when a photo somehow has no roll_id) is the same "omit rather than guess"
-      // treatment as the roll-photo-comments route above, unrelated to the emoji decision.
+      // treatment as the roll-photo-comments route above, unrelated to the emoji decision. `photo`
+      // is included so a reaction opens straight to the reacted-on photo inside the roll, same as
+      // the comments route, but WITHOUT `comments: true`: a reaction has no thread to show.
       sent += await notify(
         g.ownerId,
         g.reactorId,
         `${name} reacted`,
         reactionBody(g.emojis[g.emojis.length - 1]),
-        g.rollId ? { t: "reveal", id: g.rollId } : undefined,
+        g.rollId ? { t: "reveal", id: g.rollId, photo: g.photoId } : undefined,
       );
     }
     await supabase.from("photo_reactions").update({ push_sent: true }).in("id", g.ids);
