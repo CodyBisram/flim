@@ -285,6 +285,26 @@ final class PhotoService {
         let path = pending?.storagePath
             ?? "\(userId.uuidString.lowercased())/\(photoId.uuidString.lowercased()).\(format.pathExtension)"
         let developsAt = await developDate(forRoll: rollId, knownRevealAt: knownRevealAt)
+        let capturedAt = pending?.capturedAt ?? .now
+
+        // Burst analysis: only for a FRESH capture (`pending == nil`). A retry reuses whatever
+        // THIS capture already computed the first time (`pending.burstGroup`/`.sharpness`), never
+        // recomputes: `BurstDetector`'s ring only ever compares a capture against the MOST RECENT
+        // prior one in the same stream, and a failed upload can retry long after that ring has
+        // moved on to captures with nothing to do with this one, sometimes a full relaunch later.
+        //
+        // `async let` starts this eagerly, so it overlaps the Storage upload below instead of
+        // stacking in front of it, the "alongside the upload" half of the capture-pass contract.
+        // It's still awaited BEFORE the row insert (below), because `burst_group`/`sharpness` have
+        // to be in that exact payload, not patched on afterwards.
+        async let burstTask: BurstDetector.Decision = { () async -> BurstDetector.Decision in
+            if let pending {
+                return BurstDetector.Decision(group: pending.burstGroup, sharpness: pending.sharpness, patchEarlier: nil)
+            }
+            return await BurstDetector.shared.analyze(
+                photoId: photoId, userId: userId, streamKey: BurstDetector.streamKey(rollId: rollId),
+                takenAt: capturedAt, image: gradedImage)
+        }()
 
         // Written to disk BEFORE the upload even starts, not only once it has failed. Without
         // this, killing the app between the storage upload succeeding and the row insert landing
@@ -297,9 +317,14 @@ final class PhotoService {
         // write here delays every shot behind it in a burst. Removed again below once the row
         // actually exists, so the common case leaves nothing behind but a brief on-disk copy no
         // UI ever surfaces.
-        let record = FailedUpload(id: photoId, data: imageData, userId: userId, rollId: rollId,
-                                  capturedAt: pending?.capturedAt ?? .now,
-                                  photoId: photoId, storagePath: path)
+        //
+        // Written WITHOUT the burst analysis above, deliberately: waiting on it here would cancel
+        // out the whole point of starting it concurrently with the upload. `record` is patched
+        // with the resolved values just before the insert, below, so any retry queued AFTER that
+        // point (same session) still carries them; only a crash in the narrow window before then
+        // loses the grouping, never the photograph itself.
+        var record = FailedUpload(id: photoId, data: imageData, userId: userId, rollId: rollId,
+                                  capturedAt: capturedAt, photoId: photoId, storagePath: path)
         let store = failedUploadStore
         let persisted = await Task.detached(priority: .utility) { await store.save(record) }.value
 
@@ -323,6 +348,13 @@ final class PhotoService {
             // (that's how pre-rendition photos still display), so a photo with neither is a
             // supported state rather than a broken one, it just costs more egress until the
             // patch lands.
+            let burst = await burstTask
+            // Folded back into `record` so a same-session retry (queued below, or by
+            // `retryFailedUploads` later in this launch) carries this exact capture's own
+            // grouping instead of the burst-free snapshot written to disk above.
+            record = FailedUpload(id: record.id, data: record.data, userId: record.userId, rollId: record.rollId,
+                                  capturedAt: record.capturedAt, photoId: record.photoId, storagePath: record.storagePath,
+                                  burstGroup: burst.group, sharpness: burst.sharpness)
             let payload = InsertPhoto(
                 id: photoId,
                 userId: userId,
@@ -332,7 +364,9 @@ final class PhotoService {
                 feedPath: nil,
                 developsAt: developsAt,
                 // Roll shots skip the deck; personal instants start unsorted for triage.
-                isSorted: rollId != nil
+                isSorted: rollId != nil,
+                burstGroup: burst.group,
+                sharpness: burst.sharpness
             )
 
             let inserted: Photo
@@ -403,6 +437,12 @@ final class PhotoService {
             // the app is not, which is when it is most wrong.
             if let rollId { await syncRollActivity(rollId: rollId) }
             Usage.log(.photoCaptured)
+            // This capture is the SECOND frame of a fresh pair: the earlier frame's row already
+            // exists (it inserted before this one), and only just learned its group. One UPDATE,
+            // its own row only, best-effort like every other patch in this file, fire-and-forget
+            // rather than gating this capture's own success on it: a dropped patch just leaves the
+            // earlier frame temporarily ungrouped, not the current photo lost.
+            Self.patchEarlierBurstGroup(burst.patchEarlier)
 
             // The photo is still returned and its renditions still upload: it exists server-side
             // under the account that took it, and abandoning that work would lose a real photo.
@@ -453,7 +493,7 @@ final class PhotoService {
                 return await captureAsPersonalFallback(
                     photoId: photoId, userId: userId, path: path, imageData: imageData,
                     record: record, rollId: rollId, persisted: persisted, epoch: epoch,
-                    gradedImage: gradedImage
+                    gradedImage: gradedImage, burst: await burstTask
                 )
             }
 
@@ -489,14 +529,15 @@ final class PhotoService {
     private func captureAsPersonalFallback(
         photoId: UUID, userId: UUID, path: String, imageData: Data,
         record: FailedUpload, rollId: UUID?, persisted: Bool, epoch: Int,
-        gradedImage: CGImage? = nil
+        gradedImage: CGImage? = nil, burst: BurstDetector.Decision = .none
     ) async -> Photo? {
         let payload = InsertPhoto(
             id: photoId, userId: userId, rollId: nil, storagePath: path,
             thumbPath: nil, feedPath: nil,
             developsAt: Self.developDate(rollId: nil, rollReveal: nil, now: .now,
                                          personalDelay: personalDevelopDelay, rollDelay: rollDevelopDelay),
-            isSorted: false
+            isSorted: false,
+            burstGroup: burst.group, sharpness: burst.sharpness
         )
         do {
             let inserted: Photo = try await supabase
@@ -510,6 +551,10 @@ final class PhotoService {
             // The row exists now, independent of whether this account is still the current one
             // below, same reasoning as the ordinary success path above.
             await failedUploadStore.remove(id: photoId, userId: userId)
+            // Same reasoning as the ordinary success path: a fresh pair's second frame can only
+            // ever reach ONE insert (this one, since the roll-developed refusal means it's the
+            // only insert that lands), so this is the sole place this fallback needs to fire it.
+            Self.patchEarlierBurstGroup(burst.patchEarlier)
             // Same seed as the ordinary success path: `imageData` is the exact byte buffer already
             // sitting in Storage under `path` (uploaded before the primary insert refused), so the
             // re-homed shot's later save/share reads from disk instead of re-downloading.
@@ -554,6 +599,25 @@ final class PhotoService {
             _ = try? await supabase.storage.from("photos").remove(paths: [path])
             await queueForRetry(error, record: record, rollId: rollId, persisted: persisted, epoch: epoch)
             return nil
+        }
+    }
+
+    /// Fires the one UPDATE a fresh burst pair needs: the SECOND frame's `analyze` call just
+    /// minted a group for both itself (already in its own insert payload) and an earlier frame
+    /// whose row was inserted before this pairing was known. `nil` on every capture except that
+    /// exact one. Best-effort and fire-and-forget, matching every other post-insert patch in this
+    /// file (`uploadRenditions`'s own thumb/feed patch): a dropped UPDATE here leaves one frame
+    /// temporarily ungrouped, never a lost photograph, so it is not worth gating this capture's own
+    /// success on, nor worth an `AccountEpoch` check, the target row's id already names a specific,
+    /// already-inserted photo regardless of which account is current by the time this lands.
+    private static func patchEarlierBurstGroup(_ patch: (photoId: UUID, group: UUID)?) {
+        guard let patch else { return }
+        struct Patch: Encodable { let burst_group: String }
+        Task.detached(priority: .utility) {
+            _ = try? await supabase.from("photos")
+                .update(Patch(burst_group: patch.group.uuidString))
+                .eq("id", value: patch.photoId.uuidString)
+                .execute()
         }
     }
 
@@ -1976,6 +2040,15 @@ extension PhotoService {
     func seedDemoPhotos(userId: UUID, rollId: UUID? = nil, count: Int = 6) async {
         // Negative = already developed (shows the reveal); positive = still developing.
         let offsets: [TimeInterval] = [-86_400, -3_600, -600, -120, 60, 150]
+        // Two bursts among the DEVELOPED shots (indices 0-3, the negative offsets), roll seeding
+        // only: exercises `RollDetailView`'s stack-collapse UI without needing a real burst
+        // capture, which the Simulator (no camera) can never produce. Each burst deliberately
+        // gives its SECOND frame the higher sharpness, so the collapsed cover is provably NOT
+        // just "whichever frame came first" when screenshotting the fanned/collapsed states.
+        let burstA = rollId != nil ? UUID() : nil
+        let burstB = rollId != nil ? UUID() : nil
+        let burstGroups: [UUID?] = [burstA, burstA, burstB, burstB, nil, nil]
+        let sharpnesses: [Double?] = [0.35, 0.9, 0.85, 0.4, nil, nil]
         for (i, offset) in offsets.enumerated() {
             guard let data = Self.makeDemoImage(seed: i) else { continue }
             let photoId = UUID()
@@ -1988,7 +2061,8 @@ extension PhotoService {
                 let payload = InsertPhoto(
                     id: photoId, userId: userId, rollId: rollId,
                     storagePath: path,
-                    developsAt: Date.now.addingTimeInterval(offset)
+                    developsAt: Date.now.addingTimeInterval(offset),
+                    burstGroup: burstGroups[i], sharpness: sharpnesses[i]
                 )
                 let inserted: Photo = try await supabase
                     .from("photos")

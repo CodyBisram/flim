@@ -213,6 +213,49 @@ struct FailedUploadStoreTests {
         #expect(restored.first?.storagePath == nil)
     }
 
+    // MARK: - Burst grouping survives a retry
+
+    @Test("a capture's burst analysis survives being read back")
+    func carriesBurstAnalysis() async {
+        let (store, root) = makeStore(); defer { cleanUp(root) }
+        let user = UUID()
+        let group = UUID()
+        let upload = FailedUpload(data: jpeg(), userId: user, rollId: nil, burstGroup: group, sharpness: 0.72)
+
+        #expect(await store.save(upload))
+        let restored = await store.load(userId: user).first
+        #expect(restored?.burstGroup == group)
+        #expect(restored?.sharpness == 0.72)
+    }
+
+    @Test("a sidecar written before burst_group/sharpness existed still loads, both nil")
+    func legacySidecarHasNoBurstFields() async throws {
+        // Same reasoning as `legacySidecarStillLoads` for `photoId`/`storagePath`: a capture
+        // queued before this shipped must not be dropped on decode, it just has nothing to group.
+        let (store, root) = makeStore(); defer { cleanUp(root) }
+        let user = UUID()
+        let id = UUID()
+        let dir = root.appendingPathComponent(user.uuidString.lowercased(), isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try jpeg().write(to: dir.appendingPathComponent("\(id).jpg"))
+
+        struct PreBurstSidecar: Codable {
+            let id: UUID
+            let userId: UUID
+            let rollId: UUID?
+            let capturedAt: Date
+            let photoId: UUID?
+            let storagePath: String?
+        }
+        let legacy = PreBurstSidecar(id: id, userId: user, rollId: nil, capturedAt: .now, photoId: nil, storagePath: nil)
+        try JSONEncoder().encode(legacy).write(to: dir.appendingPathComponent("\(id).json"))
+
+        let restored = await store.load(userId: user)
+        #expect(restored.count == 1, "a pre-burst capture must not be dropped on decode")
+        #expect(restored.first?.burstGroup == nil)
+        #expect(restored.first?.sharpness == nil)
+    }
+
     // MARK: - Concurrency: save must never interleave with prune
 
     /// The actual bug this store exists to close: `PhotoService.captureAndUpload` calls `save`

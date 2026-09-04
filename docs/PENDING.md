@@ -172,6 +172,23 @@ actually do. Worth deciding before more is built on top of rolls.
 
 ## Next up
 
+### done 2026-09-04, evening: burst grouping, on device, in the dark
+
+Owner-approved design: the twelve hours withhold the picture, not the bytes, so the analysis
+runs on the shooter's phone at capture. `BurstDetector` (an actor) computes a Vision feature
+print and a Laplacian sharpness on a 512px render alongside the upload (about 28 ms a frame on
+the simulator after warm-up), pairs a shot with the shooter's previous shot in the same stream
+within 3 seconds and under feature-print distance 0.9, mints a `burst_group` for the pair and
+patches the earlier row once, best effort. Both values ride the offline queue. Columns
+`photos.burst_group` and `photos.sharpness` (migration `2026-09-04_photo_bursts.sql`, APPLIED;
+photos grants were already table-wide). The roll grid collapses a burst to one stack showing
+the sharpest frame with a mono "×N" mark, tap to fan open in place; the viewer still gets every
+frame; the reveal plays the sharpest of each burst with "and N more like it" and counts played
+frames, while Save all keeps the full deck. Thresholds are documented guesses, not measured
+against a burst corpus; retune from real rolls. Not on a device: the capture pass on real
+hardware, and the stack in a real roll (the simulator has no signed-in session). NOT built yet:
+the sort deck's "keep the sharpest" for personal shots, and Chapters ignoring bursts.
+
 ### done 2026-09-04, afternoon: the three the owner picked from the stability list
 
 - **`rolls.reveal_at` is the single source of truth** (migration `2026-09-04_rolls_reveal_at.sql`,

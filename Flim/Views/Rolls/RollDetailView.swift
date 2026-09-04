@@ -96,6 +96,87 @@ func photoArrived(_ photoId: UUID, in photos: [Photo]) -> Bool {
     photos.contains { $0.id == photoId }
 }
 
+/// A run of two or more consecutive frames sharing a burst, collapsed to one cell in the
+/// developed grid. `id` is the run's FIRST frame's id, never the shared `burst_group` itself: a
+/// pathological same-group id split into two separate runs (see `BurstGrouping.consecutiveRuns`'s
+/// own doc) would otherwise produce two stacks claiming one SwiftUI identity.
+struct BurstStack: Identifiable, Equatable {
+    let id: UUID
+    /// The sharpest frame, shown on the collapsed cell.
+    let cover: Photo
+    /// Every frame in the run, chronological, the same order the grid already shows them in.
+    let frames: [Photo]
+    var count: Int { frames.count }
+
+    init(cover: Photo, frames: [Photo]) {
+        self.cover = cover
+        self.frames = frames
+        self.id = frames.first?.id ?? cover.id
+    }
+}
+
+/// One cell in the developed grid: a lone photo, or a collapsed burst. Produced by
+/// `RollGridItem.build(from:)`, a pure function over `[Photo]` so the collapsing rule is
+/// unit-testable without a live grid.
+enum RollGridItem: Identifiable, Equatable {
+    case single(Photo)
+    case stack(BurstStack)
+
+    var id: UUID {
+        switch self {
+        case .single(let photo): return photo.id
+        case .stack(let stack): return stack.id
+        }
+    }
+
+    /// `photos` in the order the grid should show them (the caller's own chronological order is
+    /// preserved, nothing here re-sorts). A run of exactly one frame (a nil group, or a group that
+    /// only ever matched itself) passes through as `.single`; two or more collapse to `.stack`,
+    /// covered by `BurstGrouping.sharpest`.
+    static func build(from photos: [Photo]) -> [RollGridItem] {
+        BurstGrouping.consecutiveRuns(photos).flatMap { run -> [RollGridItem] in
+            guard run.count > 1, let cover = BurstGrouping.sharpest(in: run) else {
+                return run.map { .single($0) }
+            }
+            return [.stack(BurstStack(cover: cover, frames: run))]
+        }
+    }
+}
+
+/// The grid's actual render list: `RollGridItem.build`'s output, with any stack the caller has
+/// fanned open (`expanded`) replaced by its own frames inline, chronological, right where the
+/// collapsed cell was. A pure function so the fan-open rule is tested without mounting a grid.
+enum RollDisplayItem: Identifiable, Equatable {
+    case single(Photo)
+    /// A collapsed stack's cover cell. Tapping it fans the stack open in place.
+    case stackCover(BurstStack)
+    /// One frame of an already-fanned-open stack. `stackId` is the stack's own id
+    /// (`BurstStack.id`, its first frame's id), so the view can tell which fanned member should
+    /// carry the "collapse" affordance (the one whose own id equals `stackId`) without a second
+    /// lookup.
+    case stackMember(Photo, stackId: UUID)
+
+    var id: String {
+        switch self {
+        case .single(let photo): return "single-\(photo.id.uuidString)"
+        case .stackCover(let stack): return "cover-\(stack.id.uuidString)"
+        case .stackMember(let photo, _): return "member-\(photo.id.uuidString)"
+        }
+    }
+
+    static func displayItems(from gridItems: [RollGridItem], expanded: Set<UUID>) -> [RollDisplayItem] {
+        gridItems.flatMap { item -> [RollDisplayItem] in
+            switch item {
+            case .single(let photo):
+                return [.single(photo)]
+            case .stack(let stack):
+                guard expanded.contains(stack.id) else { return [.stackCover(stack)] }
+                return stack.frames.map { .stackMember($0, stackId: stack.id) }
+            }
+        }
+    }
+}
+
 struct RollDetailView: View {
     @Environment(\.flimAccent) private var accent
     let roll: Roll
@@ -151,6 +232,10 @@ struct RollDetailView: View {
     /// Reset right after `PhotoPagerView` reads it, so an ordinary grid tap opened after a pending
     /// photo push never inherits a stale "open comments" flag.
     @State private var pagerOpenComments = false
+    /// Burst stacks the developed grid has fanned open, keyed on `BurstStack.id` (its first
+    /// frame's own id), never on position: a stack staying open (or closed) must survive an
+    /// unrelated insert/delete elsewhere in the roll.
+    @State private var expandedBursts: Set<UUID> = []
 
     private var revealSeenKey: String { "rollRevealSeen.\(roll.id.uuidString)" }
     /// One-shot, unpaginated top-up for the roll viewer: everything `fetchRollPhotosSnapshot`
@@ -283,8 +368,9 @@ struct RollDetailView: View {
                                     // cell guaranteed to be freshly mounted on every new page; the
                                     // chronological tail can be a cell that mounted pages ago and
                                     // would never re-arm.
-                                    photoGrid(chronologicalDeveloped, triggersLoadMore: true,
-                                              loadMoreAnchorId: vm.developedPhotos.last?.id)
+                                    developedPhotoGrid(chronologicalDeveloped,
+                                                        loadMoreAnchorId: vm.developedPhotos.last?.id,
+                                                        generation: vm.developedPhotos.count)
                                 }
                             }
                         }
@@ -968,6 +1054,88 @@ struct RollDetailView: View {
             }
         }
         .padding(.horizontal, 2)
+    }
+
+    /// The DEVELOPED grid's own version of `photoGrid`: bursts collapse to a stack, tapping one
+    /// fans it open in place, keyed on `expandedBursts`. `generation` is the currently loaded
+    /// developed-photo count; the anchor cell's own load-more `.task(id:)` rearms on it so a tail
+    /// photo that keeps ending up inside the SAME stack across several pages (rather than a fresh
+    /// single cell each time) still re-triggers the next page instead of going stale after page
+    /// one, the anti-pattern this app's own load-more sentinels are documented to avoid.
+    private func developedPhotoGrid(_ chronological: [Photo], loadMoreAnchorId: UUID?, generation: Int) -> some View {
+        let items = RollDisplayItem.displayItems(
+            from: RollGridItem.build(from: chronological), expanded: expandedBursts)
+        let anchor = loadMoreAnchorId ?? chronological.last?.id
+        return FilmStripGrid(items: items, gap: 2) { item in
+            developedCell(item, anchor: anchor, generation: generation)
+        }
+        .padding(.horizontal, 2)
+    }
+
+    @ViewBuilder
+    private func developedCell(_ item: RollDisplayItem, anchor: UUID?, generation: Int) -> some View {
+        switch item {
+        case .single(let photo):
+            photoCell(photo, mark: nil, onMarkTap: nil,
+                      containsAnchor: photo.id == anchor, generation: generation)
+        case .stackCover(let stack):
+            let fanOpen = {
+                Haptics.select()
+                withAnimation(.snappy) { expandedBursts.insert(stack.id) }
+            }
+            photoCell(stack.cover, mark: .count(stack.count), onMarkTap: fanOpen,
+                      containsAnchor: stack.frames.contains { $0.id == anchor }, generation: generation,
+                      onCellTap: fanOpen)
+        case .stackMember(let photo, let stackId):
+            let isFirst = photo.id == stackId
+            photoCell(photo, mark: isFirst ? .collapse : nil,
+                      onMarkTap: isFirst ? {
+                          Haptics.select()
+                          withAnimation(.snappy) { expandedBursts.remove(stackId) }
+                      } : nil,
+                      containsAnchor: photo.id == anchor, generation: generation)
+        }
+    }
+
+    /// One developed-grid cell: the photograph, its burst mark if any, and the load-more sentinel
+    /// when this cell happens to be the current tail. `onCellTap` overrides the default "open the
+    /// pager" tap (used only by a collapsed stack's cover, which fans open instead); `mark`/
+    /// `onMarkTap` draw a SEPARATE, smaller tap target (a real `Button`, so it claims its own touch
+    /// rather than racing the cell's own `.onTapGesture`) over the top-leading corner.
+    @ViewBuilder
+    private func photoCell(_ photo: Photo, mark: BurstStackMark.Kind?, onMarkTap: (() -> Void)?,
+                           containsAnchor: Bool, generation: Int, onCellTap: (() -> Void)? = nil) -> some View {
+        PhotoGridCell(photo: photo, signedURL: vm.signedURLCache[photo.id], showsCountdown: false)
+            .matchedTransitionSource(id: photo.id, in: photoNS)
+            .overlay(alignment: .topLeading) {
+                if let mark, let onMarkTap {
+                    Button(action: onMarkTap) { BurstStackMark(kind: mark) }
+                        .buttonStyle(.plain)
+                }
+            }
+            .onTapGesture {
+                if let onCellTap {
+                    onCellTap()
+                } else {
+                    guard photo.isReady else { return }
+                    selectedPhoto = photo
+                }
+            }
+            .contextMenu { photoMenu(photo) }
+            .task {
+                if photo.isReady, vm.signedURLCache[photo.id] == nil {
+                    _ = await vm.signedURL(for: photo, photoService: photoService)
+                }
+            }
+            // Split from the signed-URL task above and keyed on `generation`: this cell's identity
+            // can persist across a page load (a burst already mounted can keep absorbing the
+            // server's new tail frame), and a bare `.task` fires once per identity for life. Keying
+            // on the count that changes every page re-arms it exactly when a new page lands, the
+            // same sentinel pattern every other load-more trigger in this app uses.
+            .task(id: containsAnchor ? generation : -1) {
+                guard containsAnchor else { return }
+                await vm.loadMoreRoll(photoService: photoService, rollId: roll.id, blockedIds: feed.blockedIds)
+            }
     }
 
     private func revealBanner(revealAt: Date, shots: Int?, people: Int) -> some View {

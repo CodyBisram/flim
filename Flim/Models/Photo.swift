@@ -14,6 +14,18 @@ struct Photo: Codable, Identifiable {
     var isDeveloped: Bool
     var caption: String?
     var isSorted: Bool = true
+    /// This frame's burst, if `BurstDetector` (or a live capture on some other member's phone)
+    /// matched it to a near-duplicate shot within a few seconds. Shared by every frame in the
+    /// burst; `nil` for a lone shot, or for one whose analysis hasn't landed yet (the first frame
+    /// of a pair only learns its group once the SECOND frame arrives and patches it in, see
+    /// `BurstDetector`). Optional so a photo from before this column existed, or one this device's
+    /// own Vision pass simply failed on, decodes as ungrouped rather than failing to decode.
+    var burstGroup: UUID?
+    /// A [0, 1] sharpness score from the SAME capture-time pass, used to pick a burst's cover
+    /// frame (`BurstGrouping.sharpest`). `nil` alongside `burstGroup == nil` for a photo that
+    /// predates this column, or whose on-device analysis failed; a lone (non-burst) photo may
+    /// still carry a score even though nothing currently reads it.
+    var sharpness: Double?
 
     var isReady: Bool { Date.now >= developsAt }
     /// Path to use in grids/feeds, the thumbnail if present, else the full image.
@@ -63,6 +75,8 @@ struct Photo: Codable, Identifiable {
         case isDeveloped = "is_developed"
         case caption
         case isSorted = "is_sorted"
+        case burstGroup = "burst_group"
+        case sharpness
     }
 }
 
@@ -90,6 +104,11 @@ struct InsertPhoto: Encodable {
     var feedPath: String?
     let developsAt: Date
     var isSorted: Bool = true
+    /// Written at insert time, from the SAME capture-time analysis pass as the sidecar `photos`
+    /// row's other fields; see `Photo.burstGroup`/`sharpness`. Both default nil so every other
+    /// insert site (seeding, the personal fallback) compiles unchanged.
+    var burstGroup: UUID?
+    var sharpness: Double?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -100,5 +119,7 @@ struct InsertPhoto: Encodable {
         case feedPath = "feed_path"
         case developsAt = "develops_at"
         case isSorted = "is_sorted"
+        case burstGroup = "burst_group"
+        case sharpness
     }
 }

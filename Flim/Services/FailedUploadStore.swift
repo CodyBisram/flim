@@ -19,9 +19,17 @@ struct FailedUpload: Identifiable, Equatable, Sendable {
     /// row-insert failure from stranding the master that already made it to Storage.
     let photoId: UUID?
     let storagePath: String?
+    /// `BurstDetector`'s own verdict for this exact capture, computed once, before this record was
+    /// ever written to disk. Carried through a retry unchanged (`captureAndUpload` never
+    /// re-analyzes on retry: the ring it would compare against has long since moved on, sometimes
+    /// a full relaunch later), and through the sidecar so quitting the app between a failed
+    /// upload and its retry does not silently drop the grouping this capture already earned.
+    let burstGroup: UUID?
+    let sharpness: Double?
 
     init(id: UUID = UUID(), data: Data, userId: UUID, rollId: UUID?, capturedAt: Date = .now,
-         photoId: UUID? = nil, storagePath: String? = nil) {
+         photoId: UUID? = nil, storagePath: String? = nil,
+         burstGroup: UUID? = nil, sharpness: Double? = nil) {
         self.id = id
         self.data = data
         self.userId = userId
@@ -29,6 +37,8 @@ struct FailedUpload: Identifiable, Equatable, Sendable {
         self.capturedAt = capturedAt
         self.photoId = photoId
         self.storagePath = storagePath
+        self.burstGroup = burstGroup
+        self.sharpness = sharpness
     }
 }
 
@@ -88,6 +98,11 @@ actor FailedUploadStore {
         let capturedAt: Date
         let photoId: UUID?
         let storagePath: String?
+        // Optional for the same reason `photoId`/`storagePath` are: a sidecar written before
+        // these existed decodes them as nil rather than failing to decode (and so dropping) a
+        // photo already queued on someone's device.
+        let burstGroup: UUID?
+        let sharpness: Double?
     }
 
     private nonisolated func directory(for userId: UUID) -> URL {
@@ -107,7 +122,8 @@ actor FailedUploadStore {
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
             let sidecar = Sidecar(id: upload.id, userId: upload.userId,
                                   rollId: upload.rollId, capturedAt: upload.capturedAt,
-                                  photoId: upload.photoId, storagePath: upload.storagePath)
+                                  photoId: upload.photoId, storagePath: upload.storagePath,
+                                  burstGroup: upload.burstGroup, sharpness: upload.sharpness)
             let meta = try JSONEncoder().encode(sidecar)
             // Image first. A crash between the two writes leaves an orphan jpg, which `load`
             // ignores and `prune` collects. The reverse order would leave a sidecar promising a
@@ -137,7 +153,8 @@ actor FailedUploadStore {
             guard sidecar.userId == userId else { continue }
             result.append(FailedUpload(id: sidecar.id, data: imageData, userId: sidecar.userId,
                                        rollId: sidecar.rollId, capturedAt: sidecar.capturedAt,
-                                       photoId: sidecar.photoId, storagePath: sidecar.storagePath))
+                                       photoId: sidecar.photoId, storagePath: sidecar.storagePath,
+                                       burstGroup: sidecar.burstGroup, sharpness: sidecar.sharpness))
         }
         return result.sorted { $0.capturedAt < $1.capturedAt }
     }

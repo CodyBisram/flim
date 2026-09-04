@@ -45,8 +45,20 @@ final class RollRevealViewModel {
     // MARK: - Deck
 
     // The deck actually being played, starts empty and is populated by the fresh fetch, so a
-    // photo deleted between the caller's fetch and this view opening never gets a frame.
+    // photo deleted between the caller's fetch and this view opening never gets a frame. Kept as
+    // the FULL roll (every frame, burst extras included) for `Save all` and the ordinary
+    // post-reveal viewer; `playedDeck` below is what the pager, the rack, and the credit line
+    // actually walk.
     var deck: [Photo] = []
+    /// One sharpest frame per burst run in `deck`, plus every non-burst frame, same order `deck`
+    /// is already sorted in (`BurstGrouping.playback`, shared with the grid's own grouping). This
+    /// is the reveal's actual playlist: the sharpest frame of each burst plays, the rest are
+    /// skipped, never removed from `deck` itself.
+    var playedDeck: [Photo] = []
+    /// `photoId` → how many further frames its burst holds, keyed by the COVER's id (the one
+    /// frame in `playedDeck` that represents the burst). Absent for a photo that isn't itself a
+    /// burst cover, the "and N more like it" credit line reads this directly.
+    var burstExtraCount: [UUID: Int] = [:]
     var index = 0
     var urls: [String: URL] = [:]
     /// Which frames have already played their develop beat, keyed by PHOTO ID and never by
@@ -136,8 +148,11 @@ final class RollRevealViewModel {
         }
         guard AccountEpoch.isCurrent(epoch) else { return }
         deck = fresh.sorted { $0.takenAt < $1.takenAt }
+        let playback = BurstGrouping.playback(deck)
+        playedDeck = playback.played
+        burstExtraCount = playback.extraCount
 
-        guard !deck.isEmpty else {
+        guard !playedDeck.isEmpty else {
             isEmpty = true
             deckReady = true
             beginIfReady()
@@ -172,7 +187,9 @@ final class RollRevealViewModel {
         // (thumbPath at 400 for the underlay, viewPath at 1400 for the full-size layer). Warm
         // and view must agree on key+size or the warm files bytes under an entry the view never
         // looks for, and CachedImage falls through to a second, redundant download.
-        if let first = deck.first {
+        // `playedDeck.first`, not `deck.first`: the burst cover, not necessarily the earliest
+        // frame in the run, is what the reveal actually opens on.
+        if let first = playedDeck.first {
             if let thumbPath = first.thumbPath, let thumbURL = urls[thumbPath] {
                 _ = await ImageLoader.fetch(url: thumbURL, maxPixel: 400, scale: displayScale, cacheKey: thumbPath)
             } else if let url = urls[first.viewPath] {
@@ -244,8 +261,8 @@ final class RollRevealViewModel {
     /// Doesn't touch the pinch-zoom: that's view-local state, reset by the view whenever the
     /// photo on screen changes.
     func develop(at index: Int) {
-        guard deck.indices.contains(index) else { return }
-        let photo = deck[index]
+        guard playedDeck.indices.contains(index) else { return }
+        let photo = playedDeck[index]
         prefetchAhead(from: index)
         guard !developedFrameIds.contains(photo.id) else { return }
         guard !reduceMotion else {
@@ -263,7 +280,7 @@ final class RollRevealViewModel {
 
     /// The reader paged to a new frame.
     func moved(to newIndex: Int) {
-        guard newIndex != index, deck.indices.contains(newIndex) else { return }
+        guard newIndex != index, playedDeck.indices.contains(newIndex) else { return }
         index = newIndex
         Haptics.tap()
         develop(at: newIndex)
@@ -274,11 +291,11 @@ final class RollRevealViewModel {
     /// Already-cached entries are cheap no-ops in ImageLoader, so re-calling this on every step
     /// costs nothing and keeps the runway ahead of the viewer however they move through the roll.
     private func prefetchAhead(from index: Int) {
-        let range = RevealPacing.prefetchRange(from: index, count: deck.count)
+        let range = RevealPacing.prefetchRange(from: index, count: playedDeck.count)
         // cacheKey: photo.viewPath, matching exactly what the view's CachedImage keys the
         // full-size layer under (see RollRevealView). A nil key here would warm a URL-only
         // entry the view never looks for, downloading the same bytes twice.
-        let items: [(url: URL, cacheKey: String?)] = deck[range].compactMap { photo in
+        let items: [(url: URL, cacheKey: String?)] = playedDeck[range].compactMap { photo in
             urls[photo.viewPath].map { (url: $0, cacheKey: photo.viewPath) }
         }
         ImageLoader.prefetch(items, maxPixel: 1400, scale: displayScale)
@@ -288,13 +305,17 @@ final class RollRevealViewModel {
     /// load failure), drop it and move straight to the next one. No dead frame, no stall on
     /// the auto-advance timer.
     ///
-    /// Mutates `deck` mid-playback, which is exactly why the view reads it through a bounds-safe
-    /// subscript rather than trusting `index` to still be valid.
+    /// Removed from BOTH `deck` (it's genuinely gone, `Save all` must not try it either) and
+    /// `playedDeck` (what's actually being paged). Mutates them mid-playback, which is exactly why
+    /// the view reads the current frame through a bounds-safe subscript rather than trusting
+    /// `index` to still be valid.
     func skipDeadFrame(_ photoId: UUID) {
-        guard let deadIndex = deck.firstIndex(where: { $0.id == photoId }) else { return }
-        deck.remove(at: deadIndex)
+        deck.removeAll { $0.id == photoId }
+        burstExtraCount[photoId] = nil
+        guard let deadIndex = playedDeck.firstIndex(where: { $0.id == photoId }) else { return }
+        playedDeck.remove(at: deadIndex)
         developedFrameIds.remove(photoId)
-        guard !deck.isEmpty else {
+        guard !playedDeck.isEmpty else {
             isEmpty = true
             deckReady = true
             beginIfReady()
@@ -312,8 +333,8 @@ final class RollRevealViewModel {
         //   dead AFTER us   -> nothing before us moved, stay put
         if deadIndex < index {
             index -= 1
-        } else if index >= deck.count {
-            index = deck.count - 1
+        } else if index >= playedDeck.count {
+            index = playedDeck.count - 1
         }
         develop(at: index)
     }

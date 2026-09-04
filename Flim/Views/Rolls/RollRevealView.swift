@@ -66,8 +66,10 @@ struct RollRevealView: View {
     @State private var pinchStart: CGFloat?
 
     /// The photo currently on screen, read through a bounds-safe subscript: `skipDeadFrame`
-    /// mutates the deck during playback, and an unguarded index would trap.
-    private var currentPhoto: Photo? { viewModel.deck[safe: viewModel.index] }
+    /// mutates the deck during playback, and an unguarded index would trap. From `playedDeck`,
+    /// not `deck`: bursts are skipped down to their sharpest frame, so `index` names a position in
+    /// the played list, never a raw offset into the full roll.
+    private var currentPhoto: Photo? { viewModel.playedDeck[safe: viewModel.index] }
 
     var body: some View {
         // Its own stack, so a handle tapped during a reveal pushes the profile with a back
@@ -89,7 +91,7 @@ struct RollRevealView: View {
                 emptyState
             } else if viewModel.showSummary {
                 summary
-            } else if !viewModel.deck.isEmpty {
+            } else if !viewModel.playedDeck.isEmpty {
                 revealPager
             } else {
                 // Still loading the deck. Much shorter now that playback starts on the cached
@@ -143,7 +145,7 @@ struct RollRevealView: View {
             Spacer(minLength: 0)
 
             TabView(selection: $selection) {
-                ForEach(Array(viewModel.deck.enumerated()), id: \.element.id) { index, photo in
+                ForEach(Array(viewModel.playedDeck.enumerated()), id: \.element.id) { index, photo in
                     frame(photo)
                         .tag(index)
                 }
@@ -292,7 +294,7 @@ struct RollRevealView: View {
             ScrollViewReader { proxy in
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: RevealPacing.rackFrameGap) {
-                        ForEach(Array(viewModel.deck.enumerated()), id: \.element.id) { index, photo in
+                        ForEach(Array(viewModel.playedDeck.enumerated()), id: \.element.id) { index, photo in
                             rackFrame(photo, index: index)
                                 .id(photo.id)
                         }
@@ -324,7 +326,7 @@ struct RollRevealView: View {
     }
 
     private var rackContentWidth: CGFloat {
-        RevealPacing.rackWidth(frameCount: viewModel.deck.count)
+        RevealPacing.rackWidth(frameCount: viewModel.playedDeck.count)
     }
 
     /// Softens the two edges where the strip runs off the viewport, so the eleven frames you can
@@ -400,10 +402,19 @@ struct RollRevealView: View {
             if let photo = currentPhoto {
                 let timeLabel = FrameCredit.timeLabel(
                     for: photo.takenAt, index: viewModel.index,
-                    in: viewModel.deck.map(\.takenAt))
-                Text("\(viewModel.index + 1) of \(viewModel.deck.count) · \(timeLabel)")
+                    in: viewModel.playedDeck.map(\.takenAt))
+                // "N of M" counts the frames actually PLAYED, never the roll's raw shot count: a
+                // burst plays once, as its sharpest frame, so M is `playedDeck.count`.
+                Text("\(viewModel.index + 1) of \(viewModel.playedDeck.count) · \(timeLabel)")
                     .flimFont(12.5, relativeTo: .footnote)
                     .foregroundStyle(Color(white: 0.6))
+                // This frame stands in for a burst: say so, singular phrasing at one, so the
+                // credit reads honestly rather than always pluralizing.
+                if let extra = viewModel.burstExtraCount[photo.id], extra > 0 {
+                    Text(extra == 1 ? "and 1 more like it" : "and \(extra) more like it")
+                        .flimFont(11.5, relativeTo: .caption)
+                        .foregroundStyle(Color(white: 0.45))
+                }
             }
         }
     }

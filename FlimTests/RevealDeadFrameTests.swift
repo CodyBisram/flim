@@ -26,11 +26,15 @@ struct RevealDeadFrameTests {
               isSorted: true)
     }
 
-    /// A view model sitting on a five-frame deck at `index`, with no network involved.
+    /// A view model sitting on a five-frame deck at `index`, with no network involved. None of
+    /// these fixtures carry a `burstGroup`, so `playedDeck` (what `skipDeadFrame`/`index` actually
+    /// walk) is identical to `deck`, exactly what `loadDeck` itself would produce for a burst-free
+    /// roll via `BurstGrouping.playback`.
     private func viewModel(count: Int, at index: Int) -> RollRevealViewModel {
         let photos = (0..<count).map(photo)
         let vm = RollRevealViewModel(rollId: UUID(), photos: photos)
         vm.deck = photos
+        vm.playedDeck = photos
         vm.index = index
         return vm
     }
