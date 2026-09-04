@@ -525,6 +525,70 @@ CREATE POLICY "rolls: authenticated can create"
 -- Creator-chosen roll cover (a photo's storage_path); falls back to the latest developed shot.
 ALTER TABLE public.rolls ADD COLUMN IF NOT EXISTS cover_path TEXT;
 
+-- reveal_at: the ONE source of truth for when a roll develops (2026-09-04 rolls audit,
+-- recommendation 2 in docs/PENDING.md's "the rolls audit, and what it changed"). Before this,
+-- the same 12h deadline was computed in three places -- a client constant, is_roll_developed()'s
+-- own created_at + 12h math, and each roll photo's develops_at written by the client at capture
+-- -- which is why extending a roll needed two hand edits and a straggler sweep, and why a phone
+-- that cached the old time could show a stale reveal on the lock screen. Every reader below
+-- (is_roll_developed, the develop push, the is_developed cron, RollService) now reads this one
+-- column; nothing computes created_at + 12h except the backfill/default below and
+-- set_roll_reveal_at's range check.
+ALTER TABLE public.rolls ADD COLUMN IF NOT EXISTS reveal_at TIMESTAMPTZ;
+UPDATE public.rolls SET reveal_at = created_at + interval '12 hours' WHERE reveal_at IS NULL;
+ALTER TABLE public.rolls ALTER COLUMN reveal_at SET NOT NULL;
+
+-- Default-fills reveal_at on INSERT when a caller (old client, or any insert that doesn't know
+-- about this column) leaves it NULL, so the 12h-from-creation default stays the only creation
+-- semantics without every insert site needing to compute it. Does NOT override a caller-supplied
+-- value, so this cannot be used to widen what creating a roll can do beyond today's behavior.
+CREATE OR REPLACE FUNCTION public.default_roll_reveal_at()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    IF NEW.reveal_at IS NULL THEN
+        NEW.reveal_at := NEW.created_at + interval '12 hours';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.default_roll_reveal_at() FROM PUBLIC, anon, authenticated;
+
+DROP TRIGGER IF EXISTS default_roll_reveal_at_trigger ON public.rolls;
+CREATE TRIGGER default_roll_reveal_at_trigger
+    BEFORE INSERT ON public.rolls
+    FOR EACH ROW EXECUTE FUNCTION public.default_roll_reveal_at();
+
+-- Cascades any change to a roll's reveal_at (the RPC below, or a hand SQL edit -- the two are
+-- indistinguishable to this trigger on purpose) onto that roll's still-undeveloped photos, so
+-- rolls.reveal_at and photos.develops_at can never drift apart again. Developed photos
+-- (is_developed = true) are left alone: their develop moment already happened and is history,
+-- not a live deadline.
+CREATE OR REPLACE FUNCTION public.cascade_roll_reveal_at()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    UPDATE public.photos
+    SET develops_at = NEW.reveal_at
+    WHERE roll_id = NEW.id AND is_developed = false;
+    RETURN NEW;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.cascade_roll_reveal_at() FROM PUBLIC, anon, authenticated;
+
+DROP TRIGGER IF EXISTS cascade_roll_reveal_at_trigger ON public.rolls;
+CREATE TRIGGER cascade_roll_reveal_at_trigger
+    AFTER UPDATE OF reveal_at ON public.rolls
+    FOR EACH ROW
+    WHEN (OLD.reveal_at IS DISTINCT FROM NEW.reveal_at)
+    EXECUTE FUNCTION public.cascade_roll_reveal_at();
+
 -- The creator can rename or delete their roll. Deleting cascades memberships; each
 -- photo's roll_id is set NULL (ON DELETE SET NULL) so owners keep their shots personally.
 DROP POLICY IF EXISTS "rolls: creator can update" ON public.rolls;
@@ -579,9 +643,9 @@ CREATE POLICY "photos: roll members can see"
     ON public.photos FOR SELECT
     USING (roll_id IS NOT NULL AND public.is_roll_member(roll_id));
 
--- A roll is "developed" 12h after it was CREATED (the clock starts at creation, not the first
--- shot), so the deadline is fixed up front and holds even for a roll with no photos.
--- SECURITY DEFINER so the INSERT policy can check it without recursing on photos' RLS.
+-- A roll is "developed" once rolls.reveal_at, the single source of truth (see the column's
+-- comment above), has passed. SECURITY DEFINER so the INSERT policy can check it without
+-- recursing on photos' RLS.
 CREATE OR REPLACE FUNCTION public.is_roll_developed(p_roll UUID)
 RETURNS boolean
 LANGUAGE sql
@@ -590,7 +654,7 @@ SET search_path = public
 AS $$
     SELECT EXISTS (
         SELECT 1 FROM public.rolls
-        WHERE id = p_roll AND created_at + interval '12 hours' <= now()
+        WHERE id = p_roll AND reveal_at <= now()
     );
 $$;
 
@@ -603,6 +667,31 @@ CREATE POLICY "photos: can insert own"
         AND (roll_id IS NULL OR NOT public.is_roll_developed(roll_id))
     );
 
+-- Pins a roll photo's develops_at to its roll's reveal_at, overriding whatever the client sent,
+-- so a phone that cached a stale reveal time (or one that never learned about an extension) can
+-- no longer write a wrong develop time into the row that the develop push and the is_developed
+-- cron both read. Personal shots (roll_id IS NULL) are untouched -- those keep the client's own
+-- develops_at, same as before this column existed.
+CREATE OR REPLACE FUNCTION public.pin_roll_photo_develops_at()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    IF NEW.roll_id IS NOT NULL THEN
+        SELECT reveal_at INTO NEW.develops_at FROM public.rolls WHERE id = NEW.roll_id;
+    END IF;
+    RETURN NEW;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.pin_roll_photo_develops_at() FROM PUBLIC, anon, authenticated;
+
+DROP TRIGGER IF EXISTS pin_roll_photo_develops_at_trigger ON public.photos;
+CREATE TRIGGER pin_roll_photo_develops_at_trigger
+    BEFORE INSERT ON public.photos
+    FOR EACH ROW EXECUTE FUNCTION public.pin_roll_photo_develops_at();
+
 DROP POLICY IF EXISTS "photos: can update own" ON public.photos;
 CREATE POLICY "photos: can update own"
     ON public.photos FOR UPDATE
@@ -613,6 +702,57 @@ DROP POLICY IF EXISTS "photos: can delete own" ON public.photos;
 CREATE POLICY "photos: can delete own"
     ON public.photos FOR DELETE
     USING (auth.uid() = user_id);
+
+-- ============================================================
+-- set_roll_reveal_at(p_roll, p_reveal_at): lets the roll's creator move its reveal, the
+-- legitimate feature that a single reveal_at column makes possible (see its comment near the
+-- rolls table). Creator-only, refuses once the roll has already developed (matching join_roll's
+-- and the photos INSERT policy's own is_roll_developed check, so "developed" cannot drift), and
+-- bounds the new time to [now(), created_at + 7 days] so a fat-fingered date can't push a reveal
+-- years out or into the past. Truncated to milliseconds on the way in -- same reason every other
+-- hand touch of a *_at timestamp in this schema must (see the 2026-09-03 Islands roll incident,
+-- docs/PENDING.md): the client's keyset cursor formats to milliseconds, and a value with
+-- microsecond residue can silently fail to eq-match it. The photos.develops_at cascade is NOT
+-- duplicated here -- cascade_roll_reveal_at_trigger (AFTER UPDATE OF reveal_at, defined above)
+-- fires on this function's own UPDATE and does it, the same single code path a hand SQL edit
+-- goes through, so the two can never disagree about what "cascade" means.
+-- ============================================================
+CREATE OR REPLACE FUNCTION public.set_roll_reveal_at(p_roll UUID, p_reveal_at TIMESTAMPTZ)
+RETURNS TIMESTAMPTZ
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    r public.rolls;
+    v_reveal_at TIMESTAMPTZ;
+BEGIN
+    SELECT * INTO r FROM public.rolls WHERE id = p_roll;
+    IF r.id IS NULL THEN
+        RAISE EXCEPTION 'roll_not_found' USING ERRCODE = 'P0002';
+    END IF;
+
+    IF r.created_by <> auth.uid() THEN
+        RAISE EXCEPTION 'not_creator' USING ERRCODE = 'P0003';
+    END IF;
+
+    IF public.is_roll_developed(r.id) THEN
+        RAISE EXCEPTION 'roll_developed' USING ERRCODE = 'P0004';
+    END IF;
+
+    v_reveal_at := date_trunc('milliseconds', p_reveal_at);
+
+    IF v_reveal_at < now() OR v_reveal_at > r.created_at + interval '7 days' THEN
+        RAISE EXCEPTION 'reveal_out_of_range' USING ERRCODE = 'P0005';
+    END IF;
+
+    UPDATE public.rolls SET reveal_at = v_reveal_at WHERE id = p_roll;
+
+    RETURN v_reveal_at;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.set_roll_reveal_at(UUID, TIMESTAMPTZ) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.set_roll_reveal_at(UUID, TIMESTAMPTZ) TO authenticated;
 
 -- ============================================================
 -- Storage, private "photos" bucket + per-user RLS policies.
