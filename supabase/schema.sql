@@ -807,6 +807,34 @@ ALTER TABLE public.users
 CREATE INDEX IF NOT EXISTS users_hidden_from_discovery_idx
     ON public.users (id) WHERE hidden_from_discovery;
 
+-- chapter_public_stats: the profile owner's own allow-list of which Chapters
+-- "month in numbers" stat_key values everyone ELSE may see on their card,
+-- folded in from supabase/migrations/2026-09-04_chapter_stats.sql. The column
+-- (and its CHECK) live here, ahead of the users column-level SELECT GRANT
+-- further down that must cover it, and ahead of the profiles view, for the
+-- same load-ordering reason hidden_from_discovery/signup_ordinal do: a
+-- from-scratch run reads top to bottom and the GRANT below would fail with
+-- "column does not exist" otherwise. The chapter_stats() and
+-- set_chapter_public_stats() functions that read/write it live later, in the
+-- Chapters section, alongside profile_chapters/chapter_photos -- see that
+-- section's own comment for the full visibility contract. EMPTY ARRAY means
+-- "everything public" (the default, and every existing account's current
+-- value), so this column changes nothing for anyone who has never opened the
+-- picker; the CHECK constraint pins the array to the exact same fixed key
+-- list set_chapter_public_stats() validates against, so a typo can neither
+-- silently hide a real stat nor silently grant visibility to one
+-- chapter_stats() does not know how to filter by.
+ALTER TABLE public.users
+    ADD COLUMN IF NOT EXISTS chapter_public_stats TEXT[] NOT NULL DEFAULT '{}';
+ALTER TABLE public.users
+    DROP CONSTRAINT IF EXISTS users_chapter_public_stats_keys_check,
+    ADD CONSTRAINT users_chapter_public_stats_keys_check
+        CHECK (chapter_public_stats <@ ARRAY[
+            'most_reacted', 'most_commented', 'reactions_received', 'comments_received',
+            'top_reaction', 'busiest_day', 'night_shots', 'streak_days', 'rolls_count',
+            'people_shot_with', 'first_shot', 'last_shot', 'shots'
+        ]::text[]);
+
 -- signup_ordinal: a permanent "you are the Nth member" number, folded in from
 -- supabase/migrations/2026-08-17_profile_identity.sql. Production has carried this column, its
 -- backfill, both triggers below, and its GRANT since that migration ran; this file did not, until
@@ -1531,6 +1559,15 @@ REVOKE SELECT ON public.users FROM anon, authenticated;
 -- so a from-scratch load used to diverge from production on this one column. It no longer does.
 GRANT SELECT (id, username, avatar_path, bio, created_at, display_name, cover_path,
               hidden_from_discovery, signup_ordinal) ON public.users TO authenticated;
+
+-- chapter_public_stats: a SEPARATE grant, not folded into the list above,
+-- because it is NOT one of the columns public.profiles selects (see the
+-- Chapters section's own comment on this column for why -- no client
+-- surface needs another profile's pick list, only a caller reading their
+-- OWN row for the settings screen does). Still column-scoped, same
+-- REVOKE-then-GRANT discipline: the REVOKE SELECT above already covers
+-- this column too since it runs table-wide.
+GRANT SELECT (chapter_public_stats) ON public.users TO authenticated;
 
 -- INSERT/UPDATE/DELETE: column-scoped, same discipline as SELECT above.
 -- Supabase's default privileges hand INSERT/UPDATE/DELETE to anon AND
@@ -3222,6 +3259,242 @@ GRANT EXECUTE ON FUNCTION public.chapter_photos(UUID, DATE) TO authenticated;
 -- bucket/order by taken_at. posts_user_created_idx (above) covers user_id +
 -- created_at, a different column, so this is a genuinely new index.
 CREATE INDEX IF NOT EXISTS posts_user_taken_idx ON public.posts (user_id, taken_at DESC);
+
+-- ============================================================
+-- chapter_stats(): the "month in numbers" superset, folded from
+-- supabase/migrations/2026-09-04_chapter_stats.sql. See that file's header
+-- for the full visibility/omission/timezone contract; the block below is
+-- the current shape verbatim.
+--
+-- VISIBILITY OF THE UNDERLYING PHOTOS: computed ONLY over the exact same
+-- posted photos chapter_photos(p_profile_id, p_month_start) would return
+-- to THIS caller for THIS month -- the "source" CTE below is a
+-- byte-for-byte copy of chapter_photos' own source CTE, narrowed to the
+-- one month. A stat can never reference a photo the caller could not
+-- already see in that profile's grid or Chapters playback.
+--
+-- REACTIONS/COMMENTS SOURCE: chapter_photos deals only in POSTED photos,
+-- each with exactly one row in public.posts. The feed's own reaction/
+-- comment batching (FeedService.batchReactions / batchComments) counts a
+-- shared post via public.post_reactions / public.post_comments keyed on
+-- post_id -- NOT public.photo_reactions / public.photo_comments, which
+-- back the separate roll-photo-thread UI and are never joined into a feed
+-- card's own counts. This function counts post_reactions / post_comments
+-- for the same reason: a chapter stat about "reactions received" must
+-- match what the feed itself would have shown on that same shared post.
+--
+-- NIGHT_SHOTS TIMEZONE ASSUMPTION: "22:00-04:00" is evaluated in
+-- America/New_York, FLIM's current user base, not a per-user zone (FLIM
+-- has none). Documented known gap, not an oversight.
+--
+-- OMISSION RULE: a stat row is omitted entirely, never returned as a
+-- zero, whenever there is nothing to say for it that month.
+-- shots/first_shot/last_shot/streak_days are the only rows guaranteed
+-- present whenever the month has any posted shots at all.
+--
+-- VISIBILITY PICK: users.chapter_public_stats is the profile owner's own
+-- allow-list of which stat_key values everyone ELSE may see on their
+-- card. The EMPTY array (the default) means "everything public", so this
+-- migration changes nothing for anyone who has never opened the picker.
+-- The profile owner always sees every row regardless of their own pick.
+-- The column itself (and its CHECK, and its authenticated column-level
+-- SELECT grant) live earlier in this file, next to
+-- hidden_from_discovery/signup_ordinal -- see that block's own comment
+-- for why the load-ordering matters.
+-- ============================================================
+
+CREATE OR REPLACE FUNCTION public.chapter_stats(p_profile_id UUID, p_month_start DATE)
+RETURNS TABLE (
+    stat_key         TEXT,
+    value_int        INTEGER,
+    value_text       TEXT,
+    photo_id         UUID,
+    photo_thumb_path TEXT
+)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+    WITH source AS (
+        -- Byte-for-byte the same predicate as chapter_photos' own source CTE,
+        -- narrowed to the one month up front so every CTE below it is already
+        -- scoped correctly.
+        SELECT po.id AS post_id, p.id AS photo_id, po.taken_at, p.roll_id,
+               COALESCE(po.thumb_path, po.storage_path) AS display_path
+        FROM public.posts po
+        JOIN public.photos p ON p.id = po.photo_id
+        WHERE po.user_id = p_profile_id
+          AND NOT po.hidden
+          AND NOT public.is_blocked_either_way(auth.uid(), po.user_id)
+          AND public.covered_post_visible(auth.uid(), po.user_id, po.created_at)
+          AND date_trunc('month', (po.taken_at - interval '4 hours') AT TIME ZONE 'utc')::date = p_month_start
+    ),
+    reaction_counts AS (
+        SELECT s.photo_id, s.display_path, s.taken_at, count(*) AS cnt
+        FROM source s
+        JOIN public.post_reactions pr ON pr.post_id = s.post_id
+        GROUP BY s.photo_id, s.display_path, s.taken_at
+    ),
+    comment_counts AS (
+        SELECT s.photo_id, s.display_path, s.taken_at, count(*) AS cnt
+        FROM source s
+        JOIN public.post_comments pc ON pc.post_id = s.post_id
+        GROUP BY s.photo_id, s.display_path, s.taken_at
+    ),
+    reaction_emoji AS (
+        SELECT pr.emoji, count(*) AS cnt
+        FROM source s
+        JOIN public.post_reactions pr ON pr.post_id = s.post_id
+        GROUP BY pr.emoji
+    ),
+    day_bucketed AS (
+        SELECT date_trunc('day', (s.taken_at - interval '4 hours') AT TIME ZONE 'utc')::date AS shot_day
+        FROM source s
+    ),
+    day_counts AS (
+        SELECT shot_day, count(*) AS cnt FROM day_bucketed GROUP BY shot_day
+    ),
+    streaks AS (
+        -- Classic gaps-and-islands: within a sequence of distinct days, a run of
+        -- CONSECUTIVE days shares the same (day - row_number()) value.
+        SELECT shot_day, shot_day - (row_number() OVER (ORDER BY shot_day))::int AS grp
+        FROM (SELECT DISTINCT shot_day FROM day_bucketed) d
+    ),
+    streak_lengths AS (
+        SELECT grp, count(*) AS len FROM streaks GROUP BY grp
+    ),
+    roll_ids AS (
+        SELECT DISTINCT roll_id FROM source WHERE roll_id IS NOT NULL
+    ),
+    stats (stat_key, value_int, value_text, photo_id, photo_thumb_path) AS (
+        (SELECT 'shots'::text, count(*)::int, NULL::text, NULL::uuid, NULL::text
+         FROM source
+         HAVING count(*) > 0)
+
+        UNION ALL
+        (SELECT 'reactions_received', count(*)::int, NULL, NULL, NULL
+         FROM source s JOIN public.post_reactions pr ON pr.post_id = s.post_id
+         HAVING count(*) > 0)
+
+        UNION ALL
+        (SELECT 'comments_received', count(*)::int, NULL, NULL, NULL
+         FROM source s JOIN public.post_comments pc ON pc.post_id = s.post_id
+         HAVING count(*) > 0)
+
+        UNION ALL
+        (SELECT 'most_reacted', rc.cnt::int, NULL, rc.photo_id, rc.display_path
+         FROM reaction_counts rc
+         ORDER BY rc.cnt DESC, rc.taken_at DESC
+         LIMIT 1)
+
+        UNION ALL
+        (SELECT 'most_commented', cc.cnt::int, NULL, cc.photo_id, cc.display_path
+         FROM comment_counts cc
+         ORDER BY cc.cnt DESC, cc.taken_at DESC
+         LIMIT 1)
+
+        UNION ALL
+        (SELECT 'top_reaction', re.cnt::int, re.emoji, NULL, NULL
+         FROM reaction_emoji re
+         ORDER BY re.cnt DESC, re.emoji ASC
+         LIMIT 1)
+
+        UNION ALL
+        (SELECT 'busiest_day', dc.cnt::int, to_char(dc.shot_day, 'YYYY-MM-DD'), NULL, NULL
+         FROM day_counts dc
+         ORDER BY dc.cnt DESC, dc.shot_day DESC
+         LIMIT 1)
+
+        UNION ALL
+        (SELECT 'night_shots', count(*)::int, NULL, NULL, NULL
+         FROM source s
+         WHERE EXTRACT(HOUR FROM (s.taken_at AT TIME ZONE 'America/New_York')) >= 22
+            OR EXTRACT(HOUR FROM (s.taken_at AT TIME ZONE 'America/New_York')) < 4
+         HAVING count(*) > 0)
+
+        UNION ALL
+        (SELECT 'streak_days', max(len)::int, NULL, NULL, NULL
+         FROM streak_lengths)
+
+        UNION ALL
+        (SELECT 'rolls_count', count(*)::int, NULL, NULL, NULL
+         FROM roll_ids
+         HAVING count(*) > 0)
+
+        UNION ALL
+        (SELECT 'people_shot_with', count(DISTINCT rm.user_id)::int, NULL, NULL, NULL
+         FROM public.roll_members rm
+         WHERE rm.roll_id IN (SELECT roll_id FROM roll_ids)
+           AND rm.user_id <> p_profile_id
+         HAVING count(DISTINCT rm.user_id) > 0)
+
+        UNION ALL
+        (SELECT 'first_shot', NULL, NULL, s.photo_id, s.display_path
+         FROM source s
+         ORDER BY s.taken_at ASC
+         LIMIT 1)
+
+        UNION ALL
+        (SELECT 'last_shot', NULL, NULL, s.photo_id, s.display_path
+         FROM source s
+         ORDER BY s.taken_at DESC
+         LIMIT 1)
+    ),
+    owner_pick AS (
+        SELECT chapter_public_stats FROM public.users WHERE id = p_profile_id
+    )
+    SELECT st.stat_key, st.value_int, st.value_text, st.photo_id, st.photo_thumb_path
+    FROM stats st
+    WHERE auth.uid() = p_profile_id
+       OR EXISTS (
+            SELECT 1 FROM owner_pick op
+            WHERE COALESCE(array_length(op.chapter_public_stats, 1), 0) = 0
+               OR st.stat_key = ANY(op.chapter_public_stats)
+          );
+$$;
+
+REVOKE ALL ON FUNCTION public.chapter_stats(UUID, DATE) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.chapter_stats(UUID, DATE) FROM anon;
+GRANT EXECUTE ON FUNCTION public.chapter_stats(UUID, DATE) TO authenticated;
+
+-- set_chapter_public_stats(p_keys): the only write path for a user's own
+-- chapter_public_stats pick. Pattern after set_displayed_badges below:
+-- zero-trust on input, pinned to auth.uid() (no p_user_id argument, nothing to
+-- spoof), NULL treated the same as '{}' (both mean "show everything" per the
+-- empty-array convention above), every element validated against the exact
+-- same fixed key list the table CHECK constraint enforces, idempotent, and the
+-- saved array is returned so the caller can confirm what stuck without a
+-- second round trip.
+CREATE OR REPLACE FUNCTION public.set_chapter_public_stats(p_keys TEXT[])
+RETURNS TEXT[]
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_keys TEXT[] := COALESCE(p_keys, ARRAY[]::text[]);
+BEGIN
+    IF array_position(v_keys, NULL) IS NOT NULL THEN
+        RAISE EXCEPTION 'chapter_public_stats: key cannot be null';
+    END IF;
+
+    IF NOT (v_keys <@ ARRAY[
+        'most_reacted', 'most_commented', 'reactions_received', 'comments_received',
+        'top_reaction', 'busiest_day', 'night_shots', 'streak_days', 'rolls_count',
+        'people_shot_with', 'first_shot', 'last_shot', 'shots'
+    ]::text[]) THEN
+        RAISE EXCEPTION 'chapter_public_stats: unknown stat key';
+    END IF;
+
+    UPDATE public.users SET chapter_public_stats = v_keys WHERE id = auth.uid();
+
+    RETURN v_keys;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.set_chapter_public_stats(TEXT[]) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.set_chapter_public_stats(TEXT[]) FROM anon;
+GRANT EXECUTE ON FUNCTION public.set_chapter_public_stats(TEXT[]) TO authenticated;
 
 -- set_displayed_badges(p_badge_ids): the only write path for a user's own
 -- displayed_badges selection. Zero-trust on input: pinned to auth.uid() (no
