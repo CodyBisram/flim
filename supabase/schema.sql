@@ -388,6 +388,15 @@ BEGIN
         SELECT 1 FROM public.roll_members WHERE roll_id = r.id AND user_id = auth.uid()
     ) INTO already_member;
 
+    -- Invites end when a roll develops (2026-08-26 confirmations redesign,
+    -- server-enforced 2026-09-04). Only blocks a caller who is not already a
+    -- member, so re-fetching a roll you already joined keeps working after
+    -- it develops. Reuses is_roll_developed(uuid) so this cannot drift from
+    -- the same check the photos INSERT policy already applies.
+    IF NOT already_member AND public.is_roll_developed(r.id) THEN
+        RAISE EXCEPTION 'roll_developed' USING ERRCODE = 'P0004';
+    END IF;
+
     IF NOT already_member THEN
         SELECT COUNT(*) INTO member_count FROM public.roll_members WHERE roll_id = r.id;
         IF member_count >= 50 THEN
