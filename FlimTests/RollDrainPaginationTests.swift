@@ -154,4 +154,29 @@ final class RollDrainPaginationTests: XCTestCase {
 
         XCTAssertTrue(merged.contains { $0.id == opened })
     }
+
+    // MARK: - photoArrived
+    //
+    // A roll-photo push's pending intent (`RollPhotoIntent`) polls `pagerPhotos` for the photo it
+    // means to open, because the photo may land on `rollSnapshot`'s fire-and-forget fetch rather
+    // than the grid's own first page. This is the pure "has it arrived yet?" gate the poll checks
+    // on each attempt.
+
+    func testPhotoArrivedTrueWhenThePhotoIsInTheList() {
+        let target = UUID()
+        let photos = [photo(id: UUID()), photo(id: target), photo(id: UUID())]
+        XCTAssertTrue(photoArrived(target, in: photos))
+    }
+
+    func testPhotoArrivedFalseWhenThePhotoIsNotInTheListYet() {
+        let target = UUID()
+        let photos = [photo(id: UUID()), photo(id: UUID())]
+        XCTAssertFalse(photoArrived(target, in: photos))
+    }
+
+    /// A deleted, hidden, or blocked photo reads identically to one that simply hasn't arrived
+    /// yet: an empty list must not crash or special-case, it's just "not found".
+    func testPhotoArrivedFalseForAnEmptyList() {
+        XCTAssertFalse(photoArrived(UUID(), in: []))
+    }
 }

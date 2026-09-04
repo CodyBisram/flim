@@ -174,6 +174,15 @@ actually do. Worth deciding before more is built on top of rolls.
 
 ### done 2026-09-04: the rolls audit, and what it changed
 
+- **Pushes about a roll photo open that photo.** They routed to the roll and left the person to
+  find the frame. The reveal route now carries `photo` and, for comments and mentions,
+  `comments: true`; the app opens the roll, waits for the photo to arrive (first page or
+  whole-roll snapshot, bounded), opens the viewer on it and the thread if flagged, and if the
+  roll's one-shot reveal has not been watched, plays the reveal first and opens the photo after.
+  Older builds read only the roll id and land where they always did. Server side is committed,
+  NOT deployed (token). Chapters visibility, asked the same day: other people see a shelf built
+  only from what you POSTED, with the profile grid's exact visibility; only you see every shot.
+
 Three read-only passes (correctness, flows, production data). The data pass is BLOCKED on a fresh
 management token; the other two came back SHIP WITH NITS plus one BLOCK, all fixed the same day:
 

@@ -13,6 +13,9 @@ import SwiftUI
 struct RollsView: View {
     @Environment(\.flimAccent) private var accent
     var scrollToTop: Int = 0
+    /// A pending roll-photo push intent, owned by `MainTabView`, forwarded straight through to
+    /// whichever `RollDetailView` the path pushes. See `RollPhotoIntent`'s own doc.
+    var pendingPhotoIntent: Binding<RollPhotoIntent?> = .constant(nil)
     @Environment(AuthService.self) private var auth
     @Environment(RollService.self) private var rolls
     @Environment(NotificationService.self) private var notifications
@@ -163,7 +166,7 @@ struct RollsView: View {
             Task { await resolveCovers() }
         }
         .navigationDestination(for: Roll.self) { roll in
-            RollDetailView(roll: roll)
+            RollDetailView(roll: roll, pendingPhotoIntent: pendingPhotoIntent)
         }
     }
 

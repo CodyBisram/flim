@@ -76,9 +76,34 @@ func mergePhotoSnapshot(paged: [Photo], snapshot: [Photo]) -> [Photo] {
     return kept + extra
 }
 
+/// A roll-photo push's intent, carried alongside `MainTabView.route(to:)`'s own `rollsPath.append`
+/// so `RollDetailView` can open a specific photo (and its comment thread) once it's safe to.
+/// Id-keyed rather than positional: `RollDetailView` matches by `rollId` before consuming it, so a
+/// second push landing while the same roll is already open still finds this instance, matching
+/// the `openPhotoId` pattern the Darkroom uses for a widget's frame tap.
+struct RollPhotoIntent: Equatable {
+    let rollId: UUID
+    let photoId: UUID
+    let comments: Bool
+}
+
+/// Whether `photoId` has arrived in the roll's merged photo list yet. Pure so the "keep polling or
+/// give up" boundary a pending push-photo intent waits on is pinned without a live `PhotoService`,
+/// roll, or timer: the photo can land on the eager, unpaginated snapshot (`rollSnapshot`) rather
+/// than the grid's own first page, and that snapshot is a fire-and-forget fetch, so the photo is
+/// not guaranteed to be present the instant the roll's `.task` pipeline finishes loading.
+func photoArrived(_ photoId: UUID, in photos: [Photo]) -> Bool {
+    photos.contains { $0.id == photoId }
+}
+
 struct RollDetailView: View {
     @Environment(\.flimAccent) private var accent
     let roll: Roll
+    /// A pending roll-photo push intent, owned by `MainTabView` and shared down through
+    /// `RollsView`. `nil` for every ordinary open (a grid tap, `-openRollId`); this view only ever
+    /// consumes an entry whose `rollId` matches its own `roll.id`, and nils it the instant it does,
+    /// so a later push for some OTHER roll finds it still there for that roll's own instance.
+    var pendingPhotoIntent: Binding<RollPhotoIntent?> = .constant(nil)
     @Environment(PhotoService.self) private var photoService
     @Environment(RollService.self) private var rollService
     @Environment(AuthService.self) private var auth
@@ -117,6 +142,15 @@ struct RollDetailView: View {
     /// count, without this, the button popped in after page 1 (30) and its own count label
     /// visibly ticked upward (30 → 60 → 75) as each further page streamed in behind it.
     @State private var rollFullyPaged = false
+    /// Set from `pendingPhotoIntent` once it matches this roll; consumed (nil'd) only after the
+    /// pager actually opens (or gives up). Separate from the binding itself so this survives the
+    /// binding being nil'd by the moment `adoptPendingPhotoIntent` reads it.
+    @State private var awaitingPhotoId: UUID?
+    @State private var awaitingPhotoComments = false
+    /// Whether the NEXT `selectedPhoto` presentation should open the comment sheet on arrival.
+    /// Reset right after `PhotoPagerView` reads it, so an ordinary grid tap opened after a pending
+    /// photo push never inherits a stale "open comments" flag.
+    @State private var pagerOpenComments = false
 
     private var revealSeenKey: String { "rollRevealSeen.\(roll.id.uuidString)" }
     /// One-shot, unpaginated top-up for the roll viewer: everything `fetchRollPhotosSnapshot`
@@ -347,6 +381,17 @@ struct RollDetailView: View {
                 .accessibilityLabel("More")
             }
         }
+        .onAppear { adoptPendingPhotoIntent() }
+        // A second push for THIS SAME roll while it's already open (no reappear to catch it):
+        // `MainTabView` still appends a fresh path entry, but the intent itself lands here via
+        // the shared binding, and by now the main `.task` pipeline below has long since finished,
+        // so this has to trigger the open attempt itself rather than waiting for that task to.
+        .onChange(of: pendingPhotoIntent.wrappedValue) { _, _ in
+            adoptPendingPhotoIntent()
+            if awaitingPhotoId != nil {
+                Task { await openAwaitingPhotoIfReady() }
+            }
+        }
         // The whole-roll drain used to live in `.onAppear { Task { ... } }`, which is never
         // cancelled on disappear: leaving this screen didn't stop it, so a second roll's own
         // fetch could interleave with a dead roll's still-running drain, and `loadMoreRoll`
@@ -425,6 +470,14 @@ struct RollDetailView: View {
                !UserDefaults.standard.bool(forKey: revealSeenKey) {
                 showReveal = true
             }
+            // A pending push-photo intent waits for exactly this point: the reveal decision just
+            // above has already been made, so if `showReveal` just became true, this call is a
+            // no-op and `onChange(of: showReveal)` picks it back up once the reveal finishes
+            // instead. If the reveal was already seen, this opens the photo right here, polling
+            // briefly for `rollSnapshot` if it hasn't landed yet.
+            if awaitingPhotoId != nil {
+                await openAwaitingPhotoIfReady()
+            }
             // Ensure EVERY member gets a develop reminder, even those who didn't shoot.
             // The reveal is fixed at the roll's creation, so this works with zero photos too.
             if notificationsEnabled, !roll.isDeveloped {
@@ -460,6 +513,10 @@ struct RollDetailView: View {
             }
         }
         .fullScreenCover(item: $selectedPhoto) { photo in
+            // Read once and reset immediately: this closure runs again on every presentation, and
+            // without the reset a photo push's "open comments" would leak into the very next
+            // ordinary grid tap on this same roll.
+            let openComments = pagerOpenComments
             PhotoPagerView(
                 photos: pagerPhotosChronological,
                 startIndex: pagerPhotosChronological.firstIndex(where: { $0.id == photo.id }) ?? 0,
@@ -474,9 +531,11 @@ struct RollDetailView: View {
                 // Every photo here belongs to this roll, so the delete-confirmation name is
                 // always this roll's, regardless of the (all-identical) rollId.
                 rollName: { _ in roll.name },
-                onDelete: { Task { await reloadRoll() } }
+                onDelete: { Task { await reloadRoll() } },
+                openCommentsOnAppear: openComments
             )
             .navigationTransition(.zoom(sourceID: photo.id, in: photoNS))
+            .onAppear { pagerOpenComments = false }
         }
         .fullScreenCover(isPresented: $showReveal) {
             RollRevealView(rollId: roll.id, rollName: roll.name,
@@ -488,7 +547,12 @@ struct RollDetailView: View {
             // true (full_house, chipped_in, joined_in, roll_maker, darkroom all key off roll or
             // photo activity around exactly this roll). Fire-and-forget: worst case is the tab
             // dot catching up a moment later, never a blocking spinner on the roll screen.
-            if wasShowing, !isShowing { Task { await feed.refreshOwnBadges() } }
+            if wasShowing, !isShowing {
+                Task { await feed.refreshOwnBadges() }
+                // The reveal just finished (watched or swiped away, either way it played, never
+                // skipped): a photo a push was waiting on can open now.
+                if awaitingPhotoId != nil { Task { await openAwaitingPhotoIfReady() } }
+            }
         }
         .sheet(isPresented: $showMembers) {
             RollMembersView(roll: roll)
@@ -580,6 +644,47 @@ struct RollDetailView: View {
     /// so this only has to present.
     private func replayReveal() {
         showReveal = true
+    }
+
+    /// Pulls a matching pending push-photo intent out of the shared binding and into local state,
+    /// exactly once. Called on appear, and again on `onChange` for a second push landing while
+    /// this roll is already open (no reappear to catch that one). A mismatched or absent intent is
+    /// left untouched, for whichever OTHER roll's `RollDetailView` it actually belongs to.
+    private func adoptPendingPhotoIntent() {
+        guard let intent = pendingPhotoIntent.wrappedValue, intent.rollId == roll.id else { return }
+        pendingPhotoIntent.wrappedValue = nil
+        awaitingPhotoId = intent.photoId
+        awaitingPhotoComments = intent.comments
+    }
+
+    /// Opens `awaitingPhotoId` in the pager once it's safe to, or gives up silently.
+    ///
+    /// Never while the reveal is up: the reveal is the roll's one-shot ceremony, and a push must
+    /// not skip it. `onChange(of: showReveal)` calls this again once it finishes, so the photo
+    /// still opens right after, not never.
+    ///
+    /// The photo may land on `rollSnapshot`'s fire-and-forget fetch rather than the grid's own
+    /// first page, so this polls briefly for it rather than checking once. Bounded the same way
+    /// `drainRollPagination`'s own starved-retry budget is (25 x 200ms, ~5s): past that, a
+    /// deleted/hidden/blocked photo and a slow network are indistinguishable from here, and both
+    /// get the same answer every other push destination gives when it can't find its target, land
+    /// on a real, populated screen (the roll) rather than an error.
+    private func openAwaitingPhotoIfReady() async {
+        guard let photoId = awaitingPhotoId, !showReveal else { return }
+        var found = photoArrived(photoId, in: pagerPhotos)
+        var attempts = 0
+        while !found, attempts < 25 {
+            try? await Task.sleep(for: .milliseconds(200))
+            guard !Task.isCancelled else { return }
+            found = photoArrived(photoId, in: pagerPhotos)
+            attempts += 1
+        }
+        let comments = awaitingPhotoComments
+        awaitingPhotoId = nil
+        awaitingPhotoComments = false
+        guard found, let photo = pagerPhotos.first(where: { $0.id == photoId }) else { return }
+        pagerOpenComments = comments
+        selectedPhoto = photo
     }
 
     /// The one place that reloads this roll's photos: resets the grid's own pagination (page one)

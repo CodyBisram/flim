@@ -18,6 +18,33 @@ struct PushDestinationTests {
         #expect(PushDestination.parse(userInfo: userInfo) == .reveal(rollId: rollId))
     }
 
+    @Test("reveal decodes a roll-photo comment push: photo and comments both present")
+    func revealDecodesPhotoAndComments() {
+        let rollId = UUID()
+        let photoId = UUID()
+        let userInfo: [AnyHashable: Any] = [
+            "flim": ["t": "reveal", "id": rollId.uuidString, "photo": photoId.uuidString, "comments": true]
+        ]
+        #expect(PushDestination.parse(userInfo: userInfo) == .reveal(rollId: rollId, photoId: photoId, comments: true))
+    }
+
+    @Test("reveal decodes a roll-photo reaction push: photo present, comments absent")
+    func revealDecodesPhotoOnly() {
+        let rollId = UUID()
+        let photoId = UUID()
+        let userInfo: [AnyHashable: Any] = [
+            "flim": ["t": "reveal", "id": rollId.uuidString, "photo": photoId.uuidString]
+        ]
+        #expect(PushDestination.parse(userInfo: userInfo) == .reveal(rollId: rollId, photoId: photoId, comments: false))
+    }
+
+    @Test("reveal decodes a plain roll-develop push: neither photo nor comments")
+    func revealDecodesNeitherPhotoNorComments() {
+        let rollId = UUID()
+        let userInfo: [AnyHashable: Any] = ["flim": ["t": "reveal", "id": rollId.uuidString]]
+        #expect(PushDestination.parse(userInfo: userInfo) == .reveal(rollId: rollId, photoId: nil, comments: false))
+    }
+
     @Test("post decodes with its post id, comments defaulting to false")
     func postDecodesWithoutComments() {
         let postId = UUID()
@@ -107,6 +134,27 @@ struct PushDestinationTests {
         #expect(payload["comments"] == nil)
     }
 
+    @Test("reveal's wireValue round-trips with a photo and comments")
+    func revealWireValueRoundTripsWithPhotoAndComments() {
+        let destination = PushDestination.reveal(rollId: UUID(), photoId: UUID(), comments: true)
+        let userInfo: [AnyHashable: Any] = ["flim": destination.wireValue]
+        #expect(PushDestination.parse(userInfo: userInfo) == destination)
+    }
+
+    @Test("reveal's wireValue round-trips with a photo but no comments")
+    func revealWireValueRoundTripsWithPhotoOnly() {
+        let destination = PushDestination.reveal(rollId: UUID(), photoId: UUID(), comments: false)
+        let userInfo: [AnyHashable: Any] = ["flim": destination.wireValue]
+        #expect(PushDestination.parse(userInfo: userInfo) == destination)
+    }
+
+    @Test("reveal's wireValue omits photo and comments when neither is set, matching a plain roll-develop push")
+    func revealWireValueOmitsPhotoAndComments() {
+        let payload = PushDestination.reveal(rollId: UUID()).wireValue
+        #expect(payload["photo"] == nil)
+        #expect(payload["comments"] == nil)
+    }
+
     @Test("rolls' wireValue round-trips through parse")
     func rollsWireValueRoundTrips() {
         let userInfo: [AnyHashable: Any] = ["flim": PushDestination.rolls.wireValue]
@@ -154,6 +202,8 @@ struct PendingPushDestinationTests {
         isolate()
         let cases: [PushDestination] = [
             .reveal(rollId: UUID()),
+            .reveal(rollId: UUID(), photoId: UUID(), comments: true),
+            .reveal(rollId: UUID(), photoId: UUID(), comments: false),
             .post(postId: UUID(), comments: true),
             .post(postId: UUID(), comments: false),
             .profile(userId: UUID()),

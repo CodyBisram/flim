@@ -5,7 +5,13 @@ import Foundation
 ///
 ///     { "aps": { ... }, "flim": { "t": "<destination>", "id": "<uuid>" } }
 ///
-///     "reveal"   id = roll id  -> that roll's reveal (or the roll itself, if already seen)
+///     "reveal"   id = roll id  -> that roll's reveal (or the roll itself, if already seen).
+///                                 A roll-photo comment/mention/reaction push also carries
+///                                 "photo": <photo uuid> (optional) and, for comment/mention only,
+///                                 "comments": true, so the tap can land inside that photo's
+///                                 thread rather than just the roll. Older builds parse only "t"
+///                                 and "id", which is exactly why both riders are optional: a
+///                                 build that predates them still opens the roll.
 ///     "post"     id = post id  -> that post, optionally with "comments": true
 ///     "profile"  id = user id  -> that user's page
 ///     "feed"     no id         -> the feed tab
@@ -22,7 +28,10 @@ import Foundation
 /// notification scheduled by a build older than this one), an unrecognized destination, or an id
 /// that doesn't parse as a UUID. See `FlimAppDelegate.userNotificationCenter(_:didReceive:)`.
 enum PushDestination: Codable, Equatable {
-    case reveal(rollId: UUID)
+    /// `photoId` and `comments` ride along for a roll-photo comment/mention/reaction push; both
+    /// default so every existing call site (a plain roll-develop reminder, a widget tap, the
+    /// Activity feed's own reuse of this destination) keeps meaning exactly what it always has.
+    case reveal(rollId: UUID, photoId: UUID? = nil, comments: Bool = false)
     case post(postId: UUID, comments: Bool)
     case profile(userId: UUID)
     /// The Lock Screen shutter widget. Carries no id: there is only one camera. Never arrives
@@ -50,7 +59,7 @@ enum PushDestination: Codable, Equatable {
             return .rolls
         case "reveal":
             guard let id = uuid(flim["id"]) else { return nil }
-            return .reveal(rollId: id)
+            return .reveal(rollId: id, photoId: uuid(flim["photo"]), comments: (flim["comments"] as? Bool) ?? false)
         case "post":
             guard let id = uuid(flim["id"]) else { return nil }
             return .post(postId: id, comments: (flim["comments"] as? Bool) ?? false)
@@ -99,8 +108,11 @@ enum PushDestination: Codable, Equatable {
     /// contract exactly instead of drifting from it.
     var wireValue: [String: Any] {
         switch self {
-        case .reveal(let rollId):
-            return ["t": "reveal", "id": rollId.uuidString]
+        case .reveal(let rollId, let photoId, let comments):
+            var payload: [String: Any] = ["t": "reveal", "id": rollId.uuidString]
+            if let photoId { payload["photo"] = photoId.uuidString }
+            if comments { payload["comments"] = true }
+            return payload
         case .post(let postId, let comments):
             var payload: [String: Any] = ["t": "post", "id": postId.uuidString]
             if comments { payload["comments"] = true }

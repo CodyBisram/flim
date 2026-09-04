@@ -80,6 +80,10 @@ struct MainTabView: View {
     /// Owned here (not in RollsView) so a `reveal` push destination, and `-openRollId` in DEBUG,
     /// can push straight into a roll's detail without the Rolls tab needing to already be open.
     @State private var rollsPath = NavigationPath()
+    /// A roll-photo push's intent (a specific photo, and whether to open its comment thread),
+    /// handed alongside `rollsPath.append` so `RollDetailView` can open it once it's safe to. See
+    /// `RollPhotoIntent`'s own doc for why this is id-keyed rather than positional.
+    @State private var pendingRollPhoto: RollPhotoIntent?
     /// Owned here (not in FeedView) so `profile` and `post` push destinations can push straight
     /// into a page or a post without the Feed tab needing to already be open.
     @State private var feedPath = NavigationPath()
@@ -136,7 +140,7 @@ struct MainTabView: View {
                 // in DEBUG, can push a roll's detail programmatically. RollsView declares its own
                 // `.navigationDestination(for: Roll.self)`, which this path pushes onto.
                 NavigationStack(path: $rollsPath) {
-                    RollsView(scrollToTop: scrollSignal[2, default: 0])
+                    RollsView(scrollToTop: scrollSignal[2, default: 0], pendingPhotoIntent: $pendingRollPhoto)
                 }
             }
             Tab("Feed", systemImage: "house", value: 3) {
@@ -317,6 +321,25 @@ struct MainTabView: View {
                     }
                 }
             }
+            //   -openRollPhoto <rollId> <photoId> [comments] : exercises the roll-photo comment
+            //   push end to end without a real APNs payload. `comments` is a literal, optional
+            //   third argument; its absence matches a reaction push, its presence a comment or
+            //   mention push. Mirrors `-openRollId` above, plus the photo intent `route(to:)`'s
+            //   own `.reveal` case sets from a real push.
+            if let rollPhotoIdx = args.firstIndex(of: "-openRollPhoto"),
+               args.indices.contains(rollPhotoIdx + 2),
+               let debugRollId = UUID(uuidString: args[rollPhotoIdx + 1]),
+               let debugPhotoId = UUID(uuidString: args[rollPhotoIdx + 2]) {
+                let debugComments = args.indices.contains(rollPhotoIdx + 3) && args[rollPhotoIdx + 3] == "comments"
+                selected = 2
+                Task {
+                    guard let uid = auth.currentUser?.id else { return }
+                    try? await rolls.fetchRolls(for: uid)
+                    guard let roll = rolls.rolls.first(where: { $0.id == debugRollId }) else { return }
+                    pendingRollPhoto = RollPhotoIntent(rollId: debugRollId, photoId: debugPhotoId, comments: debugComments)
+                    rollsPath.append(roll)
+                }
+            }
             //   -openDevelopedRoll : push into the first DEVELOPED roll the account can see,
             //                        clearing its `rollRevealSeen.<id>` first so the reveal
             //                        replays from the cover.
@@ -372,7 +395,7 @@ struct MainTabView: View {
     /// against. Instead this trusts the same row-level security every other screen already relies
     /// on to answer "can THIS session see that id": if it can, the fetch returns the content and
     /// this opens it; if it can't (wrong account, signed out and still not signed back in, or the
-    /// content is gone entirely — deleted, hidden, moderated, or a roll left) the fetch comes back
+    /// content is gone entirely: deleted, hidden, moderated, or a roll left) the fetch comes back
     /// empty and this does nothing further, leaving whichever tab it already switched to as a
     /// real, populated screen rather than a blank one.
     private func route(to destination: PushDestination) {
@@ -400,7 +423,7 @@ struct MainTabView: View {
             selected = 2
             rollsPath = NavigationPath()   // land on the tab's root, not whatever detail was pushed
 
-        case .reveal(let rollId):
+        case .reveal(let rollId, let photoId, let comments):
             selected = 2
             Task {
                 guard let uid = auth.currentUser?.id else { return }
@@ -410,6 +433,13 @@ struct MainTabView: View {
                 // Not a member (any more), or the roll is gone: RollsView is still showing a real,
                 // current list, so this is a graceful no-op rather than a dead end.
                 guard let roll = rolls.rolls.first(where: { $0.id == rollId }) else { return }
+                // A comment/mention/reaction push on a roll photo. Set BEFORE the append below, so
+                // it's already there the instant `RollDetailView` appears; a second push while
+                // that same roll is already open still reaches it, via `RollsView`'s own
+                // `onChange`, see `RollPhotoIntent`.
+                if let photoId {
+                    pendingRollPhoto = RollPhotoIntent(rollId: rollId, photoId: photoId, comments: comments)
+                }
                 // RollDetailView's own `onAppear` decides whether to play the reveal: it only does
                 // that once per roll (`rollRevealSeen.<id>`), so a roll whose reveal already played
                 // opens the roll itself here, never a replay. See RollDetailView.

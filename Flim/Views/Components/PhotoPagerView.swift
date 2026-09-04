@@ -135,6 +135,12 @@ struct PhotoPagerView: View {
     /// the delete-confirmation wording. A roll grid passes a closure returning its own name.
     var rollName: (UUID?) -> String? = { _ in nil }
     var onDelete: () -> Void = {}
+    /// Opens the comment sheet for the photo at `startIndex` the moment this pager appears, for a
+    /// comment/mention push that means to land inside a thread, not just on the photo. An init
+    /// parameter rather than reaching into `showComments`/`commentsPhoto` from outside: those are
+    /// this view's own state, and a caller poking them directly would be one refactor away from
+    /// opening the sheet for the wrong photo the next time `selection` changes underneath it.
+    var openCommentsOnAppear: Bool = false
 
     @Environment(PhotoService.self) private var photoService
     @Environment(AuthService.self) private var auth
@@ -254,7 +260,7 @@ struct PhotoPagerView: View {
          showsReactions: Bool = false, showsComments: Bool = false, showsAttribution: Bool = false,
          showsNightRack: Bool = false, showsRollRack: Bool = false,
          memberNames: [UUID: String] = [:], rollName: @escaping (UUID?) -> String? = { _ in nil },
-         onDelete: @escaping () -> Void = {}) {
+         onDelete: @escaping () -> Void = {}, openCommentsOnAppear: Bool = false) {
         self.photos = photos
         self.startIndex = startIndex
         self.signedURLs = signedURLs
@@ -266,6 +272,7 @@ struct PhotoPagerView: View {
         self.memberNames = memberNames
         self.rollName = rollName
         self.onDelete = onDelete
+        self.openCommentsOnAppear = openCommentsOnAppear
         _selection = State(initialValue: min(max(startIndex, 0), max(0, photos.count - 1)))
     }
 
@@ -450,6 +457,15 @@ struct PhotoPagerView: View {
         }
         .task {
             await resolveAround(selection)
+        }
+        // A comment/mention push means to land inside the thread, not just on the photo. Fires
+        // once per presentation, matching the other one-shot `.task`s in this file: this view is
+        // recreated fresh by its caller's `fullScreenCover(item:)` on every open, so there is no
+        // reappear to guard against.
+        .task {
+            guard openCommentsOnAppear, showsComments, let photo = current else { return }
+            commentsPhoto = photo
+            showComments = true
         }
         // Keyed on `selection`, so it cancels naturally on the next swipe (`.task(id:)`'s own
         // contract) and on dismiss, and restarts fresh for the new window. See its own doc.
