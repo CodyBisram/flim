@@ -516,8 +516,13 @@ The bump this section used to ask for has already happened. Status: `done`.
   "every developed shot" branch is gone; migration `2026-09-04_chapters_posted_only.sql`,
   APPLIED and verified against direct post counts), and **playback uses the shared viewer** with
   the film strip (`PhotoPagerView` in rack mode, curated fifteen, reactions and comments on,
-  attribution and delete off, roll id dropped so roll-only affordances stay inert). Owner
-  decisions on 2026-09-03, one REVERSED the next day after seeing it: months are FINISHED MONTHS ONLY ("September
+  attribution and delete off, roll id dropped so roll-only affordances stay inert). The four
+  decorative segment bars are gone from the card. **Stats, in flight:** `chapter_stats` and
+  `users.chapter_public_stats` + `set_chapter_public_stats` (migration `2026-09-04_chapter_stats.sql`)
+  APPLIED 2026-09-04; the app half (a closing "month in numbers" card after playback, up to five
+  lines: most reacted, most commented, busiest day, after dark, streak, rolls; and a per-stat
+  picker for what others see, owner always sees all) is being built. Owner: "build what you see
+  fit". Owner decisions on 2026-09-03, one REVERSED the next day after seeing it: months are FINISHED MONTHS ONLY ("September
   shouldn't be there since the month hasn't ended"); the shelf drops the month in progress
   client-side (`ChapterSummary.completedMonths`) and the newest finished month wears the RECAP
   tag. The RPC still returns the live month, unused. Earlier that day the call had been live and
