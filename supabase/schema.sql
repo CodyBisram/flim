@@ -3055,6 +3055,173 @@ REVOKE ALL ON FUNCTION public.profile_film_stats(UUID) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.profile_film_stats(UUID) FROM anon;
 GRANT EXECUTE ON FUNCTION public.profile_film_stats(UUID) TO authenticated;
 
+-- ============================================================
+-- Chapters: profile_chapters() + chapter_photos(), folded from
+-- supabase/migrations/2026-09-03_chapters.sql. The profile's monthly recap --
+-- a shelf of month covers on the profile (design 3a) and a per-month
+-- reveal-style playback (design 3b). See that migration file for the full
+-- rationale (visibility split, month-boundary convention, cover selection);
+-- summarized here so a fresh run needs no other file.
+--
+-- MONTHS ARE COMPUTED, NOT STORED: no backfill table, no data migration --
+-- a month exists purely because photos/posts rows fall in it, LIVE AND
+-- GROWING (the current month included), all the way back to a person's
+-- first shot.
+--
+-- VISIBILITY: own page (p_profile_id = auth.uid()) is every DEVELOPED
+-- photo the caller shot that month (develops_at <= now(), the app's
+-- time-derived developed predicate everywhere else -- RollService,
+-- darkroom_month_summary above), private roll shots included, undeveloped
+-- roll shots excluded even from their own shooter. is_sorted is
+-- deliberately not checked (it is a Darkroom triage flag, not a
+-- shot/developed one); photos.hidden is deliberately not checked either,
+-- matching "photos: own photos" -- a caller always sees their own photos
+-- regardless of moderation state. Someone else's page is only what they
+-- POSTED, gated by the exact predicate "posts: readable by authenticated"
+-- already enforces (not hidden, not blocked either way, not covered),
+-- confirmed live via FeedService.fetchUserPosts (the profile grid's own
+-- query), reusing the same covered_post_visible/is_blocked_either_way
+-- helpers that policy calls rather than re-deriving the rule.
+--
+-- MONTH BOUNDARY: taken_at shifted back 4 hours (FeedUnit.dayBoundaryHour)
+-- before truncating to month, same shift darkroom_month_summary applies,
+-- fixed at UTC rather than a client-supplied zone -- FLIM stores no
+-- per-user timezone column by design (see usage_events above), and this
+-- function's signature is the agreed Swift contract with no zone
+-- parameter. Accepted deviation: a shot within a few hours of local
+-- midnight near a month boundary can land in a different month here than
+-- in the Darkroom's own, locally-zoned month view for a user far from UTC.
+--
+-- COVERS: up to 4, most recent first (NOT the Darkroom's oldest-first
+-- filmstrip -- the Chapters contract calls for a preview of the month's
+-- latest activity), COALESCE(thumb_path, storage_path) for the same
+-- pre-thumb-column fallback every other cover path in this schema uses.
+--
+-- SECURITY DEFINER on both: required for the someone-else branch, which
+-- must read public.photos for roll_id (posts does not denormalize it) for
+-- a viewer who is not that photo's owner or roll member. The own-page
+-- branch is separately gated by auth.uid() = p_profile_id in its WHERE
+-- clause, so the elevated rights can never read another account's private,
+-- un-posted photos. chapter_photos is capped at 1000 rows (PostgREST caps
+-- a SETOF result anyway; this makes it explicit).
+-- ============================================================
+
+CREATE OR REPLACE FUNCTION public.profile_chapters(p_profile_id UUID)
+RETURNS TABLE (
+    month_start   DATE,
+    shot_count    INTEGER,
+    roll_count    INTEGER,
+    cover_paths   TEXT[],
+    first_shot_at TIMESTAMPTZ,
+    last_shot_at  TIMESTAMPTZ
+)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+    WITH source AS (
+        SELECT p.id, p.taken_at, p.roll_id,
+               COALESCE(p.thumb_path, p.storage_path) AS display_path
+        FROM public.photos p
+        WHERE auth.uid() = p_profile_id
+          AND p.user_id = p_profile_id
+          AND p.develops_at <= now()
+
+        UNION ALL
+
+        SELECT p.id, po.taken_at, p.roll_id,
+               COALESCE(po.thumb_path, po.storage_path) AS display_path
+        FROM public.posts po
+        JOIN public.photos p ON p.id = po.photo_id
+        WHERE auth.uid() <> p_profile_id
+          AND po.user_id = p_profile_id
+          AND NOT po.hidden
+          AND NOT public.is_blocked_either_way(auth.uid(), po.user_id)
+          AND public.covered_post_visible(auth.uid(), po.user_id, po.created_at)
+    ),
+    bucketed AS (
+        SELECT
+            date_trunc('month', (taken_at - interval '4 hours') AT TIME ZONE 'utc')::date AS bucket_month,
+            taken_at, roll_id, display_path
+        FROM source
+    ),
+    ranked_covers AS (
+        SELECT bucket_month, display_path,
+               row_number() OVER (PARTITION BY bucket_month ORDER BY taken_at DESC) AS rn
+        FROM bucketed
+    )
+    SELECT
+        b.bucket_month,
+        count(*)::integer,
+        count(DISTINCT b.roll_id) FILTER (WHERE b.roll_id IS NOT NULL)::integer,
+        COALESCE(
+            (SELECT array_agg(rc.display_path ORDER BY rc.rn)
+             FROM ranked_covers rc
+             WHERE rc.bucket_month = b.bucket_month AND rc.rn <= 4),
+            ARRAY[]::text[]
+        ),
+        min(b.taken_at),
+        max(b.taken_at)
+    FROM bucketed b
+    GROUP BY b.bucket_month
+    ORDER BY b.bucket_month DESC;
+$$;
+
+REVOKE ALL ON FUNCTION public.profile_chapters(UUID) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.profile_chapters(UUID) FROM anon;
+GRANT EXECUTE ON FUNCTION public.profile_chapters(UUID) TO authenticated;
+
+CREATE OR REPLACE FUNCTION public.chapter_photos(p_profile_id UUID, p_month_start DATE)
+RETURNS TABLE (
+    id           UUID,
+    taken_at     TIMESTAMPTZ,
+    thumb_path   TEXT,
+    feed_path    TEXT,
+    storage_path TEXT,
+    roll_id      UUID,
+    roll_name    TEXT
+)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+    WITH source AS (
+        SELECT p.id, p.taken_at, p.thumb_path, p.feed_path, p.storage_path, p.roll_id
+        FROM public.photos p
+        WHERE auth.uid() = p_profile_id
+          AND p.user_id = p_profile_id
+          AND p.develops_at <= now()
+
+        UNION ALL
+
+        SELECT p.id, po.taken_at, po.thumb_path, po.feed_path, po.storage_path, p.roll_id
+        FROM public.posts po
+        JOIN public.photos p ON p.id = po.photo_id
+        WHERE auth.uid() <> p_profile_id
+          AND po.user_id = p_profile_id
+          AND NOT po.hidden
+          AND NOT public.is_blocked_either_way(auth.uid(), po.user_id)
+          AND public.covered_post_visible(auth.uid(), po.user_id, po.created_at)
+    )
+    SELECT s.id, s.taken_at, s.thumb_path, s.feed_path, s.storage_path, s.roll_id, r.name
+    FROM source s
+    LEFT JOIN public.rolls r ON r.id = s.roll_id
+    WHERE date_trunc('month', (s.taken_at - interval '4 hours') AT TIME ZONE 'utc')::date = p_month_start
+    ORDER BY s.taken_at ASC
+    LIMIT 1000;
+$$;
+
+REVOKE ALL ON FUNCTION public.chapter_photos(UUID, DATE) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.chapter_photos(UUID, DATE) FROM anon;
+GRANT EXECUTE ON FUNCTION public.chapter_photos(UUID, DATE) TO authenticated;
+
+-- New hot-path index: both functions above filter posts by user_id and
+-- bucket/order by taken_at. posts_user_created_idx (above) covers user_id +
+-- created_at, a different column, so this is a genuinely new index.
+CREATE INDEX IF NOT EXISTS posts_user_taken_idx ON public.posts (user_id, taken_at DESC);
+
 -- set_displayed_badges(p_badge_ids): the only write path for a user's own
 -- displayed_badges selection. Zero-trust on input: pinned to auth.uid() (no
 -- p_user_id argument exists, so nothing to spoof), NULL clears back to the

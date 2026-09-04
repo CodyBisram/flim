@@ -447,7 +447,33 @@ The bump this section used to ask for has already happened. Status: `done`.
 
 ## 1.5, wanted but unbuilt
 
-- **Chapters**: monthly recaps, playable like a reveal. Confirmed want.
+- **Chapters: BUILT 2026-09-03 on branch `chapters`, not merged, not pushed.** Owner decisions
+  that day: months are LIVE AND GROWING (the current month plays now and grows as shots arrive,
+  not gated on the month ending); every month back to a person's first shot appears; everyone
+  who already exists gets a shelf. Because months are computed from `photos`, the backfill is
+  free: no data migration. Defaults set without an owner answer, change on his word: a month is
+  everything you shot including roll shots on your own page and only what you posted on someone
+  else's (the server enforces the profile grid's exact visibility); the recap picks fifteen on
+  device with Vision (aesthetics, faces, feature-print diversity, first and last shot always
+  kept), no manual swapping yet.
+  - Data: `profile_chapters(p_profile_id)` and `chapter_photos(p_profile_id, p_month_start)` in
+    `2026-09-03_chapters.sql`, folded into schema.sql, container-verified for every visibility
+    case and cross-checked against production counts. APPLIED to production 2026-09-03 on the
+    owner's word; both functions present, authenticated-only, definer, index in place.
+  - App: `ChapterService`, `ChapterShelfView` (3a, between the profile actions and the grid),
+    `ChapterRecapView` (3b opening card plus native-paging playback reusing the reveal's beat),
+    `ChapterCurator` (pure selection, tested) and `ChapterCuration` (the Vision actor).
+    `-chaptersPreviewDemo` is an offline simulator harness; `-seedChapters` seeds a signed-in
+    account. Twenty-three new tests. Full suite green on the branch bar the two known emoji
+    failures; Release builds.
+  - Two product calls the data side flagged: the month boundary is the Darkroom's 04:00 shift
+    fixed at UTC (the app has no per-user timezone), so a shot near local midnight at a month edge
+    can land in a different month than the Darkroom shows; and unsorted developed personal shots
+    count toward a month immediately. Both documented in the SQL; either is a small follow-up.
+  - Deferred: "Share as a contact sheet" is a wired stub with an inline "coming soon" (needs a
+    month layout on top of BrandedExport); manual pick swapping; device pass for Dynamic Type,
+    VoiceOver and real-photo curation quality (Vision behaves differently in the simulator).
+  - This is 1.6-sized. Merging it into main means deciding the version first.
 - **Look colour pass**: see `flim-look-gap-vs-lapse`. Decide the two-looks-in-the-feed question
   before the first parameter moves. Grain was tried and reverted 2026-09-03 (see item 1 at the
   top of this file). The two-looks question has been answered by events: flash falloff shipped
