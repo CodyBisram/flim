@@ -33,4 +33,40 @@ final class DevelopTimingTests: XCTestCase {
         )
         XCTAssertEqual(date, now.addingTimeInterval(roll))
     }
+
+    // MARK: - knownRevealAt fallback preference
+
+    /// A fresh `rollReveal` always wins, even when the caller also has a locally known reveal:
+    /// the server's answer is never second-guessed once it lands.
+    func testFreshRollRevealWinsOverKnownRevealAt() {
+        let fresh = Date(timeIntervalSince1970: 2_000_000)
+        let known = Date(timeIntervalSince1970: 3_000_000)
+        let date = PhotoService.developDate(
+            rollId: UUID(), rollReveal: fresh, knownRevealAt: known, now: now,
+            personalDelay: personal, rollDelay: roll
+        )
+        XCTAssertEqual(date, fresh)
+    }
+
+    /// When the fresh fetch failed (`rollReveal == nil`), the caller's own already-loaded
+    /// `Roll.revealAt` is preferred over the device clock, since it names the SAME fixed instant
+    /// every other photo in the roll resolved, rather than a new one made up from `now`.
+    func testKnownRevealAtWinsOverDeviceClockWhenFreshFetchFails() {
+        let known = Date(timeIntervalSince1970: 3_000_000)
+        let date = PhotoService.developDate(
+            rollId: UUID(), rollReveal: nil, knownRevealAt: known, now: now,
+            personalDelay: personal, rollDelay: roll
+        )
+        XCTAssertEqual(date, known)
+    }
+
+    /// Only once BOTH the fresh fetch and the locally known reveal are unavailable does this
+    /// fall back to the device clock.
+    func testDeviceClockIsOnlyTheLastResort() {
+        let date = PhotoService.developDate(
+            rollId: UUID(), rollReveal: nil, knownRevealAt: nil, now: now,
+            personalDelay: personal, rollDelay: roll
+        )
+        XCTAssertEqual(date, now.addingTimeInterval(roll))
+    }
 }

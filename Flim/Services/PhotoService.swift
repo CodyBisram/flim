@@ -142,7 +142,12 @@ final class PhotoService {
 
     /// Enqueues a captured frame to be processed with the chosen film look and uploaded.
     /// Shots are handled strictly one-at-a-time; `onFinish` runs after a successful save.
+    ///
+    /// - Parameter knownRevealAt: the caller's already-loaded `Roll.revealAt` for `rollId`, if
+    ///   any (see `developDate(forRoll:knownRevealAt:)`); passed straight through, unused for
+    ///   personal shots.
     func enqueueCapture(rawData: Data, stock: FilmStock, userId: UUID, rollId: UUID?,
+                        knownRevealAt: Date? = nil,
                         onFinish: @escaping (Photo) async -> Void) {
         let previous = pipeline
         pipeline = Task {
@@ -166,7 +171,7 @@ final class PhotoService {
             let filteredAt = ContinuousClock.now
 
             let photo = await captureAndUpload(imageData: processed, userId: userId, rollId: rollId,
-                                               gradedImage: graded)
+                                               gradedImage: graded, knownRevealAt: knownRevealAt)
             let finishedAt = ContinuousClock.now
 
             let waited = Self.seconds(queuedAt.duration(to: startedAt))
@@ -259,7 +264,8 @@ final class PhotoService {
     @discardableResult
     func captureAndUpload(imageData: Data, userId: UUID, rollId: UUID?,
                           retryOf pending: FailedUpload? = nil,
-                          gradedImage: CGImage? = nil) async -> Photo? {
+                          gradedImage: CGImage? = nil,
+                          knownRevealAt: Date? = nil) async -> Photo? {
         // A capture makes two round trips (storage upload, then the row insert) before inserting
         // into the shared list. Same class as createRoll: an INSERT of new content, so a
         // completion that outlives its account would splice the departing account's photo into
@@ -278,7 +284,7 @@ final class PhotoService {
         // policy, Swift's uuidString is uppercase, which would 403 the upload otherwise.
         let path = pending?.storagePath
             ?? "\(userId.uuidString.lowercased())/\(photoId.uuidString.lowercased()).\(format.pathExtension)"
-        let developsAt = await developDate(forRoll: rollId)
+        let developsAt = await developDate(forRoll: rollId, knownRevealAt: knownRevealAt)
 
         // Written to disk BEFORE the upload even starts, not only once it has failed. Without
         // this, killing the app between the storage upload succeeding and the row insert landing
@@ -1025,33 +1031,49 @@ final class PhotoService {
 
     /// When a freshly captured shot should develop. Personal shots use the short "instant"
     /// delay. Roll shots develop TOGETHER at a time fixed when the ROLL WAS CREATED
-    /// (created_at + delay), so the deadline is the same for everyone from the very start, 
+    /// (created_at + delay), so the deadline is the same for everyone from the very start,
     /// it does not depend on when the first photo is taken.
-    private func developDate(forRoll rollId: UUID?) async -> Date {
+    ///
+    /// - Parameter knownRevealAt: the roll's `revealAt` as the caller already has it locally
+    ///   (e.g. `RollService.rolls`), used only if the fresh fetch below fails outright. Without
+    ///   this, a mid-capture network blip fell back to `now + rollDelay` off the DEVICE clock,
+    ///   which can stamp one photo's `develops_at` early or late relative to the rest of the
+    ///   roll, since every other photo in it resolved the real `created_at`.
+    private func developDate(forRoll rollId: UUID?, knownRevealAt: Date? = nil) async -> Date {
         var reveal: Date?
         if let rollId {
-            reveal = (try? await rollRevealDate(rollId: rollId)) ?? nil
+            reveal = await rollRevealDateWithRetry(rollId: rollId)
         }
         return Self.developDate(
-            rollId: rollId, rollReveal: reveal, now: .now,
+            rollId: rollId, rollReveal: reveal, knownRevealAt: knownRevealAt, now: .now,
             personalDelay: personalDevelopDelay, rollDelay: rollDevelopDelay
         )
     }
 
     /// Pure develop-time policy (unit-tested): personal shots develop after `personalDelay`;
     /// roll shots use the roll's fixed `rollReveal` (created_at + delay) so the whole roll
-    /// unlocks together. `rollReveal` is nil only if the roll can't be read, then we fall
-    /// back to now + delay.
+    /// unlocks together. If the fresh fetch that produces `rollReveal` came back nil, prefer
+    /// `knownRevealAt` (the caller's already-loaded copy of the same fixed instant) over the
+    /// device clock; the clock is the last resort, used only when neither is available.
     /// `nonisolated` because it is pure policy: inputs in, a Date out, no access to any state on
     /// this class. Isolating the type would otherwise drag this along with it and force every
     /// caller, including the tests that exist precisely to exercise it without a service, onto the
     /// main actor for no reason.
     nonisolated static func developDate(
-        rollId: UUID?, rollReveal: Date?, now: Date,
+        rollId: UUID?, rollReveal: Date?, knownRevealAt: Date? = nil, now: Date,
         personalDelay: TimeInterval, rollDelay: TimeInterval
     ) -> Date {
         guard rollId != nil else { return now.addingTimeInterval(personalDelay) }
-        return rollReveal ?? now.addingTimeInterval(rollDelay)
+        return rollReveal ?? knownRevealAt ?? now.addingTimeInterval(rollDelay)
+    }
+
+    /// `rollRevealDate`, retried once before giving up. A single dropped request mid-capture
+    /// used to fall straight through to the device-clock fallback above; one retry is enough to
+    /// ride out a blip without meaningfully delaying the capture it's blocking.
+    private func rollRevealDateWithRetry(rollId: UUID) async -> Date? {
+        if let date = try? await rollRevealDate(rollId: rollId) { return date }
+        if let date = try? await rollRevealDate(rollId: rollId) { return date }
+        return nil
     }
 
     /// The roll's fixed reveal time: its `created_at` + the roll delay.

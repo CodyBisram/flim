@@ -211,7 +211,11 @@ struct CameraView: View {
                     // than folded into the Retry pill's own message, which only shows while
                     // something is still stuck.
                     if rollDevelopedFallbackToast {
-                        Label("That roll had already developed, so this shot went to your deck instead.",
+                        // `isRollDevelopedRefusal` only knows the insert was refused (Postgres
+                        // 42501), not why: a genuinely developed roll, a deleted one, or a
+                        // membership that was removed all look identical from here, so the copy
+                        // states the effect, not a cause it can't verify.
+                        Label("That roll isn't accepting shots anymore, so this one went to your deck instead.",
                               systemImage: "checkmark.circle.fill")
                             .flimFont(12, weight: .medium)
                             .foregroundStyle(.white)
@@ -279,7 +283,9 @@ struct CameraView: View {
         // selectedRoll is view-local state (persisted, but only restored once on appear), so a
         // roll created elsewhere has no other way to reach an already-mounted CameraView.
         .onReceive(NotificationCenter.default.publisher(for: .selectCameraRoll)) { note in
-            if let roll = note.object as? Roll { selectedRoll = roll }
+            // Same rule as `restoreSelectedRoll`: a developed roll can't take new shots, so it
+            // is never a valid camera target, however it arrives.
+            if let roll = note.object as? Roll, !roll.isDeveloped { selectedRoll = roll }
         }
         .sheet(isPresented: $showRollPicker) {
             RollPickerSheet(rolls: rolls.rolls, selected: $selectedRoll)
@@ -497,21 +503,32 @@ struct CameraView: View {
                             .lineLimit(1)
                             .truncationMode(.tail)
                         if let selectedRoll {
-                            RollClosingLabel(roll: selectedRoll)
+                            // Defensive: `selectedRoll` should never hold a developed roll (both
+                            // `.onReceive(.selectCameraRoll)` and `restoreSelectedRoll` gate on
+                            // `isDeveloped`), but if it ever does, this is the same tertiary
+                            // treatment `RollPickerSheet` gives a closed roll rather than a
+                            // countdown to a reveal that already happened.
+                            if selectedRoll.isDeveloped {
+                                Text("· developed")
+                                    .flimFont(12)
+                            } else {
+                                RollClosingLabel(roll: selectedRoll)
+                            }
                         }
                         Image(systemName: "chevron.down")
                             .font(.system(size: 10, weight: .semibold))
                     }
                     // A roll target should be unmistakable at a glance, accent-tinted with a
-                    // matching ring when a roll is selected; neutral white for Personal.
-                    .foregroundStyle(selectedRoll == nil ? .white : accent)
+                    // matching ring when a roll is selected; neutral white for Personal; muted
+                    // tertiary for the developed-roll edge case above.
+                    .foregroundStyle(selectedRoll == nil ? .white : (selectedRoll?.isDeveloped == true ? FlimTheme.textTertiary : accent))
                     .padding(.horizontal, 14)
                     .padding(.vertical, 9)
                 }
                 .contentShape(Capsule())
                 .glassCapsule(interactive: true)
                 .overlay(
-                    Capsule().stroke(accent.opacity(selectedRoll == nil ? 0 : 0.55), lineWidth: 1)
+                    Capsule().stroke(accent.opacity(selectedRoll == nil || selectedRoll?.isDeveloped == true ? 0 : 0.55), lineWidth: 1)
                 )
                 .layoutPriority(-1)
                 .accessibilityLabel("Send photos to")
@@ -754,10 +771,14 @@ struct CameraView: View {
             // Read the current roll + film selection at capture time.
             let rollId = selectedRoll?.id
             let rollName = selectedRoll?.name
+            // The already-loaded reveal instant for this roll, used only if the fresh fetch
+            // `enqueueCapture` makes for it fails outright (see `PhotoService.developDate`).
+            let knownRevealAt = selectedRoll?.revealAt
             let stock = selectedStock
             // Serial pipeline: bakes the film look in + uploads one shot at a time, so a
             // rapid burst can't race and fail. Fires a local develop reminder on success.
-            photos.enqueueCapture(rawData: data, stock: stock, userId: userId, rollId: rollId) { photo in
+            photos.enqueueCapture(rawData: data, stock: stock, userId: userId, rollId: rollId,
+                                  knownRevealAt: knownRevealAt) { photo in
                 await refreshUnsorted()   // keep the "to sort" count live as shots come in
                 guard notificationsEnabled else { return }
                 // Gated on the PHOTO's own rollId, not the roll selected at capture time: a roll

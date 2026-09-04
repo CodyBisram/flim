@@ -15,6 +15,7 @@ struct RollsView: View {
     var scrollToTop: Int = 0
     @Environment(AuthService.self) private var auth
     @Environment(RollService.self) private var rolls
+    @Environment(NotificationService.self) private var notifications
     @Environment(PhotoService.self) private var photos
     @State private var showCreate = false
     @State private var showJoin = false
@@ -138,6 +139,9 @@ struct RollsView: View {
                 Task {
                     do {
                         try await rolls.leaveRoll(rollId: roll.id, userId: uid)
+                        // Same as the roll screen's own Leave: the local "your roll developed"
+                        // reminder was scheduled at capture, and a roll you left must not fire it.
+                        notifications.cancelRollDevelopNotification(rollId: roll.id)
                         await load()
                     } catch {
                         // The leave never landed server-side; the roll must stay put, not
@@ -759,11 +763,28 @@ struct RollsView: View {
 
     /// Server-side counts for every roll the racks and meta lines describe: the open set and
     /// the Ready set. The archive shows no counts, so it costs nothing here.
+    ///
+    /// One round trip (or two, for a still-open roll) per roll, run concurrently rather than
+    /// awaited one roll at a time: each `group.addTask` only fetches, the actual writes into
+    /// `frameCounts`/`myFrameCounts` happen back here as results stream in, so they land on the
+    /// main actor exactly like a sequential loop's would.
     private func refreshFrameCounts(userId: UUID) async {
-        for roll in openRolls + readyRolls {
-            frameCounts[roll.id] = await photos.rollTotalShotCount(rollId: roll.id)
-            if !roll.isDeveloped {
-                myFrameCounts[roll.id] = await photos.rollPhotoCount(rollId: roll.id, userId: userId)
+        let candidates = openRolls + readyRolls
+        await withTaskGroup(of: (id: UUID, total: Int, mine: Int?).self) { group in
+            for roll in candidates {
+                let rollId = roll.id
+                let needsMine = !roll.isDeveloped
+                group.addTask {
+                    let total = await photos.rollTotalShotCount(rollId: rollId)
+                    let mine = needsMine ? await photos.rollPhotoCount(rollId: rollId, userId: userId) : nil
+                    return (id: rollId, total: total, mine: mine)
+                }
+            }
+            for await result in group {
+                frameCounts[result.id] = result.total
+                if let mine = result.mine {
+                    myFrameCounts[result.id] = mine
+                }
             }
         }
     }
@@ -783,15 +804,24 @@ struct RollsView: View {
         // and this screen is the one place that reliably knows the current set.
         RollLiveActivity.reconcile(activeRollIds: rolls.rolls.map(\.id))
         let candidates = RollLiveActivity.rollsNeedingActivity(rolls.rolls, revealAt: \.revealAt)
-        for roll in candidates {
-            let shots: Int
-            if let cached = frameCounts[roll.id] {
-                shots = cached
-            } else {
-                shots = await photos.rollTotalShotCount(rollId: roll.id)
+        // Only the shot-count fetch (when not already cached) runs inside the task, one per
+        // candidate concurrently rather than one after another; `RollLiveActivity.sync` itself
+        // is called back here as each result streams in, on the main actor, same as before.
+        await withTaskGroup(of: (roll: Roll, shots: Int).self) { group in
+            for roll in candidates {
+                if let cached = frameCounts[roll.id] {
+                    group.addTask { (roll, cached) }
+                } else {
+                    group.addTask {
+                        let shots = await photos.rollTotalShotCount(rollId: roll.id)
+                        return (roll, shots)
+                    }
+                }
             }
-            RollLiveActivity.sync(rollId: roll.id, rollName: roll.name, revealAt: roll.revealAt,
-                                  shotCount: shots, developFrom: roll.createdAt)
+            for await (roll, shots) in group {
+                RollLiveActivity.sync(rollId: roll.id, rollName: roll.name, revealAt: roll.revealAt,
+                                      shotCount: shots, developFrom: roll.createdAt)
+            }
         }
     }
 

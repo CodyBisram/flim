@@ -114,8 +114,19 @@ struct JoinRollView: View {
                     .flimFont(26, weight: .thin, relativeTo: .title3)
                     .foregroundStyle(.white)
             }
-            RevealPromiseNote()
-                .padding(.horizontal, 4)
+            // A joined roll can turn out already developed if the server accepted the join
+            // (older backend, or the roll finished mid-request): the reveal promise below would
+            // be a lie, so this says what actually happened instead.
+            if roll.isDeveloped {
+                Text("This roll already developed. You can look through the photos now.")
+                    .flimFont(13, relativeTo: .subheadline)
+                    .foregroundStyle(FlimTheme.textSecondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 4)
+            } else {
+                RevealPromiseNote()
+                    .padding(.horizontal, 4)
+            }
             Spacer()
             PrimaryButton(title: "Done") { dismiss() }
         }
@@ -140,7 +151,10 @@ struct JoinRollView: View {
             CameraRollSelection.select(roll, for: userId)
             Haptics.success()
         } catch {
-            self.error = error.localizedDescription
+            // `RollError` is the app's own mapped copy for a recognized `join_roll` failure
+            // (not found, full, already developed); anything else is a raw network/Postgres
+            // error whose `localizedDescription` is developer text, not something to show.
+            self.error = (error as? RollError)?.errorDescription ?? UserFacingError.genericMessage
         }
         isJoining = false
     }

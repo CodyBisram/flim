@@ -172,6 +172,49 @@ actually do. Worth deciding before more is built on top of rolls.
 
 ## Next up
 
+### done 2026-09-04: the rolls audit, and what it changed
+
+Three read-only passes (correctness, flows, production data). The data pass is BLOCKED on a fresh
+management token; the other two came back SHIP WITH NITS plus one BLOCK, all fixed the same day:
+
+- **BLOCK, live in 337:** the Members sheet's swipe-to-leave and swipe-to-remove bypassed
+  `RollService.leaveRoll`, swallowed failures, closed the sheet as if you had left, and never
+  ended the Live Activity, refreshed the widget, or cancelled the develop reminder. Now routed
+  through the service, success-only dismiss, rollback plus toast on failure. The Rolls tab's
+  long-press leave also cancels the reminder now.
+- **Joining a developed roll** silently succeeded and the app promised a reveal that had already
+  happened, then auto-played it. `join_roll` now raises `roll_developed` (migration
+  `2026-09-04_join_roll_refuses_developed.sql`, NOT YET APPLIED); the app maps it to copy, and
+  the join success screen no longer promises a reveal for a developed roll.
+- **Camera** no longer selects a developed roll from the join notification, the pill shows
+  "· developed" if it ever holds one, and a refused roll shot says the roll "isn't accepting
+  shots anymore" instead of asserting a cause it cannot know.
+- **Bursts read as duplicates** because the credit line showed minutes; adjacent frames that
+  share a minute now show seconds (`FrameCredit`, tested).
+- Raw server text no longer reaches the join and create screens.
+- `developDate(forRoll:)` retries once and prefers the locally known reveal over the device
+  clock; Rolls-tab per-roll refreshes run concurrently; develop push pages its backlog.
+- Chapters recap opening card swipes to dismiss via a shared modifier extracted from the avatar
+  viewer. Playback stays X-only, like the reveal and the photo viewer, which both removed their
+  vertical drag on purpose (it damped native paging). Swipe-out during playback needs a UIKit
+  `require(toFail:)` against the pager's scroll view; its own item if wanted.
+
+**Recommended for stable roll use, in order:**
+1. Next 1.5.1 build: everything above. Apply the join migration first; deploy send-develop-push.
+2. 1.5.2: a real `rolls.reveal_at` column as the single source of truth. Today the reveal is
+   `created_at + 12h` computed in three places (a client constant, `is_roll_developed()`, and each
+   photo's `develops_at` written by the client), which is why extending a roll needed two hand
+   edits and why a lock-screen card can show a stale time until the app opens. One column, one
+   reader, and "extend this roll" becomes a legitimate feature.
+3. 1.5.2: push-driven Live Activity updates (a server change reaching the lock screen without an
+   app open), the same gap seen from the other side.
+4. Product call: the develop push reaches only members who did not shoot; shooters rely on a
+   local reminder scheduled at capture, which is stale after any reveal change. One server push
+   per member, deduplicated against the reminder, would make "did everyone get it" a yes.
+5. Upstream burst handling in the sort deck (the ML roadmap's near-duplicate grouping) is the
+   real answer to "duplicates", beyond the seconds label.
+6. The production data audit, once a token arrives: integrity, reveal reach, membership.
+
 ### done 2026-09-03: three device-found bugs from the Islands roll
 
 - **The 100-of-122 was caused by a hand SQL edit the same day**, not only the viewer copy: the

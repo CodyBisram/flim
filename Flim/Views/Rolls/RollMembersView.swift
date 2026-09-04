@@ -7,6 +7,7 @@ struct RollMembersView: View {
     @Environment(RollService.self) private var rollService
     @Environment(AuthService.self) private var auth
     @Environment(FeedService.self) private var feed
+    @Environment(NotificationService.self) private var notifications
     @Environment(\.dismiss) private var dismiss
 
     @State private var members: [AppUser] = []
@@ -19,16 +20,56 @@ struct RollMembersView: View {
     /// the consequence. Worse for Remove, where the person being removed is not the one tapping.
     @State private var memberToRemove: AppUser?
     @State private var confirmLeave = false
+    /// The sheet's one top-slot toast, same shape as RollsView/RollDetailView's: a failed leave
+    /// or remove must say so and leave the row retryable, not just close as if it worked.
+    @State private var toastMessage: String?
+    @State private var toastDismiss: Task<Void, Never>?
 
     private var isCreator: Bool { auth.currentUser?.id == roll.createdBy }
 
-    private func remove(_ member: AppUser, leaving: Bool = false) {
+    private func showToast(_ message: String) {
+        withAnimation { toastMessage = message }
+        toastDismiss?.cancel()
+        toastDismiss = Task {
+            try? await Task.sleep(for: .seconds(2.4))
+            guard !Task.isCancelled else { return }
+            withAnimation { toastMessage = nil }
+        }
+    }
+
+    /// The current user leaving the roll. Goes through `RollService.leaveRoll` (not a bare
+    /// `removeMember`) so a success also drops the roll from `rolls`/`memberCounts`/`coverPaths`,
+    /// ends its Live Activity and refreshes the widget the way every other leave path does.
+    /// Dismisses this sheet only once the server confirms it: a failed leave must not read as a
+    /// successful one.
+    private func leave(_ member: AppUser) {
+        guard let uid = auth.currentUser?.id else { return }
         Task {
-            try? await rollService.removeMember(rollId: roll.id, userId: member.id)
-            if leaving {
+            do {
+                try await rollService.leaveRoll(rollId: roll.id, userId: uid)
+                notifications.cancelRollDevelopNotification(rollId: roll.id)
                 dismiss()
-            } else {
-                members.removeAll { $0.id == member.id }
+            } catch {
+                Haptics.error()
+                showToast("Couldn't leave the roll. Check your connection and try again.")
+            }
+        }
+    }
+
+    /// Creator-initiated removal of someone else. Removed from the list optimistically so the
+    /// swipe reads as immediate, restored on failure so a rejected removal doesn't silently show
+    /// the person gone while the server still lists them.
+    private func removeMember(_ member: AppUser) {
+        guard let index = members.firstIndex(where: { $0.id == member.id }) else { return }
+        let removed = members.remove(at: index)
+        Task {
+            do {
+                try await rollService.removeMember(rollId: roll.id, userId: member.id)
+                rollService.recordMemberRemoved(rollId: roll.id)
+            } catch {
+                members.insert(removed, at: min(index, members.count))
+                Haptics.error()
+                showToast("Couldn't remove @\(member.username ?? "this person"). Check your connection and try again.")
             }
         }
     }
@@ -160,7 +201,7 @@ struct RollMembersView: View {
                             ConsequenceSheet(consequence: .removeMember(
                                 handle: "@\(member.username ?? "this person")",
                                 rollName: roll.name, theirShots: nil)) {
-                                remove(member)
+                                removeMember(member)
                             }
                         }
                         .sheet(isPresented: $confirmLeave) {
@@ -168,10 +209,20 @@ struct RollMembersView: View {
                                 // Resolved from the loaded list rather than captured at swipe
                                 // time, so this cannot act on a stale row.
                                 if let me = members.first(where: { $0.id == auth.currentUser?.id }) {
-                                    remove(me, leaving: true)
+                                    leave(me)
                                 }
                             }
                         }
+                    }
+                }
+                .overlay(alignment: .top) {
+                    if let toastMessage {
+                        Label(toastMessage, systemImage: "exclamationmark.triangle.fill")
+                            .flimFont(13.5, weight: .medium, relativeTo: .subheadline)
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 16).padding(.vertical, 10)
+                            .background(.ultraThinMaterial, in: Capsule())
+                            .transition(.move(edge: .top).combined(with: .opacity))
                     }
                 }
             }

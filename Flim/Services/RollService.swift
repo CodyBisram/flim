@@ -111,8 +111,8 @@ final class RollService {
         struct JoinParams: Encodable { let p_code: String }
 
         do {
-            // SECURITY DEFINER RPC does the lookup, 10-member cap, and membership
-            // insert atomically, a not-yet-member can't read the rolls table directly.
+            // SECURITY DEFINER RPC does the lookup, the member cap (`Roll.memberCap`), and
+            // membership insert atomically, a not-yet-member can't read the rolls table directly.
             let roll: Roll = try await supabase
                 .rpc("join_roll", params: JoinParams(p_code: inviteCode))
                 .execute()
@@ -140,6 +140,7 @@ final class RollService {
         let desc = description.lowercased()
         if desc.contains("roll_full") { return .full }
         if desc.contains("roll_not_found") { return .notFound }
+        if desc.contains("roll_developed") { return .developed }
         return nil
     }
 
@@ -389,6 +390,17 @@ final class RollService {
             .execute()
     }
 
+    /// Reflects a creator-initiated `removeMember` locally once the server confirms it: the
+    /// roster label (and anything else reading `memberCounts`) would otherwise lag until the
+    /// next `fetchRolls`. Persists the snapshot for parity with every other local mutation,
+    /// even though `memberCounts` itself isn't part of what gets serialized.
+    func recordMemberRemoved(rollId: UUID) {
+        if let current = memberCounts[rollId] {
+            memberCounts[rollId] = max(0, current - 1)
+        }
+        persistSnapshot()
+    }
+
     // MARK: - Helpers
 
     private func joinRollDirect(rollId: UUID, userId: UUID) async throws {
@@ -428,12 +440,13 @@ func rollPickerDestinations(from rolls: [Roll], now: Date, grace: TimeInterval =
 }
 
 enum RollError: LocalizedError {
-    case notFound, full
+    case notFound, full, developed
 
     var errorDescription: String? {
         switch self {
         case .notFound: "No roll found with that invite code."
         case .full: "This roll is full (max \(Roll.memberCap) members)."
+        case .developed: "This roll already developed. It's closed to new members, but whoever invited you can share the photos."
         }
     }
 }

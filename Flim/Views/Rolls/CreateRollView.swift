@@ -167,7 +167,9 @@ struct CreateRollView: View {
             CameraRollSelection.select(roll, for: userId)
             Haptics.success()
         } catch {
-            self.error = error.localizedDescription
+            // Nothing `createRoll` throws is mapped to friendly copy the way `joinRoll` is, so
+            // any failure here is a raw network/Postgres error, not something to show verbatim.
+            self.error = UserFacingError.genericMessage
         }
         isCreating = false
     }

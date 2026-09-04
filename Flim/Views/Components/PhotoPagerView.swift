@@ -797,7 +797,7 @@ struct PhotoPagerView: View {
                     .buttonStyle(.plain)
                     .disabled(memberNames[photo.userId] == nil)
 
-                    Text("\(selection + 1) of \(photos.count) · \(photo.takenAt.formatted(date: .omitted, time: .shortened))")
+                    Text("\(selection + 1) of \(photos.count) · \(FrameCredit.timeLabel(for: photo.takenAt, index: selection, in: photos.map(\.takenAt)))")
                         .flimFont(12.5, relativeTo: .footnote)
                         .foregroundStyle(Color(white: 0.6))
                 }

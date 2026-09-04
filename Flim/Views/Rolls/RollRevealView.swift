@@ -398,7 +398,10 @@ struct RollRevealView: View {
                 .accessibilityHint("Opens @\(name)'s profile")
             }
             if let photo = currentPhoto {
-                Text("\(viewModel.index + 1) of \(viewModel.deck.count) · \(photo.takenAt.formatted(date: .omitted, time: .shortened))")
+                let timeLabel = FrameCredit.timeLabel(
+                    for: photo.takenAt, index: viewModel.index,
+                    in: viewModel.deck.map(\.takenAt))
+                Text("\(viewModel.index + 1) of \(viewModel.deck.count) · \(timeLabel)")
                     .flimFont(12.5, relativeTo: .footnote)
                     .foregroundStyle(Color(white: 0.6))
             }
