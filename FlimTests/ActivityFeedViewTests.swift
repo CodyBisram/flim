@@ -131,6 +131,21 @@ final class ActivityActionTextTests: XCTestCase {
     func testRollPhotoReactionSaysYourPhoto() {
         XCTAssertEqual(activityActionText(.rollPhotoReaction("🔥")), "reacted 🔥 to your photo")
     }
+
+    /// `.threadComment` (the "also commented" thread push, closing the last push-only gap) reads
+    /// distinctly from `.comment`: "also", never the plain "commented", so a thread participant
+    /// doesn't mistake it for their own photo getting commented on.
+    @MainActor
+    func testThreadCommentSaysAlsoCommented() {
+        XCTAssertEqual(activityActionText(.threadComment("count me in")),
+                       "also commented: “count me in”")
+    }
+
+    @MainActor
+    func testRollPhotoThreadCommentNamesARollPhoto() {
+        XCTAssertEqual(activityActionText(.rollPhotoThreadComment("same here")),
+                       "also commented on a roll photo: “same here”")
+    }
 }
 
 /// `activityDestination(for:)`: where tapping an Activity row should go. The regression this
@@ -216,5 +231,26 @@ final class ActivityDestinationTests: XCTestCase {
         let actor = profile()
         let item = ActivityItem(kind: .follow, actor: actor, date: .now, postId: nil)
         XCTAssertEqual(activityDestination(for: item), .profile(userId: actor.id))
+    }
+
+    /// A thread comment on a post you commented on but do not own routes exactly like an ordinary
+    /// `.comment`: the post, with the thread open (`PostDetailView` always shows its own comments).
+    func testPostThreadCommentRoutesToThePost() {
+        let author = profile("author")
+        let p = post(userId: author.id)
+        let item = ActivityItem(kind: .threadComment("me too"), actor: profile(), date: .now,
+                                 postId: p.id, post: p, postAuthor: author)
+        XCTAssertEqual(activityDestination(for: item), .post(FeedItem(post: p, author: author)))
+    }
+
+    /// A roll-photo thread comment routes to the roll and photo WITH comments, same as
+    /// `.rollPhotoComment` and `.mentioned`: it has a thread worth opening to.
+    func testRollPhotoThreadCommentRoutesToTheRollAndPhotoWithComments() {
+        let rollId = UUID()
+        let photoId = UUID()
+        let item = ActivityItem(kind: .rollPhotoThreadComment("same here"), actor: profile(), date: .now,
+                                 postId: nil, post: nil, postAuthor: nil,
+                                 rollId: rollId, rollPhotoId: photoId, rollPhotoDisplayPath: "photo.jpg")
+        XCTAssertEqual(activityDestination(for: item), .roll(rollId: rollId, photoId: photoId, comments: true))
     }
 }

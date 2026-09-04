@@ -196,6 +196,15 @@ struct ActivityItem: Identifiable {
         /// Someone reacted to a roll photo you own, never your own reaction. The roll-photo analog
         /// of `.like`, matching the reveal's pull-back-loop push.
         case rollPhotoReaction(String)
+        /// Someone else commented on a POST you commented on but do not own, after your own first
+        /// comment there. Matches `send-social-push`'s thread-participant push ("{name} also
+        /// commented"), which had no Activity row at all before this: the owner's `.comment` row
+        /// only reaches the post's owner, never a fellow commenter. Body of their comment.
+        case threadComment(String)
+        /// The roll-photo analog of `.threadComment`: someone else commented on a roll PHOTO you
+        /// commented on but do not own, after your own first comment on that photo. Matches
+        /// `send-social-push`'s roll-photo thread push ("{name} commented" / "N new comments").
+        case rollPhotoThreadComment(String)
     }
     let id = UUID()
     let kind: Kind

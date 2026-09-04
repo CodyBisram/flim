@@ -1774,34 +1774,101 @@ final class FeedService {
         // over-match, "@bob" also matches "@bobby"), then re-checked with the exact same
         // word-boundary parser the composer and comment rendering use, so the count can never be
         // higher than what the list itself would show.
+        // Comment ids already counted above as a mention, so the thread-comment counts below can
+        // apply the same "the mention row wins" dedup as `shouldIncludeThreadComment` / the list
+        // itself, and the badge can never be higher than what Activity would actually show.
+        var mentionedCommentIds: Set<UUID> = []
         if let username = await fetchProfile(id: userId)?.username, !username.isEmpty {
             let pattern = "%@\(username)%"
             let me = username.lowercased()
 
-            struct PostMentionRow: Decodable { let body: String; let posts: Owner?
+            struct PostMentionRow: Decodable { let id: UUID; let body: String; let posts: Owner?
                 struct Owner: Decodable { let user_id: UUID }
             }
             let postMentions: [PostMentionRow] = (try? await supabase.from("post_comments")
-                .select("body, posts(user_id)")
+                .select("id, body, posts(user_id)")
                 .ilike("body", value: pattern)
                 .neq("user_id", value: userId.uuidString)
                 .gt("created_at", value: sinceStr).execute().value) ?? []
-            total += postMentions.filter {
+            let matchedPostMentions = postMentions.filter {
                 $0.posts?.user_id != userId && mentionedUsernames(in: $0.body).contains(me)
-            }.count
+            }
+            total += matchedPostMentions.count
+            mentionedCommentIds.formUnion(matchedPostMentions.map(\.id))
 
-            struct PhotoMentionRow: Decodable { let body: String; let photos: Owner?
+            struct PhotoMentionRow: Decodable { let id: UUID; let body: String; let photos: Owner?
                 struct Owner: Decodable { let user_id: UUID }
             }
             let photoMentions: [PhotoMentionRow] = (try? await supabase.from("photo_comments")
-                .select("body, photos(user_id)")
+                .select("id, body, photos(user_id)")
                 .ilike("body", value: pattern)
                 .neq("user_id", value: userId.uuidString)
                 .gt("created_at", value: sinceStr).execute().value) ?? []
-            total += photoMentions.filter {
+            let matchedPhotoMentions = photoMentions.filter {
                 $0.photos?.user_id != userId && mentionedUsernames(in: $0.body).contains(me)
+            }
+            total += matchedPhotoMentions.count
+            mentionedCommentIds.formUnion(matchedPhotoMentions.map(\.id))
+        }
+
+        // Comments on a post/roll photo you commented on but do not own, after your own first
+        // comment there, from someone else; `activityPostThreadComments` /
+        // `activityRollPhotoThreadComments` are the matching Activity-list sources, same "badge
+        // can't disagree with the list" reasoning as everything above, including the same
+        // mention dedup (`mentionedCommentIds`, populated just above) and the same `.limit(40)`
+        // bound on the caller's own comments deciding which posts/photos are in scope at all.
+        struct OwnPostComment: Decodable { let post_id: UUID; let created_at: Date; let posts: Owner?
+            struct Owner: Decodable { let user_id: UUID }
+        }
+        let ownPostComments: [OwnPostComment] = (try? await supabase.from("post_comments")
+            .select("post_id, created_at, posts(user_id)")
+            .eq("user_id", value: userId.uuidString)
+            .order("created_at", ascending: false).limit(40).execute().value) ?? []
+        var postFirstCommentDate: [UUID: Date] = [:]
+        for row in ownPostComments {
+            guard let author = row.posts?.user_id, author != userId else { continue }
+            postFirstCommentDate[row.post_id] = min(postFirstCommentDate[row.post_id] ?? row.created_at, row.created_at)
+        }
+        if !postFirstCommentDate.isEmpty {
+            struct ThreadRow: Decodable { let id: UUID; let user_id: UUID; let created_at: Date; let post_id: UUID }
+            let rows: [ThreadRow] = (try? await supabase.from("post_comments")
+                .select("id, user_id, created_at, post_id")
+                .in("post_id", values: postFirstCommentDate.keys.map(\.uuidString))
+                .neq("user_id", value: userId.uuidString)
+                .gt("created_at", value: sinceStr).execute().value) ?? []
+            total += rows.filter { r in
+                guard let firstDate = postFirstCommentDate[r.post_id], r.created_at > firstDate else { return false }
+                return Self.shouldIncludeThreadComment(
+                    authorId: r.user_id, viewerId: userId, commentId: r.id, mentionedCommentIds: mentionedCommentIds)
             }.count
         }
+
+        struct OwnPhotoComment: Decodable { let photo_id: UUID; let created_at: Date; let photos: Owner?
+            struct Owner: Decodable { let user_id: UUID }
+        }
+        let ownPhotoComments: [OwnPhotoComment] = (try? await supabase.from("photo_comments")
+            .select("photo_id, created_at, photos(user_id)")
+            .eq("user_id", value: userId.uuidString)
+            .order("created_at", ascending: false).limit(40).execute().value) ?? []
+        var photoFirstCommentDate: [UUID: Date] = [:]
+        for row in ownPhotoComments {
+            guard let owner = row.photos?.user_id, owner != userId else { continue }
+            photoFirstCommentDate[row.photo_id] = min(photoFirstCommentDate[row.photo_id] ?? row.created_at, row.created_at)
+        }
+        if !photoFirstCommentDate.isEmpty {
+            struct ThreadRow: Decodable { let id: UUID; let user_id: UUID; let created_at: Date; let photo_id: UUID }
+            let rows: [ThreadRow] = (try? await supabase.from("photo_comments")
+                .select("id, user_id, created_at, photo_id")
+                .in("photo_id", values: photoFirstCommentDate.keys.map(\.uuidString))
+                .neq("user_id", value: userId.uuidString)
+                .gt("created_at", value: sinceStr).execute().value) ?? []
+            total += rows.filter { r in
+                guard let firstDate = photoFirstCommentDate[r.photo_id], r.created_at > firstDate else { return false }
+                return Self.shouldIncludeThreadComment(
+                    authorId: r.user_id, viewerId: userId, commentId: r.id, mentionedCommentIds: mentionedCommentIds)
+            }.count
+        }
+
         return total
     }
 
@@ -1820,6 +1887,11 @@ final class FeedService {
         /// the same photo the push would have, not just the roll.
         var rollPhotoId: UUID? = nil
         var rollPhotoDisplayPath: String? = nil
+        /// Set only on `.mentioned`, `.threadComment`, and `.rollPhotoThreadComment` raws: the
+        /// underlying comment row's own id, so a thread-comment raw that turns out to already be
+        /// represented as a mention (the mention row wins) can be found and dropped, see
+        /// `shouldIncludeThreadComment` below.
+        var commentId: UUID? = nil
     }
 
     func fetchActivity(userId: UUID) async -> [ActivityItem] {
@@ -1840,6 +1912,8 @@ final class FeedService {
         async let rollCommentRaws = activityRollPhotoComments(userId: userId)
         async let rollReactionRaws = activityRollPhotoReactions(userId: userId)
         async let mentionRaws = activityMentions(userId: userId)
+        async let postThreadRaws = activityPostThreadComments(userId: userId)
+        async let rollThreadRaws = activityRollPhotoThreadComments(userId: userId)
 
         await blockedDone
         var raws: [ActivityRaw]
@@ -1855,6 +1929,8 @@ final class FeedService {
             raws += try await rollCommentRaws
             raws += try await rollReactionRaws
             raws += try await mentionRaws
+            raws += try await postThreadRaws
+            raws += try await rollThreadRaws
             guard AccountEpoch.isCurrent(epoch) else { return [] }
             activityError = nil
         } catch {
@@ -1865,6 +1941,24 @@ final class FeedService {
             Self.log.error("fetchActivity failed: \(String(describing: error), privacy: .public)")
             activityError = message
             return []
+        }
+
+        // A thread-comment raw whose comment is already represented as a `.mentioned` row is
+        // dropped, the mention row wins; see `shouldIncludeThreadComment`.
+        let mentionedCommentIds = Set(raws.compactMap { raw -> UUID? in
+            guard case .mentioned = raw.kind else { return nil }
+            return raw.commentId
+        })
+        raws.removeAll { raw in
+            switch raw.kind {
+            case .threadComment, .rollPhotoThreadComment:
+                guard let commentId = raw.commentId else { return false }
+                return !Self.shouldIncludeThreadComment(
+                    authorId: raw.actorId, viewerId: userId, commentId: commentId,
+                    mentionedCommentIds: mentionedCommentIds)
+            default:
+                return false
+            }
         }
 
         raws.removeAll { blockedIds.contains($0.actorId) }
@@ -2141,12 +2235,12 @@ final class FeedService {
 
     private func activityMentionsInPostComments(userId: UUID, username: String) async throws -> [ActivityRaw] {
         struct C: Decodable {
-            let user_id: UUID; let body: String; let created_at: Date; let post_id: UUID
+            let id: UUID; let user_id: UUID; let body: String; let created_at: Date; let post_id: UUID
             let posts: Meta?
             struct Meta: Decodable { let user_id: UUID }
         }
         let rows: [C] = try await supabase.from("post_comments")
-            .select("user_id, body, created_at, post_id, posts(user_id)")
+            .select("id, user_id, body, created_at, post_id, posts(user_id)")
             .ilike("body", value: "%@\(username)%")
             .neq("user_id", value: userId.uuidString)
             .order("created_at", ascending: false).limit(40).execute().value
@@ -2155,18 +2249,19 @@ final class FeedService {
             guard mentionedUsernames(in: r.body).contains(me),
                   Self.shouldIncludeMention(ownerId: r.posts?.user_id, viewerId: userId)
             else { return nil }
-            return ActivityRaw(kind: .mentioned(r.body), actorId: r.user_id, date: r.created_at, postId: r.post_id)
+            return ActivityRaw(kind: .mentioned(r.body), actorId: r.user_id, date: r.created_at, postId: r.post_id,
+                                commentId: r.id)
         }
     }
 
     private func activityMentionsInPhotoComments(userId: UUID, username: String) async throws -> [ActivityRaw] {
         struct PC: Decodable {
-            let user_id: UUID; let body: String; let created_at: Date; let photo_id: UUID
+            let id: UUID; let user_id: UUID; let body: String; let created_at: Date; let photo_id: UUID
             let photos: Meta?
             struct Meta: Decodable { let user_id: UUID; let roll_id: UUID?; let thumb_path: String?; let storage_path: String }
         }
         let rows: [PC] = try await supabase.from("photo_comments")
-            .select("user_id, body, created_at, photo_id, photos(user_id, roll_id, thumb_path, storage_path)")
+            .select("id, user_id, body, created_at, photo_id, photos(user_id, roll_id, thumb_path, storage_path)")
             .ilike("body", value: "%@\(username)%")
             .neq("user_id", value: userId.uuidString)
             .order("created_at", ascending: false).limit(40).execute().value
@@ -2177,7 +2272,115 @@ final class FeedService {
             else { return nil }
             return ActivityRaw(kind: .mentioned(r.body), actorId: r.user_id, date: r.created_at, postId: nil,
                                 rollId: meta.roll_id, rollPhotoId: r.photo_id,
-                                rollPhotoDisplayPath: meta.thumb_path ?? meta.storage_path)
+                                rollPhotoDisplayPath: meta.thumb_path ?? meta.storage_path, commentId: r.id)
+        }
+    }
+
+    /// The pure dedup rule behind `activityPostThreadComments` / `activityRollPhotoThreadComments`.
+    /// Two checks in one, both already answered elsewhere but kept together here so they're one
+    /// tested decision rather than a filter no test can exercise:
+    ///   - the comment's author is never the viewer (their own comment is not activity about them,
+    ///     also already enforced server-side by `.neq` on the query);
+    ///   - the comment isn't already represented as a `.mentioned` row. `send-social-push` can
+    ///     reach the exact same comment through both "you have a thread here" and "you were
+    ///     mentioned in it"; the mention row already exists and wins, so the same comment must not
+    ///     also grow a thread row, the same "don't double the same event" reasoning as
+    ///     `shouldIncludeMention` above.
+    nonisolated static func shouldIncludeThreadComment(
+        authorId: UUID, viewerId: UUID, commentId: UUID, mentionedCommentIds: Set<UUID>
+    ) -> Bool {
+        guard authorId != viewerId else { return false }
+        return !mentionedCommentIds.contains(commentId)
+    }
+
+    /// Comments on a POST you commented on but do not own, from someone else, newer than your own
+    /// first comment there. The last push-only gap on posts: `send-social-push`'s thread
+    /// participant push ("{name} also commented") notifies everyone already in a post's comment
+    /// thread when someone new comments, but until this existed the only Activity row for a
+    /// comment was `.comment`, and that only reaches the POST'S OWNER (`activityOnOwnPosts` only
+    /// looks at posts you own). A fellow commenter who isn't the owner got the push and nothing
+    /// here to show for it.
+    ///
+    /// Bounded the same way every other source here is: the caller's own comments, `.limit(40)`
+    /// newest, decide which posts are in scope at all (never a scan of every post you've ever
+    /// touched), and the "newer than your first comment" boundary comes from that same bounded
+    /// set, so it can only be as complete as the 40 most recent posts you've commented on, exactly
+    /// the same trade every other Activity source here already makes.
+    private func activityPostThreadComments(userId: UUID) async throws -> [ActivityRaw] {
+        struct Own: Decodable {
+            let post_id: UUID; let created_at: Date; let posts: P?
+            struct P: Decodable { let user_id: UUID }
+        }
+        let owned: [Own] = try await supabase.from("post_comments")
+            .select("post_id, created_at, posts(user_id)")
+            .eq("user_id", value: userId.uuidString)
+            .order("created_at", ascending: false).limit(40).execute().value
+
+        // Posts commented on but not owned, each mapped to the EARLIEST of your own comments on
+        // it (within the bounded set above): only a comment after that boundary is "also
+        // commented", one that landed before you ever joined the thread is not.
+        var firstCommentDate: [UUID: Date] = [:]
+        for row in owned {
+            guard let author = row.posts?.user_id, author != userId else { continue }
+            firstCommentDate[row.post_id] = min(firstCommentDate[row.post_id] ?? row.created_at, row.created_at)
+        }
+        guard !firstCommentDate.isEmpty else { return [] }
+        let postIds = firstCommentDate.keys.map(\.uuidString)
+
+        struct C: Decodable { let id: UUID; let user_id: UUID; let body: String; let created_at: Date; let post_id: UUID }
+        let rows: [C] = try await supabase.from("post_comments")
+            .select("id, user_id, body, created_at, post_id")
+            .in("post_id", values: postIds)
+            .neq("user_id", value: userId.uuidString)
+            .order("created_at", ascending: false).limit(40).execute().value
+
+        return rows.compactMap { r in
+            guard let firstDate = firstCommentDate[r.post_id], r.created_at > firstDate else { return nil }
+            return ActivityRaw(kind: .threadComment(r.body), actorId: r.user_id, date: r.created_at,
+                                postId: r.post_id, commentId: r.id)
+        }
+    }
+
+    /// The roll-photo analog of `activityPostThreadComments`: comments on a roll PHOTO you
+    /// commented on but do not own, from someone else, newer than your own first comment on that
+    /// photo. Matches `send-social-push`'s roll-photo thread push ("{name} commented" when one
+    /// other person commented, "N new comments" when several), the same gap on the roll side that
+    /// `activityPostThreadComments` closes on posts.
+    private func activityRollPhotoThreadComments(userId: UUID) async throws -> [ActivityRaw] {
+        struct Own: Decodable {
+            let photo_id: UUID; let created_at: Date; let photos: P?
+            struct P: Decodable { let user_id: UUID }
+        }
+        let owned: [Own] = try await supabase.from("photo_comments")
+            .select("photo_id, created_at, photos(user_id)")
+            .eq("user_id", value: userId.uuidString)
+            .order("created_at", ascending: false).limit(40).execute().value
+
+        var firstCommentDate: [UUID: Date] = [:]
+        for row in owned {
+            guard let owner = row.photos?.user_id, owner != userId else { continue }
+            firstCommentDate[row.photo_id] = min(firstCommentDate[row.photo_id] ?? row.created_at, row.created_at)
+        }
+        guard !firstCommentDate.isEmpty else { return [] }
+        let photoIds = firstCommentDate.keys.map(\.uuidString)
+
+        struct C: Decodable {
+            let id: UUID; let user_id: UUID; let body: String; let created_at: Date; let photo_id: UUID
+            let photos: Meta?
+            struct Meta: Decodable { let roll_id: UUID?; let thumb_path: String?; let storage_path: String }
+        }
+        let rows: [C] = try await supabase.from("photo_comments")
+            .select("id, user_id, body, created_at, photo_id, photos(roll_id, thumb_path, storage_path)")
+            .in("photo_id", values: photoIds)
+            .neq("user_id", value: userId.uuidString)
+            .order("created_at", ascending: false).limit(40).execute().value
+
+        return rows.compactMap { r in
+            guard let firstDate = firstCommentDate[r.photo_id], r.created_at > firstDate, let meta = r.photos
+            else { return nil }
+            return ActivityRaw(kind: .rollPhotoThreadComment(r.body), actorId: r.user_id, date: r.created_at,
+                                postId: nil, rollId: meta.roll_id, rollPhotoId: r.photo_id,
+                                rollPhotoDisplayPath: meta.thumb_path ?? meta.storage_path, commentId: r.id)
         }
     }
 

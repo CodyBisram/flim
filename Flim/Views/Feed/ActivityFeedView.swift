@@ -47,6 +47,10 @@ func activityActionText(_ kind: ActivityItem.Kind) -> String {
         case .emoji(let text): return "reacted \(text) to your photo"
         case .placeholder: return "reacted to your photo"
         }
+    // "also", never the owner's "commented", so a thread participant doesn't read this as their
+    // own photo getting commented on; matches send-social-push's "{name} also commented" title.
+    case .threadComment(let body): return "also commented: “\(body)”"
+    case .rollPhotoThreadComment(let body): return "also commented on a roll photo: “\(body)”"
     }
 }
 
@@ -71,7 +75,7 @@ func activityDestination(for item: ActivityItem) -> ActivityDestination {
         // mention (both have a thread worth opening to), never on a bare reaction.
         let comments: Bool
         switch item.kind {
-        case .rollPhotoComment, .mentioned: comments = true
+        case .rollPhotoComment, .mentioned, .rollPhotoThreadComment: comments = true
         default: comments = false
         }
         return .roll(rollId: rollId, photoId: item.rollPhotoId, comments: comments)
@@ -368,7 +372,7 @@ struct ActivityFeedView: View {
                     .background(FlimTheme.bg, in: Circle())
                     .overlay(Circle().stroke(FlimTheme.bg, lineWidth: 2))
             }
-        case .comment, .tagged, .commentLiked, .rollPhotoComment, .mentioned:
+        case .comment, .tagged, .commentLiked, .rollPhotoComment, .mentioned, .threadComment, .rollPhotoThreadComment:
             Image(systemName: icon(kind))
                 .font(.system(size: 9, weight: .bold))
                 .foregroundStyle(.white)
@@ -441,7 +445,7 @@ private struct ActivityLine: View {
     private func icon(_ kind: ActivityItem.Kind) -> String {
         switch kind {
         case .like, .likeTagged, .rollPhotoReaction: return "heart.fill"
-        case .comment, .rollPhotoComment: return "bubble.right.fill"
+        case .comment, .rollPhotoComment, .threadComment, .rollPhotoThreadComment: return "bubble.right.fill"
         case .commentLiked: return "heart.fill"
         case .follow: return "person.fill.badge.plus"
         case .tagged: return "tag.fill"
