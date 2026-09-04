@@ -10,7 +10,7 @@ import Supabase
 /// not have run the migration that adds `profile_chapters`/`chapter_photos` yet, and a client
 /// that ships first must not crash or blank the profile over it. A failed or not-yet-deployed
 /// call leaves `chaptersByProfile[profileId]` absent, which `UserPageView` reads exactly like "no
-/// chapters yet" — the shelf simply does not render, nothing else about the page is affected.
+/// chapters yet": the shelf simply does not render, nothing else about the page is affected.
 @MainActor
 @Observable
 final class ChapterService {
@@ -43,8 +43,9 @@ final class ChapterService {
     }
 
     /// Fetches (or re-fetches) the shelf for `profileId`. Safe to call every time the profile
-    /// page loads, same as `UserPageView.load()`'s other per-visit reads: cheap, idempotent, and
-    /// this is the only path that keeps the current, still-growing month's shot count current.
+    /// page loads, same as `UserPageView.load()`'s other per-visit reads: cheap and idempotent.
+    /// The month in progress is dropped here (`ChapterSummary.completedMonths`): a chapter is a
+    /// month that has ended, so the shelf gains a cover on the first of each month, not before.
     func fetchChapters(for profileId: UUID) async {
         #if DEBUG
         guard !usesDemoFixture else { return }
@@ -56,7 +57,7 @@ final class ChapterService {
             .rpc("profile_chapters", params: Params(p_profile_id: profileId))
             .execute()
             .value) ?? []
-        chaptersByProfile[profileId] = rows
+        chaptersByProfile[profileId] = ChapterSummary.completedMonths(rows)
     }
 
     /// A month's photos, cached after the first fetch: opening the same month's recap twice in a
@@ -130,7 +131,7 @@ extension ChapterService {
             photosByMonth[ChapterKey(profileId: profileId, monthStart: monthStart)] = chapterPhotos
         }
 
-        chaptersByProfile[profileId] = summaries
+        chaptersByProfile[profileId] = ChapterSummary.completedMonths(summaries)
         for (key, chapterPhotos) in photosByMonth { photosByChapter[key] = chapterPhotos }
     }
 

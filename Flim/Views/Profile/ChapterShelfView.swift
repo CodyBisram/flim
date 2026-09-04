@@ -87,7 +87,9 @@ struct ChapterShelfView: View {
         .frame(width: 118)
         .clipShape(RoundedRectangle(cornerRadius: 14))
         .overlay(alignment: .topTrailing) {
-            if chapter.isCurrentMonth() {
+            // The newest finished month wears the tag: it is the recap most people have not
+            // played yet. The month in progress is not on the shelf at all.
+            if chapter.id == chapters.first?.id {
                 Label("Recap", systemImage: "play.fill")
                     .labelStyle(.chapterRecapTag)
                     .flimFont(9.5, weight: .bold, relativeTo: .caption2)

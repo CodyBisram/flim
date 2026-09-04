@@ -447,9 +447,12 @@ The bump this section used to ask for has already happened. Status: `done`.
 
 ## 1.5, wanted but unbuilt
 
-- **Chapters: BUILT 2026-09-03 on branch `chapters`, not merged, not pushed.** Owner decisions
-  that day: months are LIVE AND GROWING (the current month plays now and grows as shots arrive,
-  not gated on the month ending); every month back to a person's first shot appears; everyone
+- **Chapters: SHIPPED to TestFlight in build 337 (2026-09-04).** Owner decisions on 2026-09-03,
+  one REVERSED the next day after seeing it: months are FINISHED MONTHS ONLY ("September
+  shouldn't be there since the month hasn't ended"); the shelf drops the month in progress
+  client-side (`ChapterSummary.completedMonths`) and the newest finished month wears the RECAP
+  tag. The RPC still returns the live month, unused. Earlier that day the call had been live and
+  growing; every month back to a person's first shot appears; everyone
   who already exists gets a shelf. Because months are computed from `photos`, the backfill is
   free: no data migration. Defaults set without an owner answer, change on his word: a month is
   everything you shot including roll shots on your own page and only what you posted on someone

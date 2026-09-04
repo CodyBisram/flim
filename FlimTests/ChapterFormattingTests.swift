@@ -63,4 +63,16 @@ struct ChapterFormattingTests {
         #expect(thisMonth.isCurrentMonth(now: now, calendar: calendar))
         #expect(!lastMonth.isCurrentMonth(now: now, calendar: calendar))
     }
+
+    @Test("the shelf shows only months that have ended, newest first, and nothing else changes")
+    func completedMonthsDropsTheMonthInProgress() {
+        let now = date(year: 2026, month: 9, day: 4)
+        let september = summary(monthStart: date(year: 2026, month: 9), shots: 16)
+        let august = summary(monthStart: date(year: 2026, month: 8), shots: 34, rolls: 2)
+        let july = summary(monthStart: date(year: 2026, month: 7), shots: 18)
+        let shown = ChapterSummary.completedMonths([september, august, july], now: now, calendar: calendar)
+        #expect(shown.map(\.monthStart) == [august.monthStart, july.monthStart])
+        #expect(ChapterSummary.completedMonths([september], now: now, calendar: calendar).isEmpty)
+        #expect(ChapterSummary.completedMonths([], now: now, calendar: calendar).isEmpty)
+    }
 }

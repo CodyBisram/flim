@@ -74,11 +74,23 @@ struct ChapterSummary: Decodable, Equatable, Identifiable {
 }
 
 extension ChapterSummary {
-    /// Whether `monthStart` is the calendar month currently in progress. Drives the shelf's
-    /// `RECAP` tag: only the live month is tagged, because it's the one thing on the shelf that
-    /// is still changing.
+    /// Whether `monthStart` is the calendar month currently in progress. A chapter is a month
+    /// that has ENDED (owner decision 2026-09-04, reversing the earlier live-and-growing call:
+    /// "September shouldn't be there since the month hasn't ended"), so the shelf drops the
+    /// month this returns true for; see `completedMonths`.
     func isCurrentMonth(now: Date = .now, calendar: Calendar = .current) -> Bool {
         calendar.isDate(monthStart, equalTo: now, toGranularity: .month)
+    }
+
+    /// The months the shelf shows: everything the server returned except the month still in
+    /// progress, in the order given (newest first). Pure so the rule is tested once and applied
+    /// identically to the live fetch and the debug fixture. The server buckets months on a 04:00
+    /// UTC shift and this check uses the device's own calendar, so for a few hours around the
+    /// first of a month at the edges of the day the two can disagree; a month never appears
+    /// early because of it, it can only appear a few hours late.
+    static func completedMonths(_ rows: [ChapterSummary], now: Date = .now,
+                                calendar: Calendar = .current) -> [ChapterSummary] {
+        rows.filter { !$0.isCurrentMonth(now: now, calendar: calendar) }
     }
 
     /// "August", the full month name, for the shelf card and the recap's large title. `locale`
