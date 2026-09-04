@@ -38,9 +38,6 @@ struct ChapterRecapView: View {
     /// The pager's `startIndex` the next time it's presented: 0 from "Play the month", or a
     /// specific frame from tapping a closing-card thumb (`ChapterRecapViewModel.deckIndex`).
     @State private var selection = 0
-    /// Whether the "coming soon" line under Share as a contact sheet has been revealed this
-    /// visit.
-    @State private var showContactSheetNotice = false
     /// Drives the opening card's swipe-to-dismiss (see `View.swipeToDismiss`). Not read by the
     /// player: a native `TabView(.page)` pager gets no competing drag gesture, the same as
     /// `RollRevealView`'s own playback and `PhotoPagerView`.
@@ -226,29 +223,41 @@ struct ChapterRecapView: View {
                     .background(accent, in: Capsule())
             }
 
-            // Wired, and honestly a stub: a real contact sheet needs a month-spanning layout on
-            // top of `BrandedExport`'s single-print imprint, which does not exist yet and is out
-            // of scope for this pass. Tapping surfaces that plainly rather than pretending to
-            // export something. TODO(chapters): build the month contact-sheet layout and replace
-            // this with a real `ActivityView` share, the way `RollRevealView.saveAll` does for a
-            // roll.
             Button {
-                Haptics.tap()
-                withAnimation(.easeInOut(duration: 0.2)) { showContactSheetNotice = true }
+                guard !viewModel.isBuildingContactSheet else { return }
+                Task { await viewModel.buildContactSheet() }
             } label: {
                 HStack(spacing: 7) {
-                    Image(systemName: "square.grid.2x2").font(.system(size: 13))
-                    Text("Share as a contact sheet")
+                    if viewModel.isBuildingContactSheet {
+                        ProgressView().tint(Color(white: 0.7)).controlSize(.small)
+                    } else {
+                        Image(systemName: "square.grid.2x2").font(.system(size: 13))
+                    }
+                    Text(viewModel.isBuildingContactSheet ? "Building the sheet" : "Share as a contact sheet")
                         .flimFont(14, weight: .medium, relativeTo: .subheadline)
                 }
                 .foregroundStyle(Color(white: 0.7))
             }
+            .disabled(viewModel.isBuildingContactSheet)
 
-            if showContactSheetNotice {
-                Text("Contact sheets are coming soon.")
-                    .flimFont(12.5, relativeTo: .footnote)
-                    .foregroundStyle(Color(white: 0.5))
-                    .transition(.opacity)
+            // Rule 4 (confirmations redesign), the same shape `RollRevealView.saveAll` uses: a
+            // failure lands right under the button that caused it, with the retry in place.
+            if let error = viewModel.contactSheetError {
+                HStack(spacing: 10) {
+                    Text(error)
+                        .flimFont(12.5, relativeTo: .footnote)
+                        .foregroundStyle(Color(white: 0.55))
+                    Button("Retry") { Task { await viewModel.buildContactSheet() } }
+                        .flimFont(12.5, weight: .semibold, relativeTo: .footnote)
+                        .foregroundStyle(accent)
+                }
+                .transition(.opacity)
+            }
+        }
+        .sheet(isPresented: Binding(get: { viewModel.showContactSheetShare },
+                                    set: { viewModel.showContactSheetShare = $0 })) {
+            if let file = viewModel.contactSheetFile {
+                ActivityView(items: [file])
             }
         }
     }

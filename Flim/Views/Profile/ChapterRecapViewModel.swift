@@ -136,4 +136,67 @@ final class ChapterRecapViewModel {
     func deckIndex(ofPhoto photoId: UUID) -> Int? {
         deck.firstIndex { $0.id == photoId }
     }
+
+    // MARK: - Contact sheet share
+
+    var isBuildingContactSheet = false
+    /// Rule 4 of the confirmations redesign, same as `RollRevealViewModel.saveAllError`: a
+    /// failure lands right where the action was, with the button still there to retry, never a
+    /// modal in front of it.
+    var contactSheetError: String?
+    /// A file URL, not a `UIImage`, matching `PhotoExport`'s own contract: this is a single PNG,
+    /// not a whole roll, but reusing the file-based path means it can share out through the same
+    /// `ActivityView` every other export uses with no UIKit-share special case for this one.
+    var contactSheetFile: URL?
+    var showContactSheetShare = false
+
+    /// Builds "Share as a contact sheet": the curated deck (`pagerPhotos`'s own source, `deck`)
+    /// laid out on `ChapterContactSheet`'s grid, from whatever rendition the recap already
+    /// resolved (`urls[photo.viewPath]`, the ~1400px feed card or the original when no feed
+    /// rendition exists), decoded down to roughly cell size through `ImageLoader`'s own decode
+    /// budget rather than a raw `UIImage(data:)`.
+    ///
+    /// Written to its own `PhotoExport` directory, the same reasoning as `RollRevealViewModel`'s
+    /// save-all: two exports in flight at once must never be able to hand one share sheet the
+    /// other's file.
+    func buildContactSheet() async {
+        guard !isBuildingContactSheet else { return }
+        isBuildingContactSheet = true
+        contactSheetError = nil
+        Haptics.tap()
+        defer { isBuildingContactSheet = false }
+
+        let cell = ChapterContactSheet.cellSize()
+        var images: [UIImage] = []
+        for photo in deck.prefix(ChapterContactSheet.capacity) {
+            guard let url = urls[photo.viewPath] else { continue }
+            // scale: 1, because the contact sheet's canvas is specified in pixels, exactly like
+            // `BrandedExport.storyCanvas`; a display-scale multiplier here would decode every
+            // tile several times larger than the cell it's about to be clipped into.
+            if let image = await ImageLoader.fetch(url: url, maxPixel: cell.height, scale: 1,
+                                                    cacheKey: photo.viewPath) {
+                images.append(image)
+            }
+        }
+
+        guard let sheet = ChapterContactSheet.render(
+            images: images, chapterCode: chapter.chapterCode(), monthName: chapter.monthName(),
+            statsLine: chapter.statsLine, appName: AppInfo.appName
+        ), let data = sheet.pngData() else {
+            Haptics.error()
+            contactSheetError = "Couldn't build the contact sheet. Try again."
+            return
+        }
+
+        let directory = PhotoExport.begin()
+        let file = directory.appendingPathComponent("contact-sheet.png")
+        do {
+            try data.write(to: file, options: .atomic)
+            contactSheetFile = file
+            showContactSheetShare = true
+        } catch {
+            Haptics.error()
+            contactSheetError = "Couldn't build the contact sheet. Try again."
+        }
+    }
 }

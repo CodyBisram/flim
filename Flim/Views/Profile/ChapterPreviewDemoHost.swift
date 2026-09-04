@@ -29,6 +29,13 @@ struct ChapterPreviewDemoHost: View {
         .preferredColorScheme(.dark)
         .task {
             ChapterPreviewFixtures.seed(into: chapters, profileId: Self.profileId)
+            // `-chapterContactSheetDemo`, alongside `-chaptersPreviewDemo`: renders one contact
+            // sheet straight from the fixture images (no network, no signed URLs to wait on) and
+            // writes it to disk, since the Simulator's own CLI has no way to tap "Share as a
+            // contact sheet" and read back the result.
+            if ProcessInfo.processInfo.arguments.contains("-chapterContactSheetDemo") {
+                ChapterPreviewFixtures.renderContactSheetDemo()
+            }
         }
         // `-openChapterRecap`, alongside `-chaptersPreviewDemo`: jumps straight past the shelf
         // to the recap's opening card, for screenshotting it without a tap the Simulator's own
@@ -132,6 +139,32 @@ enum ChapterPreviewFixtures {
         for maxPixel in maxPixels {
             let key = "\(path)|\(Int(maxPixel))" as NSString
             ImageCache.set(image, forKey: key)
+        }
+    }
+
+    /// Renders one contact sheet from fifteen fresh fixture images and writes it to the app's own
+    /// temporary directory, printing the path so it can be pulled off the simulator's host
+    /// filesystem afterwards. Deliberately independent of `ChapterRecapViewModel`: that path
+    /// needs real signed URLs (`FeedService.signedURLs`), which have nothing to sign against in
+    /// an offline harness, so this calls `ChapterContactSheet.render` directly with the same kind
+    /// of generated tiles the shelf/recap covers already use.
+    static func renderContactSheetDemo() {
+        let images = (0..<15).compactMap { i in
+            makeImage(hue: CGFloat(i) / 15, label: "\(i + 1)")
+        }
+        guard let sheet = ChapterContactSheet.render(
+            images: images, chapterCode: "08", monthName: "August",
+            statsLine: "34 shots · 2 rolls", appName: AppInfo.appName
+        ), let data = sheet.pngData() else {
+            print("CONTACT_SHEET_DEMO_FAILED")
+            return
+        }
+        let path = FileManager.default.temporaryDirectory.appendingPathComponent("chapter-contact-sheet-demo.png")
+        do {
+            try data.write(to: path, options: .atomic)
+            print("CONTACT_SHEET_DEMO_PATH: \(path.path)")
+        } catch {
+            print("CONTACT_SHEET_DEMO_FAILED: \(error)")
         }
     }
 

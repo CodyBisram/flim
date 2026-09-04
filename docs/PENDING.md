@@ -172,6 +172,31 @@ actually do. Worth deciding before more is built on top of rolls.
 
 ## Next up
 
+### done 2026-09-04, afternoon: the three the owner picked from the stability list
+
+- **`rolls.reveal_at` is the single source of truth** (migration `2026-09-04_rolls_reveal_at.sql`,
+  APPLIED; all 13 rolls verified equal to their original time). Filled on creation by trigger,
+  read by `is_roll_developed()` and `join_roll`, pinned onto every roll photo's `develops_at` on
+  insert (a stale phone can no longer write a wrong time), cascaded to undeveloped photos when it
+  moves. `set_roll_reveal_at(p_roll, p_reveal_at)`: creator only, before the reveal, within
+  `[now, created + 7d]`, ms-truncated. App: `Roll.revealAt` decodes `reveal_at` (falls back to the
+  constant only for an older server or snapshot), every countdown, the widget, the Live Activity
+  and the capture-time develop date read it; `RollService.setRevealAt` and its error copy exist
+  for the "extend a roll" screen, which is NOT built.
+- **The reveal push reaches shooters too** (`send-develop-push` DEPLOYED): one push per member
+  with a token, shooters get "N shots from M people", non-shooters keep theirs. The local
+  reminder is now a fallback scheduled only when this phone cannot be pushed (not authorized, or
+  no token registered this session), and is cancelled if push arrives after capture.
+- **"Also commented" thread notices** are in the activity list and the unread badge, for posts
+  and roll photos you commented on but do not own; a comment already shown as a mention is not
+  repeated. Every event the push scanner sends now has a row.
+- **Share as a contact sheet** on a chapter is real: 1080px wide, 3 by 5 cells at the frame
+  aspect, header in the film-edge register, the app mark at the foot, the curated fifteen in
+  order, its own export directory, retryable on failure. `-chapterContactSheetDemo` renders one
+  offline.
+Not on a device: countdowns agreeing across widget and Live Activity from `reveal_at`; a
+push-capable phone getting no local reminder; the share sheet itself.
+
 ### done 2026-09-04: every notification route, traced and pinned
 
 26 routes (four push functions, the local develop reminder, widget and Live Activity taps, every

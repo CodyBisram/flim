@@ -30,6 +30,7 @@
 		10B7A0A76C19F34C09E0DE30 /* ChapterShelfView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EFC73B0CCC527F6C406257B /* ChapterShelfView.swift */; };
 		11A2D562668982156DCFDC05 /* UndoCenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5CF40AEDBC8243F837F246F /* UndoCenter.swift */; };
 		11BA671A5970F575E07653FE /* FeedSeenStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E8B0741F91A42BB1CF04C7C /* FeedSeenStoreTests.swift */; };
+		11D6DCD91D7DC79CBBAC87B9 /* ChapterContactSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0064CEE2A4F981B87717A374 /* ChapterContactSheet.swift */; };
 		1248B9A183489756AF5CA9EB /* PhotoStoragePathsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0C42110E6AE811C6B12C87A /* PhotoStoragePathsTests.swift */; };
 		1327A206130E2B17775AFE56 /* EmojiCatalogTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2089CA6DE2924FA1349B5C0C /* EmojiCatalogTests.swift */; };
 		13B1556B0A335B6CA633379C /* ChapterCurator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D39043413989E19EE820BEA /* ChapterCurator.swift */; };
@@ -238,6 +239,7 @@
 		D86D45FEC7A4EA89A268B87B /* PhotoPickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC8AD03A8D1B86B86365239A /* PhotoPickerSheet.swift */; };
 		DADF8A1F104A096A0E82B0D5 /* PhotoServiceGradedRenditionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7299D16CD74851BA0C29495 /* PhotoServiceGradedRenditionTests.swift */; };
 		DAEB96A018A4AC97A9C2B097 /* ReactionBarTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09D7D1B34FF3ABA360DFCCC6 /* ReactionBarTests.swift */; };
+		DD9A8AAC9FC49726DF3B3A84 /* ChapterContactSheetTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87BABB21BC29B14176BD0FF1 /* ChapterContactSheetTests.swift */; };
 		DF79D7CBD7A4684626EF2080 /* ActivityFeedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F4E26878DAFF415FB6B4644 /* ActivityFeedView.swift */; };
 		DFCED2D30474E53F1E6B116D /* CubeLUTTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 409A6D3129F94E675E11C751 /* CubeLUTTests.swift */; };
 		E01A141DA15C3B44C02C6CDA /* SortDeckView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F41D0B57C8881A275E755159 /* SortDeckView.swift */; };
@@ -330,6 +332,7 @@
 
 /* Begin PBXFileReference section */
 		001E3A4DAD1A222EE5CEC061 /* ChapterStatsVisibilitySheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChapterStatsVisibilitySheet.swift; sourceTree = "<group>"; };
+		0064CEE2A4F981B87717A374 /* ChapterContactSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChapterContactSheet.swift; sourceTree = "<group>"; };
 		0132F6E244DC3730C2145E2D /* FilmStripLayoutTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilmStripLayoutTests.swift; sourceTree = "<group>"; };
 		01ECCD46517220EBFD0EC621 /* PhotoService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoService.swift; sourceTree = "<group>"; };
 		01F7C56CF5A21FB71964CFEB /* FlimApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlimApp.swift; sourceTree = "<group>"; };
@@ -487,6 +490,7 @@
 		86B99F48D57C1AE3CE9295E3 /* RollRevealAttributesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollRevealAttributesTests.swift; sourceTree = "<group>"; };
 		870990313A19750FDF37E235 /* FilmStock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilmStock.swift; sourceTree = "<group>"; };
 		870AFDC29D5590DDFAB6BB9A /* ActivationEventTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivationEventTests.swift; sourceTree = "<group>"; };
+		87BABB21BC29B14176BD0FF1 /* ChapterContactSheetTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChapterContactSheetTests.swift; sourceTree = "<group>"; };
 		887740F010C7010E90BF5DFF /* ChapterRecapPagerMappingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChapterRecapPagerMappingTests.swift; sourceTree = "<group>"; };
 		88F0B8C5B056D1D3786284B1 /* DarkroomMonthSummaryV2.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DarkroomMonthSummaryV2.swift; sourceTree = "<group>"; };
 		8AF7A9B3928342965F5CD02F /* RemotePushReregistrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemotePushReregistrationTests.swift; sourceTree = "<group>"; };
@@ -857,6 +861,7 @@
 				2B25C7E9436A87FF2CF810B8 /* CameraRollAutoSave.swift */,
 				9AE61FE9182CC567D4698F8A /* CameraRollSelection.swift */,
 				BB373195A893A3C7E6FD51C9 /* CapturedPhotoCropper.swift */,
+				0064CEE2A4F981B87717A374 /* ChapterContactSheet.swift */,
 				C3D31AEE0F17D26081D0D07F /* ChapterCuration.swift */,
 				9D39043413989E19EE820BEA /* ChapterCurator.swift */,
 				37D753E9424F92B5D4815D51 /* ChapterService.swift */,
@@ -947,6 +952,7 @@
 				205B55808CBE7AF5FF43024B /* CameraRollAutoSaveTests.swift */,
 				8B56B57E60E3BDB61525E938 /* CaptionSaveOutcomeTests.swift */,
 				FD48D0114C23B26736D8280D /* CapturedPhotoCropperTests.swift */,
+				87BABB21BC29B14176BD0FF1 /* ChapterContactSheetTests.swift */,
 				E2F0B084A4472F8DCAA74627 /* ChapterCuratorTests.swift */,
 				BD93E0D3B1C28E672BCB5FC1 /* ChapterDecodingTests.swift */,
 				EC3EB4494274A2F37DB8358D /* ChapterFormattingTests.swift */,
@@ -1202,6 +1208,7 @@
 				500C288D435903A272E55EBE /* CameraRollAutoSaveTests.swift in Sources */,
 				0D80A4E64324784932627EC2 /* CaptionSaveOutcomeTests.swift in Sources */,
 				BCEEBC1EAA35491151CDFFD8 /* CapturedPhotoCropperTests.swift in Sources */,
+				DD9A8AAC9FC49726DF3B3A84 /* ChapterContactSheetTests.swift in Sources */,
 				D7BCACCC6B069FA4D6E7C0FC /* ChapterCuratorTests.swift in Sources */,
 				CE318D7E7692C4DF254206C2 /* ChapterDecodingTests.swift in Sources */,
 				B0789DB7DBF35BFDAD683FC5 /* ChapterFormattingTests.swift in Sources */,
@@ -1349,6 +1356,7 @@
 				036CE6741E055F672A548A57 /* CapturedPhotoCropper.swift in Sources */,
 				A64ACCF5B6898EAB22BEE303 /* Chapter.swift in Sources */,
 				0ECF296486EEE64EC31A6767 /* ChapterClosingCardView.swift in Sources */,
+				11D6DCD91D7DC79CBBAC87B9 /* ChapterContactSheet.swift in Sources */,
 				A5FFDF02286299A329CB24DD /* ChapterCuration.swift in Sources */,
 				13B1556B0A335B6CA633379C /* ChapterCurator.swift in Sources */,
 				2276CD913E4D77FF2A13F256 /* ChapterPreviewDemoHost.swift in Sources */,
