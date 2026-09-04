@@ -2,15 +2,23 @@
 // FLIM, send-develop-push  (Supabase Edge Function, Deno)
 //
 // Scheduled (e.g. every minute) function that finds photos which have just
-// developed in a shared roll and sends ONE APNs push per (roll, recipient), 
+// developed in a shared roll and sends ONE APNs push per (roll, recipient),
 // regardless of how many shots the roll holds.
 //
-// Recipient rule: only roll-mates who took ZERO shots in the developed batch.
-// Anyone who shot into the roll already got a LOCAL "your roll developed"
-// notification on their own device at capture time (NotificationService
-// .scheduleRollDevelopNotification, one per roll), so pushing them again would
-// double-notify the same event. The remote push exists for the OTHER members,
-// who took no shots and would otherwise never learn the roll is ready.
+// Recipient rule: every roll member with a registered device token, shooters
+// included. Previously shooters were skipped on the theory that a LOCAL
+// "your roll developed" reminder scheduled at capture time
+// (NotificationService.scheduleRollDevelopNotification) covered them. On the
+// first real 8-person roll, five of eight members, all shooters, had not
+// watched the reveal hours later: the local reminder goes stale after any
+// reveal-timing change, and never exists at all for a phone that shot
+// nothing into the batch. One push per member closes that gap. Shooters get
+// copy naming the roll and the total shots so the push reads as new
+// information rather than a repeat; the local reminder now exists only as a
+// fallback for a phone with no registered push token.
+//
+// Anyone blocked either-way with ANY shooter in the developed batch is still
+// excluded, same as before.
 //
 // Personal instants (roll_id NULL) develop immediately and never push, the
 // `roll_id is not null` filter below excludes them.
@@ -255,7 +263,8 @@ Deno.serve(async () => {
   const blockPairs = await loadBlockPairs();
 
   // 2. Collapse the batch into one entry per roll. `shooters` = everyone who took
-  //    a shot in this developed batch (they already got a local notification);
+  //    a shot in this developed batch, used to pick each recipient's push copy
+  //    and to apply the blocked-with-a-shooter exclusion below;
   //    `photoIds` = every photo of the roll to flip push_sent on once we're done.
   type Row = { id: string; user_id: string; roll_id: string; rolls?: { name?: string } };
   const rolls = new Map<string, { name: string; shooters: Set<string>; photoIds: string[] }>();
@@ -272,11 +281,11 @@ Deno.serve(async () => {
 
   let sent = 0;
   for (const [rollId, g] of rolls) {
-    // 3. Recipients = roll members who took NO shots in this batch. Shooters are
-    //    skipped because they already have the on-device local notification.
-    //    Also skipped: anyone blocked either-way with ANY shooter in this batch — the
-    //    roll developing is not their business to hear about from someone they've cut
-    //    contact with, the same way a blocked commenter's push never reaches you.
+    // 3. Recipients = every roll member, shooters included. Still skipped:
+    //    anyone blocked either-way with ANY shooter in this batch, the roll
+    //    developing is not their business to hear about from someone they've
+    //    cut contact with, the same way a blocked commenter's push never
+    //    reaches you.
     const { data: members } = await supabase
       .from("roll_members")
       .select("user_id")
@@ -284,24 +293,35 @@ Deno.serve(async () => {
 
     const recipientIds = (members ?? [])
       .map((m) => m.user_id as string)
-      .filter((uid) => !g.shooters.has(uid))
       .filter((uid) => ![...g.shooters].some((shooter) => blockPairs.has(`${uid}|${shooter}`)));
 
     if (recipientIds.length) {
       const { data: tokens } = await supabase
         .from("device_tokens")
-        .select("token")
+        .select("token, user_id")
         .in("user_id", recipientIds);
 
-      // One push per (roll, recipient device), naming the roll + total shot count.
+      // One push per (roll, recipient device). Two copy variants: a shooter already
+      // knows the roll finished shooting, so their push names the roll and the total
+      // shots (new information, not a repeat of the local reminder); a non-shooter
+      // keeps the plain "ready to view" copy they always got.
       const count = g.photoIds.length;
+      const shooterCount = g.shooters.size;
       const title = `"${g.name}" developed 🎞`;
-      const body = `${count} shot${count === 1 ? "" : "s"} ${count === 1 ? "is" : "are"} ready.`;
-      const uniqueTokens = [...new Set((tokens ?? []).map((t) => t.token as string))];
+      const shooterBody = `${count} shot${count === 1 ? "" : "s"} from ${shooterCount} ${shooterCount === 1 ? "person" : "people"}.`;
+      const memberBody = `${count} shot${count === 1 ? "" : "s"} ${count === 1 ? "is" : "are"} ready.`;
+
+      // De-dup by token (a user can carry more than one device), keeping the
+      // owning user_id so each token still gets the right copy variant.
+      const seenTokens = new Map<string, string>(); // token -> user_id
+      for (const row of (tokens ?? []) as { token: string; user_id: string }[]) {
+        if (!seenTokens.has(row.token)) seenTokens.set(row.token, row.user_id);
+      }
       // Built fresh from THIS iteration's rollId, never hoisted above the loop, so a run that
       // processes several rolls back-to-back can't carry one roll's id into another's pushes.
       const route: FlimRoute = { t: "reveal", id: rollId };
-      for (const token of uniqueTokens) {
+      for (const [token, userId] of seenTokens) {
+        const body = g.shooters.has(userId) ? shooterBody : memberBody;
         if (await sendPush(token, title, body, route)) sent++;
       }
     }
