@@ -173,4 +173,25 @@ final class PhotoPagerTests: XCTestCase {
         XCTAssertEqual(resolvedCacheKey(isFull: false, displayPath: path, viewPath: path),
                        resolvedCacheKey(isFull: true, displayPath: path, viewPath: path))
     }
+
+    // MARK: - commentsRowLabel
+    //
+    // Context: a roll photo carrying one or two comments still showed the bare word "comments",
+    // no count, where the feed already reads "1 comment" / "2 comments" for the identical shape
+    // (`PostDetailView`'s own label). `photoComments` fetches lazily (on selection change and
+    // again once the comment sheet dismisses), so an empty array means either "not fetched yet"
+    // or "genuinely zero"; both must fall back to the same safe, unnumbered copy.
+
+    func testZeroFallsBackToTheBareWord() {
+        XCTAssertEqual(commentsRowLabel(count: 0), "Comments")
+    }
+
+    func testOneCommentIsSingular() {
+        XCTAssertEqual(commentsRowLabel(count: 1), "1 comment")
+    }
+
+    func testTwoOrMoreCommentsArePlural() {
+        XCTAssertEqual(commentsRowLabel(count: 2), "2 comments")
+        XCTAssertEqual(commentsRowLabel(count: 47), "47 comments")
+    }
 }

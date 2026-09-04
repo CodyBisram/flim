@@ -271,12 +271,21 @@ struct MainTabView: View {
             if args.contains("-tabFeed") { selected = 3 }   // jump to Feed for screenshots
             if args.contains("-seedRoll") {
                 selected = 2
+                // `-seedRollCount <n>` : seed n developed photos instead of the default 6, for
+                // reproducing the roll-pagination cap (fetchRollPhotos pages at 100) rather than
+                // just populating a cover thumbnail.
+                // `-seedRollOpen`      : push straight into the seeded roll once seeding lands.
+                let seedCount = Self.launchArgValue("-seedRollCount", in: args).flatMap(Int.init) ?? 6
                 Task {
                     guard let uid = auth.currentUser?.id else { return }
                     try? await rolls.fetchRolls(for: uid)
                     if let first = rolls.rolls.first {
-                        await photos.seedDemoPhotos(userId: uid, rollId: first.id)
+                        await photos.seedDemoPhotos(userId: uid, rollId: first.id, count: seedCount)
                         try? await rolls.fetchRolls(for: uid)   // refresh coverPaths
+                        if args.contains("-seedRollOpen"),
+                           let updated = rolls.rolls.first(where: { $0.id == first.id }) {
+                            rollsPath.append(updated)
+                        }
                     }
                 }
             }

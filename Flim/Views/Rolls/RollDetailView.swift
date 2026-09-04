@@ -50,6 +50,32 @@ func rollDrainCompletedFully(exitedBecauseExhausted: Bool) -> Bool {
     exitedBecauseExhausted
 }
 
+/// Merges a roll's authoritative, unpaginated snapshot (`PhotoService.fetchRollPhotosSnapshot`,
+/// one uncapped query against every current row) into whatever `fetchRollPhotos`'s own
+/// page-at-a-time drain has loaded so far (`paged`), so the photo VIEWER a grid tap opens is never
+/// capped at a single page while the drain is still running, or gave up (`RollDrainStep.gaveUp`)
+/// and has nothing left to re-trigger it: a roll bigger than one page (100) used to hand
+/// `PhotoPagerView` whatever `vm.developedPhotos` held at the exact moment of the tap, which for
+/// the very first grid interaction is reliably just page one.
+///
+/// `paged`'s own order is kept for every id both sides still agree exists, so a grid or an
+/// already-open pager never re-sorts under a scroll or a swipe; anything the snapshot confirms
+/// that paging hasn't reached yet is appended, newest-`developsAt`-first to match `fetchRollPhotos`'s
+/// own page ordering (a snapshot query carries no `ORDER BY`, so its raw order is whatever Postgres
+/// happened to return); anything `paged` has that the snapshot no longer confirms (deleted or
+/// hidden since the snapshot's own last fetch) is dropped, so a stale top-up can never resurrect a
+/// deleted photo through the pager, only ever narrow toward what the snapshot currently confirms.
+func mergePhotoSnapshot(paged: [Photo], snapshot: [Photo]) -> [Photo] {
+    guard !snapshot.isEmpty else { return paged }
+    let snapshotById = Dictionary(uniqueKeysWithValues: snapshot.map { ($0.id, $0) })
+    let kept = paged.compactMap { snapshotById[$0.id] }
+    let keptIds = Set(kept.map(\.id))
+    let extra = snapshot
+        .filter { !keptIds.contains($0.id) }
+        .sorted { $0.developsAt > $1.developsAt }
+    return kept + extra
+}
+
 struct RollDetailView: View {
     @Environment(\.flimAccent) private var accent
     let roll: Roll
@@ -93,6 +119,11 @@ struct RollDetailView: View {
     @State private var rollFullyPaged = false
 
     private var revealSeenKey: String { "rollRevealSeen.\(roll.id.uuidString)" }
+    /// One-shot, unpaginated top-up for the roll viewer: everything `fetchRollPhotosSnapshot`
+    /// currently confirms for this roll, refreshed alongside every full reload (`reloadRoll`).
+    /// `nil` until the first fetch lands, in which case `pagerPhotos` just falls back to whatever
+    /// the grid itself has paged in.
+    @State private var rollSnapshot: [Photo]?
 
     private var isCreator: Bool { auth.currentUser?.id == roll.createdBy }
     /// Developed shots oldest → newest, for the flip-through carousel, cached on the view model
@@ -109,6 +140,16 @@ struct RollDetailView: View {
     }
     private var isFullyDeveloped: Bool {
         roll.isDeveloped && rollFullyPaged && !vm.developedPhotos.isEmpty
+    }
+
+    /// What the full-screen viewer is actually fed: `vm.developedPhotos` (the grid's own paged
+    /// list, unchanged, still oldest-page-first-loaded and whatever order the grid itself shows)
+    /// topped up with anything `rollSnapshot` confirms exists beyond that page. See
+    /// `mergePhotoSnapshot`'s own doc for why the grid stays exactly as it was rather than being
+    /// switched onto the snapshot too: this only fixes what the VIEWER opens with.
+    private var pagerPhotos: [Photo] {
+        guard let rollSnapshot else { return vm.developedPhotos }
+        return mergePhotoSnapshot(paged: vm.developedPhotos, snapshot: rollSnapshot)
     }
 
 
@@ -165,7 +206,7 @@ struct RollDetailView: View {
                         // The view model has always tracked this; the roll grid just never showed
                         // it, so a failed load looked like an empty roll.
                         ErrorState(message: error) {
-                            await vm.loadRoll(photoService: photoService, rollId: roll.id, blockedIds: feed.blockedIds)
+                            await reloadRoll()
                         }
                     } else if vm.photos.isEmpty {
                         VStack(spacing: 10) {
@@ -197,7 +238,7 @@ struct RollDetailView: View {
                             }
                         }
                         .refreshable {
-                            await vm.loadRoll(photoService: photoService, rollId: roll.id, blockedIds: feed.blockedIds)
+                            await reloadRoll()
                             warmGridThumbnails()   // no-op for anything already cached
                         }
                     }
@@ -302,6 +343,22 @@ struct RollDetailView: View {
             guard !Task.isCancelled else { return }
             await vm.loadRoll(photoService: photoService, rollId: roll.id, blockedIds: feed.blockedIds)
             guard !Task.isCancelled else { return }
+            #if DEBUG
+            // `-tapFirstDevelopedPhoto`: opens the pager on the first developed photo the moment
+            // page one lands, before `refreshRollSnapshot` below (let alone the drain further
+            // down) has landed. Simulates the real report exactly, a tap before pagination
+            // finishes, for screenshotting and reproduction without simulator tap automation.
+            if ProcessInfo.processInfo.arguments.contains("-tapFirstDevelopedPhoto"),
+               let first = vm.developedPhotos.first {
+                selectedPhoto = first
+            }
+            #endif
+            // Fire-and-forget: the pager (`pagerPhotos`) picks this up the moment it lands,
+            // whether that's before or after the tap above, via the same growing-array remap
+            // `PhotoPagerView.onChange(of: photos.map(\.id))` already does. Independent of the
+            // drain below, so a roll big enough to need a second page is never capped at page one
+            // in the viewer even if that drain starves out (`RollDrainStep.gaveUp`).
+            refreshRollSnapshot()
             // A roll's photo set is small (a friend group's shots), not the endless, ever-
             // growing personal Darkroom feed, where lazy, scroll-triggered pagination
             // genuinely protects performance, so it's safe to finish paging eagerly here
@@ -387,8 +444,8 @@ struct RollDetailView: View {
         }
         .fullScreenCover(item: $selectedPhoto) { photo in
             PhotoPagerView(
-                photos: vm.developedPhotos,
-                startIndex: vm.developedPhotos.firstIndex(where: { $0.id == photo.id }) ?? 0,
+                photos: pagerPhotos,
+                startIndex: pagerPhotos.firstIndex(where: { $0.id == photo.id }) ?? 0,
                 signedURLs: vm.signedURLCache,
                 showsReactions: true,
                 showsComments: true,
@@ -400,7 +457,7 @@ struct RollDetailView: View {
                 // Every photo here belongs to this roll, so the delete-confirmation name is
                 // always this roll's, regardless of the (all-identical) rollId.
                 rollName: { _ in roll.name },
-                onDelete: { Task { await vm.loadRoll(photoService: photoService, rollId: roll.id, blockedIds: feed.blockedIds) } }
+                onDelete: { Task { await reloadRoll() } }
             )
             .navigationTransition(.zoom(sourceID: photo.id, in: photoNS))
         }
@@ -506,6 +563,31 @@ struct RollDetailView: View {
     /// so this only has to present.
     private func replayReveal() {
         showReveal = true
+    }
+
+    /// The one place that reloads this roll's photos: resets the grid's own pagination (page one)
+    /// and then refreshes `rollSnapshot`. Every caller that used to call `vm.loadRoll` directly
+    /// (pull to refresh, the error-state retry, and a pager delete) goes through this instead.
+    ///
+    /// The two have to move in this order, never the reverse: `vm.loadRoll` resets pagination to
+    /// page one, and a `rollSnapshot` refreshed BEFORE that reset lands would be immediately
+    /// stale, able to resurrect a since-deleted photo through `pagerPhotos`'s merge
+    /// (`mergePhotoSnapshot` can only drop what it knows is gone; a stale snapshot doesn't know a
+    /// photo missing from the fresh page one was deleted rather than simply not paged in yet).
+    private func reloadRoll() async {
+        await vm.loadRoll(photoService: photoService, rollId: roll.id, blockedIds: feed.blockedIds)
+        refreshRollSnapshot()
+    }
+
+    /// Fire-and-forget top-up for `rollSnapshot` (mirrors `warmFirstRevealPrint`'s own shape):
+    /// the pager only needs this to land EVENTUALLY, never has to block whatever triggered the
+    /// reload, and must not depend on `drainRollPagination`'s own paginated cursor succeeding,
+    /// since the whole point is a fetch that can complete on its own even when that one gives up.
+    private func refreshRollSnapshot() {
+        Task {
+            guard let fetched = try? await photoService.fetchRollPhotosSnapshot(rollId: roll.id) else { return }
+            rollSnapshot = feed.blockedIds.isEmpty ? fetched : fetched.filter { !feed.blockedIds.contains($0.userId) }
+        }
     }
 
     private func saveAll() {

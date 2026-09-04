@@ -1937,7 +1937,12 @@ extension PhotoService {
     /// + reveal animation can be exercised in the Simulator (which has no camera). Generates
     /// gradient images, uploads them through the real storage path, and inserts rows with a
     /// mix of already-developed and still-developing timestamps. Never compiled for release.
-    func seedDemoPhotos(userId: UUID, rollId: UUID? = nil) async {
+    /// `count` beyond the handful of hand-picked offsets below is purely for pagination testing
+    /// (`fetchRollPhotos` pages at 100, so a roll needs 100+ developed rows to reproduce the
+    /// viewer-truncation bug at all): those extra rows reuse ONE uploaded image instead of paying
+    /// for `count` separate storage uploads, which would make seeding a 130-photo roll take
+    /// minutes instead of seconds.
+    func seedDemoPhotos(userId: UUID, rollId: UUID? = nil, count: Int = 6) async {
         // Negative = already developed (shows the reveal); positive = still developing.
         let offsets: [TimeInterval] = [-86_400, -3_600, -600, -120, 60, 150]
         for (i, offset) in offsets.enumerated() {
@@ -1964,7 +1969,32 @@ extension PhotoService {
                 print("[seed] FAILED photo \(i + 1): \(error)")
             }
         }
-        print("[seed] done, userId=\(userId)")
+        let extra = count - offsets.count
+        if extra > 0, let data = Self.makeDemoImage(seed: 99) {
+            let sharedId = UUID()
+            let sharedPath = "\(userId.uuidString.lowercased())/\(sharedId.uuidString.lowercased()).jpg"
+            do {
+                try await supabase.storage
+                    .from("photos")
+                    .upload(sharedPath, data: data, options: FileOptions(contentType: "image/jpeg"))
+                // All developed (well in the past) and a minute apart, so `develops_at` (the
+                // column `fetchRollPhotos` pages on) has real distinct values to cursor through
+                // rather than a tie on every row.
+                let payloads = (0..<extra).map { i in
+                    InsertPhoto(
+                        id: UUID(), userId: userId, rollId: rollId,
+                        storagePath: sharedPath, thumbPath: sharedPath, feedPath: sharedPath,
+                        developsAt: Date.now.addingTimeInterval(-172_800 - Double(i) * 60)
+                    )
+                }
+                try await supabase.from("photos").insert(payloads).execute()
+                print("[seed] bulk inserted \(extra) developed photos sharing \(sharedPath)")
+            } catch {
+                uploadError = error.localizedDescription
+                print("[seed] bulk insert FAILED: \(error)")
+            }
+        }
+        print("[seed] done, userId=\(userId), total requested=\(count)")
     }
 
     private static func makeDemoImage(seed: Int) -> Data? {

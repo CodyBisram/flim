@@ -67,4 +67,91 @@ final class RollDrainPaginationTests: XCTestCase {
     func testAStarvedGiveUpMustNotBeReadAsComplete() {
         XCTAssertFalse(rollDrainCompletedFully(exitedBecauseExhausted: false))
     }
+
+    // MARK: - mergePhotoSnapshot
+    //
+    // The roll VIEWER's own fix: a roll bigger than one page (100) used to hand `PhotoPagerView`
+    // whatever `vm.developedPhotos` held at the exact moment a grid photo was tapped, which for
+    // the very first interaction is reliably just page one. `mergePhotoSnapshot` tops that up with
+    // `fetchRollPhotosSnapshot`'s uncapped, unpaginated read of the roll's current rows,
+    // independent of whether the page-at-a-time drain above ever finishes.
+
+    private func photo(id: UUID, developsAt: Date = .now) -> Photo {
+        Photo(id: id, userId: UUID(), rollId: nil, storagePath: "p/\(id).jpg", thumbPath: nil, feedPath: nil,
+              takenAt: developsAt, developsAt: developsAt, isDeveloped: true, caption: nil, isSorted: true)
+    }
+
+    func testEmptySnapshotLeavesThePagedListUntouched() {
+        let paged = (0..<3).map { _ in photo(id: UUID()) }
+        XCTAssertEqual(mergePhotoSnapshot(paged: paged, snapshot: []).map(\.id), paged.map(\.id))
+    }
+
+    /// The core fix: a snapshot confirming more photos than paging has reached appends the rest.
+    func testSnapshotToppingUpASinglePageAppendsTheRest() {
+        let pagedIds = (0..<100).map { _ in UUID() }
+        let paged = pagedIds.map { photo(id: $0) }
+        let extraIds = (0..<22).map { _ in UUID() }
+        let snapshot = paged + extraIds.map { photo(id: $0) }
+
+        let merged = mergePhotoSnapshot(paged: paged, snapshot: snapshot)
+
+        XCTAssertEqual(merged.count, 122)
+        // Every id both sides agree on keeps the PAGED list's own order and position.
+        XCTAssertEqual(Array(merged.prefix(100)).map(\.id), pagedIds)
+        // The rest lands after it, and none of it is lost.
+        XCTAssertEqual(Set(merged.suffix(22).map(\.id)), Set(extraIds))
+    }
+
+    /// A photo the paged list already has keeps ITS position, not wherever the snapshot happened
+    /// to put the same id: the grid and the pager must never disagree about ordering for anything
+    /// both already show.
+    func testOverlappingPhotosKeepThePagedOrderNotTheSnapshotOrder() {
+        let a = UUID(), b = UUID(), c = UUID()
+        let paged = [a, b, c].map { photo(id: $0) }
+        // Deliberately shuffled relative to `paged`.
+        let snapshot = [c, a, b].map { photo(id: $0) }
+
+        XCTAssertEqual(mergePhotoSnapshot(paged: paged, snapshot: snapshot).map(\.id), [a, b, c])
+    }
+
+    /// A photo `paged` has that the snapshot no longer confirms (deleted, or hidden, since the
+    /// snapshot was taken) must be DROPPED, never carried through: a stale top-up must only ever
+    /// narrow toward what the snapshot currently confirms, never resurrect something gone.
+    func testAPhotoMissingFromTheSnapshotIsDropped() {
+        let kept = UUID(), deleted = UUID()
+        let paged = [photo(id: kept), photo(id: deleted)]
+        let snapshot = [photo(id: kept)]
+
+        XCTAssertEqual(mergePhotoSnapshot(paged: paged, snapshot: snapshot).map(\.id), [kept])
+    }
+
+    /// New-to-both-sides photos (the snapshot landed before the grid had paged in anything, e.g.
+    /// the very first render) come back in the snapshot alone, newest `developsAt` first, matching
+    /// `fetchRollPhotos`'s own page ordering rather than whatever raw order Postgres returned
+    /// (the snapshot query carries no `ORDER BY`).
+    func testExtraPhotosAreOrderedNewestDevelopsAtFirstNotSnapshotOrder() {
+        let now = Date.now
+        let oldest = photo(id: UUID(), developsAt: now.addingTimeInterval(-200))
+        let newest = photo(id: UUID(), developsAt: now.addingTimeInterval(-10))
+        let middle = photo(id: UUID(), developsAt: now.addingTimeInterval(-100))
+        // Deliberately not already newest-first.
+        let snapshot = [oldest, newest, middle]
+
+        let merged = mergePhotoSnapshot(paged: [], snapshot: snapshot)
+
+        XCTAssertEqual(merged.map(\.id), [newest.id, middle.id, oldest.id])
+    }
+
+    /// The selected photo's id survives the merge (what `PhotoPagerView.onChange(of:
+    /// photos.map(\.id))` relies on to keep the viewer's selection on the same photograph rather
+    /// than whatever inherited its slot).
+    func testTheOpenedPhotoStaysFindableAfterTheMerge() {
+        let opened = UUID()
+        let paged = [photo(id: opened)]
+        let snapshot = paged + (0..<5).map { _ in photo(id: UUID()) }
+
+        let merged = mergePhotoSnapshot(paged: paged, snapshot: snapshot)
+
+        XCTAssertTrue(merged.contains { $0.id == opened })
+    }
 }

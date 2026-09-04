@@ -70,6 +70,16 @@ func resolvedCacheKey(isFull: Bool, displayPath: String, viewPath: String) -> St
     isFull ? viewPath : displayPath
 }
 
+/// The roll viewer's comment-thread row label: the bare "Comments" while the count is unknown OR
+/// genuinely zero (both read identically from an empty `photoComments` array, and "Comments" is
+/// the safe, always-correct copy for either), "N comment"/"N comments" once at least one has
+/// loaded. Pure so the plural boundary (and the zero fallback) is pinned without a live photo or
+/// the comment sheet, matching `PostDetailView`'s own "N comment(s)" wording for the feed.
+func commentsRowLabel(count: Int) -> String {
+    guard count > 0 else { return "Comments" }
+    return "\(count) comment\(count == 1 ? "" : "s")"
+}
+
 /// The single swipeable full-screen photo viewer, opened at whichever grid photo was tapped.
 /// One component for both the Darkroom and a roll's grid (it replaced three near-duplicate views:
 /// FullScreenPhotoView, DarkroomPhotoPagerView, RollPhotoPagerView, which had drifted apart and
@@ -152,6 +162,12 @@ struct PhotoPagerView: View {
     @State private var retryTokens: [UUID: Int] = [:]
     @State private var reportedIds: Set<UUID> = []
     @State private var reactions: [PhotoReaction] = []
+    /// The current photo's comment thread (`showsComments` only), refetched on selection change
+    /// alongside `reactions` and again once the comments sheet dismisses, so the footer's "N
+    /// comment(s)" label reflects one just posted without needing another swipe. An empty array
+    /// reads identically whether nothing has loaded yet or the count is genuinely zero, both of
+    /// which fall back to the bare "Comments" the row always showed, see `commentsRowLabel`.
+    @State private var photoComments: [PhotoComment] = []
     /// Drives the heart that blooms over a double tap, matching the feed's.
     @State private var heartBurst = false
     @State private var scale: CGFloat = 1
@@ -339,6 +355,16 @@ struct PhotoPagerView: View {
         // dismissing, so the id waits in `pendingProfile` and onDismiss opens it.
         .sheet(isPresented: $showComments, onDismiss: {
             if let pending = pendingProfile { pendingProfile = nil; profileRoute = pending }
+            // The footer's count has to reflect anything just posted (or deleted) without
+            // requiring another swipe: `resolveAround` only refetches on a selection change, and
+            // the sheet doesn't move `selection`.
+            if let target = commentsPhoto ?? current {
+                Task {
+                    let fetched = await photoService.fetchPhotoComments(photoId: target.id, blockedIds: feed.blockedIds)
+                    guard current?.id == target.id else { return }   // fast-swipe guard, matches resolveAround
+                    photoComments = fetched
+                }
+            }
         }) {
             PhotoCommentsSheet(photoId: (commentsPhoto ?? current)?.id ?? UUID(),
                                memberNames: memberNames) { pendingProfile = ProfileRoute(id: $0) }
@@ -792,7 +818,7 @@ struct PhotoPagerView: View {
                     Button { commentsPhoto = photo; showComments = true } label: {
                         HStack(spacing: 7) {
                             Image(systemName: "bubble.left").font(.system(size: 14))
-                            Text("Comments").flimFont(12.5, relativeTo: .footnote)
+                            Text(commentsRowLabel(count: photoComments.count)).flimFont(12.5, relativeTo: .footnote)
                         }
                         .foregroundStyle(Color(white: 0.6))
                     }
@@ -1744,6 +1770,7 @@ struct PhotoPagerView: View {
         // Same fix as RollCarouselView: the refetch at the end of this function is async, so
         // without clearing, the bar shows the PREVIOUS photo's counts under the new photo.
         if showsReactions { reactions = [] }
+        if showsComments { photoComments = [] }
         let window = [index - 1, index, index + 1]
             .filter { photos.indices.contains($0) }
             .map { photos[$0] }
@@ -1811,6 +1838,12 @@ struct PhotoPagerView: View {
                 // in the window regardless of whether it's this pager's own account's photo.
                 await photoService.backfillSuggestedEmoji(for: photo)
             }
+        }
+
+        if showsComments, let photo = current {
+            let id = photo.id
+            let fetchedComments = await photoService.fetchPhotoComments(photoId: id, blockedIds: feed.blockedIds)
+            if current?.id == id { photoComments = fetchedComments }   // fast-swipe guard
         }
 
         guard showsReactions, let photo = current else { return }
