@@ -183,8 +183,19 @@ actually do. Worth deciding before more is built on top of rolls.
   (send-social-push and send-develop-push). Chapters visibility, asked the same day: other people see a shelf built
   only from what you POSTED, with the profile grid's exact visibility; only you see every shot.
 
-Three read-only passes (correctness, flows, production data). The data pass is BLOCKED on a fresh
-management token; the other two came back SHIP WITH NITS plus one BLOCK, all fixed the same day:
+Three read-only passes (correctness, flows, production data). Correctness and flows came back
+SHIP WITH NITS plus one BLOCK, all fixed the same day. The data pass (12 rolls in production, so
+every cohort is small) found ZERO integrity problems: no orphaned roll photos, no develops_at
+drift from the roll's reveal, no cron gaps, no missed develop pushes, no non-member shots, no
+microsecond residue, no rolls with members who block each other, no hidden roll photos. Three
+roll members hold no device token at all (joey31, nicolette, teamsaudia) and can never be
+pushed. Two pre-fix cases of joining after develop (cody, applereview) confirm the join gap was
+real. Roll share of all photos ran 48 to 64% in July, fell to 0 to 13% for three weeks in August
+while photo volume climbed, and came back to 44% with the Islands roll; a correlation, not a
+cause. Leaving a roll is not recorded anywhere (`roll_members` has no removal trace), which is
+worth a column if leave/remove behaviour is ever audited again. The Islands roll: five of eight
+members had not watched the reveal at audit time, all pushable, all heavy shooters, hours after
+develop; recommendation 4 below is about exactly them.
 
 - **BLOCK, live in 337:** the Members sheet's swipe-to-leave and swipe-to-remove bypassed
   `RollService.leaveRoll`, swallowed failures, closed the sheet as if you had left, and never
