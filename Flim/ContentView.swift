@@ -37,6 +37,9 @@ struct ContentView: View {
                 // Same idea again, for the Chapters shelf + recap: fixture months + cache-planted
                 // covers, no network, no account. See ChapterPreviewDemoHost.
                 ChapterPreviewDemoHost()
+            } else if ProcessInfo.processInfo.arguments.contains("-chapterStatsPickerDemo") {
+                // Same idea, for the chapter-stats visibility picker. See ChapterStatsPickerDemoHost.
+                ChapterStatsPickerDemoHost()
             } else {
                 authGate
             }

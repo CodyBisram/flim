@@ -384,6 +384,7 @@ struct EditProfileView: View {
     @State private var showAvatarPicker = false
     @State private var showCoverPicker = false
     @State private var showBadgePicker = false
+    @State private var showChapterStatsPicker = false
 
     private var displayName: String? {
         let n = auth.currentUser?.displayName
@@ -426,6 +427,8 @@ struct EditProfileView: View {
                             divider
                             editRow("Badges", value: badgesSummary,
                                     isPlaceholder: auth.currentUser?.displayedBadges == nil) { showBadgePicker = true }
+                            divider
+                            editRow("Chapter stats", value: "What others see", isPlaceholder: true) { showChapterStatsPicker = true }
                         }
                         .background(FlimTheme.bgElevated, in: RoundedRectangle(cornerRadius: 14))
                         .padding(.horizontal, 20)
@@ -468,6 +471,9 @@ struct EditProfileView: View {
             }
             .sheet(isPresented: $showBadgePicker) {
                 BadgePickerSheet()
+            }
+            .sheet(isPresented: $showChapterStatsPicker) {
+                ChapterStatsVisibilitySheet()
             }
             .sheet(isPresented: $showCoverPicker) {
                 PhotoPickerSheet(title: "Cover Photo") { path in

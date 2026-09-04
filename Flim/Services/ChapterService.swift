@@ -19,6 +19,11 @@ final class ChapterService {
     /// A month's photos, `taken_at` ascending, keyed by profile + month so two different
     /// people's Augusts, or a repeat visit to the same one, never collide.
     var photosByChapter: [ChapterKey: [ChapterPhoto]] = [:]
+    /// A month's `chapter_stats`, keyed the same way as `photosByChapter`. Visibility is already
+    /// resolved server-side by the time these rows arrive: the profile owner always gets every
+    /// key, anyone else only the keys `chapter_public_stats` allows, so this cache never needs to
+    /// know who's asking.
+    var statsByChapter: [ChapterKey: ChapterStats] = [:]
     var isLoadingChapters: Set<UUID> = []
 
     struct ChapterKey: Hashable {
@@ -36,6 +41,7 @@ final class ChapterService {
     func resetForAccountChange() {
         chaptersByProfile = [:]
         photosByChapter = [:]
+        statsByChapter = [:]
         isLoadingChapters = []
         #if DEBUG
         usesDemoFixture = false
@@ -76,6 +82,68 @@ final class ChapterService {
             .value) ?? []
         photosByChapter[key] = rows
         return rows
+    }
+
+    /// A month's `chapter_stats`, cached after the first fetch, same discipline as
+    /// `photos(for:monthStart:)`. Fails soft to an empty map on any error: the closing card
+    /// simply has nothing to show, exactly as if the RPC had genuinely returned no rows.
+    func stats(for profileId: UUID, monthStart: Date) async -> ChapterStats {
+        let key = ChapterKey(profileId: profileId, monthStart: monthStart)
+        if let cached = statsByChapter[key] { return cached }
+        #if DEBUG
+        guard !usesDemoFixture else { return [:] }
+        #endif
+        struct Params: Encodable { let p_profile_id: UUID; let p_month_start: String }
+        let rows: [ChapterStatRow] = (try? await supabase
+            .rpc("chapter_stats", params: Params(p_profile_id: profileId,
+                                                  p_month_start: Self.dateOnly.string(from: monthStart)))
+            .execute()
+            .value) ?? []
+        let map = rows.keyedByStat()
+        statsByChapter[key] = map
+        return map
+    }
+
+    /// The signed-in account's own `chapter_public_stats`: which stat keys everyone else sees on
+    /// their chapters. `nil` on any failure (column not deployed yet, offline); `[]` means
+    /// "everything public", the column's own default for every account. Two paths, in order:
+    /// `get_own_profile()` (a `SELECT * FROM users WHERE id = auth.uid()` RPC other services
+    /// already rely on for the caller's own row) and, only if that somehow doesn't carry the
+    /// column, a direct select gated by the same column-level grant the server exposes it under.
+    func fetchOwnPublicStats() async -> [String]? {
+        struct ProfileRow: Decodable {
+            let chapterPublicStats: [String]?
+            enum CodingKeys: String, CodingKey { case chapterPublicStats = "chapter_public_stats" }
+        }
+        if let row: ProfileRow = try? await supabase.rpc("get_own_profile").single().execute().value {
+            return row.chapterPublicStats ?? []
+        }
+        struct SelectRow: Decodable {
+            let chapterPublicStats: [String]?
+            enum CodingKeys: String, CodingKey { case chapterPublicStats = "chapter_public_stats" }
+        }
+        if let rows: [SelectRow] = try? await supabase
+            .from("users")
+            .select("chapter_public_stats")
+            .execute()
+            .value,
+           let first = rows.first {
+            return first.chapterPublicStats ?? []
+        }
+        return nil
+    }
+
+    /// Saves the caller's own `chapter_public_stats` and returns what the server actually stored,
+    /// same round-trip shape as `AuthService.setDisplayedBadges`. Throws rather than failing
+    /// soft: a settings save has somewhere to report the failure to and something to retry, unlike
+    /// a background read.
+    func setOwnPublicStats(_ keys: [String]) async throws -> [String] {
+        struct Params: Encodable { let p_keys: [String] }
+        let saved: [String] = try await supabase
+            .rpc("set_chapter_public_stats", params: Params(p_keys: keys))
+            .execute()
+            .value
+        return saved
     }
 
     private static let dateOnly: DateFormatter = {

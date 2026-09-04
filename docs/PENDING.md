@@ -519,10 +519,15 @@ The bump this section used to ask for has already happened. Status: `done`.
   attribution and delete off, roll id dropped so roll-only affordances stay inert). The four
   decorative segment bars are gone from the card. **Stats, in flight:** `chapter_stats` and
   `users.chapter_public_stats` + `set_chapter_public_stats` (migration `2026-09-04_chapter_stats.sql`)
-  APPLIED 2026-09-04; the app half (a closing "month in numbers" card after playback, up to five
-  lines: most reacted, most commented, busiest day, after dark, streak, rolls; and a per-stat
-  picker for what others see, owner always sees all) is being built. Owner: "build what you see
-  fit". Owner decisions on 2026-09-03, one REVERSED the next day after seeing it: months are FINISHED MONTHS ONLY ("September
+  APPLIED 2026-09-04, and the app half is BUILT: closing the viewer the first time lands on
+  "The month in numbers", up to five lines in priority (most reacted with thumb and the leading
+  emoji, most commented with thumb, busiest day, after dark when >= 3, streak when >= 3, rolls
+  when >= 1), tap a thumb to open that frame, "Play again", swipe to dismiss; a month with
+  nothing to say ends the recap as before. The picker lives under Badges in Edit profile: six
+  toggles, all on by default, saved as an explicit key list (all on saves `[]`, which the server
+  reads as everything public); the owner always sees every stat. Owner: "build what you see
+  fit". Not yet seen on a device: the top-reaction emoji in SF Mono (rendered as tofu in the
+  simulator, same as badge emoji there), and the swipe feel. Owner decisions on 2026-09-03, one REVERSED the next day after seeing it: months are FINISHED MONTHS ONLY ("September
   shouldn't be there since the month hasn't ended"); the shelf drops the month in progress
   client-side (`ChapterSummary.completedMonths`) and the newest finished month wears the RECAP
   tag. The RPC still returns the live month, unused. Earlier that day the call had been live and

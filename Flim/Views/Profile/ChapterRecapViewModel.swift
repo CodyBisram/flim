@@ -24,13 +24,24 @@ final class ChapterRecapViewModel {
     /// Every photo in the month, `taken_at` ascending, as `chapter_photos` returned it.
     private(set) var monthPhotos: [ChapterPhoto] = []
     /// The subset actually played, chronological order. Equal to `monthPhotos` when the month
-    /// has fifteen shots or fewer; otherwise `ChapterCuration`'s pick.
+    /// has fifteen shots or fewer; otherwise `ChapterCuration`'s pick, UNION any photo a stat line
+    /// on the closing card points at (see `load()`), so tapping "Most reacted"/"Most commented"
+    /// can always land on a real page in this same deck rather than a photo curation dropped.
     private(set) var deck: [ChapterPhoto] = []
     var urls: [String: URL] = [:]
     private(set) var isLoadingDeck = false
     /// `true` once `load()` has run, whether or not it found anything, so the empty state can
     /// tell "still loading" apart from "genuinely nothing here".
     private(set) var loaded = false
+
+    /// This month's `chapter_stats`, already visibility-resolved server-side by the time they
+    /// arrive here (see `ChapterService.stats(for:monthStart:)`).
+    private(set) var stats: ChapterStats = [:]
+    /// The closing card's lines, in priority order, capped at five. Empty exactly when the
+    /// closing card should not show at all: a private month for this viewer, or a month with
+    /// nothing worth calling out.
+    var closingLines: [ChapterStatLine] { ChapterStatsFormatting.lines(from: stats) }
+    var hasClosingCard: Bool { !closingLines.isEmpty }
 
     var isEmpty: Bool { loaded && deck.isEmpty }
 
@@ -84,21 +95,45 @@ final class ChapterRecapViewModel {
         isLoadingDeck = true
         defer { isLoadingDeck = false; loaded = true }
 
-        let photos = await chapters.photos(for: profileId, monthStart: chapter.monthStart)
+        async let photosResult = chapters.photos(for: profileId, monthStart: chapter.monthStart)
+        async let statsResult = chapters.stats(for: profileId, monthStart: chapter.monthStart)
+        let photos = await photosResult
         monthPhotos = photos
+        stats = await statsResult
         guard !photos.isEmpty else { deck = []; return }
 
         let pickedIds = await ChapterCuration.shared.curate(
             photos: photos, displayScale: displayScale,
             resolveThumbURL: { [feed] photo in await feed.signedURL(for: photo.displayPath) })
-        let pickedSet = Set(pickedIds)
+        var pickedSet = Set(pickedIds)
+        // Whatever the closing card can point a tap at must actually be in the deck, even when
+        // curation would otherwise have dropped it: a month with more than fifteen candidates
+        // trims aggressively, and the most-reacted/most-commented shot is exactly the kind of
+        // single photo that trim has no reason to keep on its own merits.
+        let highlightIds = [stats[.mostReacted]?.photoId, stats[.mostCommented]?.photoId].compactMap { $0 }
+        pickedSet.formUnion(highlightIds)
         // `photos` is already `taken_at` ascending, so filtering it (rather than reassembling
         // from `pickedIds`' own order) is what keeps the deck chronological.
         deck = photos.filter { pickedSet.contains($0.id) }
 
-        let paths = Set(deck.flatMap { [$0.displayPath, $0.viewPath] })
+        var paths = Set(deck.flatMap { [$0.displayPath, $0.viewPath] })
+        // The closing card's own thumb, straight off the stat row: usually the same value as the
+        // matching `ChapterPhoto.thumbPath` above, but resolved explicitly in case the RPC ever
+        // hands back a different rendition for it.
+        let highlightThumbPaths = [stats[.mostReacted]?.photoThumbPath, stats[.mostCommented]?.photoThumbPath]
+            .compactMap { $0 }
+        paths.formUnion(highlightThumbPaths)
         guard !paths.isEmpty else { return }
         let resolved = await feed.signedURLs(for: Array(paths))
         for (path, url) in resolved { urls[path] = url }
+    }
+
+    /// The deck index of `photoId`, if it's actually in this session's deck. `load()` guarantees
+    /// any photo a closing-card line points at is unioned into the deck, so this only fails for a
+    /// month whose photos never finished loading at all. Used by `ChapterRecapView` to seed
+    /// `PhotoPagerView.startIndex` when a closing-card thumb is tapped; the pager owns its own
+    /// selection from there, so this view model tracks no index of its own.
+    func deckIndex(ofPhoto photoId: UUID) -> Int? {
+        deck.firstIndex { $0.id == photoId }
     }
 }

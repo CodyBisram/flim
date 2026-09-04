@@ -46,11 +46,12 @@ struct ChapterPreviewDemoHost: View {
 @MainActor
 enum ChapterPreviewFixtures {
     /// Every `maxPixel` a Chapters view asks `CachedImage` for, across the shelf and the recap:
-    /// the shelf card (340), the recap's fanned covers (500), `PhotoPagerView`'s roll-rack film
-    /// strip (120, `DarkroomFrameView`'s own request), and its full-screen page (1400). A fixture
-    /// image is planted at every one of these so whichever view renders first always hits the
-    /// in-memory cache, never the placeholder.
-    private static let maxPixels: [CGFloat] = [340, 500, 120, 1400]
+    /// the shelf card (340), the recap's fanned covers (500), the closing card's own thumb row
+    /// (200, `ChapterClosingCardView.lineContent`), `PhotoPagerView`'s roll-rack film strip (120,
+    /// `DarkroomFrameView`'s own request), and its full-screen page (1400). A fixture image is
+    /// planted at every one of these so whichever view renders first always hits the in-memory
+    /// cache, never the placeholder.
+    private static let maxPixels: [CGFloat] = [340, 500, 200, 120, 1400]
 
     private static var seeded = false
 
@@ -92,10 +93,39 @@ enum ChapterPreviewFixtures {
                 coverPaths: Array(paths.prefix(4)),
                 firstShotAt: chapterPhotos.first?.takenAt ?? monthStart,
                 lastShotAt: chapterPhotos.last?.takenAt ?? monthStart))
-            chapters.photosByChapter[.init(profileId: profileId, monthStart: monthStart)] = chapterPhotos
+            let key = ChapterService.ChapterKey(profileId: profileId, monthStart: monthStart)
+            chapters.photosByChapter[key] = chapterPhotos
+            // Only the live current month gets fabricated `chapter_stats`, so `-chapterClosingDemo`
+            // (which jumps to the first, i.e. live, chapter) has something to render; the closed
+            // months stay stat-less, exercising the "no closing card" path for those.
+            if back == 0, let mostReacted = chapterPhotos.first, let mostCommented = chapterPhotos.last {
+                chapters.statsByChapter[key] = [
+                    .mostReacted: ChapterStatRow(statKey: "most_reacted", valueInt: 12,
+                                                  photoId: mostReacted.id, photoThumbPath: mostReacted.thumbPath),
+                    .topReaction: ChapterStatRow(statKey: "top_reaction", valueInt: 12, valueText: "❤️"),
+                    .mostCommented: ChapterStatRow(statKey: "most_commented", valueInt: 5,
+                                                    photoId: mostCommented.id, photoThumbPath: mostCommented.thumbPath),
+                    .busiestDay: ChapterStatRow(statKey: "busiest_day", valueInt: 9,
+                                                 valueText: bareDateString(monthStart.addingTimeInterval(11 * 86_400))),
+                    .nightShots: ChapterStatRow(statKey: "night_shots", valueInt: 7),
+                    .streakDays: ChapterStatRow(statKey: "streak_days", valueInt: 6),
+                    .rollsCount: ChapterStatRow(statKey: "rolls_count", valueInt: 3),
+                    .peopleShotWith: ChapterStatRow(statKey: "people_shot_with", valueInt: 7),
+                ]
+            }
         }
 
         chapters.chaptersByProfile[profileId] = summaries
+    }
+
+    /// A bare `"yyyy-MM-dd"` string, the same shape `busiest_day` arrives in for real, from a
+    /// concrete date, for this fixture's own use only.
+    private static func bareDateString(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: date)
     }
 
     private static func plant(_ image: UIImage, path: String) {

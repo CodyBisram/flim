@@ -21,8 +21,23 @@ struct ChapterRecapView: View {
     let profileId: UUID
     let chapterCoverURLs: [String: URL]
 
+    /// The recap's two "rest" screens: `phase` is whichever one sits behind the pager. Closing
+    /// the pager always lands on `.closing` when the month has anything to say
+    /// (`ChapterRecapViewModel.hasClosingCard`) rather than ending the recap outright, whether
+    /// that's the first close of the session or a replay reopened from the closing card's own
+    /// "Play again"; there is no separate "already showed you this" state to track, every close
+    /// of the pager behaves the same way. Playback itself is not a third case here: it is
+    /// presented over whichever rest screen is current via `isPlayerPresented`, see `player`'s
+    /// own doc for why.
+    private enum Phase { case opening, closing }
+
     @State private var viewModel: ChapterRecapViewModel
-    @State private var isPlaying = false
+    @State private var phase: Phase = .opening
+    /// Whether the pager is up, as its own `.fullScreenCover` rather than a third `phase` case.
+    @State private var isPlayerPresented = false
+    /// The pager's `startIndex` the next time it's presented: 0 from "Play the month", or a
+    /// specific frame from tapping a closing-card thumb (`ChapterRecapViewModel.deckIndex`).
+    @State private var selection = 0
     /// Whether the "coming soon" line under Share as a contact sheet has been revealed this
     /// visit.
     @State private var showContactSheetNotice = false
@@ -40,20 +55,25 @@ struct ChapterRecapView: View {
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            if isPlaying {
-                player
-            } else {
-                openingCard
+            switch phase {
+            case .opening: openingCard
+            case .closing: closingCard
             }
         }
         .statusBarHidden()
+        .fullScreenCover(isPresented: $isPlayerPresented, onDismiss: handlePlayerDismissed) {
+            player
+        }
         .task {
             viewModel.displayScale = displayScale
             await viewModel.load(feed: feed, chapters: chapters)
             #if DEBUG
             // Screenshotting the player from the Simulator's own CLI has no way to deliver a
             // tap on "Play the month"; this jumps straight there alongside `-openChapterRecap`.
-            if ProcessInfo.processInfo.arguments.contains("-autoPlayChapter") { isPlaying = true }
+            if ProcessInfo.processInfo.arguments.contains("-autoPlayChapter") { isPlayerPresented = true }
+            // `-chapterClosingDemo`, alongside `-openChapterRecap`: jumps straight to the closing
+            // card itself, for screenshotting it without playing through the whole deck first.
+            if ProcessInfo.processInfo.arguments.contains("-chapterClosingDemo") { phase = .closing }
             #endif
         }
     }
@@ -195,7 +215,8 @@ struct ChapterRecapView: View {
         VStack(spacing: 14) {
             Button {
                 Haptics.tap()
-                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.3)) { isPlaying = true }
+                selection = 0
+                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.3)) { isPlayerPresented = true }
             } label: {
                 Text("Play the month")
                     .flimFont(15, weight: .semibold, relativeTo: .body)
@@ -241,9 +262,12 @@ struct ChapterRecapView: View {
     ///
     /// Loading and empty states keep the same small header (close + month name) the old player
     /// had, since `PhotoPagerView` only ever renders once there is a `current` photo to show.
-    /// Once the deck is in hand, `PhotoPagerView` takes over completely, including its own X:
-    /// mounted inline rather than behind a further `.fullScreenCover`, its `dismiss()` resolves
-    /// to this screen's own presentation, so tapping it closes the whole recap.
+    /// Presented as this screen's own `.fullScreenCover` (`isPlayerPresented`) rather than mounted
+    /// directly in `body`'s `switch`, the same way `RollDetailView` presents its single-photo
+    /// pager over its grid: `PhotoPagerView`'s own X calls the environment's `dismiss()`, and
+    /// nesting a presentation boundary here is what makes that resolve to just this cover instead
+    /// of the whole recap, so `handlePlayerDismissed()` gets a chance to route to the closing card
+    /// rather than ending the recap outright.
     @ViewBuilder
     private var player: some View {
         if viewModel.isLoadingDeck {
@@ -265,6 +289,7 @@ struct ChapterRecapView: View {
         } else {
             PhotoPagerView(
                 photos: viewModel.pagerPhotos,
+                startIndex: selection,
                 signedURLs: viewModel.pagerSignedURLs,
                 // These are posts (chapters are posted-only), so the reactions/comments the
                 // viewer already resolves by photo id apply exactly as they do anywhere else a
@@ -287,7 +312,7 @@ struct ChapterRecapView: View {
 
     private var playerHeader: some View {
         HStack(spacing: 12) {
-            Button { Haptics.tap(); dismiss() } label: {
+            Button { Haptics.tap(); isPlayerPresented = false } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 15, weight: .medium))
                     .foregroundStyle(.white)
@@ -311,5 +336,37 @@ struct ChapterRecapView: View {
                 .flimFont(15, relativeTo: .subheadline)
                 .foregroundStyle(.white)
         }
+    }
+
+    // MARK: - Closing card
+
+    /// Runs once the pager's `.fullScreenCover` actually goes away, whichever way that happened:
+    /// its own X (the environment `dismiss()` this cover scopes to, not the whole recap) or
+    /// `playerHeader`'s close button setting `isPlayerPresented` directly for the loading/empty
+    /// states. Lands on the closing card when this month has one, otherwise the recap is over,
+    /// same as before the closing card existed.
+    private func handlePlayerDismissed() {
+        if viewModel.hasClosingCard {
+            withAnimation(.easeInOut(duration: 0.25)) { phase = .closing }
+        } else {
+            dismiss()
+        }
+    }
+
+    private var closingCard: some View {
+        ChapterClosingCardView(
+            monthName: viewModel.chapter.monthName(),
+            lines: viewModel.closingLines,
+            thumbURLs: viewModel.urls,
+            onSelectPhoto: { line in
+                guard let photoId = line.photoId, let idx = viewModel.deckIndex(ofPhoto: photoId) else { return }
+                selection = idx
+                isPlayerPresented = true
+            },
+            onPlayAgain: {
+                isPlayerPresented = true
+            },
+            onClose: { dismiss() }
+        )
     }
 }
