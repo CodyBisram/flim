@@ -64,6 +64,28 @@ ALTER TABLE public.photos ADD COLUMN IF NOT EXISTS feed_path TEXT;
 -- to precede it.
 ALTER TABLE public.photos ADD COLUMN IF NOT EXISTS hidden BOOLEAN NOT NULL DEFAULT FALSE;
 
+-- Burst grouping metadata, computed entirely on device at capture (nothing about
+-- the image itself leaves the phone to produce either value). burst_group is a
+-- UUID shared by every photo the phone's on-device Vision feature-print match
+-- put in the same burst; NULL means "not part of a detected burst" (the common
+-- case). sharpness is a relative [0, 1] score used to pick the sharpest frame of
+-- a burst for the reveal/grid; NULL means "not scored". The first frame of a
+-- burst starts with burst_group NULL and gets it filled in by an UPDATE once a
+-- second, similar-enough frame arrives close enough in time -- see
+-- 2026-09-04_photo_bursts.sql for why that UPDATE needs no new grant: photos
+-- INSERT/UPDATE are table-wide (not column-scoped) for `authenticated`, so
+-- "photos: can update own" already reaches these columns on the row's own owner.
+ALTER TABLE public.photos ADD COLUMN IF NOT EXISTS burst_group UUID NULL;
+ALTER TABLE public.photos ADD COLUMN IF NOT EXISTS sharpness REAL NULL;
+ALTER TABLE public.photos
+    DROP CONSTRAINT IF EXISTS photos_sharpness_range,
+    ADD CONSTRAINT photos_sharpness_range
+        CHECK (sharpness IS NULL OR (sharpness >= 0 AND sharpness <= 1));
+-- Partial: only burst members are ever looked up by burst_group, and burst_group
+-- IS NULL is the overwhelming majority of rows.
+CREATE INDEX IF NOT EXISTS photos_burst_group_idx
+    ON public.photos (burst_group) WHERE burst_group IS NOT NULL;
+
 -- ============================================================
 -- Invite gate: is this email allowed to sign in?
 -- Called from the client BEFORE auth (the user has no session yet), so it
