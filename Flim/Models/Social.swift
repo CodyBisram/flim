@@ -183,20 +183,43 @@ struct ActivityItem: Identifiable {
         /// tagged in someone else's), but a comment has exactly one author, so a comment-like push
         /// only ever reaches that one person. There's no "tagged" analog to split off.
         case commentLiked(String)
+        /// You were @mentioned in a comment, on a post or a roll photo, yours or not. Mirrors
+        /// `send-social-push`'s mention scan, which reaches you the same way regardless of which
+        /// of the two comment tables it came from. Excluded here whenever the comment is on
+        /// something you own: that comment already has its own row (`.comment` or
+        /// `.rollPhotoComment`), so a mention inside it isn't a second event.
+        case mentioned(String)
+        /// Someone commented on a roll photo you own, never your own comment. The roll-photo
+        /// analog of `.comment`, closing the gap `send-social-push`'s roll-photo-comment push
+        /// (the owner half of it) had no Activity row for at all.
+        case rollPhotoComment(String)
+        /// Someone reacted to a roll photo you own, never your own reaction. The roll-photo analog
+        /// of `.like`, matching the reveal's pull-back-loop push.
+        case rollPhotoReaction(String)
     }
     let id = UUID()
     let kind: Kind
     let actor: UserProfile
     let date: Date
     let postId: UUID?
-    /// The post this activity is about (nil for `.follow`). Carried directly, batch-fetched
-    /// alongside the activity rows, so a row can show a thumbnail preview and navigate
-    /// straight to the post with no second fetch at tap time.
+    /// The post this activity is about (nil for `.follow` and for any roll-photo kind, which has
+    /// no `Post` at all). Carried directly, batch-fetched alongside the activity rows, so a row
+    /// can show a thumbnail preview and navigate straight to the post with no second fetch at tap
+    /// time.
     var post: Post?
     /// The post's author, usually you (fetchActivity only looks at reactions/comments on
     /// YOUR OWN posts), but the actor themselves for `.tagged`. Resolved directly from the
     /// fetched post rather than inferred from `kind`, so it stays correct regardless.
     var postAuthor: UserProfile?
+    /// Set only for a roll-photo kind (`.mentioned` from a roll photo, `.rollPhotoComment`,
+    /// `.rollPhotoReaction`): the roll to open. A roll photo never has a `Post`, so tapping one of
+    /// these opens the roll's own viewer instead of `PostDetailView`, see
+    /// `activityDestination(for:)` in ActivityFeedView.swift.
+    var rollId: UUID?
+    /// Thumbnail path for a roll-photo kind, carried straight off the same embedded join
+    /// `send-social-push` reads server-side, so a row never needs a second fetch just to draw its
+    /// preview.
+    var rollPhotoDisplayPath: String?
 }
 
 /// Emoji reactions. `all` is the default quick row. The fuller browsable palette revealed when you

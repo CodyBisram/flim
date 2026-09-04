@@ -38,7 +38,33 @@ func activityActionText(_ kind: ActivityItem.Kind) -> String {
     case .commentLiked(let body): return "liked your comment: “\(body)”"
     case .follow: return "started following you"
     case .tagged: return "tagged you in a photo"
+    case .mentioned(let body): return "mentioned you: “\(body)”"
+    // The roll-photo analog of `.comment`, same sentence: the destination (a roll's viewer
+    // instead of a post) is what tells these apart, not the wording.
+    case .rollPhotoComment(let body): return "commented: “\(body)”"
+    case .rollPhotoReaction(let emoji):
+        switch reactionGlyph(for: emoji, renders: ReactionRenderabilityCache.shared.renders) {
+        case .emoji(let text): return "reacted \(text) to your photo"
+        case .placeholder: return "reacted to your photo"
+        }
     }
+}
+
+/// Where tapping an Activity row should go: any roll-photo kind opens the roll itself (a roll
+/// photo has no `Post`, so there is no `PostDetailView` to push), a post-based kind opens
+/// `PostDetailView`, and anything with neither (`.follow`) opens the actor's profile. Pure and
+/// top-level so it's testable without standing up the view, same reasoning as
+/// `buildActivityThumbURLs` above.
+enum ActivityDestination: Equatable {
+    case post(FeedItem)
+    case roll(rollId: UUID)
+    case profile(userId: UUID)
+}
+
+func activityDestination(for item: ActivityItem) -> ActivityDestination {
+    if let rollId = item.rollId { return .roll(rollId: rollId) }
+    if let post = item.post, let author = item.postAuthor { return .post(FeedItem(post: post, author: author)) }
+    return .profile(userId: item.actor.id)
 }
 
 struct ActivityFeedView: View {
@@ -51,6 +77,10 @@ struct ActivityFeedView: View {
     @State private var loaded = false
     /// Signed thumbnail URLs, keyed by post id (not path) so a row's lookup is a single hop.
     @State private var thumbURLs: [UUID: URL] = [:]
+    /// Signed thumbnail URLs for roll-photo rows, keyed directly by storage path: unlike posts,
+    /// a roll photo has no id of its own carried on `ActivityItem` worth re-keying by (only the
+    /// path itself), and `feed.signedURLs(for:)` already returns exactly this shape.
+    @State private var rollPhotoThumbURLs: [String: URL] = [:]
     @State private var profileRoute: ProfileRoute?
     @State private var postRoute: FeedItem?
     /// When Activity was last opened, captured BEFORE this visit stamped it. Anything newer sits
@@ -133,6 +163,9 @@ struct ActivityFeedView: View {
         let paths = Array(Set(items.compactMap { $0.post?.displayPath }))
         let urls = await feed.signedURLs(for: paths)
         thumbURLs = buildActivityThumbURLs(items: items, urlsByPath: urls)
+
+        let rollPaths = Array(Set(items.compactMap { $0.rollPhotoDisplayPath }))
+        rollPhotoThumbURLs = await feed.signedURLs(for: rollPaths)
         loaded = true
     }
 
@@ -201,10 +234,21 @@ struct ActivityFeedView: View {
     }
 
     private func openDestination(_ item: ActivityItem) {
-        if let post = item.post, let author = item.postAuthor {
-            postRoute = FeedItem(post: post, author: author)
-        } else {
-            profileRoute = ProfileRoute(id: item.actor.id)
+        switch activityDestination(for: item) {
+        case .post(let feedItem):
+            postRoute = feedItem
+        case .roll(let rollId):
+            // A roll photo has no `Post`/`PostDetailView` home; it opens in the roll's own
+            // viewer, the same place a push notification's `.reveal` destination lands
+            // (`PushDestination.swift`, `MainTabView.route(to:)`). This sheet holds no roll data
+            // of its own to push onto a `NavigationStack`, so rather than duplicate
+            // `RollDetailView`'s fetch-then-push dance here, it dismisses and reuses the exact
+            // mechanism a live push tap already goes through.
+            dismiss()
+            NotificationCenter.default.post(name: .openPushDestination,
+                                             object: PushDestination.reveal(rollId: rollId))
+        case .profile(let userId):
+            profileRoute = ProfileRoute(id: userId)
         }
     }
 
@@ -232,8 +276,8 @@ struct ActivityFeedView: View {
     }
 
     /// A photo preview with a small badge for what happened (matching the reaction emoji, or
-    /// a comment/tag icon), for anything that's about a post. `.follow` keeps the plain
-    /// person icon, there's no photo to show.
+    /// a comment/tag icon), for anything that's about a post OR a roll photo. `.follow` keeps
+    /// the plain person icon, there's no photo to show.
     @ViewBuilder
     private func thumbnail(_ item: ActivityItem) -> some View {
         if let post = item.post {
@@ -241,6 +285,25 @@ struct ActivityFeedView: View {
                 Group {
                     if let url = thumbURLs[post.id] {
                         CachedImage(url: url, maxPixel: 88, cacheKey: post.displayPath) {
+                            $0.resizable().scaledToFill()
+                        } placeholder: {
+                            ShimmerPlaceholder(cornerRadius: 8)
+                        }
+                    } else {
+                        ShimmerPlaceholder(cornerRadius: 8)
+                    }
+                }
+                .frame(width: 44, height: 44)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.08), lineWidth: 1))
+
+                badge(item.kind).offset(x: 6, y: 6)
+            }
+        } else if let path = item.rollPhotoDisplayPath {
+            ZStack(alignment: .bottomTrailing) {
+                Group {
+                    if let url = rollPhotoThumbURLs[path] {
+                        CachedImage(url: url, maxPixel: 88, cacheKey: path) {
                             $0.resizable().scaledToFill()
                         } placeholder: {
                             ShimmerPlaceholder(cornerRadius: 8)
@@ -269,7 +332,7 @@ struct ActivityFeedView: View {
     @ViewBuilder
     private func badge(_ kind: ActivityItem.Kind) -> some View {
         switch kind {
-        case .like(let emoji), .likeTagged(let emoji):
+        case .like(let emoji), .likeTagged(let emoji), .rollPhotoReaction(let emoji):
             // `emoji` arrived over the network from whoever reacted, possibly on a newer OS than
             // this device's; see `ReactionGlyph.swift`. `ReactionBar`'s own picker never produces
             // anything this device can't draw, but a row here can be about a reaction someone else
@@ -289,7 +352,7 @@ struct ActivityFeedView: View {
                     .background(FlimTheme.bg, in: Circle())
                     .overlay(Circle().stroke(FlimTheme.bg, lineWidth: 2))
             }
-        case .comment, .tagged, .commentLiked:
+        case .comment, .tagged, .commentLiked, .rollPhotoComment, .mentioned:
             Image(systemName: icon(kind))
                 .font(.system(size: 9, weight: .bold))
                 .foregroundStyle(.white)
@@ -361,11 +424,12 @@ private struct ActivityLine: View {
 
     private func icon(_ kind: ActivityItem.Kind) -> String {
         switch kind {
-        case .like, .likeTagged: return "heart.fill"
-        case .comment: return "bubble.right.fill"
+        case .like, .likeTagged, .rollPhotoReaction: return "heart.fill"
+        case .comment, .rollPhotoComment: return "bubble.right.fill"
         case .commentLiked: return "heart.fill"
         case .follow: return "person.fill.badge.plus"
         case .tagged: return "tag.fill"
+        case .mentioned: return "at"
         }
     }
 }

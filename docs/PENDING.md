@@ -172,6 +172,23 @@ actually do. Worth deciding before more is built on top of rolls.
 
 ## Next up
 
+### done 2026-09-03: three device-found bugs from the Islands roll
+
+- The roll viewer opened with 100 of 122 photographs. The roll fetch pages at 100, the viewer
+  took the grid's list at the tap and could never grow it, and a starved drain of page two left
+  it there. The viewer now merges an independent whole-roll fetch (the reveal's own snapshot
+  query) into the paged list, preserving order and the selected frame. `-seedRoll` gained
+  `-seedRollCount N`, `-seedRollOpen` and `-tapFirstDevelopedPhoto` for reproducing it.
+- A roll photo's comments row read the bare word. It now shows "1 comment" / "2 comments" and
+  recounts when the thread sheet closes.
+- An @mention in a roll-photo comment pushed but never reached the in-app activity list. The
+  list is assembled on the client from a fixed set of tables and had drifted from the push
+  scanner. Now in the list AND the unread badge: mentions in post or photo comments, comments on
+  your roll photo, reactions to your roll photo; a roll-photo row opens the roll's viewer, not
+  the feed. STILL MISSING from activity (push only): the "also commented" thread notices on a
+  post or roll photo you commented on but do not own. Different plumbing (needs "threads you are
+  in" tracking); its own item. Status: `queued`.
+
 ### done 2026-09-02: "still-no-shot" push sent to 7
 
 Second touch to everyone reachable who has never taken a photograph (six of them had the straight

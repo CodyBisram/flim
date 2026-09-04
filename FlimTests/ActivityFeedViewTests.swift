@@ -107,4 +107,97 @@ final class ActivityActionTextTests: XCTestCase {
     func testCommentLikedQuotesTheLikedCommentsBody() {
         XCTAssertEqual(activityActionText(.commentLiked("nice!")), "liked your comment: “nice!”")
     }
+
+    /// `.mentioned` is the fix for the reported bug: an @mention in a comment (a post's or a roll
+    /// photo's) must read as an explicit summons, not a generic "commented" row.
+    @MainActor
+    func testMentionedQuotesWhatTheyWrote() {
+        XCTAssertEqual(activityActionText(.mentioned("check this out @sam")),
+                       "mentioned you: “check this out @sam”")
+    }
+
+    /// `.rollPhotoComment` reads exactly like `.comment`: the two are told apart by WHERE they
+    /// route (a roll's viewer vs. `PostDetailView`, see `ActivityDestinationTests` below), not by
+    /// wording.
+    @MainActor
+    func testRollPhotoCommentReadsLikeAnOrdinaryComment() {
+        XCTAssertEqual(activityActionText(.rollPhotoComment("love this shot")),
+                       "commented: “love this shot”")
+    }
+
+    /// `.rollPhotoReaction` reads exactly like `.like` ("to your photo"): a roll photo you own
+    /// reacted to is still your own photo, unlike `.likeTagged`.
+    @MainActor
+    func testRollPhotoReactionSaysYourPhoto() {
+        XCTAssertEqual(activityActionText(.rollPhotoReaction("🔥")), "reacted 🔥 to your photo")
+    }
+}
+
+/// `activityDestination(for:)`: where tapping an Activity row should go. The regression this
+/// guards is the reported bug's tap-through half: a roll photo has no `Post`, so before this
+/// existed, nothing routed a roll-photo event anywhere sensible; `openDestination` fell through to
+/// whatever `item.post`/`item.postAuthor` happened to be (nil for a roll photo), which meant
+/// nothing happened at all when a mention row was tapped.
+final class ActivityDestinationTests: XCTestCase {
+    private func profile(_ username: String = "someone") -> UserProfile {
+        UserProfile(id: UUID(), username: username, avatarPath: nil, bio: nil,
+                    displayName: nil, coverPath: nil, createdAt: .now)
+    }
+
+    private func post(userId: UUID = UUID()) -> Post {
+        Post(id: UUID(), userId: userId, photoId: UUID(), storagePath: "full.jpg",
+             thumbPath: "thumb.jpg", feedPath: nil, takenAt: .now, caption: nil, createdAt: .now)
+    }
+
+    /// A roll-photo event (any kind carrying `rollId`) routes to the roll, never to a post, even
+    /// when (implausibly) both `rollId` and `post` are somehow set: a roll photo is never also a
+    /// `Post`, but `rollId` alone is what a real roll-photo row carries, so it must win.
+    func testRollPhotoMentionRoutesToTheRoll() {
+        let rollId = UUID()
+        let item = ActivityItem(kind: .mentioned("hey @you"), actor: profile(), date: .now,
+                                 postId: nil, post: nil, postAuthor: nil,
+                                 rollId: rollId, rollPhotoDisplayPath: "photo.jpg")
+        XCTAssertEqual(activityDestination(for: item), .roll(rollId: rollId))
+    }
+
+    func testRollPhotoCommentRoutesToTheRoll() {
+        let rollId = UUID()
+        let item = ActivityItem(kind: .rollPhotoComment("nice"), actor: profile(), date: .now,
+                                 postId: nil, post: nil, postAuthor: nil,
+                                 rollId: rollId, rollPhotoDisplayPath: "photo.jpg")
+        XCTAssertEqual(activityDestination(for: item), .roll(rollId: rollId))
+    }
+
+    func testRollPhotoReactionRoutesToTheRoll() {
+        let rollId = UUID()
+        let item = ActivityItem(kind: .rollPhotoReaction("❤️"), actor: profile(), date: .now,
+                                 postId: nil, post: nil, postAuthor: nil,
+                                 rollId: rollId, rollPhotoDisplayPath: "photo.jpg")
+        XCTAssertEqual(activityDestination(for: item), .roll(rollId: rollId))
+    }
+
+    /// A mention on a POST (not a roll photo) opens that post, exactly like `.comment` does, since
+    /// it carries a real `post`/`postAuthor` pair and no `rollId`.
+    func testPostMentionRoutesToThePost() {
+        let author = profile("author")
+        let p = post(userId: author.id)
+        let item = ActivityItem(kind: .mentioned("hey @you"), actor: profile(), date: .now,
+                                 postId: p.id, post: p, postAuthor: author)
+        XCTAssertEqual(activityDestination(for: item), .post(FeedItem(post: p, author: author)))
+    }
+
+    func testOrdinaryPostCommentRoutesToThePost() {
+        let author = profile("author")
+        let p = post(userId: author.id)
+        let item = ActivityItem(kind: .comment("nice!"), actor: profile(), date: .now,
+                                 postId: p.id, post: p, postAuthor: author)
+        XCTAssertEqual(activityDestination(for: item), .post(FeedItem(post: p, author: author)))
+    }
+
+    /// `.follow` carries neither a post nor a roll: it opens the actor's profile.
+    func testFollowRoutesToTheActorsProfile() {
+        let actor = profile()
+        let item = ActivityItem(kind: .follow, actor: actor, date: .now, postId: nil)
+        XCTAssertEqual(activityDestination(for: item), .profile(userId: actor.id))
+    }
 }

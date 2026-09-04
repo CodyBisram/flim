@@ -1739,25 +1739,95 @@ final class FeedService {
                 .gt("created_at", value: sinceStr).execute().value) ?? []
             total += commentLikes.count
         }
+
+        // Comments and reactions on a roll photo you own, same "badge can't disagree with the
+        // list" reasoning as everything else in this function; `activityRollPhotoComments` /
+        // `activityRollPhotoReactions` below are the matching Activity-list sources. Embeds
+        // `photos!inner(user_id)` the same way `activityRollPhotoComments` does, so the filter
+        // runs server-side rather than fetching every comment/reaction first.
+        struct OwnedPhotoRow: Decodable { let created_at: Date; let photos: Owner?
+            struct Owner: Decodable { let user_id: UUID }
+        }
+        let rollComments: [OwnedPhotoRow] = (try? await supabase.from("photo_comments")
+            .select("created_at, photos!inner(user_id)")
+            .eq("photos.user_id", value: userId.uuidString)
+            .neq("user_id", value: userId.uuidString)
+            .gt("created_at", value: sinceStr).execute().value) ?? []
+        total += rollComments.count
+
+        let rollReactions: [OwnedPhotoRow] = (try? await supabase.from("photo_reactions")
+            .select("created_at, photos!inner(user_id)")
+            .eq("photos.user_id", value: userId.uuidString)
+            .neq("user_id", value: userId.uuidString)
+            .gt("created_at", value: sinceStr).execute().value) ?? []
+        total += rollReactions.count
+
+        // @mentions of you, on a post or a roll photo, yours or not; `activityMentions` below is
+        // the matching Activity-list source. Prefiltered server-side with `.ilike` (cheap, but can
+        // over-match, "@bob" also matches "@bobby"), then re-checked with the exact same
+        // word-boundary parser the composer and comment rendering use, so the count can never be
+        // higher than what the list itself would show.
+        if let username = await fetchProfile(id: userId)?.username, !username.isEmpty {
+            let pattern = "%@\(username)%"
+            let me = username.lowercased()
+
+            struct PostMentionRow: Decodable { let body: String; let posts: Owner?
+                struct Owner: Decodable { let user_id: UUID }
+            }
+            let postMentions: [PostMentionRow] = (try? await supabase.from("post_comments")
+                .select("body, posts(user_id)")
+                .ilike("body", value: pattern)
+                .neq("user_id", value: userId.uuidString)
+                .gt("created_at", value: sinceStr).execute().value) ?? []
+            total += postMentions.filter {
+                $0.posts?.user_id != userId && mentionedUsernames(in: $0.body).contains(me)
+            }.count
+
+            struct PhotoMentionRow: Decodable { let body: String; let photos: Owner?
+                struct Owner: Decodable { let user_id: UUID }
+            }
+            let photoMentions: [PhotoMentionRow] = (try? await supabase.from("photo_comments")
+                .select("body, photos(user_id)")
+                .ilike("body", value: pattern)
+                .neq("user_id", value: userId.uuidString)
+                .gt("created_at", value: sinceStr).execute().value) ?? []
+            total += photoMentions.filter {
+                $0.photos?.user_id != userId && mentionedUsernames(in: $0.body).contains(me)
+            }.count
+        }
         return total
     }
 
-    private struct ActivityRaw { let kind: ActivityItem.Kind; let actorId: UUID; let date: Date; let postId: UUID? }
+    private struct ActivityRaw {
+        let kind: ActivityItem.Kind
+        let actorId: UUID
+        let date: Date
+        let postId: UUID?
+        /// Set only for a roll-photo-based raw (`.mentioned` from a photo_comments row,
+        /// `.rollPhotoComment`, `.rollPhotoReaction`): the roll to open and the photo's thumbnail
+        /// path, carried straight off the same embedded join `send-social-push` reads server-side.
+        var rollId: UUID? = nil
+        var rollPhotoDisplayPath: String? = nil
+    }
 
     func fetchActivity(userId: UUID) async -> [ActivityItem] {
         let epoch = AccountEpoch.current
-        // The four source branches (activity on your posts, new followers, tags of you, reactions
-        // on posts you're tagged in) are independent round-trip sets, run them concurrently instead
-        // of one after another. The block refresh is independent too; it just has to finish before
-        // the filter below. The rows are already RLS-clean of blocked-either-way activity, but this
-        // view can be reached without the Feed tab ever loading, and re-checking protects anything
-        // cached pre-block.
+        // The source branches (activity on your posts, new followers, tags of you, reactions on
+        // posts you're tagged in, comments/reactions on roll photos you own, and @mentions of you
+        // anywhere) are independent round-trip sets, run them concurrently instead of one after
+        // another. The block refresh is independent too; it just has to finish before the filter
+        // below. The rows are already RLS-clean of blocked-either-way activity, but this view can
+        // be reached without the Feed tab ever loading, and re-checking protects anything cached
+        // pre-block.
         async let blockedDone: Void = loadBlocked(userId: userId)
         async let ownPostRaws = activityOnOwnPosts(userId: userId)
         async let followRaws = activityFollows(userId: userId)
         async let taggedRaws = activityTagged(userId: userId)
         async let taggedReactionRaws = activityReactionsOnTaggedPosts(userId: userId)
         async let commentLikeRaws = activityCommentLikes(userId: userId)
+        async let rollCommentRaws = activityRollPhotoComments(userId: userId)
+        async let rollReactionRaws = activityRollPhotoReactions(userId: userId)
+        async let mentionRaws = activityMentions(userId: userId)
 
         await blockedDone
         var raws: [ActivityRaw]
@@ -1770,6 +1840,9 @@ final class FeedService {
             raws += try await taggedRaws
             raws += try await taggedReactionRaws
             raws += try await commentLikeRaws
+            raws += try await rollCommentRaws
+            raws += try await rollReactionRaws
+            raws += try await mentionRaws
             guard AccountEpoch.isCurrent(epoch) else { return [] }
             activityError = nil
         } catch {
@@ -1785,8 +1858,9 @@ final class FeedService {
         raws.removeAll { blockedIds.contains($0.actorId) }
         let profiles = await fetchProfiles(ids: Array(Set(raws.map(\.actorId))))
 
-        // Batch-fetch the post each row is about (nil for .follow) and its author, so a row
-        // can show a thumbnail and navigate straight to the post with no per-row query.
+        // Batch-fetch the post each row is about (nil for .follow and for any roll-photo raw) and
+        // its author, so a row can show a thumbnail and navigate straight to the post with no
+        // per-row query.
         let posts = await fetchPosts(ids: Array(Set(raws.compactMap(\.postId))))
         let postAuthors = await fetchProfiles(ids: Array(Set(posts.values.map(\.userId))))
 
@@ -1795,7 +1869,8 @@ final class FeedService {
                 guard let actor = profiles[raw.actorId] else { return nil }
                 let post = raw.postId.flatMap { posts[$0] }
                 return ActivityItem(kind: raw.kind, actor: actor, date: raw.date, postId: raw.postId,
-                                     post: post, postAuthor: post.flatMap { postAuthors[$0.userId] })
+                                     post: post, postAuthor: post.flatMap { postAuthors[$0.userId] },
+                                     rollId: raw.rollId, rollPhotoDisplayPath: raw.rollPhotoDisplayPath)
             }
             .sorted { $0.date > $1.date }
     }
@@ -1959,6 +2034,137 @@ final class FeedService {
     /// `shouldIncludeTaggedPostReaction` above.
     nonisolated static func shouldIncludeCommentLike(likerId: UUID, viewerId: UUID) -> Bool {
         likerId != viewerId
+    }
+
+    /// The pure exclusion rule behind both `activityMentionsInPostComments` and
+    /// `activityMentionsInPhotoComments`: a mention inside a comment on something YOU own is
+    /// dropped, because that comment already has its own row (`.comment` or `.rollPhotoComment`)
+    /// and showing it a second time as `.mentioned` would double the same event rather than
+    /// report a second one. `ownerId` is nil when the embedded post/photo failed to resolve
+    /// (deleted between the two queries, or a select that came back empty), which is treated the
+    /// same as "not yours": there's nothing to be a duplicate of, so the mention still stands.
+    nonisolated static func shouldIncludeMention(ownerId: UUID?, viewerId: UUID) -> Bool {
+        ownerId != viewerId
+    }
+
+    /// Comments on a roll photo YOU OWN, from someone else. The roll-photo analog of
+    /// `activityOnOwnPosts`'s comment half: `send-social-push`'s roll-photo-comment block notifies
+    /// the photo's owner the same way a post's owner is notified, but until this existed, opening
+    /// Activity from that push showed nothing (the owner report that this whole gap was found
+    /// from: a friend @mentioned in a roll-photo comment got the push and nothing in Activity;
+    /// this is the sibling gap the same comparison turned up, the plain "you got commented on"
+    /// case with no mention involved at all).
+    ///
+    /// `photos!inner(user_id, roll_id, thumb_path, storage_path)` filters server-side to photos
+    /// you own the same way `tagRecency`'s `posts!inner(user_id)` does; see its comment for the
+    /// precedent. Bounded the same way every other Activity source here is, `.limit(40)` on the
+    /// newest rows, not a full scan.
+    private func activityRollPhotoComments(userId: UUID) async throws -> [ActivityRaw] {
+        struct RC: Decodable {
+            let user_id: UUID; let body: String; let created_at: Date
+            let photos: Meta?
+            struct Meta: Decodable { let roll_id: UUID?; let thumb_path: String?; let storage_path: String }
+        }
+        let rows: [RC] = try await supabase.from("photo_comments")
+            .select("user_id, body, created_at, photos!inner(user_id, roll_id, thumb_path, storage_path)")
+            .eq("photos.user_id", value: userId.uuidString)
+            .neq("user_id", value: userId.uuidString)
+            .order("created_at", ascending: false).limit(40).execute().value
+        return rows.compactMap { r in
+            guard let meta = r.photos else { return nil }
+            return ActivityRaw(kind: .rollPhotoComment(r.body), actorId: r.user_id, date: r.created_at,
+                                postId: nil, rollId: meta.roll_id,
+                                rollPhotoDisplayPath: meta.thumb_path ?? meta.storage_path)
+        }
+    }
+
+    /// Reactions on a roll photo YOU OWN, from someone else. The roll-photo analog of
+    /// `activityOnOwnPosts`'s reaction half, matching `send-social-push`'s roll-photo-reactions
+    /// push (the reveal's pull-back loop), which had no Activity row at all before this.
+    private func activityRollPhotoReactions(userId: UUID) async throws -> [ActivityRaw] {
+        struct RR: Decodable {
+            let user_id: UUID; let emoji: String; let created_at: Date
+            let photos: Meta?
+            struct Meta: Decodable { let roll_id: UUID?; let thumb_path: String?; let storage_path: String }
+        }
+        let rows: [RR] = try await supabase.from("photo_reactions")
+            .select("user_id, emoji, created_at, photos!inner(user_id, roll_id, thumb_path, storage_path)")
+            .eq("photos.user_id", value: userId.uuidString)
+            .neq("user_id", value: userId.uuidString)
+            .order("created_at", ascending: false).limit(40).execute().value
+        return rows.compactMap { r in
+            guard let meta = r.photos else { return nil }
+            return ActivityRaw(kind: .rollPhotoReaction(r.emoji), actorId: r.user_id, date: r.created_at,
+                                postId: nil, rollId: meta.roll_id,
+                                rollPhotoDisplayPath: meta.thumb_path ?? meta.storage_path)
+        }
+    }
+
+    /// @mentions of you, in a comment on a post OR a roll photo, yours or not. This is the fix for
+    /// the reported gap: a friend @mentioned in a comment on a shared roll's photo got the push
+    /// (`send-social-push`'s photo_comments mention scan) but nothing appeared in their own
+    /// Activity, because nothing here ever looked at `photo_comments` for a mention, only
+    /// `post_comments` was ever scanned, and even there, only via `activityOnOwnPosts`'s "comments
+    /// on posts you own" query, which never checked the comment's TEXT at all. A mention in a
+    /// comment on a post that isn't yours had exactly the same gap and is fixed here too, for the
+    /// same underlying reason and with the same shape.
+    ///
+    /// Prefiltered server-side with `.ilike` (needs an index-free substring scan, so this is
+    /// bounded the same way every other query here is, `.limit(40)` on the newest matches, never
+    /// the whole table), then re-checked with `mentionedUsernames(in:)`, the exact same
+    /// word-boundary parser the composer and comment rendering use, before a candidate is trusted:
+    /// `.ilike("%@bob%")` also matches "@bobby", a parser check is the only way to know for sure.
+    ///
+    /// Comments on something you OWN are excluded (`shouldIncludeMention` above): that comment
+    /// already has its own row (`.comment` from `activityOnOwnPosts`, `.rollPhotoComment` above),
+    /// and showing the SAME comment twice, once generic and once as a mention, would read as two
+    /// events instead of one.
+    private func activityMentions(userId: UUID) async throws -> [ActivityRaw] {
+        guard let username = await fetchProfile(id: userId)?.username, !username.isEmpty else { return [] }
+        async let inPosts = activityMentionsInPostComments(userId: userId, username: username)
+        async let inPhotos = activityMentionsInPhotoComments(userId: userId, username: username)
+        return try await inPosts + (try await inPhotos)
+    }
+
+    private func activityMentionsInPostComments(userId: UUID, username: String) async throws -> [ActivityRaw] {
+        struct C: Decodable {
+            let user_id: UUID; let body: String; let created_at: Date; let post_id: UUID
+            let posts: Meta?
+            struct Meta: Decodable { let user_id: UUID }
+        }
+        let rows: [C] = try await supabase.from("post_comments")
+            .select("user_id, body, created_at, post_id, posts(user_id)")
+            .ilike("body", value: "%@\(username)%")
+            .neq("user_id", value: userId.uuidString)
+            .order("created_at", ascending: false).limit(40).execute().value
+        let me = username.lowercased()
+        return rows.compactMap { r in
+            guard mentionedUsernames(in: r.body).contains(me),
+                  Self.shouldIncludeMention(ownerId: r.posts?.user_id, viewerId: userId)
+            else { return nil }
+            return ActivityRaw(kind: .mentioned(r.body), actorId: r.user_id, date: r.created_at, postId: r.post_id)
+        }
+    }
+
+    private func activityMentionsInPhotoComments(userId: UUID, username: String) async throws -> [ActivityRaw] {
+        struct PC: Decodable {
+            let user_id: UUID; let body: String; let created_at: Date
+            let photos: Meta?
+            struct Meta: Decodable { let user_id: UUID; let roll_id: UUID?; let thumb_path: String?; let storage_path: String }
+        }
+        let rows: [PC] = try await supabase.from("photo_comments")
+            .select("user_id, body, created_at, photos(user_id, roll_id, thumb_path, storage_path)")
+            .ilike("body", value: "%@\(username)%")
+            .neq("user_id", value: userId.uuidString)
+            .order("created_at", ascending: false).limit(40).execute().value
+        let me = username.lowercased()
+        return rows.compactMap { r in
+            guard let meta = r.photos, mentionedUsernames(in: r.body).contains(me),
+                  Self.shouldIncludeMention(ownerId: meta.user_id, viewerId: userId)
+            else { return nil }
+            return ActivityRaw(kind: .mentioned(r.body), actorId: r.user_id, date: r.created_at, postId: nil,
+                                rollId: meta.roll_id, rollPhotoDisplayPath: meta.thumb_path ?? meta.storage_path)
+        }
     }
 
     #if DEBUG
