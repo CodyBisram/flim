@@ -1,0 +1,89 @@
+import Testing
+import Foundation
+@testable import Flim
+
+/// The pure seam between the recap's curated deck and `PhotoPagerView`'s own input shape:
+/// `ChapterRecapViewModel.pagerPhotos`/`pagerSignedURLs`. Pins that the viewer is handed exactly
+/// the curated ids, in the deck's own (chronological) order, never the whole month, and that the
+/// mapping never leaks a `rollId` or a stale `developsAt` the pager could misread.
+struct ChapterRecapPagerMappingTests {
+    private func photo(_ id: UUID, takenAt: Date, thumbPath: String? = "thumb", feedPath: String? = "feed",
+                        storagePath: String = "storage", rollId: UUID? = nil) -> ChapterPhoto {
+        ChapterPhoto(id: id, takenAt: takenAt, thumbPath: thumbPath, feedPath: feedPath,
+                     storagePath: storagePath, rollId: rollId, rollName: nil)
+    }
+
+    @Test("the pager gets exactly the curated deck's ids, in the deck's own order")
+    func handsOverExactlyTheCuratedIdsInOrder() {
+        let base = Date(timeIntervalSince1970: 0)
+        let ids = (0..<5).map { _ in UUID() }
+        let deck = ids.enumerated().map { index, id in
+            photo(id, takenAt: base.addingTimeInterval(TimeInterval(index) * 60))
+        }
+        let profileId = UUID()
+
+        let pagerPhotos = ChapterRecapViewModel.pagerPhotos(from: deck, profileId: profileId)
+
+        #expect(pagerPhotos.map(\.id) == ids)
+    }
+
+    @Test("an empty deck produces an empty pager input")
+    func emptyDeckProducesEmptyPagerInput() {
+        #expect(ChapterRecapViewModel.pagerPhotos(from: [], profileId: UUID()).isEmpty)
+    }
+
+    @Test("every mapped photo carries the chapter's own profile id, never a mix of authors")
+    func everyPhotoIsAttributedToTheChapterProfile() {
+        let profileId = UUID()
+        let deck = [photo(UUID(), takenAt: .now), photo(UUID(), takenAt: .now.addingTimeInterval(60))]
+
+        let pagerPhotos = ChapterRecapViewModel.pagerPhotos(from: deck, profileId: profileId)
+
+        #expect(pagerPhotos.allSatisfy { $0.userId == profileId })
+    }
+
+    @Test("rollId is dropped even for a shot that came from a roll")
+    func rollIdIsDroppedEvenWhenSourcedFromARoll() {
+        let rollId = UUID()
+        let deck = [photo(UUID(), takenAt: .now, rollId: rollId)]
+
+        let pagerPhotos = ChapterRecapViewModel.pagerPhotos(from: deck, profileId: UUID())
+
+        #expect(pagerPhotos.first?.rollId == nil)
+    }
+
+    @Test("every mapped photo is already \"ready\", so the pager's own develop gate never blocks it")
+    func everyPhotoIsAlreadyReady() {
+        let deck = [photo(UUID(), takenAt: .now)]
+
+        let pagerPhotos = ChapterRecapViewModel.pagerPhotos(from: deck, profileId: UUID())
+
+        #expect(pagerPhotos.allSatisfy { $0.isReady })
+    }
+
+    @Test("signed URLs are keyed by photo id, read off each photo's own displayPath")
+    func signedURLsAreKeyedByPhotoId() {
+        let a = photo(UUID(), takenAt: .now, thumbPath: "a-thumb", storagePath: "a-storage")
+        let b = photo(UUID(), takenAt: .now, thumbPath: nil, storagePath: "b-storage")
+        let deck = [a, b]
+        let aURL = URL(string: "https://example.com/a")!
+        let bURL = URL(string: "https://example.com/b")!
+        // Keyed by `displayPath`: `a`'s is its thumbPath, `b`'s falls back to its storagePath
+        // (no thumbPath), matching `ChapterPhoto.displayPath`'s own rule.
+        let urls: [String: URL] = ["a-thumb": aURL, "b-storage": bURL]
+
+        let signedURLs = ChapterRecapViewModel.pagerSignedURLs(from: deck, urls: urls)
+
+        #expect(signedURLs[a.id] == aURL)
+        #expect(signedURLs[b.id] == bURL)
+    }
+
+    @Test("a photo with no resolved URL yet is simply absent, not a crash or a placeholder entry")
+    func unresolvedPhotoIsAbsentFromSignedURLs() {
+        let deck = [photo(UUID(), takenAt: .now, thumbPath: "missing")]
+
+        let signedURLs = ChapterRecapViewModel.pagerSignedURLs(from: deck, urls: [:])
+
+        #expect(signedURLs.isEmpty)
+    }
+}

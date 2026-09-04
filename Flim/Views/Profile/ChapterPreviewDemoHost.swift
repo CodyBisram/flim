@@ -46,10 +46,11 @@ struct ChapterPreviewDemoHost: View {
 @MainActor
 enum ChapterPreviewFixtures {
     /// Every `maxPixel` a Chapters view asks `CachedImage` for, across the shelf and the recap:
-    /// the shelf card, the recap's fanned covers, and the player's thumb-under/full-over pair.
-    /// A fixture image is planted at every one of these so whichever view renders first always
-    /// hits the in-memory cache, never the placeholder.
-    private static let maxPixels: [CGFloat] = [340, 500, 400, 1400]
+    /// the shelf card (340), the recap's fanned covers (500), `PhotoPagerView`'s roll-rack film
+    /// strip (120, `DarkroomFrameView`'s own request), and its full-screen page (1400). A fixture
+    /// image is planted at every one of these so whichever view renders first always hits the
+    /// in-memory cache, never the placeholder.
+    private static let maxPixels: [CGFloat] = [340, 500, 120, 1400]
 
     private static var seeded = false
 

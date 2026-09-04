@@ -3,13 +3,13 @@ import SwiftUI
 /// The monthly recap (3b): an opening card that answers "what am I about to watch", then
 /// playback of the month's curated deck.
 ///
-/// Reuses the reveal's own mechanics rather than inventing a third player: `RevealPacing`'s print
-/// box (aspect, corner radius, insets) and the reveal's thumb-under/full-over `CachedImage`
-/// layering with its `easeOut` develop fade, per the app's swipe pattern (native paging, fixed
-/// geometry, structurally stable children, `RollRevealView.frame(_:)` and `FeedUnitCard.pager`
-/// are the two references). What does NOT carry over: the rack scrubber, comments, reactions and
-/// the one-shot "seen" flag, none of which this spec called for, a chapter is replayable any
-/// time, unlike a roll's once-ever reveal.
+/// Playback is `PhotoPagerView` in its roll-rack mode, the app's canonical viewer (native paging,
+/// fixed geometry, structurally stable children, film strip under a boxed photograph, credit
+/// line, reactions, thread), fed the curated deck `ChapterRecapViewModel.pagerPhotos` already
+/// reshapes for it. This used to be a bespoke `TabView(.page)` player reusing only `RevealPacing`'s
+/// print-box geometry with no film strip at all; the owner's call was that a chapter's playback
+/// should look like every other viewer in the app rather than being a third, unrelated one.
+/// `RevealPacing` still sizes the opening card's fanned prints below, that usage is untouched.
 struct ChapterRecapView: View {
     @Environment(\.flimAccent) private var accent
     @Environment(\.dismiss) private var dismiss
@@ -23,7 +23,6 @@ struct ChapterRecapView: View {
 
     @State private var viewModel: ChapterRecapViewModel
     @State private var isPlaying = false
-    @State private var selection = 0
     /// Whether the "coming soon" line under Share as a contact sheet has been revealed this
     /// visit.
     @State private var showContactSheetNotice = false
@@ -252,36 +251,52 @@ struct ChapterRecapView: View {
     /// No `swipeToDismiss` here, deliberately, matching `RollRevealView`'s own playback and
     /// `PhotoPagerView`: a vertical drag riding alongside a native `TabView(.page)` pager, even
     /// one gated to only act on vertical movement, visibly damps the pager's own physics on
-    /// device. The close button in `playerHeader` is the only way out while playing, the same as
-    /// both of those.
+    /// device. The pager's own X is the only way out while playing, the same as both of those.
+    ///
+    /// Loading and empty states keep the same small header (close + month name) the old player
+    /// had, since `PhotoPagerView` only ever renders once there is a `current` photo to show.
+    /// Once the deck is in hand, `PhotoPagerView` takes over completely, including its own X:
+    /// mounted inline rather than behind a further `.fullScreenCover`, its `dismiss()` resolves
+    /// to this screen's own presentation, so tapping it closes the whole recap.
+    @ViewBuilder
     private var player: some View {
-        VStack(spacing: 0) {
-            playerHeader
-            Spacer(minLength: 0)
-
-            if viewModel.isLoadingDeck {
+        if viewModel.isLoadingDeck {
+            VStack(spacing: 0) {
+                playerHeader
+                Spacer(minLength: 0)
                 ProgressView().tint(.white)
-            } else if viewModel.isEmpty {
+                Spacer(minLength: 0)
+            }
+            .transition(.opacity)
+        } else if viewModel.isEmpty {
+            VStack(spacing: 0) {
+                playerHeader
+                Spacer(minLength: 0)
                 emptyDeck
-            } else {
-                TabView(selection: $selection) {
-                    ForEach(Array(viewModel.deck.enumerated()), id: \.element.id) { index, photo in
-                        frame(photo).tag(index)
-                    }
-                }
-                .tabViewStyle(.page(indexDisplayMode: .never))
-                .frame(maxHeight: .infinity)
-                .onChange(of: selection) { _, newValue in viewModel.moved(to: newValue) }
+                Spacer(minLength: 0)
             }
-
-            if let photo = viewModel.currentPhoto {
-                caption(for: photo)
-                    .padding(.top, 10)
-                    .padding(.bottom, 30)
-            }
-            Spacer(minLength: 0)
+            .transition(.opacity)
+        } else {
+            PhotoPagerView(
+                photos: viewModel.pagerPhotos,
+                signedURLs: viewModel.pagerSignedURLs,
+                // These are posts (chapters are posted-only), so the reactions/comments the
+                // viewer already resolves by photo id apply exactly as they do anywhere else a
+                // post's photo is shown full screen.
+                showsReactions: true,
+                showsComments: true,
+                // A chapter is one profile's own month end to end, so crediting each frame with
+                // the same @handle over and over is redundant, unlike a roll's several
+                // photographers.
+                showsAttribution: false,
+                showsRollRack: true,
+                // A recap is playback, not an editing surface: no roll name badge (see
+                // `pagerPhotos`'s own doc on why `rollId` is dropped too) and no delete.
+                rollName: { _ in nil },
+                showsDelete: false
+            )
+            .transition(.opacity)
         }
-        .transition(.opacity)
     }
 
     private var playerHeader: some View {
@@ -299,43 +314,6 @@ struct ChapterRecapView: View {
         }
         .padding(.horizontal, 16)
         .padding(.top, 12)
-    }
-
-    /// One frame: identical treatment to `RollRevealView.frame(_:)`, the thumb underneath so
-    /// playback starts instantly (the shelf's own thumbnail is almost always already cached),
-    /// the card-size rendition fading in over it on arrival.
-    @ViewBuilder
-    private func frame(_ photo: ChapterPhoto) -> some View {
-        ZStack {
-            Color.black
-            CachedImage(url: viewModel.urls[photo.displayPath], maxPixel: 400, cacheKey: photo.displayPath) {
-                $0.resizable().scaledToFit()
-            } placeholder: { Color.clear }
-            CachedImage(url: viewModel.urls[photo.viewPath], maxPixel: 1400, cacheKey: photo.viewPath,
-                       fadeIn: .easeOut(duration: 0.45)) { image in
-                image.resizable().scaledToFit()
-            } placeholder: {
-                Color.clear
-            }
-        }
-        .compositingGroup()
-        .aspectRatio(RevealPacing.frameAspectRatio, contentMode: .fit)
-        .clipShape(RoundedRectangle(cornerRadius: RevealPacing.frameCornerRadius))
-        .padding(.horizontal, RevealPacing.frameHorizontalInset)
-        .padding(.vertical, RevealPacing.frameVerticalInset)
-    }
-
-    private func caption(for photo: ChapterPhoto) -> some View {
-        VStack(spacing: 2) {
-            Text("\(viewModel.index + 1) of \(viewModel.deck.count)")
-                .flimFont(12.5, relativeTo: .footnote)
-                .foregroundStyle(Color(white: 0.6))
-            if let rollName = photo.rollName {
-                Text(rollName)
-                    .flimFont(11.5, relativeTo: .caption)
-                    .foregroundStyle(Color(white: 0.45))
-            }
-        }
     }
 
     private var emptyDeck: some View {

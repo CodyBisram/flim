@@ -511,8 +511,13 @@ The bump this section used to ask for has already happened. Status: `done`.
 
 ## 1.5, wanted but unbuilt
 
-- **Chapters: SHIPPED to TestFlight in build 337 (2026-09-04).** Owner decisions on 2026-09-03,
-  one REVERSED the next day after seeing it: months are FINISHED MONTHS ONLY ("September
+- **Chapters: SHIPPED to TestFlight in build 337 (2026-09-04).** Two more owner decisions the
+  same day: **a chapter is what you shared, for everyone including yourself** (the own-page
+  "every developed shot" branch is gone; migration `2026-09-04_chapters_posted_only.sql`,
+  APPLIED and verified against direct post counts), and **playback uses the shared viewer** with
+  the film strip (`PhotoPagerView` in rack mode, curated fifteen, reactions and comments on,
+  attribution and delete off, roll id dropped so roll-only affordances stay inert). Owner
+  decisions on 2026-09-03, one REVERSED the next day after seeing it: months are FINISHED MONTHS ONLY ("September
   shouldn't be there since the month hasn't ended"); the shelf drops the month in progress
   client-side (`ChapterSummary.completedMonths`) and the newest finished month wears the RECAP
   tag. The RPC still returns the live month, unused. Earlier that day the call had been live and

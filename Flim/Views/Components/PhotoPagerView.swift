@@ -107,6 +107,9 @@ struct PhotoPagerView: View {
     var showsReactions: Bool = false
     var showsComments: Bool = false
     /// Show the photographer's @handle above the date (roll grid); off shows the date alone.
+    /// In `showsRollRack` mode this also gates the credit row's profile button in `rollFooter`
+    /// (see its own comment): a roll has several photographers worth naming, a chapter recap
+    /// does not.
     var showsAttribution: Bool = false
     /// The Darkroom's own chrome: a night-scoped header, a single-row rack under the photograph,
     /// and a status+actions row. See the type's own doc.
@@ -141,6 +144,11 @@ struct PhotoPagerView: View {
     /// this view's own state, and a caller poking them directly would be one refactor away from
     /// opening the sheet for the wrong photo the next time `selection` changes underneath it.
     var openCommentsOnAppear: Bool = false
+    /// Whether an own photo's overflow menu offers "Delete photo" at all. Defaults true so every
+    /// existing caller (a roll's own grid, the Darkroom) is unchanged; the chapter recap passes
+    /// false, since replaying a month is not an editing surface and has no `onDelete` reload to
+    /// run afterward. "Set as profile photo" is unaffected, that's not a destructive action.
+    var showsDelete: Bool = true
 
     @Environment(PhotoService.self) private var photoService
     @Environment(AuthService.self) private var auth
@@ -260,7 +268,8 @@ struct PhotoPagerView: View {
          showsReactions: Bool = false, showsComments: Bool = false, showsAttribution: Bool = false,
          showsNightRack: Bool = false, showsRollRack: Bool = false,
          memberNames: [UUID: String] = [:], rollName: @escaping (UUID?) -> String? = { _ in nil },
-         onDelete: @escaping () -> Void = {}, openCommentsOnAppear: Bool = false) {
+         onDelete: @escaping () -> Void = {}, openCommentsOnAppear: Bool = false,
+         showsDelete: Bool = true) {
         self.photos = photos
         self.startIndex = startIndex
         self.signedURLs = signedURLs
@@ -273,6 +282,7 @@ struct PhotoPagerView: View {
         self.rollName = rollName
         self.onDelete = onDelete
         self.openCommentsOnAppear = openCommentsOnAppear
+        self.showsDelete = showsDelete
         _selection = State(initialValue: min(max(startIndex, 0), max(0, photos.count - 1)))
     }
 
@@ -761,9 +771,11 @@ struct PhotoPagerView: View {
                                     }
                                 }
                             } label: { Label("Set as profile photo", systemImage: "person.crop.circle") }
-                            Button(role: .destructive) {
-                                requestDelete(photo)
-                            } label: { Label("Delete photo", systemImage: "trash") }
+                            if showsDelete {
+                                Button(role: .destructive) {
+                                    requestDelete(photo)
+                                } label: { Label("Delete photo", systemImage: "trash") }
+                            }
                         } else {
                             let reported = reportedIds.contains(photo.id)
                             Button(role: .destructive) { reportCurrent() } label: {
@@ -801,17 +813,22 @@ struct PhotoPagerView: View {
         if let photo = current {
             VStack(spacing: 0) {
                 VStack(spacing: 2) {
-                    // Always rendered, faded when the name has not resolved, so the row's height
-                    // cannot vary per photo while a paging TabView sits above it. Same rule the
-                    // carousel's own footer documents, and for the same reason.
-                    Button { profileRoute = ProfileRoute(id: photo.userId) } label: {
-                        Text(memberNames[photo.userId].map { "@\($0)" } ?? "@")
-                            .flimFont(15, weight: .semibold, relativeTo: .body)
-                            .foregroundStyle(.white)
-                            .opacity(memberNames[photo.userId] == nil ? 0 : 1)
+                    // Always rendered when shown, faded when the name has not resolved, so the
+                    // row's height cannot vary per photo while a paging TabView sits above it.
+                    // Same rule the carousel's own footer documents, and for the same reason.
+                    // Gated on `showsAttribution`: a roll's grid credits whoever took each shot,
+                    // but a chapter recap is one profile's own month end to end, so naming the
+                    // same person under every frame is pure repetition, not information.
+                    if showsAttribution {
+                        Button { profileRoute = ProfileRoute(id: photo.userId) } label: {
+                            Text(memberNames[photo.userId].map { "@\($0)" } ?? "@")
+                                .flimFont(15, weight: .semibold, relativeTo: .body)
+                                .foregroundStyle(.white)
+                                .opacity(memberNames[photo.userId] == nil ? 0 : 1)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(memberNames[photo.userId] == nil)
                     }
-                    .buttonStyle(.plain)
-                    .disabled(memberNames[photo.userId] == nil)
 
                     Text("\(selection + 1) of \(photos.count) · \(FrameCredit.timeLabel(for: photo.takenAt, index: selection, in: photos.map(\.takenAt)))")
                         .flimFont(12.5, relativeTo: .footnote)
@@ -1795,7 +1812,7 @@ struct PhotoPagerView: View {
         let pending = window.filter { !fullyResolvedIds.contains($0.id) && $0.isReady }
         if !pending.isEmpty {
             // ONE batched `signedURLs` call for the whole ±1 window's misses, rather than one
-            // `signedURL` await per photo, sequentially — the batched API's own doc
+            // `signedURL` await per photo, sequentially; the batched API's own doc
             // (`PhotoService.signedURLs`) names this exact shape. `viewPath`, matching the
             // `cacheKey` used below and in `photoPage`: the feed card when this photo has one, the
             // original only as its own fallback. A path absent from the result (a genuine

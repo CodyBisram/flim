@@ -4,10 +4,11 @@ import Foundation
 ///
 /// Rows arrive newest month first. Every month back to the profile's first shot is expected to
 /// appear, including the current, still-accumulating one (owner call: months are live and
-/// growing, not closed at midnight on the 1st). What a month CONTAINS differs by who is looking:
-/// on the profile owner's own page it's everything they shot, roll shots included; on anyone
-/// else's page it's only what that person posted. Both are the server's decision inside the RPC,
-/// never this client's, so nothing here branches on `isSelf`.
+/// growing, not closed at midnight on the 1st). A month's contents are posted-only, on every
+/// profile's page including its own owner's: `shotCount`/`coverPaths`/`chapter_photos` all count
+/// what that profile actually shared, never a shot still sitting undeveloped or unposted in a
+/// roll. That scoping is the server's decision inside the RPC, never this client's, so nothing
+/// here branches on `isSelf`, and no copy reading from this type should imply otherwise.
 struct ChapterSummary: Decodable, Equatable, Identifiable {
     /// The first of the month, at local midnight. A bare `yyyy-MM-dd` DATE column, same shape and
     /// same reason as `DarkroomMonthSummaryV2.monthStart`: the default `Date` strategies expect a
@@ -116,9 +117,11 @@ extension ChapterSummary {
     }
 
     /// "34 shots · 2 rolls", singular handled, and the roll clause dropped entirely at zero: a
-    /// month built only from photos posted to someone else's page (no roll of the viewer's own
-    /// ever touched it) is an entirely ordinary case, and "· 0 rolls" would read like a mistake
-    /// rather than the true, unremarkable answer.
+    /// month built only from personal, non-roll shares (never touched a roll at all) is an
+    /// entirely ordinary case, and "· 0 rolls" would read like a mistake rather than the true,
+    /// unremarkable answer. "Shots" here always means shared photos (see this type's own doc):
+    /// this line must never be read, or extended, as counting anything still undeveloped or
+    /// unposted.
     var statsLine: String {
         let shots = shotCount == 1 ? "1 shot" : "\(shotCount) shots"
         guard rollCount > 0 else { return shots }
