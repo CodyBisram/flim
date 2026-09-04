@@ -86,6 +86,50 @@ struct RollSnapshotStoreTests {
         #expect(RollSnapshotStore.load(for: user, root: root) == nil)
     }
 
+    @Test("a roll's revealAt round-trips exactly, not re-derived from createdAt on the way back")
+    func revealAtRoundTrips() {
+        let root = makeRoot(); defer { cleanUp(root) }
+        let user = UUID()
+        // Deliberately NOT createdAt + Roll.developDelay, so a restore that silently fell back to
+        // the formula instead of decoding the stored value would fail this.
+        let moved = Date(timeIntervalSince1970: 2_000_000)
+        let r = Roll(id: UUID(), name: "Weekend", inviteCode: "ABC123", createdBy: UUID(),
+                    createdAt: Date(timeIntervalSince1970: 1_000_000), coverPath: nil, revealAt: moved)
+        RollSnapshotStore.save(.init(rolls: [r], coverPaths: [:]), for: user, root: root)
+
+        let restored = waitForSnapshot(user: user, root: root)
+
+        #expect(restored?.rolls.first?.revealAt == moved)
+    }
+
+    @Test("an on-disk snapshot written before reveal_at existed still decodes, not a crash")
+    func legacySnapshotWithoutRevealAtStillDecodes() throws {
+        let root = makeRoot(); defer { cleanUp(root) }
+        let user = UUID()
+        let createdAt = Date(timeIntervalSince1970: 1_000_000)
+        let legacyRoll = Roll(id: UUID(), name: "Pre-migration", inviteCode: "ABC123",
+                              createdBy: UUID(), createdAt: createdAt)
+
+        // Encode today's shape, then strip `reveal_at` from the roll object: the exact shape a
+        // file written by a build that predates the column has sitting on disk right now.
+        let encoded = try JSONEncoder().encode(RollSnapshotStore.Snapshot(rolls: [legacyRoll], coverPaths: [:]))
+        var obj = try JSONSerialization.jsonObject(with: encoded) as? [String: Any] ?? [:]
+        if var rolls = obj["rolls"] as? [[String: Any]] {
+            for i in rolls.indices { rolls[i].removeValue(forKey: "reveal_at") }
+            obj["rolls"] = rolls
+        }
+        let stripped = try JSONSerialization.data(withJSONObject: obj)
+
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let fileURL = root.appendingPathComponent("\(user.uuidString.lowercased()).json")
+        try stripped.write(to: fileURL)
+
+        let restored = RollSnapshotStore.load(for: user, root: root)
+
+        #expect(restored?.rolls.first?.name == "Pre-migration")
+        #expect(restored?.rolls.first?.revealAt == createdAt.addingTimeInterval(Roll.developDelay))
+    }
+
     /// `save` is fire-and-forget off the main actor; poll for up to a second rather than assuming
     /// a fixed delay is long enough (or wastefully longer than it needs to be).
     private func waitForSnapshot(user: UUID, root: URL) -> RollSnapshotStore.Snapshot? {

@@ -478,14 +478,15 @@ struct RollDetailView: View {
             if awaitingPhotoId != nil {
                 await openAwaitingPhotoIfReady()
             }
-            // Ensure EVERY member gets a develop reminder, even those who didn't shoot.
-            // The reveal is fixed at the roll's creation, so this works with zero photos too.
-            if notificationsEnabled, !roll.isDeveloped {
-                let myCount = vm.photos.filter { $0.userId == auth.currentUser?.id }.count
+            // Ensure EVERY member gets a develop reminder, even those who didn't shoot, as a
+            // fallback for a phone push can't reach (see `scheduleRollDevelopNotification`). The
+            // reveal is fixed at roll creation, so this works with zero photos too.
+            if notificationsEnabled, !roll.isDeveloped, let myId = auth.currentUser?.id {
+                let myCount = vm.photos.filter { $0.userId == myId }.count
                 await notifications.requestAuthorizationIfNeeded()
                 notifications.scheduleRollDevelopNotification(
                     rollId: roll.id, rollName: roll.name,
-                    developsAt: roll.revealAt, photoCount: myCount
+                    developsAt: roll.revealAt, photoCount: myCount, userId: myId
                 )
             }
             // Keeps the countdown Live Activity going for anyone who opens the roll while it's

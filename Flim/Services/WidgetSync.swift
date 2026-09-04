@@ -97,20 +97,18 @@ enum WidgetSync {
     /// One query for both: they read the same rows and differ only in which side of `now` the
     /// reveal falls on.
     private static func rollState(userId: UUID) async -> (developing: WidgetSnapshot.DevelopingRoll?, ready: Bool) {
-        struct Row: Decodable { let id: UUID; let name: String; let created_at: Date }
+        struct Row: Decodable { let id: UUID; let name: String; let created_at: Date; let reveal_at: Date }
         let rows: [Row] = (try? await supabase
-            .from("rolls").select("id, name, created_at, roll_members!inner(user_id)")
+            .from("rolls").select("id, name, created_at, reveal_at, roll_members!inner(user_id)")
             .eq("roll_members.user_id", value: userId.uuidString)
             .order("created_at", ascending: false).limit(12)
             .execute().value) ?? []
 
-        // `rollDevelopDelay` is not reachable from here, so this uses the same twelve hours the
-        // roll itself was created with. Same literal, same reason, as
-        // `RollRevealAttributes.assumedDevelopWindow`.
-        let window: TimeInterval = 12 * 3600
+        // `reveal_at` is the server's fixed reveal instant (defaults to `created_at + 12h`, but
+        // can move via `RollService.setRevealAt`), the same column every other surface now reads
+        // rather than each re-deriving its own copy of the develop delay.
         let now = Date()
-        let timed = rows.map { (id: $0.id, name: $0.name, start: $0.created_at,
-                                reveal: $0.created_at.addingTimeInterval(window)) }
+        let timed = rows.map { (id: $0.id, name: $0.name, start: $0.created_at, reveal: $0.reveal_at) }
 
         let developing = timed
             .filter { $0.reveal > now }

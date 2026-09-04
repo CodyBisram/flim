@@ -797,7 +797,7 @@ struct CameraView: View {
                     let count = await photos.rollPhotoCount(rollId: landedRollId, userId: userId)
                     await notifications.scheduleRollDevelopNotification(
                         rollId: landedRollId, rollName: rollName,
-                        developsAt: photo.developsAt, photoCount: count
+                        developsAt: photo.developsAt, photoCount: count, userId: userId
                     )
                 }
             }

@@ -1076,17 +1076,20 @@ final class PhotoService {
         return nil
     }
 
-    /// The roll's fixed reveal time: its `created_at` + the roll delay.
+    /// The roll's fixed reveal time, read straight from `rolls.reveal_at`: the server, not
+    /// `created_at + delay`, is the source of truth (a reveal can move via
+    /// `RollService.setRevealAt`, and the column defaults to `created_at + 12h` for a roll that
+    /// never had it moved, so this is a strict superset of what the old formula produced).
     private func rollRevealDate(rollId: UUID) async throws -> Date? {
-        struct Row: Decodable { let created_at: Date }
+        struct Row: Decodable { let reveal_at: Date }
         let rows: [Row] = try await supabase
             .from("rolls")
-            .select("created_at")
+            .select("reveal_at")
             .eq("id", value: rollId.uuidString)
             .limit(1)
             .execute()
             .value
-        return rows.first.map { $0.created_at.addingTimeInterval(rollDevelopDelay) }
+        return rows.first?.reveal_at
     }
 
     // MARK: - Delete
@@ -1545,17 +1548,16 @@ final class PhotoService {
     /// state has not changed, so a burst of captures costs one update, not one per frame.
     private func syncRollActivity(rollId: UUID) async {
         guard RollLiveActivity.isRunning(rollId) else { return }
-        struct Row: Decodable { let name: String; let created_at: Date }
+        struct Row: Decodable { let name: String; let created_at: Date; let reveal_at: Date }
         // Read here rather than taken from RollService: this is reached from a capture, which
-        // does not hold a roll list, and the two fields needed are one narrow row.
+        // does not hold a roll list, and the fields needed are one narrow row.
         let rows: [Row] = (try? await supabase
-            .from("rolls").select("name, created_at")
+            .from("rolls").select("name, created_at, reveal_at")
             .eq("id", value: rollId.uuidString).limit(1)
             .execute().value) ?? []
         guard let roll = rows.first else { return }
         let shots = await rollTotalShotCount(rollId: rollId)
-        RollLiveActivity.sync(rollId: rollId, rollName: roll.name,
-                              revealAt: roll.created_at.addingTimeInterval(Roll.developDelay),
+        RollLiveActivity.sync(rollId: rollId, rollName: roll.name, revealAt: roll.reveal_at,
                               shotCount: shots, developFrom: roll.created_at)
     }
 

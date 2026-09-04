@@ -138,11 +138,39 @@ final class NotificationService {
         }
     }
 
-    /// Schedules the develop reminder for a freshly captured photo.
-    /// Schedules ONE develop reminder per roll (personal instants are ready immediately, so
-    /// they don't need one). Reusing the roll's identifier means every shot you add just
-    /// updates the single pending notification instead of stacking dozens at the same reveal.
-    func scheduleRollDevelopNotification(rollId: UUID, rollName: String, developsAt: Date, photoCount: Int) {
+    /// Whether a develop reminder should be scheduled ON THIS DEVICE, now that the server's
+    /// develop push reaches every roll member directly (shooters included). Local scheduling is
+    /// meant as a fallback for a phone push genuinely cannot reach, not a second copy of the same
+    /// notification: `authorized` false means the OS never granted permission at all, and
+    /// `tokenRegistered` false means this account's device token hasn't been confirmed with the
+    /// server this session (see `RemotePush.isTokenRegistered`), either way is a channel push
+    /// cannot use, so the local reminder is what is left to tell this phone at all.
+    ///
+    /// Pure and `nonisolated`: no `UNUserNotificationCenter`, no account, testable as plain input
+    /// in, `Bool` out.
+    nonisolated static func shouldScheduleLocalReminder(authorized: Bool, tokenRegistered: Bool) -> Bool {
+        !(authorized && tokenRegistered)
+    }
+
+    /// Schedules the develop reminder for a freshly captured photo, or cancels one already
+    /// pending, depending on whether push can reach this device for `userId` right now (see
+    /// `shouldScheduleLocalReminder`). Schedules at most ONE develop reminder per roll (personal
+    /// instants are ready immediately, so they don't need one); reusing the roll's identifier
+    /// means every shot you add just updates the single pending notification instead of stacking
+    /// dozens at the same reveal.
+    ///
+    /// Cancelling on the push-available branch matters, not just skipping the schedule: a phone
+    /// that captured before push was reachable (no token registered yet) and then gains it before
+    /// the reveal must not end up with both a local reminder AND the server's push firing for the
+    /// same roll.
+    func scheduleRollDevelopNotification(rollId: UUID, rollName: String, developsAt: Date,
+                                         photoCount: Int, userId: UUID) {
+        guard Self.shouldScheduleLocalReminder(
+            authorized: isAuthorized, tokenRegistered: RemotePush.isTokenRegistered(for: userId)
+        ) else {
+            cancelRollDevelopNotification(rollId: rollId)
+            return
+        }
         guard developsAt > .now else { return }
 
         let content = UNMutableNotificationContent()

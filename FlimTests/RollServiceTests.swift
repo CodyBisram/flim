@@ -25,6 +25,28 @@ final class RollServiceTests: XCTestCase {
         XCTAssertNil(RollService.mapJoinRollError("PostgrestError(message: \"connection reset\")"))
     }
 
+    // MARK: - mapSetRevealAtError
+
+    /// `set_roll_reveal_at`'s two `RAISE EXCEPTION` refusals, mapped the same way
+    /// `mapJoinRollError` maps `join_roll`'s.
+    func testRollDevelopedMessageMapsToRevealAlreadyPassed() async {
+        let mapped = RollService.mapSetRevealAtError("PostgrestError(message: \"roll_developed\")")
+        guard case .revealAlreadyPassed = mapped else {
+            return XCTFail("expected .revealAlreadyPassed, got \(String(describing: mapped))")
+        }
+    }
+
+    func testRevealOutOfRangeMessageMapsToRevealOutOfRangeError() async {
+        let mapped = RollService.mapSetRevealAtError("PostgrestError(message: \"reveal_out_of_range\")")
+        guard case .revealOutOfRange = mapped else {
+            return XCTFail("expected .revealOutOfRange, got \(String(describing: mapped))")
+        }
+    }
+
+    func testSetRevealAtUnrelatedErrorDescriptionReturnsNil() async {
+        XCTAssertNil(RollService.mapSetRevealAtError("PostgrestError(message: \"connection reset\")"))
+    }
+
     // MARK: - recordMemberRemoved
 
     /// `RollMembersView`'s creator-remove path calls this after the server confirms the delete,

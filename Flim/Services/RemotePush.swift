@@ -39,6 +39,23 @@ enum RemotePush {
     /// `reclaimForCurrentAccount()` and `claim(_:)`.
     private static let log = Logger(subsystem: "com.flim.app", category: "push")
 
+    /// The account `register_device_token` last confirmed a claim for, THIS session. `nil` until a
+    /// claim actually succeeds, never optimistically set just because a token is cached: a cached
+    /// token only proves iOS handed this device one at some point, not that the server has it
+    /// attached to whoever is signed in now.
+    ///
+    /// Scoped by account, not a bare flag, because `reclaimForCurrentAccount()` re-runs on every
+    /// sign-in on the same device: a success recorded for the PREVIOUS account must not be read as
+    /// "this account can receive push" the instant someone else signs in, that's exactly the gap
+    /// `NotificationService.scheduleRollDevelopNotification` exists to fall back into.
+    private static var registeredAccountId: UUID?
+
+    /// Whether the server has confirmed this device's token is attached to `userId`, this
+    /// session. Read by `NotificationService.scheduleRollDevelopNotification` to decide whether a
+    /// local develop reminder is still needed as a fallback, now that the server-side develop push
+    /// reaches every roll member directly.
+    static func isTokenRegistered(for userId: UUID) -> Bool { registeredAccountId == userId }
+
     /// Ask iOS for an APNs device token. Safe to call repeatedly; iOS dedupes.
     @MainActor
     static func register() {
@@ -78,7 +95,7 @@ enum RemotePush {
     }
 
     private static func claim(_ hex: String) async {
-        guard (try? await supabase.auth.session) != nil else {
+        guard let session = try? await supabase.auth.session else {
             log.notice("claim: no session, dropping device token claim")
             return
         }
@@ -86,6 +103,7 @@ enum RemotePush {
             try await supabase
                 .rpc("register_device_token", params: ["p_token": hex, "p_platform": "ios"])
                 .execute()
+            registeredAccountId = session.user.id
         } catch {
             log.error("claim: register_device_token failed: \(String(describing: error), privacy: .public)")
         }
@@ -99,6 +117,10 @@ enum RemotePush {
     static func unregisterCurrentDevice() async {
         guard let hex = UserDefaults.standard.string(forKey: tokenKey) else { return }
         guard let session = try? await supabase.auth.session else { return }
+        // This device is about to lose its claim either way, below or via the pending-detach
+        // retry; either path means push can no longer reach it for this account, so the develop
+        // reminder's local fallback must be considered live again from this point.
+        if registeredAccountId == session.user.id { registeredAccountId = nil }
         do {
             try await supabase
                 .from("device_tokens")

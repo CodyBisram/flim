@@ -339,12 +339,60 @@ final class RollService {
         if let i = rolls.firstIndex(where: { $0.id == rollId }) {
             let r = rolls[i]
             rolls[i] = Roll(id: r.id, name: r.name, inviteCode: r.inviteCode,
-                            createdBy: r.createdBy, createdAt: r.createdAt, coverPath: path)
+                            createdBy: r.createdBy, createdAt: r.createdAt, coverPath: path,
+                            revealAt: r.revealAt)
         }
         // The widget's cover tile is sourced live from coverPaths; the Live Activity doesn't
         // show the cover, so there's nothing there to touch.
         WidgetSync.refresh()
         persistSnapshot()
+    }
+
+    // MARK: - Reveal timing
+
+    /// Moves a roll's reveal to a new instant, via `set_roll_reveal_at` (creator only, enforced
+    /// server-side; refuses a roll that already developed; bounded to `[now, created_at + 7
+    /// days]`). Cascades to the roll's still-undeveloped photos server-side, so nothing here
+    /// needs to touch `photos` itself.
+    ///
+    /// Not wired to any screen yet: this only makes the call reachable and its failures friendly,
+    /// so a future "extend this roll" screen is one screen away rather than also needing to
+    /// invent this plumbing.
+    @discardableResult
+    func setRevealAt(rollId: UUID, to newRevealAt: Date) async throws -> Date {
+        struct Params: Encodable { let p_roll: UUID; let p_reveal_at: Date }
+        do {
+            let updated: Date = try await supabase
+                .rpc("set_roll_reveal_at", params: Params(p_roll: rollId, p_reveal_at: newRevealAt))
+                .execute()
+                .value
+
+            if let i = rolls.firstIndex(where: { $0.id == rollId }) {
+                let r = rolls[i]
+                rolls[i] = Roll(id: r.id, name: r.name, inviteCode: r.inviteCode,
+                                createdBy: r.createdBy, createdAt: r.createdAt, coverPath: r.coverPath,
+                                revealAt: updated)
+            }
+            // A moved reveal is exactly the kind of change the countdown surfaces (widget, Live
+            // Activity, the Rolls tab) must not be left stale about, same reasoning as every other
+            // mutation in this file.
+            WidgetSync.refresh()
+            persistSnapshot()
+            return updated
+        } catch {
+            if let mapped = Self.mapSetRevealAtError("\(error)") { throw mapped }
+            throw error
+        }
+    }
+
+    /// Maps `set_roll_reveal_at`'s `RAISE EXCEPTION` message text to a friendly `RollError`, same
+    /// shape as `mapJoinRollError`, or `nil` if `description` doesn't match a recognized failure
+    /// (the caller then rethrows the original error as-is).
+    static func mapSetRevealAtError(_ description: String) -> RollError? {
+        let desc = description.lowercased()
+        if desc.contains("roll_developed") { return .revealAlreadyPassed }
+        if desc.contains("reveal_out_of_range") { return .revealOutOfRange }
+        return nil
     }
 
     /// Deletes a roll (creator only, enforced by RLS) and removes it locally.
@@ -441,12 +489,19 @@ func rollPickerDestinations(from rolls: [Roll], now: Date, grace: TimeInterval =
 
 enum RollError: LocalizedError {
     case notFound, full, developed
+    /// `set_roll_reveal_at` refused because the roll already developed: its reveal is fixed for
+    /// good at that point, there's nothing left to move.
+    case revealAlreadyPassed
+    /// `set_roll_reveal_at` refused a target outside `[now, created_at + 7 days]`.
+    case revealOutOfRange
 
     var errorDescription: String? {
         switch self {
         case .notFound: "No roll found with that invite code."
         case .full: "This roll is full (max \(Roll.memberCap) members)."
         case .developed: "This roll already developed. It's closed to new members, but whoever invited you can share the photos."
+        case .revealAlreadyPassed: "This roll already developed, its reveal time can't be changed."
+        case .revealOutOfRange: "Pick a time between now and 7 days after the roll started."
         }
     }
 }
