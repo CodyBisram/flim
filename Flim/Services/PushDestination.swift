@@ -18,6 +18,13 @@ import Foundation
 ///     "rolls"    no id         -> the Rolls tab. Builds older than this one treat "rolls" as an
 ///                                 unrecognized destination and simply open the app, so the server
 ///                                 is free to send it without a compatibility window.
+///     "camera"   no id         -> the Camera tab. Sent remotely by send-one-shot-push's
+///                                 first-shot/still-no-shot/checked-again campaigns as of
+///                                 2026-09-02, in addition to the widget-only use this case
+///                                 started as; see `case camera` below.
+///     "sortdeck" no id         -> the Darkroom's sort deck sheet. Sent remotely by
+///                                 send-one-shot-push's waiting-to-sort campaign, same
+///                                 compatibility story as "camera" above.
 ///
 /// Named for WHERE TO GO rather than for what happened, so a future notification reusing a
 /// destination needs no client change.
@@ -34,13 +41,15 @@ enum PushDestination: Codable, Equatable {
     case reveal(rollId: UUID, photoId: UUID? = nil, comments: Bool = false)
     case post(postId: UUID, comments: Bool)
     case profile(userId: UUID)
-    /// The Lock Screen shutter widget. Carries no id: there is only one camera. Never arrives
-    /// over APNs, only from a widget link, so it has no wire representation to parse.
+    /// The Lock Screen shutter widget, and, as of 2026-09-02, send-one-shot-push's
+    /// first-shot/still-no-shot/checked-again campaigns. Carries no id: there is only one camera.
     case camera
-    /// The Darkroom, where frames sit before they are posted. Like `camera`, a widget-only
-    /// destination: nothing sends a push that means "look at your unposted work".
+    /// The Darkroom, where frames sit before they are posted. A widget-only destination: nothing
+    /// sends a remote push that means "look at your unposted work" as a whole (a specific frame
+    /// in it is `.photo`, below).
     case darkroom
-    /// The sort deck, open, on top of the Darkroom. Also widget-only.
+    /// The sort deck, open, on top of the Darkroom. Widget-only until send-one-shot-push's
+    /// waiting-to-sort campaign (2026-09-03) started sending it remotely too.
     case sortDeck
     /// A single photo in the Darkroom's pager. Distinct from `post`: a frame can be worth
     /// opening long before, or without ever, being posted.
@@ -57,6 +66,10 @@ enum PushDestination: Codable, Equatable {
             return .feed
         case "rolls":
             return .rolls
+        case "camera":
+            return .camera
+        case "sortdeck":
+            return .sortDeck
         case "reveal":
             guard let id = uuid(flim["id"]) else { return nil }
             return .reveal(rollId: id, photoId: uuid(flim["photo"]), comments: (flim["comments"] as? Bool) ?? false)

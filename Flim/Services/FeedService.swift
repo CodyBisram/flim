@@ -1814,6 +1814,11 @@ final class FeedService {
         /// `.rollPhotoComment`, `.rollPhotoReaction`): the roll to open and the photo's thumbnail
         /// path, carried straight off the same embedded join `send-social-push` reads server-side.
         var rollId: UUID? = nil
+        /// The roll photo itself, `photo_comments`/`photo_reactions`' own `photo_id` column
+        /// (never joined, it's a plain field on the row being scanned). Matches the `photo` rider
+        /// `send-social-push` puts on the equivalent push, so `activityDestination(for:)` can open
+        /// the same photo the push would have, not just the roll.
+        var rollPhotoId: UUID? = nil
         var rollPhotoDisplayPath: String? = nil
     }
 
@@ -1877,7 +1882,8 @@ final class FeedService {
                 let post = raw.postId.flatMap { posts[$0] }
                 return ActivityItem(kind: raw.kind, actor: actor, date: raw.date, postId: raw.postId,
                                      post: post, postAuthor: post.flatMap { postAuthors[$0.userId] },
-                                     rollId: raw.rollId, rollPhotoDisplayPath: raw.rollPhotoDisplayPath)
+                                     rollId: raw.rollId, rollPhotoId: raw.rollPhotoId,
+                                     rollPhotoDisplayPath: raw.rollPhotoDisplayPath)
             }
             .sorted { $0.date > $1.date }
     }
@@ -2068,19 +2074,19 @@ final class FeedService {
     /// newest rows, not a full scan.
     private func activityRollPhotoComments(userId: UUID) async throws -> [ActivityRaw] {
         struct RC: Decodable {
-            let user_id: UUID; let body: String; let created_at: Date
+            let user_id: UUID; let body: String; let created_at: Date; let photo_id: UUID
             let photos: Meta?
             struct Meta: Decodable { let roll_id: UUID?; let thumb_path: String?; let storage_path: String }
         }
         let rows: [RC] = try await supabase.from("photo_comments")
-            .select("user_id, body, created_at, photos!inner(user_id, roll_id, thumb_path, storage_path)")
+            .select("user_id, body, created_at, photo_id, photos!inner(user_id, roll_id, thumb_path, storage_path)")
             .eq("photos.user_id", value: userId.uuidString)
             .neq("user_id", value: userId.uuidString)
             .order("created_at", ascending: false).limit(40).execute().value
         return rows.compactMap { r in
             guard let meta = r.photos else { return nil }
             return ActivityRaw(kind: .rollPhotoComment(r.body), actorId: r.user_id, date: r.created_at,
-                                postId: nil, rollId: meta.roll_id,
+                                postId: nil, rollId: meta.roll_id, rollPhotoId: r.photo_id,
                                 rollPhotoDisplayPath: meta.thumb_path ?? meta.storage_path)
         }
     }
@@ -2090,19 +2096,19 @@ final class FeedService {
     /// push (the reveal's pull-back loop), which had no Activity row at all before this.
     private func activityRollPhotoReactions(userId: UUID) async throws -> [ActivityRaw] {
         struct RR: Decodable {
-            let user_id: UUID; let emoji: String; let created_at: Date
+            let user_id: UUID; let emoji: String; let created_at: Date; let photo_id: UUID
             let photos: Meta?
             struct Meta: Decodable { let roll_id: UUID?; let thumb_path: String?; let storage_path: String }
         }
         let rows: [RR] = try await supabase.from("photo_reactions")
-            .select("user_id, emoji, created_at, photos!inner(user_id, roll_id, thumb_path, storage_path)")
+            .select("user_id, emoji, created_at, photo_id, photos!inner(user_id, roll_id, thumb_path, storage_path)")
             .eq("photos.user_id", value: userId.uuidString)
             .neq("user_id", value: userId.uuidString)
             .order("created_at", ascending: false).limit(40).execute().value
         return rows.compactMap { r in
             guard let meta = r.photos else { return nil }
             return ActivityRaw(kind: .rollPhotoReaction(r.emoji), actorId: r.user_id, date: r.created_at,
-                                postId: nil, rollId: meta.roll_id,
+                                postId: nil, rollId: meta.roll_id, rollPhotoId: r.photo_id,
                                 rollPhotoDisplayPath: meta.thumb_path ?? meta.storage_path)
         }
     }
@@ -2155,12 +2161,12 @@ final class FeedService {
 
     private func activityMentionsInPhotoComments(userId: UUID, username: String) async throws -> [ActivityRaw] {
         struct PC: Decodable {
-            let user_id: UUID; let body: String; let created_at: Date
+            let user_id: UUID; let body: String; let created_at: Date; let photo_id: UUID
             let photos: Meta?
             struct Meta: Decodable { let user_id: UUID; let roll_id: UUID?; let thumb_path: String?; let storage_path: String }
         }
         let rows: [PC] = try await supabase.from("photo_comments")
-            .select("user_id, body, created_at, photos(user_id, roll_id, thumb_path, storage_path)")
+            .select("user_id, body, created_at, photo_id, photos(user_id, roll_id, thumb_path, storage_path)")
             .ilike("body", value: "%@\(username)%")
             .neq("user_id", value: userId.uuidString)
             .order("created_at", ascending: false).limit(40).execute().value
@@ -2170,7 +2176,8 @@ final class FeedService {
                   Self.shouldIncludeMention(ownerId: meta.user_id, viewerId: userId)
             else { return nil }
             return ActivityRaw(kind: .mentioned(r.body), actorId: r.user_id, date: r.created_at, postId: nil,
-                                rollId: meta.roll_id, rollPhotoDisplayPath: meta.thumb_path ?? meta.storage_path)
+                                rollId: meta.roll_id, rollPhotoId: r.photo_id,
+                                rollPhotoDisplayPath: meta.thumb_path ?? meta.storage_path)
         }
     }
 

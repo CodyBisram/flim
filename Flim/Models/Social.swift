@@ -216,6 +216,10 @@ struct ActivityItem: Identifiable {
     /// these opens the roll's own viewer instead of `PostDetailView`, see
     /// `activityDestination(for:)` in ActivityFeedView.swift.
     var rollId: UUID?
+    /// The specific roll photo this row is about, alongside `rollId`. Matches the `photo` rider
+    /// `send-social-push` puts on the equivalent "reveal" push, so tapping the row opens the same
+    /// photo inside the roll's viewer the push would have, not just the roll itself.
+    var rollPhotoId: UUID?
     /// Thumbnail path for a roll-photo kind, carried straight off the same embedded join
     /// `send-social-push` reads server-side, so a row never needs a second fetch just to draw its
     /// preview.

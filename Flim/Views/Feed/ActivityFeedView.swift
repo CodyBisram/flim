@@ -57,12 +57,25 @@ func activityActionText(_ kind: ActivityItem.Kind) -> String {
 /// `buildActivityThumbURLs` above.
 enum ActivityDestination: Equatable {
     case post(FeedItem)
-    case roll(rollId: UUID)
+    /// `photoId`/`comments` mirror the `photo`/`comments` riders `send-social-push` puts on the
+    /// matching "reveal" push (see `PushDestination.reveal`), so tapping this row and tapping the
+    /// push it came from land in exactly the same place: the roll's viewer, already open to this
+    /// photo, with its thread showing when the event was a comment or mention.
+    case roll(rollId: UUID, photoId: UUID? = nil, comments: Bool = false)
     case profile(userId: UUID)
 }
 
 func activityDestination(for item: ActivityItem) -> ActivityDestination {
-    if let rollId = item.rollId { return .roll(rollId: rollId) }
+    if let rollId = item.rollId {
+        // Matches send-social-push's own `comments: true` rule exactly: set on a comment or a
+        // mention (both have a thread worth opening to), never on a bare reaction.
+        let comments: Bool
+        switch item.kind {
+        case .rollPhotoComment, .mentioned: comments = true
+        default: comments = false
+        }
+        return .roll(rollId: rollId, photoId: item.rollPhotoId, comments: comments)
+    }
     if let post = item.post, let author = item.postAuthor { return .post(FeedItem(post: post, author: author)) }
     return .profile(userId: item.actor.id)
 }
@@ -237,16 +250,19 @@ struct ActivityFeedView: View {
         switch activityDestination(for: item) {
         case .post(let feedItem):
             postRoute = feedItem
-        case .roll(let rollId):
+        case .roll(let rollId, let photoId, let comments):
             // A roll photo has no `Post`/`PostDetailView` home; it opens in the roll's own
             // viewer, the same place a push notification's `.reveal` destination lands
-            // (`PushDestination.swift`, `MainTabView.route(to:)`). This sheet holds no roll data
-            // of its own to push onto a `NavigationStack`, so rather than duplicate
-            // `RollDetailView`'s fetch-then-push dance here, it dismisses and reuses the exact
-            // mechanism a live push tap already goes through.
+            // (`PushDestination.swift`, `MainTabView.route(to:)`), carrying the same `photoId`/
+            // `comments` riders so the row opens to exactly what the underlying push would have.
+            // This sheet holds no roll data of its own to push onto a `NavigationStack`, so
+            // rather than duplicate `RollDetailView`'s fetch-then-push dance here, it dismisses
+            // and reuses the exact mechanism a live push tap already goes through.
             dismiss()
-            NotificationCenter.default.post(name: .openPushDestination,
-                                             object: PushDestination.reveal(rollId: rollId))
+            NotificationCenter.default.post(
+                name: .openPushDestination,
+                object: PushDestination.reveal(rollId: rollId, photoId: photoId, comments: comments)
+            )
         case .profile(let userId):
             profileRoute = ProfileRoute(id: userId)
         }

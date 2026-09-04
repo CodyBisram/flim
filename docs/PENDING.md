@@ -172,6 +172,18 @@ actually do. Worth deciding before more is built on top of rolls.
 
 ## Next up
 
+### done 2026-09-04: every notification route, traced and pinned
+
+26 routes (four push functions, the local develop reminder, widget and Live Activity taps, every
+activity row) traced from payload to screen. 22 correct. Four wrong, all in the app, none in
+the functions: the three camera nudge campaigns and waiting-to-sort landed on the Darkroom
+because the parser only knew "camera" and "sortdeck" from widget URLs (so the 2026-09-02/03
+"We checked" pushes opened the Darkroom); the daily digest left the feed wherever it was
+scrolled instead of at the top; activity rows for roll photos opened the roll grid, not the
+photo and thread. `NotificationMatrixTests` now pins the literal wire payload of every send
+site against the destination it must parse to. Cross-account taps are no-ops; local reminders
+are cancelled on sign-out. Not exercised end to end on a device (no seeded signed-in session).
+
 ### done 2026-09-04: the rolls audit, and what it changed
 
 - **Pushes about a roll photo open that photo.** They routed to the roll and left the person to

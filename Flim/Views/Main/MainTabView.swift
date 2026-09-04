@@ -417,7 +417,13 @@ struct MainTabView: View {
             openPhotoId = photoId
 
         case .feed:
+            // The daily digest names this destination "the feed, at the top": landing on
+            // whatever post or profile `feedPath` had pushed before this tap (or wherever the
+            // list itself was scrolled to) would not be that, so both are reset the same way
+            // `.rolls` resets `rollsPath` just below.
             selected = 3
+            feedPath = NavigationPath()
+            scrollSignal[3, default: 0] += 1
 
         case .rolls:
             selected = 2

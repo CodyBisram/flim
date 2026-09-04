@@ -78,6 +78,25 @@ struct PushDestinationTests {
         #expect(PushDestination.parse(userInfo: userInfo) == .rolls)
     }
 
+    /// send-one-shot-push's first-shot/still-no-shot/checked-again campaigns send exactly this
+    /// payload over real APNs (not just from a widget link); before this case existed here, all
+    /// three fell through to the "unrecognized destination" default and every camera nudge landed
+    /// on the Darkroom fallback instead of the camera it named.
+    @Test("camera carries no id, and is recognized from a real push, not just a widget link")
+    func cameraDecodes() {
+        let userInfo: [AnyHashable: Any] = ["flim": ["t": "camera"]]
+        #expect(PushDestination.parse(userInfo: userInfo) == .camera)
+    }
+
+    /// send-one-shot-push's waiting-to-sort campaign sends exactly this payload over real APNs.
+    /// Same regression as `cameraDecodes` above: unrecognized before this case existed, silently
+    /// landing on the Darkroom tab without ever opening the sort deck sheet.
+    @Test("sortdeck carries no id, and is recognized from a real push, not just a widget link")
+    func sortDeckDecodes() {
+        let userInfo: [AnyHashable: Any] = ["flim": ["t": "sortdeck"]]
+        #expect(PushDestination.parse(userInfo: userInfo) == .sortDeck)
+    }
+
     // MARK: - The mandatory fallback
 
     @Test("no flim key at all falls back, exactly today's pushes and every pre-existing local notification")
@@ -273,6 +292,119 @@ struct WidgetLinkRoutingTests {
         for raw in declined {
             let parsed = URL(string: raw).flatMap(PushDestination.parse(url:))
             #expect(parsed == nil, "\(raw) parsed as \(String(describing: parsed))")
+        }
+    }
+}
+
+/// One row per distinct `flim` wire shape a real send site emits today, pinned against the exact
+/// literal each edge function builds (see the comment on every row below for its source and, for
+/// `send-social-push`, the exact call site). Several distinct EVENTS share one wire shape (every
+/// post-owner comment, mention, and "also commented" push all send `post`+`comments:true`;
+/// tagging, and both flavors of post reaction, all send bare `post`), so this is keyed by shape
+/// with every event that shape covers named alongside it, not a forced 1:1 event->row mapping.
+/// A drift between what a function actually sends and what this table says it sends is exactly
+/// the failure mode a "the app parses its own idea of the contract" test can't catch; this pins
+/// the LITERAL payload text instead.
+struct NotificationMatrixTests {
+    @Test("every real send site's exact wire payload parses to the destination it names")
+    func everyEventParsesToItsIntendedDestination() {
+        let postId = UUID()
+        let rollId = UUID()
+        let photoId = UUID()
+        let userId = UUID()
+
+        let rows: [(event: String, userInfo: [AnyHashable: Any], expected: PushDestination?)] = [
+            // send-social-push: post owner comment, an @mention inside a post comment, and a
+            // thread participant's "also commented" push all build the identical
+            // `{ t: "post", id, comments: true }` route from the one `route` constant shared by
+            // all three call sites in the comments block.
+            ("post comment (owner)",
+             ["flim": ["t": "post", "id": postId.uuidString, "comments": true]],
+             .post(postId: postId, comments: true)),
+            ("post comment mention",
+             ["flim": ["t": "post", "id": postId.uuidString, "comments": true]],
+             .post(postId: postId, comments: true)),
+            ("post comment thread (\"also commented\")",
+             ["flim": ["t": "post", "id": postId.uuidString, "comments": true]],
+             .post(postId: postId, comments: true)),
+            // send-social-push: comment likes route the same way, opening the thread.
+            ("comment liked",
+             ["flim": ["t": "post", "id": postId.uuidString, "comments": true]],
+             .post(postId: postId, comments: true)),
+            // send-social-push: a tag (at publish or via "Edit tags" later) and a post reaction
+            // (owner or a tagged bystander) all send bare `{ t: "post", id }`, no thread to open.
+            ("tag on new post",
+             ["flim": ["t": "post", "id": postId.uuidString]],
+             .post(postId: postId, comments: false)),
+            ("tag added later",
+             ["flim": ["t": "post", "id": postId.uuidString]],
+             .post(postId: postId, comments: false)),
+            ("post reaction (owner)",
+             ["flim": ["t": "post", "id": postId.uuidString]],
+             .post(postId: postId, comments: false)),
+            ("post reaction (tagged bystander)",
+             ["flim": ["t": "post", "id": postId.uuidString]],
+             .post(postId: postId, comments: false)),
+            // send-social-push: a roll-photo comment, a mention inside one, and that photo's own
+            // thread all carry `photo` + `comments: true`; a roll-photo reaction carries `photo`
+            // with no `comments` key at all (no thread to open).
+            ("roll-photo comment (owner + thread)",
+             ["flim": ["t": "reveal", "id": rollId.uuidString, "photo": photoId.uuidString, "comments": true]],
+             .reveal(rollId: rollId, photoId: photoId, comments: true)),
+            ("roll-photo mention",
+             ["flim": ["t": "reveal", "id": rollId.uuidString, "photo": photoId.uuidString, "comments": true]],
+             .reveal(rollId: rollId, photoId: photoId, comments: true)),
+            ("roll-photo reaction",
+             ["flim": ["t": "reveal", "id": rollId.uuidString, "photo": photoId.uuidString]],
+             .reveal(rollId: rollId, photoId: photoId, comments: false)),
+            // send-social-push: a follow carries the FOLLOWER's id (the profile to open), not the
+            // recipient's own.
+            ("new follower",
+             ["flim": ["t": "profile", "id": userId.uuidString]],
+             .profile(userId: userId)),
+            // send-social-push: a content report notifies only the app owner, with no `flim`
+            // payload at all, so it must fall back to the historical default rather than parse to
+            // anything specific.
+            ("content report (owner-only, no flim payload)",
+             ["aps": ["alert": ["title": "Photo reported"]]],
+             nil),
+            // send-develop-push: a roll finishing developing, for members who took no shots.
+            ("roll developed",
+             ["flim": ["t": "reveal", "id": rollId.uuidString]],
+             .reveal(rollId: rollId)),
+            // NotificationService.scheduleRollDevelopNotification: the LOCAL develop reminder,
+            // built from `PushDestination.reveal(rollId:).wireValue` directly, so this row is
+            // that exact call rather than a hand-copied literal.
+            ("local develop reminder",
+             ["flim": PushDestination.reveal(rollId: rollId).wireValue],
+             .reveal(rollId: rollId)),
+            // send-daily-digest: FEED_ROUTE, shared by every digest push.
+            ("daily digest",
+             ["flim": ["t": "feed"]],
+             .feed),
+            // send-one-shot-push: firstShotCohort / stillNoShotCohort / checkedAgainCohort all
+            // send `{ t: "camera" }`.
+            ("one-shot: first-shot",
+             ["flim": ["t": "camera"]],
+             .camera),
+            ("one-shot: still-no-shot",
+             ["flim": ["t": "camera"]],
+             .camera),
+            ("one-shot: checked-again",
+             ["flim": ["t": "camera"]],
+             .camera),
+            // send-one-shot-push: islandsCohort sends `{ t: "rolls" }`.
+            ("one-shot: islands",
+             ["flim": ["t": "rolls"]],
+             .rolls),
+            // send-one-shot-push: waitingToSortCohort sends `{ t: "sortdeck" }`.
+            ("one-shot: waiting-to-sort",
+             ["flim": ["t": "sortdeck"]],
+             .sortDeck)
+        ]
+
+        for row in rows {
+            #expect(PushDestination.parse(userInfo: row.userInfo) == row.expected, "\(row.event)")
         }
     }
 }

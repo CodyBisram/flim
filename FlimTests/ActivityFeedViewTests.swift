@@ -152,28 +152,45 @@ final class ActivityDestinationTests: XCTestCase {
     /// A roll-photo event (any kind carrying `rollId`) routes to the roll, never to a post, even
     /// when (implausibly) both `rollId` and `post` are somehow set: a roll photo is never also a
     /// `Post`, but `rollId` alone is what a real roll-photo row carries, so it must win.
-    func testRollPhotoMentionRoutesToTheRoll() {
+    ///
+    /// Also pins the `photoId`/`comments` riders against `send-social-push`'s own rule for the
+    /// equivalent "reveal" push: a mention has a thread worth opening to (`comments: true`), same
+    /// as a comment; a bare reaction does not.
+    func testRollPhotoMentionRoutesToTheRollAndPhotoWithComments() {
         let rollId = UUID()
+        let photoId = UUID()
         let item = ActivityItem(kind: .mentioned("hey @you"), actor: profile(), date: .now,
                                  postId: nil, post: nil, postAuthor: nil,
-                                 rollId: rollId, rollPhotoDisplayPath: "photo.jpg")
-        XCTAssertEqual(activityDestination(for: item), .roll(rollId: rollId))
+                                 rollId: rollId, rollPhotoId: photoId, rollPhotoDisplayPath: "photo.jpg")
+        XCTAssertEqual(activityDestination(for: item), .roll(rollId: rollId, photoId: photoId, comments: true))
     }
 
-    func testRollPhotoCommentRoutesToTheRoll() {
+    func testRollPhotoCommentRoutesToTheRollAndPhotoWithComments() {
+        let rollId = UUID()
+        let photoId = UUID()
+        let item = ActivityItem(kind: .rollPhotoComment("nice"), actor: profile(), date: .now,
+                                 postId: nil, post: nil, postAuthor: nil,
+                                 rollId: rollId, rollPhotoId: photoId, rollPhotoDisplayPath: "photo.jpg")
+        XCTAssertEqual(activityDestination(for: item), .roll(rollId: rollId, photoId: photoId, comments: true))
+    }
+
+    func testRollPhotoReactionRoutesToTheRollAndPhotoWithoutComments() {
+        let rollId = UUID()
+        let photoId = UUID()
+        let item = ActivityItem(kind: .rollPhotoReaction("❤️"), actor: profile(), date: .now,
+                                 postId: nil, post: nil, postAuthor: nil,
+                                 rollId: rollId, rollPhotoId: photoId, rollPhotoDisplayPath: "photo.jpg")
+        XCTAssertEqual(activityDestination(for: item), .roll(rollId: rollId, photoId: photoId, comments: false))
+    }
+
+    /// A roll-photo row whose `rollPhotoId` never arrived (a defensive case, every real query now
+    /// selects `photo_id`) still routes to the roll itself rather than being dropped.
+    func testRollPhotoRowWithNoPhotoIdStillRoutesToTheRoll() {
         let rollId = UUID()
         let item = ActivityItem(kind: .rollPhotoComment("nice"), actor: profile(), date: .now,
                                  postId: nil, post: nil, postAuthor: nil,
                                  rollId: rollId, rollPhotoDisplayPath: "photo.jpg")
-        XCTAssertEqual(activityDestination(for: item), .roll(rollId: rollId))
-    }
-
-    func testRollPhotoReactionRoutesToTheRoll() {
-        let rollId = UUID()
-        let item = ActivityItem(kind: .rollPhotoReaction("❤️"), actor: profile(), date: .now,
-                                 postId: nil, post: nil, postAuthor: nil,
-                                 rollId: rollId, rollPhotoDisplayPath: "photo.jpg")
-        XCTAssertEqual(activityDestination(for: item), .roll(rollId: rollId))
+        XCTAssertEqual(activityDestination(for: item), .roll(rollId: rollId, photoId: nil, comments: true))
     }
 
     /// A mention on a POST (not a roll photo) opens that post, exactly like `.comment` does, since
