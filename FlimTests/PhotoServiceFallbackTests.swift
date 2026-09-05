@@ -45,4 +45,78 @@ final class PhotoServiceFallbackTests: XCTestCase {
         let error = PostgrestError(detail: nil, code: "23505", message: "duplicate key value")
         XCTAssertFalse(PhotoService.isRollDevelopedRefusal(rollId: rollId, error: error))
     }
+
+    // MARK: - PhotoService.isDuplicatePhotoId
+
+    /// The exact shape Postgres reports for a re-inserted primary key: the constraint name in the
+    /// detail. This is what tells a retry "the row already exists, fetch it and call the capture
+    /// a success" rather than queuing yet another retry that would only collide again.
+    func testDuplicatePrimaryKeyIsDetectedFromDetail() {
+        let error = PostgrestError(
+            detail: "Key (id)=(11111111-1111-1111-1111-111111111111) already exists.",
+            code: "23505", message: "duplicate key value violates unique constraint \"photos_pkey\""
+        )
+        XCTAssertTrue(PhotoService.isDuplicatePhotoId(error))
+    }
+
+    /// A 23505 whose message names a different constraint must not be classified as the id
+    /// conflict this retry path is built to self-heal from.
+    func testDifferentUniqueConstraintIsNotMistakenForTheDuplicateId() {
+        let error = PostgrestError(
+            detail: "Key (photo_id, user_id, emoji)=(...) already exists.",
+            code: "23505", message: "duplicate key value violates unique constraint \"reactions_unique\""
+        )
+        XCTAssertFalse(PhotoService.isDuplicatePhotoId(error))
+    }
+
+    // MARK: - PhotoService.shouldDiscardFailedUpload
+
+    /// The exact case this exists for: a sidecar left behind after its own upload actually
+    /// succeeded (see `restoreFailedUploads`) must be discarded once a row with that id is
+    /// confirmed to exist, not resurrected as a retry forever.
+    func testDiscardsARecordWhosePhotoAlreadyExistsOnTheServer() {
+        let photoId = UUID()
+        XCTAssertTrue(PhotoService.shouldDiscardFailedUpload(
+            photoId: photoId, storagePath: nil,
+            existingPhotoIds: [photoId], existingStoragePaths: []))
+    }
+
+    /// A genuinely still-pending capture, whose id the server has never seen, must never be
+    /// discarded: that would silently lose the only copy of an un-uploaded photograph.
+    func testKeepsARecordThatIsNotOnTheServer() {
+        let photoId = UUID()
+        XCTAssertFalse(PhotoService.shouldDiscardFailedUpload(
+            photoId: photoId, storagePath: nil,
+            existingPhotoIds: [], existingStoragePaths: []))
+    }
+
+    /// A record queued before `photoId` existed (an old sidecar, see `FailedUpload.photoId`'s own
+    /// doc) never reached Storage on any prior attempt, so there is nothing to look up on the
+    /// server and it must never be discarded by this check.
+    func testNeverDiscardsARecordWithNoPhotoIdOrStoragePath() {
+        XCTAssertFalse(PhotoService.shouldDiscardFailedUpload(
+            photoId: nil, storagePath: nil,
+            existingPhotoIds: [], existingStoragePaths: []))
+    }
+
+    /// `photoId` wins when both are present: it's the primary, more precise identity, so a
+    /// stale (or coincidentally matching) storage path can never override a confirmed absence.
+    func testPhotoIdTakesPrecedenceOverStoragePath() {
+        let photoId = UUID()
+        let path = "user/\(photoId).jpg"
+        XCTAssertFalse(PhotoService.shouldDiscardFailedUpload(
+            photoId: photoId, storagePath: path,
+            existingPhotoIds: [], existingStoragePaths: [path]))
+    }
+
+    /// The fallback case: a sidecar with a storage path but no photo id (a shape that should not
+    /// occur given the two are always written together today, but is checked anyway, see
+    /// `shouldDiscardFailedUpload`'s own doc) is discarded once that exact path is confirmed to
+    /// already name a row on the server.
+    func testDiscardsARecordByStoragePathWhenNoPhotoIdIsPresent() {
+        let path = "user123/abc.jpg"
+        XCTAssertTrue(PhotoService.shouldDiscardFailedUpload(
+            photoId: nil, storagePath: path,
+            existingPhotoIds: [], existingStoragePaths: [path]))
+    }
 }

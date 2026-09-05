@@ -417,7 +417,7 @@ final class PhotoService {
                     .single()
                     .execute()
                     .value
-            } catch let error as PostgrestError where error.code == "23505" {
+            } catch let error as PostgrestError where error.code == "23505" && Self.isDuplicatePhotoId(error) {
                 // A row with this id already exists. Since `photoId` is only ever reused from a
                 // PRIOR attempt at this exact capture (never freshly minted for a different one),
                 // this means that earlier insert actually landed and we simply never saw the
@@ -720,6 +720,43 @@ final class PhotoService {
     /// inputs in, a Bool out, no access to any state on this class.
     nonisolated static func isRollDevelopedRefusal(rollId: UUID?, error: Error) -> Bool {
         rollId != nil && (error as? PostgrestError)?.code == "42501"
+    }
+
+    /// Distinguishes a 23505 on `photos`' own primary key (`id`) from one on some other unique
+    /// constraint on the table, using the constraint name Postgres reports, same technique as
+    /// `AuthService.isPrimaryKeyConflict`. `photos` has no other unique constraint today, so this
+    /// is currently always true whenever the insert's own catch reaches it, but it is pulled out
+    /// and tested anyway so a future constraint on the table can't silently get swept into "the
+    /// row already exists, fetch it and call the capture a success", the classification the retry
+    /// path leans on completely.
+    nonisolated static func isDuplicatePhotoId(_ error: PostgrestError) -> Bool {
+        let text = "\(error.detail ?? "") \(error.message)".lowercased()
+        return text.contains("photos_pkey") || text.contains("(id)")
+    }
+
+    /// Whether a `FailedUpload` restored from disk (or about to be retried) should be discarded
+    /// outright rather than re-queued or re-uploaded, because the photo it names already exists
+    /// on the server: the upload plainly succeeded on some earlier attempt, and the local record
+    /// is just a sidecar that outlived it (see `PhotoService.restoreFailedUploads`'s own doc for
+    /// the exact window that leaves one behind).
+    ///
+    /// Checked by `photoId` first, the common case since every capture writes one before its
+    /// first Storage attempt. Falls back to `storagePath` only when `photoId` is absent, for a
+    /// sidecar that somehow carries a path without an id; a record with NEITHER never reached
+    /// Storage on any prior attempt (see `FailedUpload.photoId`'s own doc), so there is nothing
+    /// to look up and it is never discarded here, only ever kept as still-pending.
+    ///
+    /// Pure and `nonisolated`, same reasoning as `isRollDevelopedRefusal`: the actual lookups (two
+    /// batched `select ... in (...)` calls against `photos`, one by id and one by storage path)
+    /// stay in `confirmedUploaded`, the only caller; this is just the decision in front of it,
+    /// kept pure so it's testable without a live network.
+    nonisolated static func shouldDiscardFailedUpload(
+        photoId: UUID?, storagePath: String?,
+        existingPhotoIds: Set<UUID>, existingStoragePaths: Set<String>
+    ) -> Bool {
+        if let photoId { return existingPhotoIds.contains(photoId) }
+        if let storagePath { return existingStoragePaths.contains(storagePath) }
+        return false
     }
 
     /// Generates and uploads the thumbnail + feed renditions after the photo already exists, then
@@ -1070,7 +1107,21 @@ final class PhotoService {
             failedUploads = []
             return p
         }
-        for upload in pending {
+        guard !pending.isEmpty else { return }
+
+        // Checked BEFORE spending a network attempt on any of them, not just at launch: a record
+        // that already exists on the server (its own earlier attempt landed everywhere, only the
+        // local sidecar/pill outlived it, see `restoreFailedUploads`'s own doc for the exact
+        // window) does not need `captureAndUpload`'s own 23505 self-heal to prove that, it can be
+        // dropped right here, and the tap that surfaced this pill never has to wait on a
+        // redundant re-upload of bytes already sitting in Storage.
+        let confirmed = await confirmedUploaded(pending)
+        for upload in pending where confirmed.contains(upload.id) {
+            await failedUploadStore.remove(id: upload.id, userId: upload.userId)
+        }
+        let stillPending = pending.filter { !confirmed.contains($0.id) }
+
+        for upload in stillPending {
             await captureAndUpload(imageData: upload.data,
                                    userId: upload.userId,
                                    rollId: upload.rollId,
@@ -1090,6 +1141,67 @@ final class PhotoService {
                 await failedUploadStore.remove(id: upload.id, userId: upload.userId)
             }
         }
+    }
+
+    /// Which of `records` are already fully uploaded, so neither `retryFailedUploads` nor
+    /// `restoreFailedUploads` ever re-attempts, or leaves visible as a pill, a capture whose row
+    /// is already sitting on the server. Two batched lookups against `photos` (one `select id in
+    /// (...)`, one `select storage_path in (...)`), never one call per record, so a queue of many
+    /// stale files costs at most two round trips rather than one each.
+    ///
+    /// Returns `FailedUpload.id`, the identity every caller already removes records by
+    /// (`FailedUploadStore.remove(id:)`, `queueForRetry`'s own `record.id`), not `photoId`: the
+    /// two are equal for every record with a `photoId` at all (see `FailedUpload.photoId`'s own
+    /// doc), but keying the result this way means a caller never has to re-derive which record a
+    /// confirmed `photoId` belonged to.
+    private func confirmedUploaded(_ records: [FailedUpload]) async -> Set<UUID> {
+        let byPhotoId: [(recordId: UUID, photoId: UUID)] = records.compactMap { record in
+            record.photoId.map { (record.id, $0) }
+        }
+        let byPathOnly: [(recordId: UUID, path: String)] = records.compactMap { record in
+            guard record.photoId == nil, let path = record.storagePath else { return nil }
+            return (record.id, path)
+        }
+        guard !byPhotoId.isEmpty || !byPathOnly.isEmpty else { return [] }
+
+        var existingPhotoIds: Set<UUID> = []
+        if !byPhotoId.isEmpty {
+            struct Row: Decodable { let id: UUID }
+            let ids = Array(Set(byPhotoId.map(\.photoId)))
+            let rows: [Row] = (try? await supabase
+                .from("photos")
+                .select("id")
+                .in("id", values: ids.map { $0.uuidString })
+                .execute()
+                .value) ?? []
+            existingPhotoIds = Set(rows.map(\.id))
+        }
+
+        var existingStoragePaths: Set<String> = []
+        if !byPathOnly.isEmpty {
+            struct Row: Decodable { let storage_path: String }
+            let paths = Array(Set(byPathOnly.map(\.path)))
+            let rows: [Row] = (try? await supabase
+                .from("photos")
+                .select("storage_path")
+                .in("storage_path", values: paths)
+                .execute()
+                .value) ?? []
+            existingStoragePaths = Set(rows.map(\.storage_path))
+        }
+
+        var confirmed: Set<UUID> = []
+        for (recordId, photoId) in byPhotoId
+        where Self.shouldDiscardFailedUpload(photoId: photoId, storagePath: nil,
+                                             existingPhotoIds: existingPhotoIds, existingStoragePaths: []) {
+            confirmed.insert(recordId)
+        }
+        for (recordId, path) in byPathOnly
+        where Self.shouldDiscardFailedUpload(photoId: nil, storagePath: path,
+                                             existingPhotoIds: [], existingStoragePaths: existingStoragePaths) {
+            confirmed.insert(recordId)
+        }
+        return confirmed
     }
 
     /// Re-queues anything left unsent by a previous run. Called after the account resolves.
@@ -1121,12 +1233,37 @@ final class PhotoService {
             return await store.load(userId: userId)
         }.value
         guard AccountEpoch.isCurrent(epoch), !restored.isEmpty else { return }
+
+        // A sidecar can outlive its own success: `captureAndUpload`'s success path removes it
+        // right after the row insert lands (and `captureAsPersonalFallback`'s does the same), but
+        // both of those are themselves a suspension a hard kill can land inside, after the upload
+        // and insert (and, in the ordinary case, the rendition uploads that follow) are already
+        // sitting on the server. Without this check, that one leftover file comes back on every
+        // launch forever: this method has no other way to learn the upload it names already
+        // succeeded, since nothing tells it so.
+        let confirmed = await confirmedUploaded(restored)
+        guard AccountEpoch.isCurrent(epoch) else { return }
+
+        var toRestore: [FailedUpload] = []
+        for record in restored {
+            if confirmed.contains(record.id) {
+                // The upload plainly succeeded: drop the stale sidecar so this stops coming back,
+                // and never surface a retry for a photo already sitting in the Darkroom.
+                await store.remove(id: record.id, userId: userId)
+                continue
+            }
+            toRestore.append(record)
+        }
+        guard !toRestore.isEmpty else { return }
+
         let known = Set(failedUploads.map(\.id))
-        failedUploads.append(contentsOf: restored.filter { !known.contains($0.id) })
+        let fresh = toRestore.filter { !known.contains($0.id) }
+        guard !fresh.isEmpty else { return }
+        failedUploads.append(contentsOf: fresh)
         if uploadError == nil {
-            uploadError = restored.count == 1
+            uploadError = fresh.count == 1
                 ? "One photo didn't finish uploading last time."
-                : "\(restored.count) photos didn't finish uploading last time."
+                : "\(fresh.count) photos didn't finish uploading last time."
         }
     }
 
