@@ -20,6 +20,31 @@ struct ChapterStatsDecodingTests {
         #expect(row.valueText == nil)
         #expect(row.photoId == photoId)
         #expect(row.photoThumbPath == "thumb.jpg")
+        #expect(row.postId == nil)
+    }
+
+    // MARK: - post_id (reaction/comment fix)
+
+    @Test("a photo-backed row carrying post_id decodes it")
+    func decodesPostId() throws {
+        let photoId = UUID()
+        let postId = UUID()
+        let json = Data(#"""
+        {"stat_key":"most_reacted","value_int":12,
+         "photo_id":"\#(photoId.uuidString)","photo_thumb_path":"thumb.jpg",
+         "post_id":"\#(postId.uuidString)"}
+        """#.utf8)
+        let row = try JSONDecoder().decode(ChapterStatRow.self, from: json)
+        #expect(row.postId == postId)
+    }
+
+    @Test("a row from a server that doesn't send post_id yet decodes to nil, not a failure")
+    func missingPostIdDecodesToNilNotFailure() throws {
+        let json = Data(#"""
+        {"stat_key":"most_reacted","value_int":12,"photo_id":"\#(UUID().uuidString)"}
+        """#.utf8)
+        let row = try JSONDecoder().decode(ChapterStatRow.self, from: json)
+        #expect(row.postId == nil)
     }
 
     @Test("decodes a text-valued row (top_reaction) with no photo columns present at all")

@@ -28,6 +28,11 @@ struct ChapterPreviewDemoHost: View {
         .environment(chapters)
         .preferredColorScheme(.dark)
         .task {
+            // `ChapterRecapView.isOwnRecap` compares `auth.currentUser?.id` to the profile being
+            // viewed, so the harness's own fixture profile has to actually BE "signed in" for the
+            // recap's first-run line to have anything to key off; this also makes `-openChapterRecap`
+            // exercise the one-time flag exactly the way a real own-profile visit would.
+            auth.currentUser = AppUser(id: Self.profileId, createdAt: .now)
             ChapterPreviewFixtures.seed(into: chapters, profileId: Self.profileId)
             // `-chapterContactSheetDemo`, alongside `-chaptersPreviewDemo`: renders one contact
             // sheet straight from the fixture images (no network, no signed URLs to wait on) and
@@ -42,7 +47,13 @@ struct ChapterPreviewDemoHost: View {
         // CLI cannot deliver.
         .fullScreenCover(isPresented: .constant(ProcessInfo.processInfo.arguments.contains("-openChapterRecap"))) {
             if let chapter = chapters.chaptersByProfile[Self.profileId]?.first {
+                // `.fullScreenCover`'s presented content does not pick up `.environment(auth)`
+                // from the NavigationStack above just by being chained after it; re-injected here
+                // the same way `feed`/`chapters` already are, or `ChapterRecapView.isOwnRecap`
+                // reads a default, signed-out `AuthService` and the first-run line never has
+                // anything to key off.
                 ChapterRecapView(profileId: Self.profileId, chapter: chapter, chapterCoverURLs: [:])
+                    .environment(auth)
                     .environment(feed)
                     .environment(chapters)
             }
@@ -154,7 +165,7 @@ enum ChapterPreviewFixtures {
         }
         guard let sheet = ChapterContactSheet.render(
             images: images, chapterCode: "08", monthName: "August",
-            statsLine: "34 shots · 2 rolls", appName: AppInfo.appName
+            statsLine: "34 shared · 2 rolls", appName: AppInfo.appName
         ), let data = sheet.pngData() else {
             print("CONTACT_SHEET_DEMO_FAILED")
             return

@@ -172,6 +172,45 @@ actually do. Worth deciding before more is built on top of rolls.
 
 ## Next up
 
+### done 2026-09-05: the second rolls and chapters audit, and everything it changed
+
+Three passes. **Correctness (BLOCK, fixed):** `ChapterService` wrote its three caches with no
+`AccountEpoch` guard while the RPCs are viewer-scoped, so a response landing across a sign-out
+and sign-in repopulated the cache with the previous account's permissioned rows. Guarded like
+every other service, with a stale-epoch test. Two real races fixed: a second roll-photo push for
+a roll already in the nav stack now pops to it instead of appending a duplicate that a buried
+instance could consume; a successful push-token registration now cancels every pending local
+develop reminder so a shooter whose first capture beat registration never gets both. Memoised
+the roll viewer's merge-and-sort. Clean: burst detection and its retro UPDATE (captures are
+serialised), the reveal's loading and triggers, `chapter_stats` for blocked viewers, the
+contact sheet's decode, every new cache key, no new anon grants.
+
+**Flows (SHIP WITH NITS, all fixed):** a one-time first-run line on your own first opening card
+("Built from what you shared this month. Anyone who can see your profile sees this too.");
+"34 shared · 2 rolls" not "shots" next to the profile's own "shared" count; a one-photo month
+gets no closing card; "and 3 more like it, in the roll"; a bridging toast when a push plays an
+unwatched reveal before the tapped photo.
+
+**Data (clean):** every roll at its original reveal time; every roll photo since the change
+pinned exactly (479 legacy sub-ms drifts aligned by migration); bursts grouping within one
+shooter and roll, sharpness 0.05 to 0.75 unsaturated (3 shooters, too few to tune); chapter
+month counts match direct post counts for all five users checked and every most-reacted is the
+true max; no push backlog; every table small; both chapter functions under 20 ms on index scans.
+
+**Owner-reported, fixed the same day:** chapters took long to open (curation scored every photo
+serially: a signed-URL round trip, a download and three Vision passes each). Now one batched
+sign, four-wide concurrent scoring, a provisional deck so the card is interactive the moment the
+photos arrive and the curated pick swaps in only if play has not started, and a disk cache per
+finished month (`ChapterCurationCache`). The most-reacted photo opened with no reactions because
+stats count POST reactions and the viewer read the roll-photo tables; `chapter_photos` and
+`chapter_stats` now carry `post_id`, and `PhotoPagerView` reads the post's reactions and thread
+when a post is known (a no-op for every other caller). Found on the way: presented covers need
+`.environment(auth)` reapplied; the demo host now does.
+
+**Five new stats, server live, app half in flight:** biggest fan (opens their profile), the
+reaction you gave most, golden hour, roll MVP (opens their profile), longest gap with the frame
+that ended it. Owner's August: sabs 34, heart 219, 8pm, 5 days.
+
 ### done 2026-09-05: white borders in the roll viewer
 
 A member's photos showed white bands in the roll viewer only. The viewer fitted the image

@@ -96,6 +96,15 @@ func photoArrived(_ photoId: UUID, in photos: [Photo]) -> Bool {
     photos.contains { $0.id == photoId }
 }
 
+/// The one-time bridge toast shown when a push-triggered reveal auto-plays over a pending
+/// photo/comment intent: without it, the roll opens straight into the reveal with no explanation
+/// for why the push's own target (a comment thread, a specific photo) didn't just open. Pure so
+/// the exact copy for each intent shape is tested without mounting the reveal or its toast.
+func pushBridgeToastMessage(rollName: String, hasComments: Bool) -> String {
+    let subject = hasComments ? "The comment" : "The photo"
+    return "Catching you up on \(rollName) first. \(subject) is right after."
+}
+
 /// A run of two or more consecutive frames sharing a burst, collapsed to one cell in the
 /// developed grid. `id` is the run's FIRST frame's id, never the shared `burst_group` itself: a
 /// pathological same-group id split into two separate runs (see `BurstGrouping.consecutiveRuns`'s
@@ -279,6 +288,14 @@ struct RollDetailView: View {
             a.takenAt != b.takenAt ? a.takenAt < b.takenAt : a.id.uuidString < b.id.uuidString
         }
     }
+
+    /// `pagerPhotosChronological`, recomputed only when its two inputs actually change, not on
+    /// every body evaluation: the `.fullScreenCover(item: $selectedPhoto)` site below reads this
+    /// twice (once for `photos:`, once to locate `startIndex:`), and a merge-then-sort over the
+    /// whole roll is real work to do twice per frame for no reason. Kept in sync by the
+    /// `.onChange` pair on `body`, keyed on each input's own id list so a same-count edit (a
+    /// deletion paired with a snapshot top-up landing together) still re-triggers.
+    @State private var pagerPhotosChronologicalCache: [Photo] = []
 
 
     var body: some View {
@@ -467,7 +484,19 @@ struct RollDetailView: View {
                 .accessibilityLabel("More")
             }
         }
-        .onAppear { adoptPendingPhotoIntent() }
+        .onAppear {
+            adoptPendingPhotoIntent()
+            pagerPhotosChronologicalCache = pagerPhotosChronological
+        }
+        // `pagerPhotosChronologicalCache` recomputed only when one of its two real inputs changes,
+        // not on every body evaluation; the `.fullScreenCover` below reads the cache, never the
+        // computed property directly, so it can't recompute a second time locating `startIndex:`.
+        .onChange(of: vm.developedPhotos.map(\.id)) { _, _ in
+            pagerPhotosChronologicalCache = pagerPhotosChronological
+        }
+        .onChange(of: rollSnapshot?.map(\.id)) { _, _ in
+            pagerPhotosChronologicalCache = pagerPhotosChronological
+        }
         // A second push for THIS SAME roll while it's already open (no reappear to catch it):
         // `MainTabView` still appends a fresh path entry, but the intent itself lands here via
         // the shared binding, and by now the main `.task` pipeline below has long since finished,
@@ -554,6 +583,14 @@ struct RollDetailView: View {
             // completion instead; see its `onCompleted`.
             if roll.isDeveloped, !vm.developedPhotos.isEmpty,
                !UserDefaults.standard.bool(forKey: revealSeenKey) {
+                // A pending push-photo intent for THIS roll (checked and set by
+                // `adoptPendingPhotoIntent`, called from `onAppear` before this task runs) means
+                // the reveal is about to auto-play in front of whatever the push actually pointed
+                // at. Bridge that, once, only on this path: an ordinary open of an unwatched
+                // reveal (no push involved) needs no explanation for why the roll didn't just open.
+                if awaitingPhotoId != nil {
+                    showToast(pushBridgeToastMessage(rollName: roll.name, hasComments: awaitingPhotoComments))
+                }
                 showReveal = true
             }
             // A pending push-photo intent waits for exactly this point: the reveal decision just
@@ -604,9 +641,10 @@ struct RollDetailView: View {
             // without the reset a photo push's "open comments" would leak into the very next
             // ordinary grid tap on this same roll.
             let openComments = pagerOpenComments
+            let photosForPager = pagerPhotosChronologicalCache
             PhotoPagerView(
-                photos: pagerPhotosChronological,
-                startIndex: pagerPhotosChronological.firstIndex(where: { $0.id == photo.id }) ?? 0,
+                photos: photosForPager,
+                startIndex: photosForPager.firstIndex(where: { $0.id == photo.id }) ?? 0,
                 signedURLs: vm.signedURLCache,
                 showsReactions: true,
                 showsComments: true,

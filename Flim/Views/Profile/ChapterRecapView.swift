@@ -15,6 +15,7 @@ struct ChapterRecapView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(FeedService.self) private var feed
     @Environment(ChapterService.self) private var chapters
+    @Environment(AuthService.self) private var auth
     @Environment(\.displayScale) private var displayScale
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -42,12 +43,24 @@ struct ChapterRecapView: View {
     /// player: a native `TabView(.page)` pager gets no competing drag gesture, the same as
     /// `RollRevealView`'s own playback and `PhotoPagerView`.
     @State private var cardOffset: CGSize = .zero
+    /// Whether to show the one-time "what is a chapter" line under the opening card's fanned
+    /// prints. Decided once, in `.task`, from `firstChapterSeenKey`: never on someone else's
+    /// chapter (this account has never been TOLD anything about a page that isn't theirs), and
+    /// never again after the first time on their own, same one-shot shape as
+    /// `RollDetailView.revealSeenKey`.
+    @State private var showFirstRunLine = false
 
     init(profileId: UUID, chapter: ChapterSummary, chapterCoverURLs: [String: URL]) {
         self.profileId = profileId
         self.chapterCoverURLs = chapterCoverURLs
         _viewModel = State(initialValue: ChapterRecapViewModel(profileId: profileId, chapter: chapter))
     }
+
+    /// Namespaced per account, same shape as `RollDetailView.revealSeenKey`: a device that hosts
+    /// more than one account must not let the first account's viewing burn the line for the
+    /// second, and signing back in as the first must not show it again either.
+    private func firstChapterSeenKey(userId: UUID) -> String { "firstChapterSeen.\(userId.uuidString)" }
+    private var isOwnRecap: Bool { auth.currentUser?.id == profileId }
 
     var body: some View {
         ZStack {
@@ -61,8 +74,24 @@ struct ChapterRecapView: View {
         .fullScreenCover(isPresented: $isPlayerPresented, onDismiss: handlePlayerDismissed) {
             player
         }
+        // `viewModel.deck` must never change while the pager is actually mounted (see
+        // `ChapterRecapViewModel.isPlayerMounted`'s own doc); this is the one place that tells it
+        // whether that's currently true, for both edges of the presentation.
+        .onChange(of: isPlayerPresented) { _, presented in
+            viewModel.setPlayerMounted(presented)
+        }
         .task {
             viewModel.displayScale = displayScale
+            // Decided once, up front, from the flag alone: never re-evaluated later in this same
+            // presentation, so a first-run line already on screen can't blink off mid-view if
+            // something else in this `.task` happens to touch `isOwnRecap`'s inputs.
+            if isOwnRecap, let uid = auth.currentUser?.id {
+                let key = firstChapterSeenKey(userId: uid)
+                if !UserDefaults.standard.bool(forKey: key) {
+                    showFirstRunLine = true
+                    UserDefaults.standard.set(true, forKey: key)
+                }
+            }
             await viewModel.load(feed: feed, chapters: chapters)
             #if DEBUG
             // Screenshotting the player from the Simulator's own CLI has no way to deliver a
@@ -117,6 +146,15 @@ struct ChapterRecapView: View {
 
                     fannedPrints
                         .padding(.top, 28)
+
+                    if showFirstRunLine {
+                        Text("Built from what you shared this month. Anyone who can see your profile sees this too.")
+                            .flimFont(13, relativeTo: .footnote)
+                            .foregroundStyle(Color(white: 0.65))
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 36)
+                            .padding(.top, 16)
+                    }
                 }
 
                 Spacer(minLength: 12)
@@ -224,11 +262,15 @@ struct ChapterRecapView: View {
             }
 
             Button {
-                guard !viewModel.isBuildingContactSheet else { return }
+                guard !viewModel.isBuildingContactSheet, !viewModel.isLoadingDeck else { return }
                 Task { await viewModel.buildContactSheet() }
             } label: {
                 HStack(spacing: 7) {
-                    if viewModel.isBuildingContactSheet {
+                    // `isLoadingDeck` (curation still choosing the real pick) spins the button
+                    // exactly the way `isBuildingContactSheet` already does; the opening card
+                    // itself is never blocked on this, only the ONE action that wants curation's
+                    // FINAL pick rather than the provisional one already on screen.
+                    if viewModel.isBuildingContactSheet || viewModel.isLoadingDeck {
                         ProgressView().tint(Color(white: 0.7)).controlSize(.small)
                     } else {
                         Image(systemName: "square.grid.2x2").font(.system(size: 13))
@@ -238,7 +280,7 @@ struct ChapterRecapView: View {
                 }
                 .foregroundStyle(Color(white: 0.7))
             }
-            .disabled(viewModel.isBuildingContactSheet)
+            .disabled(viewModel.isBuildingContactSheet || viewModel.isLoadingDeck)
 
             // Rule 4 (confirmations redesign), the same shape `RollRevealView.saveAll` uses: a
             // failure lands right under the button that caused it, with the retry in place.
@@ -279,7 +321,11 @@ struct ChapterRecapView: View {
     /// rather than ending the recap outright.
     @ViewBuilder
     private var player: some View {
-        if viewModel.isLoadingDeck {
+        // `!viewModel.loaded`, not `viewModel.isLoadingDeck`: `deck` is playable the instant
+        // `chapter_photos` itself returns (the provisional pick), well before curation's Vision
+        // pass finishes, so this only waits on that first, much shorter round trip. See
+        // `ChapterRecapViewModel.load()`'s own doc.
+        if !viewModel.loaded {
             VStack(spacing: 0) {
                 playerHeader
                 Spacer(minLength: 0)
@@ -313,7 +359,10 @@ struct ChapterRecapView: View {
                 // A recap is playback, not an editing surface: no roll name badge (see
                 // `pagerPhotos`'s own doc on why `rollId` is dropped too) and no delete.
                 rollName: { _ in nil },
-                showsDelete: false
+                showsDelete: false,
+                // A chapter photo IS a post; its reactions/comments live on the post tables, not
+                // the roll-photo ones. See `PhotoPagerView.posts`'s own doc.
+                posts: viewModel.pagerPosts
             )
             .transition(.opacity)
         }

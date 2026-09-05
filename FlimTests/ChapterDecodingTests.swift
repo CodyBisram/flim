@@ -71,6 +71,42 @@ struct ChapterDecodingTests {
         #expect(row.rollName == "Roommates")
         #expect(row.displayPath == "thumb.jpg")
         #expect(row.viewPath == "feed.jpg")
+        #expect(row.postId == nil)
+    }
+
+    // MARK: - post_id (reaction/comment fix)
+
+    @Test("a chapter_photos row carrying post_id decodes it")
+    func decodesPostId() throws {
+        let id = UUID()
+        let postId = UUID()
+        let json = Data(#"""
+        {"id":"\#(id.uuidString)","taken_at":"2026-08-09T18:30:00.000Z","storage_path":"full.jpg",
+         "post_id":"\#(postId.uuidString)"}
+        """#.utf8)
+        let row = try JSONDecoder().decode(ChapterPhoto.self, from: json)
+        #expect(row.postId == postId)
+    }
+
+    @Test("a chapter_photos row from a server that doesn't send post_id yet decodes to nil, not a failure")
+    func missingPostIdDecodesToNilNotFailure() throws {
+        let id = UUID()
+        let json = Data(#"""
+        {"id":"\#(id.uuidString)","taken_at":"2026-08-09T18:30:00.000Z","storage_path":"full.jpg"}
+        """#.utf8)
+        let row = try JSONDecoder().decode(ChapterPhoto.self, from: json)
+        #expect(row.postId == nil)
+    }
+
+    @Test("a null post_id (present, explicitly null) decodes the same as an absent key")
+    func nullPostIdDecodesToNil() throws {
+        let id = UUID()
+        let json = Data(#"""
+        {"id":"\#(id.uuidString)","taken_at":"2026-08-09T18:30:00.000Z","storage_path":"full.jpg",
+         "post_id":null}
+        """#.utf8)
+        let row = try JSONDecoder().decode(ChapterPhoto.self, from: json)
+        #expect(row.postId == nil)
     }
 
     @Test("a chapter_photos row with roll_id/roll_name missing (not on a roll) decodes to nil, not a failure")

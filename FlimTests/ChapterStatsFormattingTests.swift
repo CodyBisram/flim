@@ -26,6 +26,7 @@ struct ChapterStatsFormattingTests {
             .mostReacted: row("most_reacted", valueInt: 1, photoId: UUID(), photoThumbPath: "a.jpg"),
             .mostCommented: row("most_commented", valueInt: 1, photoId: UUID(), photoThumbPath: "b.jpg"),
             .busiestDay: row("busiest_day", valueInt: 1, valueText: "2026-08-12"),
+            .shots: row("shots", valueInt: 12),
             .nightShots: row("night_shots", valueInt: 3),
             .streakDays: row("streak_days", valueInt: 3),
             .rollsCount: row("rolls_count", valueInt: 1),
@@ -125,7 +126,10 @@ struct ChapterStatsFormattingTests {
     @Test("busiest day formats as weekday, ordinal day, and shot count, locale-pinned")
     func busiestDayFormatting() {
         // 2026-09-12 is a Saturday.
-        let stats: ChapterStats = [.busiestDay: row("busiest_day", valueInt: 9, valueText: "2026-09-12")]
+        let stats: ChapterStats = [
+            .busiestDay: row("busiest_day", valueInt: 9, valueText: "2026-09-12"),
+            .shots: row("shots", valueInt: 12),
+        ]
         let line = ChapterStatsFormatting.lines(from: stats, calendar: calendar, locale: locale).first
         #expect(line?.value == "Saturday the 12th · 9 shots")
         #expect(line?.label == "Busiest day")
@@ -134,7 +138,10 @@ struct ChapterStatsFormattingTests {
     @Test("busiest day singularizes a one-shot day")
     func busiestDaySingular() {
         // 2026-09-13 is a Sunday.
-        let stats: ChapterStats = [.busiestDay: row("busiest_day", valueInt: 1, valueText: "2026-09-13")]
+        let stats: ChapterStats = [
+            .busiestDay: row("busiest_day", valueInt: 1, valueText: "2026-09-13"),
+            .shots: row("shots", valueInt: 4),
+        ]
         let line = ChapterStatsFormatting.lines(from: stats, calendar: calendar, locale: locale).first
         #expect(line?.value == "Sunday the 13th · 1 shot")
     }
@@ -153,7 +160,37 @@ struct ChapterStatsFormattingTests {
 
     @Test("a malformed busiest_day date drops the line entirely rather than crashing or showing garbage")
     func malformedBusiestDayDropsLine() {
-        let stats: ChapterStats = [.busiestDay: row("busiest_day", valueInt: 9, valueText: "not-a-date")]
+        let stats: ChapterStats = [
+            .busiestDay: row("busiest_day", valueInt: 9, valueText: "not-a-date"),
+            .shots: row("shots", valueInt: 12),
+        ]
+        #expect(ChapterStatsFormatting.lines(from: stats, calendar: calendar, locale: locale).isEmpty)
+    }
+
+    // MARK: - Busiest day: the one-photo-month threshold
+
+    @Test("a one-photo month drops the busiest day line: the day IS the month")
+    func onePhotoMonthDropsBusiestDay() {
+        let stats: ChapterStats = [
+            .busiestDay: row("busiest_day", valueInt: 1, valueText: "2026-09-12"),
+            .shots: row("shots", valueInt: 1),
+        ]
+        #expect(ChapterStatsFormatting.lines(from: stats, calendar: calendar, locale: locale).isEmpty)
+    }
+
+    @Test("a busiest day that accounts for every shot in the month is dropped even with more than one shot")
+    func busiestDayEqualToTotalIsDropped() {
+        // Two shots, both taken on the same day: the busiest day and the month are the same thing.
+        let stats: ChapterStats = [
+            .busiestDay: row("busiest_day", valueInt: 2, valueText: "2026-09-12"),
+            .shots: row("shots", valueInt: 2),
+        ]
+        #expect(ChapterStatsFormatting.lines(from: stats, calendar: calendar, locale: locale).isEmpty)
+    }
+
+    @Test("busiest day is dropped when the month's shots total is missing entirely")
+    func busiestDayDroppedWithoutShotsTotal() {
+        let stats: ChapterStats = [.busiestDay: row("busiest_day", valueInt: 3, valueText: "2026-09-12")]
         #expect(ChapterStatsFormatting.lines(from: stats, calendar: calendar, locale: locale).isEmpty)
     }
 

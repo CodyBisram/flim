@@ -179,4 +179,31 @@ final class RollDrainPaginationTests: XCTestCase {
     func testPhotoArrivedFalseForAnEmptyList() {
         XCTAssertFalse(photoArrived(UUID(), in: []))
     }
+
+    // MARK: - pushBridgeToastMessage
+    //
+    // The one-time toast shown when a push-triggered reveal auto-plays over a pending photo or
+    // comment intent, so the roll opening straight into the reveal doesn't read as the push
+    // having silently gone nowhere.
+
+    func testPushBridgeToastMessageNamesThePhotoWithoutComments() {
+        XCTAssertEqual(
+            pushBridgeToastMessage(rollName: "Weekend", hasComments: false),
+            "Catching you up on Weekend first. The photo is right after."
+        )
+    }
+
+    func testPushBridgeToastMessageNamesTheCommentWhenCommentsFlagIsSet() {
+        XCTAssertEqual(
+            pushBridgeToastMessage(rollName: "Weekend", hasComments: true),
+            "Catching you up on Weekend first. The comment is right after."
+        )
+    }
+
+    func testPushBridgeToastMessageCarriesTheRollNameThrough() {
+        XCTAssertEqual(
+            pushBridgeToastMessage(rollName: "Cabin Trip", hasComments: false),
+            "Catching you up on Cabin Trip first. The photo is right after."
+        )
+    }
 }

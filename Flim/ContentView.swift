@@ -135,7 +135,7 @@ struct ContentView: View {
             // resolve after launch also lands here (cachedAccountId starts nil), and that one must
             // NOT cancel the account that is simply continuing to be signed in.
             if previousId != nil {
-                Task { await notifications.cancelAllRollDevelopNotifications() }
+                Task { await NotificationService.cancelAllRollDevelopNotifications() }
                 RollLiveActivity.endAll()
             }
             // Captures that never reached the server are kept on disk per account, so this is
@@ -167,7 +167,7 @@ struct ContentView: View {
             rolls.resetForAccountChange()
             chapters.resetForAccountChange()
             FeedSeenStore.shared.activeUserId = nil
-            Task { await notifications.cancelAllRollDevelopNotifications() }
+            Task { await NotificationService.cancelAllRollDevelopNotifications() }
             RollLiveActivity.endAll()
         }
         // Attached to the outer Group, not inside any one branch, so it covers whichever of

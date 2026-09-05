@@ -104,6 +104,11 @@ enum RemotePush {
                 .rpc("register_device_token", params: ["p_token": hex, "p_platform": "ios"])
                 .execute()
             registeredAccountId = session.user.id
+            // Push can now reach this device for this account. A fresh capture may have already
+            // scheduled a local develop reminder before this round trip landed (`isTokenRegistered`
+            // reads false until it does), and if the roll is never reopened nothing else would
+            // sweep it, so both that reminder and the server's own push would fire at develop.
+            await NotificationService.cancelAllRollDevelopNotifications()
         } catch {
             log.error("claim: register_device_token failed: \(String(describing: error), privacy: .public)")
         }

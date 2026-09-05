@@ -2,7 +2,7 @@ import Testing
 import Foundation
 @testable import Flim
 
-/// The shelf's own copy: month label, the `CHAPTER 08` code, and the `34 shots · 2 rolls` stat
+/// The shelf's own copy: month label, the `CHAPTER 08` code, and the `34 shared · 2 rolls` stat
 /// line, including the singular/plural and zero-rolls cases.
 struct ChapterFormattingTests {
     private let calendar: Calendar = {
@@ -34,25 +34,25 @@ struct ChapterFormattingTests {
         #expect(name == "August")
     }
 
-    @Test("a single shot and zero rolls reads as one shot, no roll clause at all")
+    @Test("a single shot and zero rolls reads as one shared, no roll clause at all")
     func singleShotZeroRolls() {
-        #expect(summary(monthStart: date(year: 2026, month: 8), shots: 1, rolls: 0).statsLine == "1 shot")
+        #expect(summary(monthStart: date(year: 2026, month: 8), shots: 1, rolls: 0).statsLine == "1 shared")
     }
 
     @Test("many shots and zero rolls still drops the roll clause entirely")
     func manyShotsZeroRolls() {
-        #expect(summary(monthStart: date(year: 2026, month: 8), shots: 34, rolls: 0).statsLine == "34 shots")
+        #expect(summary(monthStart: date(year: 2026, month: 8), shots: 34, rolls: 0).statsLine == "34 shared")
     }
 
     @Test("many shots and one roll: both singular/plural handled independently")
     func mixedSingularPlural() {
-        #expect(summary(monthStart: date(year: 2026, month: 8), shots: 34, rolls: 1).statsLine == "34 shots · 1 roll")
-        #expect(summary(monthStart: date(year: 2026, month: 8), shots: 1, rolls: 2).statsLine == "1 shot · 2 rolls")
+        #expect(summary(monthStart: date(year: 2026, month: 8), shots: 34, rolls: 1).statsLine == "34 shared · 1 roll")
+        #expect(summary(monthStart: date(year: 2026, month: 8), shots: 1, rolls: 2).statsLine == "1 shared · 2 rolls")
     }
 
     @Test("many shots and many rolls pluralize both")
     func manyShotsManyRolls() {
-        #expect(summary(monthStart: date(year: 2026, month: 8), shots: 34, rolls: 2).statsLine == "34 shots · 2 rolls")
+        #expect(summary(monthStart: date(year: 2026, month: 8), shots: 34, rolls: 2).statsLine == "34 shared · 2 rolls")
     }
 
     @Test("only the calendar month currently in progress is the current month")

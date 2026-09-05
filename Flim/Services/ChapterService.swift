@@ -21,8 +21,12 @@ final class ChapterService {
     var photosByChapter: [ChapterKey: [ChapterPhoto]] = [:]
     /// A month's `chapter_stats`, keyed the same way as `photosByChapter`. Visibility is already
     /// resolved server-side by the time these rows arrive: the profile owner always gets every
-    /// key, anyone else only the keys `chapter_public_stats` allows, so this cache never needs to
-    /// know who's asking.
+    /// key, anyone else only the keys `chapter_public_stats` allows. That resolution is done
+    /// AS the signed-in caller, though, so every write into this cache is still guarded by
+    /// `AccountEpoch`, the same as `RollService.fetchRolls`: a response that lands after an
+    /// account switch is internally consistent, it is just consistent with the account that is no
+    /// longer signed in, and writing it now would hand the next account a cache hit on rows they
+    /// were never authorized to see.
     var statsByChapter: [ChapterKey: ChapterStats] = [:]
     var isLoadingChapters: Set<UUID> = []
 
@@ -56,6 +60,7 @@ final class ChapterService {
         #if DEBUG
         guard !usesDemoFixture else { return }
         #endif
+        let epoch = AccountEpoch.current
         isLoadingChapters.insert(profileId)
         defer { isLoadingChapters.remove(profileId) }
         struct Params: Encodable { let p_profile_id: UUID }
@@ -63,6 +68,7 @@ final class ChapterService {
             .rpc("profile_chapters", params: Params(p_profile_id: profileId))
             .execute()
             .value) ?? []
+        guard AccountEpoch.isCurrent(epoch) else { return }
         chaptersByProfile[profileId] = ChapterSummary.completedMonths(rows)
     }
 
@@ -74,12 +80,14 @@ final class ChapterService {
         #if DEBUG
         guard !usesDemoFixture else { return [] }
         #endif
+        let epoch = AccountEpoch.current
         struct Params: Encodable { let p_profile_id: UUID; let p_month_start: String }
         let rows: [ChapterPhoto] = (try? await supabase
             .rpc("chapter_photos", params: Params(p_profile_id: profileId,
                                                    p_month_start: Self.dateOnly.string(from: monthStart)))
             .execute()
             .value) ?? []
+        guard AccountEpoch.isCurrent(epoch) else { return rows }
         photosByChapter[key] = rows
         return rows
     }
@@ -93,6 +101,7 @@ final class ChapterService {
         #if DEBUG
         guard !usesDemoFixture else { return [:] }
         #endif
+        let epoch = AccountEpoch.current
         struct Params: Encodable { let p_profile_id: UUID; let p_month_start: String }
         let rows: [ChapterStatRow] = (try? await supabase
             .rpc("chapter_stats", params: Params(p_profile_id: profileId,
@@ -100,6 +109,7 @@ final class ChapterService {
             .execute()
             .value) ?? []
         let map = rows.keyedByStat()
+        guard AccountEpoch.isCurrent(epoch) else { return map }
         statsByChapter[key] = map
         return map
     }

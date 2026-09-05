@@ -432,9 +432,10 @@ struct RollRevealView: View {
                 // This frame stands in for a burst: say so, singular phrasing at one, so the
                 // credit reads honestly rather than always pluralizing.
                 if let extra = viewModel.burstExtraCount[photo.id], extra > 0 {
-                    Text(extra == 1 ? "and 1 more like it" : "and \(extra) more like it")
+                    Text(extra == 1 ? "and 1 more like it, in the roll" : "and \(extra) more like it, in the roll")
                         .flimFont(11.5, relativeTo: .caption)
                         .foregroundStyle(Color(white: 0.45))
+                        .accessibilityHint("See them in the roll's grid")
                 }
             }
         }

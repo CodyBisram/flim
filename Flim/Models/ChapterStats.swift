@@ -30,6 +30,10 @@ struct ChapterStatRow: Decodable, Equatable {
     let valueText: String?
     let photoId: UUID?
     let photoThumbPath: String?
+    /// The `posts` row `photoId` was shared as, when this stat carries a photo at all
+    /// (`mostReacted`/`mostCommented`/`firstShot`/`lastShot`). Optional for the same
+    /// runs-ahead-of-the-migration reason as `ChapterPhoto.postId`; see that type's own doc.
+    let postId: UUID?
 
     enum CodingKeys: String, CodingKey {
         case statKey = "stat_key"
@@ -37,6 +41,7 @@ struct ChapterStatRow: Decodable, Equatable {
         case valueText = "value_text"
         case photoId = "photo_id"
         case photoThumbPath = "photo_thumb_path"
+        case postId = "post_id"
     }
 
     var resolvedKey: ChapterStatKey? { ChapterStatKey(rawValue: statKey) }
@@ -48,16 +53,18 @@ struct ChapterStatRow: Decodable, Equatable {
         valueText = (try? container.decodeIfPresent(String.self, forKey: .valueText)) ?? nil
         photoId = (try? container.decodeIfPresent(UUID.self, forKey: .photoId)) ?? nil
         photoThumbPath = (try? container.decodeIfPresent(String.self, forKey: .photoThumbPath)) ?? nil
+        postId = (try? container.decodeIfPresent(UUID.self, forKey: .postId)) ?? nil
     }
 
     /// Direct construction for tests and previews.
     init(statKey: String, valueInt: Int? = nil, valueText: String? = nil,
-         photoId: UUID? = nil, photoThumbPath: String? = nil) {
+         photoId: UUID? = nil, photoThumbPath: String? = nil, postId: UUID? = nil) {
         self.statKey = statKey
         self.valueInt = valueInt
         self.valueText = valueText
         self.photoId = photoId
         self.photoThumbPath = photoThumbPath
+        self.postId = postId
     }
 }
 
@@ -123,7 +130,15 @@ enum ChapterStatsFormatting {
                                           value: commentsWord(count),
                                           photoId: row.photoId, photoThumbPath: row.photoThumbPath))
         }
+        // Only offered when the month has more than one shot total AND the busiest day didn't
+        // account for every one of them: below that, the day IS the month, and a card that
+        // restates "your busiest day" for a month with nothing else to say is just the opening
+        // card again. `shots` is the month's own posted-photo total (`ChapterStatKey.shots`),
+        // absent from this decision would mean it's absent from the row set entirely, in which
+        // case there is nothing to compare against and the line is dropped, same as any other
+        // missing key.
         if let row = stats[.busiestDay], let dateString = row.valueText, let count = row.valueInt,
+           let totalShots = stats[.shots]?.valueInt, totalShots >= 2, count < totalShots,
            let value = busiestDayValue(dateString: dateString, count: count,
                                         calendar: calendar, locale: locale) {
             lines.append(ChapterStatLine(kind: .busiestDay, label: "Busiest day", value: value,

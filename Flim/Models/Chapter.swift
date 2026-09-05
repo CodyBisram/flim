@@ -116,14 +116,15 @@ extension ChapterSummary {
         String(format: "%02d", calendar.component(.month, from: monthStart))
     }
 
-    /// "34 shots · 2 rolls", singular handled, and the roll clause dropped entirely at zero: a
+    /// "34 shared · 2 rolls", singular handled, and the roll clause dropped entirely at zero: a
     /// month built only from personal, non-roll shares (never touched a roll at all) is an
     /// entirely ordinary case, and "· 0 rolls" would read like a mistake rather than the true,
-    /// unremarkable answer. "Shots" here always means shared photos (see this type's own doc):
+    /// unremarkable answer. "Shared" here always means shared photos (see this type's own doc):
     /// this line must never be read, or extended, as counting anything still undeveloped or
-    /// unposted.
+    /// unposted. Reads "shared" rather than "shots" because it sits next to the profile's own
+    /// "shared" stat elsewhere on the page; the closing card's narrative lines keep "shots".
     var statsLine: String {
-        let shots = shotCount == 1 ? "1 shot" : "\(shotCount) shots"
+        let shots = shotCount == 1 ? "1 shared" : "\(shotCount) shared"
         guard rollCount > 0 else { return shots }
         let rolls = rollCount == 1 ? "1 roll" : "\(rollCount) rolls"
         return "\(shots) · \(rolls)"
@@ -143,6 +144,12 @@ struct ChapterPhoto: Decodable, Identifiable, Equatable {
     let storagePath: String
     let rollId: UUID?
     let rollName: String?
+    /// The `posts` row this shot was shared as. A chapter is posted-only (see this type's own
+    /// top-level doc), so every real row has one; optional purely so a client running ahead of
+    /// the migration that adds this column still decodes instead of failing the whole month's
+    /// fetch. `nil` here means the reactions/comments viewer falls back to the roll-photo tables
+    /// (`ChapterRecapView`'s pre-`post_id` behaviour), not that the photo has no thread at all.
+    var postId: UUID?
 
     /// Path to use in grids/shelves: the thumbnail if present, else the full image. Matches
     /// `Photo.displayPath`'s naming and role.
@@ -159,6 +166,7 @@ struct ChapterPhoto: Decodable, Identifiable, Equatable {
         case storagePath = "storage_path"
         case rollId = "roll_id"
         case rollName = "roll_name"
+        case postId = "post_id"
     }
 
     init(from decoder: Decoder) throws {
@@ -176,11 +184,12 @@ struct ChapterPhoto: Decodable, Identifiable, Equatable {
         storagePath = try container.decode(String.self, forKey: .storagePath)
         rollId = (try? container.decodeIfPresent(UUID.self, forKey: .rollId)) ?? nil
         rollName = (try? container.decodeIfPresent(String.self, forKey: .rollName)) ?? nil
+        postId = (try? container.decodeIfPresent(UUID.self, forKey: .postId)) ?? nil
     }
 
     /// Direct construction for previews, the DEBUG fixture, and tests.
     init(id: UUID, takenAt: Date, thumbPath: String?, feedPath: String?, storagePath: String,
-         rollId: UUID?, rollName: String?) {
+         rollId: UUID?, rollName: String?, postId: UUID? = nil) {
         self.id = id
         self.takenAt = takenAt
         self.thumbPath = thumbPath
@@ -188,6 +197,7 @@ struct ChapterPhoto: Decodable, Identifiable, Equatable {
         self.storagePath = storagePath
         self.rollId = rollId
         self.rollName = rollName
+        self.postId = postId
     }
 }
 

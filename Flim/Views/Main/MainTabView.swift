@@ -15,6 +15,34 @@ func focusCommentsDecision(currentFocusPostId: UUID?, pushedPostId: UUID) -> (sh
     return (shouldFocus, shouldFocus ? nil : currentFocusPostId)
 }
 
+/// Whether a `reveal` push destination should push a fresh `RollDetailView` onto `rollsPath`, or
+/// pop back to one that's already there.
+///
+/// Every `RollDetailView` instance shares the very same `$pendingRollPhoto` binding
+/// (`RollsView.pendingPhotoIntent`, threaded down from `MainTabView`), and each one's own
+/// `onChange` races to consume it by matching `rollId`. Appending a SECOND instance of the same
+/// roll, which is what a plain `rollsPath.append(roll)` did on a second push for a roll already
+/// open, means two instances both match, and whichever's `onChange` runs first nils the intent
+/// out from under the other: a buried instance could win, leaving the visible, topmost one doing
+/// nothing. Popping back to the existing instance instead means there is only ever one instance
+/// of a given roll in the stack, so there is nothing left to race.
+///
+/// Pure over the ALREADY-PUSHED roll ids (`MainTabView.rollsPathIds`, kept in lockstep with
+/// `rollsPath` itself, which a bare `NavigationPath` cannot be inspected to reconstruct) rather
+/// than the stack directly, so the decision is tested without a live `NavigationPath`.
+enum RollsPathAction: Equatable {
+    /// Push a new instance; `rollId` was not already in the stack.
+    case append
+    /// Truncate back to just past the existing instance at `keepingFirst` entries, so it becomes
+    /// the topmost view again, instead of appending a duplicate.
+    case popTo(keepingFirst: Int)
+}
+
+func rollsPathAction(for rollId: UUID, pushedRollIds: [UUID]) -> RollsPathAction {
+    guard let index = pushedRollIds.firstIndex(of: rollId) else { return .append }
+    return .popTo(keepingFirst: index + 1)
+}
+
 /// Whether `maybeShowNotifPrimer` should present the soft primer again on this launch.
 ///
 /// Not yet decided (most often a swipe-away, which is not a decision): may retry, but only up to
@@ -80,6 +108,12 @@ struct MainTabView: View {
     /// Owned here (not in RollsView) so a `reveal` push destination, and `-openRollId` in DEBUG,
     /// can push straight into a roll's detail without the Rolls tab needing to already be open.
     @State private var rollsPath = NavigationPath()
+    /// The roll ids currently pushed onto `rollsPath`, oldest first, kept in lockstep with every
+    /// mutation of that path. A `NavigationPath` is opaque; it cannot be inspected for the `Roll`
+    /// values it carries, so this is the only way to answer "is this roll already in the stack"
+    /// before deciding whether `route(to: .reveal)` should append or pop back to it. See
+    /// `rollsPathAction(for:pushedRollIds:)`.
+    @State private var rollsPathIds: [UUID] = []
     /// A roll-photo push's intent (a specific photo, and whether to open its comment thread),
     /// handed alongside `rollsPath.append` so `RollDetailView` can open it once it's safe to. See
     /// `RollPhotoIntent`'s own doc for why this is id-keyed rather than positional.
@@ -292,6 +326,7 @@ struct MainTabView: View {
                         try? await rolls.fetchRolls(for: uid)   // refresh coverPaths
                         if args.contains("-seedRollOpen"),
                            let updated = rolls.rolls.first(where: { $0.id == first.id }) {
+                            rollsPathIds.append(updated.id)
                             rollsPath.append(updated)
                         }
                     }
@@ -317,6 +352,7 @@ struct MainTabView: View {
                     guard let uid = auth.currentUser?.id else { return }
                     try? await rolls.fetchRolls(for: uid)
                     if let roll = rolls.rolls.first(where: { $0.id == rollId }) {
+                        rollsPathIds.append(roll.id)
                         rollsPath.append(roll)
                     }
                 }
@@ -337,6 +373,7 @@ struct MainTabView: View {
                     try? await rolls.fetchRolls(for: uid)
                     guard let roll = rolls.rolls.first(where: { $0.id == debugRollId }) else { return }
                     pendingRollPhoto = RollPhotoIntent(rollId: debugRollId, photoId: debugPhotoId, comments: debugComments)
+                    rollsPathIds.append(roll.id)
                     rollsPath.append(roll)
                 }
             }
@@ -362,6 +399,7 @@ struct MainTabView: View {
                     try? await rolls.fetchRolls(for: uid)
                     guard let roll = rolls.rolls.first(where: { $0.isDeveloped }) else { return }
                     UserDefaults.standard.removeObject(forKey: "rollRevealSeen.\(roll.id.uuidString)")
+                    rollsPathIds.append(roll.id)
                     rollsPath.append(roll)
                 }
             }
@@ -428,6 +466,7 @@ struct MainTabView: View {
         case .rolls:
             selected = 2
             rollsPath = NavigationPath()   // land on the tab's root, not whatever detail was pushed
+            rollsPathIds = []
 
         case .reveal(let rollId, let photoId, let comments):
             selected = 2
@@ -439,17 +478,37 @@ struct MainTabView: View {
                 // Not a member (any more), or the roll is gone: RollsView is still showing a real,
                 // current list, so this is a graceful no-op rather than a dead end.
                 guard let roll = rolls.rolls.first(where: { $0.id == rollId }) else { return }
+                // A second push for a roll already in the stack must not append a duplicate
+                // `RollDetailView`: every instance shares `$pendingRollPhoto`, and a buried
+                // instance's own `onChange` can win the race to consume it, leaving the visible,
+                // topmost one doing nothing. See `rollsPathAction(for:pushedRollIds:)`.
+                let shouldAppend: Bool
+                switch rollsPathAction(for: roll.id, pushedRollIds: rollsPathIds) {
+                case .popTo(let keepingFirst):
+                    while rollsPathIds.count > keepingFirst {
+                        rollsPath.removeLast()
+                        rollsPathIds.removeLast()
+                    }
+                    shouldAppend = false
+                case .append:
+                    rollsPathIds.append(roll.id)
+                    shouldAppend = true
+                }
                 // A comment/mention/reaction push on a roll photo. Set BEFORE the append below, so
                 // it's already there the instant `RollDetailView` appears; a second push while
-                // that same roll is already open still reaches it, via `RollsView`'s own
-                // `onChange`, see `RollPhotoIntent`.
+                // that same roll is already open still reaches it (now-topmost after the pop
+                // above, or freshly mounted below), via its own `onChange`, see `RollPhotoIntent`.
                 if let photoId {
                     pendingRollPhoto = RollPhotoIntent(rollId: rollId, photoId: photoId, comments: comments)
                 }
                 // RollDetailView's own `onAppear` decides whether to play the reveal: it only does
                 // that once per roll (`rollRevealSeen.<id>`), so a roll whose reveal already played
-                // opens the roll itself here, never a replay. See RollDetailView.
-                rollsPath.append(roll)
+                // opens the roll itself here, never a replay. See RollDetailView. Skipped when the
+                // roll was already in the stack: the pop above already put that instance back on
+                // top, and appending here would recreate the very duplicate this branch avoids.
+                if shouldAppend {
+                    rollsPath.append(roll)
+                }
             }
 
         case .post(let postId, let comments):

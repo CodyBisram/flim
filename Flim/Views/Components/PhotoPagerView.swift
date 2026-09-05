@@ -170,6 +170,16 @@ struct PhotoPagerView: View {
     /// false, since replaying a month is not an editing surface and has no `onDelete` reload to
     /// run afterward. "Set as profile photo" is unaffected, that's not a destructive action.
     var showsDelete: Bool = true
+    /// The `Post` behind a photo, keyed by photo id, for the photos that ARE posts (the chapter
+    /// recap's curated deck; empty for every other caller). A post's reactions and comments live
+    /// on `post_reactions`/`post_comments`, never `photo_reactions`/`photo_comments`, so a photo
+    /// present here reads and writes through `FeedService`'s post-based calls instead of
+    /// `PhotoService`'s roll-photo ones, and its comment sheet is the feed's own `CommentsSheet`
+    /// (with likes) rather than `PhotoCommentsSheet`. A chapter photo IS a post; showing it
+    /// through the roll-photo tables was exactly why "most reacted" opened to a thread with
+    /// nothing in it. Absent for a photo (every caller before this one) falls back to today's
+    /// behaviour entirely, including for an older server that hasn't started sending `post_id` yet.
+    var posts: [UUID: Post] = [:]
 
     @Environment(PhotoService.self) private var photoService
     @Environment(AuthService.self) private var auth
@@ -197,11 +207,18 @@ struct PhotoPagerView: View {
     @State private var retryTokens: [UUID: Int] = [:]
     @State private var reportedIds: Set<UUID> = []
     @State private var reactions: [PhotoReaction] = []
+    /// The current photo's reactions when it IS a post (`posts[photo.id] != nil`): read from and
+    /// written to `post_reactions` via `FeedService`, never mixed into `reactions` above, which
+    /// stays the roll-photo table's own array for every photo without a post. Whichever one is
+    /// live for `current` is what `reactionCounts`/`reactionMine` read.
+    @State private var postReactions: [PostReaction] = []
     /// The current photo's comment thread (`showsComments` only), refetched on selection change
     /// alongside `reactions` and again once the comments sheet dismisses, so the footer's "N
     /// comment(s)" label reflects one just posted without needing another swipe. An empty array
     /// reads identically whether nothing has loaded yet or the count is genuinely zero, both of
     /// which fall back to the bare "Comments" the row always showed, see `commentsRowLabel`.
+    /// Unused for a photo that IS a post: that thread lives in `feed.commentsByPost` instead,
+    /// the same cache `CommentsSheet` itself reads and writes.
     @State private var photoComments: [PhotoComment] = []
     /// Drives the heart that blooms over a double tap, matching the feed's.
     @State private var heartBurst = false
@@ -289,13 +306,36 @@ struct PhotoPagerView: View {
     #endif
 
     private var current: Photo? { photos.indices.contains(selection) ? photos[selection] : nil }
+    /// The `Post` behind `current`, if it is one. See `posts`'s own doc for why this changes
+    /// which tables reactions/comments read and write, and which sheet the thread opens in.
+    private var currentPost: Post? { current.flatMap { posts[$0.id] } }
+
+    /// The reaction counts to show for `current`, from whichever source is live for it.
+    private var reactionCounts: [String: Int] {
+        currentPost != nil
+            ? Dictionary(grouping: postReactions, by: \.emoji).mapValues(\.count)
+            : Dictionary(grouping: reactions, by: \.emoji).mapValues(\.count)
+    }
+    /// The signed-in account's own reactions on `current`, from whichever source is live for it.
+    private var reactionMine: Set<String> {
+        let uid = auth.currentUser?.id
+        return currentPost != nil
+            ? Set(postReactions.filter { $0.userId == uid }.map(\.emoji))
+            : Set(reactions.filter { $0.userId == uid }.map(\.emoji))
+    }
+    /// The comment count to show in the roll footer's row, from whichever source is live for
+    /// `current`: `feed.commentsByPost` for a post, `photoComments` for a roll photo.
+    private var currentCommentCount: Int {
+        if let post = currentPost { return feed.commentsByPost[post.id]?.count ?? 0 }
+        return photoComments.count
+    }
 
     init(photos: [Photo], startIndex: Int = 0, signedURLs: [UUID: URL],
          showsReactions: Bool = false, showsComments: Bool = false, showsAttribution: Bool = false,
          showsNightRack: Bool = false, showsRollRack: Bool = false,
          memberNames: [UUID: String] = [:], rollName: @escaping (UUID?) -> String? = { _ in nil },
          onDelete: @escaping () -> Void = {}, openCommentsOnAppear: Bool = false,
-         showsDelete: Bool = true) {
+         showsDelete: Bool = true, posts: [UUID: Post] = [:]) {
         self.photos = photos
         self.startIndex = startIndex
         self.signedURLs = signedURLs
@@ -309,6 +349,7 @@ struct PhotoPagerView: View {
         self.onDelete = onDelete
         self.openCommentsOnAppear = openCommentsOnAppear
         self.showsDelete = showsDelete
+        self.posts = posts
         _selection = State(initialValue: min(max(startIndex, 0), max(0, photos.count - 1)))
     }
 
@@ -402,15 +443,31 @@ struct PhotoPagerView: View {
             // requiring another swipe: `resolveAround` only refetches on a selection change, and
             // the sheet doesn't move `selection`.
             if let target = commentsPhoto ?? current {
-                Task {
-                    let fetched = await photoService.fetchPhotoComments(photoId: target.id, blockedIds: feed.blockedIds)
-                    guard current?.id == target.id else { return }   // fast-swipe guard, matches resolveAround
-                    photoComments = fetched
+                if let post = posts[target.id] {
+                    Task {
+                        guard let uid = auth.currentUser?.id else { return }
+                        let fetched = await feed.fetchComments(postId: post.id, currentUserId: uid)
+                        guard current?.id == target.id else { return }
+                        feed.commentsByPost[post.id] = fetched
+                    }
+                } else {
+                    Task {
+                        let fetched = await photoService.fetchPhotoComments(photoId: target.id, blockedIds: feed.blockedIds)
+                        guard current?.id == target.id else { return }   // fast-swipe guard, matches resolveAround
+                        photoComments = fetched
+                    }
                 }
             }
         }) {
-            PhotoCommentsSheet(photoId: (commentsPhoto ?? current)?.id ?? UUID(),
-                               memberNames: memberNames) { pendingProfile = ProfileRoute(id: $0) }
+            // A chapter photo IS a post: its thread lives in `post_comments`, with likes, so it
+            // opens in the feed's own `CommentsSheet` rather than the roll-photo `PhotoCommentsSheet`,
+            // which would query a table that photo's comments were never written to.
+            if let target = commentsPhoto ?? current, let post = posts[target.id] {
+                CommentsSheet(post: post) { pendingProfile = ProfileRoute(id: $0) }
+            } else {
+                PhotoCommentsSheet(photoId: (commentsPhoto ?? current)?.id ?? UUID(),
+                                   memberNames: memberNames) { pendingProfile = ProfileRoute(id: $0) }
+            }
         }
         .sheet(isPresented: $showTagSheet) {
             // Same `resolvedCacheKey` phase rule as `photoPage`: `url` here is whatever
@@ -865,8 +922,8 @@ struct PhotoPagerView: View {
                 if showsReactions {
                     ReactionBar(
                         defaults: photoService.reactionDefaults(for: photo.id),
-                        counts: Dictionary(grouping: reactions, by: \.emoji).mapValues(\.count),
-                        mine: Set(reactions.filter { $0.userId == auth.currentUser?.id }.map(\.emoji))
+                        counts: reactionCounts,
+                        mine: reactionMine
                     ) { toggleReaction($0, on: photo) }
                     .id(photo.id)
                     .padding(.horizontal, 16)
@@ -877,7 +934,7 @@ struct PhotoPagerView: View {
                     Button { commentsPhoto = photo; showComments = true } label: {
                         HStack(spacing: 7) {
                             Image(systemName: "bubble.left").font(.system(size: 14))
-                            Text(commentsRowLabel(count: photoComments.count)).flimFont(12.5, relativeTo: .footnote)
+                            Text(commentsRowLabel(count: currentCommentCount)).flimFont(12.5, relativeTo: .footnote)
                         }
                         .foregroundStyle(Color(white: 0.6))
                     }
@@ -931,8 +988,8 @@ struct PhotoPagerView: View {
                 if showsReactions {
                     ReactionBar(
                         defaults: photoService.reactionDefaults(for: photo.id),
-                        counts: Dictionary(grouping: reactions, by: \.emoji).mapValues(\.count),
-                        mine: Set(reactions.filter { $0.userId == auth.currentUser?.id }.map(\.emoji))
+                        counts: reactionCounts,
+                        mine: reactionMine
                     ) { toggleReaction($0, on: photo) }
                     // Fresh reaction bar per photo, matching RollCarouselView. Without this the
                     // bar is ONE instance for the whole pager session, so it sorted itself once
@@ -1819,9 +1876,25 @@ struct PhotoPagerView: View {
 
     private func toggleReaction(_ emoji: String, on photo: Photo) {
         guard let uid = auth.currentUser?.id else { return }
-        let mine = reactions.contains { $0.emoji == emoji && $0.userId == uid }
+        let post = posts[photo.id]
+        let mine = post != nil
+            ? postReactions.contains { $0.emoji == emoji && $0.userId == uid }
+            : reactions.contains { $0.emoji == emoji && $0.userId == uid }
         Haptics.tap()
         Task {
+            if let post {
+                if mine {
+                    postReactions.removeAll { $0.emoji == emoji && $0.userId == uid }
+                    _ = await feed.removeReaction(postId: post.id, emoji: emoji, userId: uid)
+                } else {
+                    postReactions.append(PostReaction(id: UUID(), postId: post.id, userId: uid, emoji: emoji))
+                    _ = await feed.addReaction(postId: post.id, emoji: emoji, userId: uid)
+                }
+                let fetched = await feed.fetchReactions(postId: post.id)
+                guard current?.id == photo.id else { return }
+                postReactions = fetched
+                return
+            }
             if mine {
                 reactions.removeAll { $0.emoji == emoji && $0.userId == uid }
                 await photoService.removeReaction(photoId: photo.id, emoji: emoji, userId: uid)
@@ -1847,6 +1920,17 @@ struct PhotoPagerView: View {
         if !reduceMotion {
             heartBurst = true
             Task { try? await Task.sleep(for: .milliseconds(650)); heartBurst = false }
+        }
+        if let post = posts[photo.id] {
+            guard !postReactions.contains(where: { $0.emoji == "❤️" && $0.userId == uid }) else { return }
+            Task {
+                postReactions.append(PostReaction(id: UUID(), postId: post.id, userId: uid, emoji: "❤️"))
+                _ = await feed.addReaction(postId: post.id, emoji: "❤️", userId: uid)
+                let fetched = await feed.fetchReactions(postId: post.id)
+                guard current?.id == photo.id else { return }
+                postReactions = fetched
+            }
+            return
         }
         guard !reactions.contains(where: { $0.emoji == "❤️" && $0.userId == uid }) else { return }
         Task {
@@ -1875,7 +1959,7 @@ struct PhotoPagerView: View {
         guard auth.currentUser?.id != nil else { return }
         // Same fix as RollCarouselView: the refetch at the end of this function is async, so
         // without clearing, the bar shows the PREVIOUS photo's counts under the new photo.
-        if showsReactions { reactions = [] }
+        if showsReactions { reactions = []; postReactions = [] }
         if showsComments { photoComments = [] }
         let window = [index - 1, index, index + 1]
             .filter { photos.indices.contains($0) }
@@ -1948,12 +2032,26 @@ struct PhotoPagerView: View {
 
         if showsComments, let photo = current {
             let id = photo.id
-            let fetchedComments = await photoService.fetchPhotoComments(photoId: id, blockedIds: feed.blockedIds)
-            if current?.id == id { photoComments = fetchedComments }   // fast-swipe guard
+            if let post = posts[id] {
+                if let uid = auth.currentUser?.id {
+                    let fetchedComments = await feed.fetchComments(postId: post.id, currentUserId: uid)
+                    guard current?.id == id else { return }   // fast-swipe guard
+                    feed.commentsByPost[post.id] = fetchedComments
+                }
+            } else {
+                let fetchedComments = await photoService.fetchPhotoComments(photoId: id, blockedIds: feed.blockedIds)
+                if current?.id == id { photoComments = fetchedComments }   // fast-swipe guard
+            }
         }
 
         guard showsReactions, let photo = current else { return }
         let id = photo.id
+        if let post = posts[id] {
+            let fetched = await feed.fetchReactions(postId: post.id)
+            guard current?.id == id else { return }   // fast-swipe guard
+            postReactions = fetched
+            return
+        }
         let fetched = await photoService.fetchReactions(photoId: id)
         guard current?.id == id else { return }   // fast-swipe guard
         reactions = fetched

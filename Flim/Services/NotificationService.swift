@@ -213,7 +213,15 @@ final class NotificationService {
     /// banner or lock-screen card for the new account. Call this on sign-out and on switching
     /// accounts, never on the very first resolve after launch for an account that is simply
     /// continuing to be signed in, or this would cancel its own still-legitimate reminders.
-    func cancelAllRollDevelopNotifications() async {
+    ///
+    /// Also called from `RemotePush.claim(_:)` the moment a device token is actually confirmed
+    /// registered server-side: a fresh launch schedules a local reminder before the APNs round
+    /// trip completes (see `shouldScheduleLocalReminder`), and if that trip finishes later without
+    /// the roll ever being reopened, nothing else would sweep the now-redundant local reminder, so
+    /// both it and the server's push would fire at develop. `nonisolated static` (touches only
+    /// `UNUserNotificationCenter`, no instance state) so `RemotePush`, which has no reference to a
+    /// live `NotificationService`, can call it directly.
+    nonisolated static func cancelAllRollDevelopNotifications() async {
         let center = UNUserNotificationCenter.current()
         let pending = await center.pendingNotificationRequests()
         let ids = pending.map(\.identifier).filter { $0.hasPrefix("develop-roll-") }
