@@ -54,7 +54,28 @@ final class RollRevealViewModel {
     /// is already sorted in (`BurstGrouping.playback`, shared with the grid's own grouping). This
     /// is the reveal's actual playlist: the sharpest frame of each burst plays, the rest are
     /// skipped, never removed from `deck` itself.
+    ///
+    /// FROZEN once `loadDeck` assigns it: nothing after that point may change this array's
+    /// length or order, for the whole reveal session. The pager's `ForEach` is anchored to it and
+    /// its `TabView` selection is keyed by photo id (see `RollRevealView.revealPager`), which
+    /// together make every page's identity permanent the moment play starts. A dead frame
+    /// (`skipDeadFrame`) is recorded in `deadFrameIds` and skipped in navigation, never spliced
+    /// out here: removing an element used to shift every later frame's ARRAY POSITION down one,
+    /// and the reader's `index` is a position, so the two-hop bridge that kept a positional
+    /// `selection` following that shift (view state corrected one render pass after the model)
+    /// had a real gap on device: a neighbour page's image can fail from a plain network blip
+    /// while the reader is mid-scroll (any `CachedImage` mounted near the current page can miss,
+    /// not just a genuinely deleted shot), and for one frame the `TabView` showed whatever photo
+    /// the reader's stale numeric tag now pointed at post-shift, before the correction landed.
+    /// On a big roll that read as the pager lurching backward into shots already watched.
     var playedDeck: [Photo] = []
+    /// Frames whose full-resolution image failed to load during this session (deleted between
+    /// the fetch and play, or any other load failure `CachedImage` reports). Recorded, never
+    /// spliced out of `playedDeck`: see that property's own doc for why removal was the bug.
+    /// Navigation (`skipDeadFrame`, the forward/back search it does) treats a member of this set
+    /// as unreachable and steps past it; the rack still draws its well or its last-good thumbnail
+    /// in place.
+    var deadFrameIds: Set<UUID> = []
     /// `photoId` → how many further frames its burst holds, keyed by the COVER's id (the one
     /// frame in `playedDeck` that represents the burst). Absent for a photo that isn't itself a
     /// burst cover, the "and N more like it" credit line reads this directly.
@@ -62,10 +83,9 @@ final class RollRevealViewModel {
     var index = 0
     var urls: [String: URL] = [:]
     /// Which frames have already played their develop beat, keyed by PHOTO ID and never by
-    /// index: `skipDeadFrame` mutates the deck mid-reveal, and an index-keyed set would hand
-    /// one photo's developed state to whichever frame inherited its slot (the same poisoning
-    /// `FeedUnitCard`'s per-frame plumbing records). A frame develops once, on first reach,
-    /// and is sharp on every later visit.
+    /// index: index-keyed would hand one photo's developed state to whichever frame the reader's
+    /// position later named. A frame develops once, on first reach, and is sharp on every later
+    /// visit.
     var developedFrameIds: Set<UUID> = []
     var showSummary = false
     /// Set when the reader genuinely reached the end: paging past the last frame, or tapping
@@ -301,40 +321,36 @@ final class RollRevealViewModel {
         ImageLoader.prefetch(items, maxPixel: 1400, scale: displayScale)
     }
 
-    /// The current frame's image failed to load (deleted between fetch and play, or any other
-    /// load failure), drop it and move straight to the next one. No dead frame, no stall on
-    /// the auto-advance timer.
+    /// A frame's image failed to load (deleted between fetch and play, or any other load
+    /// failure), so it can never be shown again this session. Recorded, not spliced out; see
+    /// `playedDeck`'s own doc for why removal was the bug this replaced.
     ///
-    /// Removed from BOTH `deck` (it's genuinely gone, `Save all` must not try it either) and
-    /// `playedDeck` (what's actually being paged). Mutates them mid-playback, which is exactly why
-    /// the view reads the current frame through a bounds-safe subscript rather than trusting
-    /// `index` to still be valid.
+    /// `deck` still loses it (it's genuinely unreachable, `Save all` must not keep retrying it),
+    /// but `playedDeck`'s length and order never change, which is what lets `index` stay a plain,
+    /// always-valid position for the rest of the session.
+    ///
+    /// A dead frame the reader is not currently on moves NOTHING: it stays a permanently-failed
+    /// well in the rack, reachable by name, and `index` is left alone whether it died ahead of or
+    /// behind the reader. Only the frame actually on screen dying advances anything, and that
+    /// advance always prefers FORWARD, the direction the reader is already headed; it only steps
+    /// backward when the dying frame was the last living one in the roll and there is nowhere
+    /// forward left to go.
     func skipDeadFrame(_ photoId: UUID) {
+        guard playedDeck.contains(where: { $0.id == photoId }) else { return }
+        guard deadFrameIds.insert(photoId).inserted else { return }   // already recorded once
         deck.removeAll { $0.id == photoId }
         burstExtraCount[photoId] = nil
-        guard let deadIndex = playedDeck.firstIndex(where: { $0.id == photoId }) else { return }
-        playedDeck.remove(at: deadIndex)
-        developedFrameIds.remove(photoId)
-        guard !playedDeck.isEmpty else {
+        guard deadFrameIds.count < playedDeck.count else {
             isEmpty = true
             deckReady = true
             beginIfReady()
             return
         }
-        // Keep pointing at the SAME photograph. Removing a frame from before the reader's
-        // position shifts every later frame down one slot, so an unchanged `index` now names the
-        // NEXT photo: the reveal would silently jump forward a frame, and `develop(at:)` below
-        // would burn that frame's once-ever develop beat for a frame nobody has reached. The old
-        // clamp only caught the other case, an index left past the end of a shrunk deck.
-        //
-        // Three cases, and only the first two move anything:
-        //   dead BEFORE us  -> everything shifted down, follow it down
-        //   dead IS us      -> the next frame slid into this slot, stay put and develop it
-        //   dead AFTER us   -> nothing before us moved, stay put
-        if deadIndex < index {
-            index -= 1
-        } else if index >= playedDeck.count {
-            index = playedDeck.count - 1
+        guard playedDeck.indices.contains(index), playedDeck[index].id == photoId else { return }
+        if let next = ((index + 1)..<playedDeck.count).first(where: { !deadFrameIds.contains(playedDeck[$0].id) }) {
+            index = next
+        } else if let prev = (0..<index).reversed().first(where: { !deadFrameIds.contains(playedDeck[$0].id) }) {
+            index = prev
         }
         develop(at: index)
     }

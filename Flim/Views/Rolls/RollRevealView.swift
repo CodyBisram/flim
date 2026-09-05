@@ -48,7 +48,12 @@ struct RollRevealView: View {
     @State private var inviteQuota: AuthService.InviteQuota = .unknown
     /// The frame on screen, driven by the pager. Mirrored into the view model's `index` (which
     /// the rack, the credit line and prefetching all read) through `moved(to:)`.
-    @State private var selection = 0
+    ///
+    /// Keyed by PHOTO ID, never by position: `playedDeck` is frozen for the whole session (see
+    /// its own doc), so a stable id needs no correction when some OTHER frame in the roll dies
+    /// mid-reveal, unlike a positional tag, which used to silently start naming a different
+    /// photo the instant `playedDeck` lost an element. `nil` only until the pager first appears.
+    @State private var selection: UUID?
     /// The rack's visible width, which decides whether its edges need fading at all.
     @State private var rackViewportWidth: CGFloat = 0
     /// The frame whose comments are open, if any.
@@ -145,27 +150,40 @@ struct RollRevealView: View {
             Spacer(minLength: 0)
 
             TabView(selection: $selection) {
-                ForEach(Array(viewModel.playedDeck.enumerated()), id: \.element.id) { index, photo in
+                ForEach(viewModel.playedDeck) { photo in
                     frame(photo)
-                        .tag(index)
+                        .tag(Optional(photo.id))
                 }
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
             .frame(maxHeight: .infinity)
+            .onAppear {
+                // Seeded once, the moment the pager first has something to show: `playedDeck` is
+                // empty (and this branch unrendered) until `loadDeck` lands, and frozen from then
+                // on, so this fires exactly once for the whole session.
+                if selection == nil {
+                    selection = viewModel.playedDeck[safe: viewModel.index]?.id
+                }
+            }
             .onChange(of: selection) { _, newValue in
                 // Paging past the last frame is how the reveal ends; the pager itself cannot
                 // scroll past its own last page, so the footer's own Done handles that side.
-                viewModel.moved(to: newValue)
+                guard let newValue,
+                      let newIndex = viewModel.playedDeck.firstIndex(where: { $0.id == newValue })
+                else { return }
+                viewModel.moved(to: newIndex)
             }
-            // The other direction, and it is NOT redundant. `selection` is a positional tag, so
-            // when `skipDeadFrame` removes a frame from behind the reader the tag silently comes
-            // to mean the next photograph. The model corrects its own index for that; without
-            // this the pager would not follow, and the two would disagree about which frame is
-            // on screen. `moved(to:)` already no-ops when the value matches, so the pair cannot
-            // loop.
+            // The other direction, and it is NOT redundant, but it is now a much narrower case
+            // than it used to be: an id-keyed `selection` never needs correcting just because
+            // SOME OTHER frame died elsewhere in `playedDeck` (the id it already holds still
+            // names the same photo, wherever `skipDeadFrame` steps `index`). It only needs to
+            // follow when the frame the reader was ON is the one that died, and the model moved
+            // `index` on to a genuinely different photo. `moved(to:)` already no-ops when the
+            // value matches, so the pair cannot loop.
             .onChange(of: viewModel.index) { _, newValue in
-                guard selection != newValue else { return }
-                selection = newValue
+                let newId = viewModel.playedDeck[safe: newValue]?.id
+                guard selection != newId else { return }
+                selection = newId
             }
 
             rackScrubber
@@ -294,8 +312,8 @@ struct RollRevealView: View {
             ScrollViewReader { proxy in
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: RevealPacing.rackFrameGap) {
-                        ForEach(Array(viewModel.playedDeck.enumerated()), id: \.element.id) { index, photo in
-                            rackFrame(photo, index: index)
+                        ForEach(viewModel.playedDeck) { photo in
+                            rackFrame(photo)
                                 .id(photo.id)
                         }
                     }
@@ -343,8 +361,8 @@ struct RollRevealView: View {
         ], startPoint: .leading, endPoint: .trailing)
     }
 
-    private func rackFrame(_ photo: Photo, index: Int) -> some View {
-        let isCurrent = index == selection
+    private func rackFrame(_ photo: Photo) -> some View {
+        let isCurrent = photo.id == selection
         let developed = viewModel.hasDeveloped(photo)
         return Group {
             if developed, let thumbPath = photo.thumbPath, let url = viewModel.urls[thumbPath] {
@@ -378,11 +396,14 @@ struct RollRevealView: View {
         .opacity(isCurrent ? 1 : 0.45)
         .contentShape(Rectangle())
         .onTapGesture {
-            guard index != selection else { return }
-            selection = index
+            guard photo.id != selection else { return }
+            selection = photo.id
         }
         .accessibilityElement()
-        .accessibilityLabel(developed ? "Frame \(index + 1)" : "Frame \(index + 1), not yet reached")
+        .accessibilityLabel({
+            let position = (viewModel.playedDeck.firstIndex(where: { $0.id == photo.id }) ?? 0) + 1
+            return developed ? "Frame \(position)" : "Frame \(position), not yet reached"
+        }())
         .accessibilityAddTraits(.isButton)
     }
 

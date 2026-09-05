@@ -172,6 +172,18 @@ actually do. Worth deciding before more is built on top of rolls.
 
 ## Next up
 
+### done 2026-09-04, night: the reveal that jumped back
+
+Owner and a member saw the reveal move back a frame while scrolling and replay frames already
+seen. Cause: `skipDeadFrame` ran on ANY image load failure (a transient network miss on a
+neighbouring page counts, and `TabView(.page)` keeps neighbours mounted), spliced the frame out
+of `playedDeck`, and the pager's selection was a positional Int that followed one render pass
+later, so the old tag mapped to an earlier photo. Fix: selection keyed by photo id, `playedDeck`
+frozen for the session, dead frames recorded in `deadFrameIds` and skipped forward-first, never
+retargeting for a frame the reader is not on. Device check: airplane-mode blips while scrolling a
+big roll must never move the pager back. `PhotoPagerView` rack mode has no failure-driven
+mutation and was left alone; its snapshot-growth remap is a narrower, unproven risk.
+
 ### done 2026-09-04, evening: burst grouping, on device, in the dark
 
 Owner-approved design: the twelve hours withhold the picture, not the bytes, so the analysis
