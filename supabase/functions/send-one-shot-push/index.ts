@@ -87,6 +87,7 @@ const CAMPAIGNS: Record<string, () => Promise<Recipient[]>> = {
   "still-no-shot": stillNoShotCohort,
   "checked-again": checkedAgainCohort,
   "islands": islandsCohort,
+  "horror-nights": horrorNightsCohort,
   "waiting-to-sort": waitingToSortCohort,
 };
 
@@ -189,6 +190,25 @@ async function islandsCohort(): Promise<Recipient[]> {
       body: "Ready? Someone make the roll before we go, or the whole day ends up split across everyone's phones.",
       // Lands on the Rolls tab on builds that know the route (added 2026-09-03); older builds
       // treat an unknown destination as "just open the app", which is what this sent before.
+      route: { t: "rolls" },
+    }));
+}
+
+/// The owner's Horror Nights, 2026-09-05. "Jumbie" is the West Indian word for a spirit, the
+/// owner's own register for the night. Same shape as `islandsCohort`: names resolved at run time,
+/// anyone without a device drops out of the dry run. Routes to the Rolls tab.
+const HORROR_NIGHTS_GROUP = ["sabs", "cody", "lele", "tristan", "ricky", "aly", "branb", "trina"];
+
+async function horrorNightsCohort(): Promise<Recipient[]> {
+  const reachable = new Set(await reachableUsers());
+  const { data } = await supabase
+    .from("users").select("id, username").in("username", HORROR_NIGHTS_GROUP);
+  return ((data ?? []) as { id: string; username: string }[])
+    .filter((u) => reachable.has(u.id))
+    .map((u) => ({
+      userId: u.id,
+      title: "Watch for jumbie.",
+      body: "Horror Nights, tonight. The roll develops when you are all home safe.",
       route: { t: "rolls" },
     }));
 }
