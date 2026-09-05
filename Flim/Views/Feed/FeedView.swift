@@ -36,6 +36,10 @@ struct FeedView: View {
     /// A pull-to-refresh that genuinely failed while the feed already had content on screen;
     /// see `reload()`. A failure that touches nothing on screen still needs to say something.
     @State private var refreshFailedToast = false
+    /// A one-line notice from a notification tap whose target is gone, posted by `MainTabView`
+    /// as `.feedNotice`; shown in the same top slot as the refresh failure, for the same two
+    /// seconds. Text rather than a flag because the tab view chooses the words.
+    @State private var feedNotice: String?
     @State private var unreadActivity = 0
     /// The previous `lastActivitySeen`, handed to Activity so it can show a "New" section.
     @State private var activitySeenBefore: Date?
@@ -238,6 +242,11 @@ struct FeedView: View {
         // view's own reload path; see that property's own doc for why `snapshotLedger` ALSO calls
         // `recomputeUnits()` explicitly rather than relying on this alone.
         .onChange(of: feed.feed) { _, _ in recomputeUnits() }
+        .onReceive(NotificationCenter.default.publisher(for: .feedNotice)) { note in
+            guard let text = note.object as? String else { return }
+            withAnimation { feedNotice = text }
+            Task { try? await Task.sleep(for: .seconds(2.4)); withAnimation { feedNotice = nil } }
+        }
         .navigationBarHidden(true)
         .task {
             // `feed_viewed` semantics: once per time this view genuinely appears (initial
@@ -522,6 +531,14 @@ struct FeedView: View {
                     .transition(.move(edge: .top).combined(with: .opacity))
                 } else if refreshFailedToast {
                     Label("Couldn't refresh", systemImage: "wifi.exclamationmark")
+                        .flimFont(13.5, weight: .semibold, relativeTo: .subheadline)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 16).padding(.vertical, 8)
+                        .background(.ultraThinMaterial, in: Capsule())
+                        .padding(.top, 8)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                } else if let feedNotice {
+                    Text(feedNotice)
                         .flimFont(13.5, weight: .semibold, relativeTo: .subheadline)
                         .foregroundStyle(.white)
                         .padding(.horizontal, 16).padding(.vertical, 8)

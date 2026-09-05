@@ -205,6 +205,10 @@ extension Notification.Name {
     /// UserDefaults on change, restored once on appear), so a roll created elsewhere has no other
     /// way to reach an already-mounted CameraView.
     static let selectCameraRoll = Notification.Name("selectCameraRoll")
+    /// Posted with a String when a push tap's target is gone (a post deleted, moderated, or by
+    /// someone blocked either way) so the feed can say so in its own top slot rather than the tap
+    /// doing nothing. `FeedView` is the listener; `MainTabView.route(to:)` is the only poster.
+    static let feedNotice = Notification.Name("feedNotice")
 }
 
 /// App delegate: forwards the APNs token to `RemotePush`, and handles notification

@@ -516,10 +516,19 @@ struct MainTabView: View {
             Task {
                 let epoch = AccountEpoch.current
                 let post = await feed.fetchPosts(ids: [postId])[postId]
-                guard let post else { return }   // deleted, moderated, or blocked either way
+                guard AccountEpoch.isCurrent(epoch) else { return }
+                // Deleted, moderated, or by someone blocked either way: the feed tab is already
+                // showing, so say why nothing opened rather than leaving the tap silent.
+                guard let post else {
+                    NotificationCenter.default.post(name: .feedNotice, object: "That post isn't here anymore.")
+                    return
+                }
                 let author = await feed.fetchProfile(id: post.userId)
                 guard AccountEpoch.isCurrent(epoch) else { return }
-                guard let author else { return }
+                guard let author else {
+                    NotificationCenter.default.post(name: .feedNotice, object: "That post isn't here anymore.")
+                    return
+                }
                 focusCommentsPostId = comments ? postId : nil
                 feedPath.append(FeedItem(post: post, author: author))
             }

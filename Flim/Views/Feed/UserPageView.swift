@@ -975,7 +975,7 @@ struct DiscoverPeopleView: View {
                     if shown.isEmpty && loaded {
                         Spacer()
                         Text(searchText.isEmpty
-                             ? "No one else here yet. Invite some friends!"
+                             ? "No one else here yet. Invite some friends."
                              : "No one matches “\(searchText)”")
                             .flimFont(14, relativeTo: .subheadline).foregroundStyle(FlimTheme.textTertiary)
                             .multilineTextAlignment(.center).padding(40)

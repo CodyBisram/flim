@@ -172,6 +172,34 @@ actually do. Worth deciding before more is built on top of rolls.
 
 ## Next up
 
+### done 2026-09-05: the release audit
+
+Four passes before submission. **Code (SHIP):** the whole diff since 1.5.0 (132 files) carries no
+force unwraps, `try!` or `fatalError`, no off-main writes to observable state, every debug surface
+is `#if DEBUG` at the call site, the privacy manifest needs no change for on-device Vision, no
+anon grant widened, the retry-pill fix fails closed (a network miss drops nothing). **Flows (SHIP
+WITH NITS, fixed):** the one exclamation mark in the app is gone from the find-friends empty state,
+and a push tapped for a deleted post now says "That post isn't here anymore." in the feed's top
+slot instead of doing nothing. **Machinery:** build 344 traced to 0516255 (the cancelled sibling
+run uploaded nothing); all eleven September migrations object-verified live; no entitlement change
+since 1.5.0, no match step owed; `app_release_gate` correctly still at 1.5.0. **Data:** 53
+accounts (29 on the App Store build, 18 never reported), 33 active this week; every integrity
+check zero except one photo missing its master object (`9d928949`, 2026-09-04, thumb and feed
+present); the review account is hidden from discovery; no test handles visible. Tripwire PASS on
+every check; `net._http_response` had grown to 15 MB with no recurring VACUUM and was vacuumed to
+336 kB. Line appended to docs/TRIPWIRE.md.
+
+**What blocks submission is packaging, not code, and it is all the owner's:** the version (main
+says 1.5.1; the release captain recommends shipping as 1.5.1 since the train was opened under it
+and a bump buys nothing mechanically), a "What's New" for this train (none exists; APP_STORE.md
+still says Chapters is NOT in the release), the App Store description mentioning Chapters, fresh
+screenshots (3-across Darkroom, rebuilt Rolls, reveal without a progress bar, the Chapters shelf),
+the reviewer sign-in checked on 344, the reviewer password pasted into App Store Connect, and
+`app_release_gate.latest_version` moved to the released version only after READY_FOR_SALE.
+
+Recommended before the next tripwire: a weekly `VACUUM (FULL)` on `net._http_response` as a cron,
+since its row count is bounded but its file only ratchets up.
+
 ### done 2026-09-05, evening: three small chapter things from the owner's phone
 
 Most reacted is always the first line of the stats card. Closing the viewer no longer flashes
