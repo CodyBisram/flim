@@ -182,10 +182,12 @@ enum ChapterStatsFormatting {
     /// order. `topGivenReaction` scores by its count, scored down hard below
     /// `topGivenReactionThreshold`.
     ///
-    /// Whatever the five highest-scoring lines are, at least one photo-bearing line
-    /// (`mostReacted`/`mostCommented`/`longestGap`) is always kept if any candidate carries one:
-    /// the card should have a picture, so the weakest of the five picks is swapped for the
-    /// best-scoring photo candidate rather than letting the top five happen to be all numbers.
+    /// The most reacted shot always shows when the month has one (owner decision 2026-09-05: it
+    /// is the card's anchor, the thing people screenshot), taking the first line regardless of
+    /// score; the other lines are the highest scoring of the rest. Failing that, at least one
+    /// photo-bearing line (`mostCommented`/`longestGap`) is kept if any candidate carries one:
+    /// the card should have a picture, so the weakest pick is swapped for the best-scoring
+    /// photo candidate rather than letting the top five happen to be all numbers.
     static func lines(from stats: ChapterStats, calendar: Calendar = .current,
                        locale: Locale = .autoupdatingCurrent) -> [ChapterStatLine] {
         let shotsTotal = stats[.shots]?.valueInt
@@ -277,7 +279,11 @@ enum ChapterStatsFormatting {
                 value: "\(daysWord(days)) without a shot", photoId: row.photoId, photoThumbPath: row.photoThumbPath))
         }
 
-        var picked = Array(candidates.sorted(by: isHigherRanked).prefix(maxLines))
+        // Most reacted is pinned to the top when present; everything else competes for the rest.
+        let anchor = candidates.first { $0.line.kind == .mostReacted }
+        let rest = candidates.filter { $0.line.kind != .mostReacted }
+        var picked = Array(rest.sorted(by: isHigherRanked).prefix(anchor == nil ? maxLines : maxLines - 1))
+        if let anchor { picked.insert(anchor, at: 0) }
         if picked.count == maxLines, !picked.contains(where: { $0.line.photoId != nil }),
            // `.min(by:)`, not `.max(by:)`: `isHigherRanked(a, b)` means "a sorts before b" the
            // same way `sorted(by:)` reads it, so the best candidate is the one earliest in that
@@ -285,6 +291,10 @@ enum ChapterStatsFormatting {
            let bestPhoto = candidates.filter({ $0.line.photoId != nil }).min(by: isHigherRanked) {
             picked[picked.count - 1] = bestPhoto
             picked.sort(by: isHigherRanked)
+        }
+        // Re-sorting above may have moved the anchor; it belongs at the top whatever its score.
+        if let anchor, let i = picked.firstIndex(where: { $0.line.kind == .mostReacted }), i != 0 {
+            picked.remove(at: i); picked.insert(anchor, at: 0)
         }
         return picked.map(\.line)
     }

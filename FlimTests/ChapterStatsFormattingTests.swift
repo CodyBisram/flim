@@ -66,6 +66,41 @@ struct ChapterStatsFormattingTests {
         #expect(!lines.contains { $0.kind == .goldenHour })
     }
 
+    @Test("the most reacted shot always shows, first, whatever its score")
+    func mostReactedIsAlwaysFirst() {
+        let stats: ChapterStats = [
+            .shots: row("shots", valueInt: 100),
+            // One reaction against a hundred shots: the weakest possible score.
+            .mostReacted: row("most_reacted", valueInt: 1, photoId: UUID(), photoThumbPath: "a.jpg"),
+            .biggestFan: row("biggest_fan", valueInt: 90, valueText: "sabs", userId: UUID()),
+            .topGivenReaction: row("top_given_reaction", valueInt: 60, valueText: "❤️"),
+            .nightShots: row("night_shots", valueInt: 30),
+            .rollMVP: row("roll_mvp", valueInt: 20, valueText: "tristan", userId: UUID()),
+            .streakDays: row("streak_days", valueInt: 10),
+            .longestGap: row("longest_gap", valueInt: 9, photoId: UUID(), photoThumbPath: "b.jpg"),
+        ]
+        let lines = ChapterStatsFormatting.lines(from: stats, calendar: calendar, locale: locale)
+        #expect(lines.count == 5)
+        #expect(lines.first?.kind == .mostReacted)
+        // The other four are the strongest of the rest by score: the given reaction (60) and
+        // night shots (30) lead, and the weakest candidates (fan 0.9, longest gap 6) are the ones
+        // the anchor displaced. The anchor itself never competes.
+        #expect(lines.dropFirst().first?.kind == .yourReaction)
+        #expect(!lines.contains { $0.kind == .biggestFan })
+    }
+
+    @Test("without a most reacted shot the card falls back to the scored five")
+    func noMostReactedMeansPlainScoring() {
+        let stats: ChapterStats = [
+            .shots: row("shots", valueInt: 10),
+            // Fan scores 0.8 (8 of 10 shots); a 4-day streak scores 1 past its 3-day floor.
+            .biggestFan: row("biggest_fan", valueInt: 8, valueText: "sabs", userId: UUID()),
+            .streakDays: row("streak_days", valueInt: 4),
+        ]
+        let lines = ChapterStatsFormatting.lines(from: stats, calendar: calendar, locale: locale)
+        #expect(lines.map(\.kind) == [.streak, .biggestFan])
+    }
+
     @Test("an exact score tie breaks by the old fixed order, so results are stable")
     func tiesBreakByOldOrder() {
         let stats: ChapterStats = [

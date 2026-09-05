@@ -91,6 +91,10 @@ struct ChapterRecapView: View {
         // `ChapterRecapViewModel.isPlayerMounted`'s own doc); this is the one place that tells it
         // whether that's currently true, for both edges of the presentation.
         .onChange(of: isPlayerPresented) { _, presented in
+            // Flip to the closing card the moment the pager starts to go, not after it has gone:
+            // the cover's dismissal animation reveals whatever `phase` shows underneath, and a
+            // flip made only in `onDismiss` left the opening card visible for that frame or two.
+            if !presented, viewModel.hasClosingCard { phase = .closing }
             viewModel.setPlayerMounted(presented)
         }
         .task {
@@ -417,11 +421,10 @@ struct ChapterRecapView: View {
     /// states. Lands on the closing card when this month has one, otherwise the recap is over,
     /// same as before the closing card existed.
     private func handlePlayerDismissed() {
-        if viewModel.hasClosingCard {
-            withAnimation(.easeInOut(duration: 0.25)) { phase = .closing }
-        } else {
-            dismiss()
-        }
+        // `phase` was already flipped in `.onChange(of: isPlayerPresented)` the instant the
+        // cover began to leave, so the screen under it is the closing card by the time the cover
+        // is gone. Left here only for the no-card case, which ends the recap.
+        if !viewModel.hasClosingCard { dismiss() }
     }
 
     private var closingCard: some View {

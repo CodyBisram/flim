@@ -172,6 +172,13 @@ actually do. Worth deciding before more is built on top of rolls.
 
 ## Next up
 
+### done 2026-09-05, evening: three small chapter things from the owner's phone
+
+Most reacted is always the first line of the stats card. Closing the viewer no longer flashes
+the opening card before the stats card (the phase flipped only after the cover had gone; it flips
+as the cover starts to leave). No "Posted" pill under a frame during chapter playback: every
+frame there is a post by definition.
+
 ### done 2026-09-05: the reaction count that was briefly someone else's
 
 In the photo viewer the reactions row read a single shared array that only changed once the
@@ -232,7 +239,8 @@ when a post is known (a no-op for every other caller). Found on the way: present
 **Five new stats, DONE both halves:** biggest fan (opens their profile), the reaction you gave
 most, golden hour ("Most of your shots were around 8pm", 12/24h by locale), roll MVP (opens their
 profile), longest gap with the frame that ended it. Owner's August: sabs 34, heart 219, 8pm, 5
-days. The closing card now picks the five most interesting of the eleven by a small documented
+days. The closing card pins the most reacted shot first whenever the month has one (owner:
+"the most reacted shot should always show") and picks the other lines by a small documented
 score (counts relative to the month's shots; a day or hour only when concentrated; a picture line
 guaranteed when one exists; ties by the old order) instead of a fixed priority. The picker has
 eleven toggles. Unverified on device: the emoji glyph in the mono value (the simulator draws every

@@ -989,7 +989,9 @@ struct PhotoPagerView: View {
                     // menu answered none of them, and giving it its own row is what made the
                     // photograph smaller than the reveal's in the first place. Opens the same
                     // composer as before, so tagging is one tap further in, where it always was.
-                    if photo.userId == auth.currentUser?.id || photo.rollId != nil {
+                    // Not when the frame IS a post already (the chapter recap): every frame there
+                    // was posted by definition, so a "Posted" pill on each is noise.
+                    if posts[photo.id] == nil, photo.userId == auth.currentUser?.id || photo.rollId != nil {
                         let shared = feed.myPostedPhotoIds.contains(photo.id)
                         Button { shareToPage(photo) } label: {
                             HStack(spacing: 5) {
