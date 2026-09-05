@@ -988,13 +988,19 @@ CREATE INDEX IF NOT EXISTS users_hidden_from_discovery_idx
 -- chapter_stats() does not know how to filter by.
 ALTER TABLE public.users
     ADD COLUMN IF NOT EXISTS chapter_public_stats TEXT[] NOT NULL DEFAULT '{}';
+-- Folded in from supabase/migrations/2026-09-05_chapter_stats_more.sql: five
+-- more stat_key values (biggest_fan, top_given_reaction, golden_hour,
+-- roll_mvp, longest_gap) -- see that migration and chapter_stats() below for
+-- what each means. Kept byte-for-byte identical to the list
+-- set_chapter_public_stats() validates against, same reasoning as before.
 ALTER TABLE public.users
     DROP CONSTRAINT IF EXISTS users_chapter_public_stats_keys_check,
     ADD CONSTRAINT users_chapter_public_stats_keys_check
         CHECK (chapter_public_stats <@ ARRAY[
             'most_reacted', 'most_commented', 'reactions_received', 'comments_received',
             'top_reaction', 'busiest_day', 'night_shots', 'streak_days', 'rolls_count',
-            'people_shot_with', 'first_shot', 'last_shot', 'shots'
+            'people_shot_with', 'first_shot', 'last_shot', 'shots',
+            'biggest_fan', 'top_given_reaction', 'golden_hour', 'roll_mvp', 'longest_gap'
         ]::text[]);
 
 -- signup_ordinal: a permanent "you are the Nth member" number, folded in from
@@ -1660,6 +1666,10 @@ CREATE INDEX IF NOT EXISTS photos_roll_user_idx
     WHERE roll_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS post_comments_post_idx      ON public.post_comments (post_id);
 CREATE INDEX IF NOT EXISTS post_reactions_post_idx     ON public.post_reactions (post_id);
+-- post_reactions_user_idx: folded in from supabase/migrations/2026-09-05_chapter_stats_more.sql.
+-- chapter_stats()'s top_given_reaction key filters post_reactions directly by reactor
+-- (pr.user_id = p_profile_id), with no post_id to lean on the index above.
+CREATE INDEX IF NOT EXISTS post_reactions_user_idx     ON public.post_reactions (user_id);
 CREATE INDEX IF NOT EXISTS follows_follower_idx        ON public.follows (follower_id);
 CREATE INDEX IF NOT EXISTS follows_following_idx       ON public.follows (following_id);
 CREATE INDEX IF NOT EXISTS post_tags_tagged_idx        ON public.post_tags (tagged_user_id);
@@ -3489,6 +3499,40 @@ CREATE INDEX IF NOT EXISTS posts_user_taken_idx ON public.posts (user_id, taken_
 -- stat_key keeps post_id NULL, same as its existing NULL photo_id. DROP
 -- FUNCTION IF EXISTS precedes the CREATE below for the same
 -- return-type-change reason documented next to chapter_photos above.
+--
+-- FIVE MORE KEYS (added by 2026-09-05_chapter_stats_more.sql) -- also carry a
+-- new USER_ID column, nullable, NULL on every existing stat_key, set only by
+-- biggest_fan and roll_mvp so the app can open that person's profile:
+--   * biggest_fan: who reacted to the owner's posted shots most that month,
+--     excluding the owner reacting to themself. Grouped over `source` joined
+--     to post_reactions by reactor. EXTRA visibility gate beyond the usual
+--     source predicate: `source` guarantees the CALLER can see the owner's
+--     posts, but not that the caller can see the REACTOR -- a fan blocked
+--     either way with the caller is skipped for the next highest, same
+--     omission rule if none remain.
+--   * top_given_reaction: the emoji the OWNER gave out most that month,
+--     across every post they reacted to (their own behaviour, not their
+--     posts, so `source` does not apply). Bounded on the reaction's own
+--     created_at with the same 04:00 shift. Only visibility rule: exclude
+--     reactions on posts by someone blocked either way with the CALLER, so a
+--     viewer cannot learn about a relationship they cannot see.
+--   * golden_hour: the America/New_York hour (0-23) with the most posted
+--     shots, over `source`, same TIMEZONE ASSUMPTION as night_shots.
+--     value_text is that hour's shot count as text. Omitted under 3 shots
+--     that month.
+--   * roll_mvp: among rolls the owner posted into that month, the other
+--     member who shot the most into those rolls, from public.photos
+--     directly. ROLL VISIBILITY uses the exact predicate from the "photos:
+--     roll members can read shared" storage policy (NOT hidden, is_roll_member
+--     for the CALLER, not blocked either way with the caller), not
+--     people_shot_with's simpler unfiltered count -- roll membership alone
+--     does not imply the caller may see a specific member's shots (blocking
+--     never touches roll_members).
+--   * longest_gap: the largest gap in days between two consecutive distinct
+--     posted-shot days that month, via the standard LAG-over-distinct-days
+--     calculation. Carries the photo that ended the gap (earliest shot on the
+--     day the drought broke). Omitted under 2 distinct shot days or a gap
+--     under 3 days.
 -- ============================================================
 
 DROP FUNCTION IF EXISTS public.chapter_stats(UUID, DATE);
@@ -3500,7 +3544,8 @@ RETURNS TABLE (
     value_text       TEXT,
     photo_id         UUID,
     photo_thumb_path TEXT,
-    post_id          UUID
+    post_id          UUID,
+    user_id          UUID
 )
 LANGUAGE sql
 STABLE
@@ -3540,7 +3585,8 @@ AS $$
         GROUP BY pr.emoji
     ),
     day_bucketed AS (
-        SELECT date_trunc('day', (s.taken_at - interval '4 hours') AT TIME ZONE 'utc')::date AS shot_day
+        SELECT s.photo_id, s.post_id, s.display_path, s.taken_at,
+               date_trunc('day', (s.taken_at - interval '4 hours') AT TIME ZONE 'utc')::date AS shot_day
         FROM source s
     ),
     day_counts AS (
@@ -3558,84 +3604,179 @@ AS $$
     roll_ids AS (
         SELECT DISTINCT roll_id FROM source WHERE roll_id IS NOT NULL
     ),
-    stats (stat_key, value_int, value_text, photo_id, photo_thumb_path, post_id) AS (
-        (SELECT 'shots'::text, count(*)::int, NULL::text, NULL::uuid, NULL::text, NULL::uuid
+    -- ---- biggest_fan ----
+    fan_counts AS (
+        SELECT pr.user_id AS reactor_id, count(*) AS cnt, max(pr.created_at) AS last_reacted_at
+        FROM source s
+        JOIN public.post_reactions pr ON pr.post_id = s.post_id
+        WHERE pr.user_id <> p_profile_id
+        GROUP BY pr.user_id
+    ),
+    -- ---- top_given_reaction (owner's own behaviour, source CTE does not apply) ----
+    given_reactions AS (
+        SELECT pr.emoji, count(*) AS cnt
+        FROM public.post_reactions pr
+        JOIN public.posts po ON po.id = pr.post_id
+        WHERE pr.user_id = p_profile_id
+          AND NOT public.is_blocked_either_way(auth.uid(), po.user_id)
+          AND date_trunc('month', (pr.created_at - interval '4 hours') AT TIME ZONE 'utc')::date = p_month_start
+        GROUP BY pr.emoji
+    ),
+    -- ---- golden_hour ----
+    hour_counts AS (
+        SELECT EXTRACT(HOUR FROM (s.taken_at AT TIME ZONE 'America/New_York'))::int AS hr, count(*) AS cnt
+        FROM source s
+        GROUP BY hr
+    ),
+    -- ---- roll_mvp: same visibility predicate as the "photos: roll members can
+    -- read shared" storage policy, not the simpler unfiltered people_shot_with
+    -- count -- see the header comment above for why. ----
+    roll_mvp_counts AS (
+        SELECT p.user_id AS shooter_id, count(*) AS cnt
+        FROM public.photos p
+        WHERE p.roll_id IN (SELECT roll_id FROM roll_ids)
+          AND p.user_id <> p_profile_id
+          AND NOT p.hidden
+          AND public.is_roll_member(p.roll_id)
+          AND NOT public.is_blocked_either_way(auth.uid(), p.user_id)
+        GROUP BY p.user_id
+    ),
+    -- ---- longest_gap ----
+    distinct_days AS (
+        SELECT DISTINCT shot_day FROM day_bucketed
+    ),
+    day_gaps AS (
+        SELECT shot_day, shot_day - LAG(shot_day) OVER (ORDER BY shot_day) AS gap_days
+        FROM distinct_days
+    ),
+    gap_pick AS (
+        SELECT shot_day, gap_days
+        FROM day_gaps
+        WHERE gap_days IS NOT NULL
+        ORDER BY gap_days DESC, shot_day ASC
+        LIMIT 1
+    ),
+    gap_ending_photo AS (
+        -- The earliest shot on the day that ended the gap (first shot back
+        -- after the drought), matched back to day_bucketed rather than
+        -- re-deriving shot_day from taken_at a second time.
+        SELECT db.photo_id, db.display_path, db.post_id, gp.gap_days
+        FROM gap_pick gp
+        JOIN day_bucketed db ON db.shot_day = gp.shot_day
+        ORDER BY db.taken_at ASC
+        LIMIT 1
+    ),
+    stats (stat_key, value_int, value_text, photo_id, photo_thumb_path, post_id, user_id) AS (
+        (SELECT 'shots'::text, count(*)::int, NULL::text, NULL::uuid, NULL::text, NULL::uuid, NULL::uuid
          FROM source
          HAVING count(*) > 0)
 
         UNION ALL
-        (SELECT 'reactions_received', count(*)::int, NULL, NULL, NULL, NULL
+        (SELECT 'reactions_received', count(*)::int, NULL, NULL, NULL, NULL, NULL
          FROM source s JOIN public.post_reactions pr ON pr.post_id = s.post_id
          HAVING count(*) > 0)
 
         UNION ALL
-        (SELECT 'comments_received', count(*)::int, NULL, NULL, NULL, NULL
+        (SELECT 'comments_received', count(*)::int, NULL, NULL, NULL, NULL, NULL
          FROM source s JOIN public.post_comments pc ON pc.post_id = s.post_id
          HAVING count(*) > 0)
 
         UNION ALL
-        (SELECT 'most_reacted', rc.cnt::int, NULL, rc.photo_id, rc.display_path, rc.post_id
+        (SELECT 'most_reacted', rc.cnt::int, NULL, rc.photo_id, rc.display_path, rc.post_id, NULL
          FROM reaction_counts rc
          ORDER BY rc.cnt DESC, rc.taken_at DESC
          LIMIT 1)
 
         UNION ALL
-        (SELECT 'most_commented', cc.cnt::int, NULL, cc.photo_id, cc.display_path, cc.post_id
+        (SELECT 'most_commented', cc.cnt::int, NULL, cc.photo_id, cc.display_path, cc.post_id, NULL
          FROM comment_counts cc
          ORDER BY cc.cnt DESC, cc.taken_at DESC
          LIMIT 1)
 
         UNION ALL
-        (SELECT 'top_reaction', re.cnt::int, re.emoji, NULL, NULL, NULL
+        (SELECT 'top_reaction', re.cnt::int, re.emoji, NULL, NULL, NULL, NULL
          FROM reaction_emoji re
          ORDER BY re.cnt DESC, re.emoji ASC
          LIMIT 1)
 
         UNION ALL
-        (SELECT 'busiest_day', dc.cnt::int, to_char(dc.shot_day, 'YYYY-MM-DD'), NULL, NULL, NULL
+        (SELECT 'busiest_day', dc.cnt::int, to_char(dc.shot_day, 'YYYY-MM-DD'), NULL, NULL, NULL, NULL
          FROM day_counts dc
          ORDER BY dc.cnt DESC, dc.shot_day DESC
          LIMIT 1)
 
         UNION ALL
-        (SELECT 'night_shots', count(*)::int, NULL, NULL, NULL, NULL
+        (SELECT 'night_shots', count(*)::int, NULL, NULL, NULL, NULL, NULL
          FROM source s
          WHERE EXTRACT(HOUR FROM (s.taken_at AT TIME ZONE 'America/New_York')) >= 22
             OR EXTRACT(HOUR FROM (s.taken_at AT TIME ZONE 'America/New_York')) < 4
          HAVING count(*) > 0)
 
         UNION ALL
-        (SELECT 'streak_days', max(len)::int, NULL, NULL, NULL, NULL
+        (SELECT 'streak_days', max(len)::int, NULL, NULL, NULL, NULL, NULL
          FROM streak_lengths)
 
         UNION ALL
-        (SELECT 'rolls_count', count(*)::int, NULL, NULL, NULL, NULL
+        (SELECT 'rolls_count', count(*)::int, NULL, NULL, NULL, NULL, NULL
          FROM roll_ids
          HAVING count(*) > 0)
 
         UNION ALL
-        (SELECT 'people_shot_with', count(DISTINCT rm.user_id)::int, NULL, NULL, NULL, NULL
+        (SELECT 'people_shot_with', count(DISTINCT rm.user_id)::int, NULL, NULL, NULL, NULL, NULL
          FROM public.roll_members rm
          WHERE rm.roll_id IN (SELECT roll_id FROM roll_ids)
            AND rm.user_id <> p_profile_id
          HAVING count(DISTINCT rm.user_id) > 0)
 
         UNION ALL
-        (SELECT 'first_shot', NULL, NULL, s.photo_id, s.display_path, s.post_id
+        (SELECT 'first_shot', NULL, NULL, s.photo_id, s.display_path, s.post_id, NULL
          FROM source s
          ORDER BY s.taken_at ASC
          LIMIT 1)
 
         UNION ALL
-        (SELECT 'last_shot', NULL, NULL, s.photo_id, s.display_path, s.post_id
+        (SELECT 'last_shot', NULL, NULL, s.photo_id, s.display_path, s.post_id, NULL
          FROM source s
          ORDER BY s.taken_at DESC
          LIMIT 1)
+
+        UNION ALL
+        (SELECT 'biggest_fan', fc.cnt::int, u.username, NULL, NULL, NULL, fc.reactor_id
+         FROM fan_counts fc
+         JOIN public.users u ON u.id = fc.reactor_id
+         WHERE NOT public.is_blocked_either_way(auth.uid(), fc.reactor_id)
+         ORDER BY fc.cnt DESC, fc.last_reacted_at DESC
+         LIMIT 1)
+
+        UNION ALL
+        (SELECT 'top_given_reaction', gr.cnt::int, gr.emoji, NULL, NULL, NULL, NULL
+         FROM given_reactions gr
+         ORDER BY gr.cnt DESC, gr.emoji ASC
+         LIMIT 1)
+
+        UNION ALL
+        (SELECT 'golden_hour', hc.hr::int, hc.cnt::text, NULL, NULL, NULL, NULL
+         FROM hour_counts hc
+         WHERE (SELECT count(*) FROM source) >= 3
+         ORDER BY hc.cnt DESC, hc.hr ASC
+         LIMIT 1)
+
+        UNION ALL
+        (SELECT 'roll_mvp', rmc.cnt::int, u.username, NULL, NULL, NULL, rmc.shooter_id
+         FROM roll_mvp_counts rmc
+         JOIN public.users u ON u.id = rmc.shooter_id
+         ORDER BY rmc.cnt DESC, u.username ASC
+         LIMIT 1)
+
+        UNION ALL
+        (SELECT 'longest_gap', gep.gap_days::int, NULL, gep.photo_id, gep.display_path, gep.post_id, NULL
+         FROM gap_ending_photo gep
+         WHERE gep.gap_days >= 3)
     ),
     owner_pick AS (
         SELECT chapter_public_stats FROM public.users WHERE id = p_profile_id
     )
-    SELECT st.stat_key, st.value_int, st.value_text, st.photo_id, st.photo_thumb_path, st.post_id
+    SELECT st.stat_key, st.value_int, st.value_text, st.photo_id, st.photo_thumb_path, st.post_id, st.user_id
     FROM stats st
     WHERE auth.uid() = p_profile_id
        OR EXISTS (
@@ -3673,7 +3814,8 @@ BEGIN
     IF NOT (v_keys <@ ARRAY[
         'most_reacted', 'most_commented', 'reactions_received', 'comments_received',
         'top_reaction', 'busiest_day', 'night_shots', 'streak_days', 'rolls_count',
-        'people_shot_with', 'first_shot', 'last_shot', 'shots'
+        'people_shot_with', 'first_shot', 'last_shot', 'shots',
+        'biggest_fan', 'top_given_reaction', 'golden_hour', 'roll_mvp', 'longest_gap'
     ]::text[]) THEN
         RAISE EXCEPTION 'chapter_public_stats: unknown stat key';
     END IF;
