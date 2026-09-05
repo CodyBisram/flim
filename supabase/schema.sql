@@ -5293,3 +5293,30 @@ DROP TRIGGER IF EXISTS app_release_gate_touch_updated_at ON public.app_release_g
 CREATE TRIGGER app_release_gate_touch_updated_at
     BEFORE UPDATE ON public.app_release_gate
     FOR EACH ROW EXECUTE FUNCTION public.app_release_gate_touch_updated_at();
+
+-- ============================================================
+-- Cron jobs. NOTE: every job this project runs (flim-social-push,
+-- flim-develop-push, flim-daily-digest, flim-storage-sweep,
+-- flim-cron-cleanup, flim-mark-developed) has so far lived ONLY in its
+-- dated migration file, never mirrored here, so a fresh environment built
+-- from this file alone has none of them scheduled. This entry is the
+-- first cron job tracked in the bootstrap file; the others were not
+-- backfilled as part of this change; see supabase/migrations/*cron* for
+-- their definitions if a fresh environment ever needs all of them.
+--
+-- flim-net-response-vacuum: recurring VACUUM for net._http_response
+-- (pg_net's response log table), applied separately as
+-- supabase/migrations/2026-09-05_pg_net_vacuum_cron.sql. That file's
+-- header carries the full reasoning (why weekly, why FULL is safe from
+-- cron, why the lock is acceptable, why Sunday 09:00 UTC). Idempotent:
+-- unschedule-then-schedule.
+-- ============================================================
+SELECT cron.unschedule(jobid)
+FROM cron.job
+WHERE jobname = 'flim-net-response-vacuum';
+
+SELECT cron.schedule(
+    'flim-net-response-vacuum',
+    '0 9 * * 0',
+    $job$VACUUM (FULL, ANALYZE) net._http_response$job$
+);

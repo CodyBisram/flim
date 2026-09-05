@@ -33,9 +33,11 @@ doing anything else. Prefer the `admin_*` RPCs and the tested queries in
 2. **pg_net bloat.** Size of `net._http_response`. The 2026-08 incident was 110MB of
    response rows from per-minute crons. ALERT above 20MB, which means the cleanup cron
    has stopped doing its job.
-3. **Cron cadences.** Read `cron.job`. The push crons must be at `*/5` and `*/2`, and the
-   pg_net cleanup job must exist and be scheduled. ALERT on any drift; a reverted cadence
-   is how the Disk IO incident starts again.
+3. **Cron cadences.** Read `cron.job`. The push crons must be at `*/5` and `*/2`, the
+   pg_net cleanup job must exist and be scheduled, and the weekly pg_net vacuum job
+   (`flim-net-response-vacuum`, `0 9 * * 0`) must exist: without it `net._http_response`
+   bloats silently between audits (15 MB in ten days on 2026-09-05). ALERT on any drift; a
+   reverted cadence is how the Disk IO incident starts again.
 4. **Push backlog.** Rows eligible for a push (`push_sent` poll pattern) older than one
    hour and still unsent. ALERT above zero; the poll should never leave a backlog.
 5. **Database size trend.** Total DB size now; note the delta against the last line in
