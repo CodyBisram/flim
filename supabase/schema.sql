@@ -3316,6 +3316,17 @@ GRANT EXECUTE ON FUNCTION public.profile_film_stats(UUID) TO authenticated;
 -- posts-visibility predicate RLS enforces for every caller. chapter_photos
 -- is capped at 1000 rows (PostgREST caps a SETOF result anyway; this makes
 -- it explicit).
+--
+-- POST_ID (added by 2026-09-05_chapter_photos_post_id.sql): reactions and
+-- comments live on the POST (public.post_reactions / public.post_comments),
+-- never on the photo -- chapter_stats below already counts them that way.
+-- chapter_photos is posted-only, so post_id is NEVER NULL here; it lets the
+-- app open a tapped chapter photo as a post detail view instead of a
+-- photo-id lookup against the wrong table. DROP FUNCTION IF EXISTS
+-- precedes both CREATE statements below because Postgres will not let
+-- CREATE OR REPLACE change a function's RETURNS TABLE column list in
+-- place; the DROP+CREATE is safe to re-run and grants are restored
+-- immediately after, identical to before.
 -- ============================================================
 
 CREATE OR REPLACE FUNCTION public.profile_chapters(p_profile_id UUID)
@@ -3380,7 +3391,9 @@ REVOKE ALL ON FUNCTION public.profile_chapters(UUID) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.profile_chapters(UUID) FROM anon;
 GRANT EXECUTE ON FUNCTION public.profile_chapters(UUID) TO authenticated;
 
-CREATE OR REPLACE FUNCTION public.chapter_photos(p_profile_id UUID, p_month_start DATE)
+DROP FUNCTION IF EXISTS public.chapter_photos(UUID, DATE);
+
+CREATE FUNCTION public.chapter_photos(p_profile_id UUID, p_month_start DATE)
 RETURNS TABLE (
     id           UUID,
     taken_at     TIMESTAMPTZ,
@@ -3388,7 +3401,8 @@ RETURNS TABLE (
     feed_path    TEXT,
     storage_path TEXT,
     roll_id      UUID,
-    roll_name    TEXT
+    roll_name    TEXT,
+    post_id      UUID
 )
 LANGUAGE sql
 STABLE
@@ -3396,8 +3410,11 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
     WITH source AS (
-        -- Same posted-only rule as profile_chapters above.
-        SELECT p.id, po.taken_at, po.thumb_path, po.feed_path, po.storage_path, p.roll_id
+        -- Same posted-only rule as profile_chapters above. post_id is the
+        -- same posts row already joined for taken_at/thumb_path/etc, never
+        -- NULL here -- see the POST_ID note above this function.
+        SELECT p.id, po.taken_at, po.thumb_path, po.feed_path, po.storage_path, p.roll_id,
+               po.id AS post_id
         FROM public.posts po
         JOIN public.photos p ON p.id = po.photo_id
         WHERE po.user_id = p_profile_id
@@ -3405,7 +3422,7 @@ AS $$
           AND NOT public.is_blocked_either_way(auth.uid(), po.user_id)
           AND public.covered_post_visible(auth.uid(), po.user_id, po.created_at)
     )
-    SELECT s.id, s.taken_at, s.thumb_path, s.feed_path, s.storage_path, s.roll_id, r.name
+    SELECT s.id, s.taken_at, s.thumb_path, s.feed_path, s.storage_path, s.roll_id, r.name, s.post_id
     FROM source s
     LEFT JOIN public.rolls r ON r.id = s.roll_id
     WHERE date_trunc('month', (s.taken_at - interval '4 hours') AT TIME ZONE 'utc')::date = p_month_start
@@ -3463,15 +3480,27 @@ CREATE INDEX IF NOT EXISTS posts_user_taken_idx ON public.posts (user_id, taken_
 -- SELECT grant) live earlier in this file, next to
 -- hidden_from_discovery/signup_ordinal -- see that block's own comment
 -- for why the load-ordering matters.
+--
+-- POST_ID (added by 2026-09-05_chapter_photos_post_id.sql): most_reacted,
+-- most_commented, first_shot, and last_shot are the only stat_key values
+-- that already carry a non-null photo_id; each now also carries the post_id
+-- of the same posts row (reactions and comments live on the POST, never on
+-- the photo -- see the REACTIONS/COMMENTS SOURCE note above). Every other
+-- stat_key keeps post_id NULL, same as its existing NULL photo_id. DROP
+-- FUNCTION IF EXISTS precedes the CREATE below for the same
+-- return-type-change reason documented next to chapter_photos above.
 -- ============================================================
 
-CREATE OR REPLACE FUNCTION public.chapter_stats(p_profile_id UUID, p_month_start DATE)
+DROP FUNCTION IF EXISTS public.chapter_stats(UUID, DATE);
+
+CREATE FUNCTION public.chapter_stats(p_profile_id UUID, p_month_start DATE)
 RETURNS TABLE (
     stat_key         TEXT,
     value_int        INTEGER,
     value_text       TEXT,
     photo_id         UUID,
-    photo_thumb_path TEXT
+    photo_thumb_path TEXT,
+    post_id          UUID
 )
 LANGUAGE sql
 STABLE
@@ -3493,16 +3522,16 @@ AS $$
           AND date_trunc('month', (po.taken_at - interval '4 hours') AT TIME ZONE 'utc')::date = p_month_start
     ),
     reaction_counts AS (
-        SELECT s.photo_id, s.display_path, s.taken_at, count(*) AS cnt
+        SELECT s.post_id, s.photo_id, s.display_path, s.taken_at, count(*) AS cnt
         FROM source s
         JOIN public.post_reactions pr ON pr.post_id = s.post_id
-        GROUP BY s.photo_id, s.display_path, s.taken_at
+        GROUP BY s.post_id, s.photo_id, s.display_path, s.taken_at
     ),
     comment_counts AS (
-        SELECT s.photo_id, s.display_path, s.taken_at, count(*) AS cnt
+        SELECT s.post_id, s.photo_id, s.display_path, s.taken_at, count(*) AS cnt
         FROM source s
         JOIN public.post_comments pc ON pc.post_id = s.post_id
-        GROUP BY s.photo_id, s.display_path, s.taken_at
+        GROUP BY s.post_id, s.photo_id, s.display_path, s.taken_at
     ),
     reaction_emoji AS (
         SELECT pr.emoji, count(*) AS cnt
@@ -3529,76 +3558,76 @@ AS $$
     roll_ids AS (
         SELECT DISTINCT roll_id FROM source WHERE roll_id IS NOT NULL
     ),
-    stats (stat_key, value_int, value_text, photo_id, photo_thumb_path) AS (
-        (SELECT 'shots'::text, count(*)::int, NULL::text, NULL::uuid, NULL::text
+    stats (stat_key, value_int, value_text, photo_id, photo_thumb_path, post_id) AS (
+        (SELECT 'shots'::text, count(*)::int, NULL::text, NULL::uuid, NULL::text, NULL::uuid
          FROM source
          HAVING count(*) > 0)
 
         UNION ALL
-        (SELECT 'reactions_received', count(*)::int, NULL, NULL, NULL
+        (SELECT 'reactions_received', count(*)::int, NULL, NULL, NULL, NULL
          FROM source s JOIN public.post_reactions pr ON pr.post_id = s.post_id
          HAVING count(*) > 0)
 
         UNION ALL
-        (SELECT 'comments_received', count(*)::int, NULL, NULL, NULL
+        (SELECT 'comments_received', count(*)::int, NULL, NULL, NULL, NULL
          FROM source s JOIN public.post_comments pc ON pc.post_id = s.post_id
          HAVING count(*) > 0)
 
         UNION ALL
-        (SELECT 'most_reacted', rc.cnt::int, NULL, rc.photo_id, rc.display_path
+        (SELECT 'most_reacted', rc.cnt::int, NULL, rc.photo_id, rc.display_path, rc.post_id
          FROM reaction_counts rc
          ORDER BY rc.cnt DESC, rc.taken_at DESC
          LIMIT 1)
 
         UNION ALL
-        (SELECT 'most_commented', cc.cnt::int, NULL, cc.photo_id, cc.display_path
+        (SELECT 'most_commented', cc.cnt::int, NULL, cc.photo_id, cc.display_path, cc.post_id
          FROM comment_counts cc
          ORDER BY cc.cnt DESC, cc.taken_at DESC
          LIMIT 1)
 
         UNION ALL
-        (SELECT 'top_reaction', re.cnt::int, re.emoji, NULL, NULL
+        (SELECT 'top_reaction', re.cnt::int, re.emoji, NULL, NULL, NULL
          FROM reaction_emoji re
          ORDER BY re.cnt DESC, re.emoji ASC
          LIMIT 1)
 
         UNION ALL
-        (SELECT 'busiest_day', dc.cnt::int, to_char(dc.shot_day, 'YYYY-MM-DD'), NULL, NULL
+        (SELECT 'busiest_day', dc.cnt::int, to_char(dc.shot_day, 'YYYY-MM-DD'), NULL, NULL, NULL
          FROM day_counts dc
          ORDER BY dc.cnt DESC, dc.shot_day DESC
          LIMIT 1)
 
         UNION ALL
-        (SELECT 'night_shots', count(*)::int, NULL, NULL, NULL
+        (SELECT 'night_shots', count(*)::int, NULL, NULL, NULL, NULL
          FROM source s
          WHERE EXTRACT(HOUR FROM (s.taken_at AT TIME ZONE 'America/New_York')) >= 22
             OR EXTRACT(HOUR FROM (s.taken_at AT TIME ZONE 'America/New_York')) < 4
          HAVING count(*) > 0)
 
         UNION ALL
-        (SELECT 'streak_days', max(len)::int, NULL, NULL, NULL
+        (SELECT 'streak_days', max(len)::int, NULL, NULL, NULL, NULL
          FROM streak_lengths)
 
         UNION ALL
-        (SELECT 'rolls_count', count(*)::int, NULL, NULL, NULL
+        (SELECT 'rolls_count', count(*)::int, NULL, NULL, NULL, NULL
          FROM roll_ids
          HAVING count(*) > 0)
 
         UNION ALL
-        (SELECT 'people_shot_with', count(DISTINCT rm.user_id)::int, NULL, NULL, NULL
+        (SELECT 'people_shot_with', count(DISTINCT rm.user_id)::int, NULL, NULL, NULL, NULL
          FROM public.roll_members rm
          WHERE rm.roll_id IN (SELECT roll_id FROM roll_ids)
            AND rm.user_id <> p_profile_id
          HAVING count(DISTINCT rm.user_id) > 0)
 
         UNION ALL
-        (SELECT 'first_shot', NULL, NULL, s.photo_id, s.display_path
+        (SELECT 'first_shot', NULL, NULL, s.photo_id, s.display_path, s.post_id
          FROM source s
          ORDER BY s.taken_at ASC
          LIMIT 1)
 
         UNION ALL
-        (SELECT 'last_shot', NULL, NULL, s.photo_id, s.display_path
+        (SELECT 'last_shot', NULL, NULL, s.photo_id, s.display_path, s.post_id
          FROM source s
          ORDER BY s.taken_at DESC
          LIMIT 1)
@@ -3606,7 +3635,7 @@ AS $$
     owner_pick AS (
         SELECT chapter_public_stats FROM public.users WHERE id = p_profile_id
     )
-    SELECT st.stat_key, st.value_int, st.value_text, st.photo_id, st.photo_thumb_path
+    SELECT st.stat_key, st.value_int, st.value_text, st.photo_id, st.photo_thumb_path, st.post_id
     FROM stats st
     WHERE auth.uid() = p_profile_id
        OR EXISTS (
