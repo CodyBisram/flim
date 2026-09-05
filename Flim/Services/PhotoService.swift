@@ -146,8 +146,15 @@ final class PhotoService {
     /// - Parameter knownRevealAt: the caller's already-loaded `Roll.revealAt` for `rollId`, if
     ///   any (see `developDate(forRoll:knownRevealAt:)`); passed straight through, unused for
     ///   personal shots.
+    /// - Parameter previewAspect: the live viewfinder's measured aspect at capture time
+    ///   (`CameraViewModel.previewAspectRatio`), the same value `CapturedPhotoCropper` was given
+    ///   to crop against. Diagnostic only, DEBUG builds: logged alongside the processed image's
+    ///   own pixel aspect when that deviates from `FlimTheme.frameAspect`, so an off-aspect
+    ///   capture (see the roll viewer's own per-photo log) can be traced back to whether the crop
+    ///   ran at all, or ran against a measurement that was itself off.
     func enqueueCapture(rawData: Data, stock: FilmStock, userId: UUID, rollId: UUID?,
                         knownRevealAt: Date? = nil,
+                        previewAspect: CGFloat? = nil,
                         onFinish: @escaping (Photo) async -> Void) {
         let previous = pipeline
         pipeline = Task {
@@ -168,6 +175,9 @@ final class PhotoService {
             // can thread them straight into the thumb/feed renditions instead of re-decoding the
             // master JPEG a second time.
             let (processed, graded) = await Self.gradeForCapture(rawData: rawData, stock: stock)
+            #if DEBUG
+            Self.logCaptureAspectIfMismatched(processed: processed, graded: graded, previewAspect: previewAspect)
+            #endif
             let filteredAt = ContinuousClock.now
 
             let photo = await captureAndUpload(imageData: processed, userId: userId, rollId: rollId,
@@ -243,6 +253,35 @@ final class PhotoService {
 
     private static let captureLog = Logger(subsystem: "com.flim.app", category: "capture")
     private static let errorLog = Logger(subsystem: "com.flim.app", category: "photos")
+
+    #if DEBUG
+    /// DEBUG-only: names an off-aspect capture the moment it's processed, before it ever reaches
+    /// Storage, so an owner report of a photo with visible letterboxing in the roll viewer
+    /// (`PhotoPagerView`'s own decode-time log) can be traced back to the capture that produced
+    /// it, and to whether the crop ran against a plausible preview measurement at all. Pixel size
+    /// comes from `graded` when grading succeeded (the common path); falls back to reading
+    /// `processed`'s own header (no full decode) for the rare cases with no graded image, the
+    /// Film Lab calibration branch and a grading failure.
+    private static func logCaptureAspectIfMismatched(processed: Data, graded: CGImage?, previewAspect: CGFloat?) {
+        let size: CGSize?
+        if let graded {
+            size = CGSize(width: graded.width, height: graded.height)
+        } else if let source = CGImageSourceCreateWithData(processed as CFData, nil),
+                  let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+                  let w = props[kCGImagePropertyPixelWidth] as? CGFloat,
+                  let h = props[kCGImagePropertyPixelHeight] as? CGFloat {
+            size = CGSize(width: w, height: h)
+        } else {
+            size = nil
+        }
+        guard let size, aspectDeviatesFromFrame(width: size.width, height: size.height) else { return }
+        let aspect = size.height > 0 ? size.width / size.height : 0
+        let previewText = previewAspect.map { String(format: "%.4f", $0) } ?? "unknown"
+        captureLog.info(
+            "capture aspect mismatch: \(Int(size.width), privacy: .public)x\(Int(size.height), privacy: .public) aspect=\(aspect, privacy: .public) expected=\(FlimTheme.frameAspect, privacy: .public) previewAspect=\(previewText, privacy: .public)"
+        )
+    }
+    #endif
 
     /// `Duration` to seconds. `.seconds` is a static factory on Duration, not a read accessor,
     /// so the components have to be recombined by hand.

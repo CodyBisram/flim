@@ -306,6 +306,10 @@ struct CachedImage<Content: View, Placeholder: View>: View {
     /// was deleted after a caller resolved its signed URL). Most call sites just show the built-in
     /// retry tile; a slideshow can use this to skip the frame instead.
     var onFailure: (() -> Void)? = nil
+    /// Called whenever a decode actually lands, from any cache tier or a fresh network fetch,
+    /// with the decoded image's pixel size. A diagnostic hook only: every caller but the roll
+    /// viewer's own aspect-mismatch logging leaves this nil and pays nothing extra.
+    var onDecoded: ((CGSize) -> Void)? = nil
     /// The curve the image fades in on when it arrives from the network. Default everywhere is
     /// the app's long-standing `easeIn`; the REVEAL passes an `easeOut` instead, because it is
     /// the one surface where the arrival lands under a clearing blur and an easeIn holds the
@@ -367,17 +371,21 @@ struct CachedImage<Content: View, Placeholder: View>: View {
         // Try the caches by stable key first, this can hit before any URL is resolved.
         if let key = cacheKey {
             let memKey = "\(key)|\(Int(maxPixel))" as NSString
-            if let cached = ImageCache.shared.object(forKey: memKey) { uiImage = cached; shown = true; return }
+            if let cached = ImageCache.shared.object(forKey: memKey) {
+                uiImage = cached; shown = true; onDecoded?(cached.size); return
+            }
             if let disk = await DiskImageCache.load("\(key)|\(Int(maxPixel))") {
                 guard generation == loadGeneration else { return }
                 ImageCache.set(disk, forKey: memKey)
-                uiImage = disk; shown = true; return
+                uiImage = disk; shown = true; onDecoded?(disk.size); return
             }
         }
         guard let url else { uiImage = nil; return }
         if cacheKey == nil {
             let memKey = "\(url.absoluteString)|\(Int(maxPixel))" as NSString
-            if let cached = ImageCache.shared.object(forKey: memKey) { uiImage = cached; shown = true; return }
+            if let cached = ImageCache.shared.object(forKey: memKey) {
+                uiImage = cached; shown = true; onDecoded?(cached.size); return
+            }
         }
         uiImage = nil
         shown = false
@@ -389,6 +397,7 @@ struct CachedImage<Content: View, Placeholder: View>: View {
         }
         guard generation == loadGeneration else { return }
         uiImage = image
+        onDecoded?(image.size)
         if reduceMotion {
             shown = true
         } else {

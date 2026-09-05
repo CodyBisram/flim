@@ -778,7 +778,8 @@ struct CameraView: View {
             // Serial pipeline: bakes the film look in + uploads one shot at a time, so a
             // rapid burst can't race and fail. Fires a local develop reminder on success.
             photos.enqueueCapture(rawData: data, stock: stock, userId: userId, rollId: rollId,
-                                  knownRevealAt: knownRevealAt) { photo in
+                                  knownRevealAt: knownRevealAt,
+                                  previewAspect: camera.previewAspectRatio) { photo in
                 await refreshUnsorted()   // keep the "to sort" count live as shots come in
                 guard notificationsEnabled else { return }
                 // Gated on the PHOTO's own rollId, not the roll selected at capture time: a roll

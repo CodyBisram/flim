@@ -1,4 +1,25 @@
 import SwiftUI
+import os
+
+/// Default tolerance for `aspectDeviatesFromFrame`: `CapturedPhotoCropper` targets an exact 3:4,
+/// but it deliberately refuses to crop when the live preview's measured aspect looks implausible
+/// (see its own doc), and the sensor's own frame is only "roughly" 4:3, so a hair of drift, or
+/// even a full uncropped sensor frame, is possible on a real capture. 0.5%, not stricter: JPEG
+/// rounding alone produces single-digit-pixel drift on an otherwise-correct 3:4 capture, and a
+/// threshold that fires on that would be noise, not a diagnostic.
+let frameAspectDeviationThreshold: CGFloat = 0.005
+
+/// Whether a pixel size's own aspect ratio (width / height) strays from `FlimTheme.frameAspect`
+/// by more than `threshold` (a fraction of the target). Pure and free-standing so the boundary is
+/// pinned by a test rather than only caught on a device with an odd photo already in hand.
+/// `PhotoService`'s capture-time diagnostic and `PhotoPagerView`'s own per-photo viewer one both
+/// call this rather than each inlining its own tolerance.
+func aspectDeviatesFromFrame(width: CGFloat, height: CGFloat,
+                              threshold: CGFloat = frameAspectDeviationThreshold) -> Bool {
+    guard width > 0, height > 0 else { return false }
+    let aspect = width / height
+    return abs(aspect - FlimTheme.frameAspect) / FlimTheme.frameAspect > threshold
+}
 
 /// How far the photo follows the finger during a paging swipe. At the first and last shot it
 /// resists instead of sliding into blank space, so overswiping reads as a wall rather than dead
@@ -261,6 +282,11 @@ struct PhotoPagerView: View {
     /// page is already on screen, purely so reading it inside `photoPage` forces that body to
     /// re-evaluate. See `watchDeveloping`'s own doc.
     @State private var developPulse = 0
+    #if DEBUG
+    /// Which roll photos have already logged a decoded aspect-mismatch this session, so a shot
+    /// swiped past repeatedly doesn't spam the log on every revisit. See `logAspectMismatchOnce`.
+    @State private var loggedAspectMismatchIds: Set<UUID> = []
+    #endif
 
     private var current: Photo? { photos.indices.contains(selection) ? photos[selection] : nil }
 
@@ -1129,11 +1155,24 @@ struct PhotoPagerView: View {
                     maxPixel: 1400,
                     cacheKey: resolvedCacheKey(isFull: fullyResolvedIds.contains(photo.id),
                                                 displayPath: photo.displayPath, viewPath: photo.viewPath),
-                    onFailure: failureHandler
+                    onFailure: failureHandler,
+                    onDecoded: aspectMismatchLogger(for: photo)
                 ) { image in
                     image
                         .resizable()
-                        .scaledToFit()
+                        // Roll-rack mode's box is the fixed 3:4 shape the reveal and the grid
+                        // both fill (`RollRevealView`, `PhotoGridCell`), so this fills it too
+                        // rather than fitting: a photo that isn't EXACTLY 3:4 (the sensor frame
+                        // is only "roughly" 4:3, and `CapturedPhotoCropper` refuses to crop on an
+                        // implausible preview measurement) used to letterbox inside the box under
+                        // `.scaledToFit()`, exposing the paging `TabView`'s own opaque page
+                        // background in the gap, which reads as a white border around the photo.
+                        // For a genuinely 3:4 image fill and fit are identical, so this changes
+                        // nothing for the normal case. The other modes here are NOT fixed-aspect
+                        // (night-rack is a fixed box too but wasn't the reported surface; the
+                        // legacy/widget path is a flexible fill with no box to overflow), so they
+                        // keep `.scaledToFit()` unchanged.
+                        .aspectRatio(contentMode: (showsRollRack || showsNightRack) ? .fill : .fit)
                         .scaleEffect(scale, anchor: zoomAnchor)
                         .offset(offset)
                         .gesture(pinchToZoom)
@@ -1169,6 +1208,40 @@ struct PhotoPagerView: View {
                                      aspect: showsRollRack ? 3.0 / 4.0 : nil,
                                      cornerRadius: showsAnyRack ? 12 : 0))
     }
+
+    #if DEBUG
+    private static let aspectLog = Logger(subsystem: "com.flim.app", category: "viewer")
+
+    /// The `onDecoded` hook `photoPage` hands `CachedImage`, scoped to the roll viewer only. A
+    /// plain `showsRollRack ? { ... } : nil` inline in `CachedImage`'s call, wrapped in
+    /// `#if DEBUG`/`#else`, would put a bare `#if` in the middle of a parenthesized argument
+    /// list, which does not parse; this indirection keeps the call site itself identical in both
+    /// configurations.
+    private func aspectMismatchLogger(for photo: Photo) -> ((CGSize) -> Void)? {
+        guard showsRollRack else { return nil }
+        return { size in logAspectMismatchOnce(photo: photo, decodedSize: size) }
+    }
+
+    /// DEBUG-only: names an off-aspect photo the moment it decodes in the roll viewer, once per
+    /// photo id per session (`loggedAspectMismatchIds`), so a device test against a roll reported
+    /// to have "white borders" can point at the exact offending shot instead of the whole roll.
+    /// See `PhotoService`'s own capture-time version of this same check for where such a photo
+    /// could have come from in the first place.
+    private func logAspectMismatchOnce(photo: Photo, decodedSize: CGSize) {
+        guard !loggedAspectMismatchIds.contains(photo.id),
+              aspectDeviatesFromFrame(width: decodedSize.width, height: decodedSize.height)
+        else { return }
+        loggedAspectMismatchIds.insert(photo.id)
+        let aspect = decodedSize.height > 0 ? decodedSize.width / decodedSize.height : 0
+        Self.aspectLog.info(
+            "roll viewer photo \(photo.id.uuidString, privacy: .public) decoded \(Int(decodedSize.width), privacy: .public)x\(Int(decodedSize.height), privacy: .public) aspect=\(aspect, privacy: .public) expected=\(FlimTheme.frameAspect, privacy: .public)"
+        )
+    }
+    #else
+    /// Release builds do no per-photo decode logging; `photoPage`'s call site stays identical
+    /// either way.
+    private func aspectMismatchLogger(for photo: Photo) -> ((CGSize) -> Void)? { nil }
+    #endif
 
     /// A still-developing shot in night-rack mode: there is no image to show yet, so the box
     /// stays a near-black well. The status row below names when it will be ready. Lives as

@@ -194,4 +194,52 @@ final class PhotoPagerTests: XCTestCase {
         XCTAssertEqual(commentsRowLabel(count: 2), "2 comments")
         XCTAssertEqual(commentsRowLabel(count: 47), "47 comments")
     }
+
+    // MARK: - aspectDeviatesFromFrame
+    //
+    // Context: the roll viewer used to `.scaledToFit()` a photo inside its fixed 3:4 box, so a
+    // photo whose pixels weren't EXACTLY 3:4 (the sensor frame is only "roughly" 4:3, and
+    // `CapturedPhotoCropper` refuses to crop on an implausible preview measurement) letterboxed,
+    // exposing the paging `TabView`'s own opaque background as a white border. This is the
+    // tolerance both the capture-time (`PhotoService`) and viewer-time (`PhotoPagerView`)
+    // diagnostics use to flag exactly that kind of photo.
+
+    func testExactFrameAspectNeverDeviates() {
+        // 900x1200 is `PhotoService.makeDemoImage`'s own fixture size, exactly 3:4.
+        XCTAssertFalse(aspectDeviatesFromFrame(width: 900, height: 1200))
+        XCTAssertFalse(aspectDeviatesFromFrame(width: 3, height: 4))
+    }
+
+    func testATinyDeviationUnderTheThresholdIsNotFlagged() {
+        // 900x1198: aspect 0.7513, about 0.17% off 0.75, comfortably inside the 0.5% band that
+        // JPEG rounding and ordinary capture noise can produce on a genuinely correct 3:4 shot.
+        XCTAssertFalse(aspectDeviatesFromFrame(width: 900, height: 1198))
+    }
+
+    func testADeviationOverTheThresholdIsFlagged() {
+        // 900x1170: aspect 0.7692, about 2.6% off 0.75, well past the 0.5% band, the shape a full
+        // uncropped sensor frame or a stale preview measurement would produce.
+        XCTAssertTrue(aspectDeviatesFromFrame(width: 900, height: 1170))
+    }
+
+    func testALandscapeImageIsFlagged() {
+        // A photo rotated or fed in sideways: aspect > 1 is nowhere near 0.75 either way.
+        XCTAssertTrue(aspectDeviatesFromFrame(width: 1200, height: 900))
+    }
+
+    func testASquareImageIsFlagged() {
+        XCTAssertTrue(aspectDeviatesFromFrame(width: 1000, height: 1000))
+    }
+
+    func testZeroOrNegativeSizeIsNeverFlagged() {
+        // No pixel size to reason about; must fail closed (no false alarm), not crash on the
+        // division.
+        XCTAssertFalse(aspectDeviatesFromFrame(width: 0, height: 1200))
+        XCTAssertFalse(aspectDeviatesFromFrame(width: 900, height: 0))
+    }
+
+    func testCustomThresholdIsRespected() {
+        // The same 2.6%-off size from above passes under a looser threshold.
+        XCTAssertFalse(aspectDeviatesFromFrame(width: 900, height: 1170, threshold: 0.05))
+    }
 }

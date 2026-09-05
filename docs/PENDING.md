@@ -172,6 +172,18 @@ actually do. Worth deciding before more is built on top of rolls.
 
 ## Next up
 
+### done 2026-09-05: white borders in the roll viewer
+
+A member's photos showed white bands in the roll viewer only. The viewer fitted the image
+inside its fixed 3:4 box while the grid and the reveal fill it, so any photo not exactly 3:4
+left a transparent gap, and the paging container's own default page background (white) showed
+through. Fixed: the roll viewer and the Darkroom pager fill and clip like everything else; for a
+true 3:4 photo nothing changes. Which of her photos were off-aspect, and why (the cropper
+refuses to crop on an implausible viewfinder measurement and the sensor frame is "roughly"
+4:3), is not yet known: two DEBUG logs now name any capture or decoded viewer image that
+deviates from 3:4 by more than 0.5%, with the preview aspect the cropper was given. Read with
+`log stream --predicate 'subsystem == "com.flim.app"' --info` on a device.
+
 ### done 2026-09-04, night: the reveal that jumped back
 
 Owner and a member saw the reveal move back a frame while scrolling and replay frames already
