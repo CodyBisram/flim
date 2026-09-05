@@ -50,7 +50,9 @@ When the invite list opens, the pair below is worth revisiting. Its real gain is
 Both fields are metadata, editable on any submission, so this costs nothing to defer.
 
 ## Promotional text (170 char max, editable anytime without review)
-> The reveal lost its timer: page a developed roll at your own speed. Invites are finite now, three each, and you earn one back when the friend you brought in shoots theirs. (169 chars, for the 1.5 window)
+> Chapters: on the first of the month, the month you shared arrives on your page. It plays like a reveal and ends on the month in numbers. Every past month is there. (162 chars, for the 1.5.1 window)
+>
+> Superseded, 1.5 window: The reveal lost its timer: page a developed roll at your own speed. Invites are finite now, three each, and you earn one back when the friend you brought in shoots theirs. (169 chars, for the 1.5 window)
 >
 > Superseded, 1.4.2 window: New: badges for how you shoot, a Darkroom widget, a widget that resurfaces last month's frames, and a one-tap shutter on your Lock Screen. (135 chars)
 >
@@ -71,6 +73,8 @@ Both fields are metadata, editable on any submission, so this costs nothing to d
 
     Rolls for your people. Start a shared roll with up to 50 friends and shoot into it together. Everyone's photos land in the same place, and the whole roll develops at once. Trips, parties, nights out, all revealed together. Watch a roll fill up as its reveal gets closer, with a countdown on your lock screen, then play it back one shot at a time. Join with an invite code, comment on each other's photos, react with emojis.
 
+    Chapters. On the first of every month, the month you shared arrives on your page as a cover. It plays like a reveal, fifteen frames picked on your phone, and ends on the month in numbers: your most reacted shot, your biggest fan, the hour you shoot at. You decide which numbers other people see. Every past month is already there, and any month can be shared as a contact sheet.
+
     A feed that's yours. Follow friends, see what they post, react and comment. Mention someone with @ to bring them into it. FLIM is invite-only, so everyone you see is someone a friend chose to let in. No public like counts. No algorithm deciding what you look at. No strangers.
 
     FEATURES
@@ -78,6 +82,7 @@ Both fields are metadata, editable on any submission, so this costs nothing to d
     • Twelve hour development window, with a roll's shots revealing together
     • Shared rolls with up to 50 members, joined by invite code
     • A reveal that plays your roll back one shot at a time, with a lock screen countdown
+    • Chapters: every month you shared, as a playable recap with the month in numbers
     • A private feed from the people you follow
     • Reactions, comments, and @mentions on photos and posts
     • Photo tagging you can edit any time, and you can untag yourself from anything
@@ -128,6 +133,55 @@ without either word appearing here.
 Two rules if this is edited again: never repeat a word across name, subtitle and keywords, and do
 not add plurals of words already present. Apple handles both.
 
+## What's New (version 1.5.1)
+
+> **PASTE ONLY THE INDENTED BLOCK BELOW.** Everything under "Ship notes" is internal.
+
+    Chapters. On the first of every month, the month you just shared arrives on your page as a cover. Open it and it plays like a reveal: fifteen frames chosen on your phone for the ones worth seeing, then the month in numbers. Your most reacted shot, your biggest fan, the hour you shoot at, the day you shot the most, your longest streak, the people you filled rolls with. You choose which of those numbers other people see. Every past month is already there, and you can share any month as a contact sheet.
+
+    Rolls got steadier. The reveal no longer steps back a frame while you scroll. A roll's photographs open in the order they were taken, and a viewer that used to stop at a hundred now holds the whole roll. A burst of near identical shots stacks into one frame in the grid, tap to fan it open, and the reveal plays the sharpest of them with a note about the rest. When a roll develops, everyone in it hears about it, not only the people who did not shoot. A roll that has already developed no longer takes new members.
+
+    Notifications land where they say. A comment on a roll photograph opens that photograph with the thread. A reaction opens the photograph. The daily digest opens the top of the feed and counts only what arrived since you last opened the app, so it stops promising you things you have already seen. Everything that reaches your phone as a push now also appears in your activity, including the threads you joined but did not start.
+
+    A photograph shared into a chapter opens as the post it is, with its reactions and its thread. The viewer's reactions row never shows the count from the frame you just left. And if the app ever asked you to retry an upload that had already gone through, it will stop asking on its own.
+
+### Ship notes (internal, do NOT paste)
+
+**Promotional text for the 1.5.1 window** (170 char max, editable anytime without review):
+
+> Chapters: on the first of the month, the month you shared arrives on your page. It plays like a reveal and ends on the month in numbers. Every past month is there. (162 chars)
+
+**What was deliberately left out of the copy.** The rename feature was removed (nothing to say
+about a thing that is gone). The cross-account cache guard, the profiles view flip, the owner
+identity pin and the join refusal's server side are all security or integrity work with no user
+story; none is mentioned. Burst detection runs Vision on device and nothing about the image leaves
+the phone; the copy says "chosen on your phone" and "near identical shots" and no more, because
+the mechanism is not the point. The "you choose which numbers other people see" line is load
+bearing for App Review: it names the control.
+
+**The look did not change in 1.5.1.** Flash falloff shipped in this train (dec7b57) and grain was
+tried and reverted the same week; the rendered look is byte identical to 1.5.0 except for flash
+frames, which now carry real falloff. Screenshots shot on 345 are current.
+
+**MARKETING_VERSION is 1.5.1 on BOTH targets in `project.yml`** since f8d1dd8 (2026-08-31); the
+release candidate is build 345 (df918be). Releasing closes the train, so the first upload after
+approval must carry 1.5.2 (or 1.6) or ASC rejects it with "Invalid Pre-Release Train".
+
+After the release goes READY_FOR_SALE, arm the update nudge (the field is `latest_version`, NOT
+`minimum_version`):
+
+    update app_release_gate set latest_version = '1.5.1';
+
+`minimum_version` stays 0.0.0.
+
+**Release option:** choose "Manually release" at submission.
+
+**Reviewer path:** confirm `ReviewerSignInSheet` still works against build 345 before submitting.
+
+**App Privacy:** unchanged. Vision runs on device; the two new photo columns (`burst_group`,
+`sharpness`) are derived integers inside the already declared Photos data type; the chapter stats
+are aggregates of data already visible on the profile. No new data type, no tracking.
+
 ## What's New (version 1.5)
 
 > **PASTE ONLY THE INDENTED BLOCK BELOW.** Everything under "Ship notes" is internal.
@@ -159,8 +213,8 @@ mechanics beyond "three each and you earn one back" are also out, because the ea
 (inviter only, on the invitee's FIRST PHOTO) is more detail than a release note should carry and
 is stated in the app itself.
 
-**Chapters is NOT in this release.** It was backlogged 2026-08-29. If it appears in any copy, that
-copy is wrong.
+**Chapters was NOT in 1.5.** It was backlogged 2026-08-29 and shipped in 1.5.1 (see that
+section above). Kept here so the 1.5 notes stay a true record of that release.
 
 **The look did not change in 1.5.** If flash falloff and grain land before submission, this
 section needs a paragraph and the screenshots need reshooting, because renditions are never
@@ -460,19 +514,22 @@ FLIM includes user-generated content (photos, comments, tags, reactions). Apple'
 
 ## Screenshots
 
-Five primary screenshots, in recommended App Store upload order (the first 2-3 appear prominently in search):
+Five primary screenshots, in recommended App Store upload order (the first 2-3 appear prominently in search). **Reshoot on build 345**; the 1.5.0 set shows a square Darkroom, the old Rolls list, and a progress-bar reveal, none of which exist now.
 
-1. **02-feed-post.png**: The Feed showing a @cody post of a sunlit hydrangea garden with the film look, emoji reaction bar (heart, fire, laugh, wow, raised hands), and comment field. Caption: *"A feed that's just your friends."*
+1. **Feed.** A friend's post with the film look, the six-emoji reaction row, and the comment field. Caption: *"A feed that's just your friends."*
 
-2. **01-camera-viewfinder.png**: The live Camera tab viewfinder framing a vibrant garden of purple flowers and greenery, with Personal mode pill top-left, zoom pills, and shutter button visible. Shows the film look applied to the live viewfinder. Caption: *"Shoot like a disposable."*
+2. **Camera.** The live viewfinder with the roll pill showing a developing roll's countdown. Caption: *"Shoot like a disposable."*
 
-3. **05-roll-invite-code.png**: The New Roll share sheet overlay on the Rolls list, displaying a 6-character invite code (World Cup '26 / ZPE7EF) with Copy code and Share buttons. Shows the invite mechanic. Caption: *"Invite them with a code."*
+3. **Chapters.** Your profile with the Chapters shelf between the actions and the film-strip grid, one cover tagged RECAP. Caption: *"Every month you shared, kept."*
 
-4. **03-darkroom-developing.png**: The Darkroom showing "28 shots", a "2 DEVELOPING" row (hourglass tiles, one tagged World Cup '26) above a DEVELOPED grid of film-look photos. Shows the development mechanic. Caption: *"Watch them develop."*
+4. **The month in numbers.** The closing card: most reacted with its thumb, biggest fan, golden hour, streak, longest gap. Caption: *"The month in numbers."*
 
-5. **04-rolls-list.png**: The Rolls tab list showing World Cup '26 (developing, reveals in 11h 59m), Summer '26, Graduation Party, Road Trip, each with member count and invite code. Shows shared rolls. Caption: *"Rolls for your people."*
+5. **Rolls.** The Rolls screen with a developing roll at the top and its countdown, ready rolls gathered under it, the album below. Caption: *"Rolls for your people."*
 
-**Spare:** 06-rolls-list-alt.png (near-duplicate of 04, hold for future alternates).
+**Spare:** the reveal mid-play with the film strip, and a roll grid with a burst stack showing its count.
+
+Use the seeded demo content (`-seedDemo`), never a real account's photographs, and confirm no
+recognizable face appears without consent.
 
 ### Before uploading
 
