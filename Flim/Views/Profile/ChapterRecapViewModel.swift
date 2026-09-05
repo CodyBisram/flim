@@ -36,8 +36,8 @@ final class ChapterRecapViewModel {
     /// month's first `curationLimit` shots, or all of them if fewer) the instant `chapter_photos`
     /// itself returns, so the recap is playable immediately, then replaced with `ChapterCuration`'s
     /// real quality/diversity pick, UNION any photo a stat line on the closing card points at (see
-    /// `load()`), so tapping "Most reacted"/"Most commented" can always land on a real page in
-    /// this same deck rather than a photo curation dropped. The second write is skipped for as
+    /// `load()`), so tapping "Most reacted"/"Most commented"/"Longest gap" can always land on a
+    /// real page in this same deck rather than a photo curation dropped. The second write is skipped for as
     /// long as `isPlayerMounted` stays true: see that property's own doc.
     private(set) var deck: [ChapterPhoto] = []
     var urls: [String: URL] = [:]
@@ -189,7 +189,10 @@ final class ChapterRecapViewModel {
         loaded = true
 
         let isCompletedMonth = !chapter.isCurrentMonth()
-        let highlightIds = [stats[.mostReacted]?.photoId, stats[.mostCommented]?.photoId].compactMap { $0 }
+        // `longestGap` joins `mostReacted`/`mostCommented` here for the same reason: whatever the
+        // closing card can point a tap at must actually survive curation's trim.
+        let highlightIds = [stats[.mostReacted]?.photoId, stats[.mostCommented]?.photoId, stats[.longestGap]?.photoId]
+            .compactMap { $0 }
 
         isLoadingDeck = true
         defer { isLoadingDeck = false }
@@ -223,8 +226,8 @@ final class ChapterRecapViewModel {
         var pickedSet = Set(pickedIds)
         // Whatever the closing card can point a tap at must actually be in the deck, even when
         // curation would otherwise have dropped it: a month with more than fifteen candidates
-        // trims aggressively, and the most-reacted/most-commented shot is exactly the kind of
-        // single photo that trim has no reason to keep on its own merits.
+        // trims aggressively, and the most-reacted/most-commented/longest-gap shot is exactly the
+        // kind of single photo that trim has no reason to keep on its own merits.
         pickedSet.formUnion(highlightIds)
         // `photos` is already `taken_at` ascending, so filtering it (rather than reassembling
         // from `pickedIds`' own order) is what keeps the deck chronological.
@@ -242,7 +245,8 @@ final class ChapterRecapViewModel {
         // The closing card's own thumb, straight off the stat row: usually the same value as the
         // matching `ChapterPhoto.thumbPath` above, but resolved explicitly in case the RPC ever
         // hands back a different rendition for it.
-        let highlightThumbPaths = [stats[.mostReacted]?.photoThumbPath, stats[.mostCommented]?.photoThumbPath]
+        let highlightThumbPaths = [stats[.mostReacted]?.photoThumbPath, stats[.mostCommented]?.photoThumbPath,
+                                    stats[.longestGap]?.photoThumbPath]
             .compactMap { $0 }
         paths.formUnion(highlightThumbPaths)
         if !paths.isEmpty {

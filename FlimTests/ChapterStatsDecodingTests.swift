@@ -96,4 +96,58 @@ struct ChapterStatsDecodingTests {
         #expect(keyed[.mostCommented] == nil)
         #expect(keyed[.nightShots] == nil)
     }
+
+    // MARK: - user_id (the five newer stats)
+
+    @Test("a person-backed row (biggest_fan) decodes user_id")
+    func decodesUserId() throws {
+        let userId = UUID()
+        let json = Data(#"""
+        {"stat_key":"biggest_fan","value_int":34,"value_text":"sabs","user_id":"\#(userId.uuidString)"}
+        """#.utf8)
+        let row = try JSONDecoder().decode(ChapterStatRow.self, from: json)
+        #expect(row.resolvedKey == .biggestFan)
+        #expect(row.valueInt == 34)
+        #expect(row.valueText == "sabs")
+        #expect(row.userId == userId)
+    }
+
+    @Test("a row from a server that doesn't send user_id yet decodes to nil, not a failure")
+    func missingUserIdDecodesToNilNotFailure() throws {
+        let json = Data(#"""
+        {"stat_key":"top_given_reaction","value_int":219,"value_text":"❤️"}
+        """#.utf8)
+        let row = try JSONDecoder().decode(ChapterStatRow.self, from: json)
+        #expect(row.userId == nil)
+    }
+
+    @Test("a fixture carrying all five newer stat_keys decodes and keys every one")
+    func decodesFiveNewerStats() throws {
+        let fanId = UUID()
+        let mvpId = UUID()
+        let gapPhotoId = UUID()
+        let gapPostId = UUID()
+        let json = Data(#"""
+        [
+         {"stat_key":"biggest_fan","value_int":34,"value_text":"sabs","user_id":"\#(fanId.uuidString)"},
+         {"stat_key":"top_given_reaction","value_int":219,"value_text":"❤️"},
+         {"stat_key":"golden_hour","value_int":20,"value_text":"9"},
+         {"stat_key":"roll_mvp","value_int":10,"value_text":"tristan","user_id":"\#(mvpId.uuidString)"},
+         {"stat_key":"longest_gap","value_int":5,"photo_id":"\#(gapPhotoId.uuidString)",
+          "photo_thumb_path":"gap.jpg","post_id":"\#(gapPostId.uuidString)"}
+        ]
+        """#.utf8)
+        let rows = try JSONDecoder().decode([ChapterStatRow].self, from: json)
+        let keyed = rows.keyedByStat()
+        #expect(keyed.count == 5)
+        #expect(keyed[.biggestFan]?.userId == fanId)
+        #expect(keyed[.biggestFan]?.valueText == "sabs")
+        #expect(keyed[.topGivenReaction]?.valueInt == 219)
+        #expect(keyed[.goldenHour]?.valueInt == 20)
+        #expect(keyed[.goldenHour]?.valueText == "9")
+        #expect(keyed[.rollMVP]?.userId == mvpId)
+        #expect(keyed[.longestGap]?.valueInt == 5)
+        #expect(keyed[.longestGap]?.photoId == gapPhotoId)
+        #expect(keyed[.longestGap]?.postId == gapPostId)
+    }
 }

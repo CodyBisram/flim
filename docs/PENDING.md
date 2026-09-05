@@ -172,6 +172,19 @@ actually do. Worth deciding before more is built on top of rolls.
 
 ## Next up
 
+### done 2026-09-05: the retry pill that would not go away
+
+A member on build 327 kept seeing "Retry N" on the camera while every one of his photos was on
+the server with all renditions, and the Darkroom showed them to sort. Reinstalling cleared it,
+which located the fault: the retry queue is a set of sidecar files in Application Support, and
+the success path removed a capture's sidecar only AFTER the row insert landed, at a suspension
+point. A hard kill in that window (shoot, then close the app) left the file behind with the photo
+complete server-side, and `restoreFailedUploads` resurrected it on every launch with no check
+against the server. Fixed: restore and retry now ask `photos` which records already exist (by id,
+falling back to storage path) and drop those sidecars; the duplicate-id catch on insert is
+tightened to 23505 only. A phone already in this state heals on its first launch of the new
+build; no reinstall. Ships after 342.
+
 ### done 2026-09-05: the second rolls and chapters audit, and everything it changed
 
 Three passes. **Correctness (BLOCK, fixed):** `ChapterService` wrote its three caches with no
@@ -207,9 +220,14 @@ stats count POST reactions and the viewer read the roll-photo tables; `chapter_p
 when a post is known (a no-op for every other caller). Found on the way: presented covers need
 `.environment(auth)` reapplied; the demo host now does.
 
-**Five new stats, server live, app half in flight:** biggest fan (opens their profile), the
-reaction you gave most, golden hour, roll MVP (opens their profile), longest gap with the frame
-that ended it. Owner's August: sabs 34, heart 219, 8pm, 5 days.
+**Five new stats, DONE both halves:** biggest fan (opens their profile), the reaction you gave
+most, golden hour ("Most of your shots were around 8pm", 12/24h by locale), roll MVP (opens their
+profile), longest gap with the frame that ended it. Owner's August: sabs 34, heart 219, 8pm, 5
+days. The closing card now picks the five most interesting of the eleven by a small documented
+score (counts relative to the month's shots; a day or hour only when concentrated; a picture line
+guaranteed when one exists; ties by the old order) instead of a fixed priority. The picker has
+eleven toggles. Unverified on device: the emoji glyph in the mono value (the simulator draws every
+emoji as a box), and the profile tap for fan and MVP against real ids.
 
 ### done 2026-09-05: white borders in the roll viewer
 

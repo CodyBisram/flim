@@ -67,9 +67,31 @@ struct ChapterStatsVisibilityTests {
         #expect(ChapterStatsVisibility.toggles(fromPublicKeys: keys).isEmpty)
     }
 
-    @Test("all six toggles cover the six primary keys the closing card's lines use, one each")
-    func togglesCoverExactlySixPrimaryKeys() {
+    @Test("all eleven toggles cover the eleven primary keys the closing card's lines use, one each")
+    func togglesCoverExactlyElevenPrimaryKeys() {
         let primaryKeys = Set(ChapterStatToggle.allCases.map(\.primaryKey))
-        #expect(primaryKeys == [.mostReacted, .mostCommented, .busiestDay, .nightShots, .streakDays, .rollsCount])
+        #expect(primaryKeys == [
+            .mostReacted, .mostCommented, .busiestDay, .nightShots, .streakDays, .rollsCount,
+            .biggestFan, .topGivenReaction, .goldenHour, .rollMVP, .longestGap,
+        ])
+    }
+
+    // MARK: - The five newer toggles
+
+    @Test("each of the five newer toggles has no rider, sending only its own key")
+    func newerTogglesSendOnlyTheirOwnKey() {
+        #expect(ChapterStatsVisibility.publicKeys(fromEnabledToggles: [.biggestFan]) == ["biggest_fan"])
+        #expect(ChapterStatsVisibility.publicKeys(fromEnabledToggles: [.topGivenReaction]) == ["top_given_reaction"])
+        #expect(ChapterStatsVisibility.publicKeys(fromEnabledToggles: [.goldenHour]) == ["golden_hour"])
+        #expect(ChapterStatsVisibility.publicKeys(fromEnabledToggles: [.rollMVP]) == ["roll_mvp"])
+        #expect(ChapterStatsVisibility.publicKeys(fromEnabledToggles: [.longestGap]) == ["longest_gap"])
+    }
+
+    @Test("a narrowed selection of newer toggles round-trips")
+    func newerTogglesRoundTrip() {
+        let savedKeys = ["biggest_fan", "roll_mvp"]
+        let toggles = ChapterStatsVisibility.toggles(fromPublicKeys: savedKeys)
+        #expect(toggles == [.biggestFan, .rollMVP])
+        #expect(Set(ChapterStatsVisibility.publicKeys(fromEnabledToggles: toggles)) == Set(savedKeys))
     }
 }

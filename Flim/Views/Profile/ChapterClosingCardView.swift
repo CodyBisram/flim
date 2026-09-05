@@ -18,6 +18,9 @@ struct ChapterClosingCardView: View {
     /// uses). Missing entries just show the placeholder tile rather than blocking the card.
     let thumbURLs: [String: URL]
     let onSelectPhoto: (ChapterStatLine) -> Void
+    /// Opens the given person's profile, for the two lines that name someone instead of a photo
+    /// (`biggestFan`, `rollMVP`); see `ChapterStatLine.opensProfile`.
+    let onSelectProfile: (UUID) -> Void
     let onPlayAgain: () -> Void
     let onClose: () -> Void
 
@@ -111,6 +114,15 @@ struct ChapterClosingCardView: View {
             }
             .buttonStyle(.plain)
             .accessibilityHint("Opens this photo")
+        } else if let userId = line.userId {
+            Button {
+                Haptics.tap()
+                onSelectProfile(userId)
+            } label: {
+                lineContent(line)
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint("Opens their profile")
         } else {
             lineContent(line)
         }
@@ -142,11 +154,11 @@ struct ChapterClosingCardView: View {
     }
 
     /// The value itself, mono and in the accent, matching `CHAPTER 08`/the date stamp's own
-    /// language. Split in two for `.mostReacted` when it carries an emoji suffix: SF Mono (what
-    /// `design: .monospaced` actually is) doesn't reliably cascade to Apple Color Emoji when an
-    /// emoji sits inline in the same `Text`, and renders a tofu box instead. Rendering the emoji
-    /// in the system's own default-design font, right next to the mono count, sidesteps that
-    /// without giving up mono styling for the digits.
+    /// language. Split in two whenever a line carries an emoji (`.mostReacted`'s suffix, or
+    /// `.yourReaction`'s prefix): SF Mono (what `design: .monospaced` actually is) doesn't
+    /// reliably cascade to Apple Color Emoji when an emoji sits inline in the same `Text`, and
+    /// renders a tofu box instead. Rendering the emoji in the system's own default-design font,
+    /// right next to the mono count, sidesteps that without giving up mono styling for the digits.
     @ViewBuilder
     private func valueLine(_ line: ChapterStatLine) -> some View {
         if let (count, emoji) = Self.mostReactedEmojiSuffix(line) {
@@ -156,6 +168,14 @@ struct ChapterClosingCardView: View {
                     .foregroundStyle(accent)
                 Text(emoji)
                     .flimFont(17, relativeTo: .body)
+            }
+        } else if let (emoji, rest) = Self.yourReactionEmojiPrefix(line) {
+            HStack(spacing: 6) {
+                Text(emoji)
+                    .flimFont(17, relativeTo: .body)
+                Text(rest)
+                    .flimFont(17, weight: .medium, design: .monospaced, relativeTo: .body)
+                    .foregroundStyle(accent)
             }
         } else {
             Text(line.value)
@@ -175,6 +195,20 @@ struct ChapterClosingCardView: View {
         let emoji = String(line.value[line.value.index(after: spaceIndex)...])
         guard !count.isEmpty, !emoji.isEmpty else { return nil }
         return (count, emoji)
+    }
+
+    /// Splits `line.value` into its leading emoji and trailing count for "Your reaction"
+    /// ("❤️ · 219 times"), the one line `ChapterStatsFormatting` ever puts an emoji at the FRONT
+    /// of, rather than the back like `.mostReacted`.
+    private static func yourReactionEmojiPrefix(_ line: ChapterStatLine) -> (emoji: String, rest: String)? {
+        guard line.kind == .yourReaction else { return nil }
+        // Splits on the FIRST space only, so the "· " separator stays part of `rest` and still
+        // renders between the two halves, rather than being consumed by the split.
+        guard let spaceIndex = line.value.firstIndex(of: " ") else { return nil }
+        let emoji = String(line.value[..<spaceIndex])
+        let rest = String(line.value[line.value.index(after: spaceIndex)...])
+        guard !emoji.isEmpty, !rest.isEmpty else { return nil }
+        return (emoji, rest)
     }
 }
 
@@ -198,7 +232,7 @@ struct ChapterClosingCardView: View {
                                  photoId: nil, photoThumbPath: nil),
             ],
             thumbURLs: [:],
-            onSelectPhoto: { _ in }, onPlayAgain: {}, onClose: {}
+            onSelectPhoto: { _ in }, onSelectProfile: { _ in }, onPlayAgain: {}, onClose: {}
         )
     }
 }
@@ -213,7 +247,7 @@ struct ChapterClosingCardView: View {
                                  photoId: nil, photoThumbPath: nil),
             ],
             thumbURLs: [:],
-            onSelectPhoto: { _ in }, onPlayAgain: {}, onClose: {}
+            onSelectPhoto: { _ in }, onSelectProfile: { _ in }, onPlayAgain: {}, onClose: {}
         )
     }
 }

@@ -72,6 +72,11 @@ enum ChapterPreviewFixtures {
     private static let maxPixels: [CGFloat] = [340, 500, 200, 120, 1400]
 
     private static var seeded = false
+    /// Fixture ids for the two person-backed lines ("Biggest fan", "Roll MVP"); nobody real, but
+    /// stable so both lines render a tappable-looking row without crashing if ever actually
+    /// tapped in the demo harness (it would just push an empty `UserPageView`).
+    private static let fanId = UUID(uuidString: "00000000-0000-0000-0000-0000000000FA") ?? UUID()
+    private static let mvpId = UUID(uuidString: "00000000-0000-0000-0000-0000000000FB") ?? UUID()
 
     static func seed(into chapters: ChapterService, profileId: UUID) {
         guard !seeded else { return }
@@ -116,8 +121,11 @@ enum ChapterPreviewFixtures {
             // Only the live current month gets fabricated `chapter_stats`, so `-chapterClosingDemo`
             // (which jumps to the first, i.e. live, chapter) has something to render; the closed
             // months stay stat-less, exercising the "no closing card" path for those.
-            if back == 0, let mostReacted = chapterPhotos.first, let mostCommented = chapterPhotos.last {
+            if back == 0, let mostReacted = chapterPhotos.first, let mostCommented = chapterPhotos.last,
+               chapterPhotos.count > 2 {
+                let gapPhoto = chapterPhotos[chapterPhotos.count / 2]
                 chapters.statsByChapter[key] = [
+                    .shots: ChapterStatRow(statKey: "shots", valueInt: shotTotal),
                     .mostReacted: ChapterStatRow(statKey: "most_reacted", valueInt: 12,
                                                   photoId: mostReacted.id, photoThumbPath: mostReacted.thumbPath),
                     .topReaction: ChapterStatRow(statKey: "top_reaction", valueInt: 12, valueText: "❤️"),
@@ -129,6 +137,14 @@ enum ChapterPreviewFixtures {
                     .streakDays: ChapterStatRow(statKey: "streak_days", valueInt: 6),
                     .rollsCount: ChapterStatRow(statKey: "rolls_count", valueInt: 3),
                     .peopleShotWith: ChapterStatRow(statKey: "people_shot_with", valueInt: 7),
+                    .biggestFan: ChapterStatRow(statKey: "biggest_fan", valueInt: 34, valueText: "sabs",
+                                                 userId: Self.fanId),
+                    .topGivenReaction: ChapterStatRow(statKey: "top_given_reaction", valueInt: 219, valueText: "❤️"),
+                    .goldenHour: ChapterStatRow(statKey: "golden_hour", valueInt: 20, valueText: "9"),
+                    .rollMVP: ChapterStatRow(statKey: "roll_mvp", valueInt: 10, valueText: "tristan",
+                                              userId: Self.mvpId),
+                    .longestGap: ChapterStatRow(statKey: "longest_gap", valueInt: 5, photoId: gapPhoto.id,
+                                                 photoThumbPath: gapPhoto.thumbPath),
                 ]
             }
         }

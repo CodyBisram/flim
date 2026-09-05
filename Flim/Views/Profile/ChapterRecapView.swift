@@ -49,6 +49,11 @@ struct ChapterRecapView: View {
     /// never again after the first time on their own, same one-shot shape as
     /// `RollDetailView.revealSeenKey`.
     @State private var showFirstRunLine = false
+    /// The closing card's "Biggest fan"/"Roll MVP" lines push a profile rather than opening the
+    /// pager; this screen has no `NavigationStack` of its own reason to need one until now, so it
+    /// gets one here, the same shape `RollRevealView` already uses for the same reason (a handle
+    /// tapped mid-reveal pushes with a back button instead of presenting with no way out).
+    @State private var profileRoute: ProfileRoute?
 
     init(profileId: UUID, chapter: ChapterSummary, chapterCoverURLs: [String: URL]) {
         self.profileId = profileId
@@ -63,6 +68,14 @@ struct ChapterRecapView: View {
     private var isOwnRecap: Bool { auth.currentUser?.id == profileId }
 
     var body: some View {
+        NavigationStack {
+            content
+                .toolbar(.hidden, for: .navigationBar)
+                .navigationDestination(item: $profileRoute) { UserPageView(userId: $0.id) }
+        }
+    }
+
+    private var content: some View {
         ZStack {
             Color.black.ignoresSafeArea()
             switch phase {
@@ -420,6 +433,9 @@ struct ChapterRecapView: View {
                 guard let photoId = line.photoId, let idx = viewModel.deckIndex(ofPhoto: photoId) else { return }
                 selection = idx
                 isPlayerPresented = true
+            },
+            onSelectProfile: { userId in
+                profileRoute = ProfileRoute(id: userId)
             },
             onPlayAgain: {
                 isPlayerPresented = true
