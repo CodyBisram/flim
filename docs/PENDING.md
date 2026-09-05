@@ -172,6 +172,15 @@ actually do. Worth deciding before more is built on top of rolls.
 
 ## Next up
 
+### done 2026-09-05: the reaction count that was briefly someone else's
+
+In the photo viewer the reactions row read a single shared array that only changed once the
+new frame's fetch landed, so for a moment after every swipe it showed the frame you had just
+left. Reactions and comments are now stored per photo id (posts read the feed's own
+`reactionsByPost` cache); a frame with no entry shows the empty row rather than a neighbour's
+count, the ±1 window is prefetched (reactions batched, comments only when missing), and a frame
+revisited shows its count instantly. Device check: swipe fast through a roll with varied counts.
+
 ### done 2026-09-05: the retry pill that would not go away
 
 A member on build 327 kept seeing "Retry N" on the camera while every one of his photos was on

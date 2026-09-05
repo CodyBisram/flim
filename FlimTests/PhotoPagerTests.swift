@@ -242,4 +242,78 @@ final class PhotoPagerTests: XCTestCase {
         // The same 2.6%-off size from above passes under a looser threshold.
         XCTAssertFalse(aspectDeviatesFromFrame(width: 900, height: 1170, threshold: 0.05))
     }
+
+    // MARK: - keyedReactionCounts / keyedReactionMine
+    //
+    // The bug this pins: the pager used to hold ONE flat reactions array for the whole session,
+    // cleared and refetched on every selection change, so mid-refetch a render could show the
+    // photo just left behind's counts under the newly-selected one. Keying storage by id removes
+    // the shared slot a leak like that needs to happen through at all: a photo's own key can only
+    // ever hold its own reactions, and a photo with no entry yet reads as empty, never as
+    // whichever OTHER id happens to be in the dictionary.
+
+    private struct FakeReaction { let emoji: String; let userId: UUID }
+
+    private let alice = UUID()
+    private let bob = UUID()
+
+    func testMissingKeyReadsAsEmptyNotAsAnotherIdsCounts() {
+        let otherId = UUID()
+        let store: [UUID: [FakeReaction]] = [otherId: [FakeReaction(emoji: "❤️", userId: alice),
+                                                        FakeReaction(emoji: "❤️", userId: alice)]]
+        let missingId = UUID()
+        XCTAssertEqual(keyedReactionCounts(store: store, id: missingId, emoji: \.emoji), [:])
+        XCTAssertEqual(keyedReactionMine(store: store, id: missingId, userId: alice, emoji: \.emoji, reactor: \.userId), [])
+    }
+
+    func testPresentKeyReadsItsOwnCountsOnly() {
+        let id = UUID()
+        let otherId = UUID()
+        let store: [UUID: [FakeReaction]] = [
+            id: [FakeReaction(emoji: "❤️", userId: alice), FakeReaction(emoji: "😂", userId: bob)],
+            otherId: [FakeReaction(emoji: "🔥", userId: alice), FakeReaction(emoji: "🔥", userId: bob), FakeReaction(emoji: "🔥", userId: alice)]
+        ]
+        XCTAssertEqual(keyedReactionCounts(store: store, id: id, emoji: \.emoji), ["❤️": 1, "😂": 1])
+        XCTAssertEqual(keyedReactionMine(store: store, id: id, userId: alice, emoji: \.emoji, reactor: \.userId), ["❤️"])
+    }
+
+    func testAnotherIdsEntryNeverLeaksIntoThisIdsRead() {
+        // The exact regression: a photo that was `current` a moment ago has three "🔥"s cached
+        // under ITS id. The photo now `current` has just been swiped to and has no entry yet.
+        // Reading the new photo's id must never surface the old photo's three reactions.
+        let previousPhotoId = UUID()
+        let newPhotoId = UUID()
+        let store: [UUID: [FakeReaction]] = [previousPhotoId: [FakeReaction(emoji: "🔥", userId: alice),
+                                                                 FakeReaction(emoji: "🔥", userId: bob),
+                                                                 FakeReaction(emoji: "🔥", userId: alice)]]
+        XCTAssertEqual(keyedReactionCounts(store: store, id: newPhotoId, emoji: \.emoji), [:])
+        XCTAssertNotEqual(keyedReactionCounts(store: store, id: newPhotoId, emoji: \.emoji),
+                           keyedReactionCounts(store: store, id: previousPhotoId, emoji: \.emoji))
+    }
+
+    func testPresentButGenuinelyEmptyReadsTheSameAsMissing() {
+        // A fetched id with zero reactions (`store[id] = []`, what a batched fetch writes for a
+        // requested id that came back with nothing) must read identically to "not loaded yet":
+        // both are the row's ordinary empty state, never a crash or a placeholder count.
+        let id = UUID()
+        XCTAssertEqual(keyedReactionCounts(store: [id: [FakeReaction]()], id: id, emoji: \.emoji), [:])
+    }
+
+    // MARK: - pagerWindowIndices
+
+    func testWindowInTheMiddleIncludesBothNeighbours() {
+        XCTAssertEqual(pagerWindowIndices(index: 5, count: 10), [4, 5, 6])
+    }
+
+    func testWindowAtTheStartHasNoLeftNeighbour() {
+        XCTAssertEqual(pagerWindowIndices(index: 0, count: 10), [0, 1])
+    }
+
+    func testWindowAtTheEndHasNoRightNeighbour() {
+        XCTAssertEqual(pagerWindowIndices(index: 9, count: 10), [8, 9])
+    }
+
+    func testWindowOnASinglePhotoRollIsJustThatPhoto() {
+        XCTAssertEqual(pagerWindowIndices(index: 0, count: 1), [0])
+    }
 }

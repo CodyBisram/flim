@@ -92,13 +92,44 @@ func resolvedCacheKey(isFull: Bool, displayPath: String, viewPath: String) -> St
 }
 
 /// The roll viewer's comment-thread row label: the bare "Comments" while the count is unknown OR
-/// genuinely zero (both read identically from an empty `photoComments` array, and "Comments" is
+/// genuinely zero (both read as 0 from a missing or empty keyed-store entry, and "Comments" is
 /// the safe, always-correct copy for either), "N comment"/"N comments" once at least one has
 /// loaded. Pure so the plural boundary (and the zero fallback) is pinned without a live photo or
 /// the comment sheet, matching `PostDetailView`'s own "N comment(s)" wording for the feed.
 func commentsRowLabel(count: Int) -> String {
     guard count > 0 else { return "Comments" }
     return "\(count) comment\(count == 1 ? "" : "s")"
+}
+
+/// Reaction emoji counts for one id, read from a store keyed by photo or post id rather than one
+/// flat array shared by the whole pager. Pure and free-standing so the missing-key contract is
+/// pinned by a test: an id absent from `store` (not fetched yet) returns an empty dictionary, the
+/// same shape a genuinely zero-reaction id produces, and can never return some OTHER id's counts,
+/// because there is no shared mutable slot for two ids to collide on in the first place. That is
+/// the actual fix for "reactions load, then flash a second, wrong count before settling": the old
+/// code held one array for the whole pager, cleared it on selection change, and refetched, so
+/// there was a real window, between the clear landing and the refetch's own await returning,
+/// where a still-in-flight render could read the just-cleared (or, if the clear itself lagged a
+/// render behind, the previous photo's still-live) array under the new photo's row.
+func keyedReactionCounts<Reaction>(store: [UUID: [Reaction]], id: UUID, emoji: (Reaction) -> String) -> [String: Int] {
+    guard let list = store[id] else { return [:] }
+    return Dictionary(grouping: list, by: emoji).mapValues(\.count)
+}
+
+/// The signed-in account's own reaction emojis for one id, same keyed-store and missing-key
+/// contract as `keyedReactionCounts`.
+func keyedReactionMine<Reaction>(store: [UUID: [Reaction]], id: UUID, userId: UUID,
+                                  emoji: (Reaction) -> String, reactor: (Reaction) -> UUID) -> Set<String> {
+    guard let list = store[id] else { return [] }
+    return Set(list.filter { reactor($0) == userId }.map(emoji))
+}
+
+/// The ±1 window of in-bounds indices around `index`: the index itself plus whichever of its
+/// immediate neighbours exist, in `[index - 1, index, index + 1]` order with out-of-range
+/// neighbours simply absent (never clamped or wrapped). Pure so `resolveAround`'s prefetch window
+/// is pinned by a test without a live pager or a photo array beyond a bare count.
+func pagerWindowIndices(index: Int, count: Int) -> [Int] {
+    [index - 1, index, index + 1].filter { $0 >= 0 && $0 < count }
 }
 
 /// The single swipeable full-screen photo viewer, opened at whichever grid photo was tapped.
@@ -206,20 +237,21 @@ struct PhotoPagerView: View {
     /// may still be holding its own failed internal state.
     @State private var retryTokens: [UUID: Int] = [:]
     @State private var reportedIds: Set<UUID> = []
-    @State private var reactions: [PhotoReaction] = []
-    /// The current photo's reactions when it IS a post (`posts[photo.id] != nil`): read from and
-    /// written to `post_reactions` via `FeedService`, never mixed into `reactions` above, which
-    /// stays the roll-photo table's own array for every photo without a post. Whichever one is
-    /// live for `current` is what `reactionCounts`/`reactionMine` read.
-    @State private var postReactions: [PostReaction] = []
-    /// The current photo's comment thread (`showsComments` only), refetched on selection change
-    /// alongside `reactions` and again once the comments sheet dismisses, so the footer's "N
-    /// comment(s)" label reflects one just posted without needing another swipe. An empty array
-    /// reads identically whether nothing has loaded yet or the count is genuinely zero, both of
-    /// which fall back to the bare "Comments" the row always showed, see `commentsRowLabel`.
-    /// Unused for a photo that IS a post: that thread lives in `feed.commentsByPost` instead,
-    /// the same cache `CommentsSheet` itself reads and writes.
-    @State private var photoComments: [PhotoComment] = []
+    /// Reactions for a roll photo that is NOT a post, keyed by photo id rather than one flat
+    /// array for the whole pager. A photo that is a post reads/writes `feed.reactionsByPost`
+    /// instead (the same cache `FeedUnitCard` and `CommentsSheet` already share), never this.
+    ///
+    /// Keyed storage is the fix for a real bug: a single shared array, cleared and refetched on
+    /// every selection change, still showed the PREVIOUS photo's counts for the frame or two the
+    /// clear-then-refetch took to land, because the clear and the render it needed to beat were
+    /// two separate steps. A missing key here reads as "not loaded yet" (the same empty state a
+    /// genuinely zero-reaction photo shows), and can never be confused with another id's entry,
+    /// so revisiting an already-fetched photo also shows its count instantly instead of flashing.
+    @State private var reactionsByPhoto: [UUID: [PhotoReaction]] = [:]
+    /// A roll photo's (non-post) comment thread, keyed by photo id. Same reasoning and the same
+    /// bug fix as `reactionsByPhoto` above. A photo that IS a post reads `feed.commentsByPost`
+    /// instead, already keyed by post id and already the cache `CommentsSheet` reads and writes.
+    @State private var photoCommentsByPhoto: [UUID: [PhotoComment]] = [:]
     /// Drives the heart that blooms over a double tap, matching the feed's.
     @State private var heartBurst = false
     @State private var scale: CGFloat = 1
@@ -310,24 +342,34 @@ struct PhotoPagerView: View {
     /// which tables reactions/comments read and write, and which sheet the thread opens in.
     private var currentPost: Post? { current.flatMap { posts[$0.id] } }
 
-    /// The reaction counts to show for `current`, from whichever source is live for it.
+    /// The reaction counts to show for `current`, from whichever keyed store is live for it. A
+    /// key absent from that store (never fetched yet) reads as empty here, identically to a
+    /// genuinely zero-reaction photo, never as some OTHER photo's counts: see
+    /// `keyedReactionCounts`'s own doc for why that's structural rather than a timing accident.
     private var reactionCounts: [String: Int] {
-        currentPost != nil
-            ? Dictionary(grouping: postReactions, by: \.emoji).mapValues(\.count)
-            : Dictionary(grouping: reactions, by: \.emoji).mapValues(\.count)
+        guard let current else { return [:] }
+        if let post = currentPost {
+            return keyedReactionCounts(store: feed.reactionsByPost, id: post.id, emoji: \.emoji)
+        }
+        return keyedReactionCounts(store: reactionsByPhoto, id: current.id, emoji: \.emoji)
     }
-    /// The signed-in account's own reactions on `current`, from whichever source is live for it.
+    /// The signed-in account's own reactions on `current`, from whichever keyed store is live
+    /// for it. Same missing-key semantics as `reactionCounts`.
     private var reactionMine: Set<String> {
-        let uid = auth.currentUser?.id
-        return currentPost != nil
-            ? Set(postReactions.filter { $0.userId == uid }.map(\.emoji))
-            : Set(reactions.filter { $0.userId == uid }.map(\.emoji))
+        guard let current, let uid = auth.currentUser?.id else { return [] }
+        if let post = currentPost {
+            return keyedReactionMine(store: feed.reactionsByPost, id: post.id, userId: uid, emoji: \.emoji, reactor: \.userId)
+        }
+        return keyedReactionMine(store: reactionsByPhoto, id: current.id, userId: uid, emoji: \.emoji, reactor: \.userId)
     }
-    /// The comment count to show in the roll footer's row, from whichever source is live for
-    /// `current`: `feed.commentsByPost` for a post, `photoComments` for a roll photo.
+    /// The comment count to show in the roll footer's row, from whichever keyed store is live
+    /// for `current`: `feed.commentsByPost` for a post, `photoCommentsByPhoto` for a roll photo.
+    /// A missing key reads as 0, identically to a genuinely empty thread, matching
+    /// `commentsRowLabel`'s own "unknown or zero both read as the bare label" rule.
     private var currentCommentCount: Int {
+        guard let current else { return 0 }
         if let post = currentPost { return feed.commentsByPost[post.id]?.count ?? 0 }
-        return photoComments.count
+        return photoCommentsByPhoto[current.id]?.count ?? 0
     }
 
     init(photos: [Photo], startIndex: Int = 0, signedURLs: [UUID: URL],
@@ -447,14 +489,14 @@ struct PhotoPagerView: View {
                     Task {
                         guard let uid = auth.currentUser?.id else { return }
                         let fetched = await feed.fetchComments(postId: post.id, currentUserId: uid)
-                        guard current?.id == target.id else { return }
+                        // Keyed write: lands under `post.id` regardless of whether `target` is
+                        // still `current` by the time this returns, see `toggleReaction`'s note.
                         feed.commentsByPost[post.id] = fetched
                     }
                 } else {
                     Task {
                         let fetched = await photoService.fetchPhotoComments(photoId: target.id, blockedIds: feed.blockedIds)
-                        guard current?.id == target.id else { return }   // fast-swipe guard, matches resolveAround
-                        photoComments = fetched
+                        photoCommentsByPhoto[target.id] = fetched
                     }
                 }
             }
@@ -1877,37 +1919,29 @@ struct PhotoPagerView: View {
     private func toggleReaction(_ emoji: String, on photo: Photo) {
         guard let uid = auth.currentUser?.id else { return }
         let post = posts[photo.id]
-        let mine = post != nil
-            ? postReactions.contains { $0.emoji == emoji && $0.userId == uid }
-            : reactions.contains { $0.emoji == emoji && $0.userId == uid }
         Haptics.tap()
+        if let post {
+            // Same call `FeedUnitCard`/`PostDetailView` make: it owns `feed.reactionsByPost`
+            // (optimistic toggle, rolled back with `Haptics.error()` if the write never lands),
+            // so there's no reason for this view to keep its own copy of a post's reactions.
+            Task { await feed.reactToPost(post.id, emoji: emoji, userId: uid) }
+            return
+        }
+        let mine = reactionsByPhoto[photo.id]?.contains { $0.emoji == emoji && $0.userId == uid } ?? false
         Task {
-            if let post {
-                if mine {
-                    postReactions.removeAll { $0.emoji == emoji && $0.userId == uid }
-                    _ = await feed.removeReaction(postId: post.id, emoji: emoji, userId: uid)
-                } else {
-                    postReactions.append(PostReaction(id: UUID(), postId: post.id, userId: uid, emoji: emoji))
-                    _ = await feed.addReaction(postId: post.id, emoji: emoji, userId: uid)
-                }
-                let fetched = await feed.fetchReactions(postId: post.id)
-                guard current?.id == photo.id else { return }
-                postReactions = fetched
-                return
-            }
             if mine {
-                reactions.removeAll { $0.emoji == emoji && $0.userId == uid }
+                reactionsByPhoto[photo.id, default: []].removeAll { $0.emoji == emoji && $0.userId == uid }
                 await photoService.removeReaction(photoId: photo.id, emoji: emoji, userId: uid)
             } else {
-                reactions.append(PhotoReaction(id: UUID(), photoId: photo.id, userId: uid, emoji: emoji))
+                reactionsByPhoto[photo.id, default: []].append(PhotoReaction(id: UUID(), photoId: photo.id, userId: uid, emoji: emoji))
                 await photoService.addReaction(photoId: photo.id, emoji: emoji, userId: uid)
             }
+            // Written straight into this photo's own key regardless of whether it's still
+            // `current`: with keyed storage there is no shared slot left for a late response to
+            // land under the wrong row, so the old fast-swipe guard here is no longer needed, and
+            // dropping it means a swipe away and back finds the fresh count already in place.
             let fetched = await photoService.fetchReactions(photoId: photo.id)
-            // Same fast-swipe guard as `resolveAround`'s own terminal write: a swipe mid-flight
-            // has already moved `current` on, and writing this photo's counts into `reactions`
-            // now would show them under whatever photo the person swiped to instead.
-            guard current?.id == photo.id else { return }
-            reactions = fetched
+            reactionsByPhoto[photo.id] = fetched
         }
     }
 
@@ -1922,24 +1956,18 @@ struct PhotoPagerView: View {
             Task { try? await Task.sleep(for: .milliseconds(650)); heartBurst = false }
         }
         if let post = posts[photo.id] {
-            guard !postReactions.contains(where: { $0.emoji == "❤️" && $0.userId == uid }) else { return }
-            Task {
-                postReactions.append(PostReaction(id: UUID(), postId: post.id, userId: uid, emoji: "❤️"))
-                _ = await feed.addReaction(postId: post.id, emoji: "❤️", userId: uid)
-                let fetched = await feed.fetchReactions(postId: post.id)
-                guard current?.id == photo.id else { return }
-                postReactions = fetched
-            }
+            guard !(feed.reactionsByPost[post.id]?.contains { $0.emoji == "❤️" && $0.userId == uid } ?? false) else { return }
+            // Same call `FeedUnitCard`'s own double tap makes; see `toggleReaction`'s note.
+            Task { await feed.reactToPost(post.id, emoji: "❤️", userId: uid) }
             return
         }
-        guard !reactions.contains(where: { $0.emoji == "❤️" && $0.userId == uid }) else { return }
+        guard !(reactionsByPhoto[photo.id]?.contains { $0.emoji == "❤️" && $0.userId == uid } ?? false) else { return }
         Task {
-            reactions.append(PhotoReaction(id: UUID(), photoId: photo.id, userId: uid, emoji: "❤️"))
+            reactionsByPhoto[photo.id, default: []].append(PhotoReaction(id: UUID(), photoId: photo.id, userId: uid, emoji: "❤️"))
             await photoService.addReaction(photoId: photo.id, emoji: "❤️", userId: uid)
+            // Keyed write, no fast-swipe guard needed: see `toggleReaction`'s own note.
             let fetched = await photoService.fetchReactions(photoId: photo.id)
-            // Same fast-swipe guard as `toggleReaction`/`resolveAround`.
-            guard current?.id == photo.id else { return }
-            reactions = fetched
+            reactionsByPhoto[photo.id] = fetched
         }
     }
 
@@ -1957,13 +1985,13 @@ struct PhotoPagerView: View {
     /// about.
     private func resolveAround(_ index: Int) async {
         guard auth.currentUser?.id != nil else { return }
-        // Same fix as RollCarouselView: the refetch at the end of this function is async, so
-        // without clearing, the bar shows the PREVIOUS photo's counts under the new photo.
-        if showsReactions { reactions = []; postReactions = [] }
-        if showsComments { photoComments = [] }
-        let window = [index - 1, index, index + 1]
-            .filter { photos.indices.contains($0) }
-            .map { photos[$0] }
+        // Deliberately no reset-to-empty here anymore. `reactionsByPhoto`/`photoCommentsByPhoto`
+        // (and `feed.reactionsByPost`/`feed.commentsByPost` for posts) are keyed by id, so
+        // `current`'s row reads its OWN entry, or the empty/loading state for a missing one, and
+        // can never show some other photo's numbers: there is no shared slot left to leak from.
+        // A bonus of dropping the clear: revisiting an already-fetched photo now shows its count
+        // instantly instead of flashing empty while it refetches.
+        let window = pagerWindowIndices(index: index, count: photos.count).map { photos[$0] }
         // Still-developing shots have no viewable image yet, and an already-fully-resolved photo
         // needs nothing more, so only the genuine misses go in the batch.
         let pending = window.filter { !fullyResolvedIds.contains($0.id) && $0.isReady }
@@ -2030,31 +2058,79 @@ struct PhotoPagerView: View {
             }
         }
 
-        if showsComments, let photo = current {
-            let id = photo.id
-            if let post = posts[id] {
-                if let uid = auth.currentUser?.id {
-                    let fetchedComments = await feed.fetchComments(postId: post.id, currentUserId: uid)
-                    guard current?.id == id else { return }   // fast-swipe guard
-                    feed.commentsByPost[post.id] = fetchedComments
-                }
-            } else {
-                let fetchedComments = await photoService.fetchPhotoComments(photoId: id, blockedIds: feed.blockedIds)
-                if current?.id == id { photoComments = fetchedComments }   // fast-swipe guard
-            }
+        // Reactions and comments for the WHOLE window, not just `current`: with keyed storage a
+        // late response can no longer land under the wrong photo, so there's no reason left to
+        // fetch only the one photo on screen. Prefetching the neighbours here is what makes a
+        // swipe to either side arrive already populated instead of loading again on arrival.
+        if showsReactions {
+            let epoch = AccountEpoch.current
+            let postIds = window.compactMap { posts[$0.id]?.id }
+            let photoIds = window.filter { posts[$0.id] == nil }.map(\.id)
+            // Both batched, not one request per photo: `feed.refreshReactions` already takes a
+            // whole list of post ids in one query, and `PhotoService.fetchReactions(photoIds:)`
+            // does the same for the roll-photo table. `async let` runs the two groups (posts vs.
+            // plain roll photos) concurrently rather than one after the other.
+            async let postRefresh: Void = feed.refreshReactions(postIds: postIds)
+            async let photoFetch: [UUID: [PhotoReaction]] = photoService.fetchReactions(photoIds: photoIds)
+            let fetchedPhotoReactions = await photoFetch
+            await postRefresh
+            guard AccountEpoch.isCurrent(epoch) else { return }
+            // Assigned per id, including an explicit empty array for a fetched id with no
+            // reactions, so that id moves from "missing" (loading) to "loaded, zero" rather than
+            // staying stuck looking unloaded forever.
+            for id in photoIds { reactionsByPhoto[id] = fetchedPhotoReactions[id] ?? [] }
         }
 
-        guard showsReactions, let photo = current else { return }
-        let id = photo.id
-        if let post = posts[id] {
-            let fetched = await feed.fetchReactions(postId: post.id)
-            guard current?.id == id else { return }   // fast-swipe guard
-            postReactions = fetched
-            return
+        if showsComments {
+            let epoch = AccountEpoch.current
+            let neighbourPhotos = [index - 1, index + 1].compactMap { photos.indices.contains($0) ? photos[$0] : nil }
+            // No batched comments-count fetch exists for either table, so the two neighbours are
+            // fetched concurrently instead of one after the other; each only fires if that id's
+            // thread genuinely hasn't loaded yet, so a photo already visited isn't re-fetched on
+            // every pass through the window.
+            async let neighbour0: Void = loadCommentsIfNeeded(neighbourPhotos.first)
+            async let neighbour1: Void = loadCommentsIfNeeded(neighbourPhotos.count > 1 ? neighbourPhotos[1] : nil)
+            // `current` always refetches, unconditionally, the same as before this change: it's
+            // the one row on screen, and a comment posted elsewhere to this exact photo/post
+            // since the last visit should still show up without needing another swipe away and
+            // back.
+            if let photo = current {
+                let id = photo.id
+                if let post = posts[id] {
+                    if let uid = auth.currentUser?.id {
+                        let fetchedComments = await feed.fetchComments(postId: post.id, currentUserId: uid)
+                        if AccountEpoch.isCurrent(epoch) { feed.commentsByPost[post.id] = fetchedComments }
+                    }
+                } else {
+                    let fetchedComments = await photoService.fetchPhotoComments(photoId: id, blockedIds: feed.blockedIds)
+                    if AccountEpoch.isCurrent(epoch) { photoCommentsByPhoto[id] = fetchedComments }
+                }
+            }
+            _ = await (neighbour0, neighbour1)
         }
-        let fetched = await photoService.fetchReactions(photoId: id)
-        guard current?.id == id else { return }   // fast-swipe guard
-        reactions = fetched
+    }
+
+    /// Fetches and caches one photo's (or, if it's a post, that post's) comment thread ONLY if it
+    /// hasn't already loaded, unlike `current`'s own always-refetch in `resolveAround` above:
+    /// this exists purely to prefetch the ±1 window's neighbours so a swipe to either side is
+    /// already populated on arrival, and refetching a neighbour on every single pass through the
+    /// window would be pure waste for a thread that isn't even on screen yet. Writes are keyed by
+    /// id, so a slow response landing after the person has swiped again still files under the
+    /// right photo instead of being guarded away, matching every other write in this file now.
+    private func loadCommentsIfNeeded(_ photo: Photo?) async {
+        guard let photo else { return }
+        let epoch = AccountEpoch.current
+        if let post = posts[photo.id] {
+            guard feed.commentsByPost[post.id] == nil, let uid = auth.currentUser?.id else { return }
+            let fetched = await feed.fetchComments(postId: post.id, currentUserId: uid)
+            guard AccountEpoch.isCurrent(epoch) else { return }
+            feed.commentsByPost[post.id] = fetched
+        } else {
+            guard photoCommentsByPhoto[photo.id] == nil else { return }
+            let fetched = await photoService.fetchPhotoComments(photoId: photo.id, blockedIds: feed.blockedIds)
+            guard AccountEpoch.isCurrent(epoch) else { return }
+            photoCommentsByPhoto[photo.id] = fetched
+        }
     }
 
     /// Keeps re-checking the ±1 window while any photo in it is still developing, so sitting on
