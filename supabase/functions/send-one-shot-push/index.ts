@@ -90,6 +90,7 @@ const CAMPAIGNS: Record<string, () => Promise<Recipient[]>> = {
   "horror-nights": horrorNightsCohort,
   "epic-universe": epicUniverseCohort,
   "epic-red-shells": epicRedShellsCohort,
+  "lys-check-in": lysCheckInCohort,
   "waiting-to-sort": waitingToSortCohort,
 };
 
@@ -246,6 +247,22 @@ async function epicRedShellsCohort(): Promise<Recipient[]> {
       title: "Three red shells, locked on.",
       body: "Brandon, Aly, Trina. You are the bottom three. Start shooting.",
       route: { t: "rolls" },
+    }));
+}
+
+/// One person: a member who shoots but had not posted in thirteen days, 2026-09-06. Resolved
+/// by username so a rename cannot redirect it. Routes to the feed, where the post goes.
+async function lysCheckInCohort(): Promise<Recipient[]> {
+  const reachable = new Set(await reachableUsers());
+  const { data } = await supabase
+    .from("users").select("id, username").eq("username", "alyssa");
+  return ((data ?? []) as { id: string; username: string }[])
+    .filter((u) => reachable.has(u.id))
+    .map((u) => ({
+      userId: u.id,
+      title: "Lys, are you okay?",
+      body: "Serious question. Thirteen days, no post. The feed is worried.",
+      route: { t: "feed" },
     }));
 }
 
