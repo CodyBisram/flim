@@ -93,6 +93,7 @@ const CAMPAIGNS: Record<string, () => Promise<Recipient[]>> = {
   "lys-check-in": lysCheckInCohort,
   "epic-yoshi-line": epicYoshiLineCohort,
   "epic-lead-change": epicLeadChangeCohort,
+  "epic-floor-shots": epicFloorShotsCohort,
   "waiting-to-sort": waitingToSortCohort,
 };
 
@@ -295,6 +296,21 @@ async function epicLeadChangeCohort(): Promise<Recipient[]> {
       userId: u.id,
       title: "Yoooo. Ricky is in first now.",
       body: "53 to 48. Tristan got passed in the Yoshi line. Shoot.",
+      route: { t: "rolls" },
+    }));
+}
+
+/// The owner's own words from the park: the runner-up is padding his count. Same eight.
+async function epicFloorShotsCohort(): Promise<Recipient[]> {
+  const reachable = new Set(await reachableUsers());
+  const { data } = await supabase
+    .from("users").select("id, username").in("username", EPIC_UNIVERSE_GROUP);
+  return ((data ?? []) as { id: string; username: string }[])
+    .filter((u) => reachable.has(u.id))
+    .map((u) => ({
+      userId: u.id,
+      title: "Tris is cheating.",
+      body: "He is taking pictures of the floor. Somebody get him with a blue shell.",
       route: { t: "rolls" },
     }));
 }
