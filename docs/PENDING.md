@@ -274,17 +274,45 @@ guaranteed when one exists; ties by the old order) instead of a fixed priority. 
 eleven toggles. Unverified on device: the emoji glyph in the mono value (the simulator draws every
 emoji as a box), and the profile tap for fan and MVP against real ids.
 
-### done 2026-09-05: white borders in the roll viewer
+### done 2026-09-05, evening: the white border was the flash, not the viewer
 
-A member's photos showed white bands in the roll viewer only. The viewer fitted the image
-inside its fixed 3:4 box while the grid and the reveal fill it, so any photo not exactly 3:4
-left a transparent gap, and the paging container's own default page background (white) showed
-through. Fixed: the roll viewer and the Darkroom pager fill and clip like everything else; for a
-true 3:4 photo nothing changes. Which of her photos were off-aspect, and why (the cropper
-refuses to crop on an implausible viewfinder measurement and the sensor frame is "roughly"
-4:3), is not yet known: two DEBUG logs now name any capture or decoded viewer image that
-deviates from 3:4 by more than 0.5%, with the preview aspect the cropper was given. Read with
-`log stream --predicate 'subsystem == "com.flim.app"' --info` on a device.
+The entry below this one got it wrong. The light edge on some of a member's night shots is IN
+THE STORED PIXELS, and only on photos whose EXIF says the flash fired. Proof, from a
+simulator render of a flat 16/255 frame through the pipeline: no flash, edge 32 for one pixel;
+flash forced on, left edge 119 fading over three pixels, top and right lifted to about 100 for
+eight or more. In the owner's screenshot the glow followed the straight image edges and
+vanished where the rounded clip cuts the corners, which is the signature of pixels, not a
+stroke or a page background.
+
+Cause: `flashFalloff` builds its map at a tenth of the frame and Lanczos-scales it back up.
+Lanczos samples past the edge of its input, which is transparent, so the map's outer pixels
+carried alpha below 1; the extent clamp came AFTER the upscale, too late, and the floor bias
+then turned those pixels super-luminous, so the closing multiply brightened the edge. Fixed by
+clamping to extent before BOTH Lanczos passes and cropping after, the treatment the blur in the
+same stage already had. `flashFalloffLeavesTheFrameEdgeAlone` reads every pixel of the outer
+12px band of a flat dark frame against the centre; the older darken-only test's 48-step grid
+never landed on a dark edge pixel, which is how this shipped.
+
+Already-taken flash photos keep their border: the stored master is the processed output and
+there is no original to re-render.
+
+What the fix changes beyond the border: the lifted band was up to 15% of the frame width on
+some sides, so flash frames now fall off to true black at their edges where they used to fall
+off to a grey lift. The lit interior is byte-identical (measured end to end, old against new, on
+the flash fixture). On the synthetic flash fixture the share of pixels below 0.04 went from the
+15 to 35% window to 0.53, and the shadow test now pins 0.45 to 0.60. The synthetic `flash`
+look baseline was re-recorded; the real `parkview-flash` scene re-recorded IDENTICALLY, its
+edges are lit and the defect had nothing to lift there, which is the measure of how much of
+this a real flash photo will show: the border, and little else. OWNER FEEL-TEST on device all
+the same: a flash shot in a dark room and one outdoors at night. If the edges now read too
+dark, the dial is `FilmStock.flashFalloff` (1.0), re-fit with `FlashFalloffSweep`.
+
+### superseded 2026-09-05: white borders in the roll viewer
+
+Kept for the record; the diagnosis was wrong, see the entry above. The viewer change it made
+(fill rather than fit inside the fixed 3:4 box) is harmless and stays: for a true 3:4 photo
+fill and fit are identical. The two DEBUG aspect logs it added never fired because no photo was
+off-aspect.
 
 ### done 2026-09-04, night: the reveal that jumped back
 

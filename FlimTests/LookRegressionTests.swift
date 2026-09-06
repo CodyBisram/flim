@@ -94,7 +94,11 @@ struct LookRegressionTests {
         "daylight": LookStats(meanR: 0.42324, meanG: 0.47464, meanB: 0.44737, lumP5: 0.36078, lumP50: 0.45882, lumP95: 0.52549, meanSaturation: 0.38283, localContrast: 0.02026),
         "gamut": LookStats(meanR: 0.38223, meanG: 0.40034, meanB: 0.38638, lumP5: 0.09804, lumP50: 0.41176, lumP95: 0.76863, meanSaturation: 0.51417, localContrast: 0.01375),
         "oversize": LookStats(meanR: 0.36473, meanG: 0.33832, meanB: 0.31042, lumP5: 0.24706, lumP50: 0.34118, lumP95: 0.42745, meanSaturation: 0.14235, localContrast: 0.01027),
-        "flash": LookStats(meanR: 0.15819, meanG: 0.14549, meanB: 0.13397, lumP5: 0.02353, lumP50: 0.06667, lumP95: 0.56078, meanSaturation: 0.10840, localContrast: 0.00374),
+        // Re-recorded 2026-09-05 after the flash map's Lanczos edge defect was fixed (see
+        // `flashFalloff`): the old row was measured with a lifted band along this fixture's black
+        // surround. Only this row moved; the real `parkview-flash` scene recorded identically,
+        // its edges are lit and had nothing for the defect to lift.
+        "flash": LookStats(meanR: 0.12244, meanG: 0.10975, meanB: 0.09822, lumP5: 0.00784, lumP50: 0.03529, lumP95: 0.56078, meanSaturation: 0.11272, localContrast: 0.00296),
         "flashAmbient": LookStats(meanR: 0.24452, meanG: 0.23669, meanB: 0.21725, lumP5: 0.07843, lumP50: 0.17255, lumP95: 0.66275, meanSaturation: 0.14545, localContrast: 0.00682)
     ]
 

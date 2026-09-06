@@ -174,6 +174,44 @@ struct FlashFalloffTests {
                 "nothing measurably darkened; the stage did nothing at all")
     }
 
+    /// The edge is where `flashFalloffOnlyEverDarkens` could not see. Its 48-step grid lands on
+    /// the outermost pixel only at the four corners, and the flash fixture is bright there, so a
+    /// lift of a dark edge went unmeasured: shipped builds up to 345 put a light border, 100 to
+    /// 119 out of 255 on a 16/255 frame, on every flash-fired night shot. The cause was the two
+    /// Lanczos passes sampling past the map's edge (see `flashFalloff`). This renders a flat dark
+    /// frame, which has NO content to hide a lift, and reads every pixel of the outer 12px band on
+    /// all four sides against the centre.
+    @Test("the stage leaves the frame edge as dark as the centre")
+    func flashFalloffLeavesTheFrameEdgeAlone() throws {
+        let extent = CGRect(x: 0, y: 0, width: 1200, height: 1600)
+        let value: CGFloat = 16.0 / 255.0
+        let source = CIImage(color: CIColor(red: value, green: value, blue: value, alpha: 1))
+            .cropped(to: extent)
+        let out = InstantFilmProcessor.flashFalloff(on: source, exponent: 1.0, extent: extent)
+        let cg = try #require(Self.render(out, extent: extent))
+        let px = try #require(Self.pixels(of: cg))
+        let w = cg.width, h = cg.height
+        func luma(_ x: Int, _ y: Int) -> Int {
+            let i = (y * w + x) * 4
+            return Int(px[i]) + Int(px[i + 1]) + Int(px[i + 2])
+        }
+        let centre = luma(w / 2, h / 2)
+        var worst = 0
+        var worstAt = (0, 0)
+        let band = 12
+        for y in 0..<h {
+            let inRows = y < band || y >= h - band
+            for x in 0..<w where inRows || x < band || x >= w - band {
+                let lift = luma(x, y) - centre
+                if lift > worst { worst = lift; worstAt = (x, y) }
+            }
+        }
+        // One 8-bit level per channel of headroom for rounding, nothing more: a real border was
+        // 250 to 300 on this scale.
+        #expect(worst <= 3,
+                "edge pixel at \(worstAt) is \(worst) (summed RGB) brighter than the centre; the flash map is lifting the frame edge again")
+    }
+
     @Test("exponent 0 is an exact no-op")
     func exponentZeroIsANoOp() throws {
         let source = try #require(CIImage(data: LookFixture.flash.pngData()))
@@ -265,8 +303,15 @@ struct FlashFalloffTests {
         // because what carries the meaning is the GAP to the flash half.
         #expect(before < 0.08,
                 "the ungated frame has \(before) below 0.04; that is a flash frame, not an ambient one")
-        #expect(after >= 0.15 && after <= 0.35,
-                "flash frame has \(after) of its pixels below 0.04, want 0.15...0.35")
+        // 0.15...0.35 until 2026-09-05. That window was measured with the Lanczos edge defect in
+        // the map (see `flashFalloff`), which lifted a band along the frame edges and kept a third
+        // of this fixture's dark surround above 0.04. With the map clamped the same frame reads
+        // 0.53: the surround the stage was always meant to crush now is crushed. The interior is
+        // byte-identical to before. Whether 0.53 is the right amount of shadow for a flash frame
+        // is the owner's call on real photos (the strength dial is `flashFalloff`, re-fit with
+        // `FlashFalloffSweep`); this pins what ships so a change to it is a decision, not drift.
+        #expect(after >= 0.45 && after <= 0.60,
+                "flash frame has \(after) of its pixels below 0.04, want 0.45...0.60")
         #expect(after > before * 2.5,
                 "the flash half (\(after)) is not meaningfully deeper than the ambient half (\(before))")
     }

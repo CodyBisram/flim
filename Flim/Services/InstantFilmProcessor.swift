@@ -578,7 +578,10 @@ enum InstantFilmProcessor {
     ///   1. `CIColorMatrix`   Rec.601 luma into all three channels (the same weighting the
     ///                        adaptive exposure and the grain mask use, so "bright" means one
     ///                        thing across the whole processor), alpha forced opaque.
-    ///   2. `CILanczosScaleTransform`  down to `flashMapScale` of the frame.
+    ///   2. `CILanczosScaleTransform`  down to `flashMapScale` of the frame, clamped to extent
+    ///                        before and cropped after (see the comment at the call site: an
+    ///                        unclamped Lanczos leaves a soft alpha edge that ends as a light
+    ///                        border on every flash frame).
     ///   3. `CIGaussianBlur`  in that small space, clamped before and cropped after so the map
     ///                        does not fade at the frame edges and manufacture a second vignette.
     ///   4. `CIAreaMaximum`   the map's peak, read back once in LINEAR light. This is what the
@@ -593,10 +596,12 @@ enum InstantFilmProcessor {
     ///   6. `CIGammaAdjust`   raise to `exponent`. This is the falloff curve, and it is the only
     ///                        thing the shipped parameter controls.
     ///   7. `CIColorMatrix`   lift the result into `flashFalloffFloor`…1.
-    ///   8. `CILanczosScaleTransform` back up to the frame, `CIColorClamp` to the same range
-    ///                        afterwards so Lanczos overshoot can never push the multiplier above
-    ///                        1. That clamp is what makes this stage provably unable to BRIGHTEN
-    ///                        a pixel, which `flashFalloffOnlyEverDarkens` asserts.
+    ///   8. `CILanczosScaleTransform` back up to the frame, clamped before it like step 2, then
+    ///                        `CIColorClamp` to the same range afterwards so Lanczos overshoot can
+    ///                        never push the multiplier above 1. The colour clamp and the extent
+    ///                        clamps together are what make this stage unable to BRIGHTEN a
+    ///                        pixel, interior or edge, which `flashFalloffOnlyEverDarkens` and
+    ///                        `flashFalloffLeavesTheFrameEdgeAlone` assert.
     ///   9. `CIMultiplyCompositing` the map onto the frame.
     ///
     /// The multiply resolves in linear working space, and that is the correct space for it:
@@ -627,10 +632,27 @@ enum InstantFilmProcessor {
             "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 1)
         ]).cropped(to: extent)
 
+        // BOTH Lanczos passes (this downscale and the upscale in step 8) are clamped to extent
+        // before and cropped after, exactly like the blur below. Lanczos samples a few pixels
+        // past the edge of its input, and past the edge of a finite image is transparent black,
+        // so an unclamped pass leaves the outermost pixels of the map with alpha below 1. That
+        // alpha survives the clamps (they floor colour, not alpha), the floor bias then lifts a
+        // partly transparent pixel into a super-luminous premultiplied one, and the multiply at
+        // the end BRIGHTENS the frame edge instead of darkening it: measured 2026-09-05, a flat
+        // 16/255 frame came out with edges at 100 to 119, a visible light border on every
+        // flash-fired night shot. The previous placement clamped after the upscale, which was
+        // too late, the soft edge was already inside the extent by then.
         if scale < 1 {
-            map = map.applyingFilter("CILanczosScaleTransform", parameters: [
+            let smallExtent = map.applyingFilter("CILanczosScaleTransform", parameters: [
                 kCIInputScaleKey: scale, kCIInputAspectRatioKey: 1.0
-            ])
+            ]).extent
+            guard !smallExtent.isEmpty, !smallExtent.isInfinite else { return image }
+            map = map
+                .clampedToExtent()
+                .applyingFilter("CILanczosScaleTransform", parameters: [
+                    kCIInputScaleKey: scale, kCIInputAspectRatioKey: 1.0
+                ])
+                .cropped(to: smallExtent)
         }
         let mapExtent = map.extent
         guard !mapExtent.isEmpty, !mapExtent.isInfinite else { return image }
@@ -666,9 +688,13 @@ enum InstantFilmProcessor {
         ])
 
         if scale < 1 {
-            map = map.applyingFilter("CILanczosScaleTransform", parameters: [
-                kCIInputScaleKey: 1 / scale, kCIInputAspectRatioKey: 1.0
-            ])
+            // Clamped BEFORE the upscale (see the downscale above for why), cropped to the
+            // frame after.
+            map = map
+                .clampedToExtent()
+                .applyingFilter("CILanczosScaleTransform", parameters: [
+                    kCIInputScaleKey: 1 / scale, kCIInputAspectRatioKey: 1.0
+                ])
         }
         map = map
             .clampedToExtent()
