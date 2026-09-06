@@ -89,6 +89,7 @@ const CAMPAIGNS: Record<string, () => Promise<Recipient[]>> = {
   "islands": islandsCohort,
   "horror-nights": horrorNightsCohort,
   "epic-universe": epicUniverseCohort,
+  "epic-red-shells": epicRedShellsCohort,
   "waiting-to-sort": waitingToSortCohort,
 };
 
@@ -228,6 +229,22 @@ async function epicUniverseCohort(): Promise<Recipient[]> {
       userId: u.id,
       title: "Blue shell incoming.",
       body: "Someone is about to overtake your shot count. Whoever shoots the least is Baby Peach. Epic Universe.",
+      route: { t: "rolls" },
+    }));
+}
+
+/// The mid-day reminder at Epic Universe: the three lowest shot counts, named, to the whole
+/// group. Same eight as `epicUniverseCohort`.
+async function epicRedShellsCohort(): Promise<Recipient[]> {
+  const reachable = new Set(await reachableUsers());
+  const { data } = await supabase
+    .from("users").select("id, username").in("username", EPIC_UNIVERSE_GROUP);
+  return ((data ?? []) as { id: string; username: string }[])
+    .filter((u) => reachable.has(u.id))
+    .map((u) => ({
+      userId: u.id,
+      title: "Three red shells, locked on.",
+      body: "Brandon, Aly, Trina. You are the bottom three. Start shooting.",
       route: { t: "rolls" },
     }));
 }
