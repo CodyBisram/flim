@@ -295,6 +295,8 @@ struct RollRevealView: View {
         // pinch below scales the frame.
         .aspectRatio(RevealPacing.frameAspectRatio, contentMode: .fit)
         .clipShape(RoundedRectangle(cornerRadius: RevealPacing.frameCornerRadius))
+        // Inside the clip and under the pinch, so the mark sits on the print and scales with it.
+        .overlay(alignment: .topLeading) { burstMark(for: photo) }
         .scaleEffect(photo.id == currentPhoto?.id ? revealZoom : 1, anchor: zoomAnchor)
         .padding(.horizontal, RevealPacing.frameHorizontalInset)
         .padding(.vertical, RevealPacing.frameVerticalInset)
@@ -429,15 +431,23 @@ struct RollRevealView: View {
                 Text("\(viewModel.index + 1) of \(viewModel.playedDeck.count) · \(timeLabel)")
                     .flimFont(12.5, relativeTo: .footnote)
                     .foregroundStyle(Color(white: 0.6))
-                // This frame stands in for a burst: say so, singular phrasing at one, so the
-                // credit reads honestly rather than always pluralizing.
-                if let extra = viewModel.burstExtraCount[photo.id], extra > 0 {
-                    Text(extra == 1 ? "and 1 more like it, in the roll" : "and \(extra) more like it, in the roll")
-                        .flimFont(11.5, relativeTo: .caption)
-                        .foregroundStyle(Color(white: 0.45))
-                        .accessibilityHint("See them in the roll's grid")
-                }
+                // Two lines, ALWAYS two lines. "and N more like it, in the roll" used to be a
+                // third line here on burst frames only, and a third line on some frames is a
+                // reaction row that jumps on some frames: every burst cover moved the whole
+                // footer. That fact now lives on the frame itself (`burstMark`), where the grid
+                // already puts it, and the footer's geometry is the same on every page.
             }
+        }
+    }
+
+    /// The grid's own `×N` stack mark, in the frame's top-leading corner, on a frame that stands
+    /// in for a burst. N is the burst's full size (cover included), the same number the grid
+    /// shows on the collapsed stack, so the two surfaces agree. Not a button here: the deck is
+    /// frozen for the session and the rest of the burst is one tap away in the grid afterwards.
+    @ViewBuilder
+    private func burstMark(for photo: Photo) -> some View {
+        if let extra = viewModel.burstExtraCount[photo.id], extra > 0 {
+            BurstStackMark(kind: .count(extra + 1), interactive: false)
         }
     }
 

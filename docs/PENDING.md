@@ -274,6 +274,15 @@ guaranteed when one exists; ties by the old order) instead of a fixed priority. 
 eleven toggles. Unverified on device: the emoji glyph in the mono value (the simulator draws every
 emoji as a box), and the profile tap for fan and MVP against real ids.
 
+### done 2026-09-06: the burst note no longer moves the reveal's reaction row
+
+The owner: "and 1 more like it" in the reveal moved the emoji picker up and dislodged the whole
+view, on burst frames only. It was a third line in the two-line credit. Removed; the fact now
+sits on the frame as the grid's own `×N` stack mark (top-leading corner, `BurstStackMark`
+with `interactive: false`, N is the burst's full size like the grid), so the footer has the same
+geometry on every page. Device check: page through a roll with a burst in it and watch the
+reaction row hold still.
+
 ### done 2026-09-05, evening: the white border was the flash, not the viewer
 
 The entry below this one got it wrong. The light edge on some of a member's night shots is IN

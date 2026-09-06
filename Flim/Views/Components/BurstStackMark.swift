@@ -6,6 +6,12 @@ import SwiftUI
 /// it fans the stack open. `.collapse` sits on the FIRST frame of an already-fanned-open stack;
 /// tapping it folds the stack back. Purely presentational, the tap itself is wired by whichever
 /// `Button` wraps this at the call site.
+///
+/// `interactive: false` is the reveal's use: the same mark, in the same corner of the frame, on
+/// the sharpest frame of a burst, where the deck is frozen and there is nothing to fan open. It
+/// says "this stands for N" without a button trait or a tap hint, and without taking a line of
+/// the credit below the photograph, which is where this used to live as text and where one extra
+/// line moved the reaction row on every burst frame and only there.
 struct BurstStackMark: View {
     @Environment(\.flimAccent) private var accent
 
@@ -15,6 +21,7 @@ struct BurstStackMark: View {
     }
 
     let kind: Kind
+    var interactive: Bool = true
 
     var body: some View {
         Group {
@@ -34,12 +41,15 @@ struct BurstStackMark: View {
         .background(.black.opacity(0.55), in: Capsule())
         .padding(5)
         .accessibilityLabel(accessibilityLabel)
-        .accessibilityAddTraits(.isButton)
+        .accessibilityAddTraits(interactive ? .isButton : [])
     }
 
     private var accessibilityLabel: String {
         switch kind {
-        case .count(let n): return "Burst of \(n) photos, tap to show them all"
+        case .count(let n):
+            return interactive
+                ? "Burst of \(n) photos, tap to show them all"
+                : "Sharpest of a burst of \(n) photos; the rest are in the roll's grid"
         case .collapse: return "Collapse this burst"
         }
     }
