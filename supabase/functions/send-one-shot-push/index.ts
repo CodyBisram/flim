@@ -91,6 +91,7 @@ const CAMPAIGNS: Record<string, () => Promise<Recipient[]>> = {
   "epic-universe": epicUniverseCohort,
   "epic-red-shells": epicRedShellsCohort,
   "lys-check-in": lysCheckInCohort,
+  "epic-yoshi-line": epicYoshiLineCohort,
   "waiting-to-sort": waitingToSortCohort,
 };
 
@@ -263,6 +264,22 @@ async function lysCheckInCohort(): Promise<Recipient[]> {
       title: "Lys, are you okay?",
       body: "Serious question. Thirteen days, no post. The feed is worried.",
       route: { t: "feed" },
+    }));
+}
+
+/// Late afternoon at Epic Universe, from the Yoshi line: first and second place, one shot
+/// apart. Same eight.
+async function epicYoshiLineCohort(): Promise<Recipient[]> {
+  const reachable = new Set(await reachableUsers());
+  const { data } = await supabase
+    .from("users").select("id, username").in("username", EPIC_UNIVERSE_GROUP);
+  return ((data ?? []) as { id: string; username: string }[])
+    .filter((u) => reachable.has(u.id))
+    .map((u) => ({
+      userId: u.id,
+      title: "Tristan is in first. Ricky is one shot behind.",
+      body: "Yoshi line is long enough to settle it. Shoot.",
+      route: { t: "rolls" },
     }));
 }
 
