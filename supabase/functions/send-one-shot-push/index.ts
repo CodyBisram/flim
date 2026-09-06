@@ -91,6 +91,7 @@ const CAMPAIGNS: Record<string, () => Promise<Recipient[]>> = {
   "epic-universe": epicUniverseCohort,
   "epic-red-shells": epicRedShellsCohort,
   "lys-check-in": lysCheckInCohort,
+  "lys-check-in-2": lysCheckIn2Cohort,
   "epic-yoshi-line": epicYoshiLineCohort,
   "epic-lead-change": epicLeadChangeCohort,
   "epic-floor-shots": epicFloorShotsCohort,
@@ -312,6 +313,22 @@ async function epicFloorShotsCohort(): Promise<Recipient[]> {
       title: "Tris is cheating.",
       body: "He is taking pictures of the floor. Somebody get him with a blue shell.",
       route: { t: "rolls" },
+    }));
+}
+
+/// The follow-up, same afternoon: she opened the app twice after the first push (day-bucket
+/// counters showed it), looked at the feed, and still did not post.
+async function lysCheckIn2Cohort(): Promise<Recipient[]> {
+  const reachable = new Set(await reachableUsers());
+  const { data } = await supabase
+    .from("users").select("id, username").eq("username", "alyssa");
+  return ((data ?? []) as { id: string; username: string }[])
+    .filter((u) => reachable.has(u.id))
+    .map((u) => ({
+      userId: u.id,
+      title: "Lys. You opened the app.",
+      body: "Twice. Ten minutes after we asked. Looked at the feed and left. Still no post. Why?",
+      route: { t: "feed" },
     }));
 }
 
