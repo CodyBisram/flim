@@ -88,6 +88,7 @@ const CAMPAIGNS: Record<string, () => Promise<Recipient[]>> = {
   "checked-again": checkedAgainCohort,
   "islands": islandsCohort,
   "horror-nights": horrorNightsCohort,
+  "epic-universe": epicUniverseCohort,
   "waiting-to-sort": waitingToSortCohort,
 };
 
@@ -209,6 +210,24 @@ async function horrorNightsCohort(): Promise<Recipient[]> {
       userId: u.id,
       title: "Watch for jumbie.",
       body: "Horror Nights, tonight. The roll develops when you are all home safe.",
+      route: { t: "rolls" },
+    }));
+}
+
+/// Epic Universe, the day after Horror Nights, same eight. Mario Kart, because the group is
+/// competitive about shot counts. Routes to the Rolls tab.
+const EPIC_UNIVERSE_GROUP = ["sabs", "cody", "lele", "tristan", "ricky", "aly", "branb", "trina"];
+
+async function epicUniverseCohort(): Promise<Recipient[]> {
+  const reachable = new Set(await reachableUsers());
+  const { data } = await supabase
+    .from("users").select("id, username").in("username", EPIC_UNIVERSE_GROUP);
+  return ((data ?? []) as { id: string; username: string }[])
+    .filter((u) => reachable.has(u.id))
+    .map((u) => ({
+      userId: u.id,
+      title: "Blue shell incoming.",
+      body: "Someone is about to overtake your shot count. Whoever shoots the least is Baby Peach. Epic Universe.",
       route: { t: "rolls" },
     }));
 }
