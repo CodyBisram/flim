@@ -161,10 +161,12 @@ bearing for App Review: it names the control.
 
 **The look did not change in 1.5.1.** Flash falloff shipped in this train (dec7b57) and grain was
 tried and reverted the same week; the rendered look is byte identical to 1.5.0 except for flash
-frames, which now carry real falloff. Screenshots shot on 345 are current.
+frames, which now carry real falloff, and since build 346 no longer carry a light border along
+the frame edge (the flash map's own resampling artefact, see PENDING.md 2026-09-05). No screen
+changed between 345 and 346, so screenshots shot on 345 are current.
 
 **MARKETING_VERSION is 1.5.1 on BOTH targets in `project.yml`** since f8d1dd8 (2026-08-31); the
-release candidate is build 345 (df918be). Releasing closes the train, so the first upload after
+release candidate is build 346 (affa2c6); 345 is superseded by the flash edge fix. Releasing closes the train, so the first upload after
 approval must carry 1.5.2 (or 1.6) or ASC rejects it with "Invalid Pre-Release Train".
 
 After the release goes READY_FOR_SALE, arm the update nudge (the field is `latest_version`, NOT
@@ -176,7 +178,7 @@ After the release goes READY_FOR_SALE, arm the update nudge (the field is `lates
 
 **Release option:** choose "Manually release" at submission.
 
-**Reviewer path:** confirm `ReviewerSignInSheet` still works against build 345 before submitting.
+**Reviewer path:** confirm `ReviewerSignInSheet` still works against build 346 before submitting.
 
 **App Privacy:** unchanged. Vision runs on device; the two new photo columns (`burst_group`,
 `sharpness`) are derived integers inside the already declared Photos data type; the chapter stats
