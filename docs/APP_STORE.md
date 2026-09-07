@@ -133,7 +133,13 @@ without either word appearing here.
 Two rules if this is edited again: never repeat a word across name, subtitle and keywords, and do
 not add plurals of words already present. Apple handles both.
 
-## What's New (version 1.5.1)
+## RELEASED: 1.5.1 went live 2026-09-06 (build 347), 22:51 UTC
+
+The train is closed. `MARKETING_VERSION` is 1.5.2 on both targets as of the commit that records
+this, so the next CI upload starts the 1.5.2 train; `app_release_gate.latest_version` was set to
+1.5.1 the same evening, which arms the update nudge for everyone still on 1.5.0.
+
+## What's New (version 1.5.1), as shipped
 
 > **PASTE ONLY THE INDENTED BLOCK BELOW.** Everything under "Ship notes" is internal.
 
@@ -166,7 +172,8 @@ the frame edge (the flash map's own resampling artefact, see PENDING.md 2026-09-
 changed between 345 and 347 except a `×N` mark on burst frames in the reveal, so screenshots
 shot on 345 are current.
 
-**MARKETING_VERSION is 1.5.1 on BOTH targets in `project.yml`** since f8d1dd8 (2026-08-31); the
+**MARKETING_VERSION was 1.5.1 on BOTH targets in `project.yml`** from f8d1dd8 (2026-08-31) until the
+release, and is 1.5.2 since 2026-09-06; the
 release candidate is build 347; 345 and 346 are superseded (flash edge fix, then the burst mark
 moving off the credit line so the reveal's reaction row holds still). Releasing closes the train, so the first upload after
 approval must carry 1.5.2 (or 1.6) or ASC rejects it with "Invalid Pre-Release Train".

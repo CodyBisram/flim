@@ -274,6 +274,14 @@ guaranteed when one exists; ties by the old order) instead of a fixed priority. 
 eleven toggles. Unverified on device: the emoji glyph in the mono value (the simulator draws every
 emoji as a box), and the profile tap for fan and MVP against real ids.
 
+### released 2026-09-06: 1.5.1 is live
+
+Build 347 (ee037e7) went Ready for Sale at 22:51 UTC. Gate bumped (`latest_version` 1.5.1,
+`minimum_version` still 0.0.0). `MARKETING_VERSION` moved to 1.5.2 on both targets so the next
+upload is accepted. Still owed from this train: the owner's device feel-test of flash frames
+(edges now fall to true black, see the flash entry below) and the one photo from 2026-09-04
+missing its master storage object.
+
 ### done 2026-09-06: the burst note no longer moves the reveal's reaction row
 
 The owner: "and 1 more like it" in the reveal moved the emoji picker up and dislodged the whole
