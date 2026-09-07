@@ -95,6 +95,7 @@ const CAMPAIGNS: Record<string, () => Promise<Recipient[]>> = {
   "epic-yoshi-line": epicYoshiLineCohort,
   "epic-lead-change": epicLeadChangeCohort,
   "epic-floor-shots": epicFloorShotsCohort,
+  "epic-podium": epicPodiumCohort,
   "waiting-to-sort": waitingToSortCohort,
 };
 
@@ -329,6 +330,21 @@ async function lysCheckIn2Cohort(): Promise<Recipient[]> {
       title: "Lys. You opened the app.",
       body: "Twice. Ten minutes after we asked. Looked at the feed and left. Still no post. Why?",
       route: { t: "feed" },
+    }));
+}
+
+/// The last one of the night, fifteen minutes before the Epic Universe roll developed. Same eight.
+async function epicPodiumCohort(): Promise<Recipient[]> {
+  const reachable = new Set(await reachableUsers());
+  const { data } = await supabase
+    .from("users").select("id, username").in("username", EPIC_UNIVERSE_GROUP);
+  return ((data ?? []) as { id: string; username: string }[])
+    .filter((u) => reachable.has(u.id))
+    .map((u) => ({
+      userId: u.id,
+      title: "Race over. Fifteen minutes to the podium.",
+      body: "Ricky gold, Tristan silver, Sabs bronze. Trina, Baby Peach. 328 photos develop at 11:14.",
+      route: { t: "rolls" },
     }));
 }
 
