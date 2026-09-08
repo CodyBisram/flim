@@ -5652,7 +5652,7 @@ BEGIN
     ON CONFLICT (user_id, badge_id) DO NOTHING;
 
     -- well_met: somebody ELSE reacted to one of their photos. Excludes
-    -- self-reactions. Deliberately photo_reactions (not post_reactions) —
+    -- self-reactions. Deliberately photo_reactions (not post_reactions) ,
     -- see five_more_badges.sql's header for the full reasoning.
     INSERT INTO public.earned_badges (user_id, badge_id, earned_at)
     SELECT p_user_id, 'well_met', MIN(pr.created_at)
