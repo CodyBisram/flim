@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#0c0908" media="(prefers-color-scheme: dark)" />
   <meta name="theme-color" content="#e7e3da" media="(prefers-color-scheme: light)" />
   <title>FLIM, the disposable camera for your closest friends</title>
-  <meta name="description" content="FLIM is a disposable camera app. One film look and no filters to pick, a feed of only the people you follow, and shared rolls that develop for everyone at once. Invite only, on iPhone." />
+  <meta name="description" content="FLIM is a disposable camera app. One film look and no filters to pick, a feed of only the people you follow, shared rolls that develop for everyone at once, and a chapter of every month you shared. Invite only, on iPhone." />
   <meta property="og:site_name" content="FLIM" />
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://flim-app.com/" />
@@ -56,19 +56,19 @@
         <div>
           <p class="eyebrow">Invite only, iPhone</p>
           <h1>A disposable camera for your closest friends.</h1>
-          <!-- Both halves of the mechanic, in the order people meet them. The page
-               used to promise everyone a twelve hour wait, which is only true of a
-               shared roll: a personal shot has been ready immediately since 1.4
-               (personalDevelopDelay is 0), and it is the thing people do daily. -->
+          <!-- One job: the look. The darkroom-versus-roll mechanic used to be
+               explained here AND in the rolls frame, word for word; the specs table
+               in the next frame carries it now (your shots ready now, a roll in
+               twelve hours). The gate line below still says invite-only before
+               anyone installs. -->
           <p class="lede">
             Point and shoot, and the frame comes back wearing one film look you never
-            had to choose. Your own shots land in your darkroom <strong>right
-            away</strong>. Shoot into a shared roll instead and nobody sees a thing,
-            not even you, until the whole roll develops twelve hours later.
+            had to choose. Share it and it leaves with the date burned into the
+            corner, the way a disposable printed it.
           </p>
           <div class="actions">
             <a class="cta" href="https://apps.apple.com/us/app/flim-disposable-camera/id6786079629">Download on the App Store</a>
-            <a class="cta cta--quiet" href="#request">Request an invite</a>
+            <a class="cta cta--quiet" href="#look">See how it works</a>
           </div>
           <!-- Said here rather than only at the form, because someone who installs
                first and discovers the gate at sign-in has already been let down. -->
@@ -94,7 +94,7 @@
       </div>
     </section>
 
-    <section class="frame reveal" data-frame="02">
+    <section class="frame reveal" id="look" data-frame="02">
       <div class="split">
         <div>
           <p class="eyebrow">The look</p>
@@ -102,7 +102,9 @@
           <p class="body">
             Every frame gets the same hand tuned color, grain, and glow. There is no
             filter carousel and no sliders to second guess at 2am. You point the camera,
-            and FLIM develops the shot the way the film would have.
+            and FLIM develops the shot the way the film would have. Share one and it
+            carries the date in orange in the corner, like the date back on the
+            camera you grew up with.
           </p>
         </div>
         <!-- Two develop rows, not one. A single "Develop, 12 hours" row was the
@@ -123,10 +125,11 @@
           <p class="eyebrow">Shared rolls</p>
           <h2>Everyone shoots into the same roll.</h2>
           <p class="body">
-            Start a roll and bring in up to 50 friends. Everyone shoots into it and
+            Start a roll and bring your friends in. Everyone shoots into it and
             nobody sees a thing, not even their own frames. Twelve hours later the
             whole roll develops at once, for all of you, and you find out together
-            what the night actually looked like.
+            what the night actually looked like. Shoot five of the same thing and
+            the roll keeps the sharpest.
           </p>
         </div>
         <div>
@@ -166,22 +169,49 @@
           <div class="spec"><dt>React</dt><dd>Any emoji</dd></div>
           <div class="spec"><dt>Comment</dt><dd>And @mention</dd></div>
           <div class="spec"><dt>Order</dt><dd>Newest first</dd></div>
-          <div class="spec"><dt>Like counts</dt><dd>None</dd></div>
+          <div class="spec"><dt>Chapters</dt><dd>Every month</dd></div>
         </dl>
       </div>
     </section>
 
+    <!-- Shipped in 1.5.1 and the marquee of that release; the page had no trace of it. -->
     <section class="frame reveal" data-frame="05">
+      <div class="split">
+        <div>
+          <p class="eyebrow">Every month</p>
+          <h2>The month you shared, as a chapter.</h2>
+          <p class="body">
+            On the first of the month, the month you posted arrives on your page. Open
+            it and it plays like a reveal, then ends on the month in numbers: your most
+            reacted shot, your biggest fan, the hour you shoot at, the day you shot the
+            most. You choose which of those numbers other people see. Every past month
+            is already there.
+          </p>
+        </div>
+        <dl class="specs">
+          <div class="spec"><dt>Arrives</dt><dd>1st of the month</dd></div>
+          <div class="spec"><dt>Frames</dt><dd>Chosen on your phone</dd></div>
+          <div class="spec"><dt>Numbers</dt><dd>You pick what shows</dd></div>
+          <div class="spec"><dt>Share</dt><dd>As a contact sheet</dd></div>
+        </dl>
+      </div>
+    </section>
+
+    <!-- "No discover tab, no algorithm, no strangers" overstated it: the feed has a
+         people finder with a suggested list and username search. What is true, and
+         what matters, is that nothing ranks the feed and nothing reaches you from
+         someone you did not follow. -->
+    <section class="frame reveal" data-frame="06">
       <p class="eyebrow">Who is here</p>
       <h2>Invite only, and only ever your friends.</h2>
       <p class="body">
-        There is no discover tab, no algorithm, and no strangers. You get in with a code
-        from someone who already has the app, and what you share stays between you and
-        the people you shared it with.
+        There is no public feed and nothing ranks what you see. You find friends by
+        username, you get in with a code from someone who already has the app, and
+        what you share stays between you and the people you shared it with.
       </p>
     </section>
 
-    <section class="frame reveal" id="request" data-frame="06">
+    <section class="frame reveal" id="request" data-frame="07">
       <div class="split">
         <div>
           <p class="eyebrow">Not invited yet</p>
@@ -208,7 +238,7 @@
       </div>
     </section>
 
-    <section class="frame reveal" data-frame="07">
+    <section class="frame reveal" data-frame="08">
       <div class="split">
         <div>
           <p class="eyebrow">Contact</p>
