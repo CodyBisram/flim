@@ -274,6 +274,27 @@ guaranteed when one exists; ties by the old order) instead of a fixed priority. 
 eleven toggles. Unverified on device: the emoji glyph in the mono value (the simulator draws every
 emoji as a box), and the profile tap for fan and MVP against real ids.
 
+### done 2026-09-08: burst grouping stops pairing different photographs
+
+The owner, after Epic Universe: some frames that were not identical got stacked as a burst.
+Measured on that roll's 36 groups (thumbnails through the same Vision feature print the phone
+uses, plus a 16 by 16 grey correlation): real bursts sit at 0.18 to 0.45 between neighbours
+with pixel correlation 0.7 and up; three groups were plainly two photographs (a floor then a
+face, 0.84 to 1.0, correlation about 0) and still cleared the 0.9 bar, and two eight-frame
+groups drifted from one person to another through a chain of small moves, every link under
+0.35 and the last frame 0.69 from the first. Three changes in `BurstDetector`: the neighbour
+distance bar drops from 0.9 to 0.5; a second, pixel-level check (correlation of the two
+frames' grey thumbnails, floor 0.45) must ALSO pass; and a frame joining an existing group
+must still resemble the group's FIRST frame (0.65 / 0.35), or it starts a new burst. Pure
+rules, unit-tested; the Vision half stays untested in the Simulator as before. Already
+stored groups keep their `burst_group` (the phone decided at capture and nothing re-runs);
+the three known-bad groups in the Epic roll can be split by hand if the owner wants.
+
+Device check: shoot a genuine 5-frame burst (hold still, tap five times in two seconds) and
+confirm it stacks; then shoot two different things three seconds apart and confirm it does
+not. The Vision distance runs a little lower on the phone than on the Mac the numbers came
+from, so if a real burst fails to stack, the neighbour bar is the first thing to loosen.
+
 ### released 2026-09-06: 1.5.1 is live
 
 Build 347 (ee037e7) went Ready for Sale at 22:51 UTC. Gate bumped (`latest_version` 1.5.1,

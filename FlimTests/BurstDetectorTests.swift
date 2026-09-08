@@ -104,6 +104,74 @@ final class BurstDetectorTests: XCTestCase {
         XCTAssertNotEqual(BurstDetector.streamKey(rollId: UUID()), BurstDetector.streamKey(rollId: UUID()))
     }
 
+    // MARK: - Pixel agreement and the anchor
+
+    func testAMatchingPrintWithDisagreeingPixelsDoesNotMatch() {
+        // The Epic Universe case: two photographs of different people against one wall, whose
+        // feature prints sat under the bar while their layouts had nothing in common.
+        let user = UUID()
+        XCTAssertFalse(BurstMembership.matches(
+            currentUserId: user, currentStreamKey: "personal", currentTakenAt: now, distance: 0.3,
+            previousUserId: user, previousStreamKey: "personal", previousTakenAt: now.addingTimeInterval(-1),
+            timeWindow: 3, distanceThreshold: 0.5, correlation: 0.1, correlationFloor: 0.45))
+    }
+
+    func testAgreeingPixelsAtTheFloorStillMatch() {
+        let user = UUID()
+        XCTAssertTrue(BurstMembership.matches(
+            currentUserId: user, currentStreamKey: "personal", currentTakenAt: now, distance: 0.3,
+            previousUserId: user, previousStreamKey: "personal", previousTakenAt: now.addingTimeInterval(-1),
+            timeWindow: 3, distanceThreshold: 0.5, correlation: 0.45, correlationFloor: 0.45))
+    }
+
+    func testANilCorrelationNeverMatchesOnThePrintAlone() {
+        let user = UUID()
+        XCTAssertFalse(BurstMembership.matches(
+            currentUserId: user, currentStreamKey: "personal", currentTakenAt: now, distance: 0.1,
+            previousUserId: user, previousStreamKey: "personal", previousTakenAt: now.addingTimeInterval(-1),
+            timeWindow: 3, distanceThreshold: 0.5, correlation: nil, correlationFloor: 0.45))
+    }
+
+    func testAFrameThatDriftedFromTheAnchorLeavesTheGroup() {
+        // Every link in the chain passed; the frame no longer resembles where the burst began.
+        XCTAssertFalse(BurstMembership.staysWithAnchor(distanceToAnchor: 0.69, correlationToAnchor: 0.24,
+                                                       distanceThreshold: 0.65, correlationFloor: 0.35))
+        XCTAssertTrue(BurstMembership.staysWithAnchor(distanceToAnchor: 0.44, correlationToAnchor: 0.4,
+                                                      distanceThreshold: 0.65, correlationFloor: 0.35))
+        XCTAssertFalse(BurstMembership.staysWithAnchor(distanceToAnchor: nil, correlationToAnchor: 0.9,
+                                                       distanceThreshold: 0.65, correlationFloor: 0.35))
+    }
+
+    func testCorrelationIsOneForIdenticalAndMinusOneForInverted() {
+        let a: [Float] = [0, 0.25, 0.5, 1, 0.75, 0.1]
+        XCTAssertEqual(BurstMembership.correlation(a, a) ?? -9, 1, accuracy: 0.0001)
+        XCTAssertEqual(BurstMembership.correlation(a, a.map { 1 - $0 }) ?? 9, -1, accuracy: 0.0001)
+    }
+
+    func testCorrelationIsNilForFlatOrMismatchedInput() {
+        XCTAssertNil(BurstMembership.correlation([0.5, 0.5, 0.5], [0, 1, 0]))
+        XCTAssertNil(BurstMembership.correlation([0, 1], [0, 1, 0]))
+        XCTAssertNil(BurstMembership.correlation([], []))
+    }
+
+    func testSignatureIsTheFrameReducedToTheGrid() {
+        // Left half black, right half white, at any size: the signature's left cells are dark and
+        // its right cells light, so two such frames agree and a mirrored one disagrees.
+        let side = 64
+        var pixels = [UInt8](repeating: 0, count: side * side)
+        for y in 0..<side { for x in 0..<side { pixels[y * side + x] = x < side / 2 ? 0 : 255 } }
+        guard let image = grayscaleImage(pixels, width: side, height: side),
+              let mirrored = grayscaleImage(pixels.map { 255 - $0 }, width: side, height: side)
+        else { return XCTFail("could not build the fixture images") }
+        guard let sig = BurstDetector.signature(image), let sigMirrored = BurstDetector.signature(mirrored)
+        else { return XCTFail("no signature") }
+        XCTAssertEqual(sig.count, BurstDetector.signatureSide * BurstDetector.signatureSide)
+        XCTAssertLessThan(sig[0], 0.2)
+        XCTAssertGreaterThan(sig[BurstDetector.signatureSide - 1], 0.8)
+        XCTAssertEqual(BurstMembership.correlation(sig, sig) ?? 0, 1, accuracy: 0.0001)
+        XCTAssertLessThan(BurstMembership.correlation(sig, sigMirrored) ?? 1, -0.9)
+    }
+
     // MARK: - sharpnessScore
 
     private func grayscaleImage(_ pixels: [UInt8], width: Int, height: Int) -> CGImage? {
