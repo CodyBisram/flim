@@ -78,6 +78,23 @@ struct SharePreviewSheet: View {
     @State private var storyImage: UIImage?
     @State private var fullImage: UIImage?
 
+    /// The file the system share sheet is handed, written the moment Share is tapped.
+    ///
+    /// This used to be a `ShareLink` whose item was built from `outgoing` on every body pass. From
+    /// a chapter (two full-screen covers deep, with three renders landing behind the sheet) the
+    /// activity controller came up and was torn down within a beat, on the owner's own months as
+    /// much as anyone's: every state change under the link handed it a new item mid-presentation.
+    /// A file URL in `@State`, presented through the same `ActivityView` the contact sheet and the
+    /// roll's save-all already use, is a fixed thing to present and it also gives Photos and
+    /// Messages a real JPEG rather than an in-memory export.
+    @State private var exportFile: ExportFile?
+    @State private var isWritingExport = false
+
+    struct ExportFile: Identifiable {
+        let id = UUID()
+        let url: URL
+    }
+
     private var format: ShareFormat { ShareFormat(rawValue: formatRaw) ?? .print }
 
     /// The exact image that will leave. Falls back to the plain photo while a render is still in
@@ -88,6 +105,17 @@ struct SharePreviewSheet: View {
         case .story: storyImage ?? photo
         case .full: fullImage ?? photo
         case .plain: photo
+        }
+    }
+
+    /// Whether the chosen format's render has actually landed. The preview may show the plain
+    /// photograph as a stand-in, the export never should: Share waits for the real file.
+    private var outgoingIsReady: Bool {
+        switch format {
+        case .print: printImage != nil
+        case .story: storyImage != nil
+        case .full: fullImage != nil
+        case .plain: true
         }
     }
 
@@ -330,13 +358,32 @@ struct SharePreviewSheet: View {
     }
 
     private var shareButton: some View {
-        ShareLink(
-            item: SharedPhoto(image: outgoing),
-            preview: SharePreview("Photo", image: Image(uiImage: outgoing))
-        ) {
+        Button {
+            guard !isWritingExport else { return }
+            Haptics.tap()
+            isWritingExport = true
+            let image = outgoing
+            Task {
+                defer { isWritingExport = false }
+                // Off-main: a 2048px JPEG encode is tens of milliseconds the sheet should not
+                // spend frozen. Its own directory, matching `PhotoExport`'s contract, so two
+                // shares in flight can never hand one sheet the other's file.
+                let file = await Task.detached(priority: .userInitiated) { () -> URL? in
+                    guard let data = image.jpegData(compressionQuality: 0.9) else { return nil }
+                    let url = PhotoExport.begin().appendingPathComponent("flim.jpg")
+                    do { try data.write(to: url, options: .atomic) } catch { return nil }
+                    return url
+                }.value
+                if let file { exportFile = ExportFile(url: file) } else { Haptics.error() }
+            }
+        } label: {
             HStack(spacing: 8) {
-                Image(systemName: "square.and.arrow.up")
-                    .font(.system(size: 18, weight: .regular))
+                if isWritingExport || !outgoingIsReady {
+                    ProgressView().tint(accent).controlSize(.small)
+                } else {
+                    Image(systemName: "square.and.arrow.up")
+                        .font(.system(size: 18, weight: .regular))
+                }
                 Text(format.action)
                     .flimFont(15, weight: .medium, relativeTo: .body)
                     .contentTransition(.opacity)
@@ -348,7 +395,11 @@ struct SharePreviewSheet: View {
             // reveal's own primary and lets the print be the only bright thing on the sheet.
             .overlay(Capsule().strokeBorder(accent, lineWidth: 1))
         }
-        .simultaneousGesture(TapGesture().onEnded { Haptics.tap() })
+        .buttonStyle(.plain)
+        .disabled(isWritingExport || !outgoingIsReady)
+        .sheet(item: $exportFile) { file in
+            ActivityView(items: [file.url])
+        }
     }
 
     /// The frame toggle was a Bool. Carry the remembered answer over exactly once, so nobody who

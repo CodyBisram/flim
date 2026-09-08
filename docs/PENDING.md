@@ -274,6 +274,21 @@ guaranteed when one exists; ties by the old order) instead of a fixed priority. 
 eleven toggles. Unverified on device: the emoji glyph in the mono value (the simulator draws every
 emoji as a box), and the profile tap for fan and MVP against real ids.
 
+### done 2026-09-08: the share sheet that bounced out of chapters
+
+Owner: from a chapter, own or anyone's, tapping Share inside the preview sheet opened the
+system share sheet and it fell straight back to the photo. The preview's `ShareLink` built its
+item from `outgoing` on every body pass, and from a chapter (two full-screen covers deep,
+three exports still rendering behind the sheet) something always re-rendered during the
+presentation, handing the link a new item and tearing the activity controller down. Replaced
+with what the rest of the app already does: Share writes the chosen render to a JPEG in its own
+`PhotoExport` directory and presents it through `ActivityView` from a stable `@State` item.
+Share also waits for the chosen format's render to land instead of exporting the stand-in
+photograph, which was a second, quieter bug. `SharedPhoto` stays for now; nothing else used it.
+
+Device check: from a chapter, print, story, full and plain each share to Messages and to Save
+Image; the same from a roll and from the darkroom.
+
 ### done 2026-09-08: score every capture once, store it, read it everywhere
 
 Three asks in one spine. At capture, alongside `burst_group` and `sharpness`, the phone now
