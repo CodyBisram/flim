@@ -32,7 +32,7 @@ actor ChapterCuration {
     /// A detected face is worth this much added to the raw aesthetics score (both roughly
     /// 0...1): a plain quality metric has no notion of "someone is in this photo", and a recap
     /// that is all scenery reads wrong for a month that had people in it.
-    private static let faceBonus = 0.12
+    nonisolated static let faceBonus = 0.12
 
     /// Feature-print distances at or beyond this are treated as "not alike at all" (similarity
     /// 0); below it, similarity falls off linearly to 1 at distance 0. This is a design constant,
@@ -58,7 +58,21 @@ actor ChapterCuration {
     /// else, and never throws: one bad frame must not blank a whole month's recap.
     func curate(photos: [ChapterPhoto], displayScale: CGFloat,
                 thumbURLs: [String: URL], limit: Int = 15) async -> [UUID] {
+        // Dead frames never make the deck, whatever else is true of them.
+        let photos = photos.filter { !$0.isDeadFrame }
         guard photos.count > limit else { return photos.map(\.id) }
+
+        // The fast path: every candidate already carries its capture-time score and hash, so the
+        // month is curated from numbers the RPC returned, with no download and no Vision. This is
+        // what makes a chapter open instantly; the path below it is what runs for any month with
+        // photos from before the columns existed.
+        if let candidates = Self.columnCandidates(photos) {
+            let hashes = Dictionary(uniqueKeysWithValues: photos.compactMap { p in p.phash.map { (p.id, CaptureAnalysis.hash(fromStored: $0)) } })
+            return ChapterCurator.select(from: candidates, limit: limit) { a, b in
+                guard let ha = hashes[a], let hb = hashes[b] else { return 0 }
+                return CaptureAnalysis.similarity(hamming: CaptureAnalysis.hamming(ha, hb))
+            }
+        }
 
         // Bounded concurrency: at most `maxConcurrentScores` photos being scored at once, a new
         // one submitted the instant any one finishes, rather than either fully serial (the
@@ -100,9 +114,44 @@ actor ChapterCuration {
         }
     }
 
+    /// Candidates built purely from stored columns, or `nil` if any photo lacks either number,
+    /// in which case the whole month takes the Vision path (mixing the two scales would rank
+    /// scored months against unscored guesses). Pure and internal so it is tested directly.
+    nonisolated static func columnCandidates(_ photos: [ChapterPhoto]) -> [ChapterCurator.Candidate]? {
+        var out: [ChapterCurator.Candidate] = []
+        out.reserveCapacity(photos.count)
+        for (order, photo) in photos.enumerated() {
+            guard let quality = photo.quality, photo.phash != nil else { return nil }
+            out.append(.init(id: photo.id, order: order, qualityScore: quality))
+        }
+        return out
+    }
+
+    /// The quality number itself, shared with `BurstDetector` so the value stored at capture is
+    /// the value this actor used to compute per view: Vision's aesthetics score normalised from
+    /// its roughly -1...1 into 0...1, plus `faceBonus` when anyone is in the frame. 0.5 when the
+    /// aesthetics request is unavailable, which is the same neutral the old path used.
+    nonisolated static func visionQuality(of cgImage: CGImage, handler: VNImageRequestHandler? = nil) -> Double {
+        let handler = handler ?? VNImageRequestHandler(cgImage: cgImage, options: [:])
+        var quality = 0.5
+        if #available(iOS 18.0, *) {
+            let aesthetics = VNCalculateImageAestheticsScoresRequest()
+            if (try? handler.perform([aesthetics])) != nil, let result = aesthetics.results?.first {
+                quality = Double((result.overallScore + 1) / 2)
+            }
+        }
+        let faceRequest = VNDetectFaceRectanglesRequest()
+        if (try? handler.perform([faceRequest])) != nil, let faces = faceRequest.results, !faces.isEmpty {
+            quality = min(1, quality + Self.faceBonus)
+        }
+        return min(1, max(0, quality))
+    }
+
     private func qualityScore(for photo: ChapterPhoto, displayScale: CGFloat,
                                thumbURL: URL?) async -> Double {
         if let cached = qualityScores[photo.id] { return cached }
+        // A stored score wins over a download, even on the mixed path.
+        if let stored = photo.quality { qualityScores[photo.id] = stored; return stored }
         guard let url = thumbURL,
               // The THUMB rendition, never the full image: curation runs over an entire month,
               // and this is a scoring pass, not a viewing one.
@@ -115,20 +164,7 @@ actor ChapterCuration {
         }
 
         let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
-        var quality = 0.5
-        if #available(iOS 18.0, *) {
-            let aesthetics = VNCalculateImageAestheticsScoresRequest()
-            if (try? handler.perform([aesthetics])) != nil, let result = aesthetics.results?.first {
-                // `overallScore` is roughly -1...1; normalised to 0...1 so it composes cleanly
-                // with the face bonus below and with `ChapterCurator`'s own 0...1 expectation.
-                quality = Double((result.overallScore + 1) / 2)
-            }
-        }
-
-        let faceRequest = VNDetectFaceRectanglesRequest()
-        if (try? handler.perform([faceRequest])) != nil, let faces = faceRequest.results, !faces.isEmpty {
-            quality = min(1, quality + Self.faceBonus)
-        }
+        let quality = Self.visionQuality(of: cgImage, handler: handler)
 
         let featurePrintRequest = VNGenerateImageFeaturePrintRequest()
         if (try? handler.perform([featurePrintRequest])) != nil,

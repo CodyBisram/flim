@@ -26,10 +26,17 @@ struct FailedUpload: Identifiable, Equatable, Sendable {
     /// upload and its retry does not silently drop the grouping this capture already earned.
     let burstGroup: UUID?
     let sharpness: Double?
+    /// The rest of the capture-time analysis (see `BurstDetector.Decision`), carried the same
+    /// way as `sharpness` so a retried upload inserts the numbers this capture actually scored.
+    /// Optional so a sidecar written before 2026-09-08 still decodes.
+    let quality: Double?
+    let phash: Int64?
+    let isMiss: Bool?
 
     init(id: UUID = UUID(), data: Data, userId: UUID, rollId: UUID?, capturedAt: Date = .now,
          photoId: UUID? = nil, storagePath: String? = nil,
-         burstGroup: UUID? = nil, sharpness: Double? = nil) {
+         burstGroup: UUID? = nil, sharpness: Double? = nil,
+         quality: Double? = nil, phash: Int64? = nil, isMiss: Bool? = nil) {
         self.id = id
         self.data = data
         self.userId = userId
@@ -39,6 +46,9 @@ struct FailedUpload: Identifiable, Equatable, Sendable {
         self.storagePath = storagePath
         self.burstGroup = burstGroup
         self.sharpness = sharpness
+        self.quality = quality
+        self.phash = phash
+        self.isMiss = isMiss
     }
 }
 

@@ -63,6 +63,17 @@ struct PhotoGridCell: View {
                         .padding(5)
                         .background(Circle().fill(.black.opacity(0.45)))
                         .padding(5)
+                } else if photo.isReady, photo.isDeadFrame {
+                    // The phone's own verdict at capture (`CaptureAnalysis.MissRule`): a black or
+                    // smeared frame. A label, not a hide; the frame is still yours to open, post,
+                    // or delete. Neutral white on the same scrim as the shared check so the grid
+                    // stays two-tone.
+                    Text("Missed?")
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(.white.opacity(0.85))
+                        .padding(.horizontal, 6).padding(.vertical, 3)
+                        .background(Capsule().fill(.black.opacity(0.5)))
+                        .padding(5)
                 }
             }
             .contentShape(Rectangle())

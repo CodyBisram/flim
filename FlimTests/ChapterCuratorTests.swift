@@ -113,4 +113,23 @@ struct ChapterCuratorTests {
     func emptyMonthPicksNothing() {
         #expect(ChapterCurator.select(from: [], limit: 15) { _, _ in 0 }.isEmpty)
     }
+
+    // MARK: - Column fast path (capture-time scores replace the Vision pass)
+
+    @Test("stored scores become candidates in order, and one unscored photo sends the month to the Vision path")
+    func columnCandidatesRequireEveryPhotoScored() {
+        let scored = [
+            ChapterPhoto(id: UUID(), takenAt: Date(timeIntervalSince1970: 1_700_000_000), thumbPath: nil, feedPath: nil, storagePath: "p", rollId: nil, rollName: nil, postId: nil, quality: 0.2, phash: 1),
+            ChapterPhoto(id: UUID(), takenAt: Date(timeIntervalSince1970: 1_700_000_000), thumbPath: nil, feedPath: nil, storagePath: "p", rollId: nil, rollName: nil, postId: nil, quality: 0.9, phash: 2),
+        ]
+        let candidates = ChapterCuration.columnCandidates(scored)
+        #expect(candidates?.count == 2)
+        #expect(candidates?[0].order == 0 && candidates?[0].qualityScore == 0.2)
+        #expect(candidates?[1].order == 1 && candidates?[1].qualityScore == 0.9)
+
+        let mixed = scored + [ChapterPhoto(id: UUID(), takenAt: Date(timeIntervalSince1970: 1_700_000_000), thumbPath: nil, feedPath: nil, storagePath: "p", rollId: nil, rollName: nil, postId: nil)]
+        #expect(ChapterCuration.columnCandidates(mixed) == nil)
+        let hashless = [ChapterPhoto(id: UUID(), takenAt: Date(timeIntervalSince1970: 1_700_000_000), thumbPath: nil, feedPath: nil, storagePath: "p", rollId: nil, rollName: nil, postId: nil, quality: 0.5, phash: nil)]
+        #expect(ChapterCuration.columnCandidates(hashless) == nil)
+    }
 }

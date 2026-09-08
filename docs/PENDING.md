@@ -274,6 +274,38 @@ guaranteed when one exists; ties by the old order) instead of a fixed priority. 
 eleven toggles. Unverified on device: the emoji glyph in the mono value (the simulator draws every
 emoji as a box), and the profile tap for fan and MVP against real ids.
 
+### done 2026-09-08: score every capture once, store it, read it everywhere
+
+Three asks in one spine. At capture, alongside `burst_group` and `sharpness`, the phone now
+also writes `photos.quality` (the same Vision aesthetics-plus-faces number `ChapterCuration`
+used to recompute per view from a re-downloaded thumb, factored into
+`ChapterCuration.visionQuality` so both paths produce the identical value), `photos.phash` (a
+64-bit difference hash of the graded frame, `CaptureAnalysis.dHash`, stored as a signed
+bigint), and `photos.is_miss` (the dead-frame verdict, `CaptureAnalysis.MissRule`: black under
+0.02 mean luminance, or a smear under 0.012 sharpness on a frame that is not dark; the
+blurriest frame anyone kept in the Epic roll scored 0.035, so the floor sits well under it).
+Migration `2026-09-08_capture_analysis.sql` applied and folded into schema.sql.
+
+1. **Chapter covers by score.** `profile_chapters` ranks each month's covers by `quality`
+   DESC NULLS LAST then newest, never a miss. Months from before today keep the newest-first
+   rule because every quality there is NULL.
+2. **Dead frames.** The grid labels a miss "Missed?" (top-right, where the shared check goes)
+   and the roll reveal skips it; the recap's deck excludes it. Nothing is hidden or deleted.
+3. **Performance.** `chapter_photos` returns the four columns; `ChapterCuration.curate` builds
+   its candidates from them and measures diversity by Hamming distance
+   (`CaptureAnalysis.similarity`, 0 at 28 bits) when EVERY photo in the month is scored, so a
+   month shot entirely from today on curates with no download and no Vision, and the recap
+   signs no thumbnails for it. A month with one unscored photo takes the old path in full,
+   with stored scores still winning over downloads photo by photo.
+
+Nothing is backfilled: the server has no pixels. A device-side backfill of the signed-in
+account's own posted photos is the obvious follow-up if instant chapters for old months are
+wanted; it is not built.
+
+Device check on the next build: shoot with the lens covered and confirm "Missed?" appears on
+that frame and the reveal skips it; shoot a normal frame and confirm it does not. Open a
+chapter of a month shot after today and feel it open without the curation spinner.
+
 ### done 2026-09-08: burst grouping stops pairing different photographs
 
 The owner, after Epic Universe: some frames that were not identical got stacked as a burst.

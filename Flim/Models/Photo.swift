@@ -26,6 +26,17 @@ struct Photo: Codable, Identifiable {
     /// predates this column, or whose on-device analysis failed; a lone (non-burst) photo may
     /// still carry a score even though nothing currently reads it.
     var sharpness: Double?
+    /// Capture-time 0...1 aesthetics score (Vision aesthetics plus a face bonus), the same
+    /// formula `ChapterCuration` used to recompute per view. `nil` before 2026-09-08.
+    var quality: Double?
+    /// Capture-time 64-bit difference hash of the graded frame, carried as the signed integer
+    /// Postgres stores; compare with `CaptureAnalysis.hamming`. `nil` before 2026-09-08.
+    var phash: Int64?
+    /// The phone's dead-frame verdict at capture (lens covered, or unrecoverably blurred), see
+    /// `CaptureAnalysis.MissRule`. Optional only so a row from an older server decodes; read it
+    /// through `isDeadFrame`.
+    var isMiss: Bool?
+    var isDeadFrame: Bool { isMiss ?? false }
 
     var isReady: Bool { Date.now >= developsAt }
     /// Path to use in grids/feeds, the thumbnail if present, else the full image.
@@ -77,6 +88,9 @@ struct Photo: Codable, Identifiable {
         case isSorted = "is_sorted"
         case burstGroup = "burst_group"
         case sharpness
+        case quality
+        case phash
+        case isMiss = "is_miss"
     }
 }
 
@@ -109,6 +123,9 @@ struct InsertPhoto: Encodable {
     /// insert site (seeding, the personal fallback) compiles unchanged.
     var burstGroup: UUID?
     var sharpness: Double?
+    var quality: Double?
+    var phash: Int64?
+    var isMiss: Bool = false
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -121,5 +138,8 @@ struct InsertPhoto: Encodable {
         case isSorted = "is_sorted"
         case burstGroup = "burst_group"
         case sharpness
+        case quality
+        case phash
+        case isMiss = "is_miss"
     }
 }

@@ -172,6 +172,54 @@ final class BurstDetectorTests: XCTestCase {
         XCTAssertLessThan(BurstMembership.correlation(sig, sigMirrored) ?? 1, -0.9)
     }
 
+    // MARK: - CaptureAnalysis
+
+    func testDHashIsStableAndFlipsOnAnInvertedFrame() {
+        let side = 64
+        var pixels = [UInt8](repeating: 0, count: side * side)
+        // A left-to-right ramp: every horizontal neighbour pair is darker-then-brighter.
+        for y in 0..<side { for x in 0..<side { pixels[y * side + x] = UInt8(x * 4) } }
+        guard let ramp = grayscaleImage(pixels, width: side, height: side),
+              let inverted = grayscaleImage(pixels.map { 255 - $0 }, width: side, height: side)
+        else { return XCTFail("could not build the fixture images") }
+        guard let h1 = CaptureAnalysis.dHash(ramp), let h2 = CaptureAnalysis.dHash(ramp),
+              let hInv = CaptureAnalysis.dHash(inverted)
+        else { return XCTFail("no hash") }
+        XCTAssertEqual(h1, h2)
+        XCTAssertEqual(CaptureAnalysis.hamming(h1, h2), 0)
+        // Nearly every comparison reverses. Not all 64: resampling 64 columns into 9 leaves a few
+        // neighbouring cells equal, and an equal pair is the same bit either way round.
+        XCTAssertGreaterThanOrEqual(CaptureAnalysis.hamming(h1, hInv), 56)
+    }
+
+    func testDHashSurvivesTheBigintRoundTrip() {
+        let hash: UInt64 = 0xF00D_BEEF_DEAD_C0DE
+        XCTAssertEqual(CaptureAnalysis.hash(fromStored: CaptureAnalysis.stored(hash)), hash)
+        XCTAssertLessThan(CaptureAnalysis.stored(hash), 0)   // the top bit is set, so it rides negative
+    }
+
+    func testHashSimilarityIsOneForIdenticalAndZeroPastUnrelated() {
+        XCTAssertEqual(CaptureAnalysis.similarity(hamming: 0), 1)
+        XCTAssertEqual(CaptureAnalysis.similarity(hamming: 14), 0.5, accuracy: 0.0001)
+        XCTAssertEqual(CaptureAnalysis.similarity(hamming: 28), 0)
+        XCTAssertEqual(CaptureAnalysis.similarity(hamming: 40), 0)
+    }
+
+    func testMissRuleFlagsBlackAndSmearedFramesOnly() {
+        XCTAssertTrue(CaptureAnalysis.MissRule.isMiss(meanLuminance: 0.005, sharpness: 0.5))   // lens covered
+        XCTAssertTrue(CaptureAnalysis.MissRule.isMiss(meanLuminance: 0.4, sharpness: 0.005))   // a smear
+        XCTAssertFalse(CaptureAnalysis.MissRule.isMiss(meanLuminance: 0.05, sharpness: 0.005)) // a dark night sky
+        XCTAssertFalse(CaptureAnalysis.MissRule.isMiss(meanLuminance: 0.4, sharpness: 0.035))  // the blurriest frame anyone kept
+        XCTAssertFalse(CaptureAnalysis.MissRule.isMiss(meanLuminance: nil, sharpness: nil))
+    }
+
+    func testMeanLuminanceOfAFlatFrame() {
+        let side = 16
+        guard let image = grayscaleImage([UInt8](repeating: 128, count: side * side), width: side, height: side)
+        else { return XCTFail("could not build the fixture image") }
+        XCTAssertEqual(CaptureAnalysis.meanLuminance(image) ?? 0, 128.0 / 255.0, accuracy: 0.02)
+    }
+
     // MARK: - sharpnessScore
 
     private func grayscaleImage(_ pixels: [UInt8], width: Int, height: Int) -> CGImage? {

@@ -338,7 +338,8 @@ final class PhotoService {
         // to be in that exact payload, not patched on afterwards.
         async let burstTask: BurstDetector.Decision = { () async -> BurstDetector.Decision in
             if let pending {
-                return BurstDetector.Decision(group: pending.burstGroup, sharpness: pending.sharpness, patchEarlier: nil)
+                return BurstDetector.Decision(group: pending.burstGroup, sharpness: pending.sharpness, patchEarlier: nil,
+                                              quality: pending.quality, phash: pending.phash, isMiss: pending.isMiss ?? false)
             }
             return await BurstDetector.shared.analyze(
                 photoId: photoId, userId: userId, streamKey: BurstDetector.streamKey(rollId: rollId),
@@ -393,7 +394,8 @@ final class PhotoService {
             // grouping instead of the burst-free snapshot written to disk above.
             record = FailedUpload(id: record.id, data: record.data, userId: record.userId, rollId: record.rollId,
                                   capturedAt: record.capturedAt, photoId: record.photoId, storagePath: record.storagePath,
-                                  burstGroup: burst.group, sharpness: burst.sharpness)
+                                  burstGroup: burst.group, sharpness: burst.sharpness,
+                                  quality: burst.quality, phash: burst.phash, isMiss: burst.isMiss)
             let payload = InsertPhoto(
                 id: photoId,
                 userId: userId,
@@ -405,7 +407,10 @@ final class PhotoService {
                 // Roll shots skip the deck; personal instants start unsorted for triage.
                 isSorted: rollId != nil,
                 burstGroup: burst.group,
-                sharpness: burst.sharpness
+                sharpness: burst.sharpness,
+                quality: burst.quality,
+                phash: burst.phash,
+                isMiss: burst.isMiss
             )
 
             let inserted: Photo
@@ -576,7 +581,8 @@ final class PhotoService {
             developsAt: Self.developDate(rollId: nil, rollReveal: nil, now: .now,
                                          personalDelay: personalDevelopDelay, rollDelay: rollDevelopDelay),
             isSorted: false,
-            burstGroup: burst.group, sharpness: burst.sharpness
+            burstGroup: burst.group, sharpness: burst.sharpness,
+            quality: burst.quality, phash: burst.phash, isMiss: burst.isMiss
         )
         do {
             let inserted: Photo = try await supabase

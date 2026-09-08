@@ -158,6 +158,15 @@ struct ChapterPhoto: Decodable, Identifiable, Equatable {
     /// photo whose rendition hasn't landed. Matches `Photo.viewPath`'s naming and role.
     var viewPath: String { feedPath ?? storagePath }
 
+    /// Capture-time analysis carried by `chapter_photos` since 2026-09-08, all absent for older
+    /// photos and older servers. When `quality` and `phash` are both present curation reads them
+    /// instead of downloading the thumb and running Vision, see `ChapterCuration.curate`.
+    var quality: Double?
+    var phash: Int64?
+    var sharpness: Double?
+    var isMiss: Bool?
+    var isDeadFrame: Bool { isMiss ?? false }
+
     enum CodingKeys: String, CodingKey {
         case id
         case takenAt = "taken_at"
@@ -167,6 +176,10 @@ struct ChapterPhoto: Decodable, Identifiable, Equatable {
         case rollId = "roll_id"
         case rollName = "roll_name"
         case postId = "post_id"
+        case quality
+        case phash
+        case sharpness
+        case isMiss = "is_miss"
     }
 
     init(from decoder: Decoder) throws {
@@ -185,11 +198,16 @@ struct ChapterPhoto: Decodable, Identifiable, Equatable {
         rollId = (try? container.decodeIfPresent(UUID.self, forKey: .rollId)) ?? nil
         rollName = (try? container.decodeIfPresent(String.self, forKey: .rollName)) ?? nil
         postId = (try? container.decodeIfPresent(UUID.self, forKey: .postId)) ?? nil
+        quality = (try? container.decodeIfPresent(Double.self, forKey: .quality)) ?? nil
+        phash = (try? container.decodeIfPresent(Int64.self, forKey: .phash)) ?? nil
+        sharpness = (try? container.decodeIfPresent(Double.self, forKey: .sharpness)) ?? nil
+        isMiss = (try? container.decodeIfPresent(Bool.self, forKey: .isMiss)) ?? nil
     }
 
     /// Direct construction for previews, the DEBUG fixture, and tests.
     init(id: UUID, takenAt: Date, thumbPath: String?, feedPath: String?, storagePath: String,
-         rollId: UUID?, rollName: String?, postId: UUID? = nil) {
+         rollId: UUID?, rollName: String?, postId: UUID? = nil,
+         quality: Double? = nil, phash: Int64? = nil, sharpness: Double? = nil, isMiss: Bool? = nil) {
         self.id = id
         self.takenAt = takenAt
         self.thumbPath = thumbPath
@@ -198,6 +216,10 @@ struct ChapterPhoto: Decodable, Identifiable, Equatable {
         self.rollId = rollId
         self.rollName = rollName
         self.postId = postId
+        self.quality = quality
+        self.phash = phash
+        self.sharpness = sharpness
+        self.isMiss = isMiss
     }
 }
 

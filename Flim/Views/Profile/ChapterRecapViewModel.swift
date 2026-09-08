@@ -185,7 +185,7 @@ final class ChapterRecapViewModel {
 
         // Interactive immediately: "Play the month" and the fanned prints have something real the
         // instant the month's own photo list is in hand, no waiting on curation.
-        deck = Self.provisionalDeck(from: photos, limit: Self.curationLimit)
+        deck = Self.provisionalDeck(from: photos.filter { !$0.isDeadFrame }, limit: Self.curationLimit)
         loaded = true
 
         let isCompletedMonth = !chapter.isCurrentMonth()
@@ -208,8 +208,11 @@ final class ChapterRecapViewModel {
         } else {
             // ONE batched sign for every candidate's thumb path, rather than curation resolving
             // one at a time: this is what made a 60-shot month sixty sequential round trips.
-            let thumbPaths = Array(Set(photos.map(\.displayPath)))
-            let thumbURLs = await feed.signedURLs(for: thumbPaths)
+            // Only the photos curation will actually have to look at: anything carrying its
+            // capture-time score and hash is scored from those columns and never downloaded, so
+            // a month shot entirely after 2026-09-08 signs nothing here at all.
+            let thumbPaths = Array(Set(photos.filter { $0.quality == nil || $0.phash == nil }.map(\.displayPath)))
+            let thumbURLs = thumbPaths.isEmpty ? [:] : await feed.signedURLs(for: thumbPaths)
             for (path, url) in thumbURLs { urls[path] = url }
             signElapsed = signStart.duration(to: clock.now)
 

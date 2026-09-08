@@ -168,7 +168,9 @@ final class RollRevealViewModel {
         }
         guard AccountEpoch.isCurrent(epoch) else { return }
         deck = fresh.sorted { $0.takenAt < $1.takenAt }
-        let playback = BurstGrouping.playback(deck)
+        // A dead frame (the phone's own capture-time verdict, `Photo.isDeadFrame`) stays in the
+        // roll and in the grid, where it is labelled, but the reveal does not stop on it.
+        let playback = BurstGrouping.playback(deck.filter { !$0.isDeadFrame })
         playedDeck = playback.played
         burstExtraCount = playback.extraCount
 

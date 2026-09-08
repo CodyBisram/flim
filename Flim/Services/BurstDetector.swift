@@ -2,6 +2,87 @@ import CoreGraphics
 import Foundation
 import Vision
 
+/// The pure, testable half of what a capture is scored for beyond burst membership: the
+/// difference hash, the dead-frame rule, and the hash comparison every later reader uses. Kept
+/// out of the actor so none of it needs Vision or a device to be pinned.
+enum CaptureAnalysis {
+    /// 64-bit difference hash: the frame reduced to 9 by 8 grey cells, one bit per horizontal
+    /// neighbour pair (left brighter than right). Blind to grain, exposure shifts, and small
+    /// re-framing; a different photograph flips roughly half the bits.
+    static func dHash(_ image: CGImage) -> UInt64? {
+        guard image.width > 0, image.height > 0 else { return nil }
+        let w = 9, h = 8
+        var pixels = [UInt8](repeating: 0, count: w * h)
+        guard let colorSpace = CGColorSpace(name: CGColorSpace.linearGray),
+              let ctx = CGContext(data: &pixels, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w,
+                                  space: colorSpace, bitmapInfo: CGImageAlphaInfo.none.rawValue)
+        else { return nil }
+        ctx.interpolationQuality = .high
+        ctx.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
+        var hash: UInt64 = 0
+        for y in 0..<h {
+            for x in 0..<(w - 1) {
+                if pixels[y * w + x] > pixels[y * w + x + 1] { hash |= 1 << UInt64(y * (w - 1) + x) }
+            }
+        }
+        return hash
+    }
+
+    /// Bits that differ between two hashes. 0 is the same frame, ~32 is unrelated.
+    static func hamming(_ a: UInt64, _ b: UInt64) -> Int { (a ^ b).nonzeroBitCount }
+
+    /// Postgres has no unsigned 64-bit column, so the hash rides in a `bigint` as its raw bits.
+    static func stored(_ hash: UInt64) -> Int64 { Int64(bitPattern: hash) }
+    static func hash(fromStored value: Int64) -> UInt64 { UInt64(bitPattern: value) }
+
+    /// A 0...1 similarity for curation's diversity rule, from a Hamming distance: identical
+    /// frames are 1, anything past `unrelatedBits` is 0, linear between. Ten bits or fewer is a
+    /// near-duplicate on a 64-bit difference hash; past about twenty-eight the frames share no
+    /// layout, which is the same thing the old feature-print floor meant by "not alike at all".
+    static func similarity(hamming: Int, unrelatedBits: Int = 28) -> Double {
+        guard unrelatedBits > 0 else { return hamming == 0 ? 1 : 0 }
+        return max(0, 1 - Double(hamming) / Double(unrelatedBits))
+    }
+
+    /// Mean of a linear-grey render, 0...1.
+    static func meanLuminance(_ image: CGImage) -> Double? {
+        guard image.width > 0, image.height > 0 else { return nil }
+        let side = 16
+        var pixels = [UInt8](repeating: 0, count: side * side)
+        guard let colorSpace = CGColorSpace(name: CGColorSpace.linearGray),
+              let ctx = CGContext(data: &pixels, width: side, height: side, bitsPerComponent: 8, bytesPerRow: side,
+                                  space: colorSpace, bitmapInfo: CGImageAlphaInfo.none.rawValue)
+        else { return nil }
+        ctx.interpolationQuality = .high
+        ctx.draw(image, in: CGRect(x: 0, y: 0, width: side, height: side))
+        return Double(pixels.reduce(0) { $0 + Int($1) }) / Double(side * side * 255)
+    }
+
+    /// The dead-frame verdict. Deliberately conservative: it must be near-certain, because the
+    /// reveal skips a miss and the grid labels it. Two shapes of miss, and only two:
+    ///
+    ///   black    the lens was covered or the phone was in a pocket. Mean luminance under
+    ///            `blackFloor` on the GRADED frame, whose look already lifts blacks, so a real
+    ///            night scene reads well above this.
+    ///   blur     a smear with nothing to hold on to. `sharpnessScore` under `blurFloor` AND the
+    ///            frame is not dark, because the Laplacian of a dark frame is small for a
+    ///            different reason and a night sky is not a miss.
+    ///
+    /// Measured on the Epic Universe roll: the blurriest frame anyone kept scored 0.035, so the
+    /// blur floor sits well under it. Nothing in that roll was black.
+    enum MissRule {
+        static let blackFloor: Double = 0.02
+        static let blurFloor: Double = 0.012
+        static let darkExemptBelow: Double = 0.08
+
+        static func isMiss(meanLuminance: Double?, sharpness: Double?) -> Bool {
+            if let meanLuminance, meanLuminance < blackFloor { return true }
+            if let sharpness, let meanLuminance, sharpness < blurFloor, meanLuminance >= darkExemptBelow { return true }
+            return false
+        }
+    }
+}
+
 /// The pure membership rule behind `BurstDetector.analyze`, pulled out so the time window, the
 /// stream/shooter boundary, and the distance threshold are unit-tested directly, without a live
 /// Vision request. This app's own Vision surfaces are already documented (`ChapterCuration`) as
@@ -119,6 +200,12 @@ actor BurstDetector {
         /// matched it: apply as a single UPDATE against that photo's own row, `burst_group` only,
         /// once. `nil` on every shot except the second frame of a fresh pair.
         let patchEarlier: (photoId: UUID, group: UUID)?
+        /// The rest of the capture-time analysis, stored alongside so nothing downstream has to
+        /// re-run Vision on a downloaded thumbnail: `ChapterCuration`'s own quality score, the
+        /// difference hash (`CaptureAnalysis.dHash`), and the dead-frame verdict.
+        var quality: Double? = nil
+        var phash: Int64? = nil
+        var isMiss: Bool = false
 
         static let none = Decision(group: nil, sharpness: nil, patchEarlier: nil)
     }
@@ -185,7 +272,13 @@ actor BurstDetector {
     /// failure (or `image == nil`, the calibration path's ungraded fallback) degrades to
     /// `Decision.none` rather than stalling or failing the upload.
     func analyze(photoId: UUID, userId: UUID, streamKey: String, takenAt: Date, image: CGImage?) async -> Decision {
-        let (printObs, signature, sharpness) = await Self.score(image)
+        let scored = await Self.score(image)
+        let (printObs, signature, sharpness) = (scored.print, scored.signature, scored.sharpness)
+        // Every verdict below carries the same analysis; only `group`/`patchEarlier` differ.
+        func decision(group: UUID?, patchEarlier: (photoId: UUID, group: UUID)?) -> Decision {
+            Decision(group: group, sharpness: sharpness, patchEarlier: patchEarlier,
+                     quality: scored.quality, phash: scored.phash.map(CaptureAnalysis.stored), isMiss: scored.isMiss)
+        }
         let fresh = Entry(photoId: photoId, userId: userId, streamKey: streamKey, takenAt: takenAt,
                           print: printObs, signature: signature, group: nil,
                           anchorPrint: nil, anchorSignature: nil)
@@ -193,7 +286,7 @@ actor BurstDetector {
         guard let candidate = ring.last(where: { $0.userId == userId && $0.streamKey == streamKey }) else {
             ring.append(fresh)
             trim()
-            return Decision(group: nil, sharpness: sharpness, patchEarlier: nil)
+            return decision(group: nil, patchEarlier: nil)
         }
 
         let distance = Self.distance(printObs, candidate.print)
@@ -206,7 +299,7 @@ actor BurstDetector {
         ) else {
             ring.append(fresh)
             trim()
-            return Decision(group: nil, sharpness: sharpness, patchEarlier: nil)
+            return decision(group: nil, patchEarlier: nil)
         }
 
         if let existingGroup = candidate.group {
@@ -221,7 +314,7 @@ actor BurstDetector {
             ) else {
                 ring.append(fresh)
                 trim()
-                return Decision(group: nil, sharpness: sharpness, patchEarlier: nil)
+                return decision(group: nil, patchEarlier: nil)
             }
             var member = fresh
             member.group = existingGroup
@@ -229,7 +322,7 @@ actor BurstDetector {
             member.anchorSignature = candidate.anchorSignature
             ring.append(member)
             trim()
-            return Decision(group: existingGroup, sharpness: sharpness, patchEarlier: nil)
+            return decision(group: existingGroup, patchEarlier: nil)
         }
 
         // The candidate has no group yet: this is the SECOND frame of a fresh pair. Mint one UUID
@@ -248,7 +341,7 @@ actor BurstDetector {
         member.anchorSignature = candidate.signature
         ring.append(member)
         trim()
-        return Decision(group: newGroup, sharpness: sharpness, patchEarlier: (photoId: candidate.photoId, group: newGroup))
+        return decision(group: newGroup, patchEarlier: (photoId: candidate.photoId, group: newGroup))
     }
 
     private func trim() {
@@ -258,17 +351,37 @@ actor BurstDetector {
     /// Off the actor: a detached task so the Vision request and the sharpness scan never hold up
     /// whatever the actor is doing for a concurrent capture (captures are serialized upstream in
     /// `PhotoService`'s own pipeline anyway, but this keeps the actor's own turn short regardless).
-    private static func score(_ image: CGImage?) async -> (VNFeaturePrintObservation?, [Float]?, Double?) {
-        guard let image else { return (nil, nil, nil) }
+    /// Everything one capture is scored for, in one detached pass over one 512px downsample.
+    struct Scored {
+        var print: VNFeaturePrintObservation?
+        var signature: [Float]?
+        var sharpness: Double?
+        var quality: Double?
+        var phash: UInt64?
+        var isMiss = false
+        static let none = Scored()
+    }
+
+    private static func score(_ image: CGImage?) async -> Scored {
+        guard let image else { return .none }
         return await Task.detached(priority: .utility) {
-            guard let small = downsample(image, maxDimension: analysisMaxDimension) else { return (nil, nil, nil) }
-            var printObs: VNFeaturePrintObservation?
+            guard let small = downsample(image, maxDimension: analysisMaxDimension) else { return Scored.none }
+            var scored = Scored()
             let handler = VNImageRequestHandler(cgImage: small, options: [:])
             let request = VNGenerateImageFeaturePrintRequest()
             if (try? handler.perform([request])) != nil {
-                printObs = request.results?.first
+                scored.print = request.results?.first
             }
-            return (printObs, signature(small), sharpnessScore(small))
+            scored.signature = signature(small)
+            scored.sharpness = sharpnessScore(small)
+            // The same score ChapterCuration computed per view from a re-downloaded thumb, now
+            // once, here, on the frame itself. Reuses its request set so the number means the
+            // same thing wherever it is read.
+            scored.quality = ChapterCuration.visionQuality(of: small, handler: handler)
+            scored.phash = CaptureAnalysis.dHash(small)
+            scored.isMiss = CaptureAnalysis.MissRule.isMiss(meanLuminance: CaptureAnalysis.meanLuminance(small),
+                                                             sharpness: scored.sharpness)
+            return scored
         }.value
     }
 
