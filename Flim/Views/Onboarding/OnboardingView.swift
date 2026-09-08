@@ -1,35 +1,34 @@
 import SwiftUI
 import AVFoundation
 
+/// The first run, after sign-in and the username screen: one screen, shaped like the viewfinder
+/// it is about to become, with one sentence and one button. Tapping the button requests camera
+/// permission, so the system dialog always follows directly from this screen's own message
+/// (Apple 5.1.1(iv); FLIM was rejected once for a Skip that let people past without the dialog).
+///
+/// This replaced three swipeable cards ("Shoot now." / "Sort your shots." / "Share the moment.")
+/// with a Next button and a Skip, on 2026-09-08. Measured on the 38 accounts created since
+/// August: 8 of 36 never finished the cards, and the median time from account to first shot was
+/// 130 minutes. The cards explained the product; this screen hands over the camera. What the
+/// cards used to say is now said by the surfaces themselves: `NewAccountIntro` gives each one a
+/// single first-visit line, and the first Darkroom and first roll are designed as real states.
+///
+/// There is deliberately no Skip. There is nothing to skip: the only way forward is the camera,
+/// and the camera needs the permission ask. `hasOnboarded` keeps its exact meaning and timing
+/// (see `CameraView`'s gating on it and the standing checklist in the project notes).
 struct OnboardingView: View {
     @Environment(\.flimAccent) private var accent
     @AppStorage("hasOnboarded") private var hasOnboarded = false
-    @State private var page = 0
+    @State private var isOpening = false
 
-    private struct Card: Identifiable {
-        let id = UUID()
-        let icon: String
-        let title: String
-        let body: String
-    }
-
-    private let cards = [
-        Card(icon: "camera.aperture",
-             title: "Shoot now.",
-             body: "Capture the moment, disposable-camera style. Every shot gets \(AppInfo.appName)'s film look baked in. No filters to pick. Just tap the shutter."),
-        Card(icon: "square.stack.3d.up",
-             title: "Sort your shots.",
-             body: "Instants are ready right away. Swipe to keep them in your Darkroom or post them to your page. Shared rolls develop together, \(Roll.developDelayPhrase) after the roll is started."),
-        Card(icon: "sparkles",
-             title: "Share the moment.",
-             body: "Post your favorites to your page, follow friends, and react to theirs. \(AppInfo.appName) is invite-only. It's just your people.")
-    ]
-
-    /// Ends onboarding. If camera permission hasn't been decided yet, this requests it
-    /// first so the system dialog always follows directly from the onboarding CTA or
-    /// Skip -- mirrors the same-API call in `CameraViewModel.start()`, which will simply
-    /// see the now-decided status and proceed without prompting again.
-    private func finishOnboarding() {
+    /// Ends onboarding. If camera permission hasn't been decided yet, this requests it first so
+    /// the system dialog always follows directly from the one CTA. Mirrors the same-API call in
+    /// `CameraViewModel.start()`, which then sees the decided status and proceeds without asking
+    /// again.
+    private func openCamera() {
+        guard !isOpening else { return }
+        isOpening = true
+        Haptics.tap()
         Task { @MainActor in
             if AVCaptureDevice.authorizationStatus(for: .video) == .notDetermined {
                 _ = await AVCaptureDevice.requestAccess(for: .video)
@@ -44,53 +43,54 @@ struct OnboardingView: View {
             FlimTheme.bg.ignoresSafeArea()
 
             VStack(spacing: 0) {
-                TabView(selection: $page) {
-                    ForEach(Array(cards.enumerated()), id: \.offset) { index, card in
-                        VStack(spacing: 22) {
-                            Spacer()
-                            Image(systemName: card.icon)
-                                .font(.system(size: 52, weight: .ultraLight))
-                                .foregroundStyle(accent)
-                            Text(card.title)
-                                .flimFont(30, weight: .thin, relativeTo: .title3)
-                                .foregroundStyle(.white)
-                            Text(card.body)
-                                .flimFont(15, relativeTo: .body)
-                                .foregroundStyle(FlimTheme.textSecondary)
-                                .multilineTextAlignment(.center)
-                                .lineSpacing(3)
-                                .padding(.horizontal, 44)
-                            Spacer()
-                            Spacer()
+                Spacer(minLength: 24)
+
+                // The viewfinder's own box, dark, at the camera screen's proportions: the
+                // permission ask lives where the picture will, not on a card about it.
+                ZStack {
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(
+                            RadialGradient(colors: [Color(red: 0.10, green: 0.09, blue: 0.08), Color(red: 0.05, green: 0.05, blue: 0.05)],
+                                           center: UnitPoint(x: 0.5, y: 0.4), startRadius: 0, endRadius: 420)
+                        )
+                    VStack(spacing: 12) {
+                        Text("\(AppInfo.appName) is a camera.")
+                            .flimFont(26, weight: .thin, relativeTo: .title2)
+                            .foregroundStyle(.white)
+                        Text("Point and shoot. The frame comes back with the look already on it.")
+                            .flimFont(15, relativeTo: .body)
+                            .foregroundStyle(FlimTheme.textSecondary)
+                            .multilineTextAlignment(.center)
+                            .lineSpacing(3)
+                            .padding(.horizontal, 40)
+
+                        Button(action: openCamera) {
+                            Text("Open the camera")
+                                .flimFont(16, weight: .semibold, relativeTo: .body)
+                                .foregroundStyle(.black)
+                                .padding(.horizontal, 28)
+                                .padding(.vertical, 14)
+                                .background(accent, in: Capsule())
                         }
-                        .tag(index)
+                        .buttonStyle(.plain)
+                        .disabled(isOpening)
+                        .padding(.top, 24)
+                        .accessibilityHint("Asks for camera access, then opens the camera")
                     }
                 }
-                .tabViewStyle(.page(indexDisplayMode: .always))
-                .indexViewStyle(.page(backgroundDisplayMode: .always))
+                .aspectRatio(FlimTheme.frameAspect, contentMode: .fit)
+                .padding(.horizontal, 16)
 
-                Button {
-                    if page < cards.count - 1 {
-                        withAnimation { page += 1 }
-                    } else {
-                        Haptics.tap()
-                        finishOnboarding()
-                    }
-                } label: {
-                    Text(page < cards.count - 1 ? "Next" : "Take your first shot")
-                        .flimFont(16, weight: .semibold, relativeTo: .body)
-                        .foregroundStyle(.black)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
-                        .background(accent, in: Capsule())
-                }
-                .padding(.horizontal, 28)
-                .padding(.bottom, 20)
+                Spacer(minLength: 24)
 
-                Button("Skip") { finishOnboarding() }
-                    .flimFont(13, relativeTo: .subheadline)
-                    .foregroundStyle(FlimTheme.textTertiary)
-                    .padding(.bottom, 24)
+                // A dark shutter, so the screen reads as the camera it is about to be. Not a
+                // control: the button above is the only way on, because it is the one that asks.
+                Circle()
+                    .strokeBorder(Color.white.opacity(0.12), lineWidth: 4)
+                    .frame(width: 78, height: 78)
+                    .overlay(Circle().fill(Color.white.opacity(0.06)).padding(8))
+                    .padding(.bottom, 48)
+                    .accessibilityHidden(true)
             }
         }
     }

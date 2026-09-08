@@ -274,6 +274,53 @@ guaranteed when one exists; ties by the old order) instead of a fixed priority. 
 eleven toggles. Unverified on device: the emoji glyph in the mono value (the simulator draws every
 emoji as a box), and the profile tap for fan and MVP against real ids.
 
+### done 2026-09-08: Founding 100 counts people, and a one-day cohort code
+
+Owner asks. (1) The App Review login (hidden_from_discovery, ordinal 20) no longer earns
+`founding_100` or takes a seat: `_ratchet_badges` now ranks among non-hidden accounts, the
+review account's badge row was deleted, and the ratchet was re-run for everyone so the 101st
+ordinal picks the badge up when it exists (54 founders of 54 people today). Ordinals are
+untouched and stay immutable. Migration `2026-09-08_founding_100_people_only.sql`.
+(2) `invite_campaigns`: time-boxed cohort codes attributed to a member, never drawing on that
+member's own quota. `redeem_invite` tries a personal code first, then a live campaign code;
+`invite_preview` names the campaign's inviter the same way, so the first-run flow follows them.
+`SEPT10` is live for the whole of 2026-09-10 in New York, unlimited uses, attributed to the
+owner; the owner's own personal code is untouched and keeps working after. Migration
+`2026-09-08_invite_campaigns.sql`. Add another cohort with one INSERT into `invite_campaigns`.
+
+### in flight 2026-09-08: the first run, stage one
+
+From the Claude Design first-run canvas (owner's project "Light canvas ground fixed"), after the
+owner's decisions: Direction A with B's feel (sign in first, then straight into the camera, the
+permission ask inside the viewfinder), the username screen stays with name, username and
+colour, the inviter is followed one way, and every surface introduces itself in one line to new
+accounts only. Rejected from the canvas, with reasons in the session: shooting before sign-in
+(a frame with no owner, a stranded photo at the gate, the invite context arriving after the
+shutter), roll codes admitting people (they do not and should not), and a mutual follow made
+on the inviter's behalf.
+
+Shipped in this stage:
+- `invite_preview(p_code)` RPC (applied, folded): who a personal code belongs to, only for a
+  code `redeem_invite` would accept, behind the same 30-an-hour gate. The sign-in screen's code
+  field is always visible, and six characters resolve into "Maya invited you. You will follow
+  them once you are in." The inviter is remembered per email (`PendingInviter`) and followed
+  one way the moment the account's row exists (`UsernameView.save`); the ordinary follow push
+  tells them.
+- The three onboarding cards, Next and Skip are gone. `OnboardingView` is one screen shaped
+  like the viewfinder: "FLIM is a camera." and "Open the camera", which requests permission and
+  sets `hasOnboarded` exactly as the CTA did before. Apple 5.1.1(iv) holds: the dialog follows
+  the screen's own message, and there is no way past without it.
+- Username arrives prefilled from the email's local part (`UsernameSuggestion`).
+- `NewAccountIntro` + `FirstVisitLine`: one sentence on Feed, Rolls and your own page the first
+  time an account created on or after 2026-09-08 opens them, then never. Older accounts never
+  see any of it, reinstall or not.
+
+Still to build (stage two): the first Darkroom with one frame at print size and its two
+actions, the first roll's dark slot copy, the notification ask on the roll screen the moment a
+frame goes in ("Tell me at 9:14"), and the Darkroom's own first-visit line, which waits on that
+state. Also owed: the standing camera-permission checklist (fresh install dialog timing, the
+tab-cycle test twice) on a device before this ships, since `OnboardingView` changed.
+
 ### done 2026-09-08: the share sheet that bounced out of chapters
 
 Owner: from a chapter, own or anyone's, tapping Share inside the preview sheet opened the

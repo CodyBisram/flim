@@ -226,6 +226,8 @@ struct RollsView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(spacing: 0) {
+                    // One sentence, once, for a brand-new account: see NewAccountIntro.
+                    FirstVisitLine(surface: .rolls)
                     Color.clear.frame(height: 0).id("rollsTop")
 
                     // The whole open-roll region shares ONE clock. The cadence is decided

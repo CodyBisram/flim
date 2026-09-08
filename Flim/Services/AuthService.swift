@@ -268,6 +268,32 @@ final class AuthService {
     /// code was valid (also `true`, idempotently, if the email was already allowlisted).
     /// `false` means the code doesn't exist. The caller is responsible for proceeding via
     /// `sendOTP(email:)` on success, `is_email_allowed` stays the single source of truth there.
+    /// Who a personal invite code belongs to, for the sign-in screen to say so before any email
+    /// is sent. `nil` for a code the server will not currently accept, whichever reason: the RPC
+    /// answers identically for a spent code and a made-up one (see `invite_preview`).
+    struct InvitePreview: Decodable, Equatable {
+        let inviterId: UUID
+        let username: String
+        let displayName: String?
+        enum CodingKeys: String, CodingKey {
+            case inviterId = "inviter_id", username, displayName = "display_name"
+        }
+        /// What the screen calls them: the display name when there is one, else the handle.
+        var shownName: String {
+            if let displayName, !displayName.trimmingCharacters(in: .whitespaces).isEmpty { return displayName }
+            return "@\(username)"
+        }
+    }
+
+    func previewInvite(code: String) async -> InvitePreview? {
+        let normalized = Self.normalizeInviteCode(code)
+        guard normalized.count == 6 else { return nil }
+        let rows: [InvitePreview]? = try? await supabase
+            .rpc("invite_preview", params: ["p_code": normalized])
+            .execute().value
+        return rows?.first
+    }
+
     func redeemInvite(code: String, email: String) async throws -> Bool {
         let normalizedCode = Self.normalizeInviteCode(code)
         let normalizedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()

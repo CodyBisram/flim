@@ -7,6 +7,7 @@ struct UsernameView: View {
     @State private var name = ""
     @State private var isSaving = false
     @State private var error: String?
+    @Environment(FeedService.self) private var feed
     @AppStorage("accentColor") private var accentColor = "amber"
 
     var isValid: Bool { AuthService.isValidUsername(username) }
@@ -129,6 +130,13 @@ struct UsernameView: View {
             .padding(.bottom, 40)
         }
         .navigationBarHidden(true)
+        // Arrives filled in from the email's local part, so the common case is one glance and
+        // Continue rather than inventing a handle on the spot. Still fully editable; the server
+        // still decides uniqueness at save exactly as before.
+        .onAppear {
+            guard username.isEmpty, let email = auth.currentUser?.email ?? auth.pendingEmail else { return }
+            username = UsernameSuggestion.from(email: email)
+        }
     }
 
     private func save() async {
@@ -136,6 +144,14 @@ struct UsernameView: View {
         error = nil
         do {
             try await auth.setUsername(username.lowercased(), displayName: name)
+            // The one-way follow of whoever's code let this account in, the first moment the
+            // account's own row exists. Best effort and silent: a failure here costs nothing the
+            // person can see, and the follow can be made by hand from the inviter's page.
+            if let uid = auth.currentUser?.id,
+               let email = auth.currentUser?.email ?? auth.pendingEmail,
+               let inviter = PendingInviter.take(for: email), inviter != uid {
+                _ = await feed.follow(inviter, from: uid)
+            }
         } catch {
             self.error = error.localizedDescription
         }

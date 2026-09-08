@@ -465,6 +465,13 @@ struct UserPageView: View {
                 Button { followList = .following } label: { stat(statsKnown ? "\(following)" : "–", "following") }
             }
 
+            // One sentence, once, on your OWN page only, for a brand-new account: see
+            // NewAccountIntro. A stranger's page needs no introduction to itself.
+            if isSelf {
+                FirstVisitLine(surface: .profile)
+                    .multilineTextAlignment(.center)
+            }
+
             // No follow affordance on a blocked account, the dedicated blocked-state panel
             // below (with its own Unblock) replaces it.
             if !isSelf && !isBlocked {

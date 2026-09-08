@@ -20,13 +20,22 @@ struct EmailAuthView: View {
     // opportunity, and the one screen where a new person forms their first impression.
     /// Whether the code field is showing. Opened by tapping the disclosure, or automatically when
     /// the server says this email needs an invite.
-    @State private var inviteExpanded = false
+    /// Always open since the first-run redesign (2026-09-08). Almost everyone arriving here is
+    /// holding a code from a friend's link or message, and the collapsed row made the one thing
+    /// they came to do a tap away and easy to miss. Kept as state so the two places that used to
+    /// open it (a link, a server rejection) still compile and still focus the field.
+    @State private var inviteExpanded = true
     /// Set when the server has told us this email isn't allowlisted. Changes the invite section's
     /// wording from an offer into an instruction, without ever rendering a red rejection.
     @State private var needsInvite = false
     @State private var inviteCode = ""
     @State private var inviteError: String?
     @FocusState private var codeFocused: Bool
+    /// Who the typed code belongs to, the moment six characters are in. Shown as "Maya invited
+    /// you." and remembered (`PendingInviter`) so the new account follows them once it exists.
+    /// `nil` while resolving, for a short code, and for a code the server will not accept.
+    @State private var inviter: AuthService.InvitePreview?
+    @State private var previewTask: Task<Void, Never>?
 
     var body: some View {
         ZStack {
@@ -40,7 +49,8 @@ struct EmailAuthView: View {
                         .flimFont(34, weight: .thin, relativeTo: .title3)
                         .tracking(12)
                         .foregroundStyle(.white)
-                    Text("Shoot now. See it later. Enter your email to get started.")
+                    // One line, not a pitch. The camera says the rest by being the next screen.
+                    Text("Invite only. Your code and your email, and you are in.")
                         .font(.system(size: subtitleSize))
                         .foregroundStyle(Color(white: 0.5))
                 }
@@ -131,6 +141,7 @@ struct EmailAuthView: View {
                     .onChange(of: inviteCode) { _, new in
                         inviteCode = String(new.uppercased().prefix(6))
                         inviteError = nil
+                        resolveInviter()
                     }
                     .padding(.horizontal, 16)
                     .padding(.vertical, 16)
@@ -142,6 +153,33 @@ struct EmailAuthView: View {
                         .flimFont(13, relativeTo: .subheadline)
                         .foregroundStyle(Color(red: 1, green: 0.4, blue: 0.4))
                         .padding(.top, 4)
+                }
+
+                // The code resolving into a person is the first thing FLIM says to a newcomer
+                // that is about them: who brought you. Quiet, no accent, and it names the one
+                // consequence (you will follow them) rather than promising anything on the
+                // inviter's behalf.
+                if let inviter {
+                    HStack(spacing: 12) {
+                        Circle()
+                            .fill(Color.white.opacity(0.1))
+                            .frame(width: 34, height: 34)
+                            .overlay {
+                                Text(String(inviter.shownName.trimmingCharacters(in: CharacterSet(charactersIn: "@")).prefix(1)).uppercased())
+                                    .flimFont(15, weight: .light, relativeTo: .body)
+                                    .foregroundStyle(.white)
+                            }
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("\(inviter.shownName) invited you.")
+                                .flimFont(15, weight: .medium, relativeTo: .subheadline)
+                                .foregroundStyle(.white)
+                            Text("You will follow them once you are in.")
+                                .flimFont(12, relativeTo: .caption)
+                                .foregroundStyle(Color(white: 0.5))
+                        }
+                    }
+                    .padding(.top, 12)
+                    .transition(.opacity)
                 }
             } else {
                 // Collapsed by default so the screen still reads as "enter your email", with the
@@ -171,6 +209,22 @@ struct EmailAuthView: View {
         inviteCode = code
         withAnimation(.snappy(duration: 0.2)) { inviteExpanded = true }
         Haptics.tap()
+        resolveInviter()
+    }
+
+    /// Asks the server who the code belongs to once six characters are in, and forgets the
+    /// answer the moment the code changes. Cancels an in-flight lookup on every keystroke so a
+    /// slow answer for an old code can never label a new one.
+    private func resolveInviter() {
+        previewTask?.cancel()
+        withAnimation(.snappy(duration: 0.2)) { inviter = nil }
+        guard inviteCode.count == 6 else { return }
+        let code = inviteCode
+        previewTask = Task {
+            let preview = await auth.previewInvite(code: code)
+            guard !Task.isCancelled, inviteCode == code else { return }
+            withAnimation(.snappy(duration: 0.2)) { inviter = preview }
+        }
     }
 
     private var isValidEmail: Bool {
@@ -212,6 +266,9 @@ struct EmailAuthView: View {
             // rate-gated RPC for a person who is already allowlisted. `redeemedEmails` is the
             // record the sign-up flow already keeps for exactly this address.
             if !inviteCode.isEmpty, !PendingInviteRedeemed.isRedeemed(for: email) {
+                // Remembered before the redeem, keyed by this email: whichever sign-in this code
+                // ends up admitting, the new account follows the person whose code it was.
+                if let inviter { PendingInviter.remember(inviterId: inviter.inviterId, for: email) }
                 guard try await auth.redeemInvite(code: inviteCode, email: email) else {
                     Haptics.error()
                     // Says BOTH things that can be true, because the server cannot tell you

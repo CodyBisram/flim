@@ -5459,3 +5459,675 @@ $$;
 REVOKE ALL ON FUNCTION public.chapter_photos(UUID, DATE) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.chapter_photos(UUID, DATE) FROM anon;
 GRANT EXECUTE ON FUNCTION public.chapter_photos(UUID, DATE) TO authenticated;
+
+-- Folded in from supabase/migrations/2026-09-08_invite_preview.sql (applied 2026-09-08).
+-- invite_preview: who a personal invite code belongs to, so the sign-in screen can say "@maya
+-- invited you" the moment six characters are typed (or arrive by link), before any email is sent.
+--
+-- Deliberately narrow. It answers only for a code that redeem_invite would currently accept (the
+-- owner has uses left, or is unlimited), and it says nothing at all otherwise: an exhausted code
+-- and a code that never existed look identical here, exactly as they do in redeem_invite, so
+-- this adds no way to tell real codes from guesses that the redeem path did not already allow.
+-- It shares redeem_invite's global rate gate (redeem_invite_rate, 30 an hour across everyone),
+-- so probing through this function is bounded the same way probing through that one is.
+--
+-- Returns the inviter's id, username and display name: the id is what the new account follows
+-- once it exists, the names are what the screen shows.
+CREATE OR REPLACE FUNCTION public.invite_preview(p_code TEXT)
+RETURNS TABLE (inviter_id UUID, username TEXT, display_name TEXT)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+VOLATILE
+AS $$
+DECLARE
+    v_code     TEXT := UPPER(TRIM(p_code));
+    v_window   TIMESTAMPTZ;
+    v_attempts INT;
+BEGIN
+    IF v_code !~ '^[A-Z0-9]{6}$' THEN
+        RETURN;
+    END IF;
+
+    SELECT window_start, attempts INTO v_window, v_attempts
+    FROM public.redeem_invite_rate
+    WHERE id = TRUE
+    FOR UPDATE;
+    IF v_window < NOW() - INTERVAL '1 hour' THEN
+        UPDATE public.redeem_invite_rate SET window_start = NOW(), attempts = 1 WHERE id = TRUE;
+    ELSIF v_attempts >= 30 THEN
+        RAISE EXCEPTION 'rate_limited' USING ERRCODE = 'P0003';
+    ELSE
+        UPDATE public.redeem_invite_rate SET attempts = attempts + 1 WHERE id = TRUE;
+    END IF;
+
+    RETURN QUERY
+    SELECT u.id, u.username, u.display_name
+    FROM public.users u
+    WHERE u.invite_code = v_code
+      AND (u.invite_uses_remaining IS NULL OR u.invite_uses_remaining > 0)
+    LIMIT 1;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.invite_preview(TEXT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.invite_preview(TEXT) TO anon, authenticated;
+
+-- Folded in from supabase/migrations/2026-09-08_founding_100_people_only.sql (applied 2026-09-08).
+-- Founding 100 counts people, not the App Review account. The review login (hidden_from_discovery)
+-- held ordinal 20 and the badge with it; it keeps the ordinal (immutable by trigger, and the
+-- edge number is not a rank) but no longer earns founding_100, and the seat it took goes to the
+-- 101st ordinal. The predicate inside _ratchet_badges changes; nothing else in the ratchet does.
+-- The function body below is the production definition of 2026-09-08 with that one WHERE
+-- clause replaced.
+
+CREATE OR REPLACE FUNCTION public._ratchet_badges(p_user_id uuid)
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+BEGIN
+    -- first_light: their first frame ever, full stop.
+    INSERT INTO public.earned_badges (user_id, badge_id, earned_at)
+    SELECT p_user_id, 'first_light', MIN(p.taken_at)
+    FROM public.photos p
+    WHERE p.user_id = p_user_id
+    HAVING MIN(p.taken_at) IS NOT NULL
+    ON CONFLICT (user_id, badge_id) DO NOTHING;
+
+    -- full_roll: shot into the roll on both sides of its halfway point, on a
+    -- roll that actually developed.
+    INSERT INTO public.earned_badges (user_id, badge_id, earned_at)
+    SELECT p_user_id, 'full_roll', MIN(agg.earned_at)
+    FROM (
+        SELECT
+            BOOL_OR(p.taken_at < r.created_at + INTERVAL '6 hours') AS shot_early,
+            MIN(p.taken_at) FILTER (WHERE p.taken_at >= r.created_at + INTERVAL '6 hours') AS earned_at
+        FROM public.rolls r
+        JOIN public.photos p ON p.roll_id = r.id AND p.user_id = p_user_id
+        WHERE public.is_roll_developed(r.id)
+        GROUP BY r.id, r.created_at
+    ) agg
+    WHERE agg.shot_early AND agg.earned_at IS NOT NULL
+    HAVING MIN(agg.earned_at) IS NOT NULL
+    ON CONFLICT (user_id, badge_id) DO NOTHING;
+
+    -- darkroom: had a perfect reveal-opening streak at some point, across
+    -- every developed roll they were ever a member of. Frozen the instant
+    -- this INSERT first lands -- a later skipped reveal no longer removes it.
+    INSERT INTO public.earned_badges (user_id, badge_id, earned_at)
+    SELECT p_user_id, 'darkroom', MAX(v.viewed_at)
+    FROM public.roll_members rm
+    JOIN public.rolls r ON r.id = rm.roll_id
+    LEFT JOIN public.roll_reveal_views v
+        ON v.roll_id = rm.roll_id AND v.user_id = rm.user_id
+    WHERE rm.user_id = p_user_id
+      AND public.is_roll_developed(r.id)
+    HAVING COUNT(r.id) > 0 AND COUNT(r.id) = COUNT(v.viewed_at)
+    ON CONFLICT (user_id, badge_id) DO NOTHING;
+
+    -- founding_100: signup_ordinal <= 100. earned_at = the account's own
+    -- created_at (the ordinal was decided at signup), never now().
+    INSERT INTO public.earned_badges (user_id, badge_id, earned_at)
+    SELECT u.id, 'founding_100', u.created_at
+    FROM public.users u
+    WHERE u.id = p_user_id
+      -- 2026-09-08: the hundred are the first hundred PEOPLE. An account hidden from
+      -- discovery (the App Review login) keeps its ordinal, the ordinal stays immutable,
+      -- but it neither earns this nor takes a seat: the rank counted here skips it, so
+      -- the 101st ordinal is the 100th founder when one hidden account sits before it.
+      AND NOT u.hidden_from_discovery
+      AND (SELECT count(*) FROM public.users x
+           WHERE NOT x.hidden_from_discovery AND x.signup_ordinal <= u.signup_ordinal) <= 100
+    ON CONFLICT (user_id, badge_id) DO NOTHING;
+
+    -- first_in: first to open a roll's reveal, on a roll with >= 2 MEMBERS
+    -- (an empty race beats no one). Ranked with a deterministic tiebreak so
+    -- this is stable forever once earned.
+    INSERT INTO public.earned_badges (user_id, badge_id, earned_at)
+    WITH ranked AS (
+        SELECT roll_id, user_id, viewed_at,
+               ROW_NUMBER() OVER (PARTITION BY roll_id ORDER BY viewed_at ASC, user_id ASC) AS rn
+        FROM public.roll_reveal_views
+    ), qualifying_rolls AS (
+        SELECT roll_id FROM public.roll_members GROUP BY roll_id HAVING COUNT(*) >= 2
+    )
+    SELECT p_user_id, 'first_in', MIN(r.viewed_at)
+    FROM ranked r
+    JOIN qualifying_rolls qr ON qr.roll_id = r.roll_id
+    WHERE r.user_id = p_user_id AND r.rn = 1
+    HAVING MIN(r.viewed_at) IS NOT NULL
+    ON CONFLICT (user_id, badge_id) DO NOTHING;
+
+    -- roll_maker: created a roll that went on to hold at least one photo
+    -- from anyone. The photo requirement keeps this from being farmable by
+    -- creating and abandoning empty rolls.
+    INSERT INTO public.earned_badges (user_id, badge_id, earned_at)
+    SELECT p_user_id, 'roll_maker', MIN(r.created_at)
+    FROM public.rolls r
+    WHERE r.created_by = p_user_id
+      AND EXISTS (SELECT 1 FROM public.photos p WHERE p.roll_id = r.id)
+    HAVING MIN(r.created_at) IS NOT NULL
+    ON CONFLICT (user_id, badge_id) DO NOTHING;
+
+    -- brought_someone: someone signed up using this user's invite code.
+    -- Records only that it happened and when (u.created_at), never who.
+    INSERT INTO public.earned_badges (user_id, badge_id, earned_at)
+    SELECT p_user_id, 'brought_someone', MIN(u.created_at)
+    FROM public.allowed_emails ae
+    JOIN public.users u ON lower(u.email) = ae.email
+    WHERE ae.note = 'invited_by:' || p_user_id::text
+    HAVING MIN(u.created_at) IS NOT NULL
+    ON CONFLICT (user_id, badge_id) DO NOTHING;
+
+    -- joined_in: joined a roll (roll_members) that somebody ELSE created.
+    INSERT INTO public.earned_badges (user_id, badge_id, earned_at)
+    SELECT p_user_id, 'joined_in', MIN(rm.joined_at)
+    FROM public.roll_members rm
+    JOIN public.rolls r ON r.id = rm.roll_id
+    WHERE rm.user_id = p_user_id
+      AND r.created_by <> p_user_id
+    HAVING MIN(rm.joined_at) IS NOT NULL
+    ON CONFLICT (user_id, badge_id) DO NOTHING;
+
+    -- chipped_in: shot at least one photo into a roll they did not create.
+    INSERT INTO public.earned_badges (user_id, badge_id, earned_at)
+    SELECT p_user_id, 'chipped_in', MIN(p.taken_at)
+    FROM public.photos p
+    JOIN public.rolls r ON r.id = p.roll_id
+    WHERE p.user_id = p_user_id
+      AND r.created_by <> p_user_id
+    HAVING MIN(p.taken_at) IS NOT NULL
+    ON CONFLICT (user_id, badge_id) DO NOTHING;
+
+    -- shared: posted a frame to the feed, full stop. earned_at is the
+    -- honest global first posts.created_at; the covered-post gate is
+    -- applied at READ time by profile_badges, not here.
+    INSERT INTO public.earned_badges (user_id, badge_id, earned_at)
+    SELECT p_user_id, 'shared', MIN(po.created_at)
+    FROM public.posts po
+    WHERE po.user_id = p_user_id
+    HAVING MIN(po.created_at) IS NOT NULL
+    ON CONFLICT (user_id, badge_id) DO NOTHING;
+
+    -- well_met: somebody ELSE reacted to one of their photos. Excludes
+    -- self-reactions. Deliberately photo_reactions (not post_reactions) —
+    -- see five_more_badges.sql's header for the full reasoning.
+    INSERT INTO public.earned_badges (user_id, badge_id, earned_at)
+    SELECT p_user_id, 'well_met', MIN(pr.created_at)
+    FROM public.photo_reactions pr
+    JOIN public.photos p ON p.id = pr.photo_id
+    WHERE p.user_id = p_user_id
+      AND pr.user_id <> p_user_id
+    HAVING MIN(pr.created_at) IS NOT NULL
+    ON CONFLICT (user_id, badge_id) DO NOTHING;
+
+    -- full_house: a roll reaches >= 5 DISTINCT CONTRIBUTORS, and this user
+    -- is one of them. See five_more_badges.sql's own comment for the full
+    -- >= vs = reasoning and the shared-earned_at behaviour.
+    INSERT INTO public.earned_badges (user_id, badge_id, earned_at)
+    WITH roll_contributors AS (
+        SELECT p.roll_id, p.user_id AS contributor_id, MIN(p.taken_at) AS first_shot
+        FROM public.photos p
+        WHERE p.roll_id IS NOT NULL
+        GROUP BY p.roll_id, p.user_id
+    ), ranked AS (
+        SELECT roll_id, contributor_id, first_shot,
+               ROW_NUMBER() OVER (PARTITION BY roll_id ORDER BY first_shot ASC, contributor_id ASC) AS rn
+        FROM roll_contributors
+    ), roll_threshold AS (
+        SELECT roll_id, first_shot AS threshold_at
+        FROM ranked
+        WHERE rn = 5
+    )
+    SELECT p_user_id, 'full_house', MIN(rt.threshold_at)
+    FROM roll_threshold rt
+    JOIN ranked me ON me.roll_id = rt.roll_id AND me.contributor_id = p_user_id
+    HAVING MIN(rt.threshold_at) IS NOT NULL
+    ON CONFLICT (user_id, badge_id) DO NOTHING;
+
+    -- front_row -- NEW. See PART 1's matching block for the full comment.
+    INSERT INTO public.earned_badges (user_id, badge_id, earned_at)
+    WITH ranked AS (
+        SELECT roll_id, user_id, viewed_at,
+               ROW_NUMBER() OVER (PARTITION BY roll_id ORDER BY viewed_at ASC, user_id ASC) AS rn
+        FROM public.roll_reveal_views
+    ), qualifying_rolls AS (
+        SELECT roll_id FROM public.roll_members GROUP BY roll_id HAVING COUNT(*) >= 2
+    ), my_wins AS (
+        SELECT r.roll_id, r.viewed_at,
+               ROW_NUMBER() OVER (ORDER BY r.viewed_at ASC, r.roll_id ASC) AS frn
+        FROM ranked r
+        JOIN qualifying_rolls qr ON qr.roll_id = r.roll_id
+        WHERE r.user_id = p_user_id AND r.rn = 1
+    )
+    SELECT p_user_id, 'front_row', viewed_at
+    FROM my_wins
+    WHERE frn = 5
+    ON CONFLICT (user_id, badge_id) DO NOTHING;
+
+    -- packed_house -- NEW. Identical to full_house above, rn = 10 not 5.
+    INSERT INTO public.earned_badges (user_id, badge_id, earned_at)
+    WITH roll_contributors AS (
+        SELECT p.roll_id, p.user_id AS contributor_id, MIN(p.taken_at) AS first_shot
+        FROM public.photos p
+        WHERE p.roll_id IS NOT NULL
+        GROUP BY p.roll_id, p.user_id
+    ), ranked AS (
+        SELECT roll_id, contributor_id, first_shot,
+               ROW_NUMBER() OVER (PARTITION BY roll_id ORDER BY first_shot ASC, contributor_id ASC) AS rn
+        FROM roll_contributors
+    ), roll_threshold AS (
+        SELECT roll_id, first_shot AS threshold_at
+        FROM ranked
+        WHERE rn = 10
+    )
+    SELECT p_user_id, 'packed_house', MIN(rt.threshold_at)
+    FROM roll_threshold rt
+    JOIN ranked me ON me.roll_id = rt.roll_id AND me.contributor_id = p_user_id
+    HAVING MIN(rt.threshold_at) IS NOT NULL
+    ON CONFLICT (user_id, badge_id) DO NOTHING;
+
+    -- patron -- NEW. Identical lineage join to brought_someone above, rn = 5
+    -- over this caller's own invitees ordered by their own created_at.
+    INSERT INTO public.earned_badges (user_id, badge_id, earned_at)
+    WITH invitees AS (
+        SELECT u.id AS invitee_id, u.created_at
+        FROM public.allowed_emails ae
+        JOIN public.users u ON lower(u.email) = ae.email
+        WHERE ae.note = 'invited_by:' || p_user_id::text
+    ), ranked AS (
+        SELECT created_at,
+               ROW_NUMBER() OVER (ORDER BY created_at ASC, invitee_id ASC) AS rn
+        FROM invitees
+    )
+    SELECT p_user_id, 'patron', created_at
+    FROM ranked
+    WHERE rn = 5
+    ON CONFLICT (user_id, badge_id) DO NOTHING;
+
+    -- cover_to_cover: ten rolls you shot into before they developed.
+    -- REWRITTEN (2026-08-18_cover_to_cover_ten_rolls.sql). It used to mean
+    -- "every developed roll you were ever a member of contains a photo of
+    -- yours", which had the floor at ONE roll and turned out to be trivial:
+    -- of its first five holders, three earned it by joining a single roll
+    -- and shooting into it. It was also unearnable forever after one miss,
+    -- because the missed roll counts against you permanently -- easy for a
+    -- brand-new account and impossible for an engaged one, which is exactly
+    -- backwards. Cumulative counting fixes both: it always progresses, one
+    -- skipped roll never poisons it, and ten is real work.
+    -- Same rank-the-nth shape as every other threshold badge here, so a
+    -- later eleventh roll can never displace the recorded earned_at.
+    INSERT INTO public.earned_badges (user_id, badge_id, earned_at)
+    WITH mine AS (
+        SELECT p.roll_id, MIN(p.taken_at) AS first_shot
+        FROM public.photos p
+        JOIN public.rolls r ON r.id = p.roll_id
+        WHERE p.user_id = p_user_id
+          AND public.is_roll_developed(r.id)
+        GROUP BY p.roll_id
+    ), ranked AS (
+        SELECT first_shot,
+               ROW_NUMBER() OVER (ORDER BY first_shot ASC, roll_id ASC) AS rn
+        FROM mine
+    )
+    SELECT p_user_id, 'cover_to_cover', first_shot
+    FROM ranked
+    WHERE rn = 10
+    ON CONFLICT (user_id, badge_id) DO NOTHING;
+
+    -- kept_one -- NEW. See PART 1's matching block for what "developed but
+    -- never shared" means here and why develops_at (not is_developed) is
+    -- the condition.
+    INSERT INTO public.earned_badges (user_id, badge_id, earned_at)
+    WITH kept AS (
+        SELECT p.taken_at, p.id,
+               ROW_NUMBER() OVER (ORDER BY p.taken_at ASC, p.id ASC) AS rn
+        FROM public.photos p
+        WHERE p.user_id = p_user_id
+          AND p.develops_at <= now()
+          AND NOT EXISTS (SELECT 1 FROM public.posts po WHERE po.photo_id = p.id)
+    )
+    SELECT p_user_id, 'kept_one', taken_at
+    FROM kept
+    WHERE rn = 10
+    ON CONFLICT (user_id, badge_id) DO NOTHING;
+
+    -- regular -- NEW. Seven distinct app_open days. Not retroactive; see
+    -- this file's header.
+    INSERT INTO public.earned_badges (user_id, badge_id, earned_at)
+    WITH days AS (
+        SELECT DISTINCT day
+        FROM public.usage_events
+        WHERE user_id = p_user_id AND event = 'app_open'
+    ), ranked AS (
+        SELECT day, ROW_NUMBER() OVER (ORDER BY day ASC) AS rn
+        FROM days
+    )
+    SELECT p_user_id, 'regular', day::timestamptz
+    FROM ranked
+    WHERE rn = 7
+    ON CONFLICT (user_id, badge_id) DO NOTHING;
+
+    -- one_year: a year old, AND still shooting.
+    -- Was pure tenure: "now() >= created_at + 1 year", nothing else. That made
+    -- it the only badge in the catalogue reachable by doing nothing, which is
+    -- survivable at silver and wrong at gold -- and 14 of 48 accounts have never
+    -- shot a single frame, so the first cohort to reach a passive gold badge
+    -- would have been mostly dormant accounts collecting a medal for existing.
+    --
+    -- Now it needs a frame taken ON OR AFTER the first anniversary. Monotonic
+    -- like everything else here: once true it stays true, and it is never
+    -- blocked -- miss your anniversary week and any later frame still earns it,
+    -- unlike a "shot during month twelve" window which would shut forever.
+    -- earned_at is that qualifying frame, the honest instant both halves became
+    -- true, never now().
+    INSERT INTO public.earned_badges (user_id, badge_id, earned_at)
+    SELECT p_user_id, 'one_year', MIN(p.taken_at)
+    FROM public.photos p
+    JOIN public.users u ON u.id = p.user_id
+    WHERE p.user_id = p_user_id
+      AND p.taken_at >= u.created_at + INTERVAL '1 year'
+    HAVING MIN(p.taken_at) IS NOT NULL
+    ON CONFLICT (user_id, badge_id) DO NOTHING;
+
+    -- open_door -- NEW. Same lineage join as patron/brought_someone, rn = 10.
+    -- Ten is chosen off real numbers, not a round figure: the top inviter in
+    -- production has 24 joined invitees and the next has 9, so ten is held by
+    -- exactly one account today with a second one invite away. Twenty would
+    -- have sat empty for years.
+    INSERT INTO public.earned_badges (user_id, badge_id, earned_at)
+    WITH invitees AS (
+        SELECT u.id AS invitee_id, u.created_at
+        FROM public.allowed_emails ae
+        JOIN public.users u ON lower(u.email) = ae.email
+        WHERE ae.note = 'invited_by:' || p_user_id::text
+    ), ranked AS (
+        SELECT created_at,
+               ROW_NUMBER() OVER (ORDER BY created_at ASC, invitee_id ASC) AS rn
+        FROM invitees
+    )
+    SELECT p_user_id, 'open_door', created_at
+    FROM ranked
+    WHERE rn = 10
+    ON CONFLICT (user_id, badge_id) DO NOTHING;
+
+    -- chimed_in -- NEW. Reacted to SOMEBODY ELSE'S photo. The mirror of
+    -- well_met, which fires when someone reacts to yours: one rewards being
+    -- seen, this one rewards looking.
+    INSERT INTO public.earned_badges (user_id, badge_id, earned_at)
+    SELECT p_user_id, 'chimed_in', MIN(pr.created_at)
+    FROM public.photo_reactions pr
+    JOIN public.photos p ON p.id = pr.photo_id
+    WHERE pr.user_id = p_user_id
+      AND p.user_id <> p_user_id
+    HAVING MIN(pr.created_at) IS NOT NULL
+    ON CONFLICT (user_id, badge_id) DO NOTHING;
+
+    -- in_frame -- NEW. Somebody tagged you in a photo. Nothing you can do to
+    -- cause it, which is the point: it marks being part of someone's roll.
+    INSERT INTO public.earned_badges (user_id, badge_id, earned_at)
+    SELECT p_user_id, 'in_frame', MIN(pt.created_at)
+    FROM public.post_tags pt
+    WHERE pt.tagged_user_id = p_user_id
+    HAVING MIN(pt.created_at) IS NOT NULL
+    ON CONFLICT (user_id, badge_id) DO NOTHING;
+
+    -- spotter -- NEW. You tagged someone else in one of your own posts.
+    -- Self-tags excluded, or this would fire for anyone who tapped their own
+    -- face once.
+    INSERT INTO public.earned_badges (user_id, badge_id, earned_at)
+    SELECT p_user_id, 'spotter', MIN(pt.created_at)
+    FROM public.post_tags pt
+    JOIN public.posts po ON po.id = pt.post_id
+    WHERE po.user_id = p_user_id
+      AND pt.tagged_user_id <> p_user_id
+    HAVING MIN(pt.created_at) IS NOT NULL
+    ON CONFLICT (user_id, badge_id) DO NOTHING;
+
+    -- said_it -- NEW. Wrote a caption. Reads posts.caption, NOT photos.caption:
+    -- both columns exist, but a caption is typed when a frame is posted, so
+    -- photos.caption holds 0 rows in production against posts.caption's 47.
+    -- Written against photos first, which made the badge unearnable by anyone
+    -- -- caught because the backfill granted it to nobody at all.
+    INSERT INTO public.earned_badges (user_id, badge_id, earned_at)
+    SELECT p_user_id, 'said_it', MIN(po.created_at)
+    FROM public.posts po
+    WHERE po.user_id = p_user_id
+      AND po.caption IS NOT NULL
+      AND btrim(po.caption) <> ''
+    HAVING MIN(po.created_at) IS NOT NULL
+    ON CONFLICT (user_id, badge_id) DO NOTHING;
+
+    -- ten_frames -- NEW. The tenth frame ever shot, ranked so earned_at pins to
+    -- that frame and a later eleventh can never move it.
+    INSERT INTO public.earned_badges (user_id, badge_id, earned_at)
+    WITH ranked AS (
+        SELECT p.taken_at,
+               ROW_NUMBER() OVER (ORDER BY p.taken_at ASC, p.id ASC) AS rn
+        FROM public.photos p
+        WHERE p.user_id = p_user_id
+    )
+    SELECT p_user_id, 'ten_frames', taken_at
+    FROM ranked
+    WHERE rn = 10
+    ON CONFLICT (user_id, badge_id) DO NOTHING;
+
+    -- good_company: TEN people follow you.
+    -- Shipped as "somebody followed you", which the backfill granted to all 48
+    -- accounts: every account HAS a follower by construction, because
+    -- 2026-08-14_auto_follow_owner_backfill.sql wires one up at signup. A badge
+    -- every account holds on arrival is a side effect wearing a pill, and it
+    -- dilutes the bronze rung it sits on.
+    -- Five was tried first and was still too generous, landing on 35 of 48.
+    -- Measured across candidate thresholds -- 5:35, 8:24, 10:22, 12:20, 15:14 --
+    -- ten is where the curve flattens, and the last round number before the
+    -- badge starts excluding people who genuinely have an audience.
+    -- Ranked rather than counted so earned_at pins to the tenth follow and an
+    -- eleventh can never move it.
+    INSERT INTO public.earned_badges (user_id, badge_id, earned_at)
+    WITH ranked_follows AS (
+        SELECT f.created_at,
+               ROW_NUMBER() OVER (ORDER BY f.created_at ASC, f.follower_id ASC) AS rn
+        FROM public.follows f
+        WHERE f.following_id = p_user_id
+    )
+    SELECT p_user_id, 'good_company', created_at
+    FROM ranked_follows
+    WHERE rn = 10
+    ON CONFLICT (user_id, badge_id) DO NOTHING;
+
+    -- full_set: TWENTY other badge ids, LAST.
+    -- Was ten, which the catalogue outgrew: adding seven badges in one day took
+    -- its holders from 3 to 9 without anyone doing anything, because a fixed
+    -- count gets easier every time the catalogue grows. Twenty is 80% of the 25
+    -- a normal account can actually obtain (the other four are hand-granted or
+    -- the closed founding window), so it reads as "you have nearly everything"
+    -- rather than "you have a third of it".
+    -- Still must run after every predicate above in this same pass: it is the
+    -- only one that reads the ledger it writes to. WHERE badge_id <> 'full_set'
+    -- is the explicit cannot-count-itself guarantee.
+    INSERT INTO public.earned_badges (user_id, badge_id, earned_at)
+    WITH ranked AS (
+        SELECT eb.earned_at,
+               ROW_NUMBER() OVER (ORDER BY eb.earned_at ASC, eb.badge_id ASC) AS rn
+        FROM public.earned_badges eb
+        WHERE eb.user_id = p_user_id AND eb.badge_id <> 'full_set'
+    )
+    SELECT p_user_id, 'full_set', earned_at
+    FROM ranked
+    WHERE rn = 20
+    ON CONFLICT (user_id, badge_id) DO NOTHING;
+END;
+$function$
+;
+
+-- Take the badge back from any hidden account that holds it. The ratchet only ever inserts, so
+-- this is the one place it is removed.
+DELETE FROM public.earned_badges eb
+USING public.users u
+WHERE u.id = eb.user_id AND u.hidden_from_discovery AND eb.badge_id = 'founding_100';
+
+-- Re-run the ratchet for every account so the 101st ordinal, if there is one, picks the badge up.
+DO $do$
+DECLARE r RECORD;
+BEGIN
+    FOR r IN SELECT id FROM public.users LOOP
+        PERFORM public._ratchet_badges(r.id);
+    END LOOP;
+END
+$do$;
+
+-- Folded in from supabase/migrations/2026-09-08_invite_campaigns.sql (applied 2026-09-08).
+-- Cohort invite codes: a code that is not any one member's personal code, valid for a window,
+-- attributed to a member as the inviter, and never drawing on that member's own invite quota.
+-- Built for the owner's 2026-09-10 cohort: everyone who joins on that one day with SEPT10 is
+-- recorded as invited by the owner (the same allowed_emails note the personal path writes, so
+-- every reader of that note, the earnback trigger included, sees the owner), follows the owner
+-- one way through the first-run flow, and the code is dead the next morning.
+CREATE TABLE IF NOT EXISTS public.invite_campaigns (
+    code        TEXT PRIMARY KEY CHECK (code ~ '^[A-Z0-9]{6}$'),
+    inviter_id  UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+    valid_from  TIMESTAMPTZ NOT NULL,
+    valid_until TIMESTAMPTZ NOT NULL,
+    max_uses    INT NULL,
+    uses        INT NOT NULL DEFAULT 0,
+    note        TEXT NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CHECK (valid_until > valid_from)
+);
+ALTER TABLE public.invite_campaigns ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.invite_campaigns FROM PUBLIC, anon, authenticated;
+COMMENT ON TABLE public.invite_campaigns IS 'Time-boxed cohort invite codes, read only by redeem_invite and invite_preview (SECURITY DEFINER). No client access.';
+
+-- redeem_invite: a personal code first, exactly as before; failing that, a live campaign code.
+CREATE OR REPLACE FUNCTION public.redeem_invite(p_code TEXT, p_email TEXT)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+VOLATILE
+AS $$
+DECLARE
+    v_email      TEXT := LOWER(TRIM(p_email));
+    v_code       TEXT := UPPER(TRIM(p_code));
+    v_inviter    UUID;
+    v_remaining  INT;
+    v_did_insert BOOLEAN;
+    v_window     TIMESTAMPTZ;
+    v_attempts   INT;
+    v_campaign   public.invite_campaigns%ROWTYPE;
+BEGIN
+    SELECT window_start, attempts INTO v_window, v_attempts
+    FROM public.redeem_invite_rate
+    WHERE id = TRUE
+    FOR UPDATE;
+    IF v_window < NOW() - INTERVAL '1 hour' THEN
+        UPDATE public.redeem_invite_rate SET window_start = NOW(), attempts = 1 WHERE id = TRUE;
+    ELSIF v_attempts >= 30 THEN
+        RAISE EXCEPTION 'rate_limited' USING ERRCODE = 'P0003';
+    ELSE
+        UPDATE public.redeem_invite_rate SET attempts = attempts + 1 WHERE id = TRUE;
+    END IF;
+
+    SELECT id, invite_uses_remaining INTO v_inviter, v_remaining
+    FROM public.users
+    WHERE invite_code = v_code
+    FOR UPDATE;
+
+    IF v_inviter IS NULL THEN
+        -- Not a personal code. A campaign code that is live right now admits the email and is
+        -- attributed to its inviter; it never touches that inviter's own remaining uses.
+        SELECT * INTO v_campaign
+        FROM public.invite_campaigns c
+        WHERE c.code = v_code
+          AND NOW() >= c.valid_from AND NOW() < c.valid_until
+          AND (c.max_uses IS NULL OR c.uses < c.max_uses)
+        FOR UPDATE;
+        IF v_campaign.code IS NULL THEN
+            RETURN FALSE;
+        END IF;
+        v_did_insert := FALSE;
+        INSERT INTO public.allowed_emails (email, note)
+        VALUES (v_email, 'invited_by:' || v_campaign.inviter_id::text)
+        ON CONFLICT (email) DO NOTHING
+        RETURNING TRUE INTO v_did_insert;
+        IF v_did_insert IS TRUE THEN
+            UPDATE public.invite_campaigns SET uses = uses + 1 WHERE code = v_campaign.code;
+        END IF;
+        RETURN TRUE;
+    END IF;
+
+    IF v_remaining IS NOT NULL AND v_remaining <= 0 THEN
+        IF EXISTS (SELECT 1 FROM public.allowed_emails WHERE email = v_email) THEN
+            RETURN TRUE;
+        ELSE
+            RETURN FALSE;
+        END IF;
+    END IF;
+
+    v_did_insert := FALSE;
+    INSERT INTO public.allowed_emails (email, note)
+    VALUES (v_email, 'invited_by:' || v_inviter::text)
+    ON CONFLICT (email) DO NOTHING
+    RETURNING TRUE INTO v_did_insert;
+    IF v_did_insert IS TRUE AND v_remaining IS NOT NULL THEN
+        UPDATE public.users SET invite_uses_remaining = invite_uses_remaining - 1 WHERE id = v_inviter;
+    END IF;
+    RETURN TRUE;
+END;
+$$;
+
+-- invite_preview learns the same second branch, so the sign-in screen names the campaign's
+-- inviter exactly as it names a personal code's.
+CREATE OR REPLACE FUNCTION public.invite_preview(p_code TEXT)
+RETURNS TABLE (inviter_id UUID, username TEXT, display_name TEXT)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+VOLATILE
+AS $$
+DECLARE
+    v_code     TEXT := UPPER(TRIM(p_code));
+    v_window   TIMESTAMPTZ;
+    v_attempts INT;
+BEGIN
+    IF v_code !~ '^[A-Z0-9]{6}$' THEN
+        RETURN;
+    END IF;
+
+    SELECT window_start, attempts INTO v_window, v_attempts
+    FROM public.redeem_invite_rate
+    WHERE id = TRUE
+    FOR UPDATE;
+    IF v_window < NOW() - INTERVAL '1 hour' THEN
+        UPDATE public.redeem_invite_rate SET window_start = NOW(), attempts = 1 WHERE id = TRUE;
+    ELSIF v_attempts >= 30 THEN
+        RAISE EXCEPTION 'rate_limited' USING ERRCODE = 'P0003';
+    ELSE
+        UPDATE public.redeem_invite_rate SET attempts = attempts + 1 WHERE id = TRUE;
+    END IF;
+
+    RETURN QUERY
+    SELECT u.id, u.username, u.display_name
+    FROM public.users u
+    WHERE u.invite_code = v_code
+      AND (u.invite_uses_remaining IS NULL OR u.invite_uses_remaining > 0)
+    UNION ALL
+    SELECT u.id, u.username, u.display_name
+    FROM public.invite_campaigns c
+    JOIN public.users u ON u.id = c.inviter_id
+    WHERE c.code = v_code
+      AND NOW() >= c.valid_from AND NOW() < c.valid_until
+      AND (c.max_uses IS NULL OR c.uses < c.max_uses)
+    LIMIT 1;
+END;
+$$;
+
+-- The 2026-09-10 cohort, owner's account, the whole of that day in New York.
+INSERT INTO public.invite_campaigns (code, inviter_id, valid_from, valid_until, max_uses, note)
+VALUES ('SEPT10', 'f43287d4-f239-415b-af45-650bbee62e83',
+        timestamptz '2026-09-10 00:00 America/New_York', timestamptz '2026-09-11 00:00 America/New_York',
+        NULL, 'One-day cohort code, 2026-09-10, attributed to the owner')
+ON CONFLICT (code) DO NOTHING;

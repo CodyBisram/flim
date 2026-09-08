@@ -458,6 +458,8 @@ struct FeedView: View {
                     // hides itself; here it just needs to be the first thing on the feed so it is
                     // seen on landing and scrolls away as you browse. See NotificationNudgeBanner.
                     NotificationNudgeBanner()
+                    // One sentence, once, for a brand-new account: see NewAccountIntro.
+                    FirstVisitLine(surface: .feed)
 
                     // Nothing anywhere was unseen at load: the block sits at the top of the
                     // scroll with the days already seen below it.
