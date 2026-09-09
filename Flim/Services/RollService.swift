@@ -196,7 +196,8 @@ final class RollService {
         // cover could even begin to resolve. Both still guard their own writes on `epoch`.
         async let counts: Void = loadMemberCounts(rollIds: rollIds, epoch: epoch)
         async let covers: Void = loadCovers(rollIds: rollIds, epoch: epoch)
-        _ = await (counts, covers)
+        async let seen: Void = seedRevealSeen(userId: userId, rollIds: rollIds, epoch: epoch)
+        _ = await (counts, covers, seen)
         // The network result is the source of truth once it lands; rewrite the snapshot from it
         // wholesale so a restore never lags a fetch that already came back. Guarded the same way
         // every other write in this function is: a stale call must not overwrite the CURRENT
@@ -272,6 +273,30 @@ final class RollService {
     /// Records that the current user opened this roll's reveal (idempotent, a duplicate insert on
     /// the PK just no-ops), then returns their position and the member total. `position` counts
     /// the current user, so the very first opener sees position 1.
+    /// The reveal-seen flag (`rollRevealSeen.<id>`) lives in UserDefaults, so a reinstall forgot
+    /// every reveal ever watched and the Rolls tab lined up every developed roll to be revealed
+    /// again, one by one (the owner, 2026-09-09, after reinstalling for a test). The server
+    /// already knows: `roll_reveal_views` gets a row the moment a reveal opens, for the badges.
+    /// Seed the local flag from it after every roll fetch. Once watched, always watched, on any
+    /// phone this account signs into. Never clears a flag, and never writes for another account.
+    private func seedRevealSeen(userId: UUID, rollIds: [String], epoch: Int) async {
+        guard !rollIds.isEmpty else { return }
+        struct Row: Decodable { let roll_id: UUID }
+        guard let rows: [Row] = try? await supabase
+            .from("roll_reveal_views")
+            .select("roll_id")
+            .eq("user_id", value: userId.uuidString)
+            .in("roll_id", values: rollIds)
+            .execute().value
+        else { return }
+        guard AccountEpoch.isCurrent(epoch) else { return }
+        let defaults = UserDefaults.standard
+        for row in rows {
+            let key = "rollRevealSeen.\(row.roll_id.uuidString)"
+            if !defaults.bool(forKey: key) { defaults.set(true, forKey: key) }
+        }
+    }
+
     func recordRevealView(rollId: UUID, userId: UUID) async -> RevealPresence? {
         struct V: Encodable { let roll_id: UUID; let user_id: UUID }
         // A repeat open throws a 23505 on the PK; harmless, the view's already recorded.

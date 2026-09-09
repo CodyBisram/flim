@@ -288,6 +288,13 @@ member's own quota. `redeem_invite` tries a personal code first, then a live cam
 owner; the owner's own personal code is untouched and keeps working after. Migration
 `2026-09-08_invite_campaigns.sql`. Add another cohort with one INSERT into `invite_campaigns`.
 
+### done 2026-09-09: a reinstall no longer replays every reveal
+
+The reveal-seen flag lived only on the phone, so a reinstall queued every developed roll to be
+revealed again, one by one. `roll_reveal_views` has recorded every reveal opened since the
+badges shipped, so `RollService.fetchRolls` now seeds the local flag from it for the signed-in
+account. Once watched, always watched, on any phone. Nothing is ever cleared by this.
+
 ### done 2026-09-09: the owner's two test accounts deleted outright
 
 `test` (ordinal 56) and `testaccount` (ordinal 57), created for the first-run walk-through,
