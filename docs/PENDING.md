@@ -288,6 +288,29 @@ member's own quota. `redeem_invite` tries a personal code first, then a live cam
 owner; the owner's own personal code is untouched and keeps working after. Migration
 `2026-09-08_invite_campaigns.sql`. Add another cohort with one INSERT into `invite_campaigns`.
 
+### done 2026-09-09: the owner's two test accounts deleted outright
+
+`test` (ordinal 56) and `testaccount` (ordinal 57), created for the first-run walk-through,
+removed from auth and public (cascade), their badges and allowlist rows deleted by hand (the
+badge FK is NO ACTION), the one photo's storage objects removed. Ordinals 56 and 57 stay as
+gaps by design (immutable, never renumbered); the founding count is people, so it is exact.
+`armvnnn` (ordinal 55, a real signup the same evening) was left alone.
+
+### done 2026-09-09, afternoon: three owner calls after the first walk-through
+
+1. **Notifications are asked at start again, for everyone.** The canvas moved the ask to the
+   first roll; a day of testing showed a new person can spend a whole session without one. The
+   feed primer's new-account gate is gone; `RollDevelopAskSheet` stays as the second chance on
+   a developing roll, and only if the primer was never answered (`didShowNotifPrimer`).
+2. **First sort lands in the Darkroom.** For a new account, the first time the sort deck empties
+   it goes to the Darkroom tab instead of back to the camera, once (`NewAccountIntro.firstSortLanded`).
+   Every later sort returns to the camera as before.
+3. **The onboarding box is black, not grey.** Near-black fill, a faint warm centre, a hairline
+   edge: a viewfinder before the feed starts, not a slab on the page.
+
+Also: the third test account (`twsttt`, codyysb+test3@gmail.com) deleted with its badges,
+allowlist row and storage objects, same procedure as the two before it.
+
 ### done 2026-09-09: the roll-time notification ask fired bare
 
 The owner's fresh test account got the raw iOS notification dialog 47 seconds after starting a

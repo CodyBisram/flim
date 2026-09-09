@@ -543,9 +543,10 @@ struct MainTabView: View {
 
     private func maybeShowNotifPrimer() {
         guard hasOnboarded else { return }
-        // A new account is asked on its first roll, at the moment there is a develop time to
-        // name (`RollDevelopAskSheet`), never here. Everyone already here keeps this primer.
-        guard !NewAccountIntro.isNewAccount(createdAt: auth.currentUser?.createdAt) else { return }
+        // Asked at start, for everyone, including brand-new accounts (owner's call, 2026-09-09:
+        // the first-run canvas moved the ask to the first roll, and a day of testing showed a
+        // new person can go a whole session without one). `RollDevelopAskSheet` stays as the
+        // second chance on a developing roll for anyone who was never asked here.
         Task {
             // Read the real, live OS status rather than trusting stored state: `didDecideNotifPrimer`
             // alone can't tell a genuine decision from the old dismiss-driven bug, only iOS's own

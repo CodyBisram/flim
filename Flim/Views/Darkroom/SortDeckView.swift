@@ -378,6 +378,16 @@ struct SortDeckView: View {
         Task {
             if let p, let a { await commit(p, a, caption: caption, tags: tags) }
             dismiss()
+            // A new account's first sort ends in the Darkroom, once (owner's call 2026-09-09):
+            // the frame they just kept is the reason the Darkroom exists, and landing back on
+            // the camera hid it. `.openDarkroom` is the same switch a push uses. Only after a
+            // sort actually happened, never on a deck closed untouched.
+            if sortsCompleted > 0, let uid = auth.currentUser?.id,
+               NewAccountIntro.isNewAccount(createdAt: auth.currentUser?.createdAt),
+               !NewAccountIntro.firstSortLanded(userId: uid) {
+                NewAccountIntro.markFirstSortLanded(userId: uid)
+                NotificationCenter.default.post(name: .openDarkroom, object: nil)
+            }
         }
     }
 

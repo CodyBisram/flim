@@ -200,6 +200,9 @@ struct RollDetailView: View {
     @Environment(NotificationService.self) private var notifications
     /// The new-account notification ask, see the `.task` below and `RollDevelopAskSheet`.
     @State private var showDevelopAsk = false
+    /// The start-of-app primer's own decision flag (`MainTabView`). Once that primer has been
+    /// answered either way, the roll never asks again on its own.
+    @AppStorage("didShowNotifPrimer") private var didDecideNotifPrimer = false
     @Environment(FeedService.self) private var feed
     @Environment(\.displayScale) private var displayScale
     @Environment(\.dismiss) private var dismiss
@@ -624,7 +627,7 @@ struct RollDetailView: View {
                 // 47 seconds after creating a roll (2026-09-09). Being in a roll with a develop
                 // time IS the moment.
                 if NewAccountIntro.isNewAccount(createdAt: auth.currentUser?.createdAt),
-                   notifications.authorizationState == .notDetermined {
+                   notifications.authorizationState == .notDetermined, !didDecideNotifPrimer {
                     if !NewAccountIntro.rollAskDecided(userId: myId) { showDevelopAsk = true }
                 } else {
                     await notifications.requestAuthorizationIfNeeded()

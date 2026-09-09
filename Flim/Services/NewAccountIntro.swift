@@ -89,6 +89,11 @@ enum NewAccountIntro {
     static func firstFrameDismissed(userId: UUID) -> Bool { store.bool(forKey: "firstFrame.dismissed.\(userId.uuidString)") }
     static func dismissFirstFrame(userId: UUID) { store.set(true, forKey: "firstFrame.dismissed.\(userId.uuidString)") }
 
+    /// A new account's FIRST completed sort lands in the Darkroom rather than back on the camera,
+    /// once, so the first frame is seen where it lives. Every later sort returns to the camera.
+    static func firstSortLanded(userId: UUID) -> Bool { store.bool(forKey: "firstSort.landed.\(userId.uuidString)") }
+    static func markFirstSortLanded(userId: UUID) { store.set(true, forKey: "firstSort.landed.\(userId.uuidString)") }
+
     /// The roll-time notification ask is a real decision either way and is asked once per account.
     static func rollAskDecided(userId: UUID) -> Bool { store.bool(forKey: "rollAsk.decided.\(userId.uuidString)") }
     static func markRollAskDecided(userId: UUID) { store.set(true, forKey: "rollAsk.decided.\(userId.uuidString)") }

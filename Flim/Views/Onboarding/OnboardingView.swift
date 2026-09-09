@@ -48,11 +48,16 @@ struct OnboardingView: View {
                 // The viewfinder's own box, dark, at the camera screen's proportions: the
                 // permission ask lives where the picture will, not on a card about it.
                 ZStack {
+                    // Near-black, not grey: on a device the first cut read as a lighter slab
+                    // sitting on the page. A dark viewfinder is black with a hairline edge and
+                    // the faintest warm centre, which is what a real one shows before the feed
+                    // starts.
                     RoundedRectangle(cornerRadius: 4)
                         .fill(
-                            RadialGradient(colors: [Color(red: 0.10, green: 0.09, blue: 0.08), Color(red: 0.05, green: 0.05, blue: 0.05)],
-                                           center: UnitPoint(x: 0.5, y: 0.4), startRadius: 0, endRadius: 420)
+                            RadialGradient(colors: [Color(red: 0.055, green: 0.045, blue: 0.035), Color(red: 0.012, green: 0.012, blue: 0.012)],
+                                           center: UnitPoint(x: 0.5, y: 0.42), startRadius: 0, endRadius: 360)
                         )
+                        .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
                     VStack(spacing: 12) {
                         Text("\(AppInfo.appName) is a camera.")
                             .flimFont(26, weight: .thin, relativeTo: .title2)
