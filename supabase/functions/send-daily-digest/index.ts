@@ -361,6 +361,12 @@ async function sendPush(deviceToken: string, title: string, body: string): Promi
 // ---- Run ----------------------------------------------------------------
 
 Deno.serve(async (req: Request) => {
+  // The scheduler's own secret, checked before anything privileged runs. pg_cron sends it as
+  // x-cron-secret; the gateway's bearer is the public key, which every client holds, so it was
+  // never an authorization. Fails closed if the secret is unset.
+  const cronSecret = Deno.env.get("CRON_SECRET");
+  if (!cronSecret) return new Response("cron secret unset", { status: 503 });
+  if (req.headers.get("x-cron-secret") !== cronSecret) return new Response("forbidden", { status: 401 });
   // `?dry=true` runs every read exactly as a real run would, but never calls APNs and never
   // writes digest_state, so the owner can see the windowing effect below before the next real
   // 10:00 run. Defaults to a real send: the pg_cron job that actually drives this in production

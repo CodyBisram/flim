@@ -237,7 +237,13 @@ async function loadBlockPairs(): Promise<Set<string>> {
   return pairs;
 }
 
-Deno.serve(async () => {
+Deno.serve(async (req: Request) => {
+  // The scheduler's own secret, checked before anything privileged runs. pg_cron sends it as
+  // x-cron-secret; the gateway's bearer is the public key, which every client holds, so it was
+  // never an authorization. Fails closed if the secret is unset.
+  const cronSecret = Deno.env.get("CRON_SECRET");
+  if (!cronSecret) return new Response("cron secret unset", { status: 503 });
+  if (req.headers.get("x-cron-secret") !== cronSecret) return new Response("forbidden", { status: 401 });
   // 1. Photos that have developed, belong to a roll, and haven't pushed yet.
   //    Personal instants (roll_id NULL) are excluded, they develop immediately
   //    and never generate a remote push.

@@ -126,6 +126,11 @@ struct InsertPhoto: Encodable {
     var quality: Double?
     var phash: Int64?
     var isMiss: Bool = false
+    /// The shutter time. The column defaults to the server clock, which was fine while every
+    /// insert followed its capture within seconds and wrong for every retried upload: a shot
+    /// taken on Friday in a tunnel and uploaded on Sunday was filed under Sunday, in the grid
+    /// and in its chapter. Optional so the seeding paths keep the default.
+    var takenAt: Date? = nil
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -141,5 +146,6 @@ struct InsertPhoto: Encodable {
         case quality
         case phash
         case isMiss = "is_miss"
+        case takenAt = "taken_at"
     }
 }

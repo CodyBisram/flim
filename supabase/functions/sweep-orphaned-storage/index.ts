@@ -94,6 +94,12 @@ function totalBytes(rows: Candidate[]): number {
 }
 
 Deno.serve(async (req) => {
+  // The scheduler's own secret, checked before anything privileged runs. pg_cron sends it as
+  // x-cron-secret; the gateway's bearer is the public key, which every client holds, so it was
+  // never an authorization. Fails closed if the secret is unset.
+  const cronSecret = Deno.env.get("CRON_SECRET");
+  if (!cronSecret) return new Response("cron secret unset", { status: 503 });
+  if (req.headers.get("x-cron-secret") !== cronSecret) return new Response("forbidden", { status: 401 });
   let body: Record<string, unknown> = {};
   try {
     body = await req.json();

@@ -296,6 +296,37 @@ badge FK is NO ACTION), the one photo's storage objects removed. Ordinals 56 and
 gaps by design (immutable, never renumbered); the founding count is people, so it is exact.
 `armvnnn` (ordinal 55, a real signup the same evening) was left alone.
 
+### done 2026-09-09: the trust batch (from docs/REPOSITORY_AUDIT_2026-09-09.md)
+
+Six holes the app never offered but the server allowed, each closed at the boundary:
+
+1. **Invite-only is enforced by Auth now.** `gate_new_auth_user_trigger` on `auth.users`
+   refuses any new account whose email is not allowlisted (the App Review login excepted). The
+   app's own pre-check still gives the friendly message first; a direct call to Auth with the
+   public key now fails instead of creating an account.
+2. **A lost upload response no longer deletes the photo.** `PhotoService` asks whether the row
+   exists before touching the object: a definite yes is a success with a slow reply and finishes
+   the capture; a definite no deletes the orphan object; no answer deletes nothing and leaves it
+   to the retry path, whose duplicate-key branch already means "already there".
+3. **Retried uploads keep their shutter time.** `InsertPhoto.takenAt` is sent from the sidecar's
+   `capturedAt` on both insert paths; the column's server-clock default only ever fed the
+   DEBUG seeders. A shot uploaded days late now files under the day it was taken.
+4. **Discussion inherits post visibility.** Comments, reactions, tags and comment likes require
+   the parent post (or comment) to be readable under its own policy.
+5. **Roll joins go through `join_roll`.** The direct INSERT policy now admits only a creator
+   into their own roll; `join_roll` locks the roll row so the cap cannot be raced.
+6. **Scheduled functions check the scheduler.** `send-develop-push`, `send-social-push`,
+   `send-daily-digest` and `sweep-orphaned-storage` require `x-cron-secret` (secret `CRON_SECRET`,
+   value in the owner's `~/.flim-cron-secret`, fails closed if unset); the four pg_cron jobs
+   send it. The gateway bearer was the public key, which every client holds.
+
+Deferred from the audit, on purpose: the posts audience (followers-only reads) waits on the
+owner's call; the durable capture queue is a pipeline rewrite; R2 stays behind the tripwire.
+
+Device check: take a shot in airplane mode, wait for the retry to land, confirm it files under
+the day it was taken. Multi-account check: a second account cannot read a hidden post's
+comments by direct API, cannot insert itself into a roll by id.
+
 ### done 2026-09-09, afternoon: three owner calls after the first walk-through
 
 1. **Notifications are asked at start again, for everyone.** The canvas moved the ask to the

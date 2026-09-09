@@ -410,7 +410,8 @@ final class PhotoService {
                 sharpness: burst.sharpness,
                 quality: burst.quality,
                 phash: burst.phash,
-                isMiss: burst.isMiss
+                isMiss: burst.isMiss,
+                takenAt: record.capturedAt
             )
 
             let inserted: Photo
@@ -548,11 +549,45 @@ final class PhotoService {
             // leave it sitting in Storage, unreferenced by any row, until (if ever) this id gets
             // retried. If the delete itself fails, the next retry's `upsert` above still
             // overwrites the same path, so nothing is duplicated either way.
-            _ = try? await supabase.storage.from("photos").remove(paths: [path])
+            // A failed insert and a lost response look identical from here, and only one of
+            // them is safe to clean up after. The row is asked about before the object is
+            // touched: if it exists, the insert landed and this is a success with a slow reply;
+            // if the question itself cannot be answered (the same outage that lost the reply),
+            // nothing is deleted and the retry path decides later, where a duplicate-key answer
+            // means "already there". Only a positive "no row" earns the delete. Before this,
+            // a timeout after a committed insert deleted the master and left the row pointing
+            // at nothing, and recovery then discarded the local copy as already uploaded.
+            let rowExists: Bool? = await Self.photoRowExists(photoId, supabase: supabase)
+            if rowExists == true, let landed: Photo = try? await supabase
+                .from("photos").select().eq("id", value: photoId.uuidString).single().execute().value {
+                await failedUploadStore.remove(id: photoId, userId: userId)
+                DiskImageCache.saveRaw(imageData, path: path)
+                await MainActor.run {
+                    guard AccountEpoch.isCurrent(epoch) else { return }
+                    loadedPhotos.insert(landed, at: 0)
+                    isUploading = false
+                }
+                uploadRenditions(photoId: photoId, userId: userId, imageData: imageData, gradedImage: gradedImage)
+                return landed
+            }
+            if rowExists == false {
+                _ = try? await supabase.storage.from("photos").remove(paths: [path])
+            }
 
             await queueForRetry(error, record: record, rollId: rollId, persisted: persisted, epoch: epoch)
             return nil
         }
+    }
+
+    /// Whether a `photos` row with this id exists: `true`/`false` from a definite answer, `nil`
+    /// when the question could not be asked (offline, timeout). Callers must treat `nil` as
+    /// "do nothing destructive".
+    private static func photoRowExists(_ id: UUID, supabase: SupabaseClient) async -> Bool? {
+        struct Row: Decodable { let id: UUID }
+        guard let rows: [Row] = try? await supabase
+            .from("photos").select("id").eq("id", value: id.uuidString).limit(1).execute().value
+        else { return nil }
+        return !rows.isEmpty
     }
 
     /// Re-homes a capture as a personal instant when its roll finished developing before the
@@ -582,7 +617,8 @@ final class PhotoService {
                                          personalDelay: personalDevelopDelay, rollDelay: rollDevelopDelay),
             isSorted: false,
             burstGroup: burst.group, sharpness: burst.sharpness,
-            quality: burst.quality, phash: burst.phash, isMiss: burst.isMiss
+            quality: burst.quality, phash: burst.phash, isMiss: burst.isMiss,
+            takenAt: record.capturedAt
         )
         do {
             let inserted: Photo = try await supabase
