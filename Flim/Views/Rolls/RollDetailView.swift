@@ -612,14 +612,20 @@ struct RollDetailView: View {
             // reveal is fixed at roll creation, so this works with zero photos too.
             if notificationsEnabled, !roll.isDeveloped, let myId = auth.currentUser?.id {
                 let myCount = vm.photos.filter { $0.userId == myId }.count
-                // A new account meets the permission here, framed, at the first roll it has a
-                // frame in: `RollDevelopAskSheet` names the time and fires the system dialog only
-                // on "Tell me at ...". Asked once; either answer is final. Everyone else takes
+                // A new account meets the permission here, framed, on the first developing roll
+                // it opens: `RollDevelopAskSheet` names the time and fires the system dialog only
+                // on "Tell me at ...". Asked once; either answer is final, and "I will check"
+                // means the bare dialog never fires on their behalf either. Everyone else takes
                 // the path below unchanged.
+                //
+                // Not gated on a frame of theirs being loaded: this task runs before the roll's
+                // photos have arrived, and a roll just started from the Darkroom has none, which
+                // is exactly how the owner's first test account got the unframed iOS dialog
+                // 47 seconds after creating a roll (2026-09-09). Being in a roll with a develop
+                // time IS the moment.
                 if NewAccountIntro.isNewAccount(createdAt: auth.currentUser?.createdAt),
-                   notifications.authorizationState == .notDetermined,
-                   myCount > 0, !NewAccountIntro.rollAskDecided(userId: myId) {
-                    showDevelopAsk = true
+                   notifications.authorizationState == .notDetermined {
+                    if !NewAccountIntro.rollAskDecided(userId: myId) { showDevelopAsk = true }
                 } else {
                     await notifications.requestAuthorizationIfNeeded()
                     notifications.scheduleRollDevelopNotification(

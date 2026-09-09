@@ -288,6 +288,15 @@ member's own quota. `redeem_invite` tries a personal code first, then a live cam
 owner; the owner's own personal code is untouched and keeps working after. Migration
 `2026-09-08_invite_campaigns.sql`. Add another cohort with one INSERT into `invite_campaigns`.
 
+### done 2026-09-09: the roll-time notification ask fired bare
+
+The owner's fresh test account got the raw iOS notification dialog 47 seconds after starting a
+roll, not FLIM's "Develops at 9:14" sheet. The gate required a frame of theirs to be loaded in
+the roll when the screen's task ran; the roll had just been created with none, and the task runs
+before photos arrive anyway, so it fell through to the old request path. Now a new account with
+an undetermined permission gets the sheet on any developing roll it opens, once, and never the
+bare dialog; "I will check" also stops the old path from asking on their behalf.
+
 ### done 2026-09-08: the first run, both stages
 
 From the Claude Design first-run canvas (owner's project "Light canvas ground fixed"), after the
