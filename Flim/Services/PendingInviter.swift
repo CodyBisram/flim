@@ -12,14 +12,17 @@ enum PendingInviter {
     static var store: UserDefaults = .standard
     private static func key(_ email: String) -> String { "pendingInviter.\(email.lowercased())" }
 
-    static func remember(inviterId: UUID, for email: String) {
+    static func remember(inviterId: UUID, name: String, for email: String) {
         store.set(inviterId.uuidString, forKey: key(email))
+        store.set(name, forKey: key(email) + ".name")
     }
 
-    static func take(for email: String) -> UUID? {
+    static func take(for email: String) -> NewAccountIntro.Inviter? {
         let k = key(email)
         guard let raw = store.string(forKey: k), let id = UUID(uuidString: raw) else { return nil }
+        let name = store.string(forKey: k + ".name") ?? ""
         store.removeObject(forKey: k)
-        return id
+        store.removeObject(forKey: k + ".name")
+        return NewAccountIntro.Inviter(id: id, name: name)
     }
 }

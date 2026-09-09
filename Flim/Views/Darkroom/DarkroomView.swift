@@ -537,6 +537,7 @@ Text("Darkroom")
         // still-pending delete is flushed rather than left to its own 4s timer, see
         // `commitPendingDelete`'s own doc.
         .onDisappear { vm.stopRefreshing(); anchoredJumpTask?.cancel(); commitPendingDelete() }
+        .sheet(isPresented: $showCreateRoll) { CreateRollView() }
         .fullScreenCover(item: $selectedPhoto) { photo in
             pager(for: photo)
         }
@@ -583,6 +584,12 @@ Text("Darkroom")
             } else {
                 emptyState
             }
+        } else if let first = firstFrame {
+            // A brand-new account's one and only frame, at print size, with the two things you
+            // can do with it and the roll introduced as the next shot. Replaces the three
+            // onboarding cards' second and third card with the thing itself; see
+            // `NewAccountIntro`. Gone on "Keep it here", on a post, or when a second frame exists.
+            firstFrameState(first)
         } else if monthScopedUnits.isEmpty, anchoredJumpTarget == nil, pendingMonthLanding == nil {
             // Spillover: photos ARE loaded (an older or newer month's rows, most often left
             // behind by a previous anchored fetch's page boundary), just none of them belong to
@@ -594,6 +601,8 @@ Text("Darkroom")
             ScrollViewReader { proxy in
                 ScrollView {
                     Color.clear.frame(height: 0).id("top")
+                    // One sentence, once, for a brand-new account: see NewAccountIntro.
+                    FirstVisitLine(surface: .darkroom)
                     nightList
                 }
                 .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { scrollWidth = $0 }
@@ -1147,6 +1156,113 @@ Text("Darkroom")
     private func rollName(for rollId: UUID?) -> String? {
         guard let rollId else { return nil }
         return rolls.rolls.first { $0.id == rollId }?.name
+    }
+
+    @State private var showCreateRoll = false
+
+    /// The one frame the first Darkroom shows, or nil when this is not that moment: not a new
+    /// account, already dismissed, more or fewer than exactly one photo anywhere, not at the
+    /// month rung, or mid-selection. `totalCount` is the server's count, so a second frame on
+    /// another page still ends the state.
+    private var firstFrame: Photo? {
+        guard zoom == .month, !isSelecting,
+              let uid = auth.currentUser?.id,
+              NewAccountIntro.isNewAccount(createdAt: auth.currentUser?.createdAt),
+              !NewAccountIntro.firstFrameDismissed(userId: uid),
+              vm.totalCount == 1, vm.photos.count == 1,
+              let photo = vm.photos.first, photo.isReady
+        else { return nil }
+        return photo
+    }
+
+    private func firstFrameState(_ photo: Photo) -> some View {
+        let inviter = auth.currentUser.flatMap { NewAccountIntro.inviter(for: $0.id) }
+        return ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                Text("TODAY · 1 FRAME")
+                    .flimFont(11, weight: .medium, relativeTo: .caption2)
+                    .tracking(2)
+                    .foregroundStyle(FlimTheme.textTertiary)
+                    .padding(.top, 8)
+
+                // Print size, not a grid cell: this is the goal state of the whole first run.
+                PhotoGridCell(photo: photo, signedURL: vm.signedURLCache[photo.id], showsCountdown: false)
+                    .frame(width: 236, height: 236 / FlimTheme.frameAspect)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
+                    .padding(.top, 14)
+                    .onTapGesture { selectedPhoto = photo }
+
+                Text("Your first frame.")
+                    .flimFont(20, weight: .light, relativeTo: .title3)
+                    .foregroundStyle(.white)
+                    .padding(.top, 22)
+                Text("It stays here, and only you can see it, until you post it to your page.")
+                    .flimFont(15, relativeTo: .subheadline)
+                    .foregroundStyle(FlimTheme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 6)
+
+                HStack(spacing: 16) {
+                    Button {
+                        Haptics.tap()
+                        // The pager carries the Post pill; the state ends here either way.
+                        if let uid = auth.currentUser?.id { NewAccountIntro.dismissFirstFrame(userId: uid) }
+                        selectedPhoto = photo
+                    } label: {
+                        Text("Post to your page")
+                            .flimFont(15, weight: .semibold, relativeTo: .subheadline)
+                            .foregroundStyle(.black)
+                            .padding(.horizontal, 22).padding(.vertical, 13)
+                            .background(accent, in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    Button {
+                        Haptics.tap()
+                        if let uid = auth.currentUser?.id { NewAccountIntro.dismissFirstFrame(userId: uid) }
+                    } label: {
+                        Text("Keep it here")
+                            .flimFont(14, relativeTo: .subheadline)
+                            .foregroundStyle(FlimTheme.textTertiary)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.top, 18)
+
+                Rectangle()
+                    .fill(LinearGradient(colors: [.clear, Color.white.opacity(0.12), Color.white.opacity(0.12), .clear],
+                                         startPoint: .leading, endPoint: .trailing))
+                    .frame(height: 1)
+                    .padding(.top, 26)
+
+                // The roll, introduced as the next shot rather than as a card about rolls.
+                Text(inviter.map { "Shoot the next one with \($0.name)." } ?? "Shoot the next one into a roll.")
+                    .flimFont(15, relativeTo: .subheadline)
+                    .foregroundStyle(.white)
+                    .padding(.top, 18)
+                Text("A roll. Nobody sees a frame, not even you, until it develops twelve hours later.")
+                    .flimFont(13, relativeTo: .footnote)
+                    .foregroundStyle(FlimTheme.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 4)
+                Button {
+                    Haptics.tap()
+                    showCreateRoll = true
+                } label: {
+                    HStack(spacing: 6) {
+                        Text(inviter.map { "Start a roll with \($0.name)" } ?? "Start a roll")
+                        Image(systemName: "chevron.right").font(.system(size: 11, weight: .semibold))
+                    }
+                    .flimFont(14, weight: .medium, relativeTo: .subheadline)
+                    .foregroundStyle(.white)
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 10)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 20)
+            .padding(.bottom, 40)
+        }
     }
 
     private var emptyState: some View {

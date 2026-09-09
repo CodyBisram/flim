@@ -268,7 +268,7 @@ struct EmailAuthView: View {
             if !inviteCode.isEmpty, !PendingInviteRedeemed.isRedeemed(for: email) {
                 // Remembered before the redeem, keyed by this email: whichever sign-in this code
                 // ends up admitting, the new account follows the person whose code it was.
-                if let inviter { PendingInviter.remember(inviterId: inviter.inviterId, for: email) }
+                if let inviter { PendingInviter.remember(inviterId: inviter.inviterId, name: inviter.shownName, for: email) }
                 guard try await auth.redeemInvite(code: inviteCode, email: email) else {
                     Haptics.error()
                     // Says BOTH things that can be true, because the server cannot tell you

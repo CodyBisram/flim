@@ -80,6 +80,7 @@
 		3764DD443F769BADCDB5371D /* OptimisticRollbackTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E0F438C8D66777D1E2AFB3D /* OptimisticRollbackTests.swift */; };
 		3867802F2389D9765988E950 /* Activation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 861FB2928E71AE4B67024C57 /* Activation.swift */; };
 		38A6FEF2AD81D86634308EE0 /* FeedbackService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73A9AEBBBFB814304ABC8715 /* FeedbackService.swift */; };
+		3A185DD5541644068ABB02B4 /* RollDevelopAskSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4F999D7EC066CFB6B9D2D7F /* RollDevelopAskSheet.swift */; };
 		3B9C5D883F61F8F4D2587186 /* PhoneAuthView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C14C96ED4A714B7DD3274C7E /* PhoneAuthView.swift */; };
 		3E4B2CD914C331A443B11EB0 /* DarkroomDayUnitTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27A6A72391A59B32B3529736 /* DarkroomDayUnitTests.swift */; };
 		3F3DF3063A089C8F1EEC906E /* FeedServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17748DA0845B5512541A214D /* FeedServiceTests.swift */; };
@@ -556,6 +557,7 @@
 		B24757CAC8624EEF24EEC253 /* CameraPreviewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPreviewTests.swift; sourceTree = "<group>"; };
 		B2D7A316AA53EE4FC8AB1D8D /* DarkroomZoomRows.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DarkroomZoomRows.swift; sourceTree = "<group>"; };
 		B4931AFEABEA1CBB75E5BD06 /* DarkroomZoom.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DarkroomZoom.swift; sourceTree = "<group>"; };
+		B4F999D7EC066CFB6B9D2D7F /* RollDevelopAskSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollDevelopAskSheet.swift; sourceTree = "<group>"; };
 		B739D0FF6A5C8AF0505ABB9D /* ChapterRecapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChapterRecapView.swift; sourceTree = "<group>"; };
 		B77B536156AA303ED4CF95D3 /* ActivitySectionsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivitySectionsTests.swift; sourceTree = "<group>"; };
 		B836AA433FC02113BC1E3BA8 /* DarkroomYearMonth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DarkroomYearMonth.swift; sourceTree = "<group>"; };
@@ -1106,6 +1108,7 @@
 				8CECD20B5ABAAC6B609C6E31 /* PhotoCommentsSheet.swift */,
 				5CCFCD9A339AA06647B7A1E1 /* RollCarouselView.swift */,
 				54CD52378D31EEDB7D7BE6EF /* RollDetailView.swift */,
+				B4F999D7EC066CFB6B9D2D7F /* RollDevelopAskSheet.swift */,
 				F1AA5EF66C46272F42891AF4 /* RollMembersView.swift */,
 				3A7B0511BE80DC5094BD7F98 /* RollRevealView.swift */,
 				D30B42EBEE797C8D0DEC4848 /* RollRevealViewModel.swift */,
@@ -1508,6 +1511,7 @@
 				D1044E118206CD6EDF9692B3 /* Roll.swift in Sources */,
 				A09941FBF687F7F4F17CC981 /* RollCarouselView.swift in Sources */,
 				05E99EC9B050D51173C5B157 /* RollDetailView.swift in Sources */,
+				3A185DD5541644068ABB02B4 /* RollDevelopAskSheet.swift in Sources */,
 				60FDFAABB24CAAA6528E95EB /* RollImminence.swift in Sources */,
 				FABF503D5FA8CAFBC757E315 /* RollLiveActivity.swift in Sources */,
 				EECAD4AB8FC87AFACD4A5A80 /* RollMembersView.swift in Sources */,

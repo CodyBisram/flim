@@ -6,6 +6,9 @@ import SwiftUI
 /// Renders nothing at all for everyone else, so call sites can place it unconditionally.
 struct FirstVisitLine: View {
     let surface: NewAccountIntro.Surface
+    /// A sentence built at the call site, when the surface has a fact to put in it (a roll's
+    /// develop time). Nil uses the surface's own line.
+    var text: String? = nil
     @Environment(AuthService.self) private var auth
     @State private var line: String?
 
@@ -25,7 +28,7 @@ struct FirstVisitLine: View {
         }
         .onAppear {
             line = NewAccountIntro.lineToShow(surface, userId: auth.currentUser?.id,
-                                              createdAt: auth.currentUser?.createdAt)
+                                              createdAt: auth.currentUser?.createdAt, text: text)
         }
         .onDisappear {
             if line != nil, let uid = auth.currentUser?.id { NewAccountIntro.markSeen(surface, userId: uid) }

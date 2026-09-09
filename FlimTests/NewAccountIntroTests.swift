@@ -58,9 +58,40 @@ struct NewAccountIntroTests {
         PendingInviter.store = defaults
         defer { PendingInviter.store = previous }
         let inviter = UUID()
-        PendingInviter.remember(inviterId: inviter, for: "Maya@Example.com")
+        PendingInviter.remember(inviterId: inviter, name: "Maya", for: "Maya@Example.com")
         #expect(PendingInviter.take(for: "someone-else@example.com") == nil)
-        #expect(PendingInviter.take(for: "maya@example.com") == inviter)
+        #expect(PendingInviter.take(for: "maya@example.com") == NewAccountIntro.Inviter(id: inviter, name: "Maya"))
         #expect(PendingInviter.take(for: "maya@example.com") == nil)
+    }
+
+    @Test("the inviter and the one-shot states are kept per account")
+    func inviterAndOneShots() {
+        let defaults = UserDefaults(suiteName: "NewAccountIntroTests2.\(UUID().uuidString)")!
+        let previous = NewAccountIntro.store
+        NewAccountIntro.store = defaults
+        defer { NewAccountIntro.store = previous }
+        let me = UUID(), other = UUID()
+        let maya = NewAccountIntro.Inviter(id: UUID(), name: "@maya")
+        NewAccountIntro.rememberInviter(maya, userId: me)
+        #expect(NewAccountIntro.inviter(for: me) == maya)
+        #expect(NewAccountIntro.inviter(for: other) == nil)
+        #expect(!NewAccountIntro.firstFrameDismissed(userId: me))
+        NewAccountIntro.dismissFirstFrame(userId: me)
+        #expect(NewAccountIntro.firstFrameDismissed(userId: me))
+        #expect(!NewAccountIntro.firstFrameDismissed(userId: other))
+        #expect(!NewAccountIntro.rollAskDecided(userId: me))
+        NewAccountIntro.markRollAskDecided(userId: me)
+        #expect(NewAccountIntro.rollAskDecided(userId: me))
+    }
+
+    @Test("the develop ask names the time, and the day when it is not today")
+    func developAskTime() {
+        var cal = Calendar(identifier: .gregorian); cal.timeZone = TimeZone(identifier: "America/New_York")!
+        let locale = Locale(identifier: "en_US")
+        let today = cal.date(bySettingHour: 21, minute: 14, second: 0, of: .now)!
+        #expect(RollDevelopAskSheet.timeLabel(for: today, calendar: cal, locale: locale) == "9:14 PM")
+        let later = cal.date(byAdding: .day, value: 3, to: today)!
+        let label = RollDevelopAskSheet.timeLabel(for: later, calendar: cal, locale: locale)
+        #expect(label.hasSuffix("at 9:14 PM") && label.count > "at 9:14 PM".count)
     }
 }

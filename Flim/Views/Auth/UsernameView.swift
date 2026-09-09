@@ -149,8 +149,9 @@ struct UsernameView: View {
             // person can see, and the follow can be made by hand from the inviter's page.
             if let uid = auth.currentUser?.id,
                let email = auth.currentUser?.email ?? auth.pendingEmail,
-               let inviter = PendingInviter.take(for: email), inviter != uid {
-                _ = await feed.follow(inviter, from: uid)
+               let inviter = PendingInviter.take(for: email), inviter.id != uid {
+                NewAccountIntro.rememberInviter(inviter, userId: uid)
+                _ = await feed.follow(inviter.id, from: uid)
             }
         } catch {
             self.error = error.localizedDescription

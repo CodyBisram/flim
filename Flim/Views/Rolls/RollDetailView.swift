@@ -198,6 +198,8 @@ struct RollDetailView: View {
     @Environment(RollService.self) private var rollService
     @Environment(AuthService.self) private var auth
     @Environment(NotificationService.self) private var notifications
+    /// The new-account notification ask, see the `.task` below and `RollDevelopAskSheet`.
+    @State private var showDevelopAsk = false
     @Environment(FeedService.self) private var feed
     @Environment(\.displayScale) private var displayScale
     @Environment(\.dismiss) private var dismiss
@@ -323,6 +325,10 @@ struct RollDetailView: View {
                     revealBanner(revealAt: roll.revealAt,
                                  shots: rollFullyPaged ? vm.developingPhotos.count : nil,
                                  people: Set(vm.developingPhotos.map(\.userId)).count)
+                    // One sentence, once, for a brand-new account, naming this roll's own develop
+                    // time: the screen explains the twelve hours by refusing to show the frames.
+                    FirstVisitLine(surface: .rollDetail,
+                                   text: "Every frame anyone shoots into this roll appears here at \(RollDevelopAskSheet.timeLabel(for: roll.revealAt)), for everyone at once. Until then the roll is dark, for you too.")
                 }
 
                 // The reveal, again. This used to open the carousel, a third near-identical
@@ -606,11 +612,21 @@ struct RollDetailView: View {
             // reveal is fixed at roll creation, so this works with zero photos too.
             if notificationsEnabled, !roll.isDeveloped, let myId = auth.currentUser?.id {
                 let myCount = vm.photos.filter { $0.userId == myId }.count
-                await notifications.requestAuthorizationIfNeeded()
-                notifications.scheduleRollDevelopNotification(
-                    rollId: roll.id, rollName: roll.name,
-                    developsAt: roll.revealAt, photoCount: myCount, userId: myId
-                )
+                // A new account meets the permission here, framed, at the first roll it has a
+                // frame in: `RollDevelopAskSheet` names the time and fires the system dialog only
+                // on "Tell me at ...". Asked once; either answer is final. Everyone else takes
+                // the path below unchanged.
+                if NewAccountIntro.isNewAccount(createdAt: auth.currentUser?.createdAt),
+                   notifications.authorizationState == .notDetermined,
+                   myCount > 0, !NewAccountIntro.rollAskDecided(userId: myId) {
+                    showDevelopAsk = true
+                } else {
+                    await notifications.requestAuthorizationIfNeeded()
+                    notifications.scheduleRollDevelopNotification(
+                        rollId: roll.id, rollName: roll.name,
+                        developsAt: roll.revealAt, photoCount: myCount, userId: myId
+                    )
+                }
             }
             // Keeps the countdown Live Activity going for anyone who opens the roll while it's
             // still developing, not just whoever created it, since sync() starts one fresh if
@@ -634,6 +650,19 @@ struct RollDetailView: View {
         .task {
             if let uid = auth.currentUser?.id {
                 isMuted = await photoService.fetchMutedRolls(userId: uid).contains(roll.id)
+            }
+        }
+        // No onDismiss decision: a swipe-away is not an answer, the same rule the feed primer keeps.
+        .sheet(isPresented: $showDevelopAsk) {
+            RollDevelopAskSheet(rollName: roll.name, revealAt: roll.revealAt) { accepted in
+                guard let myId = auth.currentUser?.id else { return }
+                NewAccountIntro.markRollAskDecided(userId: myId)
+                guard accepted else { return }
+                let myCount = vm.photos.filter { $0.userId == myId }.count
+                notifications.scheduleRollDevelopNotification(
+                    rollId: roll.id, rollName: roll.name,
+                    developsAt: roll.revealAt, photoCount: myCount, userId: myId
+                )
             }
         }
         .fullScreenCover(item: $selectedPhoto) { photo in

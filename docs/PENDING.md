@@ -288,7 +288,7 @@ member's own quota. `redeem_invite` tries a personal code first, then a live cam
 owner; the owner's own personal code is untouched and keeps working after. Migration
 `2026-09-08_invite_campaigns.sql`. Add another cohort with one INSERT into `invite_campaigns`.
 
-### in flight 2026-09-08: the first run, stage one
+### done 2026-09-08: the first run, both stages
 
 From the Claude Design first-run canvas (owner's project "Light canvas ground fixed"), after the
 owner's decisions: Direction A with B's feel (sign in first, then straight into the camera, the
@@ -315,11 +315,23 @@ Shipped in this stage:
   time an account created on or after 2026-09-08 opens them, then never. Older accounts never
   see any of it, reinstall or not.
 
-Still to build (stage two): the first Darkroom with one frame at print size and its two
-actions, the first roll's dark slot copy, the notification ask on the roll screen the moment a
-frame goes in ("Tell me at 9:14"), and the Darkroom's own first-visit line, which waits on that
-state. Also owed: the standing camera-permission checklist (fresh install dialog timing, the
-tab-cycle test twice) on a device before this ships, since `OnboardingView` changed.
+Stage two, same day:
+- The first Darkroom: for a new account with exactly one frame anywhere (`vm.totalCount == 1`),
+  the month rung shows that frame at print size with "Your first frame." / "It stays here, and
+  only you can see it, until you post it to your page.", "Post to your page" (opens the viewer,
+  whose Post pill does the posting) and "Keep it here", then "Shoot the next one with Maya." and
+  "Start a roll with Maya" (the inviter's name, remembered at sign-up; a plain "Start a roll"
+  without one) opening `CreateRollView`. Ends on either button, a post, or a second frame.
+- Inside a developing roll, a new account reads one sentence naming that roll's develop time.
+- The notification ask moved to the roll for new accounts: `RollDevelopAskSheet`, "Develops at
+  9:14 PM." / "Tell me at 9:14" / "I will check", shown once when the account has a frame in a
+  roll that has not developed and iOS has not been asked. The feed primer is skipped for new
+  accounts; everyone else keeps it exactly as it was.
+- The Darkroom gets its first-visit line too, in the ordinary grid.
+
+Owed before this ships: the standing camera-permission checklist (fresh install dialog timing,
+the tab-cycle test twice) on a device, since `OnboardingView` changed; and a fresh account
+walked end to end on a device, with a code, since none of this can be seen from an existing one.
 
 ### done 2026-09-08: the share sheet that bounced out of chapters
 

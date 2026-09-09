@@ -23,6 +23,9 @@ enum NewAccountIntro {
 
     enum Surface: String, CaseIterable {
         case feed, rolls, profile, darkroom
+        /// Inside one roll that has not developed. Its sentence is built at the call site,
+        /// because it names the develop time; `line` here is the fallback with no time in it.
+        case rollDetail
 
         /// One sentence each. What the screen is, in the app's own words, with the one fact a
         /// newcomer cannot see from the screen itself.
@@ -32,6 +35,7 @@ enum NewAccountIntro {
             case .rolls: "A roll is one camera for a group. Nobody sees a frame until it develops for everyone."
             case .profile: "This is your page. Post from the Darkroom and it lands here, a chapter for every month."
             case .darkroom: "Your own shots live here. Only you can see them until you post."
+            case .rollDetail: "Every frame anyone shoots into this roll appears here when it develops, for everyone at once. Until then the roll is dark, for you too."
             }
         }
     }
@@ -51,10 +55,43 @@ enum NewAccountIntro {
     }
 
     /// The line to show right now, or nil: only for a new account, only on a first visit.
-    static func lineToShow(_ surface: Surface, userId: UUID?, createdAt: Date?) -> String? {
+    /// `text` overrides the surface's own sentence when the call site has a better one.
+    static func lineToShow(_ surface: Surface, userId: UUID?, createdAt: Date?, text: String? = nil) -> String? {
         guard let userId, isNewAccount(createdAt: createdAt), !hasSeen(surface, userId: userId) else { return nil }
-        return surface.line
+        return text ?? surface.line
     }
+
+    // MARK: - Who brought you
+
+    struct Inviter: Equatable {
+        let id: UUID
+        /// What the sign-in screen called them: display name, else "@handle".
+        let name: String
+    }
+
+    /// Kept per account once the account exists, so the first Darkroom can offer "Start a roll
+    /// with Maya" by name without a fetch. Written by `UsernameView.save`, read by `DarkroomView`.
+    static func rememberInviter(_ inviter: Inviter, userId: UUID) {
+        store.set(inviter.id.uuidString, forKey: "invitedBy.id.\(userId.uuidString)")
+        store.set(inviter.name, forKey: "invitedBy.name.\(userId.uuidString)")
+    }
+
+    static func inviter(for userId: UUID) -> Inviter? {
+        guard let raw = store.string(forKey: "invitedBy.id.\(userId.uuidString)"), let id = UUID(uuidString: raw),
+              let name = store.string(forKey: "invitedBy.name.\(userId.uuidString)") else { return nil }
+        return Inviter(id: id, name: name)
+    }
+
+    // MARK: - One-shot states
+
+    /// The first Darkroom (one frame at print size) shows until "Keep it here" or a post, or until
+    /// a second frame exists, whichever first. Per account.
+    static func firstFrameDismissed(userId: UUID) -> Bool { store.bool(forKey: "firstFrame.dismissed.\(userId.uuidString)") }
+    static func dismissFirstFrame(userId: UUID) { store.set(true, forKey: "firstFrame.dismissed.\(userId.uuidString)") }
+
+    /// The roll-time notification ask is a real decision either way and is asked once per account.
+    static func rollAskDecided(userId: UUID) -> Bool { store.bool(forKey: "rollAsk.decided.\(userId.uuidString)") }
+    static func markRollAskDecided(userId: UUID) { store.set(true, forKey: "rollAsk.decided.\(userId.uuidString)") }
 }
 
 /// A username offered from an email address, so the sign-up screen arrives filled in rather
