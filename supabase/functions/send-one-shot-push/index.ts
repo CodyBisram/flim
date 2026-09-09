@@ -96,6 +96,7 @@ const CAMPAIGNS: Record<string, () => Promise<Recipient[]>> = {
   "epic-lead-change": epicLeadChangeCohort,
   "epic-floor-shots": epicFloorShotsCohort,
   "epic-podium": epicPodiumCohort,
+  "branb-epcot": branbEpcotCohort,
   "waiting-to-sort": waitingToSortCohort,
 };
 
@@ -345,6 +346,23 @@ async function epicPodiumCohort(): Promise<Recipient[]> {
       title: "Race over. Fifteen minutes to the podium.",
       body: "Ricky gold, Tristan silver, Sabs bronze. Trina, Baby Peach. 328 photos develop at 11:14.",
       route: { t: "rolls" },
+    }));
+}
+
+/// One person, added by hand to a roll that had already developed (2026-09-09): the roll's own
+/// develop push went out days before he was a member, so this is the one he never got. Opens
+/// straight into that roll's reveal.
+async function branbEpcotCohort(): Promise<Recipient[]> {
+  const reachable = new Set(await reachableUsers());
+  const { data } = await supabase
+    .from("users").select("id, username").eq("username", "branb");
+  return ((data ?? []) as { id: string; username: string }[])
+    .filter((u) => reachable.has(u.id))
+    .map((u) => ({
+      userId: u.id,
+      title: "You are in Epcot 2026.",
+      body: "The roll developed already. 221 frames are waiting for you.",
+      route: { t: "reveal", id: "8056735a-ee74-4f86-ba63-ed60648e6226" },
     }));
 }
 
