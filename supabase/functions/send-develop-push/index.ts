@@ -244,6 +244,11 @@ Deno.serve(async (req: Request) => {
   const cronSecret = Deno.env.get("CRON_SECRET");
   if (!cronSecret) return new Response("cron secret unset", { status: 503 });
   if (req.headers.get("x-cron-secret") !== cronSecret) return new Response("forbidden", { status: 401 });
+  // One run at a time: a lease taken here and released at the end, expiring on its own if this
+  // run dies, so an overlapping cron firing cannot read the same unsent rows and send twice.
+  const { data: locked } = await supabase.rpc("acquire_push_lock", { p_name: "develop", p_seconds: 240 });
+  if (!locked) return new Response("another run holds the lock");
+  try {
   // 1. Photos that have developed, belong to a roll, and haven't pushed yet.
   //    Personal instants (roll_id NULL) are excluded, they develop immediately
   //    and never generate a remote push.
@@ -326,16 +331,28 @@ Deno.serve(async (req: Request) => {
       // Built fresh from THIS iteration's rollId, never hoisted above the loop, so a run that
       // processes several rolls back-to-back can't carry one roll's id into another's pushes.
       const route: FlimRoute = { t: "reveal", id: rollId };
+      let sentForRoll = 0;
       for (const [token, userId] of seenTokens) {
         const body = g.shooters.has(userId) ? shooterBody : memberBody;
-        if (await sendPush(token, title, body, route)) sent++;
+        if (await sendPush(token, title, body, route)) sentForRoll++;
       }
+      sent += sentForRoll;
+      // Every device refused (an APNs outage, an expired auth token): leave the rows unsent so
+      // the next run tries again, rather than marking a reveal delivered that nobody received.
+      // Dead tokens are deleted by sendPush itself, so a roll whose members have no live
+      // device reaches "no tokens" and is marked below on a later run; this cannot loop
+      // forever on a dead device. A partial delivery is marked: re-sending to the people who
+      // already got it would be worse than a missed one.
+      if (seenTokens.size > 0 && sentForRoll === 0) continue;
     }
 
-    // 4. Mark every photo of the batch as pushed regardless of send outcome, so a
-    //    dead token or a member with no device can't make us retry this roll forever.
+    // 4. Mark every photo of the batch as pushed, so a member with no device can't make us
+    //    retry this roll forever.
     await supabase.from("photos").update({ push_sent: true }).in("id", g.photoIds);
   }
 
   return new Response(`sent ${sent} push(es) for ${rolls.size} roll(s)`);
+  } finally {
+    await supabase.rpc("release_push_lock", { p_name: "develop" });
+  }
 });

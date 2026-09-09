@@ -429,7 +429,15 @@ enum ImageLoader {
         if let cached = await peek(url: url, maxPixel: maxPixel, scale: scale, cacheKey: cacheKey) {
             return cached
         }
+        // One download per asset at a time. A prefetch and the cell that just scrolled into view
+        // used to fetch the same bytes side by side; now the second waits on the first's task.
+        let memKeyStr = cacheKey.map { "\($0)|\(Int(maxPixel))" } ?? "\(url.absoluteString)|\(Int(maxPixel))"
+        return await InFlightLoads.shared.run(key: memKeyStr) {
+            await download(url: url, maxPixel: maxPixel, scale: scale, cacheKey: cacheKey)
+        }
+    }
 
+    private static func download(url: URL, maxPixel: CGFloat, scale: CGFloat, cacheKey: String?) async -> UIImage? {
         guard let (data, _) = try? await URLSession.shared.data(from: url) else { return nil }
         guard let image = await downsample(data: data, maxPixel: maxPixel, scale: scale) else { return nil }
         let memKey = (cacheKey.map { "\($0)|\(Int(maxPixel))" } ?? "\(url.absoluteString)|\(Int(maxPixel))") as NSString
@@ -549,4 +557,26 @@ struct GrainOverlay: View {
             }
         }
     }()
+}
+
+
+/// Coalesces concurrent loads of one asset into one task. Keyed by the same memory-cache key
+/// `ImageLoader` files the result under, so "same asset" means "same bytes at the same size".
+/// The entry is removed when the task finishes, whatever the outcome, so a failed download is
+/// retried by the next caller rather than cached as a failure.
+actor InFlightLoads {
+    static let shared = InFlightLoads()
+    private var tasks: [String: Task<UIImage?, Never>] = [:]
+
+    func run(key: String, _ load: @escaping @Sendable () async -> UIImage?) async -> UIImage? {
+        if let existing = tasks[key] { return await existing.value }
+        let task = Task { await load() }
+        tasks[key] = task
+        let result = await task.value
+        tasks[key] = nil
+        return result
+    }
+
+    /// How many distinct assets are loading right now. For tests.
+    var count: Int { tasks.count }
 }

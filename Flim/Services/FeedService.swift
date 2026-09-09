@@ -34,6 +34,11 @@ final class FeedService {
     /// Posts with a reaction write in flight. `refreshReactions` skips these so a poll can't
     /// clobber an optimistic toggle with a server read taken before the write landed.
     private var reactionWritesInFlight: Set<UUID> = []
+    /// One reaction write at a time per post. Two quick taps used to race: the second request
+    /// could land before the first, and a failure in either rolled the WHOLE post back to a
+    /// snapshot taken before both, wiping the one that succeeded. Writes now queue per post, and
+    /// a failure undoes only its own change.
+    private var reactionQueues: [UUID: Task<Void, Never>] = [:]
     var commentsByPost: [UUID: [CommentInfo]] = [:]
     /// Photo tags per post, and the profiles of tagged users (for their labels).
     var tagsByPost: [UUID: [PostTag]] = [:]
@@ -804,6 +809,11 @@ final class FeedService {
 
     // MARK: - Feed
 
+    /// Bumped by every `loadFeed`. A page that started under an older generation is discarded
+    /// when it lands, so pull-to-refresh can never be answered by a stale page, and a refresh no
+    /// longer gives up because a page is still in flight.
+    private var feedGeneration = 0
+
     func loadFeed(currentUserId: UUID) async {
         isLoadingFeed = true
         defer { isLoadingFeed = false }
@@ -811,6 +821,7 @@ final class FeedService {
         // pull to refresh), and the follow graph plus the block list are both account-scoped:
         // loadMoreFeed's own guard cannot save it, because that runs on a `followingIds` value
         // this function may already have written from the wrong account.
+        feedGeneration += 1
         let epoch = AccountEpoch.current
         let following = await fetchFollowingIds(userId: currentUserId)
         guard AccountEpoch.isCurrent(epoch) else { return }
@@ -837,10 +848,13 @@ final class FeedService {
     ///   appended into afterwards, so nothing on screen goes empty while the network round trip
     ///   is still in flight, see `loadFeed`'s comment.
     func loadMoreFeed(currentUserId: UUID, replacingFeed: Bool = false) async {
-        guard hasMoreFeed, !isLoadingMoreFeed else { return }
+        // A refresh (replacingFeed) proceeds even while an older page is in flight; that older
+        // page is dropped by the generation check when it lands. Pagination still waits.
+        guard hasMoreFeed, replacingFeed || !isLoadingMoreFeed else { return }
         isLoadingMoreFeed = true
         defer { isLoadingMoreFeed = false }
         let epoch = AccountEpoch.current
+        let generation = feedGeneration
 
         var authorIds = Array(followingIds)
         authorIds.append(currentUserId)
@@ -902,7 +916,7 @@ final class FeedService {
             // the moment the page lands, so a stale response could advance the NEW account's
             // cursor and switch off its `hasMoreFeed` before anything visible was appended,
             // truncating a feed that had only just been reset.
-            guard AccountEpoch.isCurrent(epoch) else { return }
+            guard AccountEpoch.isCurrent(epoch), generation == feedGeneration else { return }
             feedError = nil
 
             // Advanced from the raw page, before blocked-user filtering or dedup, exactly like the
@@ -1207,32 +1221,48 @@ final class FeedService {
     /// exactly this reason; reactions never got the same treatment. The roll-photo equivalents
     /// happen to be safe already because they refetch afterwards, so only this path could strand.
     func reactToPost(_ postId: UUID, emoji: String, userId: UUID) async {
-        let before = reactionsByPost[postId] ?? []
-        var current = before
-        let landed: Bool
-
-        // Marked in-flight for the whole write, so a background refresh landing mid-tap can't
-        // overwrite the optimistic state with a server read that predates it, which would show
-        // the reaction popping off and back on.
-        reactionWritesInFlight.insert(postId)
-        defer { reactionWritesInFlight.remove(postId) }
-
-        if current.contains(where: { $0.emoji == emoji && $0.userId == userId }) {
+        // Decide and show the change now, on the current state, so the tap feels instant...
+        var current = reactionsByPost[postId] ?? []
+        let removing = current.contains { $0.emoji == emoji && $0.userId == userId }
+        if removing {
             current.removeAll { $0.emoji == emoji && $0.userId == userId }
-            reactionsByPost[postId] = current
-            landed = await removeReaction(postId: postId, emoji: emoji, userId: userId)
         } else {
             current.append(PostReaction(id: UUID(), postId: postId, userId: userId, emoji: emoji))
-            reactionsByPost[postId] = current
-            landed = await addReaction(postId: postId, emoji: emoji, userId: userId)
         }
+        reactionsByPost[postId] = current
 
-        if !landed {
-            // Put it back exactly as it was, rather than refetching: a refetch needs the network
-            // that just failed, and would leave the wrong state on screen until it returned.
-            reactionsByPost[postId] = before
+        // ...and send it after whatever write is already in flight for this post, so the server
+        // sees taps in the order they happened. `reactionWritesInFlight` still covers the whole
+        // write, for the same reason as before: a background refresh landing mid-tap must not
+        // overwrite the optimistic state with a server read that predates it.
+        let previous = reactionQueues[postId]
+        let write = Task { [weak self] in
+            await previous?.value
+            guard let self else { return }
+            self.reactionWritesInFlight.insert(postId)
+            defer { self.reactionWritesInFlight.remove(postId) }
+            let landed = removing
+                ? await self.removeReaction(postId: postId, emoji: emoji, userId: userId)
+                : await self.addReaction(postId: postId, emoji: emoji, userId: userId)
+            guard !landed else { return }
+            // Undo THIS change only: put back what this tap removed, or take out what it added.
+            // Never a snapshot from before the tap, which would also erase any later tap that
+            // succeeded. Restored locally rather than refetched, since a refetch needs the
+            // network that just failed.
+            var now = self.reactionsByPost[postId] ?? []
+            if removing {
+                if !now.contains(where: { $0.emoji == emoji && $0.userId == userId }) {
+                    now.append(PostReaction(id: UUID(), postId: postId, userId: userId, emoji: emoji))
+                }
+            } else {
+                now.removeAll { $0.emoji == emoji && $0.userId == userId }
+            }
+            self.reactionsByPost[postId] = now
             Haptics.error()
         }
+        reactionQueues[postId] = write
+        await write.value
+        if reactionQueues[postId] == write { reactionQueues[postId] = nil }
     }
 
     /// Re-reads reactions for posts that are on screen, so someone else's reaction appears while

@@ -301,6 +301,16 @@ struct ChapterRecapView: View {
 
             // Rule 4 (confirmations redesign), the same shape `RollRevealView.saveAll` uses: a
             // failure lands right under the button that caused it, with the retry in place.
+            // Said under the button, before and after the share: an incomplete sheet is not an
+            // error, it is a fact the person should have while deciding to send it.
+            if let note = viewModel.contactSheetNote {
+                Text(note)
+                    .flimFont(12.5, relativeTo: .footnote)
+                    .foregroundStyle(Color(white: 0.55))
+                    .multilineTextAlignment(.center)
+                    .transition(.opacity)
+            }
+
             if let error = viewModel.contactSheetError {
                 HStack(spacing: 10) {
                     Text(error)

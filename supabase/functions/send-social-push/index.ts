@@ -620,6 +620,11 @@ Deno.serve(async (req: Request) => {
   const cronSecret = Deno.env.get("CRON_SECRET");
   if (!cronSecret) return new Response("cron secret unset", { status: 503 });
   if (req.headers.get("x-cron-secret") !== cronSecret) return new Response("forbidden", { status: 401 });
+  // One run at a time: a lease taken here and released at the end, expiring on its own if this
+  // run dies, so an overlapping cron firing cannot read the same unsent rows and send twice.
+  const { data: locked } = await supabase.rpc("acquire_push_lock", { p_name: "social", p_seconds: 240 });
+  if (!locked) return new Response("another run holds the lock");
+  try {
   let sent = 0;
 
   // Fetched once per run, evaluated per (recipient, post) below wherever a recipient isn't
@@ -1223,4 +1228,7 @@ Deno.serve(async (req: Request) => {
   //     flipped, so "false" means "earned since 2026-08-19", not "queued".
 
   return new Response(`sent ${sent} social push(es)`);
+  } finally {
+    await supabase.rpc("release_push_lock", { p_name: "social" });
+  }
 });

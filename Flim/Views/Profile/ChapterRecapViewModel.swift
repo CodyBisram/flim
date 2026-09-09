@@ -285,6 +285,15 @@ final class ChapterRecapViewModel {
     /// `ActivityView` every other export uses with no UIKit-share special case for this one.
     var contactSheetFile: URL?
     var showContactSheetShare = false
+    /// Set when the sheet went out without every frame: the exact number, said before the share
+    /// sheet opens, rather than a quietly incomplete export. Cleared on the next build.
+    var contactSheetNote: String?
+
+    /// "Shared without 2 of 15 frames that couldn't be fetched." Nil when nothing is missing.
+    nonisolated static func contactSheetNote(missing: Int, of total: Int) -> String? {
+        guard missing > 0 else { return nil }
+        return "Shared without \(missing) of \(total) frame\(total == 1 ? "" : "s") that couldn't be fetched."
+    }
 
     /// Builds "Share as a contact sheet": the curated deck (`pagerPhotos`'s own source, `deck`)
     /// laid out on `ChapterContactSheet`'s grid, from whatever rendition the recap already
@@ -303,17 +312,26 @@ final class ChapterRecapViewModel {
         defer { isBuildingContactSheet = false }
 
         let cell = ChapterContactSheet.cellSize()
-        var images: [UIImage] = []
-        for photo in deck.prefix(ChapterContactSheet.capacity) {
-            guard let url = urls[photo.viewPath] else { continue }
-            // scale: 1, because the contact sheet's canvas is specified in pixels, exactly like
-            // `BrandedExport.storyCanvas`; a display-scale multiplier here would decode every
-            // tile several times larger than the cell it's about to be clipped into.
-            if let image = await ImageLoader.fetch(url: url, maxPixel: cell.height, scale: 1,
-                                                    cacheKey: photo.viewPath) {
-                images.append(image)
+        contactSheetNote = nil
+        let wanted = Array(deck.prefix(ChapterContactSheet.capacity))
+        var fetched: [UUID: UIImage] = [:]
+        // Two passes: the first fetch, then one retry for whatever it missed. A flaky link on one
+        // thumbnail used to drop that frame from the sheet without a word.
+        for pass in 0..<2 {
+            for photo in wanted where fetched[photo.id] == nil {
+                guard let url = urls[photo.viewPath] else { continue }
+                // scale: 1, because the contact sheet's canvas is specified in pixels, exactly
+                // like `BrandedExport.storyCanvas`; a display-scale multiplier here would decode
+                // every tile several times larger than the cell it's about to be clipped into.
+                if let image = await ImageLoader.fetch(url: url, maxPixel: cell.height, scale: 1,
+                                                        cacheKey: photo.viewPath) {
+                    fetched[photo.id] = image
+                }
             }
+            if fetched.count == wanted.count || pass == 1 { break }
         }
+        let images = wanted.compactMap { fetched[$0.id] }
+        contactSheetNote = Self.contactSheetNote(missing: wanted.count - images.count, of: wanted.count)
 
         guard let sheet = ChapterContactSheet.render(
             images: images, chapterCode: chapter.chapterCode(), monthName: chapter.monthName(),

@@ -296,6 +296,28 @@ badge FK is NO ACTION), the one photo's storage objects removed. Ordinals 56 and
 gaps by design (immutable, never renumbered); the founding count is people, so it is exact.
 `armvnnn` (ordinal 55, a real signup the same evening) was left alone.
 
+### done 2026-09-09: the delivery batch (audit items 1 to 5 and 10)
+
+10. **Invite limits in layers.** One global 30-an-hour counter shared by preview and redeem
+    would have locked the door on a busy cohort day. Now per email (10 redeems an hour), per
+    code (40 previews an hour) and a global ceiling of 300, in `invite_rate_keys` via
+    `bump_invite_rate`; a weekly sweep prunes the keys. Applied before the 09-10 cohort.
+1.  **Push runs cannot overlap.** `acquire_push_lock` / `release_push_lock` lease each sender
+    (develop, social) for a run, expiring on their own if a run dies. The develop sender also
+    leaves a roll's rows unsent when every device refused, so an APNs outage is retried
+    instead of marked delivered; a partial delivery is still marked (re-sending to those who
+    got it would be worse). Per-recipient outcomes remain future work.
+2.  **Reactions queue per post** (`FeedService.reactionQueues`) and a failure undoes only its
+    own change; a snapshot rollback used to erase a later tap that succeeded.
+3.  **Refresh supersedes a page in flight.** `feedGeneration` bumps on every `loadFeed`; a page
+    from an older generation is dropped on landing; refresh no longer gives up because
+    pagination was busy.
+4.  **One download per asset.** `InFlightLoads` coalesces concurrent `ImageLoader.fetch` calls
+    for the same key; a prefetch and a visible cell share one request.
+5.  **The contact sheet says what it is missing.** One retry pass for failed thumbnails, then
+    "Shared without N of M frames that couldn't be fetched." under the button, before and after
+    the share sheet.
+
 ### done 2026-09-09: the trust batch (from docs/REPOSITORY_AUDIT_2026-09-09.md)
 
 Six holes the app never offered but the server allowed, each closed at the boundary:

@@ -132,4 +132,13 @@ struct ChapterCuratorTests {
         let hashless = [ChapterPhoto(id: UUID(), takenAt: Date(timeIntervalSince1970: 1_700_000_000), thumbPath: nil, feedPath: nil, storagePath: "p", rollId: nil, rollName: nil, postId: nil, quality: 0.5, phash: nil)]
         #expect(ChapterCuration.columnCandidates(hashless) == nil)
     }
+
+    // MARK: - Contact sheet completeness
+
+    @Test("the contact sheet says exactly what it is missing, and nothing when whole")
+    func contactSheetNote() {
+        #expect(ChapterRecapViewModel.contactSheetNote(missing: 0, of: 15) == nil)
+        #expect(ChapterRecapViewModel.contactSheetNote(missing: 2, of: 15) == "Shared without 2 of 15 frames that couldn't be fetched.")
+        #expect(ChapterRecapViewModel.contactSheetNote(missing: 1, of: 1) == "Shared without 1 of 1 frame that couldn't be fetched.")
+    }
 }
