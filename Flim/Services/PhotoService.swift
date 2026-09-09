@@ -826,7 +826,9 @@ final class PhotoService {
                 for attempt in 0..<2 {
                     if (try? await supabase.storage.from("photos")
                         .upload(path, data: encoded.data,
-                               options: FileOptions(contentType: encoded.format.contentType))) != nil {
+                               // upsert: a rendition whose upload succeeded but whose reply was lost is
+                               // simply overwritten with identical bytes on retry, never refused as a duplicate.
+                               options: FileOptions(contentType: encoded.format.contentType, upsert: true))) != nil {
                         return path
                     }
                     if attempt == 0 { try? await Task.sleep(for: .seconds(3)) }
@@ -997,7 +999,7 @@ final class PhotoService {
         func upload(_ encoded: InstantFilmProcessor.EncodedImage, to path: String) async -> String? {
             (try? await supabase.storage.from("photos")
                 .upload(path, data: encoded.data,
-                       options: FileOptions(contentType: encoded.format.contentType))) != nil ? path : nil
+                       options: FileOptions(contentType: encoded.format.contentType, upsert: true))) != nil ? path : nil
         }
 
         var newThumb: String?

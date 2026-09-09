@@ -252,10 +252,17 @@ final class DarkroomViewModel {
         guard !ready.isEmpty else { return }
         // Grid shows the thumbnail (displayPath), tiny download vs the full image.
         let map = await photoService.signedURLs(for: ready.map(\.displayPath))
+        // The real expiry, from the store that minted or cached the URL: a URL handed back from
+        // the shared cache may already be most of an hour old, and giving it a fresh hour here
+        // let it expire mid-view while this cache still called it fresh.
+        var expiries: [UUID: Date] = [:]
+        for photo in ready where map[photo.displayPath] != nil {
+            expiries[photo.id] = await SignedURLStore.shared.expiresAt(photo.displayPath) ?? Date.now.addingTimeInterval(3600)
+        }
         await MainActor.run {
             for photo in ready where map[photo.displayPath] != nil {
                 signedURLCache[photo.id] = map[photo.displayPath]
-                urlExpiry[photo.id] = Date.now.addingTimeInterval(3600)
+                urlExpiry[photo.id] = expiries[photo.id]
             }
         }
     }
@@ -269,9 +276,10 @@ final class DarkroomViewModel {
         }
 
         guard let url = try? await photoService.signedURL(for: photo.displayPath) else { return nil }
+        let expiry = await SignedURLStore.shared.expiresAt(photo.displayPath) ?? Date.now.addingTimeInterval(3600)
         await MainActor.run {
             signedURLCache[photo.id] = url
-            urlExpiry[photo.id] = Date.now.addingTimeInterval(3600)
+            urlExpiry[photo.id] = expiry
         }
         return url
     }

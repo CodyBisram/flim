@@ -214,6 +214,36 @@ enum DiskImageCache {
         Task.detached(priority: .background) {
             guard let data = image.jpegData(compressionQuality: 0.9) else { return }
             try? data.write(to: file(key), options: .atomic)
+            noteWrite(bytes: data.count)
+        }
+    }
+
+    /// Bytes written since the last trim. Trimming only at launch let a long session sail past
+    /// the 200 MB target; now every `trimEvery` bytes written schedules a trim, which is cheap
+    /// (a directory listing) and keeps the cache near its budget during the session too.
+    private static let writeCounter = WriteCounter()
+    static let trimEvery = 32 * 1024 * 1024
+
+    private static func noteWrite(bytes: Int) {
+        if writeCounter.add(bytes, threshold: trimEvery) { trim() }
+    }
+
+    /// Whether `written` bytes since the last trim crosses the line. Pure, for tests.
+    static func shouldTrim(writtenSinceTrim: Int, every: Int = trimEvery) -> Bool {
+        writtenSinceTrim >= every
+    }
+
+    /// A tiny lock-guarded counter; the writers run on detached background tasks.
+    final class WriteCounter: @unchecked Sendable {
+        private let lock = NSLock()
+        private var written = 0
+        /// Adds and reports whether the threshold was crossed, resetting when it was.
+        func add(_ bytes: Int, threshold: Int) -> Bool {
+            lock.lock(); defer { lock.unlock() }
+            written += bytes
+            guard written >= threshold else { return false }
+            written = 0
+            return true
         }
     }
 
@@ -260,6 +290,7 @@ enum DiskImageCache {
     static func saveRaw(_ data: Data, path: String) {
         Task.detached(priority: .background) {
             try? data.write(to: file("raw|" + path), options: .atomic)
+            noteWrite(bytes: data.count)
         }
     }
 
@@ -438,7 +469,13 @@ enum ImageLoader {
     }
 
     private static func download(url: URL, maxPixel: CGFloat, scale: CGFloat, cacheKey: String?) async -> UIImage? {
-        guard let (data, _) = try? await URLSession.shared.data(from: url) else { return nil }
+        guard let (data, response) = try? await URLSession.shared.data(from: url) else { return nil }
+        if let http = response as? HTTPURLResponse, http.statusCode == 401 || http.statusCode == 403 {
+            // The signature expired or was revoked. Forget it so the next request signs a fresh
+            // one, instead of every retry reusing a URL the server has already refused.
+            if let cacheKey { await SignedURLStore.shared.invalidate(cacheKey) }
+            return nil
+        }
         guard let image = await downsample(data: data, maxPixel: maxPixel, scale: scale) else { return nil }
         let memKey = (cacheKey.map { "\($0)|\(Int(maxPixel))" } ?? "\(url.absoluteString)|\(Int(maxPixel))") as NSString
         let diskKey = cacheKey.map { "\($0)|\(Int(maxPixel))" } ?? "\(url.path)|\(Int(maxPixel))"

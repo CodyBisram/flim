@@ -93,6 +93,23 @@ actor SignedURLStore {
         return entry.url
     }
 
+    /// When the cached URL for `path` stops being usable, or nil if none is cached. Readers that
+    /// keep their own expiry (the Darkroom) take this rather than assuming a fresh hour: a URL
+    /// pulled from this cache may already be fifty minutes old.
+    func expiresAt(_ path: String) async -> Date? {
+        await ensureLoaded()
+        guard let entry = cache[path], Self.isUsable(entry) else { return nil }
+        return entry.expiresAt
+    }
+
+    /// Forgets one path's URL, so the next request signs afresh. Called after a fetch came back
+    /// unauthorized, which is what an expired or revoked signature looks like on the wire.
+    func invalidate(_ path: String) async {
+        await ensureLoaded()
+        cache[path] = nil
+        schedulePersist()
+    }
+
     func store(_ url: URL, for path: String) async {
         await ensureLoaded()
         cache[path] = Entry(url: url, expiresAt: Date.now.addingTimeInterval(Self.ttl))
@@ -102,7 +119,11 @@ actor SignedURLStore {
     private func schedulePersist() {
         persistTask?.cancel()
         persistTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(2))   // coalesce bursts into one write
+            // Coalesce bursts into one write. A cancelled sleep used to fall through and write
+            // anyway, so a signing batch of N paths wrote the whole file N times; the debounce
+            // only debounces if cancellation actually stops the write.
+            do { try await Task.sleep(for: .seconds(2)) } catch { return }
+            guard !Task.isCancelled else { return }
             await self?.persist()
         }
     }

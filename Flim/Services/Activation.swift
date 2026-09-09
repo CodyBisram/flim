@@ -60,15 +60,51 @@ enum ActivationEvent: String {
 /// holds no UI state for any view to read, so nothing here needs isolating, and any caller (a
 /// `@MainActor` view model, a background capture task) can log an event with no actor hop.
 enum Activation {
-    /// Fires and returns immediately; never awaited by the caller. Never throws and never
-    /// retries: a dropped event only delays a milestone until the user's next action of that
-    /// kind, and this must never be able to slow down or fail the real action it rides along
-    /// with (a capture, a roll join, a reveal open, …).
+    /// Fires and returns immediately; never awaited by the caller, never throws, and must never
+    /// slow down or fail the real action it rides along with (a capture, a roll join, a reveal
+    /// open). It used to never retry either, on the reasoning that a dropped event only delays a
+    /// milestone until the next action of that kind. That is not true of the firsts that matter
+    /// most: `first_launch` on a bad connection has no next time, and the funnel we plan from
+    /// undercounted exactly the people it most needs to see. An event that fails to send is now
+    /// queued (UserDefaults, deduped) and flushed on the next launch. The server keeps one row
+    /// per person per event, so a retry after a lost response is harmless.
+    static var store: UserDefaults = .standard
+    private static let pendingKey = "activation.pending"
+
     static func log(_ event: ActivationEvent) {
         Task {
-            _ = try? await supabase
-                .rpc("log_activation_event", params: ["p_event": event.rawValue])
-                .execute()
+            if await send(event.rawValue) { return }
+            enqueue(event.rawValue)
         }
+    }
+
+    /// Sends whatever is queued, in order, stopping at the first failure so nothing is skipped.
+    static func flushPending() {
+        Task {
+            var remaining = pending()
+            while let first = remaining.first {
+                guard await send(first) else { break }
+                remaining.removeFirst()
+                store.set(remaining, forKey: pendingKey)
+            }
+        }
+    }
+
+    private static func send(_ raw: String) async -> Bool {
+        do {
+            _ = try await supabase.rpc("log_activation_event", params: ["p_event": raw]).execute()
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    static func pending() -> [String] { store.stringArray(forKey: pendingKey) ?? [] }
+
+    static func enqueue(_ raw: String) {
+        var list = pending()
+        guard !list.contains(raw) else { return }
+        list.append(raw)
+        store.set(list, forKey: pendingKey)
     }
 }

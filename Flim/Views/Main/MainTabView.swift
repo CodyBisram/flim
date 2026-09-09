@@ -300,6 +300,7 @@ struct MainTabView: View {
             }
             maybeShowNotifPrimer()
             DiskImageCache.trim()   // keep the on-disk image cache bounded
+            Activation.flushPending()   // firsts that failed to send last time
 
             #if DEBUG
             let args = ProcessInfo.processInfo.arguments

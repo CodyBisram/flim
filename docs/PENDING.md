@@ -296,6 +296,21 @@ badge FK is NO ACTION), the one photo's storage objects removed. Ordinals 56 and
 gaps by design (immutable, never renumbered); the founding count is people, so it is exact.
 `armvnnn` (ordinal 55, a real signup the same evening) was left alone.
 
+### done 2026-09-09: the rest of the delivery list (audit items 6 to 9)
+
+6. **Signed URLs keep their real expiry.** The Darkroom used to stamp a cached URL with a fresh
+   hour whenever it reused it; it now asks `SignedURLStore.expiresAt`. A fetch that comes back
+   401/403 forgets that path's URL (`SignedURLStore.invalidate`) so the next request signs afresh
+   instead of retrying a refused signature. The store's debounced persist also stops writing
+   on cancellation, which had it rewriting the whole file once per path in a signing batch.
+7. **Rendition uploads are idempotent** (`upsert: true` on both the capture-time and the repair
+   uploads): a rendition whose upload landed but whose reply was lost is overwritten with the
+   same bytes on retry, never refused as a duplicate, so repair cannot get stuck.
+8. **The disk cache trims on write.** Every 32 MB written schedules a trim, in addition to the
+   launch trim, so a long session stays near the 200 MB target.
+9. **Activation events retry.** A first that fails to send is queued per event and flushed at
+   the next launch; the server keeps one row per person per event, so a retry is harmless.
+
 ### done 2026-09-09: the delivery batch (audit items 1 to 5 and 10)
 
 10. **Invite limits in layers.** One global 30-an-hour counter shared by preview and redeem
