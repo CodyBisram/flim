@@ -21,6 +21,8 @@ struct AppUser: Codable, Identifiable, Equatable {
     ///   `[...]` — an explicit, ordered choice, leading badge first.
     /// See `supabase/migrations/2026-08-17_displayed_badges.sql` and `BadgePickerSheet`.
     var displayedBadges: [String]?
+    /// One of `FlimAccentPalette.names`, or nil for an account that has never sent one up.
+    var accentColor: String?
 
     /// Preferred name for greetings/display, the display name, else the username.
     var friendlyName: String { displayName?.isEmpty == false ? displayName! : (username ?? "there") }
@@ -36,5 +38,6 @@ struct AppUser: Codable, Identifiable, Equatable {
         case displayName = "display_name"
         case coverPath = "cover_path"
         case displayedBadges = "displayed_badges"
+        case accentColor = "accent_color"
     }
 }

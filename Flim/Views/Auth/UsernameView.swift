@@ -144,6 +144,7 @@ struct UsernameView: View {
         error = nil
         do {
             try await auth.setUsername(username.lowercased(), displayName: name)
+            try? await auth.setAccent(accentColor)
             // The one-way follow of whoever's code let this account in, the first moment the
             // account's own row exists. Best effort and silent: a failure here costs nothing the
             // person can see, and the follow can be made by hand from the inviter's page.

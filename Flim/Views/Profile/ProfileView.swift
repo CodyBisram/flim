@@ -347,6 +347,7 @@ struct ProfileView: View {
                 Button {
                     accentColor = swatch.rawValue
                     Haptics.tap()
+                    Task { try? await auth.setAccent(swatch.rawValue) }
                 } label: {
                     Circle()
                         .fill(swatch.color)

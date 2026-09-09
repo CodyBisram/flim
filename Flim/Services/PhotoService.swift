@@ -1306,9 +1306,13 @@ final class PhotoService {
         failedUploads.append(contentsOf: fresh)
         if uploadError == nil {
             uploadError = fresh.count == 1
-                ? "One photo didn't finish uploading last time."
-                : "\(fresh.count) photos didn't finish uploading last time."
+                ? "One photo didn't finish uploading last time. It only exists on this phone until it does."
+                : "\(fresh.count) photos didn't finish uploading last time. They only exist on this phone until they do."
         }
+        // Restore runs on launch and sign-in, and `confirmedUploaded` just proved the server is
+        // reachable, so try now rather than leaving them for the pill. Anything that fails
+        // again comes straight back into `failedUploads`.
+        await retryFailedUploads()
     }
 
     // MARK: - Develop timing

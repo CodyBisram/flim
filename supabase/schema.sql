@@ -6435,3 +6435,31 @@ AS $$
 $$;
 REVOKE ALL ON FUNCTION public.acquire_push_lock(TEXT, INT) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.release_push_lock(TEXT) FROM PUBLIC, anon, authenticated;
+
+-- ---------------------------------------------------------------------------
+-- 2026-09-09: accent colour on the account (supabase/migrations/2026-09-09_accent_color.sql)
+-- ---------------------------------------------------------------------------
+-- The accent colour a person picks at sign-up (and in Settings) only ever lived in UserDefaults,
+-- so a reinstall or a new phone sent it back to amber. It is theirs, so it belongs on their row.
+-- Nobody else reads it: it is not in the profiles view and there is no SELECT grant for other
+-- rows. get_own_profile returns the whole row, so the app sees it without a signature change.
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS accent_color TEXT;
+ALTER TABLE public.users DROP CONSTRAINT IF EXISTS users_accent_color_known;
+ALTER TABLE public.users ADD CONSTRAINT users_accent_color_known
+    CHECK (accent_color IS NULL OR accent_color IN ('amber', 'rose', 'violet', 'teal', 'lime', 'sky'));
+-- Column-scoped, like the other own-row edits (the row policy "users: own row" still applies).
+GRANT UPDATE (accent_color) ON public.users TO authenticated;
+
+-- Folded in from supabase/migrations/2026-09-09_sept11_cohort.sql (applied 2026-09-09).
+-- The owner's one-day cohort moved from 2026-09-10 to 2026-09-11 (asked 2026-09-09, before the
+-- SEPT10 window opened and with zero uses). The code is the primary key, so the row is replaced.
+-- Idempotent: a second run finds no SEPT10 row and inserts nothing.
+WITH gone AS (
+    DELETE FROM public.invite_campaigns WHERE code = 'SEPT10' AND uses = 0 RETURNING inviter_id
+)
+INSERT INTO public.invite_campaigns (code, inviter_id, valid_from, valid_until, max_uses, note)
+SELECT 'SEPT11', inviter_id,
+       timestamptz '2026-09-11 00:00 America/New_York', timestamptz '2026-09-12 00:00 America/New_York',
+       NULL, 'One-day cohort code, 2026-09-11, attributed to the owner (moved from 2026-09-10)'
+FROM gone
+ON CONFLICT (code) DO NOTHING;

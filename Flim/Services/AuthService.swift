@@ -79,6 +79,7 @@ final class AuthService {
             guard AccountEpoch.isCurrent(epoch) else { return }
             currentUser = profile
             profileUnavailable = false
+            reconcileAccent(with: profile)
         } catch {
             guard AccountEpoch.isCurrent(epoch) else { return }
             // Only unavailable if we have nothing to show. A cached profile from earlier in the
@@ -467,6 +468,37 @@ final class AuthService {
     }
 
     /// Updates the profile bio and refreshes `currentUser`.
+    /// Sends the phone's accent pick up to the row. Fire-and-forget from the pickers; the local
+    /// value is already applied, so a failed round trip costs nothing visible and the next
+    /// profile load sends it again (see `AccentSync`).
+    func setAccent(_ name: String) async throws {
+        guard FlimAccentPalette.names.contains(name) else { return }
+        let session = try await supabase.auth.session
+        struct Update: Encodable { let accent_color: String }
+        _ = try await supabase
+            .from("users")
+            .update(Update(accent_color: name), returning: .minimal)
+            .eq("id", value: session.user.id.uuidString)
+            .execute()
+        currentUser?.accentColor = name
+    }
+
+    /// Runs on every profile load. Server wins when it has a name; otherwise the phone's pick
+    /// goes up once. Writing UserDefaults directly is what FlimApp's `@AppStorage` observes, so
+    /// the environment accent follows without a restart.
+    private func reconcileAccent(with profile: AppUser?) {
+        guard let profile else { return }
+        let local = UserDefaults.standard.string(forKey: AccentSync.key)
+        switch AccentSync.decision(local: local, server: profile.accentColor) {
+        case .applyServer(let name):
+            UserDefaults.standard.set(name, forKey: AccentSync.key)
+        case .uploadLocal(let name):
+            Task { try? await setAccent(name) }
+        case .nothing:
+            break
+        }
+    }
+
     func setBio(_ bio: String) async throws {
         let session = try await supabase.auth.session
         struct Update: Encodable { let bio: String }

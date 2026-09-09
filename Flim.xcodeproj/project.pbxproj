@@ -18,6 +18,7 @@
 		044E0603C382A28DB1640C3E /* FlimAccentPalette.swift in Sources */ = {isa = PBXBuildFile; fileRef = 605C13CF0D2D65A1EA8701FF /* FlimAccentPalette.swift */; };
 		0557B2C95C26741B98F49834 /* WidgetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = C83B56B27D38D1F33442EDBD /* WidgetSnapshot.swift */; };
 		05E99EC9B050D51173C5B157 /* RollDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54CD52378D31EEDB7D7BE6EF /* RollDetailView.swift */; };
+		06296ED0F7F1DF2427C29DB8 /* AccentSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67C38A1F85BC5724A1B48370 /* AccentSync.swift */; };
 		0A8F3F3E94D6039F6537E14A /* SplashView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 121F65D393ABD1CC13DA0186 /* SplashView.swift */; };
 		0B2C9F6F5333D317ECADEB94 /* PostOwnershipTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72E2656C67C01EC10074B7D1 /* PostOwnershipTests.swift */; };
 		0BA7F7EE88D072B80A399232 /* RollServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8160A75F102252932FFC426A /* RollServiceTests.swift */; };
@@ -253,6 +254,7 @@
 		D86D45FEC7A4EA89A268B87B /* PhotoPickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC8AD03A8D1B86B86365239A /* PhotoPickerSheet.swift */; };
 		DADF8A1F104A096A0E82B0D5 /* PhotoServiceGradedRenditionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7299D16CD74851BA0C29495 /* PhotoServiceGradedRenditionTests.swift */; };
 		DAEB96A018A4AC97A9C2B097 /* ReactionBarTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09D7D1B34FF3ABA360DFCCC6 /* ReactionBarTests.swift */; };
+		DC8A5A687CBEE9B2D2E9BDC7 /* AccentSyncTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2411FB0CE6FE539546A7A825 /* AccentSyncTests.swift */; };
 		DD9A8AAC9FC49726DF3B3A84 /* ChapterContactSheetTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87BABB21BC29B14176BD0FF1 /* ChapterContactSheetTests.swift */; };
 		DF79D7CBD7A4684626EF2080 /* ActivityFeedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F4E26878DAFF415FB6B4644 /* ActivityFeedView.swift */; };
 		DFCED2D30474E53F1E6B116D /* CubeLUTTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 409A6D3129F94E675E11C751 /* CubeLUTTests.swift */; };
@@ -392,6 +394,7 @@
 		211B6198E8CE7E255A511736 /* LookRegressionSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LookRegressionSupport.swift; sourceTree = "<group>"; };
 		22ABBF2BC75AB4F195F7798E /* NotificationAuthorizationStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationAuthorizationStateTests.swift; sourceTree = "<group>"; };
 		235D6F50F5FDD8BE4BB9DE4E /* ReactionBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReactionBar.swift; sourceTree = "<group>"; };
+		2411FB0CE6FE539546A7A825 /* AccentSyncTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccentSyncTests.swift; sourceTree = "<group>"; };
 		24DE0B6E57BFD6B0DE4804A0 /* PhotoTags.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoTags.swift; sourceTree = "<group>"; };
 		24E8357668BCA14F54E5CBD3 /* WidgetTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetTheme.swift; sourceTree = "<group>"; };
 		2541CCDED4898D0604DB64EA /* CameraViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraViewModel.swift; sourceTree = "<group>"; };
@@ -478,6 +481,7 @@
 		64F58EA5779DD43E35F781DB /* PendingRollInviteTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PendingRollInviteTests.swift; sourceTree = "<group>"; };
 		659573B57F39ED8C122771FD /* AvatarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AvatarView.swift; sourceTree = "<group>"; };
 		661C9A57B20EE6E81E51EA9B /* PeopleSearchFieldTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeopleSearchFieldTests.swift; sourceTree = "<group>"; };
+		67C38A1F85BC5724A1B48370 /* AccentSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccentSync.swift; sourceTree = "<group>"; };
 		69363E6AAA4FCBB1BD5C48DA /* BrandedExportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrandedExportTests.swift; sourceTree = "<group>"; };
 		6AB130A52B447AFCDA0C009A /* DarkroomZoomTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DarkroomZoomTests.swift; sourceTree = "<group>"; };
 		6D27190BB76B91D0B8A60887 /* CommentComposer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommentComposer.swift; sourceTree = "<group>"; };
@@ -885,6 +889,7 @@
 		AC05434A8F7DF581D43AF6AD /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				67C38A1F85BC5724A1B48370 /* AccentSync.swift */,
 				FF9D945EEDA73B65E2E4119C /* AccountChange.swift */,
 				861FB2928E71AE4B67024C57 /* Activation.swift */,
 				5A194AB5EE948FBA8903D086 /* AppInfo.swift */,
@@ -976,6 +981,7 @@
 		EAAFC9FCEE6F9F480847295A /* FlimTests */ = {
 			isa = PBXGroup;
 			children = (
+				2411FB0CE6FE539546A7A825 /* AccentSyncTests.swift */,
 				3B04FC26356A4531AF0A539D /* AccountEpochTests.swift */,
 				870AFDC29D5590DDFAB6BB9A /* ActivationEventTests.swift */,
 				D86D048DA64F5454E17D0F34 /* ActivityFeedViewTests.swift */,
@@ -1240,6 +1246,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				DC8A5A687CBEE9B2D2E9BDC7 /* AccentSyncTests.swift in Sources */,
 				4115FC907B0F49EF7C95C712 /* AccountEpochTests.swift in Sources */,
 				6E4F8F019D7C5799B1A69B24 /* ActivationEventTests.swift in Sources */,
 				2AE813EB776EADC01EEF7A24 /* ActivityFeedViewTests.swift in Sources */,
@@ -1387,6 +1394,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				06296ED0F7F1DF2427C29DB8 /* AccentSync.swift in Sources */,
 				FA0835F7D7364268088D32F2 /* AccountChange.swift in Sources */,
 				F1A30C1267511FF08CEF2AB9 /* AccountDeleteView.swift in Sources */,
 				3867802F2389D9765988E950 /* Activation.swift in Sources */,

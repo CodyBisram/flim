@@ -208,6 +208,14 @@ struct ContentView: View {
             if let uid = auth.currentUser?.id {
                 Task { await CameraRollAutoSave.shared.sweep(userId: uid, photoService: photos) }
             }
+            // Shots that never reached the server exist only on this phone until they do, and a
+            // delete-and-reinstall takes them with it. Coming back to the foreground is the
+            // moment the network most likely came back too, so try again without waiting for
+            // the person to find the red pill on the camera. One attempt per foreground; a
+            // failure lands back in `failedUploads` exactly as a tapped retry would.
+            if photos.hasFailedUploads {
+                Task { await photos.retryFailedUploads() }
+            }
         }
     }
 

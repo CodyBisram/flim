@@ -284,9 +284,23 @@ untouched and stay immutable. Migration `2026-09-08_founding_100_people_only.sql
 (2) `invite_campaigns`: time-boxed cohort codes attributed to a member, never drawing on that
 member's own quota. `redeem_invite` tries a personal code first, then a live campaign code;
 `invite_preview` names the campaign's inviter the same way, so the first-run flow follows them.
-`SEPT10` is live for the whole of 2026-09-10 in New York, unlimited uses, attributed to the
-owner; the owner's own personal code is untouched and keeps working after. Migration
-`2026-09-08_invite_campaigns.sql`. Add another cohort with one INSERT into `invite_campaigns`.
+`SEPT11` is live for the whole of 2026-09-11 in New York, unlimited uses, attributed to the
+owner; the owner's own personal code is untouched and keeps working after. Migrations
+`2026-09-08_invite_campaigns.sql` and `2026-09-09_sept11_cohort.sql` (the day moved from the 10th
+on 2026-09-09, before the window opened). Add another cohort with one INSERT into `invite_campaigns`.
+
+### done 2026-09-09: two more things a reinstall used to lose
+
+- The accent colour now lives on the account (`users.accent_color`, own-row update grant, checked
+  against the six names). The profile load reconciles: the server wins when it has a name, an empty
+  row gets the phone's pick sent up once, so existing accounts keep what they chose. Pickers at
+  sign-up and in Settings write through. Nobody else can read the column.
+- Photos that never reached the server retry on their own: once right after they are restored on
+  launch or sign-in, and once on every return to the foreground. The restore line now says they
+  only exist on this phone until they upload. The red pill on the camera is unchanged.
+
+Not synced on purpose: feed and activity "seen" markers, the notification toggle, capture
+preferences and caches. They come back on first use and nothing is lost.
 
 ### done 2026-09-09: a reinstall no longer replays every reveal
 
