@@ -619,9 +619,12 @@ struct PhotoPagerView: View {
         .sheet(item: $deleteConsequence) { consequence in
             ConsequenceSheet(consequence: consequence) { performRollDelete() }
         }
-        .sheet(item: $shareItem) { item in
+        .sheet(item: $shareItem, onDismiss: {
+            ShareBreadcrumbs.log("pager.shareSheet.onDismiss", "rack=\(showsRollRack) selection=\(selection)")
+        }) { item in
             SharePreviewSheet(photo: item.image, caption: item.caption)
         }
+        .onDisappear { ShareBreadcrumbs.log("pager.onDisappear", "rack=\(showsRollRack)") }
         .sheet(item: $shareSheetPhoto) { photo in
             // Falls back to the rack's own thumbnail resolution too, matching `rackSection`'s own
             // `signedURLs[photo.id] ?? rackThumbURLs[photo.id]`: a night reached via the jump
@@ -1787,6 +1790,7 @@ struct PhotoPagerView: View {
     /// reads as a broken app, so a miss now costs a spinner rather than the feature.
     private func share(_ photo: Photo) {
         guard photo.userId == auth.currentUser?.id else { return }   // export is for own frames only
+        ShareBreadcrumbs.log("pager.share.tap", "rack=\(showsRollRack) hasURL=\(resolvedURLs[photo.id] != nil) preparing=\(preparingShare)")
         guard !preparingShare, let url = resolvedURLs[photo.id] else { return }
         // Same `resolvedCacheKey` phase rule as `photoPage`: `resolvedURLs[photo.id]` may still
         // be the thumbnail seed here, and keying this memory-cache entry `viewPath` regardless
@@ -1800,6 +1804,7 @@ struct PhotoPagerView: View {
         // when looked up under another.
         let key = "\(shareCacheKey)|1400" as NSString
         if let image = ImageCache.shared.object(forKey: key) {
+            ShareBreadcrumbs.log("pager.share.item.set", "path=cached px=\(Int(image.size.width))x\(Int(image.size.height))")
             shareItem = ShareImage(image: image, caption: BrandedExport.Caption(date: photo.takenAt))
             return
         }
@@ -1809,6 +1814,7 @@ struct PhotoPagerView: View {
             guard let (data, _) = try? await URLSession.shared.data(from: url),
                   let image = UIImage(data: data)
             else {
+                ShareBreadcrumbs.log("pager.share.download.failed")
                 Haptics.error()
                 flashError("Couldn't prepare that for sharing.")
                 return
@@ -1817,7 +1823,8 @@ struct PhotoPagerView: View {
             // A swipe mid-flight already moved `current` on; silently drop the stale export
             // rather than pop a share sheet for a photo no longer on screen. Retryable: the
             // share button is right there on whatever photo is current now.
-            guard current?.id == photo.id else { return }
+            guard current?.id == photo.id else { ShareBreadcrumbs.log("pager.share.selectionMoved"); return }
+            ShareBreadcrumbs.log("pager.share.item.set", "path=download bytes=\(data.count) px=\(Int(image.size.width))x\(Int(image.size.height))")
             shareItem = ShareImage(image: image, caption: BrandedExport.Caption(date: photo.takenAt))
         }
     }

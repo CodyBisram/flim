@@ -141,8 +141,11 @@ struct SharePreviewSheet: View {
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
         .flimSheetSurface()
+        .onAppear { ShareBreadcrumbs.log("sheet.onAppear", "px=\(Int(photo.size.width))x\(Int(photo.size.height))") }
+        .onDisappear { ShareBreadcrumbs.log("sheet.onDisappear", "print=\(printImage != nil) story=\(storyImage != nil) full=\(fullImage != nil)") }
         .task {
             migrateLegacyChoice()
+            ShareBreadcrumbs.log("sheet.render.start")
             // One decode, three renders. The print goes first because the story is placed FROM
             // it; the full frame is its own render off the raw photo, because it has to crop
             // before it imprints or the marks are cut off with the sides.
@@ -152,12 +155,15 @@ struct SharePreviewSheet: View {
                 BrandedExport.print(source, caption: cap)
             }.value
             printImage = rendered
+            ShareBreadcrumbs.log("sheet.render.print.done")
             storyImage = await Task.detached(priority: .userInitiated) {
                 BrandedExport.story(print: rendered)
             }.value
+            ShareBreadcrumbs.log("sheet.render.story.done")
             fullImage = await Task.detached(priority: .userInitiated) {
                 BrandedExport.fill(source, caption: cap)
             }.value
+            ShareBreadcrumbs.log("sheet.render.full.done")
         }
     }
 

@@ -299,7 +299,13 @@ on the iOS 26.3 simulator in Debug, both the cached-image path and the download 
 hold, and the system share sheet comes up over ours. The demo fixture now plants file URLs in the
 signed-URL store so the viewer's share path runs for real. What is left to separate: Release vs
 Debug, a real 1400px photograph's memory cost in the sheet's three renders, and the exact surface
-(Darkroom, feed post, chapter). Owner asked for precise steps and a Darkroom comparison.
+(Darkroom, feed post, chapter). Owner answered: chapters only, the viewer's top-right share
+icon, lands back on the same photo with the film strip. Demo chapters with posts hold too. So the
+next build carries `ShareBreadcrumbs`: each step of the flow (tap, item set, sheet appear, the
+three renders, sheet disappear, sheet onDismiss, pager disappear, player presented) writes a
+`crash_diagnostics` row of kind "breadcrumb" with free memory. Read them back with
+`select occurred_at, detail from crash_diagnostics where kind = 'breadcrumb' order by 1`. Remove
+the probe once the cause is known.
 
 ### done 2026-09-10: export is for your own photographs only
 

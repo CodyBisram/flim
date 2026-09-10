@@ -107,8 +107,11 @@ enum ChapterPreviewFixtures {
             let chapterPhotos: [ChapterPhoto] = (0..<shotTotal).map { i in
                 let path = paths[i % paths.count]
                 let takenAt = min(monthStart.addingTimeInterval(TimeInterval(i) * 5 * 3600), now)
+                // Every other frame is a post, as a real chapter's are: the viewer wires a
+                // post's reactions, comments and sheets differently from a bare frame.
                 return ChapterPhoto(id: UUID(), takenAt: takenAt, thumbPath: path, feedPath: path,
-                                     storagePath: path, rollId: nil, rollName: nil)
+                                     storagePath: path, rollId: nil, rollName: nil,
+                                     postId: i.isMultiple(of: 2) ? UUID() : nil)
             }
 
             summaries.append(ChapterSummary(
