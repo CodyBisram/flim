@@ -289,18 +289,20 @@ owner; the owner's own personal code is untouched and keeps working after. Migra
 `2026-09-08_invite_campaigns.sql` and `2026-09-09_sept11_cohort.sql` (the day moved from the 10th
 on 2026-09-09, before the window opened). Add another cohort with one INSERT into `invite_campaigns`.
 
-### done 2026-09-10: the emoji picker fails open when its render probe lies
+### done 2026-09-10: the emoji picker no longer asks the font
 
-Asked to be sure every iOS 26 emoji is in the picker. Single code points are (the catalog scans
-Unicode properties at runtime, so Emoji 16 is in and Emoji 17 arrives with iOS 26.4 on its own,
-verified on the iOS 26.3 simulator down to the fingerprint and the face with bags under eyes).
-Sequences were the problem: on the 26.3 simulator's test process CoreText reports one placeholder
-glyph per scalar for everything, so `RenderProbe.renders` rejected every flag, keycap and joined
-emoji and the picker lost all of them on that runtime. Whether a real iOS 26 phone does the same
-could not be proven from here, so the catalog no longer depends on it: the probe must pass four
-canaries (a face, a flag, a profession, a keycap) or the curated sequences go in unfiltered and
-flags come from the ISO region list. New test pins the sequences on any simulator. Owner check:
-open a reaction picker on the phone and search "flag" and "pride".
+Asked to be sure every iOS 26 emoji is in the picker; the owner's phone was missing 🤤 and "a
+lot" more. The catalog asked CoreText whether each emoji shaped to one glyph, and on iOS 26 that
+answer is wrong: plain faces failed on the phone, and on the 26.3 simulator every flag, keycap and
+joined emoji failed (one placeholder glyph per scalar, even for 😀). The 18.5 simulator, where the
+shaper still tells the truth, rejects nothing at all, so the check was only ever removing real
+emoji. It is gone: single emoji come from Unicode's `isEmoji` over the scanned ranges, flags from
+the ISO region list plus EU and UN minus QO (measured identical to the shaper's 259 on 18.5), and
+the curated joined sequences, keycaps and subdivision flags go in as they are. Reactions from
+other people use the same Unicode test (`EmojiSupport.isKnown`) instead of the shaper, so a
+received 🤤 no longer shows as a placeholder on iOS 26. Emoji 16 is in; Emoji 17 arrives with
+iOS 26.4 by itself. `RenderProbe` stays for diagnostics only. Owner check: reaction picker on
+the phone, search "drool", "flag" and "pride".
 
 ### done 2026-09-09: two more things a reinstall used to lose
 

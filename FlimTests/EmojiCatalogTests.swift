@@ -49,27 +49,39 @@ struct EmojiCatalogTests {
         }
     }
 
-    /// The iOS 26.3 simulator's test process composes no sequence at all (one placeholder glyph
-    /// per scalar), which used to empty the picker of every flag, keycap and joined emoji on
-    /// that runtime. The catalog now fails open when its render probe flunks its canaries, so
-    /// this holds on every simulator, whichever way the probe went.
-    @Test("flags, keycaps and joined emoji survive an untrustworthy render probe")
-    func sequencesSurviveAnUntrustworthyProbe() async {
+    /// The catalog used to ask the shaper whether each emoji rendered, and the shaper lied: on
+    /// the owner's iOS 26 phone plain faces like 🤤 were missing, and on the 26.3 simulator every
+    /// flag, keycap and joined emoji was. Nothing on this list may ever depend on a font again.
+    @Test("faces, flags, keycaps and joined emoji are always in the catalog")
+    func catalogNeverDependsOnTheShaper() async {
         let all = Set(await EmojiCatalog.shared.sections().flatMap(\.emojis))
-        for emoji in ["🇺🇸", "🇯🇵", "1️⃣", "🏳️‍🌈", "🧑‍💻", "🐦‍🔥", "🏴󠁧󠁢󠁥󠁮󠁧󠁿"] {
-            #expect(all.contains(emoji), "\(emoji) missing; probe trustworthy = \(RenderProbe().isTrustworthy)")
+        for emoji in ["🤤", "😀", "🫩", "🇺🇸", "🇯🇵", "🇪🇺", "1️⃣", "🏳️‍🌈", "🧑‍💻", "🐦‍🔥", "🏴󠁧󠁢󠁥󠁮󠁧󠁿", "©️", "⚽"] {
+            #expect(all.contains(emoji), "\(emoji) missing from the catalog")
         }
+        #expect(all.count > 1600, "only \(all.count) emoji; the scan lost a range")
     }
 
-    @Test("the fallback flag list is real ISO regions, uppercase, two letters")
-    func fallbackFlagRegionsAreISO() {
-        let regions = fallbackFlagRegions()
+    @Test("the flag list is the ISO regions plus EU and UN, minus the one with no flag")
+    func flagRegionsMatchWhatAppleDraws() {
+        let regions = flagRegions()
         #expect(regions.contains("US"))
         #expect(regions.contains("GB"))
-        #expect(regions.contains("JP"))
+        #expect(regions.contains("EU"))
+        #expect(regions.contains("UN"))
+        #expect(!regions.contains("QO"))
         #expect(!regions.contains("XX"))
         #expect(regions.allSatisfy { $0.count == 2 && $0 == $0.uppercased() })
-        #expect(regions.count > 200)
+        #expect(regions.count >= 255 && regions.count <= 262, "\(regions.count) regions")
+    }
+
+    @Test("EmojiSupport.isKnown trusts Unicode data, not the shaper")
+    func emojiSupportIsKnown() {
+        for known in ["🤤", "🐦‍🔥", "🇺🇸", "1️⃣", "🏴󠁧󠁢󠁥󠁮󠁧󠁿", "👍🏽", "❤️", "🏳️‍🌈"] {
+            #expect(EmojiSupport.isKnown(known), "\(known) should be known")
+        }
+        for unknown in ["", "a", "abc", "\u{E000}", "1", "\u{200D}", "\u{1F3FB}"] {
+            #expect(!EmojiSupport.isKnown(unknown), "\(unknown.unicodeScalars.map { String($0.value, radix: 16) }) should not be known")
+        }
     }
 
     @Test("flags are generated from real regional-indicator pairs, not a hardcoded handful")

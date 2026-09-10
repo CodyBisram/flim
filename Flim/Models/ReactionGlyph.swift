@@ -58,8 +58,10 @@ final class ReactionRenderabilityCache {
     /// sees, the same "expensive setup once, cheap checks after" shape `EmojiCatalog.generate()`
     /// uses for the identical reason.
     convenience init() {
-        let probe = RenderProbe()
-        self.init(probe: probe.renders)
+        // Unicode data, not the shaper: `RenderProbe` rejected plain faces on iOS 26 and every
+        // flag and joined emoji on the 26.3 simulator, which would have shown other people's
+        // reactions as placeholders. See the EmojiCatalog.swift header.
+        self.init(probe: EmojiSupport.isKnown)
     }
 
     func renders(_ emoji: String) -> Bool {

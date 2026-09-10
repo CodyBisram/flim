@@ -8,16 +8,15 @@ import CoreGraphics
 /// running: an emoji from a Unicode revision newer than the installed font just never shows up (no
 /// tofu), and a future iOS with more emoji widens the palette with no code change here.
 ///
-/// The render check (`RenderProbe.renders`) never names a font. An earlier version of this file
-/// asked for a font by the literal name `"AppleColorEmoji"`, which is exactly the kind of
-/// per-OS-version fragility this whole feature exists to avoid: on one simulator runtime that name
-/// resolved to a font whose metadata (PostScript name, the `traitColorGlyphs` bit) was entirely
-/// correct, and which still failed to draw a single pixel. The fix applies regardless of that
-/// detail: never assume a name, always resolve through `CTFontCreateForString`, which asks CoreText
-/// for whatever font it would ACTUALLY pick to draw a given string on THIS OS, then shape it and
-/// check the shaped glyph id, never pixels (see `RenderProbe.renders` for why a rasterize-and-scan
-/// approach was tried and rejected: it produces false negatives for largely achromatic emoji like
-/// 👟, 🎩, and 👓).
+/// There is NO render check any more (2026-09-10). Earlier versions asked CoreText whether the
+/// emoji font shaped each candidate to one glyph (`RenderProbe.renders`, kept below for
+/// diagnostics), and that check lied twice: a rasterize-and-scan variant rejected achromatic
+/// emoji like 👟 and 🎩, and the glyph-id variant, on iOS 26, rejected plain faces (the owner's
+/// phone had no 🤤 and "a lot" more missing) and, on the 26.3 simulator, every flag, keycap and
+/// joined emoji. Unicode's own data is the source of truth instead: Apple ships the emoji font
+/// and the Unicode tables together, so a scalar the OS reports as `isEmoji` is one it draws. The
+/// worst case of trusting the tables is a tofu for a few weeks on a beta OS; the worst case of
+/// trusting the shaper was a picker missing half its faces on a shipping one.
 ///
 /// Scope, decided deliberately:
 ///  - Single-scalar pictographs are the bulk of the set: every scalar in Unicode's emoji-relevant
@@ -108,6 +107,7 @@ struct EmojiCatalogData {
 /// allocates them), so this rarely needs to change; if a future revision opens a genuinely new
 /// block, THAT would need a code update, but nothing about which individual emoji exist would.
 private let scanRanges: [ClosedRange<UInt32>] = [
+    0x00A9...0x00AE,   // © and ®, the only two emoji below U+2000 (found missing 2026-09-10)
     0x2000...0x2BFF,   // dingbats, misc symbols, misc technical, geometric shapes, arrows
     0x1F000...0x1FAFF, // mahjong/cards, misc pictographs, emoticons, transport, supplemental
 ]
@@ -125,8 +125,8 @@ private let keycapBases = Array("0123456789#*")
 /// The three officially recognized subdivision flags (RGI ZWJ sequences built from Unicode TAG
 /// characters spelling the ISO 3166-2 subdivision code, terminated by the cancel tag), which is
 /// the complete set — there are no others in the standard. Unlike country flags these can't be
-/// reached by iterating regional-indicator pairs, so they're listed explicitly; like everything
-/// else they only survive generation if this device's font actually renders them.
+/// reached by iterating regional-indicator pairs, so they're listed explicitly. Every iOS this
+/// app runs on draws them, so they go in as they are.
 private let subdivisionFlags: [(text: String, name: String)] = [
     ("\u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F}", "England"),
     ("\u{1F3F4}\u{E0067}\u{E0062}\u{E0073}\u{E0063}\u{E0074}\u{E007F}", "Scotland"),
@@ -661,18 +661,6 @@ private func generate() -> EmojiCatalogData {
     var byCategory: [String: [String]] = [:]
     var tokensByEmoji: [String: [String]] = [:]
     var seen = Set<String>()
-    let probe = RenderProbe()
-    // Fail open. The probe asks CoreText whether the emoji font composes a sequence into one
-    // glyph, and on the iOS 26.3 simulator's test process it reports one placeholder glyph per
-    // scalar for EVERYTHING (glyph id 4, even for the private-use area), so every flag, keycap
-    // and joined emoji came back "does not render" and the picker lost all of them. That was
-    // the simulator, not the OS, but nothing guarantees a future runtime does not do the same
-    // in the app itself. So the probe is trusted only after it passes the canaries below; when
-    // it fails them the curated sequences go in unfiltered and the flags come from the ISO
-    // region list instead of the render test. A rare tofu beats a picker with no flags.
-    let probeReliable = probe.isTrustworthy
-    let renders: (String) -> Bool = probeReliable ? { probe.renders($0) } : { _ in true }
-    let fallbackRegions: Set<String>? = probeReliable ? nil : fallbackFlagRegions()
     let aliases = aliasTokensByEmoji()
     let cldr = cldrKeywordsBySkeleton()
 
@@ -695,36 +683,25 @@ private func generate() -> EmojiCatalogData {
         for value in range {
             guard let scalar = Unicode.Scalar(value), isStandalonePictograph(scalar) else { continue }
             let text = scalar.properties.isEmojiPresentation ? String(scalar) : "\(scalar)\u{FE0F}"
-            guard renders(text) else { continue }
             add(text, to: category(for: scalar), tokens: emojiSearchTokens(for: text))
         }
     }
 
-    let regionalIndicators = (0..<26).compactMap { Unicode.Scalar(0x1F1E6 + $0) }
-    for (i, first) in regionalIndicators.enumerated() {
-        for (j, second) in regionalIndicators.enumerated() {
-            let text = "\(first)\(second)"
-            if let fallbackRegions {
-                let code = String(UnicodeScalar(0x41 + i)!) + String(UnicodeScalar(0x41 + j)!)
-                guard fallbackRegions.contains(code) else { continue }
-            } else {
-                guard probe.renders(text) else { continue }
-            }
-            add(text, to: "Flags", tokens: flagSearchTokens(for: text))
-        }
+    for code in flagRegions().sorted() {
+        let text = String(String.UnicodeScalarView(code.unicodeScalars.compactMap { Unicode.Scalar(0x1F1E6 + $0.value - 0x41) }))
+        add(text, to: "Flags", tokens: flagSearchTokens(for: text))
     }
 
-    for flag in subdivisionFlags where renders(flag.text) {
+    for flag in subdivisionFlags {
         add(flag.text, to: "Flags", tokens: wordTokens(flag.name))
     }
 
     for base in keycapBases {
         let text = "\(base)\u{FE0F}\u{20E3}"
-        guard renders(text) else { continue }
         add(text, to: "Symbols", tokens: keycapSearchTokens(base: base, text: text))
     }
 
-    for template in zwjTemplates where renders(template.text) {
+    for template in zwjTemplates {
         add(template.text, to: template.category, tokens: emojiSearchTokens(for: template.text))
     }
 
@@ -906,22 +883,49 @@ func wordTokens(_ text: String) -> [String] {
 /// displaying it, unlike this file's own picker grid, which is filtered by this exact same check
 /// at generation time and therefore never shows anything the running device can't draw. Same
 /// check, reused rather than copied, per the type's own contract: name-independent, no pixels.
-/// The regions whose flags go in when the render probe cannot be trusted: every two-letter ISO
-/// region the OS knows, which is a slight superset of the flags Apple draws (a handful of codes
-/// have no flag design and would show as two letters). Pure, so it is testable without a font.
-func fallbackFlagRegions() -> Set<String> {
-    Set(Locale.Region.isoRegions.map(\.identifier).filter { $0.count == 2 && $0 == $0.uppercased() })
+/// The regions whose flags go in the picker: every two-letter ISO region the OS knows, plus the
+/// two flags Apple draws that are not ISO regions (the EU and the UN), minus the one ISO code with
+/// no flag design (QO, Outlying Oceania). Measured against the shaper on iOS 18.5, where it still
+/// told the truth: this set and the flags the font composes are the same 259, exactly.
+func flagRegions() -> Set<String> {
+    var regions = Set(Locale.Region.isoRegions.map(\.identifier).filter { $0.count == 2 && $0 == $0.uppercased() })
+    regions.formUnion(["EU", "UN"])
+    regions.remove("QO")
+    return regions
 }
 
-final class RenderProbe {
-    /// Canaries every iOS since 15 composes: a face, a country flag, a profession, and a keycap.
-    /// If the probe rejects any of them it is not measuring what the person will see and its
-    /// verdicts on sequences are worthless (see `generate`). Lazy because it is read once per
-    /// catalog build and costs four shaping passes.
-    private(set) lazy var isTrustworthy: Bool = {
-        ["😀", "🇺🇸", "🧑‍💻", "1️⃣"].allSatisfy { renders($0) }
-    }()
+/// Whether this OS knows every piece of `text` as emoji, from Unicode data alone: each scalar is
+/// an emoji, an emoji component (skin tone, regional indicator, keycap base or mark, tag) or a
+/// joiner or presentation selector. This is what decides whether a reaction someone else sent can
+/// be shown as itself or needs the placeholder (`ReactionGlyph`). A scalar from a newer Unicode
+/// than this OS reports false, which is the one case a placeholder is for. A joined sequence of
+/// known parts reports true even if this OS happens not to compose it, in which case it draws as
+/// its parts side by side rather than as a placeholder, which is the better failure.
+enum EmojiSupport {
+    static func isKnown(_ text: String) -> Bool {
+        guard !text.isEmpty else { return false }
+        var sawEmoji = false
+        for scalar in text.unicodeScalars {
+            switch scalar.value {
+            case 0x200D, 0xFE0F, 0x20E3, 0xE0020...0xE007F, 0x1F3FB...0x1F3FF:
+                continue
+            case 0x30...0x39, 0x23, 0x2A:
+                continue   // keycap bases; the keycap mark makes them emoji
+            case 0x1F1E6...0x1F1FF:
+                sawEmoji = true
+            default:
+                guard scalar.properties.isEmoji else { return false }
+                sawEmoji = true
+            }
+        }
+        return sawEmoji || text.unicodeScalars.contains { $0.value == 0x20E3 }
+    }
+}
 
+/// No longer consulted by the catalog or by reactions (see the file header); kept because the
+/// tests that pin its two historical failure modes are cheap, and because it is the quickest way
+/// to see what a given simulator's shaper claims. Do not put it back on the production path.
+final class RenderProbe {
     /// The plain system UI font, resolved by role rather than name. It cannot draw emoji itself,
     /// which is exactly what forces `CTFontCreateForString` below to perform REAL fallback
     /// resolution to whatever font this OS actually uses for a given string, rather than trusting
