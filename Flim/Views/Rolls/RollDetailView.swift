@@ -936,7 +936,11 @@ struct RollDetailView: View {
             if isCreator {
                 Button { setCover(photo) } label: { Label("Use as roll cover", systemImage: "rectangle.on.rectangle") }
             }
-            Button { share(photo) } label: { Label("Share", systemImage: "square.and.arrow.up") }
+            // Export is own-shots-only too: a roll mate's frame stays inside FLIM from your phone
+            // (the owner, 2026-09-10). Delete below already worked this way.
+            if photo.userId == auth.currentUser?.id {
+                Button { share(photo) } label: { Label("Share", systemImage: "square.and.arrow.up") }
+            }
             // Own shots only: the item simply doesn't exist on a friend's cell (a disabled
             // Delete on their photo would read as broken, not as theirs). Routes through the
             // same consequence sheet the pager uses; the grid must not be a quieter door to

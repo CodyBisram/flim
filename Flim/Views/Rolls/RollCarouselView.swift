@@ -146,6 +146,7 @@ struct RollCarouselView: View {
                     .foregroundStyle(.white).padding(12).glassCapsule(interactive: true)
             }
             .accessibilityLabel("Comments")
+            if current?.userId == auth.currentUser?.id {   // export is for own frames only
             Button {
                 shareCurrent()
             } label: {
@@ -161,6 +162,7 @@ struct RollCarouselView: View {
             }
             .disabled(preparingShare)
             .accessibilityLabel("Share this photo")
+            }
         }
         .padding(.horizontal, 20).padding(.top, 20)
     }
@@ -302,7 +304,8 @@ struct RollCarouselView: View {
     /// because the only available reading is that the app is broken. The cache hit is still
     /// instant; the miss now costs a spinner instead of the feature.
     private func shareCurrent() {
-        guard !preparingShare, let photo = current, let url = urls[photo.id] else { return }
+        guard let photo = current, photo.userId == auth.currentUser?.id else { return }   // own frames only
+        guard !preparingShare, let url = urls[photo.id] else { return }
         // Must match ImageLoader's memKey for the CachedImage above: "\(cacheKey)|\(maxPixel)".
         // Keying on the signed URL instead never hits (the token in the URL churns hourly).
         let key = "\(photo.viewPath)|1400" as NSString

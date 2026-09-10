@@ -677,6 +677,7 @@ struct PhotoPagerView: View {
                     }
                     .accessibilityLabel("Comments")
                 }
+                if isOwnPhoto {   // export is for own frames only; a friend's stays inside FLIM
                 Button {
                     share(photo)
                 } label: {
@@ -695,6 +696,7 @@ struct PhotoPagerView: View {
                 }
                 .disabled(preparingShare)
                 .accessibilityLabel(preparingShare ? "Preparing to share" : "Share photo")
+                }
                 // Own photo, a manage menu (set avatar / delete). Someone else's (only possible on
                 // a roll grid), report. Derived from ownership, so a Darkroom of all-own photos
                 // never shows report without needing a flag.
@@ -778,6 +780,7 @@ struct PhotoPagerView: View {
                 // used to be two separate white circles here, which read as two unrelated
                 // controls and as a different visual language from the screen you arrive from.
                 HStack(spacing: 18) {
+                    if photo.userId == auth.currentUser?.id {   // export is for own frames only
                     Button { share(photo) } label: {
                         Group {
                             if preparingShare {
@@ -793,6 +796,7 @@ struct PhotoPagerView: View {
                     }
                     .disabled(preparingShare)
                     .accessibilityLabel(preparingShare ? "Preparing to share" : "Share photo")
+                    }
 
                     Menu {
                         // Setting an unrevealed shot as your profile photo would be a spoiler of
@@ -866,6 +870,7 @@ struct PhotoPagerView: View {
                 // they shipped as bare `Image`s, whose tappable region is the glyph itself, about
                 // 15pt against Apple's 44pt minimum, so the menu could barely be pressed.
                 HStack(spacing: 18) {
+                    if photo.userId == auth.currentUser?.id {   // export is for own frames only
                     Button { share(photo) } label: {
                         Group {
                             if preparingShare {
@@ -881,6 +886,7 @@ struct PhotoPagerView: View {
                     }
                     .disabled(preparingShare)
                     .accessibilityLabel(preparingShare ? "Preparing to share" : "Share photo")
+                    }
 
                     let isOwn = photo.userId == auth.currentUser?.id
                     Menu {
@@ -1780,6 +1786,7 @@ struct PhotoPagerView: View {
     /// hit: the button silently did nothing, every time. A control that declines without saying so
     /// reads as a broken app, so a miss now costs a spinner rather than the feature.
     private func share(_ photo: Photo) {
+        guard photo.userId == auth.currentUser?.id else { return }   // export is for own frames only
         guard !preparingShare, let url = resolvedURLs[photo.id] else { return }
         // Same `resolvedCacheKey` phase rule as `photoPage`: `resolvedURLs[photo.id]` may still
         // be the thumbnail seed here, and keying this memory-cache entry `viewPath` regardless

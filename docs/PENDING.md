@@ -289,6 +289,18 @@ owner; the owner's own personal code is untouched and keeps working after. Migra
 `2026-09-08_invite_campaigns.sql` and `2026-09-09_sept11_cohort.sql` (the day moved from the 10th
 on 2026-09-09, before the window opened). Add another cohort with one INSERT into `invite_campaigns`.
 
+### done 2026-09-10: export is for your own photographs only
+
+The owner tapped share on a friend's photograph (from their profile's chapters) and the export
+sheet flashed and bounced back to the viewer, then asked the right question: why is that button
+there at all? It is not, now. The export sheet (print, story, full, the burn-in) is reachable only
+on your own frames: the three pager headers, the roll grid's long-press menu, and the roll
+carousel all check ownership, and the share functions refuse a foreign photo even if a button
+slipped through. Sharing a roll mate's frame INTO the feed is unchanged. The bounce itself could
+not be reproduced here (the simulator is signed out and sign-in needs an emailed code); if it
+still happens on an OWN chapter photo on build 358+, that is a separate bug to chase with the
+owner's phone.
+
 ### done 2026-09-10: Find friends says why, and stops padding with strangers
 
 At 57 accounts the Suggested list ran out of real signals after a dozen people and filled the rest
