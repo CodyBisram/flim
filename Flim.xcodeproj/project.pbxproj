@@ -122,6 +122,7 @@
 		59758BE6E1972E7FCA2E2365 /* ChapterStatsVisibilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BDBFDC00A9BD3401C2AB41C7 /* ChapterStatsVisibilityTests.swift */; };
 		5AD497FC90DCDC3592EA12FE /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7148B48A915D24BFBDEB23E0 /* NotificationService.swift */; };
 		5B75EC99FE56987906AA5A5E /* ChapterStats.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60C526FFFA358B2589F94B8B /* ChapterStats.swift */; };
+		5BAC7C2E253501071449E682 /* DiscoverRanking.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F63FE0C12738AE1D18422EB /* DiscoverRanking.swift */; };
 		5BC43DD28869E8A440458914 /* PhotoCommentsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CECD20B5ABAAC6B609C6E31 /* PhotoCommentsSheet.swift */; };
 		5C29941AD5CF50146B34AE9D /* BurstDetectorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D340BB3ADAEEAE079CBE0C2 /* BurstDetectorTests.swift */; };
 		5C355323689421EE1900B2FC /* FailedUploadStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1313F8629CEC5AD2CF03660B /* FailedUploadStore.swift */; };
@@ -140,6 +141,7 @@
 		68FF7D104A8EF2C313166D40 /* ProfileIdentityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DFDDFBCCC6F6F043DCE3C4D7 /* ProfileIdentityView.swift */; };
 		6A97E2EC893F397E17CACACB /* ChapterService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37D753E9424F92B5D4815D51 /* ChapterService.swift */; };
 		6B257D4605E1FA791E7A4846 /* SquareCropSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 059C902C744871D28E4F21AF /* SquareCropSheet.swift */; };
+		6C50D39EB462572B6B30D84E /* DiscoverRankingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BFA17FAFB068881D6A5AF5E /* DiscoverRankingTests.swift */; };
 		6E4F8F019D7C5799B1A69B24 /* ActivationEventTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 870AFDC29D5590DDFAB6BB9A /* ActivationEventTests.swift */; };
 		6E78458BFD1351B8EC1E1117 /* RestorableOverrideTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B6A3822D00FEFEAFA5350A4 /* RestorableOverrideTests.swift */; };
 		6F2E8BA21C2D2F015CB60062 /* CameraPreviewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B24757CAC8624EEF24EEC253 /* CameraPreviewTests.swift */; };
@@ -523,10 +525,12 @@
 		8B1D734336418D8747D99B43 /* EmojiBackfillTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmojiBackfillTests.swift; sourceTree = "<group>"; };
 		8B56B57E60E3BDB61525E938 /* CaptionSaveOutcomeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptionSaveOutcomeTests.swift; sourceTree = "<group>"; };
 		8B6A3822D00FEFEAFA5350A4 /* RestorableOverrideTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RestorableOverrideTests.swift; sourceTree = "<group>"; };
+		8BFA17FAFB068881D6A5AF5E /* DiscoverRankingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiscoverRankingTests.swift; sourceTree = "<group>"; };
 		8BFE9FBCA04098DC6F972D9A /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		8CECD20B5ABAAC6B609C6E31 /* PhotoCommentsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoCommentsSheet.swift; sourceTree = "<group>"; };
 		8DE1B2753CA393C95C0FDD50 /* EmojiLabelMap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmojiLabelMap.swift; sourceTree = "<group>"; };
 		8EDAF1C30F86C4126A7783EC /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		8F63FE0C12738AE1D18422EB /* DiscoverRanking.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiscoverRanking.swift; sourceTree = "<group>"; };
 		8F9C44C207C08D9E8F263DDF /* FlashFalloffTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlashFalloffTests.swift; sourceTree = "<group>"; };
 		91F74C74BB63D759AD36FD8F /* LookRegressionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LookRegressionTests.swift; sourceTree = "<group>"; };
 		9249229E385AAD5E2A06EBB0 /* FeedUnitCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedUnitCard.swift; sourceTree = "<group>"; };
@@ -907,6 +911,7 @@
 				37D753E9424F92B5D4815D51 /* ChapterService.swift */,
 				498109790A8BAE9899A4F515 /* CrashReporter.swift */,
 				4EF884AA4C8711AA4738DA8C /* CubeLUT.swift */,
+				8F63FE0C12738AE1D18422EB /* DiscoverRanking.swift */,
 				8DE1B2753CA393C95C0FDD50 /* EmojiLabelMap.swift */,
 				715E1B30BA75E68C7CE63812 /* EmojiSemanticFallback.swift */,
 				FFB805EB8E7D0A5F32D77193 /* EmojiSuggestion.swift */,
@@ -1022,6 +1027,7 @@
 				C108830B39AFDFF33780E586 /* DeliveryBatchTests.swift */,
 				1C99D91A50FAB51B03509135 /* DevelopDelayPhraseTests.swift */,
 				0F61787FFCEE49A74368FF8C /* DevelopTimingTests.swift */,
+				8BFA17FAFB068881D6A5AF5E /* DiscoverRankingTests.swift */,
 				8B1D734336418D8747D99B43 /* EmojiBackfillTests.swift */,
 				2089CA6DE2924FA1349B5C0C /* EmojiCatalogTests.swift */,
 				41A387A8908C61FB39ABB6DB /* EmojiSuggestionTests.swift */,
@@ -1287,6 +1293,7 @@
 				80AA6A5197FD0930C667CE99 /* DeliveryBatchTests.swift in Sources */,
 				967F2E1B7B7D96A9F195C4B7 /* DevelopDelayPhraseTests.swift in Sources */,
 				AD24F3CB906A687FED7FE687 /* DevelopTimingTests.swift in Sources */,
+				6C50D39EB462572B6B30D84E /* DiscoverRankingTests.swift in Sources */,
 				26EDF41D19D62C74C82BA3FE /* EmojiBackfillTests.swift in Sources */,
 				1327A206130E2B17775AFE56 /* EmojiCatalogTests.swift in Sources */,
 				C284CAB6E1E4B68DD90A2B20 /* EmojiSuggestionTests.swift in Sources */,
@@ -1449,6 +1456,7 @@
 				79D669915A62DA962B12309C /* DarkroomZoomBar.swift in Sources */,
 				61ED019161D768683F7BBA8C /* DarkroomZoomRows.swift in Sources */,
 				1713A05A7A1BE842F4004BE9 /* DayContactSheet.swift in Sources */,
+				5BAC7C2E253501071449E682 /* DiscoverRanking.swift in Sources */,
 				82713C7A22ABB87EBA8F0211 /* EditCaptionSheet.swift in Sources */,
 				E53D957844CA00D2B88C5608 /* EmojiCatalog.swift in Sources */,
 				FFA795C3A7AAFED96AD9CE93 /* EmojiLabelMap.swift in Sources */,

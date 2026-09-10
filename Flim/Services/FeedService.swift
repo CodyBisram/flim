@@ -489,55 +489,59 @@ final class FeedService {
         return map
     }
 
-    private let discoverLimit = 50
-
-    /// "Suggested" people to follow, ranked in four tiers. People who already follow you but you
-    /// haven't followed back rank first: unlike every other tier here, that signal isn't
-    /// inferred from overlap, they took the action themselves, and it's the strongest "you know
-    /// this person" signal the app has (also the cheapest reciprocity prompt: not following back
-    /// someone who already can see your posts is usually an oversight, not a choice). Then roll
-    /// co-membership, this app's actual social unit is the roll (a small trusted group you shoot
-    /// into together), so "you share a roll" is a far stronger signal here than a generic
-    /// follow-graph mutual, then mutual follows (people followed by people you follow), then a
-    /// recency fallback to fill any remaining slots so newer or less-connected accounts still see
-    /// a full list. Within the roll-mate and mutual tiers, more overlap ranks higher (someone in
-    /// 3 of your rolls beats someone in 1; someone followed by 3 of your follows beats 1). Callers
-    /// should `loadFollowing` AND `loadFollowers` first so `followingIds`/`followerIds` are
-    /// populated for the follows-you tier, the mutual-follow tier, and the already-following
-    /// exclusion below; without that call this silently degrades to "no following/follower
-    /// signal" rather than failing.
-    func discoverProfiles(excluding userId: UUID) async -> [UserProfile] {
-        let excluded = blockedIds.union(followingIds).union([userId])
-
-        let followsMeNotFollowing = rankedFollowsMeIds(excluding: excluded)
-        async let rollMates = rankedRollMateIds(userId: userId, excluding: excluded)
-        async let mutuals = rankedMutualFollowIds(excluding: excluded)
-
-        var ranked: [UUID] = []
-        var seen = excluded
-        for id in followsMeNotFollowing where !seen.contains(id) { ranked.append(id); seen.insert(id) }
-        for id in await rollMates where !seen.contains(id) { ranked.append(id); seen.insert(id) }
-        for id in await mutuals where !seen.contains(id) { ranked.append(id); seen.insert(id) }
-
-        if ranked.count < discoverLimit {
-            let recent = await recentProfileIds(excluding: seen, limit: discoverLimit - ranked.count)
-            ranked.append(contentsOf: recent)
-        }
-
-        let profiles = await fetchProfiles(ids: ranked)
-        // Filtered here rather than in each of the three tier queries above: one place to get
-        // right, and it catches an account that qualifies through roll co-membership or a mutual
-        // follow, not just the recency fallback. See the hidden_from_discovery migration for what
-        // this is and, importantly, what it is not (a suggestion filter, not a privacy boundary).
-        return ranked.compactMap { profiles[$0] }.filter(\.isSuggestable)   // preserves tier + rank order
+    /// A section of the Find friends list: a reason and the people it applies to.
+    struct DiscoverSection: Identifiable, Equatable {
+        let title: String
+        let profiles: [UserProfile]
+        var id: String { title }
     }
 
-    /// People who already follow you but you haven't followed back (`excluding` already removes
-    /// anyone you do follow, so every id that survives is a real gap). Reads the cached
-    /// `followerIds` set rather than a fresh query, same tolerance `rankedMutualFollowIds` already
-    /// has for an unloaded `followingIds`: if the caller skipped `loadFollowers`, this tier is
-    /// simply empty rather than the whole function failing. Ties (there's no per-tier count to
-    /// rank by here, unlike the two below) break on the id itself purely for a stable order.
+    /// "Suggested" people, in sections that say why (see `DiscoverRanking` for the order and the
+    /// reasoning). Signals, all gathered here: people who follow you but you have not followed
+    /// back; roll co-membership ranked by overlap; the invite tree (`invite_tree` RPC: who invited
+    /// you, who they also invited, who you invited, who they follow); people followed by people
+    /// you follow; and a capped, labelled handful of the newest accounts. No padding: a person
+    /// with no signals sees a short list and the screen's invite and search prompts. Callers
+    /// should `loadFollowing` AND `loadFollowers` first, or the follow-based tiers silently read
+    /// as empty rather than failing.
+    func discoverSections(excluding userId: UUID) async -> [DiscoverSection] {
+        let excluded = blockedIds.union(followingIds).union([userId])
+
+        async let rollMates = rankedRollMateIds(userId: userId, excluding: excluded)
+        async let mutuals = rankedMutualFollowIds(excluding: excluded)
+        async let tree = fetchInviteTree()
+        async let newest = recentProfileIds(excluding: excluded, limit: DiscoverRanking.newOnFlimCap * 4)
+
+        var signals = DiscoverRanking.Signals()
+        signals.followsMe = rankedFollowsMeIds(excluding: excluded)
+        signals.rollMates = await rollMates
+        let relations = await tree
+        signals.inviter = relations.first { $0.relation == "inviter" }?.userId
+        signals.siblings = relations.filter { $0.relation == "sibling" }.map(\.userId)
+        signals.invited = relations.filter { $0.relation == "invited" }.map(\.userId)
+        signals.inviterFollows = relations.filter { $0.relation == "inviter_follows" }.map(\.userId)
+        signals.mutuals = await mutuals
+        signals.newest = await newest
+
+        let sections = DiscoverRanking.sections(from: signals, excluding: excluded)
+        let profiles = await fetchProfiles(ids: sections.flatMap(\.ids))
+        return sections.compactMap { section in
+            let kept = section.ids.compactMap { profiles[$0] }.filter(\.isSuggestable)
+            return kept.isEmpty ? nil : DiscoverSection(title: section.title, profiles: kept)
+        }
+    }
+
+    struct InviteRelation: Decodable, Equatable {
+        let userId: UUID
+        let relation: String
+        enum CodingKeys: String, CodingKey { case userId = "user_id", relation }
+    }
+
+    /// The caller's place in the invite tree, ids only (see the `invite_tree` migration).
+    func fetchInviteTree() async -> [InviteRelation] {
+        (try? await supabase.rpc("invite_tree").execute().value) ?? []
+    }
+
     private func rankedFollowsMeIds(excluding: Set<UUID>) -> [UUID] {
         followerIds.filter { !excluding.contains($0) }.sorted { $0.uuidString < $1.uuidString }
     }
@@ -599,9 +603,12 @@ final class FeedService {
     func searchProfiles(query: String, excluding userId: UUID) async -> [UserProfile] {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty else { return [] }
+        // Username or display name. PostgREST's `or` filter is comma and paren delimited, so
+        // those characters are dropped from the pattern rather than escaped.
+        let pattern = "%" + q.filter { !",()".contains($0) } + "%"
         let list: [UserProfile] = (try? await supabase
             .from("profiles").select()
-            .ilike("username", pattern: "%\(q)%")
+            .or("username.ilike.\(pattern),display_name.ilike.\(pattern)")
             .neq("id", value: userId.uuidString)
             .limit(30)
             .execute().value) ?? []

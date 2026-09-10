@@ -289,6 +289,20 @@ owner; the owner's own personal code is untouched and keeps working after. Migra
 `2026-09-08_invite_campaigns.sql` and `2026-09-09_sept11_cohort.sql` (the day moved from the 10th
 on 2026-09-09, before the window opened). Add another cohort with one INSERT into `invite_campaigns`.
 
+### done 2026-09-10: Find friends says why, and stops padding with strangers
+
+At 57 accounts the Suggested list ran out of real signals after a dozen people and filled the rest
+with the newest signups, unlabelled; at a hundred it would have been a wall. Now: sections that
+say why (Follows you, In your rolls, Invited you, Invited by the same person, You invited, Friends
+of friends, New on FLIM capped at three), a person appears once in the first section they qualify
+for, nothing is padded, and an empty list points at search and invite. The invite tree comes from
+a new `invite_tree` RPC (ids only, caller only; who invited whom lives in allowed_emails.note by
+email, which the client cannot read). Friends of friends now includes who your inviter follows,
+which is most of a new account's list. Search matches display names too. An "Invite a friend" row
+sits at the top of the screen. Contacts matching deliberately parked (no phone numbers held, low
+email match rate, a new permission); no Twilio needed for anything here. `DiscoverRanking` is
+pure and tested.
+
 ### done 2026-09-10: the emoji picker no longer asks the font
 
 Asked to be sure every iOS 26 emoji is in the picker; the owner's phone was missing 🤤 and "a

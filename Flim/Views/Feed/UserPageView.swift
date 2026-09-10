@@ -966,41 +966,43 @@ struct DiscoverPeopleView: View {
     @Environment(FeedService.self) private var feed
     @Environment(\.dismiss) private var dismiss
 
-    @State private var profiles: [UserProfile] = []
+    @State private var sections: [FeedService.DiscoverSection] = []
     @State private var results: [UserProfile] = []
     @State private var searchText = ""
     @State private var loaded = false
+    @State private var showInvite = false
 
-    private var shown: [UserProfile] { searchText.isEmpty ? profiles : results }
+    private var searching: Bool { !searchText.isEmpty }
 
     var body: some View {
         NavigationStack {
             ZStack {
                 VStack(spacing: 0) {
-                    PeopleSearchField(query: $searchText, prompt: "Search by username")
+                    PeopleSearchField(query: $searchText, prompt: "Search by name or username")
 
-                    if shown.isEmpty && loaded {
+                    if searching && results.isEmpty && loaded {
                         Spacer()
-                        Text(searchText.isEmpty
-                             ? "No one else here yet. Invite some friends."
-                             : "No one matches “\(searchText)”")
+                        Text("No one matches “\(searchText)”")
                             .flimFont(14, relativeTo: .subheadline).foregroundStyle(FlimTheme.textTertiary)
                             .multilineTextAlignment(.center).padding(40)
                         Spacer()
                     } else {
                         ScrollView {
                             LazyVStack(alignment: .leading, spacing: 4) {
-                                if searchText.isEmpty && !profiles.isEmpty {
-                                    Text("SUGGESTED")
-                                        .flimFont(11, weight: .medium, relativeTo: .caption).tracking(2)
-                                        .foregroundStyle(FlimTheme.textTertiary)
-                                        .padding(.horizontal, 20).padding(.top, 10).padding(.bottom, 2)
-                                }
-                                ForEach(shown) { profile in
-                                    NavigationLink { UserPageView(userId: profile.id) } label: {
-                                        PersonRow(profile: profile)
+                                if searching {
+                                    ForEach(results) { profile in personLink(profile) }
+                                } else {
+                                    inviteRow
+                                    if sections.isEmpty && loaded {
+                                        Text("No one to suggest yet. Search by name, or invite someone you shoot with.")
+                                            .flimFont(14, relativeTo: .subheadline)
+                                            .foregroundStyle(FlimTheme.textTertiary)
+                                            .padding(.horizontal, 20).padding(.top, 24)
                                     }
-                                    .buttonStyle(.plain)
+                                    ForEach(sections) { section in
+                                        sectionHeader(section.title)
+                                        ForEach(section.profiles) { profile in personLink(profile) }
+                                    }
                                 }
                             }
                             .padding(.vertical, 8)
@@ -1016,12 +1018,13 @@ struct DiscoverPeopleView: View {
                     Button("Done") { dismiss() }.foregroundStyle(.white)
                 }
             }
+            .sheet(isPresented: $showInvite) { InviteSheet() }
             .task {
                 if let uid = auth.currentUser?.id {
                     await feed.loadFollowing(userId: uid)
                     await feed.loadFollowers(userId: uid)
                     await feed.loadBlocked(userId: uid)
-                    profiles = await feed.discoverProfiles(excluding: uid)
+                    sections = await feed.discoverSections(excluding: uid)
                 }
                 loaded = true
             }
@@ -1035,6 +1038,46 @@ struct DiscoverPeopleView: View {
         .flimSheetSurface()
     }
 
+    /// Why each group of people is here. Uppercase tracked caps, the same voice as the old
+    /// single "SUGGESTED" header this replaces.
+    private func sectionHeader(_ title: String) -> some View {
+        Text(title.uppercased())
+            .flimFont(11, weight: .medium, relativeTo: .caption).tracking(2)
+            .foregroundStyle(FlimTheme.textTertiary)
+            .padding(.horizontal, 20).padding(.top, 14).padding(.bottom, 2)
+    }
+
+    private func personLink(_ profile: UserProfile) -> some View {
+        NavigationLink { UserPageView(userId: profile.id) } label: {
+            PersonRow(profile: profile)
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// The graph grows by invitation, so the invite lives where people go looking for people.
+    private var inviteRow: some View {
+        Button { showInvite = true } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "plus")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(.black)
+                    .frame(width: 42, height: 42)
+                    .background(Circle().fill(.white))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Invite a friend")
+                        .flimFont(15, weight: .medium, relativeTo: .body)
+                        .foregroundStyle(FlimTheme.textPrimary)
+                    Text("Your code, in a message.")
+                        .flimFont(12, relativeTo: .caption)
+                        .foregroundStyle(FlimTheme.textTertiary)
+                }
+                Spacer()
+            }
+            .padding(.horizontal, 20).padding(.vertical, 8)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
 }
 
 /// A reusable person row (avatar + handle + bio + follow button) for people lists.
