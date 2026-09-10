@@ -171,6 +171,20 @@ targets:
     dependencies:
       - target: Flim
 
+  FlimUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    deploymentTarget: "18.0"
+    sources:
+      - path: FlimUITests
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.flim.app.uitests
+        SWIFT_VERSION: "5.9"
+    dependencies:
+      - target: Flim
+
 schemes:
   Flim:
     build:
@@ -188,3 +202,15 @@ schemes:
       config: Debug
     archive:
       config: Release
+  # On demand only: `xcodebuild test -scheme FlimUITests ...` drives a simulator through XCUITest
+  # (no account needed, see FlimUITests). Kept out of the Flim scheme so CI's `xcodebuild test`
+  # and the local suite stay UI-free.
+  FlimUITests:
+    build:
+      targets:
+        Flim: all
+        FlimUITests: [test]
+    test:
+      config: Debug
+      targets:
+        - FlimUITests

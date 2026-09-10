@@ -289,6 +289,18 @@ owner; the owner's own personal code is untouched and keeps working after. Migra
 `2026-09-08_invite_campaigns.sql` and `2026-09-09_sept11_cohort.sql` (the day moved from the 10th
 on 2026-09-09, before the window opened). Add another cohort with one INSERT into `invite_campaigns`.
 
+### open 2026-09-10: the export sheet bounces on the owner's phone, not reproducible here
+
+Own chapter photo, viewer share button: the sheet with the format chooser shows for a split
+second, the screen blanks, and it is back on the photo with no sheet. A new on-demand UI test
+(`FlimUITests/ShareSheetUITests`, run with `xcodebuild test -scheme FlimUITests` on a simulator) drives the
+chapter demo host into the viewer, taps Share, waits, taps Share print, and checks both sheets:
+on the iOS 26.3 simulator in Debug, both the cached-image path and the download path present and
+hold, and the system share sheet comes up over ours. The demo fixture now plants file URLs in the
+signed-URL store so the viewer's share path runs for real. What is left to separate: Release vs
+Debug, a real 1400px photograph's memory cost in the sheet's three renders, and the exact surface
+(Darkroom, feed post, chapter). Owner asked for precise steps and a Darkroom comparison.
+
 ### done 2026-09-10: export is for your own photographs only
 
 The owner tapped share on a friend's photograph (from their profile's chapters) and the export

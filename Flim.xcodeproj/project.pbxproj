@@ -215,6 +215,7 @@
 		B24553011D30469838CCA923 /* RollTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B7E5F0D581D43A4722CD6D9 /* RollTests.swift */; };
 		B41748B01C12B5094E9B9BF2 /* RollSnapshotStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59600C468EC84C1B685DC31D /* RollSnapshotStoreTests.swift */; };
 		B41C5A5F6F23A802A9298F70 /* PostDetailSwipeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 950384B61AF8316D3517594E /* PostDetailSwipeTests.swift */; };
+		B4474A58359A89EEFA669FE9 /* ShareSheetUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78805D12063E87FE38C568D4 /* ShareSheetUITests.swift */; };
 		B55F9D476602872837F6CCDA /* NotificationAuthorizationStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22ABBF2BC75AB4F195F7798E /* NotificationAuthorizationStateTests.swift */; };
 		B5E40248AEAEF1C69C495751 /* CameraView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BF0928EB05A780C49AC79C8 /* CameraView.swift */; };
 		B978981B10C71B09F5F07AED /* MentionsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 635F41BDBDCA4E6DD118E4DE /* MentionsTests.swift */; };
@@ -332,6 +333,13 @@
 			proxyType = 1;
 			remoteGlobalIDString = FCFC81B074081F96D33F3E76;
 			remoteInfo = RollActivityWidget;
+		};
+		ECFC3849F6F87ED0FF4B19DE /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = D76C2429EDC169EF7AD0B4E8 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 7419C4EF5A09315366044E25;
+			remoteInfo = Flim;
 		};
 /* End PBXContainerItemProxy section */
 
@@ -456,6 +464,7 @@
 		4EF884AA4C8711AA4738DA8C /* CubeLUT.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CubeLUT.swift; sourceTree = "<group>"; };
 		512ECCC06516CDBBAC8749B7 /* BrandedExport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrandedExport.swift; sourceTree = "<group>"; };
 		5187733F2549E32AAD048816 /* CommentPreviewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommentPreviewTests.swift; sourceTree = "<group>"; };
+		52B88C831ACB2C40CBE04185 /* FlimUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = FlimUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		543E15371B8D02BD1F562C0B /* Chapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Chapter.swift; sourceTree = "<group>"; };
 		547E0898469C3526450EDAE4 /* ChapterStatsDecodingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChapterStatsDecodingTests.swift; sourceTree = "<group>"; };
 		54CD52378D31EEDB7D7BE6EF /* RollDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollDetailView.swift; sourceTree = "<group>"; };
@@ -501,6 +510,7 @@
 		76A0A3EA09696EA2921DCA7C /* SharePreviewSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharePreviewSheet.swift; sourceTree = "<group>"; };
 		76B80C9D40244DBAC934AF30 /* RenditionRepairTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RenditionRepairTests.swift; sourceTree = "<group>"; };
 		787B53E8F03E149E24C22211 /* DarkroomMonthClosingRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DarkroomMonthClosingRow.swift; sourceTree = "<group>"; };
+		78805D12063E87FE38C568D4 /* ShareSheetUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareSheetUITests.swift; sourceTree = "<group>"; };
 		788074CB36AF18B6BA347641 /* DarkroomMonthPaging.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DarkroomMonthPaging.swift; sourceTree = "<group>"; };
 		792B11BFCD767C04628A64C4 /* ReactionGlyph.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReactionGlyph.swift; sourceTree = "<group>"; };
 		799578BF49AD244204751AC0 /* UserPageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserPageView.swift; sourceTree = "<group>"; };
@@ -803,6 +813,14 @@
 			path = Config;
 			sourceTree = "<group>";
 		};
+		586410BA7472047B7B5FF8E9 /* FlimUITests */ = {
+			isa = PBXGroup;
+			children = (
+				78805D12063E87FE38C568D4 /* ShareSheetUITests.swift */,
+			);
+			path = FlimUITests;
+			sourceTree = "<group>";
+		};
 		59442940A66724C5875B4D6C /* Auth */ = {
 			isa = PBXGroup;
 			children = (
@@ -842,6 +860,7 @@
 			children = (
 				B5B7E330A2CBC1193A9C6767 /* Flim */,
 				EAAFC9FCEE6F9F480847295A /* FlimTests */,
+				586410BA7472047B7B5FF8E9 /* FlimUITests */,
 				9F4EB46AA740BBBEE2D0F118 /* RollActivityWidget */,
 				87013E4995F7580E6228E580 /* Products */,
 			);
@@ -852,6 +871,7 @@
 			children = (
 				5FE59742B6CDB9699448F677 /* Flim.app */,
 				34743DB97B9809C5C81D7E30 /* FlimTests.xctest */,
+				52B88C831ACB2C40CBE04185 /* FlimUITests.xctest */,
 				BF5AF4446D3DC691556A0EDD /* RollActivityWidget.appex */,
 			);
 			name = Products;
@@ -1153,6 +1173,24 @@
 			productReference = 34743DB97B9809C5C81D7E30 /* FlimTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
+		67F678973BD16C637B3CEB47 /* FlimUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B2BCE84488A2870223A54BB0 /* Build configuration list for PBXNativeTarget "FlimUITests" */;
+			buildPhases = (
+				B9EBA11046D83E5B7704ECE0 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				008400BF6619781E8FE5BB53 /* PBXTargetDependency */,
+			);
+			name = FlimUITests;
+			packageProductDependencies = (
+			);
+			productName = FlimUITests;
+			productReference = 52B88C831ACB2C40CBE04185 /* FlimUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 		7419C4EF5A09315366044E25 /* Flim */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 02CDD09274CC45285F318146 /* Build configuration list for PBXNativeTarget "Flim" */;
@@ -1201,6 +1239,9 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1600;
 				TargetAttributes = {
+					67F678973BD16C637B3CEB47 = {
+						TestTargetID = 7419C4EF5A09315366044E25;
+					};
 					7419C4EF5A09315366044E25 = {
 						DevelopmentTeam = DCU7GHRVUQ;
 					};
@@ -1228,6 +1269,7 @@
 			targets = (
 				7419C4EF5A09315366044E25 /* Flim */,
 				57E7DA67BCC32699FC542BA8 /* FlimTests */,
+				67F678973BD16C637B3CEB47 /* FlimUITests */,
 				FCFC81B074081F96D33F3E76 /* RollActivityWidget */,
 			);
 		};
@@ -1572,9 +1614,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		B9EBA11046D83E5B7704ECE0 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B4474A58359A89EEFA669FE9 /* ShareSheetUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		008400BF6619781E8FE5BB53 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 7419C4EF5A09315366044E25 /* Flim */;
+			targetProxy = ECFC3849F6F87ED0FF4B19DE /* PBXContainerItemProxy */;
+		};
 		8EC4802D485AEFB10E7FC31D /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = 7419C4EF5A09315366044E25 /* Flim */;
@@ -1691,6 +1746,44 @@
 				SKIP_INSTALL = YES;
 				SWIFT_VERSION = 5.9;
 				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		4CDB5F591240119EE7442374 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.flim.app.uitests;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.9;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = Flim;
+			};
+			name = Release;
+		};
+		64DF107F2FF369664FF3B768 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.flim.app.uitests;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.9;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = Flim;
 			};
 			name = Debug;
 		};
@@ -1872,6 +1965,15 @@
 			buildConfigurations = (
 				682C112265F3681D4DE7F0A0 /* Debug */,
 				A7644BDDB2BEF9FAA5A0D021 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		B2BCE84488A2870223A54BB0 /* Build configuration list for PBXNativeTarget "FlimUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				64DF107F2FF369664FF3B768 /* Debug */,
+				4CDB5F591240119EE7442374 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

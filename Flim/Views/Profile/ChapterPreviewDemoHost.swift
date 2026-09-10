@@ -69,7 +69,7 @@ enum ChapterPreviewFixtures {
     /// `DarkroomFrameView`'s own request), and its full-screen page (1400). A fixture image is
     /// planted at every one of these so whichever view renders first always hits the in-memory
     /// cache, never the placeholder.
-    private static let maxPixels: [CGFloat] = [340, 500, 200, 120, 1400]
+    private static let maxPixels: [CGFloat] = [340, 500, 200, 120]   // not 1400: the viewer's share path must take the download branch, as on a phone
 
     private static var seeded = false
     /// Fixture ids for the two person-backed lines ("Biggest fan", "Roll MVP"); nobody real, but
@@ -166,6 +166,15 @@ enum ChapterPreviewFixtures {
         for maxPixel in maxPixels {
             let key = "\(path)|\(Int(maxPixel))" as NSString
             ImageCache.set(image, forKey: key)
+        }
+        // A real URL too, so the viewer's share path (which needs one before it even looks at
+        // the cache) works in the demo: the JPEG on disk, remembered under the same path the
+        // app would sign. Added 2026-09-10 to reproduce the export sheet bouncing.
+        let file = FileManager.default.temporaryDirectory
+            .appendingPathComponent("chaptersDemo-\(path.replacingOccurrences(of: "/", with: "-"))")
+        if let data = image.jpegData(compressionQuality: 0.9) {
+            try? data.write(to: file)
+            Task { await SignedURLStore.shared.store(file, for: path) }
         }
     }
 
