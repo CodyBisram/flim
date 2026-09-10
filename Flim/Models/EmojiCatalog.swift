@@ -662,6 +662,17 @@ private func generate() -> EmojiCatalogData {
     var tokensByEmoji: [String: [String]] = [:]
     var seen = Set<String>()
     let probe = RenderProbe()
+    // Fail open. The probe asks CoreText whether the emoji font composes a sequence into one
+    // glyph, and on the iOS 26.3 simulator's test process it reports one placeholder glyph per
+    // scalar for EVERYTHING (glyph id 4, even for the private-use area), so every flag, keycap
+    // and joined emoji came back "does not render" and the picker lost all of them. That was
+    // the simulator, not the OS, but nothing guarantees a future runtime does not do the same
+    // in the app itself. So the probe is trusted only after it passes the canaries below; when
+    // it fails them the curated sequences go in unfiltered and the flags come from the ISO
+    // region list instead of the render test. A rare tofu beats a picker with no flags.
+    let probeReliable = probe.isTrustworthy
+    let renders: (String) -> Bool = probeReliable ? { probe.renders($0) } : { _ in true }
+    let fallbackRegions: Set<String>? = probeReliable ? nil : fallbackFlagRegions()
     let aliases = aliasTokensByEmoji()
     let cldr = cldrKeywordsBySkeleton()
 
@@ -684,31 +695,36 @@ private func generate() -> EmojiCatalogData {
         for value in range {
             guard let scalar = Unicode.Scalar(value), isStandalonePictograph(scalar) else { continue }
             let text = scalar.properties.isEmojiPresentation ? String(scalar) : "\(scalar)\u{FE0F}"
-            guard probe.renders(text) else { continue }
+            guard renders(text) else { continue }
             add(text, to: category(for: scalar), tokens: emojiSearchTokens(for: text))
         }
     }
 
     let regionalIndicators = (0..<26).compactMap { Unicode.Scalar(0x1F1E6 + $0) }
-    for first in regionalIndicators {
-        for second in regionalIndicators {
+    for (i, first) in regionalIndicators.enumerated() {
+        for (j, second) in regionalIndicators.enumerated() {
             let text = "\(first)\(second)"
-            guard probe.renders(text) else { continue }
+            if let fallbackRegions {
+                let code = String(UnicodeScalar(0x41 + i)!) + String(UnicodeScalar(0x41 + j)!)
+                guard fallbackRegions.contains(code) else { continue }
+            } else {
+                guard probe.renders(text) else { continue }
+            }
             add(text, to: "Flags", tokens: flagSearchTokens(for: text))
         }
     }
 
-    for flag in subdivisionFlags where probe.renders(flag.text) {
+    for flag in subdivisionFlags where renders(flag.text) {
         add(flag.text, to: "Flags", tokens: wordTokens(flag.name))
     }
 
     for base in keycapBases {
         let text = "\(base)\u{FE0F}\u{20E3}"
-        guard probe.renders(text) else { continue }
+        guard renders(text) else { continue }
         add(text, to: "Symbols", tokens: keycapSearchTokens(base: base, text: text))
     }
 
-    for template in zwjTemplates where probe.renders(template.text) {
+    for template in zwjTemplates where renders(template.text) {
         add(template.text, to: template.category, tokens: emojiSearchTokens(for: template.text))
     }
 
@@ -890,7 +906,22 @@ func wordTokens(_ text: String) -> [String] {
 /// displaying it, unlike this file's own picker grid, which is filtered by this exact same check
 /// at generation time and therefore never shows anything the running device can't draw. Same
 /// check, reused rather than copied, per the type's own contract: name-independent, no pixels.
+/// The regions whose flags go in when the render probe cannot be trusted: every two-letter ISO
+/// region the OS knows, which is a slight superset of the flags Apple draws (a handful of codes
+/// have no flag design and would show as two letters). Pure, so it is testable without a font.
+func fallbackFlagRegions() -> Set<String> {
+    Set(Locale.Region.isoRegions.map(\.identifier).filter { $0.count == 2 && $0 == $0.uppercased() })
+}
+
 final class RenderProbe {
+    /// Canaries every iOS since 15 composes: a face, a country flag, a profession, and a keycap.
+    /// If the probe rejects any of them it is not measuring what the person will see and its
+    /// verdicts on sequences are worthless (see `generate`). Lazy because it is read once per
+    /// catalog build and costs four shaping passes.
+    private(set) lazy var isTrustworthy: Bool = {
+        ["😀", "🇺🇸", "🧑‍💻", "1️⃣"].allSatisfy { renders($0) }
+    }()
+
     /// The plain system UI font, resolved by role rather than name. It cannot draw emoji itself,
     /// which is exactly what forces `CTFontCreateForString` below to perform REAL fallback
     /// resolution to whatever font this OS actually uses for a given string, rather than trusting

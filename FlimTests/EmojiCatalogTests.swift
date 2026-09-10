@@ -49,6 +49,29 @@ struct EmojiCatalogTests {
         }
     }
 
+    /// The iOS 26.3 simulator's test process composes no sequence at all (one placeholder glyph
+    /// per scalar), which used to empty the picker of every flag, keycap and joined emoji on
+    /// that runtime. The catalog now fails open when its render probe flunks its canaries, so
+    /// this holds on every simulator, whichever way the probe went.
+    @Test("flags, keycaps and joined emoji survive an untrustworthy render probe")
+    func sequencesSurviveAnUntrustworthyProbe() async {
+        let all = Set(await EmojiCatalog.shared.sections().flatMap(\.emojis))
+        for emoji in ["🇺🇸", "🇯🇵", "1️⃣", "🏳️‍🌈", "🧑‍💻", "🐦‍🔥", "🏴󠁧󠁢󠁥󠁮󠁧󠁿"] {
+            #expect(all.contains(emoji), "\(emoji) missing; probe trustworthy = \(RenderProbe().isTrustworthy)")
+        }
+    }
+
+    @Test("the fallback flag list is real ISO regions, uppercase, two letters")
+    func fallbackFlagRegionsAreISO() {
+        let regions = fallbackFlagRegions()
+        #expect(regions.contains("US"))
+        #expect(regions.contains("GB"))
+        #expect(regions.contains("JP"))
+        #expect(!regions.contains("XX"))
+        #expect(regions.allSatisfy { $0.count == 2 && $0 == $0.uppercased() })
+        #expect(regions.count > 200)
+    }
+
     @Test("flags are generated from real regional-indicator pairs, not a hardcoded handful")
     func flagsSectionIsGenerated() async {
         let categories = await EmojiCatalog.shared.sections()
