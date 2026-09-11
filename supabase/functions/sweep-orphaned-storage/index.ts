@@ -141,10 +141,11 @@ Deno.serve(async (req) => {
     return new Response(`query failed: ${error.message}`, { status: 500 });
   }
 
-  const candidates = (data ?? []) as Candidate[];
-  const candidateBytes = totalBytes(candidates);
+  const allCandidates = (data ?? []) as Candidate[];
+  const candidateBytes = totalBytes(allCandidates);
+  let candidates = allCandidates;
 
-  if (candidates.length === 0) {
+  if (allCandidates.length === 0) {
     console.log(JSON.stringify({ at: "sweep_run", dryRun, candidates: 0 }));
     return new Response("no orphaned objects found");
   }
@@ -152,18 +153,38 @@ Deno.serve(async (req) => {
   // Cap check happens before anything else, and blocks the run outright
   // (not just the delete branch) so a runaway candidate set is loud in the
   // logs on a dry run too, not just discovered the day it would matter.
+  // Over the cap: the safety stop stays (a bad orphan query must not empty the bucket), but
+  // it is no longer silent, and there is a way out. The owner gets one ops alert per day (the
+  // social push run delivers it), and a run with `{"batch": true}` in the body processes only
+  // the OLDEST HARD_CAP candidates, so a real backlog can be worked down one inspected batch
+  // at a time without ever removing the guard. Deletion since 1.5.3 leaves object cleanup to
+  // this sweeper on purpose, so a stuck sweeper is a growing bill, not a distant edge case.
   if (candidates.length > HARD_CAP) {
+    const batch = body.batch === true;
     console.log(JSON.stringify({
-      at: "sweep_aborted_cap_exceeded",
+      at: batch ? "sweep_batch_over_cap" : "sweep_aborted_cap_exceeded",
       candidateCount: candidates.length,
       cap: HARD_CAP,
       candidateBytes,
     }));
-    return new Response(
-      `ABORTED: ${candidates.length} candidate objects exceeds the safety cap of ${HARD_CAP}. ` +
-        `Deleted nothing. Check list_orphaned_photos_objects() for a bad match before re-running.`,
-      { status: 200 },
-    );
+    if (!batch) {
+      const since = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+      const { data: recent } = await supabase.from("ops_alerts").select("id")
+        .eq("source", "sweep-orphaned-storage").gte("created_at", since).limit(1);
+      if (!recent?.length) {
+        await supabase.from("ops_alerts").insert({
+          source: "sweep-orphaned-storage",
+          detail: `Stopped: ${candidates.length} orphan candidates (${Math.round(candidateBytes / 1e6)} MB) exceed the cap of ${HARD_CAP}. ` +
+            `Inspect list_orphaned_photos_objects(), then run with {"batch": true} to clear the oldest ${HARD_CAP} per run.`,
+        });
+      }
+      return new Response(
+        `ABORTED: ${candidates.length} candidate objects exceeds the safety cap of ${HARD_CAP}. ` +
+          `Deleted nothing. Owner alerted. Check list_orphaned_photos_objects() for a bad match, then run with {"batch": true}.`,
+        { status: 200 },
+      );
+    }
+    candidates = [...candidates].sort((a, b) => a.created_at.localeCompare(b.created_at)).slice(0, HARD_CAP);
   }
 
   if (dryRun) {

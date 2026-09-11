@@ -246,8 +246,8 @@ Deno.serve(async (req: Request) => {
   if (req.headers.get("x-cron-secret") !== cronSecret) return new Response("forbidden", { status: 401 });
   // One run at a time: a lease taken here and released at the end, expiring on its own if this
   // run dies, so an overlapping cron firing cannot read the same unsent rows and send twice.
-  const { data: locked } = await supabase.rpc("acquire_push_lock", { p_name: "develop", p_seconds: 240 });
-  if (!locked) return new Response("another run holds the lock");
+  const { data: leaseToken } = await supabase.rpc("acquire_push_lock", { p_name: "develop", p_seconds: 240 });
+  if (!leaseToken) return new Response("another run holds the lock");
   try {
   // 1. Photos that have developed, belong to a roll, and haven't pushed yet.
   //    Personal instants (roll_id NULL) are excluded, they develop immediately
@@ -331,19 +331,35 @@ Deno.serve(async (req: Request) => {
       // Built fresh from THIS iteration's rollId, never hoisted above the loop, so a run that
       // processes several rolls back-to-back can't carry one roll's id into another's pushes.
       const route: FlimRoute = { t: "reveal", id: rollId };
-      let sentForRoll = 0;
-      for (const [token, userId] of seenTokens) {
+      // Per-recipient outcomes (push_deliveries, kind "develop", source = roll id): a member
+      // who already got it is not sent again, one whose devices failed is retried on later
+      // runs up to three times, and only when every member is settled are the roll's photos
+      // marked push_sent. Before this, one lost device could either resend to everyone or
+      // silently drop the rest of the roll. No device at all counts as settled, so a roll
+      // whose members have no live phone cannot loop forever.
+      const { data: priorRows } = await supabase.from("push_deliveries").select("user_id, attempts, delivered")
+        .eq("kind", "develop").eq("source_id", rollId);
+      const prior = new Map<string, { attempts: number; delivered: boolean }>();
+      for (const r of (priorRows ?? []) as { user_id: string; attempts: number; delivered: boolean }[]) prior.set(r.user_id, r);
+      const tokensByUser = new Map<string, string[]>();
+      for (const [token, userId] of seenTokens) tokensByUser.set(userId, [...(tokensByUser.get(userId) ?? []), token]);
+      let unsettled = 0;
+      for (const userId of recipientIds) {
+        const p = prior.get(userId) ?? { attempts: 0, delivered: false };
+        if (p.delivered || p.attempts >= 3) continue;
+        const userTokens = tokensByUser.get(userId) ?? [];
         const body = g.shooters.has(userId) ? shooterBody : memberBody;
-        if (await sendPush(token, title, body, route)) sentForRoll++;
+        let ok = 0;
+        for (const token of userTokens) if (await sendPush(token, title, body, route)) ok++;
+        sent += ok;
+        const delivered = ok > 0 || userTokens.length === 0;
+        const attempts = p.attempts + 1;
+        await supabase.from("push_deliveries").upsert({
+          kind: "develop", source_id: rollId, user_id: userId, attempts, delivered, updated_at: new Date().toISOString(),
+        });
+        if (!delivered && attempts < 3) unsettled++;
       }
-      sent += sentForRoll;
-      // Every device refused (an APNs outage, an expired auth token): leave the rows unsent so
-      // the next run tries again, rather than marking a reveal delivered that nobody received.
-      // Dead tokens are deleted by sendPush itself, so a roll whose members have no live
-      // device reaches "no tokens" and is marked below on a later run; this cannot loop
-      // forever on a dead device. A partial delivery is marked: re-sending to the people who
-      // already got it would be worse than a missed one.
-      if (seenTokens.size > 0 && sentForRoll === 0) continue;
+      if (unsettled > 0) continue;   // next run retries the failed members; the rest are recorded
     }
 
     // 4. Mark every photo of the batch as pushed, so a member with no device can't make us
@@ -353,6 +369,6 @@ Deno.serve(async (req: Request) => {
 
   return new Response(`sent ${sent} push(es) for ${rolls.size} roll(s)`);
   } finally {
-    await supabase.rpc("release_push_lock", { p_name: "develop" });
+    await supabase.rpc("release_push_lock", { p_name: "develop", p_token: leaseToken });
   }
 });

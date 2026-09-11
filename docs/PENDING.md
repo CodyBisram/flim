@@ -352,6 +352,35 @@ The four from the audit the owner picked on 2026-09-10: the durable capture queu
 capture status, one invitation journey (a roll code admits you), deletion order, and the photo
 write boundary. In that order of value; built in the order of size.
 
+### done 2026-09-11, night: audit 2, the rest of the delivery list (findings 7, 9, 10, 11, 12, 13, 17, 18)
+
+Server, migration `2026-09-12_audit2_server.sql`, APPLIED; three functions DEPLOYED and verified
+running:
+- 11: rolls get the photo treatment: clients may update `cover_path` only, and a trigger requires
+  the cover to be one of the roll's own photographs; reveal time goes through the RPC.
+- 12: `start_follow_up_roll` takes a request id (the create sheet keeps one per attempt) and
+  returns the same roll on a retry; five follow-ups per person per day; serialized per caller.
+  Client: a failed invite fetch keeps the cards it had, a failed dismiss puts the card back with a
+  line, Join shows progress and a real error ("This roll already developed." or a retry line).
+- 9: `push_deliveries` records one outcome per (kind, source, recipient) with attempts. The
+  develop push retries only the members whose devices failed (three attempts, then settled) and
+  marks a roll's photos only when every member is settled. The social push does the same through
+  `notify(sourceKey:)` and a `settled()` gate before every push_sent mark. Leases carry a token;
+  a release with the wrong token is ignored. Verified: two acquires, one wins; wrong-token release
+  keeps the lease; the cron runs after deploy are 200.
+- 13: the sweeper keeps its cap but writes an `ops_alerts` row (once a day) that the social push
+  turns into a push to the owner, and `{"batch": true}` processes the oldest 500 per run.
+Client:
+- 7: the feed load checks the request generation at the final await and before the empty-feed
+  clear, not only after the posts query.
+- 17: reactions carry a revision per (post, emoji, user); a failed write rolls the screen back only
+  if no later tap owns it. Tap, untap, tap with the first add failing keeps the heart.
+- 18: the image retry signs a fresh URL from the storage path (one bounded step) instead of
+  reloading the expired one.
+- 10: the activation queue is keyed per account (pre-sign-in events wait under a neutral key and
+  flush once an account exists), entries are removed one by one as each send succeeds, and a
+  flush already running is not started twice.
+
 ### done 2026-09-11, evening: one export rule everywhere, and the homepage stops overpromising
 
 `PhotoExport.eligible(_:viewer:)` is the rule: only the viewer's own photographs leave FLIM as

@@ -364,6 +364,8 @@ struct CachedImage<Content: View, Placeholder: View>: View {
     @State private var uiImage: UIImage?
     @State private var shown = false
     @State private var failed = false
+    /// A URL signed fresh on retry (see `retry`); wins over `url` once set.
+    @State private var resignedURL: URL?
     // Bumped at the start of every `load()` call and captured locally by that call. The decode
     // underneath `DiskImageCache.load`/`ImageLoader.fetch` runs on `Task.detached`, which is NOT
     // part of the tree `.task(id:)` cancels, so an old call's awaits can still resolve after a
@@ -387,7 +389,7 @@ struct CachedImage<Content: View, Placeholder: View>: View {
                             .foregroundStyle(.white.opacity(0.5))
                     }
                     .contentShape(Rectangle())
-                    .onTapGesture { Task { await load() } }
+                    .onTapGesture { Task { await retry() } }
             } else {
                 placeholder()
             }
@@ -406,6 +408,24 @@ struct CachedImage<Content: View, Placeholder: View>: View {
         .task(id: "\(cacheKey ?? "")|\(url?.absoluteString ?? "")|\(Int(maxPixel))") { await load() }
     }
 
+    /// Retry after a failure. The URL this view was given may be the reason it failed: a
+    /// signed link that expired while the screen stayed open. `ImageLoader` already drops such
+    /// a link from the shared store on 401/403, but that does not change the URL this view
+    /// holds, so a plain reload would fail the same way until the parent refreshed. When the
+    /// cache key is a storage path (every grid and cover passes one), sign it again here and
+    /// load from that. One bounded step, no loop: a second failure shows the retry again.
+    private func retry() async {
+        if let path = cacheKey, path.contains("/"), !path.hasPrefix("http") {
+            let fresh = try? await supabase.storage.from("photos")
+                .createSignedURL(path: path, expiresIn: Int(SignedURLStore.ttl))
+            if let fresh {
+                await SignedURLStore.shared.store(fresh, for: path)
+                resignedURL = fresh
+            }
+        }
+        await load()
+    }
+
     private func load() async {
         loadGeneration += 1
         let generation = loadGeneration
@@ -422,7 +442,7 @@ struct CachedImage<Content: View, Placeholder: View>: View {
                 uiImage = disk; shown = true; onDecoded?(disk.size); return
             }
         }
-        guard let url else { uiImage = nil; return }
+        guard let url = resignedURL ?? url else { uiImage = nil; return }
         if cacheKey == nil {
             let memKey = "\(url.absoluteString)|\(Int(maxPixel))" as NSString
             if let cached = ImageCache.shared.object(forKey: memKey) {

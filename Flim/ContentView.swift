@@ -129,6 +129,7 @@ struct ContentView: View {
             // straight account-to-account switch; see FeedSeenStore's own doc for why marks
             // must be namespaced by whoever is actually signed in.
             FeedSeenStore.shared.activeUserId = newId
+            Activation.activeUserId = newId
             // Develop reminders and Live Activities are scoped to a ROLL, not an account, so they
             // outlive a sign-out. Only clear them when there WAS a previously-cached account in
             // this session, i.e. a real switch (including straight to signed-out): the very first
@@ -172,6 +173,7 @@ struct ContentView: View {
             rolls.resetForAccountChange()
             chapters.resetForAccountChange()
             FeedSeenStore.shared.activeUserId = nil
+            Activation.activeUserId = nil
             Task { await NotificationService.cancelAllRollDevelopNotifications() }
             RollLiveActivity.endAll()
         }

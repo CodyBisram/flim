@@ -39,6 +39,10 @@ final class FeedService {
     /// snapshot taken before both, wiping the one that succeeded. Writes now queue per post, and
     /// a failure undoes only its own change.
     private var reactionQueues: [UUID: Task<Void, Never>] = [:]
+    /// The latest intent per (post, emoji, user): which tap currently owns what the screen
+    /// shows. A failed write only rolls the screen back if it is still the owner; a later tap
+    /// that already changed the intent wins, and the queue's later write reconciles the server.
+    private var reactionRevisions: [String: Int] = [:]
     var commentsByPost: [UUID: [CommentInfo]] = [:]
     /// Photo tags per post, and the profiles of tagged users (for their labels).
     var tagsByPost: [UUID: [PostTag]] = [:]
@@ -953,7 +957,7 @@ final class FeedService {
             // unfollowed or blocked) still needs to clear whatever the previous page left behind;
             // `loadMoreFeed`'s ordinary "no more pages" return is the only other way here, and
             // that one has nothing stale to clear because it's always appending.
-            if replacingFeed, AccountEpoch.isCurrent(epoch) {
+            if replacingFeed, AccountEpoch.isCurrent(epoch), generation == feedGeneration {
                 reactionsByPost = [:]; commentsByPost = [:]; tagsByPost = [:]; tagProfiles = [:]
                 feed = []
             }
@@ -970,8 +974,11 @@ final class FeedService {
         let (tagMap, tagProf) = await tags
 
         // One guard covering every write below, placed after the LAST await rather than before
-        // the first merge, so nothing lands from a session that has since been replaced.
-        guard AccountEpoch.isCurrent(epoch) else { return }
+        // the first merge, so nothing lands from a session that has since been replaced. The
+        // generation too: a refresh that started while reactions and profiles were hydrating
+        // bumps the generation but not the epoch, and this older request must not replace or
+        // append to the feed it produced.
+        guard AccountEpoch.isCurrent(epoch), generation == feedGeneration else { return }
         if replacingFeed {
             // Replace, not merge: the previous page's caches belong to posts that are about to
             // disappear from `feed` entirely, keeping them around would just be stale memory.
@@ -1237,25 +1244,25 @@ final class FeedService {
             current.append(PostReaction(id: UUID(), postId: postId, userId: userId, emoji: emoji))
         }
         reactionsByPost[postId] = current
+        let revisionKey = "\(postId)|\(emoji)|\(userId)"
+        let revision = (reactionRevisions[revisionKey] ?? 0) + 1
+        reactionRevisions[revisionKey] = revision
+        let epoch = AccountEpoch.current
 
-        // ...and send it after whatever write is already in flight for this post, so the server
-        // sees taps in the order they happened. `reactionWritesInFlight` still covers the whole
-        // write, for the same reason as before: a background refresh landing mid-tap must not
-        // overwrite the optimistic state with a server read that predates it.
         let previous = reactionQueues[postId]
         let write = Task { [weak self] in
             await previous?.value
-            guard let self else { return }
+            guard let self, AccountEpoch.isCurrent(epoch) else { return }
             self.reactionWritesInFlight.insert(postId)
             defer { self.reactionWritesInFlight.remove(postId) }
             let landed = removing
                 ? await self.removeReaction(postId: postId, emoji: emoji, userId: userId)
                 : await self.addReaction(postId: postId, emoji: emoji, userId: userId)
-            guard !landed else { return }
-            // Undo THIS change only: put back what this tap removed, or take out what it added.
-            // Never a snapshot from before the tap, which would also erase any later tap that
-            // succeeded. Restored locally rather than refetched, since a refetch needs the
-            // network that just failed.
+            guard !landed, AccountEpoch.isCurrent(epoch) else { return }
+            // Roll back only if no later tap on this emoji has taken over the screen. Tap, untap,
+            // tap: if the first add fails after the third tap, the third tap's intent stands and
+            // its own write (already queued) is what reconciles the server.
+            guard self.reactionRevisions[revisionKey] == revision else { return }
             var now = self.reactionsByPost[postId] ?? []
             if removing {
                 if !now.contains(where: { $0.emoji == emoji && $0.userId == userId }) {

@@ -112,31 +112,44 @@ final class RollService {
 
     /// Starts a follow-up of a finished roll: the server creates it, makes the caller a member,
     /// and invites every other member of the finished roll (see `start_follow_up_roll`).
-    func startFollowUpRoll(parent: Roll, name: String) async throws -> Roll {
+    /// `request` is kept by the create sheet across retries of one tap, so a response lost on
+    /// the way back cannot make a second roll and a second round of invites.
+    func startFollowUpRoll(parent: Roll, name: String, request: UUID) async throws -> Roll {
         let epoch = AccountEpoch.current
-        struct Params: Encodable { let p_parent: UUID; let p_name: String }
+        struct Params: Encodable { let p_parent: UUID; let p_name: String; let p_request: UUID }
         let roll: Roll = try await supabase
-            .rpc("start_follow_up_roll", params: Params(p_parent: parent.id, p_name: name))
+            .rpc("start_follow_up_roll", params: Params(p_parent: parent.id, p_name: name, p_request: request))
             .single().execute().value
         guard AccountEpoch.isCurrent(epoch) else { return roll }
-        rolls.insert(roll, at: 0)
+        if !rolls.contains(where: { $0.id == roll.id }) { rolls.insert(roll, at: 0) }
         WidgetSync.refresh()
         persistSnapshot()
         return roll
     }
 
+    /// A failed fetch keeps whatever was shown before rather than blanking the cards.
     func fetchFollowUpInvites() async {
         let epoch = AccountEpoch.current
-        let fetched: [Roll] = (try? await supabase.rpc("follow_up_invites").execute().value) ?? []
+        guard let fetched: [Roll] = try? await supabase.rpc("follow_up_invites").execute().value else { return }
         guard AccountEpoch.isCurrent(epoch) else { return }
         followUpInvites = fetched
     }
 
-    /// "Not this time": the invite goes away, nothing else changes.
-    func dismissFollowUpInvite(_ roll: Roll, userId: UUID) async {
+    /// "Not this time": the invite goes away, nothing else changes. Optimistic; a failed
+    /// delete puts the card back and says so via the return value.
+    @discardableResult
+    func dismissFollowUpInvite(_ roll: Roll, userId: UUID) async -> Bool {
+        let epoch = AccountEpoch.current
+        let before = followUpInvites
         followUpInvites.removeAll { $0.id == roll.id }
-        _ = try? await supabase.from("roll_follow_up_invites").delete()
-            .eq("roll_id", value: roll.id.uuidString).eq("user_id", value: userId.uuidString).execute()
+        do {
+            try await supabase.from("roll_follow_up_invites").delete()
+                .eq("roll_id", value: roll.id.uuidString).eq("user_id", value: userId.uuidString).execute()
+            return true
+        } catch {
+            if AccountEpoch.isCurrent(epoch) { followUpInvites = before }
+            return false
+        }
     }
 
     func joinRoll(inviteCode: String, userId: UUID) async throws -> Roll {

@@ -11,11 +11,20 @@ struct DeliveryBatchTests {
         let previous = Activation.store
         Activation.store = defaults
         defer { Activation.store = previous }
+        let a = UUID(), b = UUID()
+        Activation.activeUserId = a
+        defer { Activation.activeUserId = nil }
         #expect(Activation.pending().isEmpty)
         Activation.enqueue("first_launch")
         Activation.enqueue("first_shot")
         Activation.enqueue("first_launch")   // deduped
         #expect(Activation.pending() == ["first_launch", "first_shot"])
+        // Another account sees none of it, and its own queue is its own.
+        Activation.activeUserId = b
+        #expect(Activation.pending().isEmpty)
+        Activation.enqueue("first_shot")
+        #expect(Activation.pending() == ["first_shot"])
+        #expect(Activation.pending(owner: a.uuidString.lowercased()) == ["first_launch", "first_shot"])
     }
 
     @Test("the disk cache trims after a budget of writes, and the counter resets when it fires")

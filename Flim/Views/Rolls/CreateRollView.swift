@@ -13,6 +13,8 @@ struct CreateRollView: View {
 
     @State private var name = ""
     @State private var isCreating = false
+    /// One id per sheet: a retry after a lost response reuses it and gets the same roll back.
+    @State private var followUpRequest = UUID()
     @State private var createdRoll: Roll?
     @State private var error: String?
     @State private var copied = false
@@ -165,7 +167,7 @@ struct CreateRollView: View {
         do {
             let trimmed = name.trimmingCharacters(in: .whitespaces)
             let roll = if let followUpOf {
-                try await rolls.startFollowUpRoll(parent: followUpOf, name: trimmed)
+                try await rolls.startFollowUpRoll(parent: followUpOf, name: trimmed, request: followUpRequest)
             } else {
                 try await rolls.createRoll(name: trimmed, createdBy: userId)
             }

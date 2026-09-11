@@ -24,6 +24,8 @@ struct RollsView: View {
     @State private var showCreate = false
     @State private var showJoin = false
     @State private var invitedByNames: [UUID: String] = [:]
+    @State private var inviteBusy: Set<UUID> = []
+    @State private var inviteErrors: [UUID: String] = [:]
     /// Signed cover URLs keyed by STORAGE PATH, not by roll id.
     ///
     /// Keyed by roll id, changing a roll's cover left the old URL in place forever: the resolve
@@ -576,30 +578,50 @@ struct RollsView: View {
                 .flimFont(12.5, relativeTo: .footnote)
                 .foregroundStyle(FlimTheme.textTertiary)
                 .lineSpacing(3)
+            if let error = inviteErrors[roll.id] {
+                Text(error)
+                    .flimFont(12, relativeTo: .caption)
+                    .foregroundStyle(Color(red: 0.95, green: 0.45, blue: 0.4))
+            }
             HStack(spacing: 10) {
+                Button {
+                    Haptics.tap()
+                    guard let uid = auth.currentUser?.id, !inviteBusy.contains(roll.id) else { return }
+                    inviteBusy.insert(roll.id); inviteErrors[roll.id] = nil
+                    Task {
+                        defer { inviteBusy.remove(roll.id) }
+                        do {
+                            _ = try await rolls.joinRoll(inviteCode: roll.inviteCode, userId: uid)
+                            Haptics.success()
+                            await load()
+                        } catch {
+                            Haptics.error()
+                            inviteErrors[roll.id] = RollService.mapJoinRollError(String(describing: error)) == .developed
+                                ? "This roll already developed."
+                                : "Couldn't join. Check your connection and try again."
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        if inviteBusy.contains(roll.id) { ProgressView().tint(.black).controlSize(.mini) }
+                        Text("Join")
+                            .flimFont(14, weight: .semibold, relativeTo: .subheadline)
+                    }
+                    .foregroundStyle(.black)
+                    .padding(.vertical, 9).padding(.horizontal, 18)
+                    .background(accent, in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .disabled(inviteBusy.contains(roll.id))
                 Button {
                     Haptics.tap()
                     guard let uid = auth.currentUser?.id else { return }
                     Task {
-                        if (try? await rolls.joinRoll(inviteCode: roll.inviteCode, userId: uid)) != nil {
-                            Haptics.success()
-                            await load()
-                        } else {
+                        if await !rolls.dismissFollowUpInvite(roll, userId: uid) {
                             Haptics.error()
+                            inviteErrors[roll.id] = "Couldn't dismiss that. Try again."
                         }
                     }
-                } label: {
-                    Text("Join")
-                        .flimFont(14, weight: .semibold, relativeTo: .subheadline)
-                        .foregroundStyle(.black)
-                        .padding(.vertical, 9).padding(.horizontal, 18)
-                        .background(accent, in: Capsule())
-                }
-                .buttonStyle(.plain)
-                Button {
-                    Haptics.tap()
-                    guard let uid = auth.currentUser?.id else { return }
-                    Task { await rolls.dismissFollowUpInvite(roll, userId: uid) }
                 } label: {
                     Text("Not this time")
                         .flimFont(14, weight: .medium, relativeTo: .subheadline)

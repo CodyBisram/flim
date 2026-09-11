@@ -266,18 +266,51 @@ async function blockedEitherWay(a: string, b: string): Promise<boolean> {
 /// Sends one notification from `fromId` to `toId`, unless either has blocked the other, or they
 /// are the same person. The single door every user-to-user push goes through, so a new
 /// notification type can't forget the check.
+// Sources whose delivery to at least one recipient failed this run and is still worth
+// retrying: the block that owns the source must NOT mark it push_sent, so the next run tries
+// again. `notify` fills this; `settled()` reads it. See push_deliveries.
+const pendingRetry = new Set<string>();
+const MAX_DELIVERY_ATTEMPTS = 3;
+
+function settled(sourceKey: string): boolean {
+  return !pendingRetry.has(sourceKey);
+}
+
+// One recipient of one source. With a `sourceKey` (kind:id) the outcome is remembered in
+// push_deliveries: a recipient already delivered is skipped, a failed one is retried on later
+// runs up to MAX_DELIVERY_ATTEMPTS, then given up (terminal). Without a key the old behaviour:
+// try every device once.
 async function notify(
   toId: string | undefined,
   fromId: string,
   title: string,
   body?: string,
   flim?: FlimRoute,
+  sourceKey?: string,
 ): Promise<number> {
   if (!toId || toId === fromId) return 0;
   if (await blockedEitherWay(toId, fromId)) return 0;
+  let prior = { attempts: 0, delivered: false };
+  if (sourceKey) {
+    const [kind, ...rest] = sourceKey.split(":");
+    const { data } = await supabase.from("push_deliveries").select("attempts, delivered")
+      .eq("kind", kind).eq("source_id", rest.join(":")).eq("user_id", toId).maybeSingle();
+    if (data) prior = data as { attempts: number; delivered: boolean };
+    if (prior.delivered || prior.attempts >= MAX_DELIVERY_ATTEMPTS) return 0;
+  }
+  const tokens = await tokensFor(toId);
   let sent = 0;
-  for (const token of await tokensFor(toId)) {
+  for (const token of tokens) {
     if (await sendPush(token, title, body, flim)) sent++;
+  }
+  if (sourceKey) {
+    const [kind, ...rest] = sourceKey.split(":");
+    const delivered = sent > 0 || tokens.length === 0;   // no device is terminal, not a failure
+    const attempts = prior.attempts + 1;
+    await supabase.from("push_deliveries").upsert({
+      kind, source_id: rest.join(":"), user_id: toId, attempts, delivered, updated_at: new Date().toISOString(),
+    });
+    if (!delivered && attempts < MAX_DELIVERY_ATTEMPTS) pendingRetry.add(sourceKey);
   }
   return sent;
 }
@@ -623,8 +656,8 @@ Deno.serve(async (req: Request) => {
   if (req.headers.get("x-cron-secret") !== cronSecret) return new Response("forbidden", { status: 401 });
   // One run at a time: a lease taken here and released at the end, expiring on its own if this
   // run dies, so an overlapping cron firing cannot read the same unsent rows and send twice.
-  const { data: locked } = await supabase.rpc("acquire_push_lock", { p_name: "social", p_seconds: 240 });
-  if (!locked) return new Response("another run holds the lock");
+  const { data: leaseToken } = await supabase.rpc("acquire_push_lock", { p_name: "social", p_seconds: 240 });
+  if (!leaseToken) return new Response("another run holds the lock");
   try {
   let sent = 0;
 
@@ -682,7 +715,7 @@ Deno.serve(async (req: Request) => {
     // post is covered, its own author is trivially allowed to be told about activity on it.
     if (ownerId) {
       notified.add(ownerId);
-      sent += await notify(ownerId, c.user_id, `${name} commented`, preview, route);
+      sent += await notify(ownerId, c.user_id, `${name} commented`, preview, route, `comment:${c.id}`);
     }
     // Capped: one comment can name any number of people, and without a limit a single comment
     // could fan out into dozens of pushes. Five is generous for a real conversation and useless
@@ -698,7 +731,7 @@ Deno.serve(async (req: Request) => {
       }
       notified.add(uid);
       mentionPushes++;
-      sent += await notify(uid, c.user_id, `${name} mentioned you`, preview, route);
+      sent += await notify(uid, c.user_id, `${name} mentioned you`, preview, route, `comment:${c.id}`);
     }
     // Thread participants: everyone who already has a comment on this same post, other than
     // this comment's own author, and other than anyone already notified above as the owner or a
@@ -723,9 +756,9 @@ Deno.serve(async (req: Request) => {
         continue;
       }
       notified.add(uid);
-      sent += await notify(uid, c.user_id, `${name} also commented`, preview, route);
+      sent += await notify(uid, c.user_id, `${name} also commented`, preview, route, `comment:${c.id}`);
     }
-    await supabase.from("post_comments").update({ push_sent: true }).eq("id", c.id);
+    if (settled(`comment:${c.id}`)) await supabase.from("post_comments").update({ push_sent: true }).eq("id", c.id);
   }
 
   // ---- New posts: notify people tagged in the photo + @mentioned in the caption ----
@@ -761,12 +794,12 @@ Deno.serve(async (req: Request) => {
       // post's own author, so this asks exactly what covered_post_visible would ask RLS.
       if (!coveredPostVisibleTo(coveredCtx, uid, p.user_id, p.created_at as string)) continue;
       notified.add(uid);
-      sent += await notify(uid, p.user_id, `${name} tagged you`, "in a photo", { t: "post", id: p.id });
+      sent += await notify(uid, p.user_id, `${name} tagged you`, "in a photo", { t: "post", id: p.id }, `post:${p.id}`);
     }
     if (tagRows && tagRows.length > 0) {
-      await supabase.from("post_tags").update({ push_sent: true }).in("id", tagRows.map((t) => t.id));
+      if (settled(`post:${p.id}`)) await supabase.from("post_tags").update({ push_sent: true }).in("id", tagRows.map((t) => t.id));
     }
-    await supabase.from("posts").update({ push_sent: true }).eq("id", p.id);
+    if (settled(`post:${p.id}`)) await supabase.from("posts").update({ push_sent: true }).eq("id", p.id);
   }
 
   // ---- Tags added AFTER publishing: notify someone tagged via "Edit tags"
@@ -818,10 +851,11 @@ Deno.serve(async (req: Request) => {
     if (!coveredPostVisibleTo(coveredCtx, taggedId, ownerId, postMeta.created_at)) continue;
 
     const name = await handle(ownerId);
-    sent += await notify(taggedId, ownerId, `${name} tagged you`, "in a photo", { t: "post", id: t.post_id });
+    sent += await notify(taggedId, ownerId, `${name} tagged you`, "in a photo", { t: "post", id: t.post_id }, `tag:${t.id}`);
   }
   if (laterTags && laterTags.length > 0) {
-    await supabase.from("post_tags").update({ push_sent: true }).in("id", laterTags.map((t) => t.id));
+    await supabase.from("post_tags").update({ push_sent: true })
+      .in("id", (laterTags ?? []).filter((t) => settled(`tag:${t.id}`)).map((t) => t.id));
   }
 
   // ---- Reactions: batch per (post, reactor) → one push listing their emoji, to the OWNER ----
@@ -866,9 +900,10 @@ Deno.serve(async (req: Request) => {
         `${name} reacted`,
         reactionBody(g.emojis[g.emojis.length - 1]),
         { t: "post", id: g.postId },
+        `post_reaction:${g.ids[0]}`,
       );
     }
-    await supabase.from("post_reactions").update({ push_sent: true }).in("id", g.ids);
+    if (settled(`post_reaction:${g.ids[0]}`)) await supabase.from("post_reactions").update({ push_sent: true }).in("id", g.ids);
   }
 
   // ---- Reactions (continued): notify people TAGGED in the photo, once per post per run, never
@@ -1021,10 +1056,10 @@ Deno.serve(async (req: Request) => {
         : undefined;
       // `fromOthers[0].userId` is the sole/most recent commenter; blocks are checked against
       // them, so a blocked person can't reach you through a roll photo either.
-      sent += await notify(recipient, fromOthers[0].userId, title, body, route);
+      sent += await notify(recipient, fromOthers[0].userId, title, body, route, `photo_comment:${g.items[0].id}`);
     }
 
-    await supabase.from("photo_comments").update({ push_sent: true }).in("id", g.items.map((it) => it.id));
+    if (settled(`photo_comment:${g.items[0].id}`)) await supabase.from("photo_comments").update({ push_sent: true }).in("id", g.items.map((it) => it.id));
   }
 
   // ---- Roll photo reactions: notify the photo's OWNER (never self), batched per reactor.
@@ -1079,9 +1114,10 @@ Deno.serve(async (req: Request) => {
         `${name} reacted`,
         reactionBody(g.emojis[g.emojis.length - 1]),
         g.rollId ? { t: "reveal", id: g.rollId, photo: g.photoId } : undefined,
+        `photo_reaction:${g.ids[0]}`,
       );
     }
-    await supabase.from("photo_reactions").update({ push_sent: true }).in("id", g.ids);
+    if (settled(`photo_reaction:${g.ids[0]}`)) await supabase.from("photo_reactions").update({ push_sent: true }).in("id", g.ids);
   }
 
   // ---- Comment likes: batch every NEW like on a comment into ONE push to the comment's
@@ -1147,9 +1183,10 @@ Deno.serve(async (req: Request) => {
         title,
         preview,
         g.postId ? { t: "post", id: g.postId, comments: true } : undefined,
+        `comment_like:${g.ids[0]}`,
       );
     }
-    await supabase.from("comment_likes").update({ push_sent: true }).in("id", g.ids);
+    if (settled(`comment_like:${g.ids[0]}`)) await supabase.from("comment_likes").update({ push_sent: true }).in("id", g.ids);
   }
 
   // ---- New followers → notify the person who was followed.
@@ -1174,13 +1211,14 @@ Deno.serve(async (req: Request) => {
     // in the title, and `sendPush` omits the `body` key entirely when none is given (see above
     // its definition), so this renders as a clean single-line banner, never a blank second line.
     // Still routes to the follower's profile.
+    const followKey = `follow:${f.follower_id}:${f.following_id}`;
     sent += await notify(f.following_id, f.follower_id, `${name} started following you`, undefined, {
       t: "profile",
       id: f.follower_id,
-    });
+    }, followKey);
     // Composite primary key (follower_id, following_id): both halves are needed to address
     // the row, and there is no surrogate id to use instead.
-    await supabase
+    if (settled(followKey)) await supabase
       .from("follows")
       .update({ push_sent: true })
       .eq("follower_id", f.follower_id)
@@ -1212,13 +1250,22 @@ Deno.serve(async (req: Request) => {
     if (!developed && !muted) {
       const name = await handle(inv.invited_by);
       sent += await notify(inv.user_id, inv.invited_by, `${name} started ${roll.name} with your group`,
-        "Tap to join. Or not, and nothing changes.", { t: "join", code: roll.invite_code });
+        "Tap to join. Or not, and nothing changes.", { t: "join", code: roll.invite_code }, `followup:${inv.roll_id}:${inv.user_id}`);
     }
-    await supabase.from("roll_follow_up_invites").update({ push_sent: true })
+    if (settled(`followup:${inv.roll_id}:${inv.user_id}`)) await supabase.from("roll_follow_up_invites").update({ push_sent: true })
       .eq("roll_id", inv.roll_id).eq("user_id", inv.user_id);
   }
   const ownerPushTokens = await ownerTokens();
 
+  // Operational alerts (a scheduled function that stopped doing its job): one push each to
+  // the owner, then marked. See public.ops_alerts.
+  const { data: opsAlerts } = await supabase.from("ops_alerts").select("id, source, detail").eq("push_sent", false);
+  for (const a of opsAlerts ?? []) {
+    for (const token of ownerPushTokens) {
+      if (await sendPush(token, `FLIM ops: ${a.source}`, a.detail.slice(0, 180))) sent++;
+    }
+    await supabase.from("ops_alerts").update({ push_sent: true }).eq("id", a.id);
+  }
   const { data: photoReports } = await supabase
     .from("photo_reports")
     .select("id, photo_id, reason")
@@ -1255,6 +1302,6 @@ Deno.serve(async (req: Request) => {
 
   return new Response(`sent ${sent} social push(es)`);
   } finally {
-    await supabase.rpc("release_push_lock", { p_name: "social" });
+    await supabase.rpc("release_push_lock", { p_name: "social", p_token: leaseToken });
   }
 });

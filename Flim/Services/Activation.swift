@@ -71,10 +71,22 @@ enum Activation {
     static var store: UserDefaults = .standard
     private static let pendingKey = "activation.pending"
 
+    /// The account the queue belongs to. Entries are keyed by it, so a milestone that failed
+    /// to send under one account is never flushed under the next, and a pre-sign-in milestone
+    /// (first launch, onboarding) waits under a neutral key until an account exists and is then
+    /// attributed to it: those events happen before there is a user, and the first account
+    /// on this phone is the one they belong to.
+    static var activeUserId: UUID? = nil
+    private static let neutralOwner = "none"
+    private static var owner: String { activeUserId?.uuidString.lowercased() ?? neutralOwner }
+    private static let flushLock = NSLock()
+    private static var flushing = false
+
     static func log(_ event: ActivationEvent) {
+        let key = owner
         Task {
             if await send(event.rawValue) { return }
-            enqueue(event.rawValue)
+            enqueue(event.rawValue, owner: key)
         }
     }
 
@@ -99,12 +111,23 @@ enum Activation {
         }
     }
 
-    static func pending() -> [String] { store.stringArray(forKey: pendingKey) ?? [] }
+    private static func key(for owner: String) -> String { "\(pendingKey).\(owner)" }
+    static func pending(owner: String? = nil) -> [String] {
+        store.stringArray(forKey: key(for: owner ?? Self.owner)) ?? []
+    }
 
-    static func enqueue(_ raw: String) {
-        var list = pending()
+    static func enqueue(_ raw: String, owner: String? = nil) {
+        let k = key(for: owner ?? Self.owner)
+        var list = store.stringArray(forKey: k) ?? []
         guard !list.contains(raw) else { return }
         list.append(raw)
-        store.set(list, forKey: pendingKey)
+        store.set(list, forKey: k)
+    }
+
+    private static func remove(_ raw: String, owner: String) {
+        let k = key(for: owner)
+        var list = store.stringArray(forKey: k) ?? []
+        list.removeAll { $0 == raw }
+        if list.isEmpty { store.removeObject(forKey: k) } else { store.set(list, forKey: k) }
     }
 }
