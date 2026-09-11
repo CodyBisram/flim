@@ -560,10 +560,23 @@ struct CameraView: View {
 
                 // Upload status, compact spinner only, so it can't crowd the top row.
                 if photos.isUploading {
-                    ProgressView().tint(.white).controlSize(.mini)
-                        .frame(width: 38, height: 38)
-                        .glassCapsule()
-                        .accessibilityLabel("Developing")
+                    // "Saving N" once more than one shot is in line, so a burst on a slow
+                    // connection reads as shots safely queued on this phone, not as a hang.
+                    HStack(spacing: 6) {
+                        ProgressView().tint(.white).controlSize(.mini)
+                        if photos.pendingCaptureCount > 1 {
+                            Text("Saving \(photos.pendingCaptureCount)")
+                                .flimFont(13, weight: .medium)
+                                .foregroundStyle(.white)
+                                .lineLimit(1).fixedSize()
+                        }
+                    }
+                    .frame(minWidth: 38, minHeight: 38)
+                    .padding(.horizontal, photos.pendingCaptureCount > 1 ? 12 : 0)
+                    .glassCapsule()
+                    .accessibilityLabel(photos.pendingCaptureCount > 1
+                        ? "Saving \(photos.pendingCaptureCount) photos"
+                        : "Developing")
                 } else if photos.hasFailedUploads {
                     Button {
                         Task { await photos.retryFailedUploads() }

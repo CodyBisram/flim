@@ -69,8 +69,10 @@
 		2CAFA5D0F336FEEF6B862BFD /* RollDrainPaginationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FBCA4037C38CEF7977543BAB /* RollDrainPaginationTests.swift */; };
 		2CBF2A7682471B5C6BF9FE84 /* PersonalInviteLinkTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0B2C33A2244A999EF8CCD60 /* PersonalInviteLinkTests.swift */; };
 		2CC83F417EA5D7E7797DE86B /* PhotosNeedingSignedURLTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 743DC077F394FDA8492B4BD3 /* PhotosNeedingSignedURLTests.swift */; };
+		2EADA1559161227EB5E39A93 /* CaptureQueueStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0B896AB175F0632ABA6D64E /* CaptureQueueStoreTests.swift */; };
 		2EDCE64ACD1C1B9060F4B36B /* UserPageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 799578BF49AD244204751AC0 /* UserPageView.swift */; };
 		305059BC7E8376F1EA969083 /* DarkroomWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9733A56107406A4222E1AE1C /* DarkroomWidget.swift */; };
+		306C5803B9CDE4D073176B30 /* CaptureQueueStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5C10296557CE45DCC0004BB /* CaptureQueueStore.swift */; };
 		3070CADC3F21984D682B9058 /* UserFacingError.swift in Sources */ = {isa = PBXBuildFile; fileRef = E76395E2FEC6D1DFCEAC9E84 /* UserFacingError.swift */; };
 		322A5492683DD8B6D58B77C6 /* RollsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33D109A1C315CD466659A10F /* RollsView.swift */; };
 		3329F6BEB76AA76B288DE250 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49A4B9AB5111472363BE0ECF /* OnboardingView.swift */; };
@@ -615,6 +617,7 @@
 		D12980C0CB6174D144ED01F5 /* DarkroomDayUnit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DarkroomDayUnit.swift; sourceTree = "<group>"; };
 		D22ACB97D61072B25DA50604 /* PushDestination.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushDestination.swift; sourceTree = "<group>"; };
 		D30B42EBEE797C8D0DEC4848 /* RollRevealViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollRevealViewModel.swift; sourceTree = "<group>"; };
+		D5C10296557CE45DCC0004BB /* CaptureQueueStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureQueueStore.swift; sourceTree = "<group>"; };
 		D7299D16CD74851BA0C29495 /* PhotoServiceGradedRenditionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoServiceGradedRenditionTests.swift; sourceTree = "<group>"; };
 		D86D048DA64F5454E17D0F34 /* ActivityFeedViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityFeedViewTests.swift; sourceTree = "<group>"; };
 		D9927EBDE8E7056C4DA31EF2 /* AuthHelpersTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthHelpersTests.swift; sourceTree = "<group>"; };
@@ -648,6 +651,7 @@
 		EE73B765C41AB33B6D7D43F4 /* ShareImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareImage.swift; sourceTree = "<group>"; };
 		EFA9C65A961FE978AB5AB452 /* DarkroomRackView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DarkroomRackView.swift; sourceTree = "<group>"; };
 		EFC0C65109A81467AB59472B /* AuthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthService.swift; sourceTree = "<group>"; };
+		F0B896AB175F0632ABA6D64E /* CaptureQueueStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureQueueStoreTests.swift; sourceTree = "<group>"; };
 		F0C42110E6AE811C6B12C87A /* PhotoStoragePathsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoStoragePathsTests.swift; sourceTree = "<group>"; };
 		F1AA5EF66C46272F42891AF4 /* RollMembersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollMembersView.swift; sourceTree = "<group>"; };
 		F1E4DBE18F0676BDDE852EDD /* RevealDeadFrameTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RevealDeadFrameTests.swift; sourceTree = "<group>"; };
@@ -926,6 +930,7 @@
 				2B25C7E9436A87FF2CF810B8 /* CameraRollAutoSave.swift */,
 				9AE61FE9182CC567D4698F8A /* CameraRollSelection.swift */,
 				BB373195A893A3C7E6FD51C9 /* CapturedPhotoCropper.swift */,
+				D5C10296557CE45DCC0004BB /* CaptureQueueStore.swift */,
 				0064CEE2A4F981B87717A374 /* ChapterContactSheet.swift */,
 				C3D31AEE0F17D26081D0D07F /* ChapterCuration.swift */,
 				E2E8672AE8BCF45B32EC5C30 /* ChapterCurationCache.swift */,
@@ -1025,6 +1030,7 @@
 				205B55808CBE7AF5FF43024B /* CameraRollAutoSaveTests.swift */,
 				8B56B57E60E3BDB61525E938 /* CaptionSaveOutcomeTests.swift */,
 				FD48D0114C23B26736D8280D /* CapturedPhotoCropperTests.swift */,
+				F0B896AB175F0632ABA6D64E /* CaptureQueueStoreTests.swift */,
 				87BABB21BC29B14176BD0FF1 /* ChapterContactSheetTests.swift */,
 				02129E23694AF78C989C2B3F /* ChapterCurationCacheTests.swift */,
 				E2F0B084A4472F8DCAA74627 /* ChapterCuratorTests.swift */,
@@ -1312,6 +1318,7 @@
 				6F2E8BA21C2D2F015CB60062 /* CameraPreviewTests.swift in Sources */,
 				500C288D435903A272E55EBE /* CameraRollAutoSaveTests.swift in Sources */,
 				0D80A4E64324784932627EC2 /* CaptionSaveOutcomeTests.swift in Sources */,
+				2EADA1559161227EB5E39A93 /* CaptureQueueStoreTests.swift in Sources */,
 				BCEEBC1EAA35491151CDFFD8 /* CapturedPhotoCropperTests.swift in Sources */,
 				DD9A8AAC9FC49726DF3B3A84 /* ChapterContactSheetTests.swift in Sources */,
 				7F707A309E379005989B5621 /* ChapterCurationCacheTests.swift in Sources */,
@@ -1468,6 +1475,7 @@
 				01890D8287BBB9653910F4ED /* CameraRollSelection.swift in Sources */,
 				B5E40248AEAEF1C69C495751 /* CameraView.swift in Sources */,
 				56F026E4C4E1E30F19E98152 /* CameraViewModel.swift in Sources */,
+				306C5803B9CDE4D073176B30 /* CaptureQueueStore.swift in Sources */,
 				036CE6741E055F672A548A57 /* CapturedPhotoCropper.swift in Sources */,
 				A64ACCF5B6898EAB22BEE303 /* Chapter.swift in Sources */,
 				0ECF296486EEE64EC31A6767 /* ChapterClosingCardView.swift in Sources */,

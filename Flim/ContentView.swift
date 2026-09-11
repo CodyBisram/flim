@@ -141,7 +141,12 @@ struct ContentView: View {
             // Captures that never reached the server are kept on disk per account, so this is
             // where they come back: on launch, and on signing back in. Without it the files
             // would accumulate forever and nobody would ever be offered the retry.
-            if let newId { Task { await photos.restoreFailedUploads(userId: newId) } }
+            if let newId {
+                Task {
+                    await photos.restorePendingCaptures(userId: newId)
+                    await photos.restoreFailedUploads(userId: newId)
+                }
+            }
             // Signing in does not prompt iOS for a new APNs token, so this device would stay
             // registered to whoever was signed in last. Re-asking here too (not just once at
             // launch, in the `.task` above) covers the race where the account resolves before the

@@ -63,6 +63,11 @@ final class PhotoService {
     /// Disk backing for `failedUploads`. Without it, quitting the app destroys unsent captures,
     /// and a capture is the one thing here that cannot be reproduced.
     var failedUploadStore = FailedUploadStore()
+    /// Raw captures on disk from the moment the shutter fires; see `CaptureQueueStore`.
+    var captureQueueStore = CaptureQueueStore()
+    /// Shots saved on this phone that have not reached the server yet (queued or mid-upload),
+    /// for the camera's status pill. Failed uploads are counted separately in `failedUploads`.
+    var pendingCaptureCount = 0
 
     var hasFailedUploads: Bool { !failedUploads.isEmpty }
 
@@ -155,10 +160,25 @@ final class PhotoService {
     func enqueueCapture(rawData: Data, stock: FilmStock, userId: UUID, rollId: UUID?,
                         knownRevealAt: Date? = nil,
                         previewAspect: CGFloat? = nil,
+                        capturedAt: Date = .now,
+                        photoId: UUID = UUID(),
+                        alreadyQueued: Bool = false,
                         onFinish: @escaping (Photo) async -> Void) {
+        // To disk first (1.5.3): the raw bytes and the facts needed to redo this shot, written
+        // before it waits its turn behind earlier shots. A kill while it is in line no longer
+        // loses it; `restorePendingCaptures` replays it on the next launch with this capture
+        // time. `alreadyQueued` is that replay, whose files are already there.
+        let meta = PendingCapture(id: photoId, userId: userId, rollId: rollId, capturedAt: capturedAt,
+                                  stockId: stock.id, knownRevealAt: knownRevealAt)
+        let queueStore = captureQueueStore
+        let saved: Task<Bool, Never> = Task.detached(priority: .userInitiated) {
+            alreadyQueued ? true : await queueStore.save(meta, raw: rawData)
+        }
+        pendingCaptureCount += 1
         let previous = pipeline
         pipeline = Task {
             let queuedAt = ContinuousClock.now
+            _ = await saved.value
             await previous?.value
 
             // Timed in three parts, because "a photo takes a while to appear" has three possible
@@ -181,7 +201,9 @@ final class PhotoService {
             let filteredAt = ContinuousClock.now
 
             let photo = await captureAndUpload(imageData: processed, userId: userId, rollId: rollId,
-                                               gradedImage: graded, knownRevealAt: knownRevealAt)
+                                               gradedImage: graded, knownRevealAt: knownRevealAt,
+                                               queued: meta)
+            pendingCaptureCount = max(0, pendingCaptureCount - 1)
             let finishedAt = ContinuousClock.now
 
             let waited = Self.seconds(queuedAt.duration(to: startedAt))
@@ -304,7 +326,8 @@ final class PhotoService {
     func captureAndUpload(imageData: Data, userId: UUID, rollId: UUID?,
                           retryOf pending: FailedUpload? = nil,
                           gradedImage: CGImage? = nil,
-                          knownRevealAt: Date? = nil) async -> Photo? {
+                          knownRevealAt: Date? = nil,
+                          queued: PendingCapture? = nil) async -> Photo? {
         // A capture makes two round trips (storage upload, then the row insert) before inserting
         // into the shared list. Same class as createRoll: an INSERT of new content, so a
         // completion that outlives its account would splice the departing account's photo into
@@ -312,7 +335,7 @@ final class PhotoService {
         let epoch = AccountEpoch.current
         await MainActor.run { isUploading = true; uploadError = nil }
 
-        let photoId = pending?.photoId ?? UUID()
+        let photoId = pending?.photoId ?? queued?.id ?? UUID()
         // Sniffed from the actual bytes, not assumed. Every rendition we produce is JPEG today
         // (`InstantFilmProcessor.EncodeSpec` records why), so this reads .jpeg in practice, but
         // this is the one place the pipeline's output and the untouched-capture fallback
@@ -324,7 +347,7 @@ final class PhotoService {
         let path = pending?.storagePath
             ?? "\(userId.uuidString.lowercased())/\(photoId.uuidString.lowercased()).\(format.pathExtension)"
         let developsAt = await developDate(forRoll: rollId, knownRevealAt: knownRevealAt)
-        let capturedAt = pending?.capturedAt ?? .now
+        let capturedAt = pending?.capturedAt ?? queued?.capturedAt ?? .now
 
         // Burst analysis: only for a FRESH capture (`pending == nil`). A retry reuses whatever
         // THIS capture already computed the first time (`pending.burstGroup`/`.sharpness`), never
@@ -461,7 +484,7 @@ final class PhotoService {
 
             // The row exists now, under whichever account captured it, independent of whether
             // that account is still the current one below.
-            await failedUploadStore.remove(id: photoId, userId: userId)
+            await clearPersistedCopies(photoId: photoId, userId: userId)
             // Seeds the raw-bytes cache with the master JPEG under its OWN storage path, the same
             // key `DiskImageCache.loadRaw`/`saveRaw` use everywhere else. Unconditional, not gated
             // on the camera-roll auto-save toggle: this cache backs every existing share/save path
@@ -560,7 +583,7 @@ final class PhotoService {
             let rowExists: Bool? = await Self.photoRowExists(photoId, supabase: supabase)
             if rowExists == true, let landed: Photo = try? await supabase
                 .from("photos").select().eq("id", value: photoId.uuidString).single().execute().value {
-                await failedUploadStore.remove(id: photoId, userId: userId)
+                await clearPersistedCopies(photoId: photoId, userId: userId)
                 DiskImageCache.saveRaw(imageData, path: path)
                 await MainActor.run {
                     guard AccountEpoch.isCurrent(epoch) else { return }
@@ -631,7 +654,7 @@ final class PhotoService {
 
             // The row exists now, independent of whether this account is still the current one
             // below, same reasoning as the ordinary success path above.
-            await failedUploadStore.remove(id: photoId, userId: userId)
+            await clearPersistedCopies(photoId: photoId, userId: userId)
             // Same reasoning as the ordinary success path: a fresh pair's second frame can only
             // ever reach ONE insert (this one, since the roll-developed refusal means it's the
             // only insert that lands), so this is the sole place this fallback needs to fire it.
@@ -747,6 +770,35 @@ final class PhotoService {
                 : "\(message) This one is only held until you close \(AppInfo.appName)."
             failedUploads.append(record)
             isUploading = false
+        }
+        // Hand-off: the processed copy is now the durable one, so the raw queue entry can go.
+        // If persisting it failed, the raw entry stays and the next launch replays it.
+        if persisted { await captureQueueStore.remove(id: record.id, userId: record.userId) }
+    }
+
+    /// The row is on the server: nothing on disk needs to remember this shot any more.
+    private func clearPersistedCopies(photoId: UUID, userId: UUID) async {
+        await failedUploadStore.remove(id: photoId, userId: userId)
+        await captureQueueStore.remove(id: photoId, userId: userId)
+    }
+
+    /// Replays every raw capture still on disk for this account through the pipeline, oldest
+    /// shutter first, with its original capture time and roll. Called on launch and sign-in,
+    /// before `restoreFailedUploads`, since a shot can only be in one of the two stores.
+    func restorePendingCaptures(userId: UUID) async {
+        let store = captureQueueStore
+        let entries = await Task.detached(priority: .utility) { () -> [(meta: PendingCapture, raw: Data)] in
+            await store.prune(userId: userId)
+            return await store.load(userId: userId)
+        }.value
+        guard !entries.isEmpty else { return }
+        Self.captureLog.info("replaying \(entries.count, privacy: .public) capture(s) saved on this phone")
+        for entry in entries {
+            enqueueCapture(rawData: entry.raw, stock: FilmStock.stock(id: entry.meta.stockId),
+                           userId: userId, rollId: entry.meta.rollId,
+                           knownRevealAt: entry.meta.knownRevealAt,
+                           capturedAt: entry.meta.capturedAt, photoId: entry.meta.id,
+                           alreadyQueued: true) { _ in }
         }
     }
 

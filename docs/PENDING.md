@@ -349,6 +349,18 @@ The four from the audit the owner picked on 2026-09-10: the durable capture queu
 capture status, one invitation journey (a roll code admits you), deletion order, and the photo
 write boundary. In that order of value; built in the order of size.
 
+### done 2026-09-10: the shot is on disk before it waits its turn (audit item 2)
+
+`CaptureQueueStore`: the raw bytes plus capture time, roll, look and known reveal time are
+written the instant the shutter fires, before the shot queues behind earlier ones for grading
+and upload. An entry leaves only when the row is on the server or the processed copy has been
+handed to `FailedUploadStore`. On launch and sign-in, `restorePendingCaptures` replays anything
+left, oldest shutter first, with its original time and roll, before the failed-upload restore.
+Bytes are written before the sidecar, so a crash between the two is pruned rather than replayed
+as a half shot. The camera pill reads "Saving N" once more than one shot is in line. Store tests
+cover ordering, per-account isolation and pruning. Owner check: airplane mode, five quick shots,
+force quit, reopen; all five should upload with their original times.
+
 ### done 2026-09-10: photo and post writes end at the boundary (audit items 4 and 5)
 
 Migration `2026-09-11_write_boundary.sql`, APPLIED to production (it only removes what the app
