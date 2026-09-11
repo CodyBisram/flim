@@ -135,10 +135,14 @@ without either word appearing here.
 Two rules if this is edited again: never repeat a word across name, subtitle and keywords, and do
 not add plurals of words already present. Apple handles both.
 
-## What's New (version 1.5.2), drafted 2026-09-10, rewritten from the 347..head diff
+## RELEASED: 1.5.2 went live 2026-09-11 (build 365, 7404f4c)
 
-Release candidate: the first build after 7404f4c (the inline chapter player). Version is already
-1.5.2 on both targets. After Ready for Sale: `update app_release_gate set latest_version = '1.5.2';`
+The train is closed. `MARKETING_VERSION` is 1.5.3 on both targets as of the commit that records
+this, so the next CI upload starts the 1.5.3 train; `app_release_gate.latest_version` was set to
+1.5.2 the same day, which arms the update nudge for everyone still on 1.5.1.
+
+## What's New (version 1.5.2), as shipped
+
 Thirty-six commits since 347; the copy below covers the eleven a person can see.
 
 > **PASTE ONLY THE INDENTED BLOCK BELOW.** Everything under "Ship notes" is internal.

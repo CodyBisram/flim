@@ -343,7 +343,10 @@ sits at the top of the screen. Contacts matching deliberately parked (no phone n
 email match rate, a new permission); no Twilio needed for anything here. `DiscoverRanking` is
 pure and tested.
 
-## 1.5.3 (branch train/1.5.3, not on main until 1.5.2 is released)
+## 1.5.3
+
+1.5.2 went live 2026-09-11 on build 365; the branch below merged to main the same day and the
+1.5.3 train opened.
 
 The four from the audit the owner picked on 2026-09-10: the durable capture queue with visible
 capture status, one invitation journey (a roll code admits you), deletion order, and the photo
