@@ -284,10 +284,10 @@ untouched and stay immutable. Migration `2026-09-08_founding_100_people_only.sql
 (2) `invite_campaigns`: time-boxed cohort codes attributed to a member, never drawing on that
 member's own quota. `redeem_invite` tries a personal code first, then a live campaign code;
 `invite_preview` names the campaign's inviter the same way, so the first-run flow follows them.
-`SEPT11` is live for the whole of 2026-09-11 in New York, unlimited uses, attributed to the
-owner; the owner's own personal code is untouched and keeps working after. Migrations
-`2026-09-08_invite_campaigns.sql` and `2026-09-09_sept11_cohort.sql` (the day moved from the 10th
-on 2026-09-09, before the window opened). Add another cohort with one INSERT into `invite_campaigns`.
+`FLIMGO` is live from 2026-09-11 00:00 through 2026-09-12 23:59 in New York, unlimited uses,
+attributed to the owner; the owner's own personal code is untouched and keeps working after.
+Migrations `2026-09-08_invite_campaigns.sql`, `2026-09-09_sept11_cohort.sql` and
+`2026-09-11_flimgo_cohort.sql` (SEPT10, then SEPT11, then a code that is not a date). Add another cohort with one INSERT into `invite_campaigns`.
 
 ### done 2026-09-10: the export sheet bounced on the owner's phone (chapters only)
 
