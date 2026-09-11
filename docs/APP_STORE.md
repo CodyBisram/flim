@@ -62,20 +62,21 @@ Both fields are metadata, editable on any submission, so this costs nothing to d
 
 ## Description
 
-> **PASTE THE BLOCK BELOW.** Paragraphs are single unwrapped lines on purpose; App Store Connect
-> keeps your line breaks exactly as pasted, so hard-wrapping here produces a ragged listing.
+Updated 2026-09-10 for 1.5.2 (the store still carries the 1.2-era text with no Chapters). 4000 char max.
+
+> **PASTE ONLY THE INDENTED BLOCK BELOW.**
 
     FLIM is a disposable camera for your closest friends.
 
     Point, shoot, and let it develop, just like the real thing. Personal shots land in your Darkroom right away. Shots into a shared roll stay hidden until the whole roll reveals at once, twelve hours after it started. Nobody sees them early, not even the person who took them. The waiting is what makes the reveal worth showing up for.
 
-    Real film feel. Every photo gets FLIM's film look baked in at capture: warm color, grain through the midtones where film puts it, and the soft red glow real film gives a bright window or a streetlight. No filters. No sliders. One look, applied the moment you shoot, the same for everyone.
+    Real film feel. Every photo gets FLIM's film look baked in at capture: warm color, fine grain where film puts it, and the soft red glow real film gives a bright window or a streetlight. No filters. No sliders. One look, applied the moment you shoot, the same for everyone. Share a photo and it goes out with the orange date stamp burned in, as a print, a story, or the full frame.
 
-    Rolls for your people. Start a shared roll with up to 50 friends and shoot into it together. Everyone's photos land in the same place, and the whole roll develops at once. Trips, parties, nights out, all revealed together. Watch a roll fill up as its reveal gets closer, with a countdown on your lock screen, then play it back one shot at a time. Join with an invite code, comment on each other's photos, react with emojis.
+    Rolls for your people. Start a shared roll with up to 50 friends and shoot into it together. Everyone's photos land in the same place, and the whole roll develops at once. Trips, parties, nights out, all revealed together. Watch a roll fill up as its reveal gets closer, with a countdown on your lock screen, then play it back one shot at a time. Near-identical shots stack, a frame that came out black or blurred is marked so the call is yours, and once you have watched a reveal it stays watched on any phone you sign into. Join with an invite code, comment on each other's photos, react with emojis.
 
     Chapters. On the first of every month, the month you shared arrives on your page as a cover. It plays like a reveal, fifteen frames picked on your phone, and ends on the month in numbers: your most reacted shot, your biggest fan, the hour you shoot at. You decide which numbers other people see. Every past month is already there, and any month can be shared as a contact sheet.
 
-    A feed that's yours. Follow friends, see what they post, react and comment. Mention someone with @ to bring them into it. FLIM is invite-only, so everyone you see is someone a friend chose to let in. No public like counts. No algorithm deciding what you look at. No strangers.
+    A feed that's yours. Follow friends, see what they post, react and comment. Mention someone with @ to bring them into it. FLIM is invite-only, so everyone you see is someone a friend chose to let in. The friend who invited you is named before you join, and you follow them from the start. Find friends by who you already know: people who follow you, people in your rolls, the people your inviter brought in. No public like counts. No algorithm deciding what you look at. No strangers.
 
     FEATURES
     • One film look, applied at capture, no post-processing
@@ -83,7 +84,8 @@ Both fields are metadata, editable on any submission, so this costs nothing to d
     • Shared rolls with up to 50 members, joined by invite code
     • A reveal that plays your roll back one shot at a time, with a lock screen countdown
     • Chapters: every month you shared, as a playable recap with the month in numbers
-    • A private feed from the people you follow
+    • Exports with the date stamp burned in: print, story, or full frame
+    • A private feed from the people you follow, and friend suggestions that say why
     • Reactions, comments, and @mentions on photos and posts
     • Photo tagging you can edit any time, and you can untag yourself from anything
     • Blocking and reporting, reviewed within 24 hours
