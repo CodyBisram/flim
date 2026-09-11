@@ -138,6 +138,7 @@ final class PhotoService {
         failedUploads = []
         uploadError = nil
         isUploading = false
+        pendingCaptureCount = 0   // queued shots belong to the previous account; see enqueueCapture
         isLoading = false
         suggestedEmojiByPhoto = [:]
         emojiBackfillAttempted = []
@@ -174,12 +175,21 @@ final class PhotoService {
         let saved: Task<Bool, Never> = Task.detached(priority: .userInitiated) {
             alreadyQueued ? true : await queueStore.save(meta, raw: rawData)
         }
+        // The account that owns this shot, fixed NOW, before the shot waits its turn. A queued
+        // shot from account A must never run under account B: it would fail B's storage
+        // authorization and then land A's image bytes in B's retry list. The files stay on disk
+        // under A's folder and replay when A signs back in (`restorePendingCaptures`).
+        let epoch = AccountEpoch.current
         pendingCaptureCount += 1
         let previous = pipeline
         pipeline = Task {
             let queuedAt = ContinuousClock.now
             _ = await saved.value
             await previous?.value
+            guard AccountEpoch.isCurrent(epoch) else {
+                Self.captureLog.info("capture left in the queue on disk: the account changed while it waited")
+                return
+            }
 
             // Timed in three parts, because "a photo takes a while to appear" has three possible
             // causes with three different fixes, and guessing between them is how you optimise
@@ -200,9 +210,11 @@ final class PhotoService {
             #endif
             let filteredAt = ContinuousClock.now
 
+            guard AccountEpoch.isCurrent(epoch) else { return }
             let photo = await captureAndUpload(imageData: processed, userId: userId, rollId: rollId,
                                                gradedImage: graded, knownRevealAt: knownRevealAt,
-                                               queued: meta)
+                                               queued: meta, epoch: epoch)
+            guard AccountEpoch.isCurrent(epoch) else { return }
             pendingCaptureCount = max(0, pendingCaptureCount - 1)
             let finishedAt = ContinuousClock.now
 
@@ -327,12 +339,14 @@ final class PhotoService {
                           retryOf pending: FailedUpload? = nil,
                           gradedImage: CGImage? = nil,
                           knownRevealAt: Date? = nil,
-                          queued: PendingCapture? = nil) async -> Photo? {
+                          queued: PendingCapture? = nil,
+                          epoch: Int? = nil) async -> Photo? {
         // A capture makes two round trips (storage upload, then the row insert) before inserting
         // into the shared list. Same class as createRoll: an INSERT of new content, so a
         // completion that outlives its account would splice the departing account's photo into
         // the new account's Darkroom grid.
-        let epoch = AccountEpoch.current
+        // The caller's epoch when it queued the shot (see `enqueueCapture`), else now.
+        let epoch = epoch ?? AccountEpoch.current
         await MainActor.run { isUploading = true; uploadError = nil }
 
         let photoId = pending?.photoId ?? queued?.id ?? UUID()
@@ -786,12 +800,14 @@ final class PhotoService {
     /// shutter first, with its original capture time and roll. Called on launch and sign-in,
     /// before `restoreFailedUploads`, since a shot can only be in one of the two stores.
     func restorePendingCaptures(userId: UUID) async {
+        let epoch = AccountEpoch.current
         let store = captureQueueStore
         let entries = await Task.detached(priority: .utility) { () -> [(meta: PendingCapture, raw: Data)] in
             await store.prune(userId: userId)
             return await store.load(userId: userId)
         }.value
-        guard !entries.isEmpty else { return }
+        // The account may have changed while the disk was read; those files are not ours now.
+        guard AccountEpoch.isCurrent(epoch), !entries.isEmpty else { return }
         Self.captureLog.info("replaying \(entries.count, privacy: .public) capture(s) saved on this phone")
         for entry in entries {
             enqueueCapture(rawData: entry.raw, stock: FilmStock.stock(id: entry.meta.stockId),
@@ -1446,28 +1462,9 @@ final class PhotoService {
     /// (a swipe, an undo toast) knows not to treat a failure as a completed delete.
     @discardableResult
     func deletePhoto(_ photo: Photo) async -> Bool {
-        do {
-            try await supabase.storage.from("photos").remove(paths: photo.allStoragePaths)
-        } catch {
-            await reportDeleteFailure(error, context: "storage remove")
-            return false
-        }
-        do {
-            try await supabase
-                .from("photos")
-                .delete()
-                .eq("id", value: photo.id.uuidString)
-                .execute()
-            await MainActor.run {
-                loadedPhotos.removeAll { $0.id == photo.id }
-                // Trashing from the sort deck lowers the tile's count exactly as sorting does.
-                WidgetSync.refresh()
-            }
-            return true
-        } catch {
-            await reportDeleteFailure(error, context: "row delete")
-            return false
-        }
+        // One protocol for single and batch deletes: the row first, then the bytes best-effort,
+        // with `sweep-orphaned-storage` as the backstop. See `deletePhotos`.
+        await deletePhotos([photo])
     }
 
     /// Shared tail of a failed delete (single or batch). Nothing about the delete actually

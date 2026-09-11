@@ -352,6 +352,20 @@ The four from the audit the owner picked on 2026-09-10: the durable capture queu
 capture status, one invitation journey (a roll code admits you), deletion order, and the photo
 write boundary. In that order of value; built in the order of size.
 
+### done 2026-09-11, evening: audit 2 findings 3, 4, 5, 16 and the empty-state invite
+
+- Single-photo delete now goes through the batch path: row first, bytes best-effort (finding 3).
+- Account deletion requires the photo-row delete to succeed before touching a byte (it used to
+  `try?` and fall through), and the folder loop is bounded to twenty pages and stops on the first
+  failed removal; the sweeper takes the rest (finding 4).
+- A queued capture is bound to the account that pressed the shutter: the epoch is taken in
+  `enqueueCapture` before the wait, checked before grading and before upload, and passed into
+  `captureAndUpload`; a shot whose account changed stays on disk under its owner's folder and
+  replays when they sign back in. `restorePendingCaptures` rechecks the account after the disk
+  read; `resetForAccountChange` zeroes the pending count (finding 5).
+- Follow-up invite cards render above the Rolls empty state too (no rolls of your own).
+- `Roll.followUpName` uses checked arithmetic and respects the 60-character server limit (16).
+
 ### done 2026-09-11, evening: HOTFIX for the write boundary (audit 2 finding 1)
 
 The write-boundary migration granted clients UPDATE on `photos.is_sorted` only. The shipped

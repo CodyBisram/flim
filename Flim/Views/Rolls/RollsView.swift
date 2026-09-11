@@ -93,7 +93,16 @@ struct RollsView: View {
                     } else if let error = loadError, rolls.rolls.isEmpty {
                         ErrorState(message: error) { await load() }
                     } else if rolls.rolls.isEmpty {
-                        emptyState
+                        // An invitation to a follow-up roll must show even with no rolls of your
+                        // own (the old roll was deleted, or you left it after the follow-up began).
+                        ScrollView {
+                            VStack(spacing: 0) {
+                                ForEach(rolls.followUpInvites) { invited in
+                                    invitedCard(invited)
+                                }
+                                emptyState
+                            }
+                        }
                     } else {
                         rollsScroll
                     }

@@ -114,10 +114,14 @@ extension Roll {
     /// "Orlando, day 2" becomes "Orlando, day 3". Only a suggestion; the person can type anything.
     static func followUpName(after name: String) -> String {
         let trimmed = name.trimmingCharacters(in: .whitespaces)
+        let suggested: String
         if let range = trimmed.range(of: #", day (\d+)$"#, options: .regularExpression),
-           let n = Int(trimmed[range].filter(\.isNumber)) {
-            return trimmed[..<range.lowerBound] + ", day \(n + 1)"
+           let n = Int(trimmed[range].filter(\.isNumber)), n < Int.max {
+            suggested = trimmed[..<range.lowerBound] + ", day \(n + 1)"
+        } else {
+            suggested = trimmed.isEmpty ? "Day 2" : trimmed + ", day 2"
         }
-        return trimmed.isEmpty ? "Day 2" : trimmed + ", day 2"
+        // The server refuses names over 60 characters; a long parent name gets a shorter suggestion.
+        return suggested.count <= 60 ? suggested : String(suggested.prefix(60))
     }
 }

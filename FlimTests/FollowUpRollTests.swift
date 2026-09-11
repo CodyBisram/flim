@@ -34,3 +34,11 @@ struct FollowUpRollTests {
         #expect(bare.parentRollId == nil)
     }
 }
+
+struct FollowUpRollNameEdgeTests {
+    @Test func theSuggestionNeverOverflowsOrExceedsTheServerLimit() {
+        #expect(Roll.followUpName(after: "x, day \(Int.max)").hasPrefix("x, day"))   // no trap
+        let long = String(repeating: "a", count: 60)
+        #expect(Roll.followUpName(after: long).count <= 60)
+    }
+}

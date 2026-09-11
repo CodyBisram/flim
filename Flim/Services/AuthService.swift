@@ -749,16 +749,21 @@ final class AuthService {
         // nothing can read or restore a photograph whose objects are about to be removed. Then the
         // folder, best-effort; anything left is an orphan for `sweep-orphaned-storage`. Then the
         // account itself.
-        if let session = try? await supabase.auth.session {
-            let uid = session.user.id.uuidString.lowercased()
-            _ = try? await supabase.from("photos").delete().eq("user_id", value: session.user.id.uuidString).execute()
-            while true {
-                guard let objects = try? await supabase.storage.from("photos")
-                    .list(path: uid, options: SearchOptions(limit: 1000)), !objects.isEmpty else { break }
-                _ = try? await supabase.storage.from("photos")
-                    .remove(paths: objects.map { "\(uid)/\($0.name)" })
-                if objects.count < 1000 { break }
-            }
+        let session = try await supabase.auth.session
+        let uid = session.user.id.uuidString.lowercased()
+        // The rows must be gone before any byte is; if this throws, nothing has been removed and
+        // the person sees the error and can try again. (The old `try?` here let a failed row
+        // delete fall through to the object removal, which is exactly the order this exists to
+        // prevent.)
+        try await supabase.from("photos").delete().eq("user_id", value: session.user.id.uuidString).execute()
+        // The folder, best-effort and bounded: a page that will not delete must not loop
+        // forever between us and `delete_account`. Anything left is an orphan for the sweeper.
+        for _ in 0..<20 {
+            guard let objects = try? await supabase.storage.from("photos")
+                .list(path: uid, options: SearchOptions(limit: 1000)), !objects.isEmpty else { break }
+            let removed = (try? await supabase.storage.from("photos")
+                .remove(paths: objects.map { "\(uid)/\($0.name)" })) != nil
+            if !removed || objects.count < 1000 { break }
         }
 
         try await supabase.rpc("delete_account").execute()
