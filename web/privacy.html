@@ -59,13 +59,14 @@
     <h2>What we collect</h2>
     <ul>
       <li><strong>Email address</strong>, used only to sign you in and gate invite access. We do not email you marketing.</li>
-      <li><strong>Profile</strong>, meaning the username, display name, bio, and profile/cover photos you choose. These are shown to other users.</li>
-      <li><strong>Photos you take</strong>, stored so they can develop and appear in your Darkroom, in rolls you share them to, and on your feed if you publish them.</li>
-      <li><strong>Social activity</strong>, meaning the posts you publish, comments and emoji reactions you make, who you follow, and the rolls you create or join.</li>
+      <li><strong>Who invited you</strong>, meaning which member's code, roll code, or public code let you in. It is what makes you follow that person from the start and what Find friends uses to suggest the people they brought in. Anyone you invite is recorded against you the same way.</li>
+      <li><strong>Profile</strong>, meaning the username, display name, bio, accent colour, and profile/cover photos you choose, plus your signup number and any badges you have earned. These are shown to other users, except the colour, which is only yours.</li>
+      <li><strong>Photos you take</strong>, stored so they can develop and appear in your Darkroom, in rolls you share them to, and on your feed if you publish them. Each photo also carries a few numbers worked out on your phone at the moment you shoot: a sharpness and quality score, a small numeric fingerprint used to group near-identical shots, and whether the frame came out black or blurred. Nothing about a photo is analysed anywhere but on your phone, and the numbers say nothing about what is in the picture.</li>
+      <li><strong>Social activity</strong>, meaning the posts you publish, comments and emoji reactions you make, who you follow, the rolls you create or join, which reveals you have watched, and invitations to follow-up rolls that you accept or dismiss.</li>
       <li><strong>Safety data</strong>, meaning users you block and any content or accounts you report, so we can review them.</li>
-      <li><strong>A device push token</strong> <em>(only if you enable notifications)</em>, used to tell you when your roll develops and when friends react to or comment on your posts. Very occasionally we may also send a nudge about your own account, like frames still waiting in your darkroom. Never marketing, and never about anyone else's activity beyond what is listed here.</li>
+      <li><strong>A device push token</strong> <em>(only if you enable notifications)</em>, used to tell you when your roll develops, when friends react to or comment on your posts, when someone follows you or starts another roll with your group, and once a day to round up what your friends posted. Occasionally we may also send a nudge about your own account, like frames still waiting in your darkroom, or a note from us to everyone or to a group, such as a thank-you. Never marketing.</li>
       <li><strong>What you write when you send feedback</strong>, along with your app version, build number, iOS version and device model, so we can reproduce what you are describing.</li>
-      <li><strong>Crash reports</strong>, meaning the technical record iOS produces if FLIM crashes on your device (where in the code it failed, your app version and device model), so we can fix it. These never include your photos or anything you wrote.</li>
+      <li><strong>Crash and diagnostic reports</strong>, meaning the technical record iOS produces if FLIM crashes or hangs on your device (where in the code it failed, your app version and device model), and, while we are chasing a specific bug, a short trail of which steps of one screen ran and how much memory was free at each. These never include your photos or anything you wrote, and the trails are removed once the bug is found.</li>
       <li><strong>A short list of firsts</strong>, meaning the first time you launch the app, finish onboarding, allow camera access, reach a working camera, press the shutter, take a shot, create or join a roll, send or redeem an invite, share a post, watch a reveal, and whether you allowed or declined notifications when asked. One record per person per event, tied to your account, kept in our own database. It exists so we can tell which parts of FLIM people actually reach, rather than guessing.</li>
       <li><strong>Day counts of a few actions</strong>, meaning that on a given day you opened the app, took some number of photos, or shared some number of posts. A count per day, nothing more: never the time of day, never which photos, and never what was in them. Together with the firsts above, this is the whole of our analytics. No analytics company is involved and nothing is shared with one.</li>
     </ul>
@@ -77,7 +78,7 @@
       <li><strong>No cookies and no identifiers.</strong> Nothing is stored on your device, and you are not followed from one visit to the next, or from this site to any other.</li>
       <li><strong>What is recorded</strong> for a page view: which page, the site that linked you here, any campaign tag in the link, your country, whether you are on a phone, tablet or desktop, and your browser and operating system.</li>
       <li><strong>Country is the most precise location we ever see.</strong> It is worked out at our host's edge network. We are never shown your city, your region, or your IP address.</li>
-      <li><strong>Invite codes are removed before anything is sent.</strong> If you arrived on a personal invite link, we record that an invite link was opened, never which one.</li>
+      <li><strong>Invite codes are removed before anything is sent.</strong> If you arrived on a personal or roll invite link, we record that an invite link was opened, never which one.</li>
       <li><strong>None of it is joined to your account.</strong> Site measurement and app data are kept apart, and we cannot tell that a visitor here and a user in the app are the same person.</li>
     </ul>
 
@@ -91,15 +92,18 @@
     <ul>
       <li><strong>Personal photos</strong> in your Darkroom are visible only to you.</li>
       <li><strong>Photos in a shared roll</strong> are visible to that roll's members (a roll holds up to 50 people).</li>
-      <li><strong>Photos you publish to your feed</strong> are visible to your followers.</li>
+      <li><strong>Photos you publish</strong> are visible to other FLIM members: in the feed of everyone who follows you, and on your page to any member who opens it. FLIM is invite-only, so every member was let in by someone, but a post is not limited to your followers. Anyone you block, and anyone who blocks you, sees nothing of yours.</li>
+      <li><strong>Only your own photographs can be exported</strong> out of FLIM. Another member's photograph can be reacted to, commented on, and, from a shared roll, posted to the feed, but it cannot be saved or shared out from your phone.</li>
+      <li><strong>Find friends</strong> suggests people from signals already listed here: who follows you, who shares a roll with you, who invited you and who they invited, and who your friends follow. Nothing is read from your contacts.</li>
       <li>Your page shows a chapter for each month you posted. A chapter is built only from what you already shared, and the monthly numbers it ends on are shown to other people only if you choose to show them. Badges you have earned also show on your page.</li>
     </ul>
     <p>We don't share your data with anyone else except our infrastructure providers, <strong>Supabase</strong> (backend and storage), <strong>Apple Push Notification service</strong> (notifications, only if enabled), and <strong>Vercel</strong> (website hosting and the site measurement described above, which never touches your account or your photos), as needed to operate the app.</p>
 
     <h2>Your controls</h2>
     <ul>
-      <li><strong>Delete a photo</strong> at any time from the full-screen view; <strong>delete a post</strong> to remove it from your feed.</li>
-      <li><strong>Block</strong> or <strong>report</strong> a user or a photo; <strong>leave a roll</strong>, or (as its creator) remove a member.</li>
+      <li><strong>Delete a photo</strong> at any time from the full-screen view; <strong>delete a post</strong> to remove it from your feed. Deleting removes the record first and the image files right after; a file that fails to delete is swept up automatically.</li>
+      <li><strong>Photos that have not finished uploading</strong> exist only on your phone until they do. FLIM keeps them and retries on its own; deleting the app before then deletes them too.</li>
+      <li><strong>Block</strong> or <strong>report</strong> a user or a photo; <strong>leave a roll</strong>, or (as its creator) remove a member. An invitation to a follow-up roll can be dismissed, and dismissing it is invisible to everyone else.</li>
       <li><strong>Turn notifications on or off</strong> from your Profile, or in iOS Settings.</li>
       <li><strong>Delete your account</strong> from Profile → Delete Account. This permanently removes your account, photos, posts, rolls, and reports, and cannot be undone.</li>
     </ul>
