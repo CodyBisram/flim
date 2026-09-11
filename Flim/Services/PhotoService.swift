@@ -1437,23 +1437,27 @@ final class PhotoService {
     func deletePhotos(_ toDelete: [Photo]) async -> Bool {
         guard !toDelete.isEmpty else { return true }
         let ids = toDelete.map(\.id.uuidString)
-        do {
-            try await supabase.storage.from("photos").remove(paths: toDelete.flatMap(\.allStoragePaths))
-        } catch {
-            await reportDeleteFailure(error, context: "batch storage remove")
-            return false
-        }
+        // Row first, bytes second (1.5.3, audit item 3). The old order removed the objects and
+        // then deleted the row; if the row delete failed, the app restored a photograph whose
+        // bytes were already gone. Now the row is the record of intent: once it is gone the
+        // photo is gone from every read, and the objects are removed best-effort. A failure
+        // there leaves orphaned bytes, which `sweep-orphaned-storage` exists to reconcile.
         do {
             try await supabase.from("photos").delete().in("id", values: ids).execute()
-            await MainActor.run {
-                loadedPhotos.removeAll { ids.contains($0.id.uuidString) }
-                WidgetSync.refresh()
-            }
-            return true
         } catch {
             await reportDeleteFailure(error, context: "batch row delete")
             return false
         }
+        await MainActor.run {
+            loadedPhotos.removeAll { ids.contains($0.id.uuidString) }
+            WidgetSync.refresh()
+        }
+        do {
+            try await supabase.storage.from("photos").remove(paths: toDelete.flatMap(\.allStoragePaths))
+        } catch {
+            Self.errorLog.error("storage remove after row delete failed, sweeper will reconcile: \(String(describing: error), privacy: .public)")
+        }
+        return true
     }
 
     /// One-time test reset: removes EVERY Storage object in your folder (photos, thumbs, avatar,
@@ -1461,7 +1465,8 @@ final class PhotoService {
     /// resets your egress baseline. Only reachable from a gated Settings button (not public).
     func deleteAllMyData(userId: UUID) async {
         let uid = userId.uuidString.lowercased()
-        // Remove all objects in the user's folder (may be paginated, loop until empty).
+        // Rows first, then the folder (see `deletePhotos`); the sweeper reconciles leftovers.
+        _ = try? await supabase.from("photos").delete().eq("user_id", value: userId.uuidString).execute()
         while true {
             guard let objects = try? await supabase.storage.from("photos")
                 .list(path: uid, options: SearchOptions(limit: 1000)), !objects.isEmpty else { break }
@@ -1469,8 +1474,6 @@ final class PhotoService {
             _ = try? await supabase.storage.from("photos").remove(paths: paths)
             if objects.count < 1000 { break }
         }
-        // Delete photo rows (cascades to posts, reactions, comments).
-        _ = try? await supabase.from("photos").delete().eq("user_id", value: userId.uuidString).execute()
         await MainActor.run { loadedPhotos = []; failedUploads = [] }
     }
 

@@ -743,8 +743,13 @@ final class AuthService {
         // Enumerating the folder cannot drift the way a hand-written column list does: a fourth
         // rendition, or anything else ever written under the user's prefix, is covered without
         // anyone remembering to come back here.
+        // Rows before bytes (1.5.3, audit item 3): the photo rows go first, so from this point
+        // nothing can read or restore a photograph whose objects are about to be removed. Then the
+        // folder, best-effort; anything left is an orphan for `sweep-orphaned-storage`. Then the
+        // account itself.
         if let session = try? await supabase.auth.session {
             let uid = session.user.id.uuidString.lowercased()
+            _ = try? await supabase.from("photos").delete().eq("user_id", value: session.user.id.uuidString).execute()
             while true {
                 guard let objects = try? await supabase.storage.from("photos")
                     .list(path: uid, options: SearchOptions(limit: 1000)), !objects.isEmpty else { break }

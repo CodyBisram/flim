@@ -343,6 +343,32 @@ sits at the top of the screen. Contacts matching deliberately parked (no phone n
 email match rate, a new permission); no Twilio needed for anything here. `DiscoverRanking` is
 pure and tested.
 
+## 1.5.3 (branch train/1.5.3, not on main until 1.5.2 is released)
+
+The four from the audit the owner picked on 2026-09-10: the durable capture queue with visible
+capture status, one invitation journey (a roll code admits you), deletion order, and the photo
+write boundary. In that order of value; built in the order of size.
+
+### done 2026-09-10: photo and post writes end at the boundary (audit items 4 and 5)
+
+Migration `2026-09-11_write_boundary.sql`, APPLIED to production (it only removes what the app
+never did). A roll shot now needs roll membership as well as ownership. Clients may update one
+photo column (`is_sorted`) and one post column (`caption`); hidden, push_sent, roll, develop
+time and every path are the server's. Post paths are copied from the photo row on insert and
+update, and the photo and author cannot be swapped, which closes the hole where any object path
+written into a post became readable by everyone; 101 old posts missing thumbnail or feed paths
+got them back as a side effect. Avatar and cover paths must sit in the account's own folder.
+Verified as an authenticated user in rolled-back transactions: non-member roll insert refused,
+member insert allowed, hidden/roll/develop_at updates refused, is_sorted and caption allowed,
+foreign post paths replaced, foreign avatar path refused.
+
+### done 2026-09-10: rows before bytes (audit item 3)
+
+`PhotoService.deletePhotos`, `deleteAllMyData` and `AuthService.deleteAccount` delete the rows
+first, then remove objects best-effort. The row is the record of intent; a failed object removal
+leaves an orphan for `sweep-orphaned-storage`, which already exists for exactly that. The old
+order could restore a photograph whose bytes were gone.
+
 ### done 2026-09-10: the emoji picker no longer asks the font
 
 Asked to be sure every iOS 26 emoji is in the picker; the owner's phone was missing 🤤 and "a
