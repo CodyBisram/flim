@@ -209,6 +209,7 @@ struct RollDetailView: View {
     @AppStorage("developNotificationsEnabled") private var notificationsEnabled = true
     @State private var vm = DarkroomViewModel()
     @State private var showMembers = false
+    @State private var showFollowUp = false
     @Namespace private var photoNS
     @State private var selectedPhoto: Photo?
     @State private var memberNames: [UUID: String] = [:]   // userId → username, for attribution
@@ -452,6 +453,13 @@ struct RollDetailView: View {
 
                     // Disabled with no reason reads as a broken menu item. A menu can hold a
                     // plain Text, so it says which of the two reasons applies instead.
+                    if roll.isDeveloped {
+                        // Everyone from this roll gets invited, not added: saying no costs
+                        // them nothing and shows nobody anything.
+                        Button { showFollowUp = true } label: {
+                            Label("Start another with this group", systemImage: "plus.square.on.square")
+                        }
+                    }
                     if vm.developedPhotos.isEmpty {
                         Text("Nothing to save until the roll develops")
                     } else {
@@ -719,6 +727,9 @@ struct RollDetailView: View {
         }
         .sheet(isPresented: $showMembers) {
             RollMembersView(roll: roll)
+        }
+        .sheet(isPresented: $showFollowUp) {
+            CreateRollView(followUpOf: roll)
         }
         .sheet(item: $shareItem) { SharePreviewSheet(photo: $0.image, caption: $0.caption) }
         .sheet(isPresented: $showShareAll) {

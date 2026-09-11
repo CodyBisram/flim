@@ -352,6 +352,32 @@ The four from the audit the owner picked on 2026-09-10: the durable capture queu
 capture status, one invitation journey (a roll code admits you), deletion order, and the photo
 write boundary. In that order of value; built in the order of size.
 
+### done 2026-09-11: start another with this group
+
+The owner's pick after the FLIMGO cohort. On a developed roll's menu: "Start another with this
+group" opens the create sheet with the name prefilled ("Orlando" becomes "Orlando, day 2",
+editable) and, on create, `start_follow_up_roll` makes the roll, joins the creator, and INVITES
+every other member of the finished roll (blocked either way excluded). An invite is a row in
+`roll_follow_up_invites`: it shows as an Invited card at the top of the Rolls tab (Join / Not this
+time), sends one push routing to the join sheet with the code filled in (`{t:"join", code}`; muted
+parent roll means card but no push), and is consumed by joining, dismissing, or the roll
+developing. Someone who does nothing is in nothing, and nothing about them changes. Migration
+APPLIED, push function DEPLOYED, `rolls.parent_roll_id` records the lineage. Verified in
+rolled-back transactions as creator and invitee. Metric to watch: second roll from the same group
+within 30 days.
+
+### done 2026-09-11: privacy, terms, and support caught up with the app
+
+The privacy page said posts were visible to followers; they are visible to any member (the
+audit's item 7, still deferred by the owner), so the page now says so. Added: who invited you is
+recorded and used, the on-device capture scores and fingerprint, reveals watched and follow-up
+invites, the push kinds actually sent (follows, digest, follow-up rolls, occasional notes from
+us), hang reports and the temporary diagnostic trail, export is own photographs only, Find friends
+signals, deletion order, unsent photos living on the phone. Terms: dated September, codes admit
+whoever holds them, badges carry no rights, export of others' photographs is not allowed. Support:
+three kinds of code, the sign-in email not arriving, follow-up rolls are invitations, saving a
+friend's photo, what a reinstall brings back. DEPLOYED and verified externally.
+
 ### done 2026-09-10: one invitation journey (the audit's top product item)
 
 A roll's invite code now admits its holder to the app, with the roll's creator as inviter.

@@ -17,11 +17,13 @@ struct RollsView: View {
     /// whichever `RollDetailView` the path pushes. See `RollPhotoIntent`'s own doc.
     var pendingPhotoIntent: Binding<RollPhotoIntent?> = .constant(nil)
     @Environment(AuthService.self) private var auth
+    @Environment(FeedService.self) private var feed
     @Environment(RollService.self) private var rolls
     @Environment(NotificationService.self) private var notifications
     @Environment(PhotoService.self) private var photos
     @State private var showCreate = false
     @State private var showJoin = false
+    @State private var invitedByNames: [UUID: String] = [:]
     /// Signed cover URLs keyed by STORAGE PATH, not by roll id.
     ///
     /// Keyed by roll id, changing a roll's cover left the old URL in place forever: the resolve
@@ -229,6 +231,13 @@ struct RollsView: View {
                     // One sentence, once, for a brand-new account: see NewAccountIntro.
                     FirstVisitLine(surface: .rolls)
                     Color.clear.frame(height: 0).id("rollsTop")
+
+                    // Follow-up invites ("Start another with this group"), above everything: a
+                    // friend started a roll and is waiting to see who is in. Join is one tap,
+                    // "Not this time" is one tap, and either way the card leaves.
+                    ForEach(rolls.followUpInvites) { invited in
+                        invitedCard(invited)
+                    }
 
                     // The whole open-roll region shares ONE clock. The cadence is decided
                     // from the active roll: 1s only near the closing window's seconds form,
@@ -540,6 +549,67 @@ struct RollsView: View {
 
     // MARK: - Nothing open (3c)
 
+    private func invitedCard(_ roll: Roll) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Text(roll.name)
+                    .flimFont(17, weight: .light, relativeTo: .body)
+                    .tracking(0.4)
+                    .foregroundStyle(FlimTheme.textPrimary)
+                Spacer(minLength: 8)
+                Text("Invited")
+                    .flimFont(11, weight: .medium, relativeTo: .caption2)
+                    .foregroundStyle(accent)
+                    .padding(.vertical, 4).padding(.horizontal, 9)
+                    .overlay(Capsule().strokeBorder(accent, lineWidth: 1))
+            }
+            Text("\(invitedByName(roll)) started another roll with your group. It develops \(RollDevelopAskSheet.timeLabel(for: roll.revealAt)).")
+                .flimFont(12.5, relativeTo: .footnote)
+                .foregroundStyle(FlimTheme.textTertiary)
+                .lineSpacing(3)
+            HStack(spacing: 10) {
+                Button {
+                    Haptics.tap()
+                    guard let uid = auth.currentUser?.id else { return }
+                    Task {
+                        if (try? await rolls.joinRoll(inviteCode: roll.inviteCode, userId: uid)) != nil {
+                            Haptics.success()
+                            await load()
+                        } else {
+                            Haptics.error()
+                        }
+                    }
+                } label: {
+                    Text("Join")
+                        .flimFont(14, weight: .semibold, relativeTo: .subheadline)
+                        .foregroundStyle(.black)
+                        .padding(.vertical, 9).padding(.horizontal, 18)
+                        .background(accent, in: Capsule())
+                }
+                .buttonStyle(.plain)
+                Button {
+                    Haptics.tap()
+                    guard let uid = auth.currentUser?.id else { return }
+                    Task { await rolls.dismissFollowUpInvite(roll, userId: uid) }
+                } label: {
+                    Text("Not this time")
+                        .flimFont(14, weight: .medium, relativeTo: .subheadline)
+                        .foregroundStyle(FlimTheme.textSecondary)
+                        .padding(.vertical, 9).padding(.horizontal, 14)
+                }
+                .buttonStyle(.plain)
+                Spacer()
+            }
+            .padding(.top, 2)
+        }
+        .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 10)
+    }
+
+    private func invitedByName(_ roll: Roll) -> String {
+        if let name = invitedByNames[roll.createdBy] { return "@\(name)" }
+        return "A friend"
+    }
+
     private var nothingOpenBlock: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("No roll is open")
@@ -757,6 +827,12 @@ struct RollsView: View {
         do {
             try await rolls.fetchRolls(for: userId)
             loadError = nil
+            await rolls.fetchFollowUpInvites()
+            let creators = Set(rolls.followUpInvites.map(\.createdBy)).subtracting(invitedByNames.keys)
+            if !creators.isEmpty {
+                let profiles = await feed.fetchProfiles(ids: Array(creators))
+                for (id, profile) in profiles { invitedByNames[id] = profile.username ?? "friend" }
+            }
             await resolveCovers()
             mutedRolls = await photos.fetchMutedRolls(userId: userId)
             await refreshFrameCounts(userId: userId)

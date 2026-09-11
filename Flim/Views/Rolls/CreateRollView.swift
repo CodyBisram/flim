@@ -7,6 +7,10 @@ struct CreateRollView: View {
     @Environment(RollService.self) private var rolls
     @Environment(\.dismiss) private var dismiss
 
+    /// "Start another with this group": the finished roll this one follows. Its members get
+    /// invited (not added) by the server; the name below is only a suggestion.
+    var followUpOf: Roll? = nil
+
     @State private var name = ""
     @State private var isCreating = false
     @State private var createdRoll: Roll?
@@ -41,6 +45,9 @@ struct CreateRollView: View {
         }
         .flimSheetSurface()
         .presentationDetents([.medium, .large], selection: $detent)
+        .onAppear {
+            if name.isEmpty, let followUpOf { name = Roll.followUpName(after: followUpOf.name) }
+        }
     }
 
     private var formView: some View {
@@ -91,9 +98,11 @@ struct CreateRollView: View {
                         Text(roll.name)
                             .flimFont(22, weight: .thin, relativeTo: .title3)
                             .foregroundStyle(.white)
-                        Text("Share this code with friends")
+                        Text(followUpOf.map { "Everyone from \($0.name) has been invited. The code works for anyone else." }
+                             ?? "Share this code with friends")
                             .flimFont(14, relativeTo: .subheadline)
                             .foregroundStyle(Color(white: 0.5))
+                            .multilineTextAlignment(.center)
                     }
 
                     Text(roll.inviteCode)
@@ -154,7 +163,12 @@ struct CreateRollView: View {
         isCreating = true
         error = nil
         do {
-            let roll = try await rolls.createRoll(name: name.trimmingCharacters(in: .whitespaces), createdBy: userId)
+            let trimmed = name.trimmingCharacters(in: .whitespaces)
+            let roll = if let followUpOf {
+                try await rolls.startFollowUpRoll(parent: followUpOf, name: trimmed)
+            } else {
+                try await rolls.createRoll(name: trimmed, createdBy: userId)
+            }
             Activation.log(.rollCreated)
             withAnimation(.snappy(duration: 0.3)) {
                 createdRoll = roll

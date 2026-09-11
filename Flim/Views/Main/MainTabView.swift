@@ -469,6 +469,10 @@ struct MainTabView: View {
             rollsPath = NavigationPath()   // land on the tab's root, not whatever detail was pushed
             rollsPathIds = []
 
+        case .joinRoll(let code):
+            selected = 2
+            inviteCode = code   // the same join sheet a roll link opens, code filled in
+
         case .reveal(let rollId, let photoId, let comments):
             selected = 2
             Task {

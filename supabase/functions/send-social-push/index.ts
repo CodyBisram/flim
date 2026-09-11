@@ -137,10 +137,11 @@ async function importPrivateKey(pem: string): Promise<CryptoKey> {
 // builds parse only `t` and `id`, ignore fields they don't recognize, and keep landing on the
 // roll, so this is additive and backward compatible, not a breaking change.
 interface FlimRoute {
-  t: "reveal" | "post" | "profile" | "feed";
+  t: "reveal" | "post" | "profile" | "feed" | "join";
   id?: string;
   photo?: string;
   comments?: true;
+  code?: string;   // "join": the roll's invite code; the app opens the join sheet with it filled in
 }
 
 // Prunes a device token APNs has told us is genuinely dead, so it stops being retried on
@@ -1191,6 +1192,31 @@ Deno.serve(async (req: Request) => {
   //      first report is seen immediately. push_sent is flipped regardless of
   //      whether the owner has a device registered (same as the blocks above);
   //      the migration's daily-check query is the backstop for the no-device case.
+  // Follow-up rolls ("Start another with this group", 1.5.3): one push per invite, to the
+  // members of the finished roll, routing to the join sheet with the code filled in. Someone
+  // who muted the PARENT roll said they wanted quiet from this group, so they get the card in
+  // the Rolls tab but no push. A roll that has already developed is not worth a push either.
+  const { data: followUps } = await supabase
+    .from("roll_follow_up_invites")
+    .select("roll_id, user_id, invited_by, rolls!inner(name, invite_code, parent_roll_id, reveal_at)")
+    .eq("push_sent", false);
+  for (const inv of followUps ?? []) {
+    const roll = inv.rolls as unknown as { name: string; invite_code: string; parent_roll_id: string | null; reveal_at: string };
+    const developed = roll.reveal_at && new Date(roll.reveal_at).getTime() <= Date.now();
+    let muted = false;
+    if (roll.parent_roll_id) {
+      const { data: m } = await supabase.from("roll_notification_mutes").select("user_id")
+        .eq("roll_id", roll.parent_roll_id).eq("user_id", inv.user_id).maybeSingle();
+      muted = !!m;
+    }
+    if (!developed && !muted) {
+      const name = await handle(inv.invited_by);
+      sent += await notify(inv.user_id, inv.invited_by, `${name} started ${roll.name} with your group`,
+        "Tap to join. Or not, and nothing changes.", { t: "join", code: roll.invite_code });
+    }
+    await supabase.from("roll_follow_up_invites").update({ push_sent: true })
+      .eq("roll_id", inv.roll_id).eq("user_id", inv.user_id);
+  }
   const ownerPushTokens = await ownerTokens();
 
   const { data: photoReports } = await supabase

@@ -17,6 +17,8 @@ struct Roll: Codable, Identifiable, Hashable {
     /// computation reads THIS, never re-derives `createdAt + developDelay` on its own, so a roll
     /// whose reveal was extended stays consistent everywhere it's shown.
     let revealAt: Date
+    /// Set when this roll was started from a finished one ("Start another with this group").
+    var parentRollId: UUID? = nil
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -26,6 +28,7 @@ struct Roll: Codable, Identifiable, Hashable {
         case createdAt = "created_at"
         case coverPath = "cover_path"
         case revealAt = "reveal_at"
+        case parentRollId = "parent_roll_id"
     }
 
     // The reveal clock starts when the roll is CREATED (not at the first shot), so everyone
@@ -57,7 +60,7 @@ struct Roll: Codable, Identifiable, Hashable {
     /// before a server round trip's real row comes back. `revealAt` defaults to the fallback
     /// formula (`createdAt + developDelay`) when not given, same as a decode with no column.
     init(id: UUID, name: String, inviteCode: String, createdBy: UUID, createdAt: Date,
-         coverPath: String? = nil, revealAt: Date? = nil) {
+         coverPath: String? = nil, revealAt: Date? = nil, parentRollId: UUID? = nil) {
         self.id = id
         self.name = name
         self.inviteCode = inviteCode
@@ -65,6 +68,7 @@ struct Roll: Codable, Identifiable, Hashable {
         self.createdAt = createdAt
         self.coverPath = coverPath
         self.revealAt = revealAt ?? createdAt.addingTimeInterval(Self.developDelay)
+        self.parentRollId = parentRollId
     }
 
     /// Decoded by hand so a server that hasn't sent `reveal_at` yet (rollout ordering, or simply
@@ -82,6 +86,7 @@ struct Roll: Codable, Identifiable, Hashable {
         coverPath = try container.decodeIfPresent(String.self, forKey: .coverPath)
         revealAt = try container.decodeIfPresent(Date.self, forKey: .revealAt)
             ?? createdAt.addingTimeInterval(Self.developDelay)
+        parentRollId = try container.decodeIfPresent(UUID.self, forKey: .parentRollId)
     }
 
     /// True once the reveal has passed, the roll is closed to new shots.
@@ -101,5 +106,18 @@ struct RollMember: Codable {
         case rollId = "roll_id"
         case userId = "user_id"
         case joinedAt = "joined_at"
+    }
+}
+
+extension Roll {
+    /// The name the create sheet prefills for a follow-up: "Orlando" becomes "Orlando, day 2",
+    /// "Orlando, day 2" becomes "Orlando, day 3". Only a suggestion; the person can type anything.
+    static func followUpName(after name: String) -> String {
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        if let range = trimmed.range(of: #", day (\d+)$"#, options: .regularExpression),
+           let n = Int(trimmed[range].filter(\.isNumber)) {
+            return trimmed[..<range.lowerBound] + ", day \(n + 1)"
+        }
+        return trimmed.isEmpty ? "Day 2" : trimmed + ", day 2"
     }
 }

@@ -57,6 +57,8 @@ enum PushDestination: Codable, Equatable {
     case feed
     /// The Rolls tab. Carries no id: it lands on the tab's own list, not any one roll.
     case rolls
+    /// A follow-up roll invite: open the join sheet with this code filled in.
+    case joinRoll(code: String)
 
     static func parse(userInfo: [AnyHashable: Any]) -> PushDestination? {
         guard let flim = userInfo["flim"] as? [String: Any],
@@ -79,6 +81,9 @@ enum PushDestination: Codable, Equatable {
         case "profile":
             guard let id = uuid(flim["id"]) else { return nil }
             return .profile(userId: id)
+        case "join":
+            guard let raw = flim["code"] as? String, let code = InviteCodeStorage.normalize(raw) else { return nil }
+            return .joinRoll(code: code)
         default:
             // An unrecognized destination, most likely a newer server sending a case this build
             // doesn't know about yet. Falling back is the only safe move: opening nothing is
@@ -144,6 +149,8 @@ enum PushDestination: Codable, Equatable {
             return ["t": "feed"]
         case .rolls:
             return ["t": "rolls"]
+        case .joinRoll(let code):
+            return ["t": "join", "code": code]
         }
     }
 }

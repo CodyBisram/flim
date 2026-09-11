@@ -106,6 +106,39 @@ final class RollService {
 
     // MARK: - Join by invite code
 
+    /// Rolls the signed-in account has been invited to by "Start another with this group",
+    /// open ones only. Loaded alongside `fetchRolls`; cleared with the rest on account change.
+    var followUpInvites: [Roll] = []
+
+    /// Starts a follow-up of a finished roll: the server creates it, makes the caller a member,
+    /// and invites every other member of the finished roll (see `start_follow_up_roll`).
+    func startFollowUpRoll(parent: Roll, name: String) async throws -> Roll {
+        let epoch = AccountEpoch.current
+        struct Params: Encodable { let p_parent: UUID; let p_name: String }
+        let roll: Roll = try await supabase
+            .rpc("start_follow_up_roll", params: Params(p_parent: parent.id, p_name: name))
+            .single().execute().value
+        guard AccountEpoch.isCurrent(epoch) else { return roll }
+        rolls.insert(roll, at: 0)
+        WidgetSync.refresh()
+        persistSnapshot()
+        return roll
+    }
+
+    func fetchFollowUpInvites() async {
+        let epoch = AccountEpoch.current
+        let fetched: [Roll] = (try? await supabase.rpc("follow_up_invites").execute().value) ?? []
+        guard AccountEpoch.isCurrent(epoch) else { return }
+        followUpInvites = fetched
+    }
+
+    /// "Not this time": the invite goes away, nothing else changes.
+    func dismissFollowUpInvite(_ roll: Roll, userId: UUID) async {
+        followUpInvites.removeAll { $0.id == roll.id }
+        _ = try? await supabase.from("roll_follow_up_invites").delete()
+            .eq("roll_id", value: roll.id.uuidString).eq("user_id", value: userId.uuidString).execute()
+    }
+
     func joinRoll(inviteCode: String, userId: UUID) async throws -> Roll {
         let epoch = AccountEpoch.current
         struct JoinParams: Encodable { let p_code: String }
@@ -121,6 +154,7 @@ final class RollService {
             guard AccountEpoch.isCurrent(epoch) else { return roll }
             if !rolls.contains(where: { $0.id == roll.id }) {
                 rolls.append(roll)
+                followUpInvites.removeAll { $0.id == roll.id }
             }
             // Same reason as createRoll: joining is the other way a countdown starts existing.
             WidgetSync.refresh()
@@ -175,7 +209,7 @@ final class RollService {
 
         let rollIds = memberRows.map(\.rollId.uuidString)
         guard !rollIds.isEmpty else {
-            rolls = []; memberCounts = [:]; coverPaths = [:]
+            rolls = []; memberCounts = [:]; coverPaths = [:]; followUpInvites = []
             persistSnapshot()
             return
         }
@@ -365,7 +399,7 @@ final class RollService {
             let r = rolls[i]
             rolls[i] = Roll(id: r.id, name: r.name, inviteCode: r.inviteCode,
                             createdBy: r.createdBy, createdAt: r.createdAt, coverPath: path,
-                            revealAt: r.revealAt)
+                            revealAt: r.revealAt, parentRollId: r.parentRollId)
         }
         // The widget's cover tile is sourced live from coverPaths; the Live Activity doesn't
         // show the cover, so there's nothing there to touch.
@@ -396,7 +430,7 @@ final class RollService {
                 let r = rolls[i]
                 rolls[i] = Roll(id: r.id, name: r.name, inviteCode: r.inviteCode,
                                 createdBy: r.createdBy, createdAt: r.createdAt, coverPath: r.coverPath,
-                                revealAt: updated)
+                                revealAt: updated, parentRollId: r.parentRollId)
             }
             // A moved reveal is exactly the kind of change the countdown surfaces (widget, Live
             // Activity, the Rolls tab) must not be left stale about, same reasoning as every other
