@@ -133,6 +133,47 @@ without either word appearing here.
 Two rules if this is edited again: never repeat a word across name, subtitle and keywords, and do
 not add plurals of words already present. Apple handles both.
 
+## What's New (version 1.5.2), drafted 2026-09-10
+
+Release candidate: the first build after 7404f4c (the inline chapter player). Version is already
+1.5.2 on both targets. After Ready for Sale: `update app_release_gate set latest_version = '1.5.2';`
+
+> **PASTE ONLY THE INDENTED BLOCK BELOW.** Everything under "Ship notes" is internal.
+
+    A better first day. Sign-up is one screen: your code and your email, and you are in. The person who invited you is named before you join, and you follow them from the start. Your first shot lands in the Darkroom, and the app tells you what each screen is for the first time you open it, one line each, then gets out of the way.
+
+    Find friends says why. Suggestions come in groups: people who follow you, people in your rolls, the person who invited you, people they invited, friends of friends. Nobody is padded in. Search finds display names now, and inviting a friend is the first row.
+
+    Rolls remember. Once you have watched a roll's reveal, it stays watched, on any phone you sign into. Your accent colour follows your account too. Photos that did not finish uploading try again on their own the next time you open the app.
+
+    Chapters. Sharing a photograph from a chapter works again, and the export is yours alone: only your own photographs leave FLIM.
+
+    Every emoji. The reaction picker now carries every emoji your iPhone can draw, including the newest faces, and flags and joined emoji that were missing before.
+
+    Near-identical shots group tighter, and a frame that came out black or blurred is marked Missed so you can decide.
+
+### Ship notes (internal, do NOT paste)
+
+**Promotional text for the 1.5.2 window** (170 char max, editable anytime without review):
+> One screen to join, the person who invited you named before you do. Find friends by who you already know. Once you have watched a roll, it stays watched. (159 chars)
+
+**What was deliberately left out.** The trust batch (auth-user gate, discussion policies,
+creator-only roll inserts, cron secrets, push run locks, invite rate layers, the crash table
+grants), the owner-identity pin, the profiles view and everything else that is security or
+integrity work with no user story. The invite-tree function behind Find friends is described by
+its effect only. The emoji fix says "every emoji your iPhone can draw" rather than explaining that
+the app used to ask the font. The chapter share line does not explain the presentation bug.
+Founding 100 counting people rather than the review account is not user-visible copy.
+
+**The look did not change in 1.5.2.** Grain stays reverted; flash falloff and its edge fix
+shipped in 1.5.1. No screenshot shows a rendered difference.
+
+**Screenshots.** The first-run flow changed (one screen, invite preview), so the invite and
+onboarding captures need reshooting on the release candidate; the feed, camera, chapters, month
+in numbers and rolls captures from 345 are still current. The designed-panel brief
+(`docs/APP_STORE_PREVIEWS_BRIEF.md`) is for the set after this one unless Claude Design comes
+back in time.
+
 ## RELEASED: 1.5.1 went live 2026-09-06 (build 347), 22:51 UTC
 
 The train is closed. `MARKETING_VERSION` is 1.5.2 on both targets as of the commit that records
