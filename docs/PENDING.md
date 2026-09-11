@@ -352,6 +352,21 @@ The four from the audit the owner picked on 2026-09-10: the durable capture queu
 capture status, one invitation journey (a roll code admits you), deletion order, and the photo
 write boundary. In that order of value; built in the order of size.
 
+### done 2026-09-11, evening: HOTFIX for the write boundary (audit 2 finding 1)
+
+The write-boundary migration granted clients UPDATE on `photos.is_sorted` only. The shipped
+client (build 365) also patches `thumb_path`/`feed_path` after uploading renditions,
+`burst_group`, and `is_developed`. Every capture since it went live uploaded its renditions and
+failed to link them: 17 of 26 new photos, against 7 of 674 before. Fixed in production within
+the hour of reading the audit: `2026-09-11_photo_grants_hotfix.sql` grants exactly those five
+columns, adds `lock_photo_paths_to_owner_trigger` (a client may only point a photo at objects in
+its own folder, on insert and on change, which also closes finding 2), and relinks the stranded
+rows whose objects exist (5 remain unlinked; their renditions were never uploaded and the client's
+own repair will redo them). Probed as a client: own renditions, burst and develop patches allowed;
+foreign thumb or master path refused; hidden still refused. Lesson recorded in memory: before
+tightening a grant, grep every `.update(` on that table, and measure the affected column for a
+day after.
+
 ### done 2026-09-11: start another with this group
 
 The owner's pick after the FLIMGO cohort. On a developed roll's menu: "Start another with this
