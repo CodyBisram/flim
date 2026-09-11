@@ -352,6 +352,15 @@ The four from the audit the owner picked on 2026-09-10: the durable capture queu
 capture status, one invitation journey (a roll code admits you), deletion order, and the photo
 write boundary. In that order of value; built in the order of size.
 
+### done 2026-09-11, night: a roll you are in is yours to save, all of it
+
+The owner corrected the export rule: "the point of a roll is for everyone to share those photos."
+`PhotoExport.eligible(_:viewer:inRoll:)` now allows your own photographs anywhere and every
+photograph in a roll from the roll's own surfaces (roll screen, reveal, roll viewer, roll grid
+menu), where membership is already proven. A friend's feed post and a friend's chapter stay in
+FLIM; the contact sheet stays own-chapter only. Save all reads "Save all N" again. Privacy, terms,
+support, homepage and the 1.5.2 What's New record say the same. Site DEPLOYED.
+
 ### done 2026-09-11, night: audit 2, the rest of the delivery list (findings 7, 9, 10, 11, 12, 13, 17, 18)
 
 Server, migration `2026-09-12_audit2_server.sql`, APPLIED; three functions DEPLOYED and verified

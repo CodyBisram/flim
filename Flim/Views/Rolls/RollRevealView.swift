@@ -560,7 +560,7 @@ struct RollRevealView: View {
             // whole roll; "keep these" is the feeling, and making someone go find it is how the
             // feeling gets lost. Nearly free here: every frame was fetched to be shown, so this
             // is reading the cache the slideshow just filled.
-            if !PhotoExport.eligible(viewModel.deck, viewer: auth.currentUser?.id).isEmpty {
+            if !PhotoExport.eligible(viewModel.deck, viewer: auth.currentUser?.id, inRoll: true).isEmpty {
                 Button {
                     viewModel.saveAll(viewer: auth.currentUser?.id)
                 } label: {
@@ -570,7 +570,7 @@ struct RollRevealView: View {
                         } else {
                             Image(systemName: "square.and.arrow.down").font(.system(size: 13))
                         }
-                        Text(viewModel.savingAll ? "Getting them ready" : "Save mine to Camera Roll")
+                        Text(viewModel.savingAll ? "Getting them ready" : "Save all to Camera Roll")
                             .flimFont(15, weight: .medium, relativeTo: .body)
                     }
                     .foregroundStyle(Color(white: 0.7))

@@ -466,11 +466,11 @@ struct RollDetailView: View {
                         Button {
                             saveAll()
                         } label: {
-                            let mine = PhotoExport.eligible(vm.developedPhotos, viewer: auth.currentUser?.id).count
-                            Label(savingAll ? "Saving…" : (mine == 0 ? "Nothing of yours to save" : "Save my \(mine) to Camera Roll"),
+                            let mine = PhotoExport.eligible(vm.developedPhotos, viewer: auth.currentUser?.id, inRoll: true).count
+                            Label(savingAll ? "Saving…" : "Save all \(mine) to Camera Roll",
                                   systemImage: "square.and.arrow.down.on.square")
                         }
-                            .disabled(savingAll || PhotoExport.eligible(vm.developedPhotos, viewer: auth.currentUser?.id).isEmpty)
+                            .disabled(savingAll || PhotoExport.eligible(vm.developedPhotos, viewer: auth.currentUser?.id, inRoll: true).isEmpty)
                     }
 
                     // Silence this roll's comment/reaction notifications without leaving it.
@@ -902,7 +902,7 @@ struct RollDetailView: View {
             let exportDir = PhotoExport.begin()
             // Same order the reveal's own Save all exports in, oldest shot first, so the two
             // Save all buttons on one roll number their files the same way.
-            let deck = PhotoExport.eligible(chronologicalDeveloped, viewer: auth.currentUser?.id)   // own frames only
+            let deck = PhotoExport.eligible(chronologicalDeveloped, viewer: auth.currentUser?.id, inRoll: true)   // the whole roll: members share it
             // The 1400px rendition, not the 2048px original.
             //
             // These two Save all buttons disagreed: the reveal's saved `viewPath` and this one
@@ -930,7 +930,7 @@ struct RollDetailView: View {
                 Haptics.error()
                 withAnimation { saveAllError = "Couldn't load the photos. Check your connection." }
             } else {
-                let mine = PhotoExport.eligible(vm.developedPhotos, viewer: auth.currentUser?.id).count
+                let mine = PhotoExport.eligible(vm.developedPhotos, viewer: auth.currentUser?.id, inRoll: true).count
                 if images.count < mine {
                     // A partial result still reaches the sheet, because some photos IS better
                     // than none, but claiming "all" when it was 4 of 9 would be a lie the person
@@ -952,11 +952,9 @@ struct RollDetailView: View {
             if isCreator {
                 Button { setCover(photo) } label: { Label("Use as roll cover", systemImage: "rectangle.on.rectangle") }
             }
-            // Export is own-shots-only too: a roll mate's frame stays inside FLIM from your phone
-            // (the owner, 2026-09-10). Delete below already worked this way.
-            if photo.userId == auth.currentUser?.id {
-                Button { share(photo) } label: { Label("Share", systemImage: "square.and.arrow.up") }
-            }
+            // Any frame in the roll can be shared by any member: a roll is shared on purpose
+            // (the owner, 2026-09-11). Delete below stays own-shots-only.
+            Button { share(photo) } label: { Label("Share", systemImage: "square.and.arrow.up") }
             // Own shots only: the item simply doesn't exist on a friend's cell (a disabled
             // Delete on their photo would read as broken, not as theirs). Routes through the
             // same consequence sheet the pager uses; the grid must not be a quieter door to

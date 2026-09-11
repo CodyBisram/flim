@@ -686,7 +686,7 @@ struct PhotoPagerView: View {
                     }
                     .accessibilityLabel("Comments")
                 }
-                if isOwnPhoto {   // export is for own frames only; a friend's stays inside FLIM
+                if PhotoExport.eligible(photo, viewer: auth.currentUser?.id, inRoll: showsRollRack) {   // see PhotoExport.eligible
                 Button {
                     share(photo)
                 } label: {
@@ -789,7 +789,7 @@ struct PhotoPagerView: View {
                 // used to be two separate white circles here, which read as two unrelated
                 // controls and as a different visual language from the screen you arrive from.
                 HStack(spacing: 18) {
-                    if photo.userId == auth.currentUser?.id {   // export is for own frames only
+                    if PhotoExport.eligible(photo, viewer: auth.currentUser?.id, inRoll: showsRollRack) {
                     Button { share(photo) } label: {
                         Group {
                             if preparingShare {
@@ -879,7 +879,7 @@ struct PhotoPagerView: View {
                 // they shipped as bare `Image`s, whose tappable region is the glyph itself, about
                 // 15pt against Apple's 44pt minimum, so the menu could barely be pressed.
                 HStack(spacing: 18) {
-                    if photo.userId == auth.currentUser?.id {   // export is for own frames only
+                    if PhotoExport.eligible(photo, viewer: auth.currentUser?.id, inRoll: showsRollRack) {
                     Button { share(photo) } label: {
                         Group {
                             if preparingShare {
@@ -1799,7 +1799,7 @@ struct PhotoPagerView: View {
     /// hit: the button silently did nothing, every time. A control that declines without saying so
     /// reads as a broken app, so a miss now costs a spinner rather than the feature.
     private func share(_ photo: Photo) {
-        guard photo.userId == auth.currentUser?.id else { return }   // export is for own frames only
+        guard PhotoExport.eligible(photo, viewer: auth.currentUser?.id, inRoll: showsRollRack) else { return }
         ShareBreadcrumbs.log("pager.share.tap", "rack=\(showsRollRack) hasURL=\(resolvedURLs[photo.id] != nil) preparing=\(preparingShare)")
         guard !preparingShare, let url = resolvedURLs[photo.id] else { return }
         // Same `resolvedCacheKey` phase rule as `photoPage`: `resolvedURLs[photo.id]` may still

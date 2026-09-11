@@ -29,17 +29,21 @@ import Foundation
 /// Scoping each export to its own directory removes the shared mutable state entirely, which is
 /// cheaper than trying to coordinate two independent tasks.
 enum PhotoExport {
-    /// The one rule for anything that leaves FLIM as a file: only the viewer's own photographs.
-    /// A friend's frame can be reacted to, commented on, and posted to the feed from a roll, but
-    /// it is never written to this phone's Camera Roll or handed to the share sheet. Used by the
-    /// viewer's share button, both Save all paths, and the chapter contact sheet.
-    static func eligible(_ photo: Photo, viewer: UUID?) -> Bool {
+    /// The one rule for anything that leaves FLIM as a file. Your own photographs, anywhere. And
+    /// every photograph in a roll you belong to, from the roll's own screens: a roll is one
+    /// camera shared by its members, and taking the pictures home is the point of it (the
+    /// owner, 2026-09-11). What stays inside FLIM is a friend's feed post and a friend's
+    /// chapter, which are theirs alone. `inRoll` is true only on surfaces that already prove
+    /// membership (the roll screen, the reveal, the roll viewer); a roll photograph seen in the
+    /// feed by a non-member is not exportable there.
+    static func eligible(_ photo: Photo, viewer: UUID?, inRoll: Bool = false) -> Bool {
         guard let viewer else { return false }
-        return photo.userId == viewer
+        if photo.userId == viewer { return true }
+        return inRoll && photo.rollId != nil
     }
 
-    static func eligible(_ photos: [Photo], viewer: UUID?) -> [Photo] {
-        photos.filter { eligible($0, viewer: viewer) }
+    static func eligible(_ photos: [Photo], viewer: UUID?, inRoll: Bool = false) -> [Photo] {
+        photos.filter { eligible($0, viewer: viewer, inRoll: inRoll) }
     }
 
 

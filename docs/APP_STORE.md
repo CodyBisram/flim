@@ -70,7 +70,7 @@ Updated 2026-09-10 for 1.5.2 (the store still carries the 1.2-era text with no C
 
     Point, shoot, and let it develop, just like the real thing. Personal shots land in your Darkroom right away. Shots into a shared roll stay hidden until the whole roll reveals at once, twelve hours after it started. Nobody sees them early, not even the person who took them. The waiting is what makes the reveal worth showing up for.
 
-    Real film feel. Every photo gets FLIM's film look baked in at capture: warm color, fine grain where film puts it, and the soft red glow real film gives a bright window or a streetlight. No filters. No sliders. One look, applied the moment you shoot, the same for everyone. Share a photo and it goes out with the orange date stamp burned in, as a print, a story, or the full frame.
+    Real film feel. Every photo gets FLIM's film look baked in at capture: warm color, fine grain where film puts it, and the soft red glow real film gives a bright window or a streetlight. No filters. No sliders. One look, applied the moment you shoot, the same for everyone. Share a photo and it goes out with the orange date stamp burned in, as a print, a story, or the full frame. Every roll you are in is yours to save, all of it.
 
     Rolls for your people. Start a shared roll with up to 50 friends and shoot into it together. Everyone's photos land in the same place, and the whole roll develops at once. Trips, parties, nights out, all revealed together. Watch a roll fill up as its reveal gets closer, with a countdown on your lock screen, then play it back one shot at a time. Near-identical shots stack, a frame that came out black or blurred is marked so the call is yours, and once you have watched a reveal it stays watched on any phone you sign into. Join with an invite code, comment on each other's photos, react with emojis.
 
@@ -157,7 +157,7 @@ Thirty-six commits since 347; the copy below covers the eleven a person can see.
 
     Sharper sorting. Near-identical shots group tighter, and a frame that came out black or blurred is marked Missed so the call is yours. Chapter covers pick from the same scores.
 
-    Sharing from a chapter works again, and only your own photographs can leave FLIM. The reaction picker now carries every emoji your iPhone can draw, including flags, joined emoji and the newest faces.
+    Sharing from a chapter works again. Every roll you are in is yours to save, all of it; a friend's page stays theirs. The reaction picker now carries every emoji your iPhone can draw, including flags, joined emoji and the newest faces.
 
 ### Ship notes (internal, do NOT paste)
 
