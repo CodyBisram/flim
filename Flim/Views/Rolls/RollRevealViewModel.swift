@@ -389,7 +389,8 @@ final class RollRevealViewModel {
     ///
     /// Reads through `ImageLoader`, which means the frames already shown come straight from cache
     /// and only a skipped tail costs anything.
-    func saveAll() {
+    /// Only the viewer's own frames leave the phone; see `PhotoExport.eligible`.
+    func saveAll(viewer: UUID?) {
         guard !savingAll else { return }
         savingAll = true
         saveAllError = nil
@@ -400,9 +401,10 @@ final class RollRevealViewModel {
             // be a 75-shot roll, and collecting that as UIImages is a jetsam kill. See PhotoExport.
             let exportDir = PhotoExport.begin()
             var images: [URL] = []
-            for (i, photo) in deck.enumerated() {
+            let mine = PhotoExport.eligible(deck, viewer: viewer)
+            for (i, photo) in mine.enumerated() {
                 guard let url = urls[photo.viewPath] else { continue }
-                if let file = await PhotoExport.download(url, into: exportDir, index: i, total: deck.count) {
+                if let file = await PhotoExport.download(url, into: exportDir, index: i, total: mine.count) {
                     images.append(file)
                 }
             }

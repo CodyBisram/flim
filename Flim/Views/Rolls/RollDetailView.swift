@@ -465,8 +465,12 @@ struct RollDetailView: View {
                     } else {
                         Button {
                             saveAll()
-                        } label: { Label(savingAll ? "Saving…" : "Save all to Camera Roll", systemImage: "square.and.arrow.down.on.square") }
-                            .disabled(savingAll)
+                        } label: {
+                            let mine = PhotoExport.eligible(vm.developedPhotos, viewer: auth.currentUser?.id).count
+                            Label(savingAll ? "Saving…" : (mine == 0 ? "Nothing of yours to save" : "Save my \(mine) to Camera Roll"),
+                                  systemImage: "square.and.arrow.down.on.square")
+                        }
+                            .disabled(savingAll || PhotoExport.eligible(vm.developedPhotos, viewer: auth.currentUser?.id).isEmpty)
                     }
 
                     // Silence this roll's comment/reaction notifications without leaving it.
@@ -898,7 +902,7 @@ struct RollDetailView: View {
             let exportDir = PhotoExport.begin()
             // Same order the reveal's own Save all exports in, oldest shot first, so the two
             // Save all buttons on one roll number their files the same way.
-            let deck = chronologicalDeveloped
+            let deck = PhotoExport.eligible(chronologicalDeveloped, viewer: auth.currentUser?.id)   // own frames only
             // The 1400px rendition, not the 2048px original.
             //
             // These two Save all buttons disagreed: the reveal's saved `viewPath` and this one
@@ -926,12 +930,13 @@ struct RollDetailView: View {
                 Haptics.error()
                 withAnimation { saveAllError = "Couldn't load the photos. Check your connection." }
             } else {
-                if images.count < vm.developedPhotos.count {
+                let mine = PhotoExport.eligible(vm.developedPhotos, viewer: auth.currentUser?.id).count
+                if images.count < mine {
                     // A partial result still reaches the sheet, because some photos IS better
                     // than none, but claiming "all" when it was 4 of 9 would be a lie the person
                     // only discovers later, in their camera roll, with no way to tell which four.
                     // Said in a toast alongside the sheet now, not a modal in front of it.
-                    showToast("Only \(images.count) of \(vm.developedPhotos.count) photos could be loaded. Saving those now.", isError: true)
+                    showToast("Only \(images.count) of \(mine) photos could be loaded. Saving those now.", isError: true)
                 }
                 showShareAll = true
             }

@@ -289,6 +289,9 @@ struct ChapterRecapView: View {
                     .background(accent, in: Capsule())
             }
 
+            // A chapter is one person's month, so the sheet is theirs to share and nobody
+            // else's (see `PhotoExport.eligible`).
+            if isOwnRecap {
             Button {
                 guard !viewModel.isBuildingContactSheet, !viewModel.isLoadingDeck else { return }
                 Task { await viewModel.buildContactSheet() }
@@ -309,6 +312,7 @@ struct ChapterRecapView: View {
                 .foregroundStyle(Color(white: 0.7))
             }
             .disabled(viewModel.isBuildingContactSheet || viewModel.isLoadingDeck)
+            }
 
             // Rule 4 (confirmations redesign), the same shape `RollRevealView.saveAll` uses: a
             // failure lands right under the button that caused it, with the retry in place.
