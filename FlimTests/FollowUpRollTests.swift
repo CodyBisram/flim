@@ -42,3 +42,18 @@ struct FollowUpRollNameEdgeTests {
         #expect(Roll.followUpName(after: long).count <= 60)
     }
 }
+
+struct ExportEligibilityTests {
+    private func photo(_ owner: UUID) -> Photo {
+        Photo(id: UUID(), userId: owner, rollId: nil, storagePath: "\(owner)/x.jpg", thumbPath: nil, feedPath: nil,
+              takenAt: .now, developsAt: .distantPast, isDeveloped: true, caption: nil, isSorted: true)
+    }
+    @Test func onlyTheViewersOwnPhotographsAreEligible() {
+        let me = UUID(), friend = UUID()
+        let deck = [photo(me), photo(friend), photo(me)]
+        #expect(PhotoExport.eligible(deck, viewer: me).count == 2)
+        #expect(PhotoExport.eligible(deck, viewer: friend).count == 1)
+        #expect(PhotoExport.eligible(deck, viewer: nil).isEmpty)
+        #expect(!PhotoExport.eligible(photo(friend), viewer: me))
+    }
+}

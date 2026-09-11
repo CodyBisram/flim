@@ -352,6 +352,15 @@ The four from the audit the owner picked on 2026-09-10: the durable capture queu
 capture status, one invitation journey (a roll code admits you), deletion order, and the photo
 write boundary. In that order of value; built in the order of size.
 
+### done 2026-09-11, evening: one export rule everywhere, and the homepage stops overpromising
+
+`PhotoExport.eligible(_:viewer:)` is the rule: only the viewer's own photographs leave FLIM as
+files. It now governs the viewer's share button (already), the roll screen's Save all (now "Save
+my N to Camera Roll", disabled when none are yours), the reveal's Save all ("Save mine"), and the
+chapter contact sheet (own recap only; the button does not exist on someone else's chapter).
+Audit 2 finding 8. The homepage's "only ever your friends" became "Everyone here was let in by a
+friend," with the body saying your page can be opened by anyone on FLIM (finding 15). DEPLOYED.
+
 ### done 2026-09-11, evening: audit 2 findings 3, 4, 5, 16 and the empty-state invite
 
 - Single-photo delete now goes through the batch path: row first, bytes best-effort (finding 3).

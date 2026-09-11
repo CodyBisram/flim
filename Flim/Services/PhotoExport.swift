@@ -29,6 +29,19 @@ import Foundation
 /// Scoping each export to its own directory removes the shared mutable state entirely, which is
 /// cheaper than trying to coordinate two independent tasks.
 enum PhotoExport {
+    /// The one rule for anything that leaves FLIM as a file: only the viewer's own photographs.
+    /// A friend's frame can be reacted to, commented on, and posted to the feed from a roll, but
+    /// it is never written to this phone's Camera Roll or handed to the share sheet. Used by the
+    /// viewer's share button, both Save all paths, and the chapter contact sheet.
+    static func eligible(_ photo: Photo, viewer: UUID?) -> Bool {
+        guard let viewer else { return false }
+        return photo.userId == viewer
+    }
+
+    static func eligible(_ photos: [Photo], viewer: UUID?) -> [Photo] {
+        photos.filter { eligible($0, viewer: viewer) }
+    }
+
 
     /// Container for all exports. Injectable so tests never touch the real temp directory.
     static var root: URL = FileManager.default.temporaryDirectory
