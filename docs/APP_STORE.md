@@ -133,29 +133,30 @@ without either word appearing here.
 Two rules if this is edited again: never repeat a word across name, subtitle and keywords, and do
 not add plurals of words already present. Apple handles both.
 
-## What's New (version 1.5.2), drafted 2026-09-10
+## What's New (version 1.5.2), drafted 2026-09-10, rewritten from the 347..head diff
 
 Release candidate: the first build after 7404f4c (the inline chapter player). Version is already
 1.5.2 on both targets. After Ready for Sale: `update app_release_gate set latest_version = '1.5.2';`
+Thirty-six commits since 347; the copy below covers the eleven a person can see.
 
 > **PASTE ONLY THE INDENTED BLOCK BELOW.** Everything under "Ship notes" is internal.
 
-    A better first day. Sign-up is one screen: your code and your email, and you are in. The person who invited you is named before you join, and you follow them from the start. Your first shot lands in the Darkroom, and the app tells you what each screen is for the first time you open it, one line each, then gets out of the way.
+    Your first day. Sign-up is one screen: your code, your email, and you are in. The person who invited you is named before you join, and you follow them from the start. Your first shot arrives in the Darkroom at print size, each screen introduces itself in one line the first time you open it, and FLIM asks about notifications at the moment a roll gives it a time to tell you.
 
-    Find friends says why. Suggestions come in groups: people who follow you, people in your rolls, the person who invited you, people they invited, friends of friends. Nobody is padded in. Search finds display names now, and inviting a friend is the first row.
+    Find friends says why. People who follow you, people in your rolls, the person who invited you, the people they invited, friends of friends. No strangers to pad the list. Search finds display names, and Invite a friend is the first row.
 
-    Rolls remember. Once you have watched a roll's reveal, it stays watched, on any phone you sign into. Your accent colour follows your account too. Photos that did not finish uploading try again on their own the next time you open the app.
+    Steadier and quicker. A reaction never loses a tap, even two in a row. Pulling to refresh mid-scroll wins over the page loading below it. Every image is downloaded once, no matter how many places show it, and the cache tidies itself as it grows.
 
-    Chapters. Sharing a photograph from a chapter works again, and the export is yours alone: only your own photographs leave FLIM.
+    Rolls remember. Once you have watched a reveal it stays watched, on any phone you sign into. Your accent colour follows your account. Photos that never finished uploading try again on their own, without a tap.
 
-    Every emoji. The reaction picker now carries every emoji your iPhone can draw, including the newest faces, and flags and joined emoji that were missing before.
+    Sharper sorting. Near-identical shots group tighter, and a frame that came out black or blurred is marked Missed so the call is yours. Chapter covers pick from the same scores.
 
-    Near-identical shots group tighter, and a frame that came out black or blurred is marked Missed so you can decide.
+    Sharing from a chapter works again, and only your own photographs can leave FLIM. The reaction picker now carries every emoji your iPhone can draw, including flags, joined emoji and the newest faces.
 
 ### Ship notes (internal, do NOT paste)
 
 **Promotional text for the 1.5.2 window** (170 char max, editable anytime without review):
-> One screen to join, the person who invited you named before you do. Find friends by who you already know. Once you have watched a roll, it stays watched. (159 chars)
+> Join in one screen, with the friend who invited you already followed. Find friends by who you know. Reactions never miss a tap. Reveals stay watched.
 
 **What was deliberately left out.** The trust batch (auth-user gate, discussion policies,
 creator-only roll inserts, cron secrets, push run locks, invite rate layers, the crash table
