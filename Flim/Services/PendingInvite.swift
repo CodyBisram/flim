@@ -42,6 +42,9 @@ enum InviteCodeStorage {
         defaults.removeObject(forKey: key)
         return normalize(saved)
     }
+    static func peek(key: String, in defaults: UserDefaults) -> String? {
+        defaults.string(forKey: key).flatMap(normalize)
+    }
 }
 
 enum PendingInvite {
@@ -88,6 +91,9 @@ enum PendingRollInvite {
 
     /// Drops a held code without using it, for the handler that got there first via the
     /// notification. Without this the sheet would open again on the next cold launch.
+    /// Reads without consuming: the sign-in screen uses a roll code to get someone in, and the
+    /// Rolls tab still needs it afterwards to open the join sheet (1.5.3).
+    static func peek() -> String? { InviteCodeStorage.peek(key: key, in: store) }
     static func clear() { _ = take() }
 }
 

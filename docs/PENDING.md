@@ -349,6 +349,20 @@ The four from the audit the owner picked on 2026-09-10: the durable capture queu
 capture status, one invitation journey (a roll code admits you), deletion order, and the photo
 write boundary. In that order of value; built in the order of size.
 
+### done 2026-09-10: one invitation journey (the audit's top product item)
+
+A roll's invite code now admits its holder to the app, with the roll's creator as inviter.
+Migration `2026-09-11_roll_code_admits.sql`, APPLIED: `invite_preview` and `redeem_invite` fall
+through personal code, campaign code, roll code; a developed roll's code admits nobody; the
+creator's quota is untouched; the allowed_emails note names the creator, so the first-run follow
+and the invite tree treat them as the inviter. `invite_preview` gained a `roll_name` column.
+Client: the sign-in screen adopts a roll link's code (peeked, not consumed, so the Rolls tab still
+opens the join sheet after sign-up) and says "@creator invited you to Islands." The join page
+tells a newcomer the code gets them in; DEPLOYED and verified externally. Server verified in
+rolled-back transactions. The roll can still develop between sign-up and joining, in which case
+`join_roll` refuses as before. Owner check on a fresh account: open a /join/CODE link with the
+app installed but signed out, sign up with it, land in the app, see the join sheet.
+
 ### done 2026-09-10: the shot is on disk before it waits its turn (audit item 2)
 
 `CaptureQueueStore`: the raw bytes plus capture time, roll, look and known reveal time are

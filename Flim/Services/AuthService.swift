@@ -276,8 +276,10 @@ final class AuthService {
         let inviterId: UUID
         let username: String
         let displayName: String?
+        /// Set when the code is a roll's: the roll it opens, whose creator is the inviter.
+        var rollName: String? = nil
         enum CodingKeys: String, CodingKey {
-            case inviterId = "inviter_id", username, displayName = "display_name"
+            case inviterId = "inviter_id", username, displayName = "display_name", rollName = "roll_name"
         }
         /// What the screen calls them: the display name when there is one, else the handle.
         var shownName: String {

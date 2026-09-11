@@ -107,6 +107,9 @@ struct EmailAuthView: View {
         .onReceive(NotificationCenter.default.publisher(for: .openPersonalInvite)) { _ in
             adoptPendingInvite()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .openRollInvite)) { _ in
+            adoptPendingInvite()
+        }
         // A corrected typo deserves a clean slate: the previous email's verdict shouldn't keep
         // insisting this one needs an invite.
         .onChange(of: email) { _, _ in
@@ -170,10 +173,13 @@ struct EmailAuthView: View {
                                     .foregroundStyle(.white)
                             }
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("\(inviter.shownName) invited you.")
+                            Text(inviter.rollName.map { "\(inviter.shownName) invited you to \($0)." }
+                                 ?? "\(inviter.shownName) invited you.")
                                 .flimFont(15, weight: .medium, relativeTo: .subheadline)
                                 .foregroundStyle(.white)
-                            Text("You will follow them once you are in.")
+                            Text(inviter.rollName == nil
+                                 ? "You will follow them once you are in."
+                                 : "You will follow them, and the roll is waiting once you are in.")
                                 .flimFont(12, relativeTo: .caption)
                                 .foregroundStyle(Color(white: 0.5))
                         }
@@ -205,7 +211,10 @@ struct EmailAuthView: View {
     /// Never overwrites something already typed: someone mid-way through entering a code by hand
     /// should not have it swapped underneath them by a stale link.
     private func adoptPendingInvite() {
-        guard inviteCode.isEmpty, let code = PendingInvite.take() else { return }
+        // A roll link works here too (1.5.3): the roll's code admits its holder, with the
+        // creator as inviter. Peeked, not taken, so the Rolls tab can still open the join sheet
+        // once they are in.
+        guard inviteCode.isEmpty, let code = PendingInvite.take() ?? PendingRollInvite.peek() else { return }
         inviteCode = code
         withAnimation(.snappy(duration: 0.2)) { inviteExpanded = true }
         Haptics.tap()

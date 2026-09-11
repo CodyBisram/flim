@@ -67,3 +67,16 @@ struct PendingRollInviteTests {
         #expect(PendingRollInvite.normalize("ab12cd") == PendingInvite.normalize("AB12CD"))
     }
 }
+
+/// 1.5.3: the sign-in screen reads a roll code without consuming it, so the Rolls tab can still
+/// open the join sheet after the account exists.
+struct PendingRollInvitePeekTests {
+    @Test func peekLeavesTheCodeForTheRollsTab() {
+        let defaults = UserDefaults(suiteName: "peek-\(UUID().uuidString)")!
+        InviteCodeStorage.store("ab12cd", key: "k", in: defaults)
+        #expect(InviteCodeStorage.peek(key: "k", in: defaults) == "AB12CD")
+        #expect(InviteCodeStorage.peek(key: "k", in: defaults) == "AB12CD", "peek must not consume")
+        #expect(InviteCodeStorage.take(key: "k", in: defaults) == "AB12CD")
+        #expect(InviteCodeStorage.peek(key: "k", in: defaults) == nil)
+    }
+}
