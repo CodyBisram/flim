@@ -82,11 +82,20 @@ struct ChapterRecapView: View {
             case .opening: openingCard
             case .closing: closingCard
             }
+            // Inline, not a `.fullScreenCover` (changed 2026-09-10). The recap is already a cover
+            // over the profile; the player was a second cover over that, and the viewer's export
+            // sheet a third presentation on top. On iOS 26.6 that third layer was re-presented
+            // by the system and then torn down along with the player, every time (breadcrumbs
+            // in crash_diagnostics). Rolls, one cover deep, never had it. The pager's X now
+            // calls `onClose` instead of the environment `dismiss()`, which is the only thing
+            // the cover was buying (see `player`'s doc).
+            if isPlayerPresented {
+                player
+                    .transition(.opacity)
+                    .zIndex(1)
+            }
         }
         .statusBarHidden()
-        .fullScreenCover(isPresented: $isPlayerPresented, onDismiss: handlePlayerDismissed) {
-            player
-        }
         // `viewModel.deck` must never change while the pager is actually mounted (see
         // `ChapterRecapViewModel.isPlayerMounted`'s own doc); this is the one place that tells it
         // whether that's currently true, for both edges of the presentation.
@@ -97,6 +106,7 @@ struct ChapterRecapView: View {
             if !presented, viewModel.hasClosingCard { phase = .closing }
             ShareBreadcrumbs.log("recap.playerPresented", "\(presented)")
             viewModel.setPlayerMounted(presented)
+            if !presented { handlePlayerDismissed() }
         }
         .task {
             viewModel.displayScale = displayScale
@@ -390,7 +400,8 @@ struct ChapterRecapView: View {
                 showsDelete: false,
                 // A chapter photo IS a post; its reactions/comments live on the post tables, not
                 // the roll-photo ones. See `PhotoPagerView.posts`'s own doc.
-                posts: viewModel.pagerPosts
+                posts: viewModel.pagerPosts,
+                onClose: { withAnimation(.easeInOut(duration: 0.2)) { isPlayerPresented = false } }
             )
             .transition(.opacity)
         }

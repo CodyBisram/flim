@@ -190,6 +190,11 @@ struct PhotoPagerView: View {
     /// the delete-confirmation wording. A roll grid passes a closure returning its own name.
     var rollName: (UUID?) -> String? = { _ in nil }
     var onDelete: () -> Void = {}
+    /// What the X does when this viewer is mounted inline rather than presented: the host tears
+    /// it down itself. Nil (every presented use) keeps the environment `dismiss()`. Added for
+    /// the chapter player (2026-09-10): presenting the export sheet from inside two stacked
+    /// full-screen covers was one layer too many on iOS 26.6, so the chapter now plays inline.
+    var onClose: (() -> Void)? = nil
     /// Opens the comment sheet for the photo at `startIndex` the moment this pager appears, for a
     /// comment/mention push that means to land inside a thread, not just on the photo. An init
     /// parameter rather than reaching into `showComments`/`commentsPhoto` from outside: those are
@@ -377,7 +382,7 @@ struct PhotoPagerView: View {
          showsNightRack: Bool = false, showsRollRack: Bool = false,
          memberNames: [UUID: String] = [:], rollName: @escaping (UUID?) -> String? = { _ in nil },
          onDelete: @escaping () -> Void = {}, openCommentsOnAppear: Bool = false,
-         showsDelete: Bool = true, posts: [UUID: Post] = [:]) {
+         showsDelete: Bool = true, posts: [UUID: Post] = [:], onClose: (() -> Void)? = nil) {
         self.photos = photos
         self.startIndex = startIndex
         self.signedURLs = signedURLs
@@ -392,6 +397,7 @@ struct PhotoPagerView: View {
         self.openCommentsOnAppear = openCommentsOnAppear
         self.showsDelete = showsDelete
         self.posts = posts
+        self.onClose = onClose
         _selection = State(initialValue: min(max(startIndex, 0), max(0, photos.count - 1)))
     }
 
@@ -661,7 +667,7 @@ struct PhotoPagerView: View {
         if let photo = current {
             let isOwnPhoto = photo.userId == auth.currentUser?.id
             HStack(spacing: 12) {
-                Button { dismiss() } label: {
+                Button { close() } label: {
                     Image(systemName: "xmark")
                         .font(.system(size: 16, weight: .medium))
                         .foregroundStyle(.white)
@@ -756,7 +762,7 @@ struct PhotoPagerView: View {
     private var nightRackHeader: some View {
         if let photo = current {
             HStack(spacing: 10) {
-                Button { dismiss() } label: {
+                Button { close() } label: {
                     Image(systemName: "xmark")
                         .font(.system(size: 16, weight: .medium))
                         .foregroundStyle(.white)
@@ -851,7 +857,7 @@ struct PhotoPagerView: View {
     private var rollRackHeader: some View {
         if let photo = current {
             HStack(spacing: 12) {
-                Button { dismiss() } label: {
+                Button { close() } label: {
                     Image(systemName: "xmark")
                         .font(.system(size: 15, weight: .medium))
                         .foregroundStyle(FlimTheme.textPrimary)
@@ -1723,6 +1729,10 @@ struct PhotoPagerView: View {
                 people: memberNames.isEmpty ? nil : memberNames.count,
                 myOtherShots: mine)
         }
+    }
+
+    private func close() {
+        if let onClose { onClose() } else { dismiss() }
     }
 
     private func stagePersonalDelete(_ photo: Photo) {

@@ -289,7 +289,7 @@ owner; the owner's own personal code is untouched and keeps working after. Migra
 `2026-09-08_invite_campaigns.sql` and `2026-09-09_sept11_cohort.sql` (the day moved from the 10th
 on 2026-09-09, before the window opened). Add another cohort with one INSERT into `invite_campaigns`.
 
-### open 2026-09-10: the export sheet bounces on the owner's phone, not reproducible here
+### done 2026-09-10: the export sheet bounced on the owner's phone (chapters only)
 
 Own chapter photo, viewer share button: the sheet with the format chooser shows for a split
 second, the screen blanks, and it is back on the photo with no sheet. A new on-demand UI test
@@ -304,8 +304,18 @@ icon, lands back on the same photo with the film strip. Demo chapters with posts
 next build carries `ShareBreadcrumbs`: each step of the flow (tap, item set, sheet appear, the
 three renders, sheet disappear, sheet onDismiss, pager disappear, player presented) writes a
 `crash_diagnostics` row of kind "breadcrumb" with free memory. Read them back with
-`select occurred_at, detail from crash_diagnostics where kind = 'breadcrumb' order by 1`. Remove
-the probe once the cause is known.
+`select occurred_at, detail from crash_diagnostics where kind = 'breadcrumb' order by 1`.
+
+The breadcrumbs answered it. Memory was fine (3 GB free). The sheet was created three times
+within 60 ms, the viewer's root "disappeared" while on screen, the sheet went away without its
+dismiss handler ever running, and the player cover closed a second later: the system re-hosting
+the presentation stack. Chapters were the only surface presenting the export sheet from inside
+TWO stacked full-screen covers (profile -> recap cover -> player cover -> sheet); rolls sit one
+cover deep and never bounced. On the 26.3 simulator the same sheet appeared twice (harmless
+there); with the player mounted inline in the recap instead of as its own cover, it appears
+exactly once. So: `ChapterRecapView` now shows the player inline (`if isPlayerPresented`), and
+`PhotoPagerView` takes `onClose` so its X tears the inline player down instead of calling the
+environment `dismiss()`. Breadcrumbs stay in for one build to confirm on the phone, then go.
 
 ### done 2026-09-10: export is for your own photographs only
 
