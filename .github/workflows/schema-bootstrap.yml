@@ -1,0 +1,28 @@
+name: Schema · bootstrap
+
+# Builds an empty FLIM database from supabase/schema.sql, twice, on Supabase's own Postgres
+# image. Fails on the first statement that cannot be applied fresh or re-applied. Runs whenever
+# the schema, the platform shim, or the script changes. See scripts/schema_bootstrap.sh.
+on:
+  push:
+    branches: [main]
+    paths:
+      - supabase/schema.sql
+      - supabase/bootstrap/**
+      - scripts/schema_bootstrap.sh
+      - .github/workflows/schema-bootstrap.yml
+  pull_request:
+    paths:
+      - supabase/schema.sql
+      - supabase/bootstrap/**
+      - scripts/schema_bootstrap.sh
+  workflow_dispatch:
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the schema from scratch, then again
+        run: scripts/schema_bootstrap.sh

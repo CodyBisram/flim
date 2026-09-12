@@ -352,6 +352,20 @@ The four from the audit the owner picked on 2026-09-10: the durable capture queu
 capture status, one invitation journey (a roll code admits you), deletion order, and the photo
 write boundary. In that order of value; built in the order of size.
 
+### done 2026-09-12: the schema builds from scratch, and again (audit 2 finding 14)
+
+`scripts/schema_bootstrap.sh` runs Supabase's Postgres image, applies a small platform shim
+(`supabase/bootstrap/platform.sql`: the storage tables and helpers the Storage API would create,
+pg_net, pg_cron), then applies `schema.sql` with ON_ERROR_STOP, then applies it a SECOND time to
+prove the rerun promise in the file's own header. First run found four things: a production-only
+data insert (the SEPT10 campaign row, now guarded on the owner's user existing), three functions
+whose shape changed across the ledger without a DROP before the historical definition
+(`invite_preview`, `acquire_push_lock`/`release_push_lock`, `start_follow_up_roll`), and one
+policy created twice. All fixed in the file; production untouched (the final definitions are what
+it already has). Result: 40 tables, 76 functions, 59 policies, 16 triggers, both passes clean.
+`.github/workflows/schema-bootstrap.yml` runs it on every schema change. `--keep` leaves the
+container up on port 54329 as a staging database to try migrations against before production.
+
 ### done 2026-09-11, late: the follow-up audit's list (A to H and the small ones)
 
 The evening audit was right that several "done" items were half-landed. In particular, my

@@ -5473,6 +5473,7 @@ GRANT EXECUTE ON FUNCTION public.chapter_photos(UUID, DATE) TO authenticated;
 --
 -- Returns the inviter's id, username and display name: the id is what the new account follows
 -- once it exists, the names are what the screen shows.
+DROP FUNCTION IF EXISTS public.invite_preview(TEXT);
 CREATE OR REPLACE FUNCTION public.invite_preview(p_code TEXT)
 RETURNS TABLE (inviter_id UUID, username TEXT, display_name TEXT)
 LANGUAGE plpgsql
@@ -6081,6 +6082,7 @@ $$;
 
 -- invite_preview learns the same second branch, so the sign-in screen names the campaign's
 -- inviter exactly as it names a personal code's.
+DROP FUNCTION IF EXISTS public.invite_preview(TEXT);
 CREATE OR REPLACE FUNCTION public.invite_preview(p_code TEXT)
 RETURNS TABLE (inviter_id UUID, username TEXT, display_name TEXT)
 LANGUAGE plpgsql
@@ -6126,10 +6128,13 @@ END;
 $$;
 
 -- The 2026-09-10 cohort, owner's account, the whole of that day in New York.
+-- Data, not schema: only meaningful where the owner's account exists (production). A fresh
+-- build (scripts/schema_bootstrap.sh) has no users, so this inserts nothing there.
 INSERT INTO public.invite_campaigns (code, inviter_id, valid_from, valid_until, max_uses, note)
-VALUES ('SEPT10', 'f43287d4-f239-415b-af45-650bbee62e83',
+SELECT 'SEPT10', u.id,
         timestamptz '2026-09-10 00:00 America/New_York', timestamptz '2026-09-11 00:00 America/New_York',
-        NULL, 'One-day cohort code, 2026-09-10, attributed to the owner')
+        NULL, 'One-day cohort code, 2026-09-10, attributed to the owner'
+FROM public.users u WHERE u.id = 'f43287d4-f239-415b-af45-650bbee62e83'
 ON CONFLICT (code) DO NOTHING;
 
 -- Folded in from supabase/migrations/2026-09-09_trust_batch.sql (applied 2026-09-09).
@@ -6207,6 +6212,7 @@ CREATE POLICY "comment_likes: readable"
 --    this policy. The function also locks the roll row so two simultaneous joins cannot both
 --    count 49 and both insert.
 DROP POLICY IF EXISTS "roll_members: can join" ON public.roll_members;
+DROP POLICY IF EXISTS "roll_members: creator joins own roll" ON public.roll_members;
 CREATE POLICY "roll_members: creator joins own roll"
     ON public.roll_members FOR INSERT
     WITH CHECK (
@@ -6362,6 +6368,7 @@ BEGIN
 END;
 $$;
 
+DROP FUNCTION IF EXISTS public.invite_preview(TEXT);
 CREATE OR REPLACE FUNCTION public.invite_preview(p_code TEXT)
 RETURNS TABLE (inviter_id UUID, username TEXT, display_name TEXT)
 LANGUAGE plpgsql
@@ -6407,6 +6414,7 @@ ALTER TABLE public.push_run_locks ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON public.push_run_locks FROM PUBLIC, anon, authenticated;
 
 -- TRUE when the lease was taken; FALSE when another run holds it. Service role only.
+DROP FUNCTION IF EXISTS public.acquire_push_lock(TEXT, INT);
 CREATE OR REPLACE FUNCTION public.acquire_push_lock(p_name TEXT, p_seconds INT)
 RETURNS BOOLEAN
 LANGUAGE plpgsql
@@ -6425,6 +6433,8 @@ BEGIN
     RETURN COALESCE(v_taken, FALSE);
 END;
 $$;
+DROP FUNCTION IF EXISTS public.release_push_lock(TEXT);
+DROP FUNCTION IF EXISTS public.release_push_lock(TEXT, UUID);
 CREATE OR REPLACE FUNCTION public.release_push_lock(p_name TEXT)
 RETURNS VOID
 LANGUAGE sql
@@ -6814,6 +6824,8 @@ CREATE POLICY "rolls: invitees can read"
 -- The whole thing in one call: the roll, the creator's membership, the invites. Caller must be a
 -- member of the parent; the parent must have developed (the button only exists there). Members
 -- blocked either way are not invited. The code comes from the same alphabet the app uses.
+DROP FUNCTION IF EXISTS public.start_follow_up_roll(UUID, TEXT);
+DROP FUNCTION IF EXISTS public.start_follow_up_roll(UUID, TEXT, UUID);
 CREATE OR REPLACE FUNCTION public.start_follow_up_roll(p_parent UUID, p_name TEXT)
 RETURNS public.rolls
 LANGUAGE plpgsql
