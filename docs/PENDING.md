@@ -352,6 +352,22 @@ The four from the audit the owner picked on 2026-09-10: the durable capture queu
 capture status, one invitation journey (a roll code admits you), deletion order, and the photo
 write boundary. In that order of value; built in the order of size.
 
+### done 2026-09-12: one recovery state per shot (audit 2 finding 6)
+
+`CaptureQueueStore` is a manifest now: one `manifest.json` per account listing every shot with a
+stage (writing, saved, processed) plus the raw bytes file. A new shot is entry `.writing`, then
+bytes (atomic), then `.saved`; a crash anywhere leaves either an entry with no bytes (nothing
+reached disk, dropped) or complete bytes (recovered whatever the stage says). The old two-file
+race where a crash between bytes and sidecar got the bytes pruned is gone. When the processed
+copy lands in `FailedUploadStore`, the manifest flips to `.processed`; from there recovery
+retries the upload instead of grading the raw again. `CaptureRecovery.plan` decides, from the
+manifest and the processed ids alone, one action per shot: replay raw, retry processed, drop a
+stale processed file, or drop an empty entry. `restorePendingCaptures` runs the plan and hands
+`restoreFailedUploads` the ids it may take, so the two paths never both take a shot. A failed
+raw save now says so in the camera ("keep FLIM open until it uploads"). Tests cover seven crash
+points and assert no shot appears in two lists. Not done: a fake transport through the whole
+pipeline; the plan is pure and tested, the pipeline around it is the same code as before.
+
 ### done 2026-09-12: the schema builds from scratch, and again (audit 2 finding 14)
 
 `scripts/schema_bootstrap.sh` runs Supabase's Postgres image, applies a small platform shim

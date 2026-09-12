@@ -175,6 +175,12 @@ final class PhotoService {
         let saved: Task<Bool, Never> = Task.detached(priority: .userInitiated) {
             alreadyQueued ? true : await queueStore.save(meta, raw: rawData)
         }
+        Task { [weak self] in
+            // Say so if the phone could not keep the shot: it is only in memory until it uploads.
+            if await !saved.value, let self {
+                self.uploadError = "A shot could not be saved to this phone. Keep FLIM open until it uploads."
+            }
+        }
         // The account that owns this shot, fixed NOW, before the shot waits its turn. A queued
         // shot from account A must never run under account B: it would fail B's storage
         // authorization and then land A's image bytes in B's retry list. The files stay on disk
@@ -404,6 +410,9 @@ final class PhotoService {
                                   capturedAt: capturedAt, photoId: photoId, storagePath: path)
         let store = failedUploadStore
         let persisted = await Task.detached(priority: .utility) { await store.save(record) }.value
+        // The processed copy is the durable one from here; the manifest says so, so a launch
+        // after a crash retries the upload instead of grading the raw a second time.
+        if persisted { await captureQueueStore.markProcessed(id: photoId, userId: userId) }
 
         do {
             // `upsert: true` makes this idempotent: a retry that reused `pending`'s id/path
@@ -785,9 +794,9 @@ final class PhotoService {
             failedUploads.append(record)
             isUploading = false
         }
-        // Hand-off: the processed copy is now the durable one, so the raw queue entry can go.
-        // If persisting it failed, the raw entry stays and the next launch replays it.
-        if persisted { await captureQueueStore.remove(id: record.id, userId: record.userId) }
+        // The raw entry stays, marked `.processed` when the copy was persisted, so recovery
+        // retries the upload; if persisting failed, it stays `.saved` and the next launch grades
+        // it again. Either way the shot is on disk exactly once as far as recovery is concerned.
     }
 
     /// The row is on the server: nothing on disk needs to remember this shot any more.
@@ -799,23 +808,39 @@ final class PhotoService {
     /// Replays every raw capture still on disk for this account through the pipeline, oldest
     /// shutter first, with its original capture time and roll. Called on launch and sign-in,
     /// before `restoreFailedUploads`, since a shot can only be in one of the two stores.
-    func restorePendingCaptures(userId: UUID) async {
+    /// One decision per shot on disk (see `CaptureRecovery.plan`): raw replay, upload retry, or
+    /// drop. Returns the ids the failed-upload restore may retry, so the two paths never both
+    /// take the same shot.
+    @discardableResult
+    func restorePendingCaptures(userId: UUID) async -> Set<UUID> {
         let epoch = AccountEpoch.current
-        let store = captureQueueStore
-        let entries = await Task.detached(priority: .utility) { () -> [(meta: PendingCapture, raw: Data)] in
-            await store.prune(userId: userId)
-            return await store.load(userId: userId)
+        let queue = captureQueueStore
+        let failed = failedUploadStore
+        let (plan, entries) = await Task.detached(priority: .utility) { () -> (CaptureRecovery.Plan, [(meta: PendingCapture, hasRaw: Bool)]) in
+            await queue.prune(userId: userId)
+            await failed.prune(userId: userId)
+            let entries = await queue.entries(userId: userId)
+            let processed = Set(await failed.load(userId: userId).map(\.id))
+            return (CaptureRecovery.plan(entries: entries, processedIds: processed), entries)
         }.value
         // The account may have changed while the disk was read; those files are not ours now.
-        guard AccountEpoch.isCurrent(epoch), !entries.isEmpty else { return }
-        Self.captureLog.info("replaying \(entries.count, privacy: .public) capture(s) saved on this phone")
-        for entry in entries {
-            enqueueCapture(rawData: entry.raw, stock: FilmStock.stock(id: entry.meta.stockId),
+        guard AccountEpoch.isCurrent(epoch) else { return [] }
+        for id in plan.dropStaleProcessed { await failed.remove(id: id, userId: userId) }
+        for id in plan.dropEmpty { await queue.remove(id: id, userId: userId) }
+        if !plan.replayRaw.isEmpty {
+            Self.captureLog.info("replaying \(plan.replayRaw.count, privacy: .public) capture(s) saved on this phone")
+        }
+        for id in plan.replayRaw {
+            guard let entry = entries.first(where: { $0.meta.id == id }),
+                  let raw = await queue.raw(for: id, userId: userId) else { continue }
+            guard AccountEpoch.isCurrent(epoch) else { return [] }
+            enqueueCapture(rawData: raw, stock: FilmStock.stock(id: entry.meta.stockId),
                            userId: userId, rollId: entry.meta.rollId,
                            knownRevealAt: entry.meta.knownRevealAt,
                            capturedAt: entry.meta.capturedAt, photoId: entry.meta.id,
                            alreadyQueued: true) { _ in }
         }
+        return Set(plan.retryProcessed)
     }
 
     /// Whether `error` is specifically the roll-developed INSERT policy refusal: the row was
@@ -1335,7 +1360,9 @@ final class PhotoService {
     /// on tens of megabytes of synchronous reads. The store is an actor, so it crosses to the
     /// detached task safely, and its own isolation is what keeps this `prune` then `load` from
     /// interleaving with a concurrent `save` off a capture in flight elsewhere.
-    func restoreFailedUploads(userId: UUID) async {
+    /// `only`: the ids the recovery plan assigned to this path (see `restorePendingCaptures`);
+    /// nil restores everything, for callers that did not consult the plan.
+    func restoreFailedUploads(userId: UUID, only allowed: Set<UUID>? = nil) async {
         // Captured before the only `await` below, and re-checked immediately after it, right
         // before this touches `failedUploads`. `ContentView` launches this unstructured
         // (`Task { await photos.restoreFailedUploads(userId:) }`) right after
@@ -1349,7 +1376,7 @@ final class PhotoService {
         let store = failedUploadStore
         let restored = await Task.detached(priority: .utility) { () -> [FailedUpload] in
             await store.prune(userId: userId)
-            return await store.load(userId: userId)
+            return await store.load(userId: userId).filter { allowed?.contains($0.id) ?? true }
         }.value
         guard AccountEpoch.isCurrent(epoch), !restored.isEmpty else { return }
 

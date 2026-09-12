@@ -144,8 +144,8 @@ struct ContentView: View {
             // would accumulate forever and nobody would ever be offered the retry.
             if let newId {
                 Task {
-                    await photos.restorePendingCaptures(userId: newId)
-                    await photos.restoreFailedUploads(userId: newId)
+                    let retryable = await photos.restorePendingCaptures(userId: newId)
+                    await photos.restoreFailedUploads(userId: newId, only: retryable)
                 }
             }
             // Signing in does not prompt iOS for a new APNs token, so this device would stay
