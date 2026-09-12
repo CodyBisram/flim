@@ -100,7 +100,18 @@ const CAMPAIGNS: Record<string, () => Promise<Recipient[]>> = {
   "waiting-to-sort": waitingToSortCohort,
   "thank-you-preview": thankYouPreviewCohort,
   "thank-you": thankYouCohort,
+  "thank-you-annie": thankYouAnnieCohort,
 };
+
+/// One person, sent again at the owner's ask (2026-09-12). Its own campaign name, because the
+/// claim ledger rightly refuses to send "thank-you" to the same account twice.
+async function thankYouAnnieCohort(): Promise<Recipient[]> {
+  const reachable = new Set(await reachableUsers());
+  const { data } = await supabase.from("users").select("id").eq("username", "annie");
+  return ((data ?? []) as { id: string }[])
+    .filter((u) => reachable.has(u.id))
+    .map((u) => ({ userId: u.id, title: THANK_YOU_TITLE, body: THANK_YOU_BODY, route: { t: "profile", id: u.id } }));
+}
 
 const THANK_YOU_TITLE = "Thank you, from Cody";
 const THANK_YOU_BODY =
