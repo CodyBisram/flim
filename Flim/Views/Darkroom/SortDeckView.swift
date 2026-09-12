@@ -13,6 +13,8 @@ struct SortDeckView: View {
 
     @State private var cards: [Photo] = []
     @State private var urls: [UUID: URL] = [:]
+    /// True from an action's tap until its card has left the deck; see `performSwipe`.
+    @State private var isTransitioning = false
     @State private var drag: CGSize = .zero
     @State private var loaded = false
     @State private var closing = false
@@ -273,7 +275,7 @@ struct SortDeckView: View {
             HStack(spacing: 26) {
                 circleButton("tray.and.arrow.down", tint: accent, size: 54,
                              caption: "Keep", label: "Keep in your Darkroom") { performSwipe(.archive) }
-                circleButton("trash", tint: .red, size: 64,
+                circleButton("trash", tint: .red, size: 54,
                              caption: "Delete", label: "Delete photo") { performSwipe(.trash) }
                 circleButton("paperplane.fill", tint: .green, size: 54,
                              caption: "Post", label: "Post to your page") { performSwipe(.publish) }
@@ -338,7 +340,11 @@ struct SortDeckView: View {
     /// swipe-right and the green Post button both call this with neither, so they stay exactly
     /// the instant, caption-less, tag-less publish they always were.
     private func performSwipe(_ action: SortAction, caption: String? = nil, tags: [PendingTag] = []) {
-        guard let photo = cards.first else { return }
+        // One action per card. A second tap (or a swipe plus a tap) inside the 280 ms transition
+        // used to act on the SAME top card and then remove a second one, so the next photograph
+        // left the deck unreviewed. The card is claimed here and released when it is gone.
+        guard !isTransitioning, let photo = cards.first else { return }
+        isTransitioning = true
         Haptics.tap()
 
         switch action {
@@ -362,8 +368,10 @@ struct SortDeckView: View {
         // Advance the deck after the card flies off.
         Task {
             try? await Task.sleep(for: .milliseconds(280))
-            if !cards.isEmpty { cards.removeFirst() }
+            // Remove the card that was acted on, by id, never "whatever is on top now".
+            if let i = cards.firstIndex(where: { $0.id == photo.id }) { cards.remove(at: i) }
             drag = .zero
+            isTransitioning = false
             if cards.isEmpty { onFinish() }
         }
     }

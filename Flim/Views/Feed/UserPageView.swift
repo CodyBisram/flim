@@ -962,6 +962,7 @@ struct PostThumb: View {
 // MARK: - Discover people
 
 struct DiscoverPeopleView: View {
+    @Environment(\.flimAccent) private var accent
     @Environment(AuthService.self) private var auth
     @Environment(FeedService.self) private var feed
     @Environment(\.dismiss) private var dismiss
@@ -971,8 +972,16 @@ struct DiscoverPeopleView: View {
     @State private var searchText = ""
     @State private var loaded = false
     @State private var showInvite = false
+    /// The query the current `results` answer, and whether that request failed. "No one
+    /// matches" is said only for the exact query that came back empty, never while a request is
+    /// still in flight and never for a request that failed.
+    @State private var answeredQuery = ""
+    @State private var searchFailed = false
+    @State private var searchGeneration = 0   // bumped by Try again to rerun the same query
 
     private var searching: Bool { !searchText.isEmpty }
+    private var searchSettled: Bool { searching && answeredQuery == searchText && !searchFailed }
+    private var searchInFlight: Bool { searching && answeredQuery != searchText }
 
     var body: some View {
         NavigationStack {
@@ -980,11 +989,34 @@ struct DiscoverPeopleView: View {
                 VStack(spacing: 0) {
                     PeopleSearchField(query: $searchText, prompt: "Search by name or username")
 
-                    if searching && results.isEmpty && loaded {
+                    if searching && searchFailed && answeredQuery == searchText {
                         Spacer()
-                        Text("No one matches “\(searchText)”")
-                            .flimFont(14, relativeTo: .subheadline).foregroundStyle(FlimTheme.textTertiary)
-                            .multilineTextAlignment(.center).padding(40)
+                        VStack(spacing: 12) {
+                            Text("Couldn't search right now.")
+                                .flimFont(14, relativeTo: .subheadline).foregroundStyle(FlimTheme.textTertiary)
+                            Button("Try again") { answeredQuery = ""; searchFailed = false; searchGeneration += 1 }
+                                .flimFont(14, weight: .medium, relativeTo: .subheadline)
+                                .foregroundStyle(accent)
+                        }
+                        .padding(40)
+                        Spacer()
+                    } else if searchInFlight && results.isEmpty {
+                        Spacer()
+                        ProgressView().tint(.white)
+                        Spacer()
+                    } else if searchSettled && results.isEmpty {
+                        Spacer()
+                        VStack(spacing: 12) {
+                            Text("No one matches “\(searchText)”")
+                                .flimFont(14, relativeTo: .subheadline).foregroundStyle(FlimTheme.textTertiary)
+                                .multilineTextAlignment(.center)
+                            Button { showInvite = true } label: {
+                                Text("Invite them")
+                                    .flimFont(14, weight: .medium, relativeTo: .subheadline)
+                                    .foregroundStyle(accent)
+                            }
+                        }
+                        .padding(40)
                         Spacer()
                     } else {
                         ScrollView {
@@ -1028,11 +1060,17 @@ struct DiscoverPeopleView: View {
                 }
                 loaded = true
             }
-            .task(id: searchText) {
+            .task(id: "\(searchText)|\(searchGeneration)") {
                 // Debounced server-side search so it scales past a scrollable list.
+                let query = searchText
+                guard !query.isEmpty else { results = []; answeredQuery = ""; searchFailed = false; return }
                 try? await Task.sleep(for: .milliseconds(300))
-                guard !Task.isCancelled, !searchText.isEmpty, let uid = auth.currentUser?.id else { return }
-                results = await feed.searchProfiles(query: searchText, excluding: uid)
+                guard !Task.isCancelled, let uid = auth.currentUser?.id else { return }
+                let found = await feed.searchProfiles(query: query, excluding: uid)
+                // Only the request for the query still on screen may answer it.
+                guard !Task.isCancelled, query == searchText else { return }
+                if let found { results = found; searchFailed = false } else { searchFailed = true }
+                answeredQuery = query
             }
         }
         .flimSheetSurface()

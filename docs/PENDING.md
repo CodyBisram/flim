@@ -352,6 +352,24 @@ The four from the audit the owner picked on 2026-09-10: the durable capture queu
 capture status, one invitation journey (a roll code admits you), deletion order, and the photo
 write boundary. In that order of value; built in the order of size.
 
+### done 2026-09-12: the UI audit's batches 1 and 2 (docs/UI_SOCIAL_AUDIT_2026-09-12.md)
+
+Batch 1, trust: the social push settles a source only when every recipient this run touched is
+settled (one recipient's success used to clear another's failure on the same comment; my bug
+from the night before, DEPLOYED). The sort deck claims one card per action and removes it by id,
+so two fast taps can no longer act on the same card and drop the next one unreviewed. Delete is
+no longer the largest control (54 like Keep and Post). The "could not be saved to this phone"
+warning has its own flag and shows even when nothing has failed to upload.
+Batch 2, the first response: Activity's read watermark moves only once the list has loaded
+(`onLoaded`), so a failed load or a sheet closed mid-spinner keeps the unread badge; Activity
+has pull-to-refresh that keeps the loaded list on failure. Friend search has real states: a
+spinner while in flight, "No one matches" only for the exact query that came back empty (with
+an Invite them button), and "Couldn't search right now" with Try again on failure;
+`searchProfiles` returns nil for a failed request rather than an empty list.
+Not taken from that audit, on purpose: the "everyday sharing first" reframing (rolls stay the
+direction), tab reordering or last-tab resume, onboarding copy, and the five-person study
+(worth doing before 1.6).
+
 ### done 2026-09-12: one recovery state per shot (audit 2 finding 6)
 
 `CaptureQueueStore` is a manifest now: one `manifest.json` per account listing every shot with a

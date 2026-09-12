@@ -316,7 +316,10 @@ struct FeedView: View {
             DiscoverPeopleView()
         }
         .sheet(isPresented: $showActivity) {
-            ActivityFeedView(seenBefore: activitySeenBefore)
+            ActivityFeedView(seenBefore: activitySeenBefore) {
+                lastActivitySeen = Date().timeIntervalSince1970
+                unreadActivity = 0
+            }
         }
     }
 
@@ -363,8 +366,9 @@ struct FeedView: View {
                 activitySeenBefore = lastActivitySeen > 0
                     ? Date(timeIntervalSince1970: lastActivitySeen)
                     : nil
-                lastActivitySeen = Date().timeIntervalSince1970
-                unreadActivity = 0
+                // The watermark moves only once Activity has actually shown its content (its
+                // `onLoaded`), so a failed load or a sheet dismissed mid-spinner keeps the unread
+                // signal for next time instead of silently consuming it.
                 showActivity = true
             } label: {
                 Image(systemName: unreadActivity > 0 ? "bell.badge" : "bell")

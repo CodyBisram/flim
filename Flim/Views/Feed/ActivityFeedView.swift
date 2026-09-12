@@ -103,6 +103,8 @@ struct ActivityFeedView: View {
     /// When Activity was last opened, captured BEFORE this visit stamped it. Anything newer sits
     /// under "New". nil means no New section (first ever visit, or the caller didn't pass one).
     var seenBefore: Date?
+    /// Called once the list has loaded successfully, the moment the unread state may be cleared.
+    var onLoaded: () -> Void = {}
 
     var body: some View {
         NavigationStack {
@@ -140,6 +142,9 @@ struct ActivityFeedView: View {
                         }
                         .padding(.vertical, 8)
                     }
+                    // Someone following a thread should not have to close and reopen the sheet
+                    // to see the reply. A failed refresh keeps what is on screen.
+                    .refreshable { await load(keepingOnFailure: true) }
                 }
             }
             .navigationBarTitleDisplayMode(.inline)
@@ -162,7 +167,7 @@ struct ActivityFeedView: View {
         .flimSheetSurface()
     }
 
-    private func load() async {
+    private func load(keepingOnFailure: Bool = false) async {
         guard let uid = auth.currentUser?.id else { loaded = true; return }
         // followingIds only otherwise loads lazily from UserPageView, so a follow
         // notification opened before visiting any profile this session would read as
@@ -171,7 +176,12 @@ struct ActivityFeedView: View {
         async let activityTask = feed.fetchActivity(userId: uid)
         async let followingTask: Void = loadFollowingIfNeeded(uid)
         async let followersTask: Void = loadFollowersIfNeeded(uid)
-        items = await activityTask
+        let fetched = await activityTask
+        if keepingOnFailure, feed.activityError != nil, fetched.isEmpty, !items.isEmpty {
+            await followingTask; await followersTask
+            return   // a refresh that failed leaves the loaded list where it is
+        }
+        items = fetched
         await followingTask
         await followersTask
         // Thumbnails are the smallest rendition in the pipeline (~30KB) and deduped
@@ -184,6 +194,7 @@ struct ActivityFeedView: View {
         let rollPaths = Array(Set(items.compactMap { $0.rollPhotoDisplayPath }))
         rollPhotoThumbURLs = await feed.signedURLs(for: rollPaths)
         loaded = true
+        if feed.activityError == nil { onLoaded() }
     }
 
     /// The rows grouped by when they happened. `items` already arrives newest-first, so grouping

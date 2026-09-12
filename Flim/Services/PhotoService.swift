@@ -68,6 +68,9 @@ final class PhotoService {
     /// Shots saved on this phone that have not reached the server yet (queued or mid-upload),
     /// for the camera's status pill. Failed uploads are counted separately in `failedUploads`.
     var pendingCaptureCount = 0
+    /// A raw capture could not be written to disk and exists only in memory until it uploads.
+    /// Cleared when that shot lands (or fails into the retry list, which is durable).
+    var localSaveFailed = false
 
     var hasFailedUploads: Bool { !failedUploads.isEmpty }
 
@@ -178,6 +181,7 @@ final class PhotoService {
         Task { [weak self] in
             // Say so if the phone could not keep the shot: it is only in memory until it uploads.
             if await !saved.value, let self {
+                self.localSaveFailed = true
                 self.uploadError = "A shot could not be saved to this phone. Keep FLIM open until it uploads."
             }
         }
@@ -222,6 +226,7 @@ final class PhotoService {
                                                queued: meta, epoch: epoch)
             guard AccountEpoch.isCurrent(epoch) else { return }
             pendingCaptureCount = max(0, pendingCaptureCount - 1)
+            if pendingCaptureCount == 0 { localSaveFailed = false }   // everything in line has landed or is durable
             let finishedAt = ContinuousClock.now
 
             let waited = Self.seconds(queuedAt.duration(to: startedAt))

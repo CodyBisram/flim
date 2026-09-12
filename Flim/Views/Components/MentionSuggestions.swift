@@ -62,7 +62,7 @@ struct MentionSuggestions: View {
                 // targets, and it makes the row useful from the first keystroke, not the second.
                 let found = query.isEmpty
                     ? await feed.fetchFollowingProfiles(of: uid)
-                    : await feed.searchProfiles(query: query, excluding: uid)
+                    : (await feed.searchProfiles(query: query, excluding: uid) ?? [])
                 // The draft can move on while that query is in flight; only apply the result if it
                 // still describes what's on screen.
                 guard mentionQuery(in: draft) == query else { return }

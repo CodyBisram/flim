@@ -604,18 +604,19 @@ final class FeedService {
     }
 
     /// Server-side username search (scales past a scrollable list). Case-insensitive prefix/substring.
-    func searchProfiles(query: String, excluding userId: UUID) async -> [UserProfile] {
+    /// nil means the request failed (network, server), which is not the same as no match.
+    func searchProfiles(query: String, excluding userId: UUID) async -> [UserProfile]? {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty else { return [] }
         // Username or display name. PostgREST's `or` filter is comma and paren delimited, so
         // those characters are dropped from the pattern rather than escaped.
         let pattern = "%" + q.filter { !",()".contains($0) } + "%"
-        let list: [UserProfile] = (try? await supabase
+        guard let list: [UserProfile] = try? await supabase
             .from("profiles").select()
             .or("username.ilike.\(pattern),display_name.ilike.\(pattern)")
             .neq("id", value: userId.uuidString)
             .limit(30)
-            .execute().value) ?? []
+            .execute().value else { return nil }
         return list.filter { !blockedIds.contains($0.id) }
     }
 

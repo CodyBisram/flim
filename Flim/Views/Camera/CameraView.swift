@@ -621,7 +621,7 @@ struct CameraView: View {
             // gone wrong without telling them it was the network, or that the photo was still
             // safe, which is the difference between "the app lost my shot" and "I'll retry when
             // I have signal". Kept to one line so the viewfinder stays a viewfinder.
-            if photos.hasFailedUploads, let uploadError = photos.uploadError {
+            if let uploadError = photos.uploadError, photos.hasFailedUploads || photos.localSaveFailed {
                 Text(uploadError)
                     .flimFont(11)
                     .foregroundStyle(.white.opacity(0.85))

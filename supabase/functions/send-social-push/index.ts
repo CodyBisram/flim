@@ -318,8 +318,10 @@ async function notify(
     });
     // A ledger write that failed leaves no evidence of this attempt, so the source must stay
     // unsent and be looked at again; marking it now could lose a recipient for good.
+    // A source is settled only when EVERY recipient this run touched is settled. One person's
+    // success must never clear another person's failure on the same comment, so this only ever
+    // adds; nothing removes a source from the set within a run.
     if (error || (!delivered && attempts < MAX_DELIVERY_ATTEMPTS)) pendingRetry.add(sourceKey);
-    else pendingRetry.delete(sourceKey);
   }
   return sent;
 }
