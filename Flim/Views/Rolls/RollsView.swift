@@ -596,9 +596,12 @@ struct RollsView: View {
                             await load()
                         } catch {
                             Haptics.error()
-                            inviteErrors[roll.id] = RollService.mapJoinRollError(String(describing: error)) == .developed
-                                ? "This roll already developed."
-                                : "Couldn't join. Check your connection and try again."
+                            inviteErrors[roll.id] = switch error as? RollError {
+                            case .developed: "This roll already developed."
+                            case .full: "This roll is full."
+                            case .notFound: "This roll is gone."
+                            default: "Couldn't join. Check your connection and try again."
+                            }
                         }
                     }
                 } label: {
@@ -615,8 +618,10 @@ struct RollsView: View {
                 .disabled(inviteBusy.contains(roll.id))
                 Button {
                     Haptics.tap()
-                    guard let uid = auth.currentUser?.id else { return }
+                    guard let uid = auth.currentUser?.id, !inviteBusy.contains(roll.id) else { return }
+                    inviteBusy.insert(roll.id); inviteErrors[roll.id] = nil
                     Task {
+                        defer { inviteBusy.remove(roll.id) }
                         if await !rolls.dismissFollowUpInvite(roll, userId: uid) {
                             Haptics.error()
                             inviteErrors[roll.id] = "Couldn't dismiss that. Try again."
@@ -629,6 +634,7 @@ struct RollsView: View {
                         .padding(.vertical, 9).padding(.horizontal, 14)
                 }
                 .buttonStyle(.plain)
+                .disabled(inviteBusy.contains(roll.id))
                 Spacer()
             }
             .padding(.top, 2)

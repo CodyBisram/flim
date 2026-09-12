@@ -140,14 +140,17 @@ final class RollService {
     @discardableResult
     func dismissFollowUpInvite(_ roll: Roll, userId: UUID) async -> Bool {
         let epoch = AccountEpoch.current
-        let before = followUpInvites
-        followUpInvites.removeAll { $0.id == roll.id }
+        guard let index = followUpInvites.firstIndex(where: { $0.id == roll.id }) else { return true }
+        followUpInvites.remove(at: index)
         do {
             try await supabase.from("roll_follow_up_invites").delete()
                 .eq("roll_id", value: roll.id.uuidString).eq("user_id", value: userId.uuidString).execute()
             return true
         } catch {
-            if AccountEpoch.isCurrent(epoch) { followUpInvites = before }
+            // Put back only this card, where it was, and only if nothing else removed it meanwhile.
+            if AccountEpoch.isCurrent(epoch), !followUpInvites.contains(where: { $0.id == roll.id }) {
+                followUpInvites.insert(roll, at: min(index, followUpInvites.count))
+            }
             return false
         }
     }

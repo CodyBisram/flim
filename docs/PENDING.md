@@ -352,6 +352,33 @@ The four from the audit the owner picked on 2026-09-10: the durable capture queu
 capture status, one invitation journey (a roll code admits you), deletion order, and the photo
 write boundary. In that order of value; built in the order of size.
 
+### done 2026-09-11, late: the follow-up audit's list (A to H and the small ones)
+
+The evening audit was right that several "done" items were half-landed. In particular, my
+activation flush had never actually been written to disk (the replace failed partway and I
+re-applied only half), so the per-account queue was read and the old key written. Corrections:
+- A: `retryFailedUploads` and `restoreFailedUploads` take the account epoch at entry, pass it
+  into every upload, and guard the final UI write.
+- B: the flush really is per account now: reads and removes from the same keyed queue, one
+  entry at a time, serialized by a flag, stops on account change, adopts the old unscoped key
+  as pre-sign-in entries. Test covers the migration; a transport-injected flush test is owed.
+- C: the social push's retry set is reset per invocation and cleared on success or terminal.
+- D: a tag has one delivery identity (`tag:<id>`) on both the new-post and later-tag routes.
+- E: the re-signed image URL is stored with its path and ignored once the cell shows another.
+- F: `loadFeed` holds its generation from the first await through setup and only clears the
+  loading flag if it still owns the generation.
+- G: the follow-up daily quota is checked inside the per-caller lock; rolls INSERT is column
+  scoped (name, code, creator), so a client cannot supply its own reveal time or parent.
+- H, the practical half: both push runs stop taking new work after 200 s of a 240 s lease, and
+  a ledger write failure leaves the source unsent. Lease renewal proper is not built.
+- Small: item-scoped invite rollback; one busy state for Join and Not this time; typed join
+  errors (developed, full, gone); a 60-character name check in the create sheet; ops alerts
+  marked sent only when a push went out; posts follow their photo's paths by trigger when a
+  relink happens (backfilled, 0 mismatched).
+Migration `2026-09-12_audit2b_server.sql` APPLIED; both push functions DEPLOYED.
+Still open from that audit, on purpose: a single per-photo recovery state across the raw and
+processed stores; the schema bootstrap test; digest pushes without per-recipient records.
+
 ### done 2026-09-11, night: a roll you are in is yours to save, all of it
 
 The owner corrected the export rule: "the point of a roll is for everyone to share those photos."

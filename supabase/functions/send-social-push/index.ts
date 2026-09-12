@@ -269,8 +269,13 @@ async function blockedEitherWay(a: string, b: string): Promise<boolean> {
 // Sources whose delivery to at least one recipient failed this run and is still worth
 // retrying: the block that owns the source must NOT mark it push_sent, so the next run tries
 // again. `notify` fills this; `settled()` reads it. See push_deliveries.
-const pendingRetry = new Set<string>();
+let pendingRetry = new Set<string>();   // reset at the start of every invocation (the lease keeps runs from overlapping)
 const MAX_DELIVERY_ATTEMPTS = 3;
+// Runs must stop taking new work before the lease (240 s) can lapse under them; a run that
+// kept sending past its lease would overlap the next one on the same sources.
+const RUN_BUDGET_MS = 200_000;
+let runStartedAt = 0;
+function outOfTime(): boolean { return Date.now() - runStartedAt > RUN_BUDGET_MS; }
 
 function settled(sourceKey: string): boolean {
   return !pendingRetry.has(sourceKey);
@@ -289,6 +294,7 @@ async function notify(
   sourceKey?: string,
 ): Promise<number> {
   if (!toId || toId === fromId) return 0;
+  if (outOfTime()) { if (sourceKey) pendingRetry.add(sourceKey); return 0; }   // leave it for the next run
   if (await blockedEitherWay(toId, fromId)) return 0;
   let prior = { attempts: 0, delivered: false };
   if (sourceKey) {
@@ -307,10 +313,13 @@ async function notify(
     const [kind, ...rest] = sourceKey.split(":");
     const delivered = sent > 0 || tokens.length === 0;   // no device is terminal, not a failure
     const attempts = prior.attempts + 1;
-    await supabase.from("push_deliveries").upsert({
+    const { error } = await supabase.from("push_deliveries").upsert({
       kind, source_id: rest.join(":"), user_id: toId, attempts, delivered, updated_at: new Date().toISOString(),
     });
-    if (!delivered && attempts < MAX_DELIVERY_ATTEMPTS) pendingRetry.add(sourceKey);
+    // A ledger write that failed leaves no evidence of this attempt, so the source must stay
+    // unsent and be looked at again; marking it now could lose a recipient for good.
+    if (error || (!delivered && attempts < MAX_DELIVERY_ATTEMPTS)) pendingRetry.add(sourceKey);
+    else pendingRetry.delete(sourceKey);
   }
   return sent;
 }
@@ -658,6 +667,8 @@ Deno.serve(async (req: Request) => {
   // run dies, so an overlapping cron firing cannot read the same unsent rows and send twice.
   const { data: leaseToken } = await supabase.rpc("acquire_push_lock", { p_name: "social", p_seconds: 240 });
   if (!leaseToken) return new Response("another run holds the lock");
+  pendingRetry = new Set<string>();
+  runStartedAt = Date.now();
   try {
   let sent = 0;
 
@@ -794,12 +805,15 @@ Deno.serve(async (req: Request) => {
       // post's own author, so this asks exactly what covered_post_visible would ask RLS.
       if (!coveredPostVisibleTo(coveredCtx, uid, p.user_id, p.created_at as string)) continue;
       notified.add(uid);
-      sent += await notify(uid, p.user_id, `${name} tagged you`, "in a photo", { t: "post", id: p.id }, `post:${p.id}`);
+      // The same identity the later-tag route uses (`tag:<id>`), so a recipient delivered here
+      // is never sent again by that route, and only the ones that failed are retried.
+      sent += await notify(uid, p.user_id, `${name} tagged you`, "in a photo", { t: "post", id: p.id }, `tag:${t.id}`);
     }
     if (tagRows && tagRows.length > 0) {
-      if (settled(`post:${p.id}`)) await supabase.from("post_tags").update({ push_sent: true }).in("id", tagRows.map((t) => t.id));
+      const settledTags = tagRows.filter((t) => settled(`tag:${t.id}`)).map((t) => t.id);
+      if (settledTags.length) await supabase.from("post_tags").update({ push_sent: true }).in("id", settledTags);
     }
-    if (settled(`post:${p.id}`)) await supabase.from("posts").update({ push_sent: true }).eq("id", p.id);
+    await supabase.from("posts").update({ push_sent: true }).eq("id", p.id);
   }
 
   // ---- Tags added AFTER publishing: notify someone tagged via "Edit tags"
@@ -1261,10 +1275,14 @@ Deno.serve(async (req: Request) => {
   // the owner, then marked. See public.ops_alerts.
   const { data: opsAlerts } = await supabase.from("ops_alerts").select("id, source, detail").eq("push_sent", false);
   for (const a of opsAlerts ?? []) {
+    let ok = 0;
     for (const token of ownerPushTokens) {
-      if (await sendPush(token, `FLIM ops: ${a.source}`, a.detail.slice(0, 180))) sent++;
+      if (await sendPush(token, `FLIM ops: ${a.source}`, a.detail.slice(0, 180))) ok++;
     }
-    await supabase.from("ops_alerts").update({ push_sent: true }).eq("id", a.id);
+    sent += ok;
+    // Recorded is not delivered: the row stays unsent until a push actually went out, so a
+    // failed APNs call is retried next run rather than lost. No owner device at all is final.
+    if (ok > 0 || ownerPushTokens.length === 0) await supabase.from("ops_alerts").update({ push_sent: true }).eq("id", a.id);
   }
   const { data: photoReports } = await supabase
     .from("photo_reports")

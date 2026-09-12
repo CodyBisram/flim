@@ -248,6 +248,8 @@ Deno.serve(async (req: Request) => {
   // run dies, so an overlapping cron firing cannot read the same unsent rows and send twice.
   const { data: leaseToken } = await supabase.rpc("acquire_push_lock", { p_name: "develop", p_seconds: 240 });
   if (!leaseToken) return new Response("another run holds the lock");
+  const runStartedAt = Date.now();
+  const RUN_BUDGET_MS = 200_000;   // stop before the 240 s lease can lapse under a live run
   try {
   // 1. Photos that have developed, belong to a roll, and haven't pushed yet.
   //    Personal instants (roll_id NULL) are excluded, they develop immediately
@@ -347,6 +349,7 @@ Deno.serve(async (req: Request) => {
       for (const userId of recipientIds) {
         const p = prior.get(userId) ?? { attempts: 0, delivered: false };
         if (p.delivered || p.attempts >= 3) continue;
+        if (Date.now() - runStartedAt > RUN_BUDGET_MS) { unsettled++; continue; }   // next run
         const userTokens = tokensByUser.get(userId) ?? [];
         const body = g.shooters.has(userId) ? shooterBody : memberBody;
         let ok = 0;
@@ -354,10 +357,11 @@ Deno.serve(async (req: Request) => {
         sent += ok;
         const delivered = ok > 0 || userTokens.length === 0;
         const attempts = p.attempts + 1;
-        await supabase.from("push_deliveries").upsert({
+        const { error } = await supabase.from("push_deliveries").upsert({
           kind: "develop", source_id: rollId, user_id: userId, attempts, delivered, updated_at: new Date().toISOString(),
         });
-        if (!delivered && attempts < 3) unsettled++;
+        // A ledger write that failed leaves no evidence of this attempt: keep the roll unsent.
+        if (error || (!delivered && attempts < 3)) unsettled++;
       }
       if (unsettled > 0) continue;   // next run retries the failed members; the rest are recorded
     }

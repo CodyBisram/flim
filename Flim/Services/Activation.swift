@@ -90,16 +90,41 @@ enum Activation {
         }
     }
 
-    /// Sends whatever is queued, in order, stopping at the first failure so nothing is skipped.
+    /// Sends what is queued for the current account, and anything queued before sign-in, one
+    /// entry at a time, removing each entry from the SAME queue it was read from only once its
+    /// own send succeeded. Serialized: a flush already running is not started twice, and an
+    /// event logged mid-flush lands in the store untouched because entries are removed one by
+    /// one rather than by writing back a snapshot. Entries from before this queue was keyed
+    /// (the old unscoped key) are adopted as pre-sign-in entries the first time.
     static func flushPending() {
+        flushLock.lock()
+        if flushing { flushLock.unlock(); return }
+        flushing = true
+        flushLock.unlock()
+        migrateLegacyQueue()
+        guard let user = activeUserId else {
+            flushLock.lock(); flushing = false; flushLock.unlock()
+            return   // nothing can be attributed yet; the neutral queue waits
+        }
+        let owners = [user.uuidString.lowercased(), neutralOwner]
         Task {
-            var remaining = pending()
-            while let first = remaining.first {
-                guard await send(first) else { break }
-                remaining.removeFirst()
-                store.set(remaining, forKey: pendingKey)
+            defer { flushLock.lock(); flushing = false; flushLock.unlock() }
+            for key in owners {
+                for raw in pending(owner: key) {
+                    // Still the same account? The queue is keyed by it; a switch mid-flush
+                    // stops here and the rest waits for that account's next flush.
+                    guard activeUserId == user else { return }
+                    guard await send(raw) else { return }
+                    remove(raw, owner: key)
+                }
             }
         }
+    }
+
+    private static func migrateLegacyQueue() {
+        guard let legacy = store.stringArray(forKey: pendingKey), !legacy.isEmpty else { return }
+        for raw in legacy { enqueue(raw, owner: neutralOwner) }
+        store.removeObject(forKey: pendingKey)
     }
 
     private static func send(_ raw: String) async -> Bool {

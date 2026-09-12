@@ -827,18 +827,19 @@ final class FeedService {
 
     func loadFeed(currentUserId: UUID) async {
         isLoadingFeed = true
-        defer { isLoadingFeed = false }
-        // Guarded per write, not once. This is the primary feed entry point (tab appear and
-        // pull to refresh), and the follow graph plus the block list are both account-scoped:
-        // loadMoreFeed's own guard cannot save it, because that runs on a `followingIds` value
-        // this function may already have written from the wrong account.
         feedGeneration += 1
+        // This refresh's own identity, held from the first await to the last write. An older
+        // refresh that resumes after a newer one finished must not reset the cursor, replace the
+        // author set, or clear the newer one's loading flag; only the owner of the current
+        // generation touches state.
+        let generation = feedGeneration
+        defer { if generation == feedGeneration { isLoadingFeed = false } }
         let epoch = AccountEpoch.current
         let following = await fetchFollowingIds(userId: currentUserId)
-        guard AccountEpoch.isCurrent(epoch) else { return }
+        guard AccountEpoch.isCurrent(epoch), generation == feedGeneration else { return }
         followingIds = following
         await loadBlocked(userId: currentUserId, epoch: epoch)
-        guard AccountEpoch.isCurrent(epoch) else { return }
+        guard AccountEpoch.isCurrent(epoch), generation == feedGeneration else { return }
         // Reset pagination bookkeeping for a fresh first page, but deliberately leave `feed`
         // (and its reaction/comment/tag caches) alone until the new page actually lands, see
         // `loadMoreFeed`'s `replacingFeed`. Clearing `feed` here, before the network round trip

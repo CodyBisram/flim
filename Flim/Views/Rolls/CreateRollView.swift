@@ -79,7 +79,7 @@ struct CreateRollView: View {
 
             Spacer()
 
-            PrimaryButton(title: "Create Roll", isLoading: isCreating, disabled: name.trimmingCharacters(in: .whitespaces).isEmpty) {
+            PrimaryButton(title: "Create Roll", isLoading: isCreating, disabled: name.trimmingCharacters(in: .whitespaces).isEmpty || name.trimmingCharacters(in: .whitespaces).count > 60) {
                 await create()
             }
         }

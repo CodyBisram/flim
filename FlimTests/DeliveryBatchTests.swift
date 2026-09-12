@@ -57,3 +57,21 @@ struct DeliveryBatchTests {
         #expect(await store.expiresAt(path) == nil)
     }
 }
+
+/// The flush reads and removes from the same per-account queue, adopts the old unscoped key as
+/// pre-sign-in entries, and never runs without an account to attribute to.
+struct ActivationFlushTests {
+    @Test("legacy unscoped entries are adopted into the neutral queue on flush")
+    func legacyMigration() async {
+        let defaults = UserDefaults(suiteName: "ActivationFlushTests.\(UUID().uuidString)")!
+        let previous = Activation.store
+        Activation.store = defaults
+        defer { Activation.store = previous; Activation.activeUserId = nil }
+        defaults.set(["first_launch", "onboarding_finished"], forKey: "activation.pending")
+        Activation.activeUserId = nil
+        Activation.flushPending()   // no account: migrates, sends nothing
+        try? await Task.sleep(for: .milliseconds(50))
+        #expect(defaults.stringArray(forKey: "activation.pending") == nil)
+        #expect(Activation.pending(owner: "none") == ["first_launch", "onboarding_finished"])
+    }
+}

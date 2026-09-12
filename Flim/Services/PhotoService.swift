@@ -1214,6 +1214,10 @@ final class PhotoService {
     }
 
     func retryFailedUploads() async {
+        // Bound to the account that owns these records at entry: if the account changes while
+        // the confirmation round trip is in flight, nothing below runs, and the records stay on
+        // disk under their owner's folder for that account's next restore.
+        let epoch = AccountEpoch.current
         let pending = await MainActor.run { () -> [FailedUpload] in
             let p = failedUploads
             failedUploads = []
@@ -1228,16 +1232,19 @@ final class PhotoService {
         // dropped right here, and the tap that surfaced this pill never has to wait on a
         // redundant re-upload of bytes already sitting in Storage.
         let confirmed = await confirmedUploaded(pending)
+        guard AccountEpoch.isCurrent(epoch) else { return }
         for upload in pending where confirmed.contains(upload.id) {
             await failedUploadStore.remove(id: upload.id, userId: upload.userId)
         }
         let stillPending = pending.filter { !confirmed.contains($0.id) }
 
         for upload in stillPending {
+            guard AccountEpoch.isCurrent(epoch) else { return }
             await captureAndUpload(imageData: upload.data,
                                    userId: upload.userId,
                                    rollId: upload.rollId,
-                                   retryOf: upload)
+                                   retryOf: upload,
+                                   epoch: epoch)
             // Only a record queued before `photoId` existed needs cleanup here. It carries no id
             // to reuse, so `captureAndUpload` mints a FRESH one for it and manages that new file
             // itself (removed on success, rewritten on a further failure); `upload.id` names a
@@ -1366,7 +1373,7 @@ final class PhotoService {
             }
             toRestore.append(record)
         }
-        guard !toRestore.isEmpty else { return }
+        guard AccountEpoch.isCurrent(epoch), !toRestore.isEmpty else { return }
 
         let known = Set(failedUploads.map(\.id))
         let fresh = toRestore.filter { !known.contains($0.id) }

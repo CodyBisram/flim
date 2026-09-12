@@ -364,8 +364,10 @@ struct CachedImage<Content: View, Placeholder: View>: View {
     @State private var uiImage: UIImage?
     @State private var shown = false
     @State private var failed = false
-    /// A URL signed fresh on retry (see `retry`); wins over `url` once set.
-    @State private var resignedURL: URL?
+    /// A URL signed fresh on retry (see `retry`), remembered with the path it was signed for;
+    /// used only while this view still shows that path, so a cell that moves on to another
+    /// rendition or another photo never loads the old bytes under the new key.
+    @State private var resigned: (path: String, url: URL)?
     // Bumped at the start of every `load()` call and captured locally by that call. The decode
     // underneath `DiskImageCache.load`/`ImageLoader.fetch` runs on `Task.detached`, which is NOT
     // part of the tree `.task(id:)` cancels, so an old call's awaits can still resolve after a
@@ -418,9 +420,12 @@ struct CachedImage<Content: View, Placeholder: View>: View {
         if let path = cacheKey, path.contains("/"), !path.hasPrefix("http") {
             let fresh = try? await supabase.storage.from("photos")
                 .createSignedURL(path: path, expiresIn: Int(SignedURLStore.ttl))
+            // The view may have moved to another path while signing; then this URL is not ours.
+            guard cacheKey == path else { return }
             if let fresh {
                 await SignedURLStore.shared.store(fresh, for: path)
-                resignedURL = fresh
+                guard cacheKey == path else { return }
+                resigned = (path, fresh)
             }
         }
         await load()
@@ -442,7 +447,8 @@ struct CachedImage<Content: View, Placeholder: View>: View {
                 uiImage = disk; shown = true; onDecoded?(disk.size); return
             }
         }
-        guard let url = resignedURL ?? url else { uiImage = nil; return }
+        let override = (resigned?.path == cacheKey) ? resigned?.url : nil
+        guard let url = override ?? url else { uiImage = nil; return }
         if cacheKey == nil {
             let memKey = "\(url.absoluteString)|\(Int(maxPixel))" as NSString
             if let cached = ImageCache.shared.object(forKey: memKey) {
