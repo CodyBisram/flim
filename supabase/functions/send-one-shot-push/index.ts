@@ -98,7 +98,29 @@ const CAMPAIGNS: Record<string, () => Promise<Recipient[]>> = {
   "epic-podium": epicPodiumCohort,
   "branb-epcot": branbEpcotCohort,
   "waiting-to-sort": waitingToSortCohort,
+  "thank-you-preview": thankYouPreviewCohort,
+  "thank-you": thankYouCohort,
 };
+
+const THANK_YOU_TITLE = "Thank you, from Cody";
+const THANK_YOU_BODY =
+  "For every roll, every reveal, and every time it broke and you came back anyway. FLIM is what it is because of you. " +
+  "If you know one more person who belongs here, your code is on your profile.";
+
+/// The owner alone, to see the thank-you on his own lock screen before it goes to everyone.
+async function thankYouPreviewCohort(): Promise<Recipient[]> {
+  const reachable = new Set(await reachableUsers());
+  const { data } = await supabase.from("users").select("id").eq("username", "cody");
+  return ((data ?? []) as { id: string }[])
+    .filter((u) => reachable.has(u.id))
+    .map((u) => ({ userId: u.id, title: THANK_YOU_TITLE, body: THANK_YOU_BODY, route: { t: "profile", id: u.id } }));
+}
+
+/// Everyone reachable. Routes to the person's own profile, where the invite code lives.
+async function thankYouCohort(): Promise<Recipient[]> {
+  const ids = await reachableUsers();
+  return ids.map((id) => ({ userId: id, title: THANK_YOU_TITLE, body: THANK_YOU_BODY, route: { t: "profile", id } }));
+}
 
 /// Everyone reachable who has never taken a single photograph.
 ///
