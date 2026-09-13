@@ -1,0 +1,31 @@
+name: Nightly numbers
+
+# One line a day of how FLIM is doing, committed to docs/NUMBERS.md, plus a push to the owner
+# (through ops_alerts) when something is broken rather than quiet. The thresholds and their
+# reasoning live in scripts/nightly_numbers.sh. Runs at 00:20 Eastern so "yesterday" is whole.
+on:
+  schedule:
+    - cron: "20 4 * * *"   # 04:20 UTC = 00:20 EDT (01:20 EST in winter; still after midnight)
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  numbers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read the numbers and append the day
+        env:
+          FLIM_SERVICE_KEY: ${{ secrets.FLIM_SERVICE_KEY }}
+        run: bash scripts/nightly_numbers.sh
+      - name: Commit the line
+        run: |
+          git config user.name "flim-nightly"
+          git config user.email "nightly@flim-app.com"
+          git add docs/NUMBERS.md
+          git diff --cached --quiet && exit 0
+          DAY=$(tail -1 docs/NUMBERS.md | cut -d'|' -f2 | tr -d ' ')
+          git commit -m "Numbers for $DAY."
+          git push

@@ -18,6 +18,10 @@ on:
       # pipeline; a database-only commit must not ship an identical app build.
       - "supabase/**"
       - "*.md"
+      # The routines commit here on their own; none of it is app code.
+      - "social/**"
+      - ".github/workflows/nightly-numbers.yml"
+      - ".github/workflows/r2-tripwire.yml"
   pull_request:
   workflow_dispatch:
 

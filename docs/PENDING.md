@@ -1312,6 +1312,14 @@ The bump this section used to ask for has already happened. Status: `done`.
 
 ## Owner actions
 
+- **owner** — Paste the two routine prompts from `docs/ROUTINES.md` into the claude.ai routines
+  (nightly review `trig_016sRvtGxYpPVyN3mXtEHi2v`, social drafts `trig_016yUs6HtUepKBwDDNYvLeft`).
+  Rewritten 2026-09-13 so both commit to main (docs/reviews/, social/drafts/) instead of opening
+  PRs, and the review re-verifies `docs/reviews/OPEN.md` nightly. The update call is refused
+  from this session by the auto-mode classifier, so the live prompts are still the old ones
+  until pasted; the review prompt is on the clipboard as of 2026-09-13. Also confirm the
+  `nightly-numbers.yml` workflow's first run (Actions tab, after 00:20 ET) appended a row to
+  `docs/NUMBERS.md`; it uses the same `FLIM_SERVICE_KEY` secret as the tripwire.
 - **owner** — Device-test the rolls redesign (batches 1 and 2, `06b08ea` through `51dcae5`).
   Not reachable in the simulator: the develop beat animating, the 3g summary card, and the
   completion-flag behaviour, all of which need taps. 1.5.0 shipped this work to the App Store;
