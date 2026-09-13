@@ -32,6 +32,8 @@ struct SortDeckView: View {
     /// A post that landed, said once so the person knows where it went. Cleared by the next
     /// action or a few seconds, whichever first.
     @State private var postedNotice = false
+    /// Which posted notice the running three-second timer belongs to; see `commit`.
+    @State private var postedNoticeId: UUID?
     /// The compose sheet, opened from the pill under the top card or a tap on the card itself.
     @State private var showCompose = false
     @State private var composePhoto: Photo?
@@ -158,8 +160,7 @@ struct SortDeckView: View {
                     .foregroundStyle(FlimTheme.textSecondary)
                 Button("View") {
                     guard let uid = auth.currentUser?.id else { return }
-                    closeDeck()
-                    NotificationCenter.default.post(name: .openPushDestination, object: PushDestination.profile(userId: uid))
+                    closeDeck(then: .profile(userId: uid))
                 }
                 .flimFont(13, weight: .semibold, relativeTo: .subheadline)
                 .foregroundStyle(accent)
@@ -398,8 +399,12 @@ struct SortDeckView: View {
     }
 
     /// Closes the deck, finishing any held action FIRST so the caller's refresh sees the
-    /// committed state (otherwise the "N to sort" count lingers).
-    private func closeDeck() {
+    /// committed state (otherwise the "N to sort" count lingers). The deck lands in exactly one
+    /// place afterwards, decided here and nowhere else: `destination` when the person asked for
+    /// one (the posted notice's View), else a new account's first-sort Darkroom, else wherever
+    /// the dismiss leaves them. Posting the destination from the button and letting the default
+    /// fire later let the default win over an explicit tap (audit A6).
+    private func closeDeck(then destination: PushDestination? = nil) {
         guard !closing else { return }   // auto-dismiss + button could both fire
         closing = true
         let p = lastPhoto, a = lastAction, caption = lastCaption, tags = lastTags
@@ -410,11 +415,18 @@ struct SortDeckView: View {
             // A new account's first sort ends in the Darkroom, once (owner's call 2026-09-09):
             // the frame they just kept is the reason the Darkroom exists, and landing back on
             // the camera hid it. `.openDarkroom` is the same switch a push uses. Only after a
-            // sort actually happened, never on a deck closed untouched.
-            if sortsCompleted > 0, let uid = auth.currentUser?.id,
-               NewAccountIntro.isNewAccount(createdAt: auth.currentUser?.createdAt),
-               !NewAccountIntro.firstSortLanded(userId: uid) {
+            // sort actually happened, never on a deck closed untouched. An explicit destination
+            // consumes the one-shot too: the person has seen where their frame went.
+            let firstSortPending: Bool = {
+                guard sortsCompleted > 0, let uid = auth.currentUser?.id,
+                      NewAccountIntro.isNewAccount(createdAt: auth.currentUser?.createdAt),
+                      !NewAccountIntro.firstSortLanded(userId: uid) else { return false }
                 NewAccountIntro.markFirstSortLanded(userId: uid)
+                return true
+            }()
+            if let destination {
+                NotificationCenter.default.post(name: .openPushDestination, object: destination)
+            } else if firstSortPending {
                 NotificationCenter.default.post(name: .openDarkroom, object: nil)
             }
         }
@@ -445,8 +457,15 @@ struct SortDeckView: View {
             await photoService.markSorted(photoId: photo.id)
             do {
                 let tagsSaved = try await feed.createPost(photo: photo, caption: caption, userId: uid, tags: tags)
+                // The timer belongs to THIS notice: a second post inside the three seconds
+                // starts its own, and the first one's expiry no longer hides it (audit A8).
+                let notice = UUID()
+                postedNoticeId = notice
                 withAnimation { postedNotice = true }
-                Task { try? await Task.sleep(for: .seconds(3)); withAnimation { postedNotice = false } }
+                Task {
+                    try? await Task.sleep(for: .seconds(3))
+                    if postedNoticeId == notice { withAnimation { postedNotice = false } }
+                }
                 if shouldWarnThatTagsDidNotSave(tagsSaved) {
                     // The post itself is live, only the tags failed to attach; a genuine failure
                     // still has to speak up, same reasoning as the publish failure right below,

@@ -209,12 +209,19 @@ UNION ALL SELECT 'posts',          count(*) FILTER (WHERE NOT push_sent) FROM pu
 UNION ALL SELECT 'comment_likes',  count(*) FILTER (WHERE NOT push_sent) FROM public.comment_likes;
 ```
 
-## 12. The two funnels, weekly
+## 12. The two milestone ladders, weekly
 
 Counts, not percentages, scoped to accounts created since a date (so every step's event has been
 logging for the whole cohort). Function `weekly_funnels(date)`, owner-only. Run it every Monday
 with the previous Monday's date and keep the rows; at this size the absolute numbers and the
 names behind them matter more than a percentage that moves when one person acts.
+
+Read these as milestones, not an ordered funnel: each row counts the people in the cohort who
+have ever done that thing, independently. Someone can be in "got a response" without being in
+"reacted on a friend", and nothing here says the steps happened in order or inside the first
+week. "Reacted or commented on a friend" means on someone else's post; it does not establish
+that the friendship runs both ways (that is §14). The name of the function is older than this
+paragraph; do not rename it, the dashboard queries call it.
 
 ```sql
 select * from public.weekly_funnels('2026-09-01');
@@ -242,3 +249,22 @@ select * from public.first_response_stats('2026-09-01');
 First run, 2026-09-13, posts since 2026-09-01: 335 posts, 309 answered, median 42 minutes to the
 first response, 191 answered within an hour, 25 older than a day with none. 36 people posted and
 nobody has posted without ever getting a response. The number to watch is the last one.
+
+"Never got a response" (fixed 2026-09-13): someone with at least one post older than a day and
+no answered post of any age. The first version looked only at aged posts, so one stale unanswered
+post next to a fresh answered one counted as never answered.
+
+## 14. Reciprocal pairs
+
+The one number that says whether people are connecting rather than broadcasting: pairs of people
+who EACH reacted to or commented on the other's photos inside a rolling window. Personal posts and
+roll photos are reported separately (a roll makes reciprocity cheap; a page does not); "either" is
+the distinct-pair union, not the sum. Never shown in the app, never a score. It is also the
+`reciprocal_pairs_7d` column in `docs/NUMBERS.md`, so the trend needs no query.
+
+```sql
+select * from public.reciprocal_pairs_detail(7);   -- posts / rolls / either
+select public.reciprocal_pairs(30);
+```
+
+First run, 2026-09-13, seven days: 52 pairs on posts, 0 on rolls, 52 either, across 70 accounts.

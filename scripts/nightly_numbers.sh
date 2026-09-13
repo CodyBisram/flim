@@ -10,6 +10,7 @@
 #   - a push gave up after three tries
 #   - a cron run failed, or an edge function answered non-200
 #   - a crash or hang row landed
+#   - a report the owner was never pushed about
 # Openers dropping is not an alert; that is what the trend line is for.
 set -euo pipefail
 [ -z "${FLIM_SERVICE_KEY:-}" ] && source ~/.claude/flim-r2-watch.env
@@ -21,11 +22,12 @@ ALERT=$(python3 - "$J" "${NUMBERS_FILE:-docs/NUMBERS.md}" <<'PY'
 import json, sys, pathlib
 d = json.loads(sys.argv[1]); path = pathlib.Path(sys.argv[2])
 cols = ["day","accounts","new_accounts","openers","openers_7d_avg","shooters","photos","posts",
-        "reactions","comments","follows","rolls_created","reveals_watched","invites_redeemed",
-        "founding_left","db_mb","storage_gb"]
+        "reactions","comments","follows","reciprocal_pairs_7d","rolls_created","reveals_watched",
+        "invites_redeemed","founding_left","db_mb","storage_gb"]
 header = ("# FLIM by the day\n\nOne line per day, appended by the nightly numbers job "
           "(scripts/nightly_numbers.sh). Counts are for the Eastern-time day named; "
-          "`openers_7d_avg` is the trailing week so a weekend dip reads as a dip.\n\n| "
+          "`openers_7d_avg` is the trailing week so a weekend dip reads as a dip; "
+          "`reciprocal_pairs_7d` is pairs of people who each reacted to or commented on the other in the last seven days.\n\n| "
           + " | ".join(cols) + " |\n|" + "---|" * len(cols) + "\n")
 row = "| " + " | ".join(str(d.get(c, "")) for c in cols) + " |\n"
 text = path.read_text() if path.exists() else header
@@ -41,7 +43,7 @@ if d["push_deliveries_failed_terminal_24h"]: problems.append(f"{d['push_deliveri
 if d["cron_failures_24h"]: problems.append(f"{d['cron_failures_24h']} cron failure(s)")
 if d["edge_non_200_24h"]: problems.append(f"{d['edge_non_200_24h']} non-200 edge response(s)")
 if d["crash_rows_24h"]: problems.append(f"{d['crash_rows_24h']} crash/hang row(s)")
-if d["reports_open"]: problems.append(f"{d['reports_open']} report(s) awaiting the owner")
+if d["reports_unnotified"]: problems.append(f"{d['reports_unnotified']} report(s) the owner has not been told about")
 summary = (f"{d['day']}: {d['openers']} opened (7d avg {d['openers_7d_avg']}), {d['shooters']} shot "
            f"{d['photos']} photos, {d['posts']} posts, {d['new_accounts']} new accounts")
 print(("REGRESSION: " + "; ".join(problems) + " | " if problems else "QUIET: ") + summary)
@@ -50,6 +52,6 @@ PY
 echo "$ALERT"
 case "$ALERT" in
   REGRESSION*)
-    DETAIL=$(printf '%s' "${ALERT#REGRESSION: }" | cut -d"|" -f1 | python3 -c 'import json,sys; print(json.dumps({"p_source":"nightly numbers","p_detail":sys.stdin.read()}))')
+    DETAIL=$(printf '%s' "${ALERT#REGRESSION: }" | cut -d"|" -f1 | python3 -c 'import json,sys; print(json.dumps({"p_source":"nightly numbers","p_detail":sys.stdin.read().strip()}))')
     curl -sf "${AUTH[@]}" -X POST "$BASE/rpc/raise_ops_alert" -d "$DETAIL" >/dev/null;;
 esac

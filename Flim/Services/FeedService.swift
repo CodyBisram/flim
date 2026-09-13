@@ -12,6 +12,11 @@ final class FeedService {
 
     var feed: [FeedItem] = []
     var followingIds: Set<UUID> = []
+    /// `followingIds` as the SERVER knows it. `followingIds` moves before the network call so
+    /// the button answers the tap; this set moves only after the insert or delete lands. Posts
+    /// are readable by followers, so a page that refetches on the optimistic flip can beat the
+    /// insert and come back empty; it watches this set instead (audit A1, 2026-09-13).
+    var confirmedFollowingIds: Set<UUID> = []
     /// Who follows ME. Loaded once (mirrors `followingIds`) rather than per-profile, so "follows
     /// you" is a free membership check anywhere in the app: a badge on a profile, "Follow back"
     /// copy on a button, or a suggestion-ranking signal, all read this one set.
@@ -84,6 +89,7 @@ final class FeedService {
         let following = await fetchFollowingIds(userId: userId)
         guard AccountEpoch.isCurrent(epoch) else { return }
         followingIds = following
+        confirmedFollowingIds = following
     }
 
     private func fetchFollowingIds(userId: UUID) async -> Set<UUID> {
@@ -197,12 +203,14 @@ final class FeedService {
         do {
             try await supabase.from("follows")
                 .insert(F(follower_id: userId, following_id: targetId)).execute()
+            confirmedFollowingIds.insert(targetId)
             return true
         } catch let error as PostgrestError where error.code == "23505" {
             // follows' PK is (follower_id, following_id): a duplicate insert means the row
             // already exists server-side (e.g. a stale followingIds read racing this call), so
             // the desired end state already holds, leave the optimistic insert in place rather
             // than rolling back a follow that's actually there.
+            confirmedFollowingIds.insert(targetId)
             return true
         } catch {
             // The insert never landed (offline, RLS), without this the button was stuck
@@ -221,6 +229,7 @@ final class FeedService {
                 .eq("follower_id", value: userId.uuidString)
                 .eq("following_id", value: targetId.uuidString)
                 .execute()
+            confirmedFollowingIds.remove(targetId)
             return true
         } catch {
             // Same as above, mirrored: the delete never landed, so put the follow back.
@@ -756,6 +765,7 @@ final class FeedService {
         profilePostsCache = [:]
         feed = []
         followingIds = []
+        confirmedFollowingIds = []
         followerIds = []
         myPostedPhotoIds = []
         blockedIds = []
@@ -839,6 +849,7 @@ final class FeedService {
         let following = await fetchFollowingIds(userId: currentUserId)
         guard AccountEpoch.isCurrent(epoch), generation == feedGeneration else { return }
         followingIds = following
+        confirmedFollowingIds = following
         await loadBlocked(userId: currentUserId, epoch: epoch)
         guard AccountEpoch.isCurrent(epoch), generation == feedGeneration else { return }
         // Reset pagination bookkeeping for a fresh first page, but deliberately leave `feed`
@@ -1329,6 +1340,7 @@ final class FeedService {
         let following = await fetchFollowingIds(userId: currentUserId)
         guard AccountEpoch.isCurrent(epoch) else { return [] }
         followingIds = following
+        confirmedFollowingIds = following
         await loadBlocked(userId: currentUserId, epoch: epoch)
         guard AccountEpoch.isCurrent(epoch) else { return [] }
         var authorIds = Array(followingIds)

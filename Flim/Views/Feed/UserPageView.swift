@@ -102,6 +102,9 @@ struct UserPageView: View {
 
     private var isSelf: Bool { userId == auth.currentUser?.id }
     private var isFollowing: Bool { feed.isFollowing(userId) }
+    /// Whether the follow HOLDS server-side, which is what decides whether the posts request
+    /// below returns anything. `isFollowing` flips on the tap; this flips when the row lands.
+    private var followConfirmed: Bool { feed.confirmedFollowingIds.contains(userId) }
     private var isBlocked: Bool { feed.isBlocked(userId) }
     private var followsMe: Bool { feed.followsMe(userId) }
 
@@ -187,8 +190,27 @@ struct UserPageView: View {
                 }
                 .ignoresSafeArea(edges: .top)   // cover bleeds up under the back/gear buttons
                 .refreshable { await load() }
-                // Following is what opens someone's photographs; fetch them the moment it lands.
-                .onChange(of: isFollowing) { was, now in if now && !was && !isSelf { Task { await load() } } }
+                // Following is what opens someone's photographs: fetch them once the follow row
+                // has LANDED, not on the optimistic flip, or the request can beat the insert
+                // and legitimately return nothing (audit A1). Unfollowing closes them again, at
+                // once: the grid and the shelf empty and the cache for this page is dropped, so
+                // neither this visit nor the next paints a follower-only grid from memory
+                // (audit A2). The signed URLs already minted expire on their own within the hour.
+                .onChange(of: followConfirmed) { was, now in
+                    guard !isSelf else { return }
+                    if now && !was {
+                        Task { await load() }
+                    } else if was && !now {
+                        posts = []
+                        postThumbURLs = [:]
+                        sharedCount = 0
+                        feed.profilePostsCache[userId] = nil
+                        chapterService.chaptersByProfile[userId] = nil
+                        // Then ask again rather than assume nothing: a post this person is
+                        // tagged in stays theirs to see, and only the server knows which.
+                        Task { await load(); await chapterService.fetchChapters(for: userId) }
+                    }
+                }
                 // A finger on the page ends the swap-in at once: an explanation that rides the
                 // scroll pins attention to a line the person has already moved past.
                 .onScrollPhaseChange { _, newPhase in

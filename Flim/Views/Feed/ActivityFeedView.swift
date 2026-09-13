@@ -103,8 +103,11 @@ struct ActivityFeedView: View {
     /// When Activity was last opened, captured BEFORE this visit stamped it. Anything newer sits
     /// under "New". nil means no New section (first ever visit, or the caller didn't pass one).
     var seenBefore: Date?
-    /// Called once the list has loaded successfully, the moment the unread state may be cleared.
-    var onLoaded: () -> Void = {}
+    /// Called once the list has loaded successfully, the moment the unread state may be cleared,
+    /// with the instant the query was ISSUED: everything on screen is at least that old, so that
+    /// is the honest watermark. Stamping "now" after the thumbnails were signed would mark a
+    /// reply that arrived during the signing as seen without it ever being shown (audit A4).
+    var onLoaded: (Date) -> Void = { _ in }
 
     var body: some View {
         NavigationStack {
@@ -173,6 +176,7 @@ struct ActivityFeedView: View {
         // notification opened before visiting any profile this session would read as
         // "not following" even when you already are. Runs alongside the activity fetch,
         // not after, so it doesn't add to first paint.
+        let queriedAt = Date()
         async let activityTask = feed.fetchActivity(userId: uid)
         async let followingTask: Void = loadFollowingIfNeeded(uid)
         async let followersTask: Void = loadFollowersIfNeeded(uid)
@@ -194,7 +198,7 @@ struct ActivityFeedView: View {
         let rollPaths = Array(Set(items.compactMap { $0.rollPhotoDisplayPath }))
         rollPhotoThumbURLs = await feed.signedURLs(for: rollPaths)
         loaded = true
-        if feed.activityError == nil { onLoaded() }
+        if feed.activityError == nil { onLoaded(queriedAt) }
     }
 
     /// The rows grouped by when they happened. `items` already arrives newest-first, so grouping

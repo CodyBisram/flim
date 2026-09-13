@@ -129,7 +129,12 @@ struct JoinRollView: View {
             }
             Spacer()
             if roll.isDeveloped {
-                PrimaryButton(title: "See the roll") { dismiss() }
+                // Says "See the roll", so it opens the roll, not just the sheet's parent
+                // (audit A8). Same destination a develop push uses.
+                PrimaryButton(title: "See the roll") {
+                    dismiss()
+                    NotificationCenter.default.post(name: .openPushDestination, object: PushDestination.reveal(rollId: roll.id))
+                }
             } else {
                 PrimaryButton(title: "Shoot into \(roll.name)") {
                     dismiss()

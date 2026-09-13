@@ -316,8 +316,10 @@ struct FeedView: View {
             DiscoverPeopleView()
         }
         .sheet(isPresented: $showActivity) {
-            ActivityFeedView(seenBefore: activitySeenBefore) {
-                lastActivitySeen = Date().timeIntervalSince1970
+            ActivityFeedView(seenBefore: activitySeenBefore) { queriedAt in
+                // Never moves the watermark backwards: a refresh inside the sheet reports its
+                // own (later) query time, and an earlier one can't undo it.
+                lastActivitySeen = max(lastActivitySeen, queriedAt.timeIntervalSince1970)
                 unreadActivity = 0
             }
         }

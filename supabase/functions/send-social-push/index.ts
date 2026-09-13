@@ -263,6 +263,23 @@ async function blockedEitherWay(a: string, b: string): Promise<boolean> {
   return blocked;
 }
 
+/// Whether `viewerId` may open the post at all: posts are readable by followers (and by the
+/// people tagged in them) since 2026-09-13, and a push that carries a comment's text and a link
+/// into a post the recipient cannot open is the same leak the covered-post rule closes, just
+/// through the follow graph instead of the cover list. Same predicate RLS uses (`post_visible_to`,
+/// SECURITY DEFINER, callable by the service role), asked fresh per recipient and cached for the
+/// run. Fails closed: if the RPC errors, nobody is told.
+const visibleCache = new Map<string, boolean>();
+async function postVisibleTo(viewerId: string, postId: string, authorId: string): Promise<boolean> {
+  const key = `${viewerId}|${postId}`;
+  const hit = visibleCache.get(key);
+  if (hit !== undefined) return hit;
+  const { data, error } = await supabase.rpc("post_visible_to", { p_viewer: viewerId, p_post_id: postId, p_author: authorId });
+  const visible = !error && data === true;
+  visibleCache.set(key, visible);
+  return visible;
+}
+
 /// Sends one notification from `fromId` to `toId`, unless either has blocked the other, or they
 /// are the same person. The single door every user-to-user push goes through, so a new
 /// notification type can't forget the check.
@@ -670,6 +687,7 @@ Deno.serve(async (req: Request) => {
   const { data: leaseToken } = await supabase.rpc("acquire_push_lock", { p_name: "social", p_seconds: 240 });
   if (!leaseToken) return new Response("another run holds the lock");
   pendingRetry = new Set<string>();
+  visibleCache.clear();
   runStartedAt = Date.now();
   try {
   let sent = 0;
@@ -742,6 +760,10 @@ Deno.serve(async (req: Request) => {
       if (ownerId && postMeta?.created_at && !coveredPostVisibleTo(coveredCtx, uid, ownerId, postMeta.created_at)) {
         continue;
       }
+      // And the follower rule: a mention can name someone who does not follow the author and
+      // was not tagged, and the push would hand them the comment text plus a link to a post
+      // RLS will refuse. Being mentioned is not an audience exception; being tagged is.
+      if (ownerId && !(await postVisibleTo(uid, c.post_id, ownerId))) continue;
       notified.add(uid);
       mentionPushes++;
       sent += await notify(uid, c.user_id, `${name} mentioned you`, preview, route, `comment:${c.id}`);
@@ -768,6 +790,9 @@ Deno.serve(async (req: Request) => {
       if (ownerId && postMeta?.created_at && !coveredPostVisibleTo(coveredCtx, uid, ownerId, postMeta.created_at)) {
         continue;
       }
+      // A participant who has since unfollowed the author can no longer open the thread, so
+      // they are not told it continued.
+      if (ownerId && !(await postVisibleTo(uid, c.post_id, ownerId))) continue;
       notified.add(uid);
       sent += await notify(uid, c.user_id, `${name} also commented`, preview, route, `comment:${c.id}`);
     }

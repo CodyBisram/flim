@@ -210,6 +210,8 @@ struct RollDetailView: View {
     @State private var vm = DarkroomViewModel()
     @State private var showMembers = false
     @State private var showFollowUp = false
+    /// Set by the reveal's closing card; consumed once the reveal cover has finished dismissing.
+    @State private var followUpAfterReveal = false
     @Namespace private var photoNS
     @State private var selectedPhoto: Photo?
     @State private var memberNames: [UUID: String] = [:]   // userId → username, for attribution
@@ -716,7 +718,7 @@ struct RollDetailView: View {
             RollRevealView(rollId: roll.id, rollName: roll.name,
                            photos: chronologicalDeveloped, memberNames: memberNames,
                            onCompleted: { UserDefaults.standard.set(true, forKey: revealSeenKey) },
-                           onStartAnother: { showFollowUp = true })
+                           onStartAnother: { followUpAfterReveal = true })
         }
         .onChange(of: showReveal) { wasShowing, isShowing in
             // Finishing a reveal is one of the two moments a badge most plausibly just became
@@ -728,6 +730,14 @@ struct RollDetailView: View {
                 // The reveal just finished (watched or swiped away, either way it played, never
                 // skipped): a photo a push was waiting on can open now.
                 if awaitingPhotoId != nil { Task { await openAwaitingPhotoIfReady() } }
+                // "Start another with this group" on the closing card: the sheet is presented
+                // from HERE, after the cover's dismissal has committed, never from the same
+                // handler that dismissed it. Two presentations in one transaction on one view
+                // race, and the sheet could lose (audit A7 / nightly review 2026-09-13).
+                if followUpAfterReveal {
+                    followUpAfterReveal = false
+                    showFollowUp = true
+                }
             }
         }
         .sheet(isPresented: $showMembers) {

@@ -55,6 +55,9 @@ func shareDestinationDayLabel(_ dayKey: Date, calendar: Calendar = .current) -> 
     return formatter.string(from: dayKey)
 }
 
+/// The audience, under the sheet's title. One sentence, the same everywhere the rule is stated.
+let shareAudienceLine = "People who follow you can see it."
+
 /// The consequence line under the primary button, matching the tag-chip count exactly. Never
 /// omitted: a share with nobody tagged still states that plainly, rather than leaving the
 /// button's outcome unsaid.
@@ -153,6 +156,14 @@ struct ShareToFeedSheet: View {
                     .flimFont(17, weight: .light, relativeTo: .body)
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity, alignment: .center)
+                // Who will see it, said once, where the decision is made. Posts have been
+                // readable by followers since 2026-09-13 and the only place that said so was
+                // the sort deck's accessibility label (audit A8).
+                Text(shareAudienceLine)
+                    .flimFont(12, relativeTo: .caption)
+                    .foregroundStyle(FlimTheme.textTertiary)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.top, -10)
 
                 destinationRow
                 captionField

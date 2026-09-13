@@ -69,8 +69,11 @@ final class PhotoService {
     /// for the camera's status pill. Failed uploads are counted separately in `failedUploads`.
     var pendingCaptureCount = 0
     /// A raw capture could not be written to disk and exists only in memory until it uploads.
-    /// Cleared when that shot lands (or fails into the retry list, which is durable).
+    /// Cleared when that shot lands (or fails into the retry list, which is durable). Its
+    /// message lives here, not in `uploadError`: the upload that starts right after the failed
+    /// save clears `uploadError` on the way in, which used to take this warning with it (A5).
     var localSaveFailed = false
+    static let localSaveFailedMessage = "A shot could not be saved to this phone. Keep FLIM open until it uploads."
 
     var hasFailedUploads: Bool { !failedUploads.isEmpty }
 
@@ -182,7 +185,6 @@ final class PhotoService {
             // Say so if the phone could not keep the shot: it is only in memory until it uploads.
             if await !saved.value, let self {
                 self.localSaveFailed = true
-                self.uploadError = "A shot could not be saved to this phone. Keep FLIM open until it uploads."
             }
         }
         // The account that owns this shot, fixed NOW, before the shot waits its turn. A queued

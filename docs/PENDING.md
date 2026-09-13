@@ -352,6 +352,44 @@ The four from the audit the owner picked on 2026-09-10: the durable capture queu
 capture status, one invitation journey (a roll code admits you), deletion order, and the photo
 write boundary. In that order of value; built in the order of size.
 
+### done 2026-09-13, night: the everyday audit's Batch 0 (docs/EVERYDAY_SOCIAL_AUDIT_AND_PLAN_2026-09-13.md)
+
+All nine findings verified in source and taken, in the order the owner approved:
+
+- **A3, the privacy one.** `send-social-push` now asks `post_visible_to` per recipient before a
+  mention push or a thread-participant push: a nonfollower named in a comment, or a commenter who
+  has since unfollowed, is no longer handed the comment text and a link to a post RLS will refuse.
+  Owner, reaction and tag pushes needed nothing (owner and tagged are always eligible). DEPLOYED,
+  runs green. `get_suggested_emoji`'s posted-photo branch asks the same predicate (migration
+  `2026-09-14_audit3_measurement.sql`, APPLIED).
+- **A1 / A2.** `FeedService.confirmedFollowingIds` moves only when the follow row lands; the
+  page reloads on that, not on the optimistic flip. Unfollow empties the grid, the shelf and this
+  page's cache, then asks again so a tagged post survives.
+- **A4.** Activity's watermark is the instant the query was issued, never later; the stamp never
+  moves backwards.
+- **A5.** The unsaved-shot warning has its own message (`PhotoService.localSaveFailedMessage`)
+  and outranks the network line; the upload that starts after the failed save no longer clears it.
+- **A6.** `closeDeck(then:)` is the single owner of where the deck lands: an explicit View
+  outranks the first-sort Darkroom and consumes that one-shot.
+- **A7.** The reveal's "Start another" sets an intent the cover's `onChange` consumes after
+  dismissal, so the create sheet is never presented in the same transaction as the dismiss.
+- **A8.** The posted notice's timer is scoped to its own notice; "See the roll" opens the roll;
+  the share sheet says "People who follow you can see it." under its title (new copy, owner to
+  veto).
+- **A9.** "Never got a response" now needs no answered post of any age; the 7-day opener average
+  counts empty days as zero; `reports_open` renamed `reports_unnotified`; METRICS §12 says
+  milestones, not funnel; §14 adds `reciprocal_pairs_detail(days)` (52 pairs in the last 7 days,
+  all on posts) and NUMBERS.md carries it daily.
+
+Not taken: Batch 1's copy (tagline, onboarding lines, hero), held for after the study; Batch 2's
+launch-tab experiment, the owner's camera-first decision stands until the study says otherwise;
+A2's cache-revocation paragraph, signed URLs expire on their own.
+
+Owner checks on device: follow a stranger on a slow connection (posts appear without a pull),
+unfollow (grid empties at once), post twice quickly in the sort deck (second notice stays its
+full three seconds), new-account first sort then View (lands on the page, not the Darkroom),
+finish a reveal and tap Start another (sheet appears once).
+
 ### done 2026-09-13: posts are readable by followers, and the usability study kit
 
 The audience decision, made: posts are visible to the people who follow their author (and to

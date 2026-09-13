@@ -623,8 +623,11 @@ struct CameraView: View {
             // gone wrong without telling them it was the network, or that the photo was still
             // safe, which is the difference between "the app lost my shot" and "I'll retry when
             // I have signal". Kept to one line so the viewfinder stays a viewfinder.
-            if let uploadError = photos.uploadError, photos.hasFailedUploads || photos.localSaveFailed {
-                Text(uploadError)
+            // The unsaved-shot warning outranks a network message: one says the phone may lose
+            // the photo, the other says the network is slow. Neither clears the other.
+            if let warning = photos.localSaveFailed ? PhotoService.localSaveFailedMessage
+                : (photos.hasFailedUploads ? photos.uploadError : nil) {
+                Text(warning)
                     .flimFont(11)
                     .foregroundStyle(.white.opacity(0.85))
                     .lineLimit(2)
