@@ -354,6 +354,10 @@ final class PhotoService {
                           knownRevealAt: Date? = nil,
                           queued: PendingCapture? = nil,
                           epoch: Int? = nil) async -> Photo? {
+        // Locking the phone right after the shutter must not freeze the upload mid-flight; see
+        // BackgroundKeepAlive. Released whichever way this returns.
+        let keepAlive = BackgroundKeepAlive.begin("capture upload")
+        defer { BackgroundKeepAlive.end(keepAlive) }
         // A capture makes two round trips (storage upload, then the row insert) before inserting
         // into the shared list. Same class as createRoll: an INSERT of new content, so a
         // completion that outlives its account would splice the departing account's photo into
@@ -514,7 +518,6 @@ final class PhotoService {
 
             // The row exists now, under whichever account captured it, independent of whether
             // that account is still the current one below.
-            await clearPersistedCopies(photoId: photoId, userId: userId)
             // Seeds the raw-bytes cache with the master JPEG under its OWN storage path, the same
             // key `DiskImageCache.loadRaw`/`saveRaw` use everywhere else. Unconditional, not gated
             // on the camera-roll auto-save toggle: this cache backs every existing share/save path
@@ -613,7 +616,6 @@ final class PhotoService {
             let rowExists: Bool? = await Self.photoRowExists(photoId, supabase: supabase)
             if rowExists == true, let landed: Photo = try? await supabase
                 .from("photos").select().eq("id", value: photoId.uuidString).single().execute().value {
-                await clearPersistedCopies(photoId: photoId, userId: userId)
                 DiskImageCache.saveRaw(imageData, path: path)
                 await MainActor.run {
                     guard AccountEpoch.isCurrent(epoch) else { return }
@@ -684,7 +686,6 @@ final class PhotoService {
 
             // The row exists now, independent of whether this account is still the current one
             // below, same reasoning as the ordinary success path above.
-            await clearPersistedCopies(photoId: photoId, userId: userId)
             // Same reasoning as the ordinary success path: a fresh pair's second frame can only
             // ever reach ONE insert (this one, since the roll-developed refusal means it's the
             // only insert that lands), so this is the sole place this fallback needs to fire it.
@@ -917,9 +918,23 @@ final class PhotoService {
     ///   rendition people see most, p99 9, max 45) AND ~3% larger, at once. `nil` on every retry
     ///   path, which only ever has `imageData` on hand, falls back to that same imageData-based
     ///   encode exactly as before.
+    /// The renditions are the last leg of a capture, and the shot's on-disk copy lives until they
+    /// are done (or have been tried): `clearPersistedCopies` runs HERE, not after the row insert.
+    /// A kill mid-rendition therefore leaves the sidecar for `restoreFailedUploads` to find, and
+    /// that path rebuilds the missing cards from it rather than surfacing a retry. Held under a
+    /// background assertion so a phone locked after the shutter still finishes the two uploads.
     private func uploadRenditions(photoId: UUID, userId: UUID, imageData: Data, gradedImage: CGImage? = nil) {
         Task { [weak self] in
             guard let self else { return }
+            let keepAlive = BackgroundKeepAlive.begin("renditions")
+            await performRenditionUpload(photoId: photoId, userId: userId, imageData: imageData, gradedImage: gradedImage)
+            await clearPersistedCopies(photoId: photoId, userId: userId)
+            BackgroundKeepAlive.end(keepAlive)
+        }
+    }
+
+    private func performRenditionUpload(photoId: UUID, userId: UUID, imageData: Data, gradedImage: CGImage?) async {
+        do {
             let prefix = "\(userId.uuidString.lowercased())/\(photoId.uuidString.lowercased())"
 
             func upload(_ encoded: InstantFilmProcessor.EncodedImage, to path: String) async -> String? {
@@ -1263,12 +1278,17 @@ final class PhotoService {
         // window) does not need `captureAndUpload`'s own 23505 self-heal to prove that, it can be
         // dropped right here, and the tap that surfaced this pill never has to wait on a
         // redundant re-upload of bytes already sitting in Storage.
-        let confirmed = await confirmedUploaded(pending)
+        let verdict = await confirmedUploaded(pending)
         guard AccountEpoch.isCurrent(epoch) else { return }
-        for upload in pending where confirmed.contains(upload.id) {
-            await failedUploadStore.remove(id: upload.id, userId: upload.userId)
+        for upload in pending where verdict.confirmed.contains(upload.id) {
+            if verdict.needingRenditions.contains(upload.id), let photoId = upload.photoId {
+                // Row there, cards not: finish that leg from the sidecar (it clears itself).
+                uploadRenditions(photoId: photoId, userId: upload.userId, imageData: upload.data)
+            } else {
+                await failedUploadStore.remove(id: upload.id, userId: upload.userId)
+            }
         }
-        let stillPending = pending.filter { !confirmed.contains($0.id) }
+        let stillPending = pending.filter { !verdict.confirmed.contains($0.id) }
 
         for upload in stillPending {
             guard AccountEpoch.isCurrent(epoch) else { return }
@@ -1305,7 +1325,12 @@ final class PhotoService {
     /// two are equal for every record with a `photoId` at all (see `FailedUpload.photoId`'s own
     /// doc), but keying the result this way means a caller never has to re-derive which record a
     /// confirmed `photoId` belonged to.
-    private func confirmedUploaded(_ records: [FailedUpload]) async -> Set<UUID> {
+    /// `confirmed` are records whose upload plainly succeeded (row exists). `needingRenditions`
+    /// is the subset whose row is missing its thumb or feed card: the kill landed between the
+    /// insert and the rendition leg, and the sidecar still holds the bytes to rebuild them from.
+    private struct SidecarVerdict { var confirmed: Set<UUID> = []; var needingRenditions: Set<UUID> = [] }
+
+    private func confirmedUploaded(_ records: [FailedUpload]) async -> SidecarVerdict {
         let byPhotoId: [(recordId: UUID, photoId: UUID)] = records.compactMap { record in
             record.photoId.map { (record.id, $0) }
         }
@@ -1313,19 +1338,21 @@ final class PhotoService {
             guard record.photoId == nil, let path = record.storagePath else { return nil }
             return (record.id, path)
         }
-        guard !byPhotoId.isEmpty || !byPathOnly.isEmpty else { return [] }
+        guard !byPhotoId.isEmpty || !byPathOnly.isEmpty else { return SidecarVerdict() }
 
         var existingPhotoIds: Set<UUID> = []
+        var missingRenditions: Set<UUID> = []
         if !byPhotoId.isEmpty {
-            struct Row: Decodable { let id: UUID }
+            struct Row: Decodable { let id: UUID; let thumb_path: String?; let feed_path: String? }
             let ids = Array(Set(byPhotoId.map(\.photoId)))
             let rows: [Row] = (try? await supabase
                 .from("photos")
-                .select("id")
+                .select("id, thumb_path, feed_path")
                 .in("id", values: ids.map { $0.uuidString })
                 .execute()
                 .value) ?? []
             existingPhotoIds = Set(rows.map(\.id))
+            missingRenditions = Set(rows.filter { $0.thumb_path == nil || $0.feed_path == nil }.map(\.id))
         }
 
         var existingStoragePaths: Set<String> = []
@@ -1341,18 +1368,19 @@ final class PhotoService {
             existingStoragePaths = Set(rows.map(\.storage_path))
         }
 
-        var confirmed: Set<UUID> = []
+        var verdict = SidecarVerdict()
         for (recordId, photoId) in byPhotoId
         where Self.shouldDiscardFailedUpload(photoId: photoId, storagePath: nil,
                                              existingPhotoIds: existingPhotoIds, existingStoragePaths: []) {
-            confirmed.insert(recordId)
+            verdict.confirmed.insert(recordId)
+            if missingRenditions.contains(photoId) { verdict.needingRenditions.insert(recordId) }
         }
         for (recordId, path) in byPathOnly
         where Self.shouldDiscardFailedUpload(photoId: nil, storagePath: path,
                                              existingPhotoIds: [], existingStoragePaths: existingStoragePaths) {
-            confirmed.insert(recordId)
+            verdict.confirmed.insert(recordId)
         }
-        return confirmed
+        return verdict
     }
 
     /// Re-queues anything left unsent by a previous run. Called after the account resolves.
@@ -1394,12 +1422,20 @@ final class PhotoService {
         // sitting on the server. Without this check, that one leftover file comes back on every
         // launch forever: this method has no other way to learn the upload it names already
         // succeeded, since nothing tells it so.
-        let confirmed = await confirmedUploaded(restored)
+        let verdict = await confirmedUploaded(restored)
         guard AccountEpoch.isCurrent(epoch) else { return }
 
         var toRestore: [FailedUpload] = []
         for record in restored {
-            if confirmed.contains(record.id) {
+            if verdict.needingRenditions.contains(record.id), let photoId = record.photoId {
+                // The row landed but the kill came before its thumb and feed cards did. The
+                // sidecar IS the processed master those cards are built from, so build them now
+                // and let that leg clear the sidecar when it finishes. Nothing to surface: the
+                // photo is already in the Darkroom.
+                uploadRenditions(photoId: photoId, userId: userId, imageData: record.data)
+                continue
+            }
+            if verdict.confirmed.contains(record.id) {
                 // The upload plainly succeeded: drop the stale sidecar so this stops coming back,
                 // and never surface a retry for a photo already sitting in the Darkroom.
                 await store.remove(id: record.id, userId: userId)

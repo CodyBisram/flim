@@ -10,7 +10,7 @@ disabled; they served nothing once the PRs were gone.
 | When (ET) | What | Where it runs | Output |
 |---|---|---|---|
 | 02:07 daily | Nightly review (Sonnet) | claude.ai routine `trig_016sRvtGxYpPVyN3mXtEHi2v` | `docs/reviews/<date>.md` for new findings, `docs/reviews/OPEN.md` re-verified, committed to main |
-| 00:20 daily | Nightly numbers | GitHub Actions `nightly-numbers.yml` | one line appended to `docs/NUMBERS.md`; an `ops_alerts` row (so a push to the owner) when something is broken |
+| 00:20 daily | Nightly numbers + rendition repair | GitHub Actions `nightly-numbers.yml` | one line appended to `docs/NUMBERS.md`; an `ops_alerts` row (so a push to the owner) when something is broken; then `scripts/repair_renditions.py` rebuilds any thumb or feed card a capture lost |
 | Mon 08:00 | Social drafts | claude.ai routine `trig_016yUs6HtUepKBwDDNYvLeft` | `social/drafts/<date>.md` committed to main; Buffer stays the send gate |
 | Mon 09:07 | R2 tripwire | GitHub Actions `r2-tripwire.yml` | silent while quiet, fails (email) when a migration trigger fires |
 | every 2 min | Social push | pg_cron `flim-social-push` | pushes, `push_deliveries`, drains `ops_alerts` to the owner |
@@ -42,8 +42,9 @@ FLIM_SERVICE_KEY=... bash scripts/nightly_numbers.sh
 ## Routine prompts
 
 The claude.ai routines' prompts cannot be edited from this session (the auto-mode classifier
-refuses the update call), so the owner pastes them at the routine's page. These are the current
-intended prompts; keep them in sync with what is live.
+refuses the update call), so the owner pastes them at the routine's page: Routines, open the
+routine, click the Instructions block, replace the text, Save. The review prompt went live
+2026-09-13. These are the current intended prompts; keep them in sync with what is live.
 
 ### Nightly review (`trig_016sRvtGxYpPVyN3mXtEHi2v`)
 
@@ -60,11 +61,7 @@ COMMIT. If anything changed under docs/reviews/, commit it on main with the one-
 ### Social drafts (`trig_016yUs6HtUepKBwDDNYvLeft`)
 
 ```
-You write FLIM's weekly social drafts. FLIM is an invite-only iOS disposable camera app: you shoot, the photos develop later, and you see them then; rolls are shared cameras with friends that reveal together; Chapters is a monthly recap on your page. Every Monday, do this and commit the result straight to main under social/drafts/ (that folder is ignored by CI, so nobody has to merge anything).
+You are drafting this week's social media post batch for FLIM, the invite-only instant-camera iOS app this repository contains. Read .claude/skills/social-drafts/SKILL.md and follow it exactly: it defines the sources (git log since the most recent file in social/drafts/, plus docs/ for context), the voice rules (no em dashes anywhere, short declarative sentences, no hype, no growth CTAs, features not in a released App Store build are always framed as in progress; docs/APP_STORE.md says what is released), the output format, and the asset rules. Also read the previous two files in social/drafts/ so you do not repeat a beat. Write ONE new file, social/drafts/<today's date as YYYY-MM-DD>.md, containing 3-4 X drafts and 2-3 Instagram concepts, a 'Reply bank' of three short replies to the questions people actually ask (when does it develop, how do I get in, is it free; the only public answer to getting in is 'ask a friend who has it'), plus a 'Skipped on purpose' section. Never mention invite codes or a link, never quote users or usernames, never give numbers about users.
 
-1. Read the last two weeks of git log on main, docs/APP_STORE.md (the current What's New and description), and the previous two files in social/drafts/ so you do not repeat a beat. Only write about things that have actually shipped to the App Store: something is shipped if docs/APP_STORE.md lists it under a released version, or the commit predates the latest released version's tag or note there. Anything newer is not yet in users' hands; say nothing about it.
-
-2. Write social/drafts/<today YYYY-MM-DD>.md with: a two-sentence summary of the week's angle; then under '## X' three to five posts, each under 280 characters, each with a one-line 'Why now:'; then under '## Instagram caption' one caption for a reel or carousel, with hashtags on their own line (use #flim #filmphotography #disposablecamera plus two or three that fit the post, never more than eight); then under '## Reply bank' three short replies to the questions people actually ask (when does it develop, how do I get in, is it free). Voice: plain, warm, specific, first person plural; never hype, never exclamation marks, never emoji in the X posts, no em dashes anywhere. Never promise a date. Never mention invite codes or a link; the app is invite-only, and the only public line is 'ask a friend who has it'. Never quote users, usernames, or numbers about users.
-
-3. Commit that single file on main with the one-line message 'Social drafts, week of <Mon DD>.' and NO tool or assistant attribution of any kind (no Co-Authored-By, no generated-with lines, nothing naming an AI). Then git pull --rebase origin main and git push origin main; retry the pull and push up to three times if rejected. Never open a branch or a PR. Touch nothing outside social/drafts/. Never modify app code.
+Then commit that single file on main with the one-line commit message 'Social drafts, week of <Mon DD>.' and NO tool or assistant attribution of any kind (no Co-Authored-By, no generated-with lines, nothing that names an AI). Run git pull --rebase origin main and git push origin main; if the push is rejected, pull --rebase and push again, up to three times. social/ is ignored by CI, so the commit costs nothing and nobody has to merge it; do not open a branch or a PR. Touch nothing outside social/drafts/. If the skill file is missing or the repo looks unlike what is described here, stop and do nothing rather than improvise.
 ```

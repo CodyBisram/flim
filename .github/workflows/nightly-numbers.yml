@@ -1,7 +1,7 @@
 name: Nightly numbers
 
 # One line a day of how FLIM is doing, committed to docs/NUMBERS.md, plus a push to the owner
-# (through ops_alerts) when something is broken rather than quiet. The thresholds and their
+# (through ops_alerts) when something is broken rather than quiet, then the rendition repair. The thresholds and their
 # reasoning live in scripts/nightly_numbers.sh. Runs at 00:20 Eastern so "yesterday" is whole.
 on:
   schedule:
@@ -20,6 +20,14 @@ jobs:
         env:
           FLIM_SERVICE_KEY: ${{ secrets.FLIM_SERVICE_KEY }}
         run: bash scripts/nightly_numbers.sh
+      # After the count, never before: the alert should still say how many captures leaked
+      # their renditions, and then this closes them so nobody pays 1.25MB per grid cell for it.
+      - name: Rebuild missing renditions
+        env:
+          FLIM_SERVICE_KEY: ${{ secrets.FLIM_SERVICE_KEY }}
+        run: |
+          pip install --quiet pillow
+          python3 scripts/repair_renditions.py
       - name: Commit the line
         run: |
           git config user.name "flim-nightly"

@@ -352,6 +352,35 @@ The four from the audit the owner picked on 2026-09-10: the durable capture queu
 capture status, one invitation journey (a roll code admits you), deletion order, and the photo
 write boundary. In that order of value; built in the order of size.
 
+### done 2026-09-13, late: why captures lost their renditions, and the repair that runs nightly
+
+The nightly numbers job's first alert (one capture missing renditions) was the tip: 49 photos
+across 12 people were missing a thumb or feed card, back to Aug 21, one or two a day, each one
+costing 1.25MB per grid cell instead of 80KB on every view. Cause, read from the code and from
+lele's timestamps (master 05:05, thumb 05:27, no feed, null paths): the rendition uploads were a
+fire-and-forget Task after the row insert with no background assertion, so locking the phone
+after the shutter froze them mid-flight, and the shot's on-disk copy had already been cleared
+at the insert, so nothing on the next launch knew to finish the job.
+
+Three fixes:
+- `BackgroundKeepAlive` (new file, xcodegen'd): `captureAndUpload` and the rendition leg each
+  hold a `beginBackgroundTask` assertion, so the phone going dark after a shot still gets the
+  ~30s the two small uploads need.
+- The sidecar (processed master in `FailedUploadStore` + manifest entry) now lives until the
+  rendition leg ENDS, success or not; `clearPersistedCopies` moved there. `confirmedUploaded`
+  reports which confirmed rows still lack a card, and both `restoreFailedUploads` and
+  `retryFailedUploads` rebuild the cards from the sidecar for those instead of dropping it, with
+  no retry pill (the photo is already in the Darkroom).
+- `scripts/repair_renditions.py` ported to the service key + PostgREST and added to
+  `nightly-numbers.yml` after the count (so the alert still says how many leaked). Skips captures
+  under an hour old, reports NO MASTER rows and exits 1 so the workflow goes red for a blank
+  frame. Ran it once by hand: 48 rows patched, 59 cards built, 8 strays adopted; 0 missing now.
+  One row had no bytes at all (ricky, Sep 4, roll 8056735a): deleted on the owner's word.
+
+Owner check on device: shoot, lock the phone within a second, wait a minute, unlock; the
+Darkroom cell for that shot should be the thumb (the row's thumb_path set), not the master.
+Then shoot, force-quit within a second, relaunch: same result, no retry pill.
+
 ### done 2026-09-13, night: the everyday audit's Batch 0 (docs/EVERYDAY_SOCIAL_AUDIT_AND_PLAN_2026-09-13.md)
 
 All nine findings verified in source and taken, in the order the owner approved:

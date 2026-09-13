@@ -214,6 +214,7 @@
 		B07744AE4F12841B418572F5 /* PhotoPagerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CEA4E3C37801DCE0D47B428 /* PhotoPagerView.swift */; };
 		B0789DB7DBF35BFDAD683FC5 /* ChapterFormattingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC3EB4494274A2F37DB8358D /* ChapterFormattingTests.swift */; };
 		B09880D2185738A73550E7C6 /* RollService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 633F60D6D348ADEA4D94D263 /* RollService.swift */; };
+		B0C9C48DBCDC68A991979CEE /* BackgroundKeepAlive.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30A2A137530439FA94D61FA2 /* BackgroundKeepAlive.swift */; };
 		B163C6D33D32933E1570FD67 /* PhotoTags.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24DE0B6E57BFD6B0DE4804A0 /* PhotoTags.swift */; };
 		B24553011D30469838CCA923 /* RollTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B7E5F0D581D43A4722CD6D9 /* RollTests.swift */; };
 		B41748B01C12B5094E9B9BF2 /* RollSnapshotStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59600C468EC84C1B685DC31D /* RollSnapshotStoreTests.swift */; };
@@ -427,6 +428,7 @@
 		2CDE42DC73343A3669F6A4A9 /* TagPhotoSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TagPhotoSheet.swift; sourceTree = "<group>"; };
 		2DBDD795E7211D298DCFEB50 /* BlockedUsersSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlockedUsersSheet.swift; sourceTree = "<group>"; };
 		2DDF52A98F82403864BA86D2 /* RollRevealAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollRevealAttributes.swift; sourceTree = "<group>"; };
+		30A2A137530439FA94D61FA2 /* BackgroundKeepAlive.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundKeepAlive.swift; sourceTree = "<group>"; };
 		3160152C151C46D58498F19D /* RollRevealCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollRevealCard.swift; sourceTree = "<group>"; };
 		3262E790C5DB22687DA92F08 /* NotificationPermissionEventTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationPermissionEventTests.swift; sourceTree = "<group>"; };
 		33D109A1C315CD466659A10F /* RollsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollsView.swift; sourceTree = "<group>"; };
@@ -926,6 +928,7 @@
 				861FB2928E71AE4B67024C57 /* Activation.swift */,
 				5A194AB5EE948FBA8903D086 /* AppInfo.swift */,
 				EFC0C65109A81467AB59472B /* AuthService.swift */,
+				30A2A137530439FA94D61FA2 /* BackgroundKeepAlive.swift */,
 				512ECCC06516CDBBAC8749B7 /* BrandedExport.swift */,
 				621A9FC5C5A0087AAAD106ED /* BurstDetector.swift */,
 				48E604C6FB5140A9788F87E4 /* BurstGrouping.swift */,
@@ -1468,6 +1471,7 @@
 				410927C61580C55C921D591F /* AppUser.swift in Sources */,
 				1986128F060D36EEB13FF786 /* AuthService.swift in Sources */,
 				7CC65D898130236C8681AB7A /* AvatarView.swift in Sources */,
+				B0C9C48DBCDC68A991979CEE /* BackgroundKeepAlive.swift in Sources */,
 				C8521B8844353AB75F4AE5B9 /* BadgePickerSheet.swift in Sources */,
 				1E37F6744B21D26B8E8DDFAB /* BlockedUsersSheet.swift in Sources */,
 				A738DE58BF36527DC94CBF12 /* BrandedExport.swift in Sources */,

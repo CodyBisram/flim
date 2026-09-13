@@ -57,4 +57,7 @@ apply first
 apply second
 echo "== objects"
 docker exec -e PGPASSWORD=postgres "$NAME" psql -U postgres -h localhost -d postgres -tAc "select 'tables ' || count(*) from pg_tables where schemaname = 'public' union all select 'functions ' || count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' union all select 'policies ' || count(*) from pg_policies where schemaname = 'public' union all select 'triggers ' || count(*) from pg_trigger t join pg_class c on c.oid = t.tgrelid join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'public' and not t.tgisinternal" | sed 's/^/   /'
-[[ $KEEP -eq 1 ]] && echo "container $NAME kept on port $PORT (postgres/postgres)"
+# Not `[[ ]] && echo` as the last line: without --keep that test is false, and a false last
+# command is the script's exit status, which made CI mark every green run red.
+if [[ $KEEP -eq 1 ]]; then echo "container $NAME kept on port $PORT (postgres/postgres)"; fi
+exit 0

@@ -5,16 +5,21 @@ A photo with no thumb or feed rendition falls back to its full master EVERYWHERE
 every view, forever: a grid cell that should cost ~80kB costs ~1.25MB. Renditions are uploaded
 after the photo row exists, with two retries three seconds apart, so a kill, a background, or a
 dropout loses them for good, and the app's own opportunistic repair only reaches photos their
-owner looks at again on a healthy connection. This closes the rest from the server side.
+owner looks at again on a healthy connection. This closes the rest from the server side, and
+since 2026-09-13 runs nightly inside .github/workflows/nightly-numbers.yml (49 photos across 12
+people had piled up in three weeks before that).
 
-Per photo missing either rendition:
+Per photo missing either rendition and older than an hour (younger ones may still be mid-upload):
   1. If an object already exists at the deterministic path (the row patch was lost, not the
      upload), just patch the column.
   2. Otherwise download the master, resize with Lanczos to the app's exact spec
      (thumb 500px long edge JPEG q80, feed 1400px q79), upload, patch.
+  3. A row whose master does not exist either is reported as NO MASTER and left alone; that is
+     a blank frame nothing can rebuild, and deleting a row is the owner's call.
 Only ever fills NULL columns and never overwrites an existing object: rerunning is a no-op.
 
-Run:  SUPABASE_MGMT_TOKEN=sbp_... .venv/bin/python scripts/repair_renditions.py [--dry-run]
+Run:  FLIM_SERVICE_KEY=... .venv/bin/python scripts/repair_renditions.py [--dry-run]
+(locally, `source ~/.claude/flim-r2-watch.env` provides the key; CI has it as a secret)
 """
 import io
 import json
@@ -22,42 +27,28 @@ import os
 import sys
 import urllib.request
 import urllib.error
-
 from PIL import Image, ImageOps
 
-# api.supabase.com sits behind Cloudflare, which rejects Python's default User-Agent outright
-# (403, error code 1010). Any real-looking agent passes.
-_opener = urllib.request.build_opener()
-_opener.addheaders = [("User-Agent", "flim-repair/1.0")]
-urllib.request.install_opener(_opener)
-
 REF = "wxvwamwrjlrvqmuaafjv"
-MGMT = os.environ["SUPABASE_MGMT_TOKEN"]
+KEY = os.environ["FLIM_SERVICE_KEY"]
 SPECS = {"thumb": (500, 80), "feed": (1400, 79)}
 DRY = "--dry-run" in sys.argv
-
-def sql(query: str):
-    req = urllib.request.Request(
-        f"https://api.supabase.com/v1/projects/{REF}/database/query",
-        data=json.dumps({"query": query}).encode(),
-        headers={"Authorization": f"Bearer {MGMT}", "Content-Type": "application/json"},
-        method="POST")
-    with urllib.request.urlopen(req, timeout=60) as r:
-        return json.load(r)
-
-def service_key() -> str:
-    req = urllib.request.Request(
-        f"https://api.supabase.com/v1/projects/{REF}/api-keys",
-        headers={"Authorization": f"Bearer {MGMT}"})
-    with urllib.request.urlopen(req, timeout=30) as r:
-        keys = json.load(r)
-    return next(k["api_key"] for k in keys if k["name"] == "service_role")
-
-KEY = service_key()
+REST = f"https://{REF}.supabase.co/rest/v1"
 STORE = f"https://{REF}.supabase.co/storage/v1/object"
+AUTH = {"Authorization": f"Bearer {KEY}", "apikey": KEY}
+
+def rest(method: str, path: str, body=None, prefer=None):
+    headers = dict(AUTH, **{"Content-Type": "application/json"})
+    if prefer:
+        headers["Prefer"] = prefer
+    req = urllib.request.Request(f"{REST}/{path}", data=json.dumps(body).encode() if body is not None else None,
+                                 headers=headers, method=method)
+    with urllib.request.urlopen(req, timeout=60) as r:
+        raw = r.read()
+        return json.loads(raw) if raw else None
 
 def storage(method: str, path: str, data=None, content_type=None):
-    headers = {"Authorization": f"Bearer {KEY}", "apikey": KEY}
+    headers = dict(AUTH)
     if content_type:
         headers["Content-Type"] = content_type
     req = urllib.request.Request(f"{STORE}/photos/{path}", data=data, headers=headers, method=method)
@@ -84,17 +75,23 @@ def make_rendition(master: bytes, long_edge: int, quality: int) -> bytes:
     img.save(out, "JPEG", quality=quality)
     return out.getvalue()
 
-rows = sql("""
-  select id, user_id, storage_path, thumb_path, feed_path
-  from photos where thumb_path is null or feed_path is null
-  order by taken_at""")
+import datetime
+import urllib.parse
+cutoff = urllib.parse.quote((datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=1)).isoformat())
+rows = rest("GET", "photos?select=id,user_id,storage_path,thumb_path,feed_path"
+                   f"&or=(thumb_path.is.null,feed_path.is.null)&taken_at=lt.{cutoff}&order=taken_at")
 
 print(f"{len(rows)} photos need repair{' (dry run)' if DRY else ''}")
 patched = uploaded = adopted = failed = 0
+no_master = []
 for row in rows:
     pid = row["id"].lower()
     uid = row["user_id"].lower()
     updates = {}
+    if not exists(row["storage_path"]):
+        no_master.append(row["id"])
+        print(f"  NO MASTER {row['storage_path']}")
+        continue
     for kind in ("thumb", "feed"):
         if row[f"{kind}_path"] is not None:
             continue
@@ -117,9 +114,10 @@ for row in rows:
             print(f"  FAILED {target}: {e}")
             failed += 1
     if updates and not DRY:
-        sets = ", ".join(f"{k} = '{v}'" for k, v in updates.items())
-        conds = " and ".join(f"{k} is null" for k in updates)   # never clobber a concurrent repair
-        sql(f"update photos set {sets} where id = '{row['id']}' and {conds}")
+        conds = "&".join(f"{k}=is.null" for k in updates)   # never clobber a concurrent repair
+        rest("PATCH", f"photos?id=eq.{row['id']}&{conds}", updates, prefer="return=minimal")
         patched += 1
 
-print(f"done: {patched} rows patched, {uploaded} renditions built, {adopted} orphans adopted, {failed} failures")
+print(f"done: {patched} rows patched, {uploaded} renditions built, {adopted} orphans adopted, "
+      f"{failed} failures, {len(no_master)} with no master")
+sys.exit(1 if failed or no_master else 0)
