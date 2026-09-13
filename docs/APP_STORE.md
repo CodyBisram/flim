@@ -62,7 +62,7 @@ Both fields are metadata, editable on any submission, so this costs nothing to d
 
 ## Description
 
-Updated 2026-09-10 for 1.5.2 (the store still carries the 1.2-era text with no Chapters). 4000 char max.
+Updated 2026-09-13 for 1.5.3 (two sentences on follow-up rolls and roll-code sign-up, one accessibility feature line). 4000 char max.
 
 > **PASTE ONLY THE INDENTED BLOCK BELOW.**
 
@@ -72,7 +72,7 @@ Updated 2026-09-10 for 1.5.2 (the store still carries the 1.2-era text with no C
 
     Real film feel. Every photo gets FLIM's film look baked in at capture: warm color, fine grain where film puts it, and the soft red glow real film gives a bright window or a streetlight. No filters. No sliders. One look, applied the moment you shoot, the same for everyone. Share a photo and it goes out with the orange date stamp burned in, as a print, a story, or the full frame. Every roll you are in is yours to save, all of it.
 
-    Rolls for your people. Start a shared roll with up to 50 friends and shoot into it together. Everyone's photos land in the same place, and the whole roll develops at once. Trips, parties, nights out, all revealed together. Watch a roll fill up as its reveal gets closer, with a countdown on your lock screen, then play it back one shot at a time. Near-identical shots stack, a frame that came out black or blurred is marked so the call is yours, and once you have watched a reveal it stays watched on any phone you sign into. Join with an invite code, comment on each other's photos, react with emojis.
+    Rolls for your people. Start a shared roll with up to 50 friends and shoot into it together. Everyone's photos land in the same place, and the whole roll develops at once. Trips, parties, nights out, all revealed together. Watch a roll fill up as its reveal gets closer, with a countdown on your lock screen, then play it back one shot at a time. Near-identical shots stack, a frame that came out black or blurred is marked so the call is yours, and once you have watched a reveal it stays watched on any phone you sign into. Join with an invite code, comment on each other's photos, react with emojis. When the reveal ends, start another with the same group in one tap; everyone gets an invitation they can decline. A roll's code even gets a friend who is not on FLIM yet in, with the roll ready to shoot into.
 
     Chapters. On the first of every month, the month you shared arrives on your page as a cover. It plays like a reveal, fifteen frames picked on your phone, and ends on the month in numbers: your most reacted shot, your biggest fan, the hour you shoot at. You decide which numbers other people see. Every past month is already there, and any month can be shared as a contact sheet.
 
@@ -91,6 +91,7 @@ Updated 2026-09-10 for 1.5.2 (the store still carries the 1.2-era text with no C
     • Blocking and reporting, reviewed within 24 hours
     • One daily notification rounding up what friends posted, instead of one per photo
     • Email sign-in with a one time code, invite only
+    • Dynamic Type up to the largest accessibility sizes, VoiceOver labels throughout
 
     You need an invite to join. If you do not have a code yet, ask the friend who sent you here.
 
@@ -134,6 +135,51 @@ without either word appearing here.
 
 Two rules if this is edited again: never repeat a word across name, subtitle and keywords, and do
 not add plurals of words already present. Apple handles both.
+
+## What's New (version 1.5.3), draft 2026-09-13
+
+Fifty-odd commits since 365; the copy below covers the nine a person can see. Two audits' worth of
+transition fixes are folded into "Steadier" rather than listed.
+
+> **PASTE ONLY THE INDENTED BLOCK BELOW.** Everything under "Ship notes" is internal.
+
+    Start another with this group. When a roll's reveal ends, one tap starts the next one and invites everyone who was in it. They get a card on their Rolls tab with a Not this time button, so nobody is pulled into a roll they did not choose. Rename it before the first photo if you like.
+
+    A roll's code gets a friend in. Someone who is not on FLIM yet can join straight from a roll link: they sign up, the roll's creator is named as who invited them, and they land on the roll ready to shoot into it.
+
+    Your page is for the people who follow you. Anyone on FLIM can find you and follow; your photographs appear to them after that, not before. Being tagged in a photo lets you see that photo either way. The share sheet says this where you post.
+
+    A shot is safe the instant you take it. It is written to this phone before it waits its turn to upload, and it finishes uploading even if you lock the phone right after. If the phone could not keep a shot, FLIM says so until it is safe.
+
+    Rolls tell you where they stand. While a roll develops you see who is in it and the exact time it opens. Joining a roll ends on Shoot into it; creating one ends on Take the first photo. Save all in a roll really means all of it.
+
+    Posting says where it went. A Posted notice with a View button appears in the sort deck, and the app lands where you asked, not where it guessed.
+
+    Bigger type, bigger targets. Every button is at least 44 points, the largest accessibility text sizes are supported, colour swatches say their name to VoiceOver, and the faintest text is brighter.
+
+    Steadier. Sorting cannot skip a card when you tap fast. Search says when it is loading, found nothing, or could not reach FLIM. Activity marks a reply as read only once it has actually shown it to you, and pulls to refresh. Following someone shows their photos the moment it goes through, and unfollowing hides them at once. A comment that mentions you only arrives if you can open the post it is on.
+
+### Ship notes (internal, do NOT paste)
+
+**Promotional text for the 1.5.3 window** (170 char max, editable anytime without review):
+> Start another roll with the same group from the end of a reveal. A roll's code gets a friend into FLIM. Your page is for the people who follow you.
+
+**What was deliberately left out.** The capture queue's manifest and recovery plan, the write
+boundary and deletion order, the account binding on retry, the push delivery ledger and lease
+tokens, the schema bootstrap, the nightly routines, the rendition repair job, the funnels and the
+reciprocal-pairs number, ShareBreadcrumbs. None of it has a user story. "Your page is for the
+people who follow you" is a server-side change that reached every installed client on
+2026-09-13, so 1.5.2 users already live under it; it is in this copy because the app now SAYS
+so (empty page state, share sheet line) and because the store description promises it.
+
+**The look did not change in 1.5.3.** Grain stays reverted.
+
+**Screenshots.** The owner reshot the set on 2026-09-13 (onboarding, invite, feed, camera,
+chapters, month in numbers, rolls). The designed-panel brief (`docs/APP_STORE_PREVIEWS_BRIEF.md`)
+stays for a later set.
+
+**Description delta** (see the Description section): the Rolls paragraph gains "Start another
+with this group" and the roll-code sign-up; FEATURES gains the accessibility line. Nothing removed.
 
 ## RELEASED: 1.5.2 went live 2026-09-11 (build 365, 7404f4c)
 
