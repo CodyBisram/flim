@@ -298,7 +298,7 @@ struct SortDeckView: View {
                 circleButton("trash", tint: .red, size: 54,
                              caption: "Delete", label: "Delete photo") { performSwipe(.trash) }
                 circleButton("paperplane.fill", tint: .green, size: 54,
-                             caption: "Post", label: "Post to your page, where anyone on FLIM can see it") { performSwipe(.publish) }
+                             caption: "Post", label: "Post to your page, for the people who follow you") { performSwipe(.publish) }
             }
 
             // One line, once, and only while it can still change what you do. Three tinted

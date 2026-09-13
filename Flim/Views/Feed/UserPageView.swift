@@ -187,6 +187,8 @@ struct UserPageView: View {
                 }
                 .ignoresSafeArea(edges: .top)   // cover bleeds up under the back/gear buttons
                 .refreshable { await load() }
+                // Following is what opens someone's photographs; fetch them the moment it lands.
+                .onChange(of: isFollowing) { was, now in if now && !was && !isSelf { Task { await load() } } }
                 // A finger on the page ends the swap-in at once: an explanation that rides the
                 // scroll pins attention to a line the person has already moved past.
                 .onScrollPhaseChange { _, newPhase in
@@ -739,13 +741,26 @@ struct UserPageView: View {
     private struct SkeletonFrame: Identifiable { let id: Int }
 
     private var emptyState: some View {
-        VStack(spacing: 8) {
-            Image(systemName: "square.stack.3d.up.slash")
-                .font(.system(size: 26, weight: .ultraLight)).foregroundStyle(FlimTheme.textTertiary)
-            Text(isSelf ? "You haven't posted anything yet" : "No posts yet")
-                .flimFont(14, relativeTo: .subheadline).foregroundStyle(FlimTheme.textTertiary)
+        VStack(spacing: 10) {
+            if !isSelf && !isFollowing {
+                // Posts are readable by followers (2026-09-13). The server returns nothing here
+                // until you follow, so say what following does rather than "No posts yet".
+                Image(systemName: "eye.slash")
+                    .font(.system(size: 26, weight: .ultraLight)).foregroundStyle(FlimTheme.textTertiary)
+                Text("Follow \(profile?.handle ?? "them") to see their photos.")
+                    .flimFont(14, relativeTo: .subheadline).foregroundStyle(FlimTheme.textSecondary)
+                    .multilineTextAlignment(.center)
+                FollowButton(userId: userId)
+                    .padding(.top, 4)
+            } else {
+                Image(systemName: "square.stack.3d.up.slash")
+                    .font(.system(size: 26, weight: .ultraLight)).foregroundStyle(FlimTheme.textTertiary)
+                Text(isSelf ? "You haven't posted anything yet" : "No posts yet")
+                    .flimFont(14, relativeTo: .subheadline).foregroundStyle(FlimTheme.textTertiary)
+            }
         }
         .padding(.top, 40)
+        .padding(.horizontal, 32)
     }
 
     /// Replaces the post grid + follow affordance for a blocked account, mirrors

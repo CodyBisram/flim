@@ -76,7 +76,7 @@ Updated 2026-09-10 for 1.5.2 (the store still carries the 1.2-era text with no C
 
     Chapters. On the first of every month, the month you shared arrives on your page as a cover. It plays like a reveal, fifteen frames picked on your phone, and ends on the month in numbers: your most reacted shot, your biggest fan, the hour you shoot at. You decide which numbers other people see. Every past month is already there, and any month can be shared as a contact sheet.
 
-    A feed that's yours. Follow friends, see what they post, react and comment. Mention someone with @ to bring them into it. FLIM is invite-only, so everyone you see is someone a friend chose to let in. The friend who invited you is named before you join, and you follow them from the start. Find friends by who you already know: people who follow you, people in your rolls, the people your inviter brought in. No public like counts. No algorithm deciding what you look at. No strangers.
+    A feed that's yours. Follow friends, see what they post, react and comment. Your photographs are seen by the people who follow you, and nobody else. Mention someone with @ to bring them into it. FLIM is invite-only, so everyone you see is someone a friend chose to let in. The friend who invited you is named before you join, and you follow them from the start. Find friends by who you already know: people who follow you, people in your rolls, the people your inviter brought in. No public like counts. No algorithm deciding what you look at. No strangers.
 
     FEATURES
     • One film look, applied at capture, no post-processing

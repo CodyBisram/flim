@@ -352,6 +352,25 @@ The four from the audit the owner picked on 2026-09-10: the durable capture queu
 capture status, one invitation journey (a roll code admits you), deletion order, and the photo
 write boundary. In that order of value; built in the order of size.
 
+### done 2026-09-13: posts are readable by followers, and the usability study kit
+
+The audience decision, made: posts are visible to the people who follow their author (and to
+anyone tagged in that post). Following stays one-way and instant. The profile itself (name,
+avatar, bio, badges, counts) stays visible to everyone so people can be found and followed.
+Migration `2026-09-13_followers_only_reads.sql`, APPLIED: `can_see_posts_of` /
+`post_visible_to`, the posts SELECT policy, the storage policy for post images, and the three
+chapter functions all use the same predicate; comments, reactions and likes already require a
+readable parent. Probed: a follower sees ricky's 228 posts, 2 chapters and images; a non-follower
+sees the profile and nothing else. Client: a stranger's page says "Follow @name to see their
+photos." with the button, and reloads the moment the follow lands. Privacy, terms, support,
+homepage, the store description record and the sort deck's Post label say "the people who
+follow you". Site DEPLOYED. Live now for every installed client. Not in scope: follow approval
+(private accounts); mentions in comments on posts you cannot see route to a page that shows
+nothing, acceptable for now.
+
+The study kit is `docs/USABILITY_STUDY.md`: who, setup, the rule, the six tasks in the owner's
+words, the recording sheet, and what to do with five sheets. Owner runs it before the v2 redesign.
+
 ### done 2026-09-13: accessibility pass, the two funnels, time to first response
 
 Direction note first: the owner adopted the audit's framing on 2026-09-13, everyday photo
