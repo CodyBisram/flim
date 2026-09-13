@@ -353,9 +353,13 @@ struct ProfileView: View {
                         .fill(swatch.color)
                         .frame(width: 30, height: 30)
                         .overlay(Circle().strokeBorder(.white, lineWidth: accentColor == swatch.rawValue ? 2.5 : 0))
+                        .frame(width: 44, height: 44)   // the target; the swatch itself stays 30
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(swatch.label)
+                .accessibilityValue(accentColor == swatch.rawValue ? "Selected" : "")
+                .accessibilityAddTraits(accentColor == swatch.rawValue ? [.isSelected] : [])
             }
             Spacer()
         }

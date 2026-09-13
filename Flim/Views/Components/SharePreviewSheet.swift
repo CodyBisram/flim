@@ -396,7 +396,7 @@ struct SharePreviewSheet: View {
             }
             .foregroundStyle(accent)
             .frame(maxWidth: .infinity)
-            .frame(height: 46)
+            .frame(minHeight: 46)
             // Outlined, not the filled accent capsule this sheet used to have: it matches the
             // reveal's own primary and lets the print be the only bright thing on the sheet.
             .overlay(Capsule().strokeBorder(accent, lineWidth: 1))

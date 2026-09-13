@@ -266,7 +266,7 @@ struct ShareToFeedSheet: View {
             }
             .foregroundStyle(accent)
             .padding(.horizontal, 12)
-            .frame(height: 32)
+            .frame(minHeight: 32)
             .overlay(Capsule().strokeBorder(accent.opacity(0.55), lineWidth: 1))
         }
     }
@@ -294,7 +294,7 @@ struct ShareToFeedSheet: View {
         }
         .padding(.leading, 6)
         .padding(.trailing, 10)
-        .frame(height: 32)
+        .frame(minHeight: 32)
         .background(accent.opacity(0.15), in: Capsule())
     }
 
@@ -304,7 +304,7 @@ struct ShareToFeedSheet: View {
                 .flimFont(15, weight: .semibold, relativeTo: .body)
                 .foregroundStyle(accent)
                 .frame(maxWidth: .infinity)
-                .frame(height: 38)
+                .frame(minHeight: 38)
                 .overlay(Capsule().strokeBorder(accent, lineWidth: 1.5))
         }
         .disabled(isSharing)

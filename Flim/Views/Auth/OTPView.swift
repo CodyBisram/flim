@@ -42,7 +42,7 @@ struct OTPView: View {
                     Text(auth.pendingEmail.map { "We sent a \(otpLength)-digit code to \($0)." }
                          ?? "Enter the \(otpLength)-digit code we sent you.")
                         .flimFont(15, relativeTo: .body)
-                        .foregroundStyle(Color(white: 0.5))
+                        .foregroundStyle(FlimTheme.textSecondary)
                 }
                 .padding(.bottom, 40)
 
@@ -84,7 +84,7 @@ struct OTPView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("No code yet? Check your spam folder.")
                         .flimFont(13, relativeTo: .subheadline)
-                        .foregroundStyle(Color(white: 0.45))
+                        .foregroundStyle(FlimTheme.textTertiary)
 
                     HStack(spacing: 16) {
                         Button {
@@ -94,13 +94,13 @@ struct OTPView: View {
                                  ? "Send a new code in \(resendCountdown)s"
                                  : (isResending ? "Sending…" : "Send a new code"))
                                 .flimFont(13, weight: .medium, relativeTo: .subheadline)
-                                .foregroundStyle(resendCountdown > 0 ? Color(white: 0.4) : accent)
+                                .foregroundStyle(resendCountdown > 0 ? FlimTheme.textTertiary : accent)
                         }
                         .disabled(resendCountdown > 0 || isResending)
 
                         Button("Use a different email") { dismiss() }
                             .flimFont(13, weight: .medium, relativeTo: .subheadline)
-                            .foregroundStyle(Color(white: 0.55))
+                            .foregroundStyle(FlimTheme.textSecondary)
                     }
                 }
                 .padding(.top, 20)
@@ -224,7 +224,7 @@ private struct OTPField: View {
                     .flimFont(20, weight: .light, design: .monospaced, relativeTo: .title3)
                     .foregroundStyle(.white)
             )
-            .frame(height: 52)
+            .frame(minHeight: 52)
             .animation(.easeInOut(duration: 0.1), value: isActive)
     }
 }

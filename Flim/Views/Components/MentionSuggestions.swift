@@ -41,7 +41,7 @@ struct MentionSuggestions: View {
                     }
                     .padding(.horizontal, 16)
                 }
-                .frame(height: 44)
+                .frame(minHeight: 44)
                 // Picking a suggestion must insert the mention and leave the keyboard up, not
                 // lose the tap to the app-level "tap anywhere to dismiss" gesture. See
                 // KeyboardDismiss.swift.

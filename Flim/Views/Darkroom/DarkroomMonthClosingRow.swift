@@ -47,7 +47,7 @@ struct DarkroomMonthClosingRow: View {
                     .foregroundStyle(FlimTheme.textTertiary)
             }
             .padding(.horizontal, 16)
-            .frame(height: 44)
+            .frame(minHeight: 44)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

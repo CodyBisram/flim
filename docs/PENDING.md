@@ -352,6 +352,28 @@ The four from the audit the owner picked on 2026-09-10: the durable capture queu
 capture status, one invitation journey (a roll code admits you), deletion order, and the photo
 write boundary. In that order of value; built in the order of size.
 
+### done 2026-09-13: accessibility pass, the two funnels, time to first response
+
+Direction note first: the owner adopted the audit's framing on 2026-09-13, everyday photo
+sharing with friends first, rolls for occasions (memory: flim_15_direction, superseded section).
+
+Accessibility (docs/UI_SOCIAL_AUDIT_2026-09-12.md): colour swatches on the username screen and
+the profile have VoiceOver names, a Selected value and trait, and 44pt targets around the 30pt
+circle. Feed header buttons 38 to 44, the post menu 34 to 44 (glyphs unchanged), the empty-feed
+CTA a 44 minimum. Contrast, computed against each surface (bg, elevated, sheet, and an
+approximation of the glass capsule): `textTertiary` 0.48 was 4.0:1 on a sheet (below AA); now
+0.55 (5.1:1 on a sheet, 5.9 on bg). Hardcoded `Color(white: 0.4)` labels on the auth, create
+and join screens were 3.4:1 and now use the theme tokens. Dynamic Type: every text-bearing fixed
+`.frame(height:)` became `minHeight` (OTP, Darkroom rows, reveal and rolls capsules, share
+sheets, mention row, consequence sheet, account delete, pager), and the ceiling moved one step
+to `.accessibility3`. Not done: a rendered contrast check through the real material, and the
+two steps above accessibility3, which need a device pass with the largest sizes first.
+
+Measurement: `weekly_funnels(date)` and `first_response_stats(date)` (owner-only functions,
+docs/METRICS.md sections 12 and 13, first results recorded there). Headline from the first run:
+for the 20 accounts since 2026-09-01 the everyday loop works (7 posted, all 7 got a response,
+median 42 minutes across all posts) and the roll loop has barely started (2 joined a roll).
+
 ### done 2026-09-13: the UI audit's small, clearly right list
 
 - Roll confirmations say what to do next: "Take the first photo" after creating, "Shoot into

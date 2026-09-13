@@ -98,7 +98,7 @@ extension View {
 /// to be able to reflow first. Written down here so the ceiling is a decision with a reason rather
 /// than an oversight.
 enum FlimTypeScale {
-    static let maximum: DynamicTypeSize = .accessibility2
+    static let maximum: DynamicTypeSize = .accessibility3   // raised 2026-09-13 after fixed-height controls became minimums
 }
 
 extension View {

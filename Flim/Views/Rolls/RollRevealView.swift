@@ -551,7 +551,7 @@ struct RollRevealView: View {
                         .flimFont(15, weight: .medium, relativeTo: .body)
                         .foregroundStyle(.black)
                         .padding(.horizontal, 36)
-                        .frame(height: 46)
+                        .frame(minHeight: 46)
                         .background(accent, in: Capsule())
                 }
                 .padding(.top, 12)
@@ -567,7 +567,7 @@ struct RollRevealView: View {
                     .flimFont(15, weight: .medium, relativeTo: .body)
                     .foregroundStyle(accent)
                     .padding(.horizontal, 36)
-                    .frame(height: 46)
+                    .frame(minHeight: 46)
                     .overlay(Capsule().strokeBorder(accent, lineWidth: 1))
             }
             .padding(.top, 12)

@@ -60,7 +60,7 @@ struct CreateRollView: View {
                 Text("ROLL NAME")
                     .flimFont(11, weight: .medium, relativeTo: .caption)
                     .tracking(2)
-                    .foregroundStyle(Color(white: 0.4))
+                    .foregroundStyle(FlimTheme.textTertiary)
 
                 TextField("", text: $name, prompt: Text("Summer Road Trip").foregroundStyle(Color(white: 0.3)))
                     .flimFont(17, relativeTo: .body)
@@ -103,7 +103,7 @@ struct CreateRollView: View {
                         Text(followUpOf.map { "Everyone from \($0.name) has been invited. The code works for anyone else." }
                              ?? "Share this code with friends")
                             .flimFont(14, relativeTo: .subheadline)
-                            .foregroundStyle(Color(white: 0.5))
+                            .foregroundStyle(FlimTheme.textSecondary)
                             .multilineTextAlignment(.center)
                     }
 

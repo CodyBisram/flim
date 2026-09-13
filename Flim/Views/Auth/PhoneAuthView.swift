@@ -52,7 +52,7 @@ struct EmailAuthView: View {
                     // One line, not a pitch. The camera says the rest by being the next screen.
                     Text("Invite only. Your code and your email, and you are in.")
                         .font(.system(size: subtitleSize))
-                        .foregroundStyle(Color(white: 0.5))
+                        .foregroundStyle(FlimTheme.textSecondary)
                 }
                 .padding(.bottom, 40)
 
@@ -60,7 +60,7 @@ struct EmailAuthView: View {
                     Text("EMAIL")
                         .flimFont(11, weight: .medium, relativeTo: .caption)
                         .tracking(2)
-                        .foregroundStyle(Color(white: 0.4))
+                        .foregroundStyle(FlimTheme.textTertiary)
 
                     TextField("", text: $email, prompt: Text("you@example.com").foregroundStyle(Color(white: 0.3)))
                         .keyboardType(.emailAddress)
@@ -130,7 +130,7 @@ struct EmailAuthView: View {
                      ? "Enter the code a friend sent you and we'll get you straight in."
                      : "Enter it now and you'll go straight in.")
                     .flimFont(12, relativeTo: .caption)
-                    .foregroundStyle(Color(white: 0.5))
+                    .foregroundStyle(FlimTheme.textSecondary)
 
                 TextField("", text: $inviteCode, prompt: Text("ABC123").foregroundStyle(Color(white: 0.3)))
                     .flimFont(24, weight: .thin, design: .monospaced, relativeTo: .title2)
@@ -181,7 +181,7 @@ struct EmailAuthView: View {
                                  ? "You will follow them once you are in."
                                  : "You will follow them, and the roll is waiting once you are in.")
                                 .flimFont(12, relativeTo: .caption)
-                                .foregroundStyle(Color(white: 0.5))
+                                .foregroundStyle(FlimTheme.textSecondary)
                         }
                     }
                     .padding(.top, 12)

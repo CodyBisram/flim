@@ -76,7 +76,7 @@ enum FlimTheme {
     /// obviously brighter: this colour's whole job is to recede, and the point is that it can do
     /// that while still being readable by someone who isn't looking at it in a dark room with
     /// young eyes.
-    static let textTertiary = Color(white: 0.48)
+    static let textTertiary = Color(white: 0.55)   // 5.9:1 on bg, 5.1:1 on a sheet; 0.48 was 4.0:1 on a sheet (AA fails)
 }
 
 /// The accent, as something SwiftUI can actually see change.

@@ -404,7 +404,7 @@ struct RollsView: View {
                 }
                 .foregroundStyle(accent)
                 .frame(maxWidth: .infinity)
-                .frame(height: 46)
+                .frame(minHeight: 46)
                 .overlay(Capsule().strokeBorder(accent, lineWidth: 1))
                 .contentShape(Capsule())
             }
@@ -673,7 +673,7 @@ struct RollsView: View {
                     }
                     .foregroundStyle(accent)
                     .frame(maxWidth: .infinity)
-                    .frame(height: 46)
+                    .frame(minHeight: 46)
                     .overlay(Capsule().strokeBorder(accent, lineWidth: 1))
                     .contentShape(Capsule())
                 }
@@ -685,7 +685,7 @@ struct RollsView: View {
                     }
                     .foregroundStyle(FlimTheme.textSecondary)
                     .frame(maxWidth: .infinity)
-                    .frame(height: 46)
+                    .frame(minHeight: 46)
                     .overlay(Capsule().strokeBorder(FlimTheme.stroke, lineWidth: 1))
                     .contentShape(Capsule())
                 }

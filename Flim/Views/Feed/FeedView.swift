@@ -375,7 +375,7 @@ struct FeedView: View {
                     .font(.system(size: 16, weight: .medium))
                     .foregroundStyle(accent)
                     .symbolEffect(.bounce, value: unreadActivity)
-                    .frame(width: 38, height: 38)
+                    .frame(width: 44, height: 44)
                     .glassCapsule(interactive: true)
                     .overlay(alignment: .topTrailing) {
                         if unreadActivity > 0 {
@@ -398,7 +398,7 @@ struct FeedView: View {
                     // it rather than duplicating it as a second control somewhere else; the
                     // reader who comes back tomorrow already knows where the action lives.
                     .shadow(color: followsNobody ? accent.opacity(0.62) : .clear, radius: 7)
-                    .frame(width: 38, height: 38)
+                    .frame(width: 44, height: 44)
                     .glassCapsule(interactive: true)
                     .expandTapTarget(by: 3)   // 38 + 3 either side = 44
             }
@@ -607,7 +607,7 @@ struct FeedView: View {
                     .flimFont(14, weight: .medium, relativeTo: .subheadline)
                     .foregroundStyle(accent)
                     .padding(.horizontal, 20)
-                    .frame(height: 38)
+                    .frame(minHeight: 44)
                     .overlay(Capsule().strokeBorder(accent, lineWidth: 1))
             }
             .padding(.top, 4)

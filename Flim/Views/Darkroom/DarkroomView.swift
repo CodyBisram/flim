@@ -359,7 +359,7 @@ Text("Darkroom")
                 .foregroundStyle(accent)
             }
         }
-        .frame(height: 44)
+        .frame(minHeight: 44)
         .padding(.horizontal, 20)
     }
 
@@ -383,7 +383,7 @@ Text("Darkroom")
                 Spacer()
             }
         }
-        .frame(height: 44)
+        .frame(minHeight: 44)
         .padding(.horizontal, 20)
     }
 
@@ -930,7 +930,7 @@ Text("Darkroom")
     private var loadMoreSentinel: some View {
         if monthPagingActive {
             Color.clear
-                .frame(height: 44)
+                .frame(minHeight: 44)
                 .onAppear { Task { await loadMoreIfNeeded() } }
                 .task(id: vm.photos.count) { await loadMoreIfNeeded() }
         }

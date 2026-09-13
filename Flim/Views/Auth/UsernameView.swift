@@ -25,7 +25,7 @@ struct UsernameView: View {
                         .foregroundStyle(.white)
                     Text("3 to 20 characters. Letters, numbers and underscores.")
                         .flimFont(15, relativeTo: .body)
-                        .foregroundStyle(Color(white: 0.5))
+                        .foregroundStyle(FlimTheme.textSecondary)
                 }
                 .padding(.bottom, 40)
 
@@ -33,11 +33,11 @@ struct UsernameView: View {
                     Text("USERNAME")
                         .flimFont(11, weight: .medium, relativeTo: .caption)
                         .tracking(2)
-                        .foregroundStyle(Color(white: 0.4))
+                        .foregroundStyle(FlimTheme.textTertiary)
 
                     HStack {
                         Text("@")
-                            .foregroundStyle(Color(white: 0.4))
+                            .foregroundStyle(FlimTheme.textTertiary)
                         TextField("", text: $username, prompt: Text("yourname").foregroundStyle(Color(white: 0.3)))
                             .autocorrectionDisabled()
                             .textInputAutocapitalization(.never)
@@ -58,7 +58,7 @@ struct UsernameView: View {
                     Text("WHAT SHOULD WE CALL YOU? (OPTIONAL)")
                         .flimFont(11, weight: .medium, relativeTo: .caption)
                         .tracking(2)
-                        .foregroundStyle(Color(white: 0.4))
+                        .foregroundStyle(FlimTheme.textTertiary)
 
                     TextField("", text: $name, prompt: Text("First name").foregroundStyle(Color(white: 0.3)))
                         .textContentType(.givenName)
@@ -75,13 +75,20 @@ struct UsernameView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("PICK YOUR COLOR")
                         .flimFont(11, weight: .medium, relativeTo: .caption).tracking(2)
-                        .foregroundStyle(Color(white: 0.4))
+                        .foregroundStyle(FlimTheme.textTertiary)
                     HStack(spacing: 14) {
                         ForEach(FlimAccent.allCases) { swatch in
+                            let selected = accentColor == swatch.rawValue
                             Button { accentColor = swatch.rawValue; Haptics.tap() } label: {
                                 Circle().fill(swatch.color).frame(width: 30, height: 30)
-                                    .overlay(Circle().strokeBorder(.white, lineWidth: accentColor == swatch.rawValue ? 2.5 : 0))
+                                    .overlay(Circle().strokeBorder(.white, lineWidth: selected ? 2.5 : 0))
+                                    .frame(width: 44, height: 44)   // the target; the swatch itself stays 30
+                                    .contentShape(Rectangle())
                             }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel(swatch.label)
+                            .accessibilityValue(selected ? "Selected" : "")
+                            .accessibilityAddTraits(selected ? [.isSelected] : [])
                         }
                         Spacer()
                     }

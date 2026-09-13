@@ -293,7 +293,7 @@ struct FeedUnitCard: View {
                 Image(systemName: "ellipsis")
                     .font(.system(size: 16, weight: .bold))
                     .foregroundStyle(FlimTheme.textSecondary)
-                    .frame(width: 34, height: 34)
+                    .frame(width: 44, height: 44)   // Apple's minimum target; the glyph stays 16pt
                     .contentShape(Rectangle())
             }
             .accessibilityLabel("Post options")

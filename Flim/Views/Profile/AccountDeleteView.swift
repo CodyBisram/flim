@@ -120,7 +120,7 @@ struct AccountDeleteView: View {
                     .flimFont(15, relativeTo: .body)
                     .foregroundStyle(FlimTheme.textSecondary)
                     .frame(maxWidth: .infinity)
-                    .frame(height: 44)
+                    .frame(minHeight: 44)
             }
             .padding(.top, 8)
         }
@@ -185,7 +185,7 @@ struct AccountDeleteView: View {
                 .flimFont(16, weight: .medium, relativeTo: .body)
                 .foregroundStyle(.red)
         }
-        .frame(height: 54)
+        .frame(minHeight: 54)
         .frame(maxWidth: .infinity)
         .clipShape(Capsule())
         .overlay(Capsule().strokeBorder(Color.red.opacity(0.8), lineWidth: 1))

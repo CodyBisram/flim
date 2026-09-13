@@ -56,7 +56,7 @@ struct JoinRollView: View {
                 Text("ROLL CODE")
                     .flimFont(11, weight: .medium, relativeTo: .caption)
                     .tracking(2)
-                    .foregroundStyle(Color(white: 0.4))
+                    .foregroundStyle(FlimTheme.textTertiary)
 
                 TextField("", text: $code, prompt: Text("ABC123").foregroundStyle(Color(white: 0.3)))
                     .flimFont(28, weight: .thin, design: .monospaced, relativeTo: .title2)
@@ -109,7 +109,7 @@ struct JoinRollView: View {
             VStack(spacing: 8) {
                 Text("You joined")
                     .flimFont(14, relativeTo: .subheadline)
-                    .foregroundStyle(Color(white: 0.5))
+                    .foregroundStyle(FlimTheme.textSecondary)
                 Text(roll.name)
                     .flimFont(26, weight: .thin, relativeTo: .title3)
                     .foregroundStyle(.white)

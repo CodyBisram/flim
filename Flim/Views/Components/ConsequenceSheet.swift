@@ -136,7 +136,7 @@ struct ConsequenceSheet: View {
                     .flimFont(16, weight: .medium, relativeTo: .body)
                     .foregroundStyle(.red)
                     .frame(maxWidth: .infinity)
-                    .frame(height: 52)
+                    .frame(minHeight: 52)
                     .background(Color.red.opacity(0.1), in: Capsule())
                     .overlay(Capsule().strokeBorder(Color.red.opacity(0.8), lineWidth: 1))
             }
@@ -148,7 +148,7 @@ struct ConsequenceSheet: View {
                     .flimFont(16, relativeTo: .body)
                     .foregroundStyle(FlimTheme.textSecondary)
                     .frame(maxWidth: .infinity)
-                    .frame(height: 52)
+                    .frame(minHeight: 52)
             }
             .padding(.top, 4)
         }

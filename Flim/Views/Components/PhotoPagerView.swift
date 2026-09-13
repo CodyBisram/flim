@@ -1657,7 +1657,7 @@ struct PhotoPagerView: View {
                 .flimFont(13, weight: .medium)
                 .foregroundStyle(accent)
                 .padding(.horizontal, 14)
-                .frame(height: 32)
+                .frame(minHeight: 32)
                 .overlay(Capsule().strokeBorder(accent.opacity(0.55), lineWidth: 1))
         }
     }
@@ -1678,7 +1678,7 @@ struct PhotoPagerView: View {
                 .flimFont(13, weight: .medium)
                 .foregroundStyle(accent)
                 .padding(.horizontal, 14)
-                .frame(height: 32)
+                .frame(minHeight: 32)
                 .overlay(Capsule().strokeBorder(accent.opacity(0.55), lineWidth: 1))
                 .opacity(isLoadingTags ? 0.45 : 1)
         }

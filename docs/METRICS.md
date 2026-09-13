@@ -208,3 +208,37 @@ UNION ALL SELECT 'post_reactions', count(*) FILTER (WHERE NOT push_sent) FROM pu
 UNION ALL SELECT 'posts',          count(*) FILTER (WHERE NOT push_sent) FROM public.posts
 UNION ALL SELECT 'comment_likes',  count(*) FILTER (WHERE NOT push_sent) FROM public.comment_likes;
 ```
+
+## 12. The two funnels, weekly
+
+Counts, not percentages, scoped to accounts created since a date (so every step's event has been
+logging for the whole cohort). Function `weekly_funnels(date)`, owner-only. Run it every Monday
+with the previous Monday's date and keep the rows; at this size the absolute numbers and the
+names behind them matter more than a percentage that moves when one person acts.
+
+```sql
+select * from public.weekly_funnels('2026-09-01');
+```
+
+Everyday: created, follows someone (the inviter auto-follow counts; the next row is beyond the
+inviter), opened the feed, reacted or commented on a friend, posted, got a response, came back
+another day. Roll: joined a roll they did not create, contributed a frame, in a roll with two or
+more contributors, watched a reveal, in a second such roll.
+
+First run, 2026-09-13, cohort since 2026-09-01 (20 accounts): 12 followed someone beyond their
+inviter, 8 reacted or commented, 7 posted and all 7 got a response, 15 came back another day.
+Roll side: 2 joined a roll, 1 contributed, 1 watched a reveal. The everyday loop is working for
+the newest cohort; the roll loop has not started for them.
+
+## 13. Time to first response
+
+A response is a reaction or a comment by someone other than the author. Function
+`first_response_stats(date)`, owner-only. Posts younger than a day are not counted as unanswered.
+
+```sql
+select * from public.first_response_stats('2026-09-01');
+```
+
+First run, 2026-09-13, posts since 2026-09-01: 335 posts, 309 answered, median 42 minutes to the
+first response, 191 answered within an hour, 25 older than a day with none. 36 people posted and
+nobody has posted without ever getting a response. The number to watch is the last one.
