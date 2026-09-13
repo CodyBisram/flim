@@ -128,7 +128,14 @@ struct JoinRollView: View {
                     .padding(.horizontal, 4)
             }
             Spacer()
-            PrimaryButton(title: "Done") { dismiss() }
+            if roll.isDeveloped {
+                PrimaryButton(title: "See the roll") { dismiss() }
+            } else {
+                PrimaryButton(title: "Shoot into \(roll.name)") {
+                    dismiss()
+                    NotificationCenter.default.post(name: .openCamera, object: nil)
+                }
+            }
         }
     }
 

@@ -352,6 +352,23 @@ The four from the audit the owner picked on 2026-09-10: the durable capture queu
 capture status, one invitation journey (a roll code admits you), deletion order, and the photo
 write boundary. In that order of value; built in the order of size.
 
+### done 2026-09-13: the UI audit's small, clearly right list
+
+- Roll confirmations say what to do next: "Take the first photo" after creating, "Shoot into
+  <roll>" after joining (both open the camera with that roll selected), "See the roll" when the
+  joined roll has already developed.
+- The empty feed says "Find someone you know, or invite a friend" instead of defending itself.
+- The camera pill's VoiceOver label says "Uploading" (or "Saving N on this phone, then
+  uploading"), never "Developing" for a plain upload.
+- Sort deck: Keep is "only you see it, in your Darkroom", Post is "your page, where anyone on
+  FLIM can see it" (the honest audience), the swipe hint says the same. A post that lands shows
+  "Posted to your page" with View (opens your page) for three seconds or until the next action.
+- The reveal's end card offers "Start another with this group" above View the roll.
+- The waiting screen on an open roll names who is in it and the exact reveal time next to the
+  countdown.
+Left from that audit: the accessibility pass, the product decisions (tab resume, onboarding
+line, audience), the two funnels as a weekly query, and the usability study.
+
 ### done 2026-09-12: the UI audit's batches 1 and 2 (docs/UI_SOCIAL_AUDIT_2026-09-12.md)
 
 Batch 1, trust: the social push settles a source only when every recipient this run touched is

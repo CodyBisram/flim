@@ -574,9 +574,11 @@ struct CameraView: View {
                     .frame(minWidth: 38, minHeight: 38)
                     .padding(.horizontal, photos.pendingCaptureCount > 1 ? 12 : 0)
                     .glassCapsule()
+                    // Uploading is not developing: a personal shot is on its way to the server,
+                    // not waiting for a group reveal. Say which.
                     .accessibilityLabel(photos.pendingCaptureCount > 1
-                        ? "Saving \(photos.pendingCaptureCount) photos"
-                        : "Developing")
+                        ? "Saving \(photos.pendingCaptureCount) photos on this phone, then uploading"
+                        : "Uploading")
                 } else if photos.hasFailedUploads {
                     Button {
                         Task { await photos.retryFailedUploads() }

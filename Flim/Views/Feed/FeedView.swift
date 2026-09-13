@@ -681,7 +681,7 @@ struct FeedView: View {
                 }
             }
             .padding(.top, 9)
-            Text("\(AppInfo.appName) is invite only. Nobody is suggested to you, and nobody is ranked.")
+            Text("Find someone you know, or invite a friend. The feed is the people you follow, newest first.")
                 .flimFont(12.5, relativeTo: .footnote)
                 .foregroundStyle(FlimTheme.textTertiary)
                 .multilineTextAlignment(.center)

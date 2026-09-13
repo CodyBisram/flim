@@ -29,6 +29,9 @@ struct SortDeckView: View {
     @State private var lastCaption: String?
     @State private var lastTags: [PendingTag] = []
     @State private var publishError: String?
+    /// A post that landed, said once so the person knows where it went. Cleared by the next
+    /// action or a few seconds, whichever first.
+    @State private var postedNotice = false
     /// The compose sheet, opened from the pill under the top card or a tap on the card itself.
     @State private var showCompose = false
     @State private var composePhoto: Photo?
@@ -148,6 +151,23 @@ struct SortDeckView: View {
     /// the buttons is showing, and doesn't reach up far enough to compete with the compose pill
     /// above.
     @ViewBuilder private var publishErrorBanner: some View {
+        if postedNotice, publishError == nil {
+            HStack(spacing: 10) {
+                Label("Posted to your page", systemImage: "checkmark.circle.fill")
+                    .flimFont(13, weight: .medium, relativeTo: .subheadline)
+                    .foregroundStyle(FlimTheme.textSecondary)
+                Button("View") {
+                    guard let uid = auth.currentUser?.id else { return }
+                    closeDeck()
+                    NotificationCenter.default.post(name: .openPushDestination, object: PushDestination.profile(userId: uid))
+                }
+                .flimFont(13, weight: .semibold, relativeTo: .subheadline)
+                .foregroundStyle(accent)
+            }
+            .padding(.horizontal, 24)
+            .padding(.bottom, 4)
+            .transition(.opacity)
+        }
         if let publishError {
             Text(publishError)
                 .flimFont(13, relativeTo: .subheadline)
@@ -274,11 +294,11 @@ struct SortDeckView: View {
         VStack(spacing: 14) {
             HStack(spacing: 26) {
                 circleButton("tray.and.arrow.down", tint: accent, size: 54,
-                             caption: "Keep", label: "Keep in your Darkroom") { performSwipe(.archive) }
+                             caption: "Keep", label: "Keep. Only you see it, in your Darkroom") { performSwipe(.archive) }
                 circleButton("trash", tint: .red, size: 54,
                              caption: "Delete", label: "Delete photo") { performSwipe(.trash) }
                 circleButton("paperplane.fill", tint: .green, size: 54,
-                             caption: "Post", label: "Post to your page") { performSwipe(.publish) }
+                             caption: "Post", label: "Post to your page, where anyone on FLIM can see it") { performSwipe(.publish) }
             }
 
             // One line, once, and only while it can still change what you do. Three tinted
@@ -286,7 +306,7 @@ struct SortDeckView: View {
             // card is already moving, so the first time through the only way to find out that
             // right means POST is to post something.
             if showSwipeHint {
-                Text("Swipe right to post, left to keep it private.")
+                Text("Right posts it to your page. Left keeps it private, in your Darkroom.")
                     .flimFont(12, relativeTo: .caption)
                     .foregroundStyle(FlimTheme.textSecondary)
                     .transition(.opacity)
@@ -345,6 +365,7 @@ struct SortDeckView: View {
         // left the deck unreviewed. The card is claimed here and released when it is gone.
         guard !isTransitioning, let photo = cards.first else { return }
         isTransitioning = true
+        postedNotice = false
         Haptics.tap()
 
         switch action {
@@ -424,6 +445,8 @@ struct SortDeckView: View {
             await photoService.markSorted(photoId: photo.id)
             do {
                 let tagsSaved = try await feed.createPost(photo: photo, caption: caption, userId: uid, tags: tags)
+                withAnimation { postedNotice = true }
+                Task { try? await Task.sleep(for: .seconds(3)); withAnimation { postedNotice = false } }
                 if shouldWarnThatTagsDidNotSave(tagsSaved) {
                     // The post itself is live, only the tags failed to attach; a genuine failure
                     // still has to speak up, same reasoning as the publish failure right below,

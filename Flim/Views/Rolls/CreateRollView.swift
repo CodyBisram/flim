@@ -154,8 +154,11 @@ struct CreateRollView: View {
             // No rubber-banding when the content already fits the large detent.
             .scrollBounceBehavior(.basedOnSize)
 
-            PrimaryButton(title: "Done") {
+            // The roll is already the camera's destination (`CameraRollSelection.select` in
+            // `create`), so the button names the next thing to do, not the sheet's own state.
+            PrimaryButton(title: "Take the first photo") {
                 dismiss()
+                NotificationCenter.default.post(name: .openCamera, object: nil)
             }
         }
     }
