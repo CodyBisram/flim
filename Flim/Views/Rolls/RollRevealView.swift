@@ -25,12 +25,13 @@ struct RollRevealView: View {
     @State private var viewModel: RollRevealViewModel
 
     init(rollId: UUID, rollName: String, photos: [Photo], memberNames: [UUID: String],
-         onCompleted: (() -> Void)? = nil) {
+         onCompleted: (() -> Void)? = nil, onStartAnother: (() -> Void)? = nil) {
         self.rollId = rollId
         self.rollName = rollName
         self.photos = photos
         self.memberNames = memberNames
         self.onCompleted = onCompleted
+        self.onStartAnother = onStartAnother
         _viewModel = State(initialValue: RollRevealViewModel(rollId: rollId, photos: photos))
     }
 
@@ -63,6 +64,8 @@ struct RollRevealView: View {
     /// Called when the reveal is genuinely finished, so the caller can burn its one-shot flag.
     /// Nothing else may write it: an abandoned reveal has to stay replayable.
     var onCompleted: (() -> Void)?
+    /// The natural moment for the next roll is the end of this one. Nil hides the button.
+    var onStartAnother: (() -> Void)?
     /// Pinch-to-look on the current slide. Transient, so a zoom can never be left behind on a
     /// slideshow that keeps moving. Reset whenever the photo on screen changes, see the
     /// `onChange` below.
@@ -536,6 +539,22 @@ struct RollRevealView: View {
                     .padding(.horizontal, 14).padding(.vertical, 8)
                     .background(accent.opacity(0.16), in: Capsule())
                     .padding(.top, 2)
+            }
+
+            if let onStartAnother {
+                Button {
+                    Haptics.tap()
+                    dismiss()
+                    onStartAnother()
+                } label: {
+                    Text("Start another with this group")
+                        .flimFont(15, weight: .medium, relativeTo: .body)
+                        .foregroundStyle(.black)
+                        .padding(.horizontal, 36)
+                        .frame(height: 46)
+                        .background(accent, in: Capsule())
+                }
+                .padding(.top, 12)
             }
 
             Button {

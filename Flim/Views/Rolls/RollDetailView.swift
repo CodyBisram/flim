@@ -715,7 +715,8 @@ struct RollDetailView: View {
         .fullScreenCover(isPresented: $showReveal) {
             RollRevealView(rollId: roll.id, rollName: roll.name,
                            photos: chronologicalDeveloped, memberNames: memberNames,
-                           onCompleted: { UserDefaults.standard.set(true, forKey: revealSeenKey) })
+                           onCompleted: { UserDefaults.standard.set(true, forKey: revealSeenKey) },
+                           onStartAnother: { showFollowUp = true })
         }
         .onChange(of: showReveal) { wasShowing, isShowing in
             // Finishing a reveal is one of the two moments a badge most plausibly just became
@@ -1236,9 +1237,17 @@ struct RollDetailView: View {
         VStack(alignment: .leading, spacing: 3) {
             TimelineView(.periodic(from: .now, by: 1)) { timeline in
                 let remaining = max(0, Int(revealAt.timeIntervalSince(timeline.date)))
-                Label("Develops in \(Self.countdown(remaining))", systemImage: "hourglass")
+                Label("Develops in \(Self.countdown(remaining)), at \(RollDevelopAskSheet.timeLabel(for: revealAt))", systemImage: "hourglass")
                     .flimFont(14, weight: .semibold)
                     .foregroundStyle(accent)
+            }
+            // Who is in it, by name, so the wait reads as a group and not a timer.
+            if !memberNames.isEmpty {
+                let names = memberNames.values.sorted().prefix(6)
+                Text(names.map { "@\($0)" }.joined(separator: ", ") + (memberNames.count > 6 ? " and \(memberNames.count - 6) more" : ""))
+                    .flimFont(12.5, relativeTo: .footnote)
+                    .foregroundStyle(FlimTheme.textSecondary)
+                    .lineLimit(2)
             }
             Group {
                 if let shots {
