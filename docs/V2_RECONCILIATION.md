@@ -22,12 +22,12 @@ the foundations, and they conflict with nothing.
 |---|---|---|---|
 | 1 | Feed-first launch, "Model A" | Camera-first is the owner's decision; the everyday audit said test it in the study first | **Flag. Not built.** Design batch 3; needs the study and the owner's word |
 | 2 | Tab order Feed · Camera · Darkroom · Rolls, tab named "Friends" | Camera · Darkroom · Rolls · Feed, named "Feed" | **Flag. Not built.** Same decision as #1 |
-| 3 | Activity unread clears per row, only for rows actually opened | Unread is a watermark: every row older than the last successful open is read (fixed twice this week to stamp the query instant) | **Flag, unchanged.** Per-row unread is a different contract (local or server seen set per row, bell count = unopened rows). Doable client-side; the owner decides whether the bell should ever say "3" after you looked |
+| 3 | Activity unread clears per row, only for rows actually opened | Unread is a watermark: every row older than the last successful open is read (fixed twice this week to stamp the query instant) | **Keep the app** (owner, 2026-09-14). The watermark stays |
 | 4 | Onboarding: an explicit Follow step; "See Rae's photos" appears only after Follow | The inviter is followed for you at sign-up (shipped 2026-09-08); the audit said never ask to follow someone already followed | **Keep the app.** Design batch 4 anyway; the package's own no-known-person path is compatible |
-| 5 | Camera permission asked on first camera open, returning to the surface that asked | Asked at the end of onboarding, because the camera is the landing tab; there is a re-test checklist for it | **Flag.** Only makes sense with #1; decide together |
+| 5 | Camera permission asked on first camera open, returning to the surface that asked | Asked at the end of onboarding, because the camera is the landing tab; there is a re-test checklist for it | **Approved for batch 2** (owner, 2026-09-14): contextual to opening Camera |
 | 6 | Sorting vocabulary "Keep private / Post to page / Delete" | "Keep / Post / Delete" with one-line sublabels | **Take, batch 1**, copy below for veto |
-| 7 | Labelled React and Comment controls; existing reaction chips capped at two, the rest in the tray | Emoji chips (reacted first, then defaults) in a scrolling row, a + for the picker, and a text line "Add a comment" / "View all N comments" | **Take, batch 1.** Cost: a default emoji (❤️ 🔥 😂) becomes React then tap instead of one tap; an existing chip stays one tap. Reversible |
-| 8 | Photograph inset 33pt each side (309 / 336 / 364 wide at 375 / 402 / 430), radius 6 | Photograph is width minus 32, radius 12 | **Take, batch 1.** The most visible change in the batch; decode budget unaffected |
+| 7 | Labelled React and Comment controls; existing reaction chips capped at two, the rest in the tray | Emoji chips (reacted first, then defaults) in a scrolling row, a + for the picker, and a text line "Add a comment" / "View all N comments" | **Taken in batch 1, UNDER REVIEW.** Cost: a default emoji (❤️ 🔥 😂) becomes React then tap instead of one tap; an existing chip stays one tap. Reversible |
+| 8 | Photograph inset 33pt each side (309 / 336 / 364 wide at 375 / 402 / 430), radius 6 | Photograph is width minus 32, radius 12 | **Taken in batch 1, UNDER REVIEW.** The most visible change in the batch; decode budget unaffected |
 | 9 | Two frames: "1 of 2" plus dots; the strip from three | Strip from two | **Take, batch 1** |
 | 10 | Audience sentence with the follower count: "That's 12 people right now, and anyone who follows you later"; a tagged variant | "People who follow you can see it." (added 2026-09-13) | **Take, batch 1.** Count read on sheet open; the plain line until it lands |
 | 11 | Five capture states with honest copy: Not saved yet / Saved on this phone / Uploading / Queued on this phone / Uploaded | "Uploading" or "Saving N" pill, a warning line under it, "N to sort" | **Take, batch 1**, presentation over the state the service already holds |
@@ -44,6 +44,19 @@ plus tags), photo durability (capture queue, sidecar, renditions), image renderi
 (look pipeline, 1400 decode budget, cache contract), notification routing, and the first-sort
 Darkroom destination. Demo content, reviewer panels, simulated backends and the Stage 1
 explorations stay out of the app.
+
+## Owner decisions, 2026-09-14
+
+- Batch 1 stays out of 1.5.3. 1.5.3 ships from build 378 (`0e7991f`); this branch (`v2`) is the
+  next release candidate, version number provisional.
+- Activity's unread behaviour is preserved as it is (#3 closed: keep the watermark).
+- Feed-first launch and tab order (#1, #2) are evaluated through the usability study.
+- Camera permission becomes contextual to opening Camera (#5 approved for batch 2).
+- Under explicit review, not settled: the extra tap for a default reaction (#7) and the
+  reduced photograph width (#8). Either reverts on the owner's word.
+- Before batch 2: the copy table below, old/new feed screenshots, and device checks for
+  sorting, capture status, audience wording, the two-frame cue, VoiceOver and the largest
+  supported text size.
 
 ## Phased plan
 
