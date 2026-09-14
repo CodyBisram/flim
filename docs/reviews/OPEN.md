@@ -49,3 +49,5 @@ sat unread in pull requests; everything starts `unverified` and the first night 
 | 2026-09-12 | ? | Flim/Services/RollService.swift:27, :111 | unverified | |
 | 2026-09-12 | ? | supabase/functions/send-social-push/index.ts:272, 300-322, 729-772, 1048-1076 | unverified | |
 | 2026-09-12 | ? | Flim/Services/PhotoService.swift:1262, 1285, 1398 | unverified | |
+| 2026-09-14 | high | .github/workflows/nightly-numbers.yml:25-30 (rendition-repair step has no continue-on-error, so repair_renditions.py's expected exit 1 skips the Commit the line step and silently drops that night's NUMBERS.md line) | open | |
+| 2026-09-14 | medium | supabase/functions/send-social-push/index.ts:1209-1230 (comment-likes push has no postVisibleTo gate like the thread-participant push does, can deep-link to a post the recipient can no longer open) | open | |
