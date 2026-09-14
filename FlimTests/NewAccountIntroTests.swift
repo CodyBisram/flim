@@ -133,5 +133,9 @@ struct NewAccountIntroTests {
         let later = cal.date(byAdding: .day, value: 3, to: today)!
         let label = RollDevelopAskSheet.timeLabel(for: later, calendar: cal, locale: locale)
         #expect(label.hasSuffix("at 9:14 PM") && label.count > "at 9:14 PM".count)
+        // The sentence form carries its own "at" today and none on another day, so "Develops
+        // in 2h, at 9:14 PM" and "Develops in 50h, Saturday at 9:14 PM" both read once.
+        #expect(RollDevelopAskSheet.whenLabel(for: today, calendar: cal, locale: locale) == "at 9:14 PM")
+        #expect(RollDevelopAskSheet.whenLabel(for: later, calendar: cal, locale: locale) == label)
     }
 }
