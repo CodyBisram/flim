@@ -58,6 +58,29 @@ explorations stay out of the app.
   sorting, capture status, audience wording, the two-frame cue, VoiceOver and the largest
   supported text size.
 
+## Getting batch 1 onto a phone (owner, 2026-09-14)
+
+Main stays at the 1.5.3 candidate; `v2` never moves onto main for testing. Once 1.5.3 is out:
+
+1. On `v2`, set `MARKETING_VERSION` to the provisional next version (1.5.4) on both targets, so
+   the archive cannot be mistaken for a 1.5.3 build in App Store Connect. Commit on `v2`.
+2. Archive by hand from that pinned commit with the same lane CI uses, which takes its build
+   number from TestFlight's latest plus one (so it is distinct by construction):
+   `git checkout v2 && bundle exec fastlane beta`, with the App Store Connect API key and the
+   match variables in the environment (the owner holds these; CI reads them as secrets).
+3. Record the pair here: `v2 <sha>` = build `<n>`. The device checks run against that pair.
+
+The device checks that gate batch 2, on that build: sorting (the three words, the drag labels,
+the posted notice), the capture chip through all five states (shoot; shoot then airplane mode;
+shoot then lock the phone), the audience wording with and without a tag, the two-frame cue on a
+two-shot day, VoiceOver through the feed card and the sort deck, and the largest supported text
+size (AX3) on the feed and the sort deck. Plus the before/after feed image and the copy table
+below, reviewed first.
+
+| v2 commit | Build | Recorded |
+|---|---|---|
+| (pending 1.5.3 release) | | |
+
 ## Phased plan
 
 **Batch 1, foundations and the everyday journey (this batch).** Presentation only. Tokens:
