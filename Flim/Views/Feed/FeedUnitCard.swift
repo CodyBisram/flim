@@ -121,8 +121,12 @@ struct FeedUnitCard: View {
     private var current: FeedItem { unit.items[min(selection, unit.items.count - 1)] }
     private var post: Post { current.post }
     private var isOwn: Bool { post.isOwned(by: auth.currentUser?.id) }
-    private var photoWidth: CGFloat { max(1, width - 32) }
+    /// The photograph's inset from each screen edge. Fixed across widths (v2 foundations): a
+    /// bigger phone shows more conversation beside the same photograph, not a bigger one.
+    static let photoInset: CGFloat = 33
+    private var photoWidth: CGFloat { max(1, width - Self.photoInset * 2) }
     private var photoHeight: CGFloat { photoWidth * 4 / 3 }
+    private var margin: CGFloat { FlimSpace.margin(for: width) }
 
     private var reactions: [PostReaction] {
         (feed.reactionsByPost[post.id] ?? []).filter { !feed.blockedIds.contains($0.userId) }
@@ -144,32 +148,40 @@ struct FeedUnitCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             band
-            if unit.items.count > 1 {
+            // Two frames: the position in words, below the photograph. Three or more: the strip.
+            if unit.items.count > 2 {
                 FilmStrip(
                     unit: unit, selection: $selection, accent: accent,
                     isSeen: { seenStore.isSeen($0) }, failedFrames: failedFrames,
                     resolveURLs: { await feed.signedURLs(for: $0) },
                     openOverflow: { showContactSheet = true }
                 )
-                .padding(.horizontal, 16)
+                .padding(.horizontal, margin)
             }
             pager
                 .padding(.top, 6)
-                .padding(.horizontal, 16)
-            ReactionBar(
-                defaults: photos.reactionDefaults(for: post.photoId),
+                .frame(maxWidth: .infinity)
+            if unit.items.count == 2 {
+                PositionCue(index: selection, count: 2)
+                    .padding(.top, FlimSpace.m)
+                    .padding(.horizontal, margin)
+            }
+            ResponseRow(
                 counts: Dictionary(grouping: reactions, by: \.emoji).mapValues(\.count),
-                mine: Set(reactions.filter { $0.userId == auth.currentUser?.id }.map(\.emoji))
-            ) { toggleReaction($0) }
-            .padding(.top, 7)
-            .padding(.horizontal, 16)
-            // The row belongs to the frame on screen; swiping re-renders it. The id ties the
-            // bar's internal ordering state to the frame, so chip order never leaks between
-            // shots.
+                mine: Set(reactions.filter { $0.userId == auth.currentUser?.id }.map(\.emoji)),
+                quick: photos.reactionDefaults(for: post.photoId),
+                commentCount: comments.count,
+                failed: feed.reactionFailures[post.id],
+                onReact: { toggleReaction($0) },
+                onComment: { commentsTarget = CommentsTarget() }
+            )
+            .padding(.top, FlimSpace.m)
+            .padding(.horizontal, margin)
+            // The row belongs to the frame on screen; swiping re-renders it.
             .id("reactions-\(post.id)")
             thread
-                .padding(.top, 8)
-                .padding(.horizontal, 16)
+                .padding(.top, FlimSpace.m)
+                .padding(.horizontal, margin)
         }
         .task(id: unit.id) {
             if let path = unit.author.avatarPath { avatarURL = await feed.signedURL(for: path) }
@@ -299,7 +311,7 @@ struct FeedUnitCard: View {
             .accessibilityLabel("Post options")
         }
         .padding(.top, 10)
-        .padding(.leading, 16)
+        .padding(.leading, margin)
         .padding(.trailing, 6)
         .padding(.bottom, 6)
     }
@@ -333,7 +345,7 @@ struct FeedUnitCard: View {
         }
         .tabViewStyle(.page(indexDisplayMode: .never))
         .frame(width: photoWidth, height: photoHeight)
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .clipShape(RoundedRectangle(cornerRadius: FlimRadius.photo))
         .accessibilityElement(children: .contain)
         .accessibilityLabel(
             unit.items.count == 1
@@ -397,7 +409,7 @@ struct FeedUnitCard: View {
     /// you cannot see. Retry is per frame: it re-resolves the signed URL (the commonest
     /// failure is an expired one) and refetches that one image, blocking nothing.
     private func brokenWell(item: FeedItem) -> some View {
-        RoundedRectangle(cornerRadius: 12)
+        RoundedRectangle(cornerRadius: FlimRadius.photo)
             .fill(Color.white.opacity(0.06))
             .frame(width: photoWidth, height: photoHeight)
             .overlay {
@@ -532,18 +544,16 @@ struct FeedUnitCard: View {
                     .accessibilityLabel(info.likedByMe ? "Unlike comment" : "Like comment")
                 }
             }
-            // ONE line, always present, always the same destination, so a frame with no
-            // thread is never a dead end.
-            Button { commentsTarget = CommentsTarget() } label: {
-                Text(hasCommentsBeyondPreview(total: comments.count, shownInPreview: previewComments.count)
-                     ? "View all \(comments.count) comments"
-                     : "Add a comment")
-                    .flimFont(12.5, relativeTo: .footnote)
-                    .foregroundStyle(
-                        hasCommentsBeyondPreview(total: comments.count, shownInPreview: previewComments.count)
-                            ? FlimTheme.textSecondary : FlimTheme.textTertiary)
+            // The Comment control above is the door into the thread; this line only appears
+            // when the preview is hiding part of it.
+            if hasCommentsBeyondPreview(total: comments.count, shownInPreview: previewComments.count) {
+                Button { commentsTarget = CommentsTarget() } label: {
+                    Text(comments.count == 2 ? "View both comments" : "View all \(comments.count) comments")
+                        .flimType(.meta)
+                        .foregroundStyle(FlimTheme.textSecondary)
+                }
+                .expandTapTarget(top: 6, leading: 4, bottom: 8, trailing: 4)
             }
-            .expandTapTarget(top: 6, leading: 4, bottom: 8, trailing: 4)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }

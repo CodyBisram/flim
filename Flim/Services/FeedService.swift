@@ -48,6 +48,10 @@ final class FeedService {
     /// shows. A failed write only rolls the screen back if it is still the owner; a later tap
     /// that already changed the intent wins, and the queue's later write reconciles the server.
     private var reactionRevisions: [String: Int] = [:]
+    /// The emoji whose last write on a post was refused and rolled back, so the frame can say
+    /// so ("That reaction didn't save. Retry") instead of the count silently going back. Cleared
+    /// by the next attempt on that post.
+    var reactionFailures: [UUID: String] = [:]
     var commentsByPost: [UUID: [CommentInfo]] = [:]
     /// Photo tags per post, and the profiles of tagged users (for their labels).
     var tagsByPost: [UUID: [PostTag]] = [:]
@@ -260,10 +264,16 @@ final class FeedService {
     }
 
     func followerCount(_ userId: UUID) async -> Int {
-        (try? await supabase.from("follows")
+        await followerCountIfKnown(userId) ?? 0
+    }
+
+    /// nil when the count could not be read, so a sentence like "That's N people right now"
+    /// is never said with a 0 that a flaky network produced.
+    func followerCountIfKnown(_ userId: UUID) async -> Int? {
+        try? await supabase.from("follows")
             .select("follower_id", head: true, count: .exact)
             .eq("following_id", value: userId.uuidString)
-            .execute().count) ?? 0
+            .execute().count
     }
 
     func followingCount(_ userId: UUID) async -> Int {
@@ -1257,6 +1267,7 @@ final class FeedService {
             current.append(PostReaction(id: UUID(), postId: postId, userId: userId, emoji: emoji))
         }
         reactionsByPost[postId] = current
+        reactionFailures[postId] = nil
         let revisionKey = "\(postId)|\(emoji)|\(userId)"
         let revision = (reactionRevisions[revisionKey] ?? 0) + 1
         reactionRevisions[revisionKey] = revision
@@ -1285,6 +1296,7 @@ final class FeedService {
                 now.removeAll { $0.emoji == emoji && $0.userId == userId }
             }
             self.reactionsByPost[postId] = now
+            self.reactionFailures[postId] = emoji
             Haptics.error()
         }
         reactionQueues[postId] = write

@@ -352,6 +352,46 @@ The four from the audit the owner picked on 2026-09-10: the durable capture queu
 capture status, one invitation journey (a roll code admits you), deletion order, and the photo
 write boundary. In that order of value; built in the order of size.
 
+### done 2026-09-14: v2 batch 1, the foundations and the everyday journey (docs/V2_RECONCILIATION.md)
+
+The Claude Design package ("Stage 1 design directions", six authoritative boards) reconciled
+against main; the conflict list, verdicts and the five-batch plan are in
+`docs/V2_RECONCILIATION.md`. Batch 1 is presentation only and touches one journey:
+
+- Foundations: `FlimTheme.surface / row / divider / success / destructive / disabled / loading /
+  warning(accent)`, `FlimSpace` (nine steps + `margin(for:)` 14/16/18 by width), `FlimRadius`
+  (photo 6, control 12, panel 14, sheet 16, viewfinder 28), `FlimType` roles with per-style
+  Dynamic Type growth and `.flimType(_:)` (Stamp never scales). Older surfaces keep their
+  hand-picked sizes; new and revisited surfaces take a role.
+- `ResponseRow`: React and Comment as labelled 44pt controls, at most two reaction chips (most
+  given first), the tray as `EmojiPickerSheet` (extracted from ReactionBar; a quick row of the
+  six defaults on top), a "That reaction didn't save. Retry" line fed by
+  `FeedService.reactionFailures`. Stacks past AX2. `ReactionBar` still serves the pager, the roll
+  carousel and post detail until those screens are revisited.
+- Feed card: photograph inset 33pt each side at every width, radius 6, `PositionCue` ("1 of 2"
+  plus dots) for a two-frame day, the strip from three, thread's last line only when comments
+  are hidden ("View both comments" / "View all N comments").
+- Sort deck: Keep private · Post to page · Delete, lock / paperplane / trash glyphs in accent /
+  success / destructive, the one-line explanation, drag labels KEEP / POST, posted notice
+  "Posted to your page. Your followers can see it."
+- Camera: `CaptureStatusChip` over the five honest states (`CaptureStatus.derive`, tested),
+  "Uploaded" for three seconds once the line empties, then the sort shortcut.
+- Share sheet: `ShareAudience` / `AudienceLine` under the tags: "Your followers can see this.
+  That's N people right now, and anyone who follows you later.", with the tagged variant;
+  `followerCountIfKnown` so a failed read never says 0.
+
+Validated: full suite (614 swift-testing + 759 XCTest) green; feed demo on iPhone 16e (390) and
+17 Pro Max (440) at default and accessibility-large text, controls keep their words. Not
+validated: VoiceOver spoken (labels written), the sort deck, camera chip and share sheet on a
+device (need an account and a camera), the two-frame cue in the demo (unit-tested only).
+
+Not built, per the brief and the conflict list: Feed-first launch and tab order (#1, #2),
+per-row Activity unread (#3, flagged), explicit follow at onboarding (#4, keep auto-follow),
+camera permission timing (#5), comments-pop-to-origin (#12), profile header and chapters (#13),
+the group B client work (#14), monetization (#16).
+
+Owner: veto any copy in the reconciliation's table; decide #1/#2/#3/#5 after the study.
+
 ### done 2026-09-13, late: why captures lost their renditions, and the repair that runs nightly
 
 The nightly numbers job's first alert (one capture missing renditions) was the tip: 49 photos

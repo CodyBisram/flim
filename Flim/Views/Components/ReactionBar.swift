@@ -107,15 +107,6 @@ struct ReactionBar: View {
 
     @State private var expanded = false
     @State private var displayOrder: [String] = []
-    /// The full generated palette's sections, empty until `EmojiCatalog` finishes (usually already
-    /// done by the time anyone opens the sheet, since `warm()` fires on every appear below).
-    @State private var catalogSections: [EmojiCategory] = []
-    /// Every generated emoji's search tokens, keyed by the emoji itself. Produced by the exact same
-    /// background pass as `catalogSections`; see `EmojiCatalog.searchTokens()`.
-    @State private var searchTokens: [String: [String]] = [:]
-    /// The picker sheet's search field. Empty means "browsing", not "searching for nothing": see
-    /// `emojiSearchResults`.
-    @State private var query = ""
     /// True once `displayOrder` has been built from a real (non-empty) `counts`, or once you've
     /// tapped something. Gates the one-shot re-sort in `onChange(of: counts)` below.
     @State private var orderSeeded = false
@@ -142,7 +133,9 @@ struct ReactionBar: View {
             }
             .padding(.trailing, 4)
         }
-        .sheet(isPresented: $expanded) { emojiPickerSheet }
+        .sheet(isPresented: $expanded) {
+            EmojiPickerSheet(mine: mine, quick: []) { pick($0) }
+        }
         .onAppear {
             rebuildOrder()
             // Fire-and-forget: gets the (relatively expensive, thousands of scalar + font checks)
@@ -174,86 +167,6 @@ struct ReactionBar: View {
     private func rebuildOrder() {
         displayOrder = reactionDisplayOrder(counts: counts, defaults: defaults)
         if !counts.isEmpty { orderSeeded = true }
-    }
-
-    private static let gridColumns = [GridItem(.adaptive(minimum: 44), spacing: 10)]
-
-    /// The sections the grid actually shows: the normal browsable grouping (recents promoted up
-    /// front) when `query` is empty, ranked search results when it isn't. Search is additive, never
-    /// a replacement for browsing: an empty query must show exactly what the picker showed before
-    /// this existed.
-    private var displayedSections: [EmojiPickerSection] {
-        query.isEmpty
-            ? emojiPickerSections(categories: catalogSections, recents: recents)
-            : emojiSearchResults(categories: catalogSections, tokens: searchTokens, query: query)
-    }
-
-    /// A browsable grid of the full device-renderable palette `EmojiCatalog` generates, grouped
-    /// into labelled sections with recents promoted to the front, with a search field up top to
-    /// narrow it down. A sheet, not an overlay: see the note above `body`.
-    private var emojiPickerSheet: some View {
-        VStack(spacing: 0) {
-            PeopleSearchField(query: $query, prompt: "Search emoji", underSheetGrabber: true)
-            ScrollView {
-                if catalogSections.isEmpty {
-                    // Only reachable if the sheet opened before `warm()` (fired on every bar's
-                    // appear) finished generating; a brief loading state rather than an empty sheet.
-                    ProgressView()
-                        .padding(.top, 60)
-                } else if displayedSections.isEmpty {
-                    // Only reachable while searching: browsing always has at least one section
-                    // once `catalogSections` has loaded, so this is specifically "searched, found
-                    // nothing", not a blank grid.
-                    searchEmptyState
-                } else {
-                    LazyVStack(alignment: .leading, spacing: 22) {
-                        ForEach(displayedSections) { section in
-                            VStack(alignment: .leading, spacing: 10) {
-                                Text(section.name)
-                                    .flimFont(13, weight: .semibold)
-                                    .foregroundStyle(FlimTheme.textTertiary)
-                                    .textCase(.uppercase)
-                                LazyVGrid(columns: Self.gridColumns, spacing: 10) {
-                                    ForEach(section.emojis, id: \.self) { emoji in
-                                        Button { pick(emoji) } label: {
-                                            Text(emoji).flimFont(26)
-                                                .frame(width: 44, height: 44)
-                                                .background(mine.contains(emoji) ? accent.opacity(0.28) : Color.white.opacity(0.08), in: Circle())
-                                        }
-                                        .accessibilityLabel("React \(emoji)")
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    .padding(16)
-                }
-            }
-        }
-        .task {
-            async let loadedSections = EmojiCatalog.shared.sections()
-            async let loadedTokens = EmojiCatalog.shared.searchTokens()
-            (catalogSections, searchTokens) = await (loadedSections, loadedTokens)
-        }
-        .onDisappear { query = "" }   // next open starts back on the browsable grid, not a stale search
-        .presentationDetents([.medium, .large])
-        .presentationDragIndicator(.visible)
-        .flimSheetSurface()
-    }
-
-    /// Shown only while actively searching for something that matched nothing, as opposed to the
-    /// picker's loading state or the normal browsable grid.
-    private var searchEmptyState: some View {
-        VStack(spacing: 8) {
-            Image(systemName: "magnifyingglass")
-                .font(.system(size: 28, weight: .ultraLight))
-                .foregroundStyle(FlimTheme.textTertiary)
-            Text("No matches.")
-                .flimFont(14, relativeTo: .subheadline)
-                .foregroundStyle(FlimTheme.textSecondary)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.top, 60)
     }
 
     private var plusButton: some View {
@@ -351,8 +264,110 @@ struct ReactionBar: View {
     }
 
     private func recordRecent(_ emoji: String) {
-        var list = recents.filter { $0 != emoji }
+        recentsRaw = EmojiPickerSheet.recordingRecent(emoji, in: recentsRaw)
+    }
+}
+
+/// The browsable grid of the full device-renderable palette `EmojiCatalog` generates, grouped
+/// into labelled sections with recents promoted to the front and a search field up top. Shared
+/// by `ReactionBar`'s + and `ResponseRow`'s React; a sheet, not an overlay, because the hosts
+/// give a swipeable pager "whatever height is left" and an inline tray changed that height
+/// mid-drag (see `ReactionBar`'s history). `quick` is an optional first row: the six-slot
+/// default set, when the host has no chips of its own showing them.
+struct EmojiPickerSheet: View {
+    @Environment(\.flimAccent) private var accent
+    let mine: Set<String>
+    var quick: [String] = []
+    let onPick: (String) -> Void
+
+    @State private var catalogSections: [EmojiCategory] = []
+    @State private var searchTokens: [String: [String]] = [:]
+    @State private var query = ""
+    @AppStorage("recentEmojis") private var recentsRaw = ""
+
+    private var recents: [String] { recentsRaw.split(separator: ",").map(String.init) }
+
+    static func recordingRecent(_ emoji: String, in raw: String) -> String {
+        var list = raw.split(separator: ",").map(String.init).filter { $0 != emoji }
         list.insert(emoji, at: 0)
-        recentsRaw = list.prefix(24).joined(separator: ",")
+        return list.prefix(24).joined(separator: ",")
+    }
+
+    private var displayedSections: [EmojiPickerSection] {
+        query.isEmpty
+            ? emojiPickerSections(categories: catalogSections, recents: recents)
+            : emojiSearchResults(categories: catalogSections, tokens: searchTokens, query: query)
+    }
+
+    private static let gridColumns = [GridItem(.adaptive(minimum: 44), spacing: 10)]
+
+    var body: some View {
+        VStack(spacing: 0) {
+            PeopleSearchField(query: $query, prompt: "Search emoji", underSheetGrabber: true)
+            if !quick.isEmpty && query.isEmpty {
+                // The six defaults, one tap, above the fold of the sheet: what the old row
+                // offered inline. 44pt each, spaced to fill the width.
+                HStack(spacing: 0) {
+                    ForEach(quick, id: \.self) { emoji in
+                        Button { onPick(emoji) } label: {
+                            Text(emoji).flimFont(28)
+                                .frame(maxWidth: .infinity, minHeight: 48)
+                                .background(mine.contains(emoji) ? accent.opacity(0.16) : .clear, in: RoundedRectangle(cornerRadius: FlimRadius.control))
+                                .overlay(RoundedRectangle(cornerRadius: FlimRadius.control).strokeBorder(mine.contains(emoji) ? accent.opacity(0.45) : .clear, lineWidth: 1))
+                        }
+                        .accessibilityLabel("React \(emoji)")
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.top, 6)
+            }
+            ScrollView {
+                if catalogSections.isEmpty {
+                    ProgressView().padding(.top, 60)
+                } else if displayedSections.isEmpty {
+                    VStack(spacing: 8) {
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: 28, weight: .ultraLight))
+                            .foregroundStyle(FlimTheme.textTertiary)
+                        Text("No matches.")
+                            .flimFont(14, relativeTo: .subheadline)
+                            .foregroundStyle(FlimTheme.textSecondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 60)
+                } else {
+                    LazyVStack(alignment: .leading, spacing: 22) {
+                        ForEach(displayedSections) { section in
+                            VStack(alignment: .leading, spacing: 10) {
+                                Text(section.name)
+                                    .flimFont(13, weight: .semibold)
+                                    .foregroundStyle(FlimTheme.textTertiary)
+                                    .textCase(.uppercase)
+                                LazyVGrid(columns: Self.gridColumns, spacing: 10) {
+                                    ForEach(section.emojis, id: \.self) { emoji in
+                                        Button { onPick(emoji) } label: {
+                                            Text(emoji).flimFont(26)
+                                                .frame(width: 44, height: 44)
+                                                .background(mine.contains(emoji) ? accent.opacity(0.28) : Color.white.opacity(0.08), in: Circle())
+                                        }
+                                        .accessibilityLabel("React \(emoji)")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    .padding(16)
+                }
+            }
+        }
+        .task {
+            async let loadedSections = EmojiCatalog.shared.sections()
+            async let loadedTokens = EmojiCatalog.shared.searchTokens()
+            (catalogSections, searchTokens) = await (loadedSections, loadedTokens)
+        }
+        .onDisappear { query = "" }   // next open starts back on the browsable grid, not a stale search
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
+        .flimSheetSurface()
     }
 }

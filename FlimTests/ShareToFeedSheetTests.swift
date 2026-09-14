@@ -131,3 +131,46 @@ final class ShareToFeedSheetTests: XCTestCase {
         XCTAssertEqual(ordered.map(\.username), ["a", "b"])
     }
 }
+
+// MARK: - v2 audience sentence and capture states (2026-09-14)
+
+final class V2FoundationsTests: XCTestCase {
+    func testAudienceNamesFollowersAndCountsThem() {
+        let a = ShareAudience(followerCount: 12, taggedNames: [])
+        XCTAssertEqual(a.title, "Your followers can see this")
+        XCTAssertEqual(a.detail, "That's 12 people right now, and anyone who follows you later.")
+        XCTAssertEqual(ShareAudience(followerCount: 1, taggedNames: []).detail,
+                       "That's 1 person right now, and anyone who follows you later.")
+    }
+
+    func testAudienceWithoutACountNeverClaimsOne() {
+        XCTAssertEqual(ShareAudience(followerCount: nil, taggedNames: []).detail,
+                       "And anyone who follows you later.")
+    }
+
+    func testAudienceNamesTheTaggedPerson() {
+        let a = ShareAudience(followerCount: 3, taggedNames: ["Rae"])
+        XCTAssertEqual(a.title, "Your followers, and Rae")
+        XCTAssertTrue(a.detail.hasSuffix("You tagged Rae, so they can see this photo whether or not they follow you."))
+        XCTAssertEqual(ShareAudience(followerCount: 3, taggedNames: ["Rae", "Sam", "Jo"]).title,
+                       "Your followers, and 3 people you tagged")
+    }
+
+    func testCaptureStatusPrecedence() {
+        XCTAssertEqual(CaptureStatus.derive(localSaveFailed: true, pendingCount: 1, isUploading: true, failedCount: 0, connected: true, justUploaded: false), .notSavedYet)
+        XCTAssertEqual(CaptureStatus.derive(localSaveFailed: false, pendingCount: 2, isUploading: true, failedCount: 0, connected: true, justUploaded: false), .uploading(count: 2))
+        XCTAssertEqual(CaptureStatus.derive(localSaveFailed: false, pendingCount: 1, isUploading: false, failedCount: 0, connected: true, justUploaded: false), .savedOnPhone)
+        XCTAssertEqual(CaptureStatus.derive(localSaveFailed: false, pendingCount: 0, isUploading: false, failedCount: 1, connected: false, justUploaded: false), .queued(count: 1, offline: true))
+        XCTAssertEqual(CaptureStatus.derive(localSaveFailed: false, pendingCount: 0, isUploading: false, failedCount: 0, connected: true, justUploaded: true), .uploaded)
+        XCTAssertNil(CaptureStatus.derive(localSaveFailed: false, pendingCount: 0, isUploading: false, failedCount: 0, connected: true, justUploaded: false))
+        XCTAssertEqual(CaptureStatus.uploading(count: 3).title, "Uploading 3")
+        XCTAssertTrue(CaptureStatus.queued(count: 1, offline: true).attention)
+        XCTAssertFalse(CaptureStatus.uploaded.attention)
+    }
+
+    func testResponseRowShowsAtMostTwoChipsMostGivenFirst() {
+        XCTAssertEqual(ResponseRow.chipOrder(counts: ["❤️": 3, "🔥": 1, "😂": 2, "👏": 0]), ["❤️", "😂"])
+        XCTAssertEqual(ResponseRow.chipOrder(counts: ["🔥": 1, "❤️": 1]), ["❤️", "🔥"])
+        XCTAssertEqual(ResponseRow.chipOrder(counts: [:]), [])
+    }
+}
