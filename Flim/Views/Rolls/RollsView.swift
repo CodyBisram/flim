@@ -574,7 +574,7 @@ struct RollsView: View {
                     .padding(.vertical, 4).padding(.horizontal, 9)
                     .overlay(Capsule().strokeBorder(accent, lineWidth: 1))
             }
-            Text("\(invitedByName(roll)) started another roll with your group. It develops \(RollDevelopAskSheet.timeLabel(for: roll.revealAt)).")
+            Text("\(invitedByName(roll)) started another roll with your group. It develops \(RollDevelopAskSheet.whenLabel(for: roll.revealAt)).")
                 .flimFont(12.5, relativeTo: .footnote)
                 .foregroundStyle(FlimTheme.textTertiary)
                 .lineSpacing(3)

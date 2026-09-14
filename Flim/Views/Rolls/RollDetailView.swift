@@ -334,7 +334,7 @@ struct RollDetailView: View {
                     // One sentence, once, for a brand-new account, naming this roll's own develop
                     // time: the screen explains the twelve hours by refusing to show the frames.
                     FirstVisitLine(surface: .rollDetail,
-                                   text: "Every frame anyone shoots into this roll appears here at \(RollDevelopAskSheet.timeLabel(for: roll.revealAt)), for everyone at once. Until then the roll is dark, for you too.")
+                                   text: "Every frame anyone shoots into this roll appears here \(RollDevelopAskSheet.whenLabel(for: roll.revealAt)), for everyone at once. Until then the roll is dark, for you too.")
                 }
 
                 // The reveal, again. This used to open the carousel, a third near-identical
@@ -1247,7 +1247,7 @@ struct RollDetailView: View {
         VStack(alignment: .leading, spacing: 3) {
             TimelineView(.periodic(from: .now, by: 1)) { timeline in
                 let remaining = max(0, Int(revealAt.timeIntervalSince(timeline.date)))
-                Label("Develops in \(Self.countdown(remaining)), at \(RollDevelopAskSheet.timeLabel(for: revealAt))", systemImage: "hourglass")
+                Label("Develops in \(Self.countdown(remaining)), \(RollDevelopAskSheet.whenLabel(for: revealAt))", systemImage: "hourglass")
                     .flimFont(14, weight: .semibold)
                     .foregroundStyle(accent)
             }

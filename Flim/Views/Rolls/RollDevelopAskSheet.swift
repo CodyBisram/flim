@@ -31,6 +31,14 @@ struct RollDevelopAskSheet: View {
         return formatter.string(from: date)
     }
 
+    /// `timeLabel` with its own preposition, for sentences that continue "It develops ...":
+    /// "at 9:14 PM" today, "Saturday at 9:14 PM" otherwise. Callers that already wrote "at"
+    /// keep using `timeLabel`; the two together produced "at Monday at 5:51 AM".
+    static func whenLabel(for date: Date, calendar: Calendar = .current, locale: Locale = .current) -> String {
+        let label = timeLabel(for: date, calendar: calendar, locale: locale)
+        return calendar.isDate(date, inSameDayAs: .now) ? "at \(label)" : label
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(rollName.uppercased())
