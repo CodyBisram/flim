@@ -8,26 +8,26 @@ sat unread in pull requests; everything starts `unverified` and the first night 
 
 | Raised | Severity | Finding | Status | Note |
 |---|---|---|---|---|
-| 2026-08-27 | ? | Flim/ContentView.swift:109 | unverified | |
-| 2026-08-27 | ? | Flim/Views/Rolls/RollsView.swift:357-362 | unverified | |
-| 2026-08-27 | ? | Flim/Views/Feed/FeedView.swift:406 (via FeedUnitCard.swift onAuthorBlocked) | unverified | |
-| 2026-08-27 | ? | Flim/Views/Profile/BadgePickerSheet.swift:643-660 | unverified | |
-| 2026-08-27 | ? | Flim/Views/Rolls/RollsView.swift:398-406 and 733-739 | unverified | |
-| 2026-08-27 | ? | Flim/Views/Feed/UserPageView.swift:246-266 | unverified | |
-| 2026-08-27 | ? | Flim/Views/Profile/ProfileView.swift:501-507 | unverified | |
-| 2026-08-28 | high | RollDetailView.swift:366 (high) | unverified | |
-| 2026-08-28 | medium | RollRevealView.swift:134-137 (medium) | unverified | |
-| 2026-08-28 | low | RollRevealView.swift:387 (low) | unverified | |
-| 2026-08-28 | low | SharePreviewSheet.swift:310-313 (low) | unverified | |
-| 2026-08-30 | ? | Flim/Views/Feed/FeedView.swift:218 | unverified | |
-| 2026-08-31 | medium | Flim/Services/InstantFilmProcessor.swift:631-632 (severity: medium) | unverified | |
-| 2026-09-01 | ? | `admin_overview()`'s never_asked_notifications does not match the definition its own comment claims | unverified | |
-| 2026-09-01 | ? | Reveals week-over-week comparison in `admin_overview()` compares an 8-day window to a 7-day window | unverified | |
-| 2026-09-03 | high | Flim/Views/Darkroom/PhotoGridCell.swift:371 (severity: high) | unverified | |
-| 2026-09-03 | low | Flim/Services/RollSnapshotStore.swift:232 (severity: low) | unverified | |
-| 2026-09-05 | ? | Chapter recap pager reads and writes the wrong reactions/comments table | unverified | |
-| 2026-09-05 | ? | A burst pairing patch is silently and permanently dropped on a generic upload failure | unverified | |
-| 2026-09-05 | ? | A second push tap for the same roll can overwrite the wrong photo's comment intent | unverified | |
+| 2026-08-27 | high | Flim/ContentView.swift:117 (account-change flush ran after the cache resets, dropping a pending undoable action) | fixed | 92c1fb9 |
+| 2026-08-27 | high | Flim/Views/Rolls/RollsView.swift:397-398 ("Shoot into this roll" posts a bare NotificationCenter notification instead of CameraRollSelection.select, camera can point at the wrong roll) | open | |
+| 2026-08-27 | high | Flim/Views/Feed/FeedView.swift:484,799-801 (onAuthorBlocked re-snapshots the ledger non-growOnly, can shrink the header's counts for unrelated already-read units) | open | |
+| 2026-08-27 | high | Flim/Views/Profile/BadgePickerSheet.swift:651-684 (commit() bypasses UndoCenter, a stale staged clear-badges action can overwrite a fresh save) | open | |
+| 2026-08-27 | medium | Flim/Views/Rolls/RollsView.swift frame-counts race (mine defaulted to 0 between two sequential writes) | fixed | 92c1fb9 |
+| 2026-08-27 | medium | Flim/Views/Feed/UserPageView.swift:327-347 (blockAccount defers dismiss into the staged commit closure, can pop whatever the user navigated to since) | open | |
+| 2026-08-27 | low | Flim/Views/Profile/ProfileView.swift:512-518 (photoError auto-dismiss timer is never cancelled, a second error can be cut short by the first one's timer) | open | |
+| 2026-08-28 | high | Flim/Views/Rolls/RollDetailView.swift:607-618 (reveal re-presents on every reappearance; presenting never marks it seen, only genuine completion does) | open | |
+| 2026-08-28 | medium | RollRevealView.swift selection/index desync after skipDeadFrame | fixed | 92c1fb9 |
+| 2026-08-28 | low | Flim/Views/Rolls/RollRevealView.swift:480-484 (stages a reportPhoto undo but has no undoCapsuleHost of its own, capsule unreachable during the reveal) | open | |
+| 2026-08-28 | low | SharePreviewSheet.swift Share button not gated on render completion | fixed | 92c1fb9 |
+| 2026-08-30 | low-medium | Flim/Views/Feed/FeedView.swift:260,723-736 (inviteQuota fetched once in .task, never refreshed by reload(), can hand out an already-dead invite code) | open | |
+| 2026-08-31 | medium | Flim/Services/InstantFilmProcessor.swift:668-669 (flashFalloff floors peak at 0.02 instead of treating it as 1, darkening an already near-black flash frame instead of leaving it untouched) | open | |
+| 2026-09-01 | medium | `admin_overview()`'s never_asked_notifications (2026-08-31_admin_overview_v2.sql:88-93) adds a device_tokens condition admin_reach()'s never_asked lacks, so the two panels disagree | open | |
+| 2026-09-01 | medium | `admin_overview()`'s reveals week-over-week (2026-08-31_admin_overview_v2.sql:31-32,45-48) compares an 8-day "now" window to a 7-day "prev" window | open | |
+| 2026-09-03 | high | PhotoGridCell.swift disk-cache-miss path had no loadGeneration guard | fixed | 92c1fb9 |
+| 2026-09-03 | low | Flim/Services/RollSnapshotStore.swift:55-61 (save() spawns an unordered detached Task per call; two persistSnapshot() calls for one account can finish out of order) | open | |
+| 2026-09-05 | high | Flim/Views/Profile/ChapterRecapView.swift:387-395 (recap pager still resolves reactions/comments by photo id against photo_reactions/photo_comments, not the post_reactions/post_comments chapter_stats() counts from) | open | |
+| 2026-09-05 | medium-high | Flim/Services/PhotoService.swift:568-634 (generic upload-failure catch never calls patchEarlierBurstGroup; the retry path at :393-396 also returns patchEarlier: nil, so the obligation is permanently dropped) | open | |
+| 2026-09-05 | medium | Flim/Views/Rolls/RollDetailView.swift:861-877 (openAwaitingPhotoIfReady reads awaitingPhotoComments after polling instead of capturing it with photoId; a second push for the same roll can attach the wrong comment intent) | open | |
 | 2026-09-05 | ? | Burst grouping's 3-second window is measured against a timestamp taken after the previous shot's full pipeline | unverified | |
 | 2026-09-05 | ? | "Play again" on a chapter's closing card replays from a stale index | unverified | |
 | 2026-09-05 | ? | A reveal shown mid-poll can conflict with a pending push-photo presentation | unverified | |
