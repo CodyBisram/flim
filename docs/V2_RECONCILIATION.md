@@ -77,6 +77,19 @@ two-shot day, VoiceOver through the feed card and the sort deck, and the largest
 size (AX3) on the feed and the sort deck. Plus the before/after feed image and the copy table
 below, reviewed first.
 
+Archive-day rules (the lane's build number is a read, then a build, then an upload minutes
+later, so two lanes inside that window read the same number; CI runs the same lane on every push
+to main). Verified against fastlane 2.235.0: the lookup passes no version, so it takes the most
+recent upload across every marketing version, and the 1.5.4 bump does not narrow it.
+
+- No push to main from the moment the archive starts until App Store Connect shows the build
+  uploaded.
+- Before starting: `gh run list --workflow ios-testflight.yml --limit 1` shows `completed`.
+- From a clean checkout of the exact version-bump commit: `git status` clean, `git rev-parse
+  HEAD` equal to the pinned sha, then `bundle exec fastlane beta`.
+- The lane prints "Building FLIM build #N" before it archives; N and the sha go in the table
+  when the upload finishes, and the App Store Connect build list confirms N appeared once.
+
 | v2 commit | Build | Recorded |
 |---|---|---|
 | (pending 1.5.3 release) | | |
