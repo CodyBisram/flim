@@ -20,14 +20,6 @@ jobs:
         env:
           FLIM_SERVICE_KEY: ${{ secrets.FLIM_SERVICE_KEY }}
         run: bash scripts/nightly_numbers.sh
-      # After the count, never before: the alert should still say how many captures leaked
-      # their renditions, and then this closes them so nobody pays 1.25MB per grid cell for it.
-      - name: Rebuild missing renditions
-        env:
-          FLIM_SERVICE_KEY: ${{ secrets.FLIM_SERVICE_KEY }}
-        run: |
-          pip install --quiet pillow
-          python3 scripts/repair_renditions.py
       - name: Commit the line
         run: |
           git config user.name "flim-nightly"
@@ -37,3 +29,12 @@ jobs:
           DAY=$(tail -1 docs/NUMBERS.md | cut -d'|' -f2 | tr -d ' ')
           git commit -m "Numbers for $DAY."
           git push
+      # After the count AND after the commit: the alert still says how many captures leaked,
+      # the day's line is already on main, and a NO MASTER row can turn this run red without
+      # costing the line (nightly review, 2026-09-14).
+      - name: Rebuild missing renditions
+        env:
+          FLIM_SERVICE_KEY: ${{ secrets.FLIM_SERVICE_KEY }}
+        run: |
+          pip install --quiet pillow
+          python3 scripts/repair_renditions.py
