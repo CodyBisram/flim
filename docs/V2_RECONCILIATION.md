@@ -92,7 +92,9 @@ recent upload across every marketing version, and the 1.5.4 bump does not narrow
 
 | v2 commit | Build | Recorded |
 |---|---|---|
-| `fce65c0` (1.5.4) | 379 | 2026-09-15, archived by CI from the v2 branch (the workflow builds v2 too now, one concurrency group with main); the review and the six device checks run on this build |
+| `fce65c0` (1.5.4) | 379 | 2026-09-15, archived by CI from the v2 branch (the workflow builds v2 too now, one concurrency group with main); batch 1; the owner cleared the sort deck, the camera chip and the two-frame cue on it |
+| `988f4f4` (1.5.4) | 380 | 2026-09-16, batch 2 (camera permission on first Camera open; thread rows open comments over Activity) |
+| `73783a2` (1.5.4) | 381 | 2026-09-16, batch 4a (a cohort-code arrival lands on Find friends); uploading as this was written |
 
 ## Phased plan
 
