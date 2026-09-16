@@ -118,6 +118,7 @@
 		56574F4B2007E36D6BD2AECD /* FlashFalloffTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F9C44C207C08D9E8F263DDF /* FlashFalloffTests.swift */; };
 		56D4F900308EC62AA80D17CE /* QuickTagChips.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1FE0CA9740ADF71705FBD37 /* QuickTagChips.swift */; };
 		56F026E4C4E1E30F19E98152 /* CameraViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2541CCDED4898D0604DB64EA /* CameraViewModel.swift */; };
+		571CFC27DC155BF450C24645 /* FeedCommentsReturnUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A67344782B4FE71ABC8BBD1 /* FeedCommentsReturnUITests.swift */; };
 		5839D5218A56E65BA0BDEA51 /* RollDevelopReminderFallbackTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EACB1050A3FCF4AE495979D3 /* RollDevelopReminderFallbackTests.swift */; };
 		58ACCFC04DEF968BFD005E0A /* TagPhotoSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CDE42DC73343A3669F6A4A9 /* TagPhotoSheet.swift */; };
 		58AE8B8E91CA0C9736917C40 /* ProfileCropGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B22CA37A589546819FD3D43 /* ProfileCropGeometry.swift */; };
@@ -460,6 +461,7 @@
 		498109790A8BAE9899A4F515 /* CrashReporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CrashReporter.swift; sourceTree = "<group>"; };
 		49A4B9AB5111472363BE0ECF /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
 		49C42E0C072E983E45F3535C /* NetworkMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkMonitor.swift; sourceTree = "<group>"; };
+		4A67344782B4FE71ABC8BBD1 /* FeedCommentsReturnUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedCommentsReturnUITests.swift; sourceTree = "<group>"; };
 		4AD1B8502DB294D5BE1986E3 /* AuthRulesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthRulesTests.swift; sourceTree = "<group>"; };
 		4B7E5F0D581D43A4722CD6D9 /* RollTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollTests.swift; sourceTree = "<group>"; };
 		4BF31E8C225DFDD35DCCFD60 /* ReviewerSignInSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReviewerSignInSheet.swift; sourceTree = "<group>"; };
@@ -824,6 +826,7 @@
 		586410BA7472047B7B5FF8E9 /* FlimUITests */ = {
 			isa = PBXGroup;
 			children = (
+				4A67344782B4FE71ABC8BBD1 /* FeedCommentsReturnUITests.swift */,
 				78805D12063E87FE38C568D4 /* ShareSheetUITests.swift */,
 			);
 			path = FlimUITests;
@@ -1634,6 +1637,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				571CFC27DC155BF450C24645 /* FeedCommentsReturnUITests.swift in Sources */,
 				B4474A58359A89EEFA669FE9 /* ShareSheetUITests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
