@@ -59,6 +59,17 @@ func activityActionText(_ kind: ActivityItem.Kind) -> String {
 /// `PostDetailView`, and anything with neither (`.follow`) opens the actor's profile. Pure and
 /// top-level so it's testable without standing up the view, same reasoning as
 /// `buildActivityThumbURLs` above.
+/// Whether a row is about a THREAD (a comment, a like on your comment, a mention) rather than
+/// the photograph. Thread rows open the comments sheet directly over Activity, so closing it is
+/// one gesture back to where you were; a reaction or a tag opens the post, because the
+/// photograph is the point. Top-level so the rule is testable (v2 batch 2, 2026-09-15).
+func activityOpensThread(_ kind: ActivityItem.Kind) -> Bool {
+    switch kind {
+    case .comment, .commentLiked, .mentioned, .threadComment: return true
+    default: return false
+    }
+}
+
 enum ActivityDestination: Equatable {
     case post(FeedItem)
     /// `photoId`/`comments` mirror the `photo`/`comments` riders `send-social-push` puts on the
@@ -99,6 +110,12 @@ struct ActivityFeedView: View {
     /// path itself), and `feed.signedURLs(for:)` already returns exactly this shape.
     @State private var rollPhotoThumbURLs: [String: URL] = [:]
     @State private var profileRoute: ProfileRoute?
+    /// A thread row's comments sheet, presented HERE rather than over a pushed post, so Back is
+    /// one gesture and lands on Activity by construction (the package's "comments remember
+    /// their origin"; no new navigation form, see the note above `navigationDestination`).
+    @State private var commentsFor: FeedItem?
+    /// A handle tapped inside that sheet: navigated to after the sheet is gone, never under it.
+    @State private var pendingProfile: ProfileRoute?
     @State private var postRoute: FeedItem?
     /// When Activity was last opened, captured BEFORE this visit stamped it. Anything newer sits
     /// under "New". nil means no New section (first ever visit, or the caller didn't pass one).
@@ -159,6 +176,13 @@ struct ActivityFeedView: View {
                 }
             }
             .navigationDestination(item: $profileRoute) { UserPageView(userId: $0.id) }
+            .sheet(item: $commentsFor, onDismiss: {
+                if let pending = pendingProfile { pendingProfile = nil; profileRoute = pending }
+            }) { item in
+                CommentsSheet(post: item.post, authorHandle: item.author.handle) {
+                    pendingProfile = ProfileRoute(id: $0)
+                }
+            }
             // No zoom transition here either. The identical pair of modifiers on the profile
             // grid's push to this same destination caused it to open a previously-opened post,
             // and survived three different navigation forms underneath it. This one was added in
@@ -268,7 +292,11 @@ struct ActivityFeedView: View {
     private func openDestination(_ item: ActivityItem) {
         switch activityDestination(for: item) {
         case .post(let feedItem):
-            postRoute = feedItem
+            if activityOpensThread(item.kind) {
+                commentsFor = feedItem
+            } else {
+                postRoute = feedItem
+            }
         case .roll(let rollId, let photoId, let comments):
             // A roll photo has no `Post`/`PostDetailView` home; it opens in the roll's own
             // viewer, the same place a push notification's `.reveal` destination lands

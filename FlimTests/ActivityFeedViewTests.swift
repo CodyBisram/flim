@@ -253,4 +253,17 @@ final class ActivityDestinationTests: XCTestCase {
                                  rollId: rollId, rollPhotoId: photoId, rollPhotoDisplayPath: "photo.jpg")
         XCTAssertEqual(activityDestination(for: item), .roll(rollId: rollId, photoId: photoId, comments: true))
     }
+
+    // MARK: - v2 batch 2: thread rows open the sheet over Activity, photo rows open the post
+
+    func testThreadRowsOpenTheCommentsSheetAndPhotoRowsOpenThePost() {
+        XCTAssertTrue(activityOpensThread(.comment("hi")))
+        XCTAssertTrue(activityOpensThread(.commentLiked("hi")))
+        XCTAssertTrue(activityOpensThread(.mentioned("@you")))
+        XCTAssertTrue(activityOpensThread(.threadComment("me too")))
+        XCTAssertFalse(activityOpensThread(.like("❤️")))
+        XCTAssertFalse(activityOpensThread(.likeTagged("❤️")))
+        XCTAssertFalse(activityOpensThread(.tagged))
+        XCTAssertFalse(activityOpensThread(.follow))
+    }
 }
