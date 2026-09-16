@@ -254,6 +254,17 @@ struct FeedView: View {
             // appearance note on `CameraViewModel.start()`. Riding `.task` keeps it from
             // firing on re-renders or scene-phase changes.
             Usage.log(.feedViewed)
+            // A cohort-code arrival's first feed is one person's photos (the code's maker, whom
+            // they follow by default) and nobody they know. Find friends opens by itself, once,
+            // so the first visit is about finding their people rather than reading a stranger
+            // (v2 batch 4; the September cohort numbers are why: ten of thirteen code arrivals
+            // followed nobody else and never shot).
+            if NewAccountIntro.shouldOfferDiscover(userId: auth.currentUser?.id, createdAt: auth.currentUser?.createdAt),
+               let uid = auth.currentUser?.id {
+                NewAccountIntro.markDiscoverOffered(userId: uid)
+                try? await Task.sleep(for: .milliseconds(600))   // let the feed paint first
+                showDiscover = true
+            }
             // Only the empty state reads this, and it fails soft to `.unknown`, which still
             // offers the invite. Cheap enough to ride the existing appear rather than earn a
             // task of its own.
@@ -464,8 +475,11 @@ struct FeedView: View {
                     // hides itself; here it just needs to be the first thing on the feed so it is
                     // seen on landing and scrolls away as you browse. See NotificationNudgeBanner.
                     NotificationNudgeBanner()
-                    // One sentence, once, for a brand-new account: see NewAccountIntro.
-                    FirstVisitLine(surface: .feed)
+                    // One sentence, once, for a brand-new account: see NewAccountIntro. A cohort
+                    // code arrival gets the honest version: nobody here knows them yet.
+                    FirstVisitLine(surface: .feed,
+                                   text: NewAccountIntro.inviter(for: auth.currentUser?.id ?? UUID())?.isCampaign == true
+                                       ? NewAccountIntro.campaignFeedLine : nil)
 
                     // Nothing anywhere was unseen at load: the block sits at the top of the
                     // scroll with the days already seen below it.

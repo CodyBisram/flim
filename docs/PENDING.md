@@ -374,6 +374,22 @@ The four from the audit the owner picked on 2026-09-10: the durable capture queu
 capture status, one invitation journey (a roll code admits you), deletion order, and the photo
 write boundary. In that order of value; built in the order of size.
 
+### done 2026-09-16: v2 batch 4a, a cohort-code arrival lands on Find friends
+
+The September numbers' biggest hole: 13 people arrived by the FLIMGO code, ten followed nobody
+but the code's maker and never shot. `invite_preview` now returns `kind` (personal / campaign /
+roll; migration `2026-09-15_invite_preview_kind.sql`, APPLIED, additive so older clients are
+unaffected). The client carries it from the sign-in screen (`InvitePreview.isCampaign`,
+`PendingInviter`, `NewAccountIntro.Inviter.isCampaign`) to the account. For a campaign arrival:
+the sign-in preview says "You're in with @cody's code." instead of "@cody invited you."; the
+inviter is still followed for them (owner's rule); the feed's first-visit line is "That code was
+a general invitation, not from someone in particular. Find someone you know and their photos
+show up here."; and Find friends opens by itself on the first feed visit, once
+(`shouldOfferDiscover`, tested). Personal and roll invites are untouched. Copy is the owner's to
+veto. Not done from batch 4: numeric OTP with autofill (it already is: `oneTimeCode` text content
+type on the code field), the destination-preserving invite flow (a roll code already lands on
+the roll since 1.5.3).
+
 ### done 2026-09-15, night: v2 batch 2 (docs/V2_BATCH2_NOTES.md)
 
 Gate opened on build 379: the owner cleared the sort deck, the camera chip and the two-frame

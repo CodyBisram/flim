@@ -67,6 +67,10 @@ enum NewAccountIntro {
         let id: UUID
         /// What the sign-in screen called them: display name, else "@handle".
         let name: String
+        /// The code was a cohort code, not this person's own invitation (v2 batch 4). The
+        /// follow still happens (owner's rule: the inviter is followed for you), but the first
+        /// visit says nobody knows you yet and opens Find friends.
+        var isCampaign: Bool = false
     }
 
     /// Kept per account once the account exists, so the first Darkroom can offer "Start a roll
@@ -74,13 +78,27 @@ enum NewAccountIntro {
     static func rememberInviter(_ inviter: Inviter, userId: UUID) {
         store.set(inviter.id.uuidString, forKey: "invitedBy.id.\(userId.uuidString)")
         store.set(inviter.name, forKey: "invitedBy.name.\(userId.uuidString)")
+        store.set(inviter.isCampaign, forKey: "invitedBy.campaign.\(userId.uuidString)")
     }
 
     static func inviter(for userId: UUID) -> Inviter? {
         guard let raw = store.string(forKey: "invitedBy.id.\(userId.uuidString)"), let id = UUID(uuidString: raw),
               let name = store.string(forKey: "invitedBy.name.\(userId.uuidString)") else { return nil }
-        return Inviter(id: id, name: name)
+        return Inviter(id: id, name: name, isCampaign: store.bool(forKey: "invitedBy.campaign.\(userId.uuidString)"))
     }
+
+    /// Whether the feed should open Find friends by itself on this account's first visit: a
+    /// new account that arrived by a cohort code and has not been offered it yet. Once.
+    static func shouldOfferDiscover(userId: UUID?, createdAt: Date?) -> Bool {
+        guard let userId, isNewAccount(createdAt: createdAt),
+              inviter(for: userId)?.isCampaign == true,
+              !store.bool(forKey: "discover.offered.\(userId.uuidString)") else { return false }
+        return true
+    }
+    static func markDiscoverOffered(userId: UUID) { store.set(true, forKey: "discover.offered.\(userId.uuidString)") }
+
+    /// The feed's first-visit line for a cohort-code arrival, in place of the ordinary one.
+    static let campaignFeedLine = "That code was a general invitation, not from someone in particular. Find someone you know and their photos show up here."
 
     // MARK: - One-shot states
 
