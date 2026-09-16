@@ -174,7 +174,7 @@ struct EmailAuthView: View {
                             }
                         VStack(alignment: .leading, spacing: 2) {
                             Text(inviter.rollName.map { "\(inviter.shownName) invited you to \($0)." }
-                                 ?? "\(inviter.shownName) invited you.")
+                                 ?? (inviter.isCampaign ? "You're in with \(inviter.shownName)'s code." : "\(inviter.shownName) invited you."))
                                 .flimFont(15, weight: .medium, relativeTo: .subheadline)
                                 .foregroundStyle(.white)
                             Text(inviter.rollName == nil
@@ -277,7 +277,7 @@ struct EmailAuthView: View {
             if !inviteCode.isEmpty, !PendingInviteRedeemed.isRedeemed(for: email) {
                 // Remembered before the redeem, keyed by this email: whichever sign-in this code
                 // ends up admitting, the new account follows the person whose code it was.
-                if let inviter { PendingInviter.remember(inviterId: inviter.inviterId, name: inviter.shownName, for: email) }
+                if let inviter { PendingInviter.remember(inviterId: inviter.inviterId, name: inviter.shownName, isCampaign: inviter.isCampaign, for: email) }
                 guard try await auth.redeemInvite(code: inviteCode, email: email) else {
                     Haptics.error()
                     // Says BOTH things that can be true, because the server cannot tell you

@@ -278,9 +278,15 @@ final class AuthService {
         let displayName: String?
         /// Set when the code is a roll's: the roll it opens, whose creator is the inviter.
         var rollName: String? = nil
+        /// "personal", "campaign" or "roll" (server, 2026-09-15). nil from a server that predates
+        /// it, which reads as personal: the only wrong guess that costs nothing.
+        var kind: String? = nil
         enum CodingKeys: String, CodingKey {
-            case inviterId = "inviter_id", username, displayName = "display_name", rollName = "roll_name"
+            case inviterId = "inviter_id", username, displayName = "display_name", rollName = "roll_name", kind
         }
+        /// A cohort code: the person it names made the code, but did not invite THIS person, so
+        /// the first visit must not pretend they know each other.
+        var isCampaign: Bool { kind == "campaign" }
         /// What the screen calls them: the display name when there is one, else the handle.
         var shownName: String {
             if let displayName, !displayName.trimmingCharacters(in: .whitespaces).isEmpty { return displayName }

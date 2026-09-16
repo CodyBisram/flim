@@ -84,6 +84,39 @@ struct NewAccountIntroTests {
         #expect(NewAccountIntro.rollAskDecided(userId: me))
     }
 
+    @Test("a cohort-code arrival is offered Find friends once; a personal invite never is")
+    func campaignArrivalIsOfferedDiscoverOnce() {
+        let defaults = UserDefaults(suiteName: "NewAccountIntroTests3.\(UUID().uuidString)")!
+        let previous = NewAccountIntro.store
+        NewAccountIntro.store = defaults
+        defer { NewAccountIntro.store = previous }
+        let code = UUID(), link = UUID(), maker = UUID()
+        NewAccountIntro.rememberInviter(.init(id: maker, name: "@cody", isCampaign: true), userId: code)
+        NewAccountIntro.rememberInviter(.init(id: maker, name: "@cody"), userId: link)
+        #expect(NewAccountIntro.inviter(for: code)?.isCampaign == true)
+        #expect(NewAccountIntro.inviter(for: link)?.isCampaign == false)
+        #expect(NewAccountIntro.shouldOfferDiscover(userId: code, createdAt: .now))
+        #expect(!NewAccountIntro.shouldOfferDiscover(userId: link, createdAt: .now))
+        // An old account that somehow carries the flag is not a first visit.
+        #expect(!NewAccountIntro.shouldOfferDiscover(userId: code, createdAt: .now.addingTimeInterval(-30 * 86400)))
+        NewAccountIntro.markDiscoverOffered(userId: code)
+        #expect(!NewAccountIntro.shouldOfferDiscover(userId: code, createdAt: .now))
+        #expect(!NewAccountIntro.shouldOfferDiscover(userId: nil, createdAt: .now))
+    }
+
+    @Test("the pending inviter carries whether the code was a campaign's")
+    func pendingInviterCarriesKind() {
+        let defaults = UserDefaults(suiteName: "PendingInviterTests2.\(UUID().uuidString)")!
+        let previous = PendingInviter.store
+        PendingInviter.store = defaults
+        defer { PendingInviter.store = previous }
+        let maker = UUID()
+        PendingInviter.remember(inviterId: maker, name: "@cody", isCampaign: true, for: "a@example.com")
+        #expect(PendingInviter.take(for: "a@example.com")?.isCampaign == true)
+        PendingInviter.remember(inviterId: maker, name: "@cody", for: "b@example.com")
+        #expect(PendingInviter.take(for: "b@example.com")?.isCampaign == false)
+    }
+
     @Test("the develop ask names the time, and the day when it is not today")
     func developAskTime() {
         var cal = Calendar(identifier: .gregorian); cal.timeZone = TimeZone(identifier: "America/New_York")!
