@@ -104,7 +104,6 @@ struct ChapterRecapView: View {
             // the cover's dismissal animation reveals whatever `phase` shows underneath, and a
             // flip made only in `onDismiss` left the opening card visible for that frame or two.
             if !presented, viewModel.hasClosingCard { phase = .closing }
-            ShareBreadcrumbs.log("recap.playerPresented", "\(presented)")
             viewModel.setPlayerMounted(presented)
             if !presented { handlePlayerDismissed() }
         }

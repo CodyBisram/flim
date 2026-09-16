@@ -23,7 +23,7 @@ import json, sys, pathlib
 d = json.loads(sys.argv[1]); path = pathlib.Path(sys.argv[2])
 cols = ["day","accounts","new_accounts","openers","openers_7d_avg","shooters","photos","posts",
         "reactions","comments","follows","reciprocal_pairs_7d","rolls_created","reveals_watched",
-        "invites_redeemed","founding_left","db_mb","storage_gb"]
+        "invites_redeemed","founding_left","edge_timeouts_24h","db_mb","storage_gb"]
 header = ("# FLIM by the day\n\nOne line per day, appended by the nightly numbers job "
           "(scripts/nightly_numbers.sh). Counts are for the Eastern-time day named; "
           "`openers_7d_avg` is the trailing week so a weekend dip reads as a dip; "

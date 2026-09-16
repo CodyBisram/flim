@@ -136,7 +136,13 @@ without either word appearing here.
 Two rules if this is edited again: never repeat a word across name, subtitle and keywords, and do
 not add plurals of words already present. Apple handles both.
 
-## What's New (version 1.5.3), draft 2026-09-13
+## RELEASED: 1.5.3 went live 2026-09-15 21:13 UTC (build 378, 0e7991f), submitted 2026-09-14
+
+The train is closed. `app_release_gate.latest_version` was set to 1.5.3 the same evening, which
+arms the update nudge for everyone still on 1.5.2 (28 of 34 active clients at the time). The next
+candidate is the `v2` branch (batch 1 of the redesign), provisional version 1.5.4.
+
+## What's New (version 1.5.3), as shipped
 
 Fifty-odd commits since 365; the copy below covers the nine a person can see. Two audits' worth of
 transition fixes are folded into "Steadier" rather than listed.

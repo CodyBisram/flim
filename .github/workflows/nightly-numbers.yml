@@ -36,5 +36,5 @@ jobs:
         env:
           FLIM_SERVICE_KEY: ${{ secrets.FLIM_SERVICE_KEY }}
         run: |
-          pip install --quiet pillow
+          pip install --quiet --retries 10 --timeout 60 pillow
           python3 scripts/repair_renditions.py
