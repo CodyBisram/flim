@@ -343,10 +343,32 @@ sits at the top of the screen. Contacts matching deliberately parked (no phone n
 email match rate, a new permission); no Twilio needed for anything here. `DiscoverRanking` is
 pure and tested.
 
+## 1.5.4 (the v2 branch)
+
+1.5.3 went live 2026-09-15 on build 378 (`0e7991f`). The next candidate is `v2`: batch 1 of the
+redesign (docs/V2_RECONCILIATION.md), archived by hand from a pinned commit, version 1.5.4
+provisional. Gate before batch 2: the owner's review of the before/after feed and the copy table,
+then device checks for sorting, the capture chip, audience wording, the two-frame cue, VoiceOver
+and AX3 on that build.
+
+### done 2026-09-15: post-release pass
+
+Nudge armed (`latest_version` 1.5.3). `ShareBreadcrumbs` deleted (the chapter share sheet is
+proven by the UI test now). Three one-shot campaigns sent the same afternoon (`first-post` 1,
+`first-photo` 7, `invites-left` 28; see `send-one-shot-push`). Ops: pg_net keeps only 6 hours and
+its ttl cannot be changed on Supabase, so an hourly cron (`flim-edge-ledger`) copies non-200 and
+timed-out responses into `edge_response_log` and the nightly counters read that; a new
+`edge_timeouts_24h` column in NUMBERS.md; the workflow commits the line before the repair step
+and retries pip. Migration `2026-09-15_post_release_ops.sql` APPLIED.
+
+Queued for v2: an `invite` push route so a campaign can land on the invite sheet instead of the
+profile; the notification primer's copy for code arrivals ("Know when a friend replies" beside
+the reveal line); the no-known-person landing (a code arrival lands on Find friends).
+
 ## 1.5.3
 
 1.5.2 went live 2026-09-11 on build 365; the branch below merged to main the same day and the
-1.5.3 train opened.
+1.5.3 train opened. Released 2026-09-15 on build 378.
 
 The four from the audit the owner picked on 2026-09-10: the durable capture queue with visible
 capture status, one invitation journey (a roll code admits you), deletion order, and the photo

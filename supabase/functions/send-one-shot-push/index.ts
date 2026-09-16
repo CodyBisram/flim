@@ -98,6 +98,11 @@ const CAMPAIGNS: Record<string, () => Promise<Recipient[]>> = {
   "epic-podium": epicPodiumCohort,
   "branb-epcot": branbEpcotCohort,
   "waiting-to-sort": waitingToSortCohort,
+  "first-post": firstPostCohort,
+  "first-photo": firstPhotoCohort,
+  "invites-left": invitesLeftCohort,
+  "invites-left-preview-a": invitesLeftPreviewA,
+  "invites-left-preview-b": invitesLeftPreviewB,
   "thank-you-preview": thankYouPreviewCohort,
   "thank-you": thankYouCohort,
   "thank-you-annie": thankYouAnnieCohort,
@@ -441,6 +446,105 @@ async function waitingToSortCohort(): Promise<Recipient[]> {
       // whole decision, and naming it is what makes this different from a badge count.
       body: "They developed while you were out. Keep them, or post the ones worth sharing.",
       route: { t: "sortdeck" },
+    });
+  }
+  return out;
+}
+
+/// The invite push (2026-09-15): everyone reachable who has shot and posted and still holds
+/// invites. Two bodies, chosen per person by whether they have ever brought someone in
+/// (allowed_emails.note carries the inviter), so nobody who has invited people is told they
+/// never used one. Counts are substituted: invites left in the title, people brought in for
+/// the second body. The owner (unlimited invites) is excluded. Route: own profile, where the
+/// code lives. The never-shot (first-photo) and never-posted (first-post) groups are left out;
+/// they were pushed the same afternoon.
+function invitesLeftTitle(left: number): string {
+  return left === 1 ? "You have 1 invite." : `You have ${left} invites.`;
+}
+const INVITES_LEFT_BODY_NEW =
+  "Still unused. Your code is in your profile; anyone you send it to lands with you already followed.";
+function invitesLeftBodyReturning(brought: number): string {
+  const people = brought === 1 ? "1 person" : `${brought} people`;
+  return `You've brought ${people} onto FLIM. Every one of them arrived following you, and the invite comes back when they shoot. Your code's in your profile.`;
+}
+
+async function invitesLeftCohort(): Promise<Recipient[]> {
+  const reachable = await reachableUsers();
+  const out: Recipient[] = [];
+  for (const id of reachable) {
+    const { data: u } = await supabase
+      .from("users").select("id, username, invite_uses_remaining").eq("id", id).maybeSingle();
+    const user = u as { id: string; username: string; invite_uses_remaining: number | null } | null;
+    if (!user || user.username === "cody" || user.username === "applereview") continue;
+    const left = user.invite_uses_remaining;
+    if (left === null || left <= 0) continue;
+    const { count: posts, error: e1 } = await supabase
+      .from("posts").select("id", { count: "exact", head: true }).eq("user_id", id);
+    if (e1 || !posts) continue;
+    const { count: brought, error: e2 } = await supabase
+      .from("allowed_emails").select("email", { count: "exact", head: true })
+      .like("note", `invited_by:${id}%`);
+    if (e2 || brought === null) continue;
+    out.push({
+      userId: id,
+      title: invitesLeftTitle(left),
+      body: brought > 0 ? invitesLeftBodyReturning(brought) : INVITES_LEFT_BODY_NEW,
+      route: { t: "profile", id },
+    });
+  }
+  return out;
+}
+
+/// The two bodies, to the owner alone, with sample counts, so both can be read on a lock
+/// screen before anyone else sees either. Two names so both land (one claim per name).
+async function ownerOnly(title: string, body: string): Promise<Recipient[]> {
+  const reachable = new Set(await reachableUsers());
+  const { data } = await supabase.from("users").select("id").eq("username", "cody");
+  return ((data ?? []) as { id: string }[])
+    .filter((u) => reachable.has(u.id))
+    .map((u) => ({ userId: u.id, title, body, route: { t: "profile", id: u.id } }));
+}
+async function invitesLeftPreviewA(): Promise<Recipient[]> {
+  return ownerOnly(invitesLeftTitle(3), INVITES_LEFT_BODY_NEW);
+}
+async function invitesLeftPreviewB(): Promise<Recipient[]> {
+  return ownerOnly(invitesLeftTitle(3), invitesLeftBodyReturning(4));
+}
+
+/// The third touch for the never-shot cohort (2026-09-15), after "Take a shot." and "We
+/// checked." went unanswered. Plain on purpose, at the owner's ask: no joke, no pressure, the
+/// fact and where a first shot goes. Its own name so the ledger keeps the three touches apart.
+async function firstPhotoCohort(): Promise<Recipient[]> {
+  return (await neverShot()).map((userId) => ({
+    userId,
+    title: "Still no shots from you.",
+    body: "No rush. Your first one goes to your Darkroom, and only you see it unless you post it.",
+    route: { t: "camera" },
+  }));
+}
+
+/// Everyone reachable who has taken at least one photo and never posted one (2026-09-15). The
+/// audience is computed at send time, so it is one person today (owner's friend, shy) and
+/// whoever shoots-but-never-posts later. Copy chosen by the owner from three rounds: the joke
+/// is never on the person, the audience rule is said in plain words (posts are readable by
+/// followers since 2026-09-13), and it is their call. Lands in the Darkroom, where the photos
+/// are; the deck is for the unsorted, and these are mostly kept.
+async function firstPostCohort(): Promise<Recipient[]> {
+  const reachable = await reachableUsers();
+  const out: Recipient[] = [];
+  for (const id of reachable) {
+    const { count: shots, error: e1 } = await supabase
+      .from("photos").select("id", { count: "exact", head: true }).eq("user_id", id);
+    if (e1 || !shots) continue;
+    const { count: posts, error: e2 } = await supabase
+      .from("posts").select("id", { count: "exact", head: true }).eq("user_id", id);
+    // An error is not a zero: a failed count must never turn into "never posted".
+    if (e2 || posts === null || posts > 0) continue;
+    out.push({
+      userId: id,
+      title: "Post one.",
+      body: "Just one. The rest can stay private. The people who follow you are the only ones who'll see it.",
+      route: { t: "darkroom" },
     });
   }
   return out;
