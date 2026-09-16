@@ -64,10 +64,10 @@ Main stays at the 1.5.3 candidate; `v2` never moves onto main for testing. Once 
 
 1. On `v2`, set `MARKETING_VERSION` to the provisional next version (1.5.4) on both targets, so
    the archive cannot be mistaken for a 1.5.3 build in App Store Connect. Commit on `v2`.
-2. Archive by hand from that pinned commit with the same lane CI uses, which takes its build
-   number from TestFlight's latest plus one (so it is distinct by construction):
-   `git checkout v2 && bundle exec fastlane beta`, with the App Store Connect API key and the
-   match variables in the environment (the owner holds these; CI reads them as secrets).
+2. Archive from that pinned commit with the same lane CI uses. Since 2026-09-15 the workflow
+   builds pushes to `v2` as well as `main`, in one concurrency group, so a push to `v2` IS the
+   archive and two branches can never upload at once. (A hand archive, `git checkout v2 &&
+   bundle exec fastlane beta` with the ASC key and match variables, still works.)
 3. Record the pair here: `v2 <sha>` = build `<n>`. The device checks run against that pair.
 
 The device checks that gate batch 2, on that build: sorting (the three words, the drag labels,
@@ -92,7 +92,7 @@ recent upload across every marketing version, and the 1.5.4 bump does not narrow
 
 | v2 commit | Build | Recorded |
 |---|---|---|
-| (pending 1.5.3 release) | | |
+| `fce65c0` (1.5.4) | 379 | 2026-09-15, archived by CI from the v2 branch (the workflow builds v2 too now, one concurrency group with main); the review and the six device checks run on this build |
 
 ## Phased plan
 
