@@ -417,6 +417,28 @@ capture status, one invitation journey (a roll code admits you), deletion order,
 write boundary. In that order of value; built in the order of size.
 
 ### done 2026-09-17: nine ledger rows, and the numbers table's header
+### done 2026-09-17: camera permission on first Camera open (v2 batch 2b, brought to main)
+
+Gate opened on build 379: the owner cleared the sort deck, the camera chip and the two-frame
+cue; still owed on the next build: the tagged audience sentence, VoiceOver, AX3.
+
+- **Camera permission on first Camera open.** `OnboardingView.openCamera()` no longer calls
+  `requestAccess`; `CameraViewModel.start()` already asks on `.notDetermined` the first time the
+  camera appears, which is the same moment today (Camera is the landing tab) and the right one
+  if launch ever moves. The refusal overlay now reads "FLIM can't use the camera. Camera access is
+  off for FLIM in iOS Settings. You can still see your friends' photos and reply to them." with
+  Open Settings and a Back to Feed button (`.openPushDestination` feed). Owner copy, unseen.
+  Re-run the standing permission checklist on the next build (fresh install timing, tab-cycle
+  restart, refuse then Settings then Allow).
+- **Comments remember their origin.** `activityOpensThread(kind)` (tested): comment, comment-liked,
+  mention and thread-comment rows present `CommentsSheet` directly over Activity, so closing is
+  one gesture back to Activity; reaction and tag rows still open the post (the photograph is the
+  point). A handle tapped inside the sheet navigates after dismissal. The feed already returned to
+  the same frame; `FeedCommentsReturnUITests` proves it on the demo host.
+
+Measure: `cameraAuthorized` within a day of `onboardingFinished`, before and after, against the
+26 never-prompted accounts; `shooters` in NUMBERS.md must not fall.
+
 
 Each a real defect a person could hit, from `docs/reviews/OPEN.md`: "Shoot into this roll" now
 persists the pick through `CameraRollSelection.select` (a bare notification reached no camera);
