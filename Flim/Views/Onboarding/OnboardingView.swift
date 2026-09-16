@@ -1,10 +1,13 @@
 import SwiftUI
-import AVFoundation
 
 /// The first run, after sign-in and the username screen: one screen, shaped like the viewfinder
-/// it is about to become, with one sentence and one button. Tapping the button requests camera
-/// permission, so the system dialog always follows directly from this screen's own message
-/// (Apple 5.1.1(iv); FLIM was rejected once for a Skip that let people past without the dialog).
+/// it is about to become, with one sentence and one button. Tapping the button opens the camera,
+/// and the camera asks for its permission the first time it appears (`CameraViewModel.start()`),
+/// so the system dialog still follows directly from this screen's own message (Apple 5.1.1(iv);
+/// FLIM was rejected once for a Skip that let people past without the dialog). Until v2 batch 2
+/// (2026-09-15) this screen requested the permission itself, one tap earlier; asking on the
+/// camera surface is the same moment today and stays the right moment if launch ever moves off
+/// the camera (docs/V2_BATCH2_NOTES.md).
 ///
 /// This replaced three swipeable cards ("Shoot now." / "Sort your shots." / "Share the moment.")
 /// with a Next button and a Skip, on 2026-09-08. Measured on the 38 accounts created since
@@ -21,21 +24,15 @@ struct OnboardingView: View {
     @AppStorage("hasOnboarded") private var hasOnboarded = false
     @State private var isOpening = false
 
-    /// Ends onboarding. If camera permission hasn't been decided yet, this requests it first so
-    /// the system dialog always follows directly from the one CTA. Mirrors the same-API call in
-    /// `CameraViewModel.start()`, which then sees the decided status and proceeds without asking
-    /// again.
+    /// Ends onboarding. The camera asks for its own permission as it appears
+    /// (`CameraView.onChange(of: hasOnboarded)` starts the flow, `CameraViewModel.start()` asks
+    /// on `.notDetermined`), so this only has to hand over.
     private func openCamera() {
         guard !isOpening else { return }
         isOpening = true
         Haptics.tap()
-        Task { @MainActor in
-            if AVCaptureDevice.authorizationStatus(for: .video) == .notDetermined {
-                _ = await AVCaptureDevice.requestAccess(for: .video)
-            }
-            hasOnboarded = true
-            Activation.log(.onboardingFinished)
-        }
+        hasOnboarded = true
+        Activation.log(.onboardingFinished)
     }
 
     var body: some View {

@@ -673,16 +673,20 @@ struct CameraView: View {
 
     // MARK: - Camera permission denied
 
+    /// A refusal is not a dead tab (v2 batch 2): it says where the switch is and offers the
+    /// part of the app that still works. The tab itself stays; hiding it would make the refusal
+    /// look like a broken app.
     private var cameraDeniedOverlay: some View {
         VStack(spacing: 16) {
             Image(systemName: "camera.fill")
                 .font(.system(size: 40, weight: .ultraLight))
                 .foregroundStyle(accent)
-            Text("Camera access needed")
-                .flimFont(20, weight: .light)
+            Text("\(AppInfo.appName) can't use the camera")
+                .flimFont(20, weight: .light, relativeTo: .title3)
                 .foregroundStyle(.white)
-            Text("\(AppInfo.appName) needs your camera to take photos. Turn it on in Settings.")
-                .flimFont(14)
+                .multilineTextAlignment(.center)
+            Text("Camera access is off for \(AppInfo.appName) in iOS Settings. You can still see your friends' photos and reply to them.")
+                .flimType(.body)
                 .foregroundStyle(FlimTheme.textSecondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 44)
@@ -692,14 +696,23 @@ struct CameraView: View {
                 }
             } label: {
                 Text("Open Settings")
-                    .flimFont(15, weight: .semibold)
+                    .flimType(.control)
                     .foregroundStyle(.black)
                     .padding(.horizontal, 32)
-                    .padding(.vertical, 13)
+                    .frame(minHeight: 48)
                     .background(accent, in: Capsule())
             }
             .padding(.top, 8)
+            Button {
+                NotificationCenter.default.post(name: .openPushDestination, object: PushDestination.feed)
+            } label: {
+                Text("Back to Feed")
+                    .flimType(.label)
+                    .foregroundStyle(FlimTheme.textSecondary)
+                    .frame(minHeight: 44)
+            }
         }
+        .padding(.horizontal, 20)
         .padding(.bottom, 60)
     }
 
