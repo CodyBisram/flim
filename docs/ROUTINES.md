@@ -4,18 +4,28 @@ Everything that fires without a person, what it produces, and where to look. Rew
 2026-09-13: the nightly review and the weekly social drafts used to open a pull request each
 (fifteen sat unread for two weeks); they now commit straight to main into CI-ignored folders,
 and the review keeps a ledger it re-verifies every night. A nightly numbers job was added.
-The five "check on PR #N" reminder routines that had accreted around the unread PRs are
-disabled; they served nothing once the PRs were gone.
+
+Moved 2026-09-14: the review, the social drafts and a new weekly product memo run on the
+owner's Raspberry Pi (a clone at `~/work/flim`, a fine-grained token scoped to this repo,
+committing as `Cody Bisram (pi)` so git log tells the Pi from the owner and from the old cloud
+runs). The two claude.ai routines (`trig_016sRvtGxYpPVyN3mXtEHi2v` review,
+`trig_016yUs6HtUepKBwDDNYvLeft` social) were disabled the same day at 15:49 ET and stay off:
+there is exactly one reviewer. The five "check on PR #N" reminders are disabled too.
 
 | When (ET) | What | Where it runs | Output |
 |---|---|---|---|
-| 02:07 daily | Nightly review (Sonnet) | claude.ai routine `trig_016sRvtGxYpPVyN3mXtEHi2v` | `docs/reviews/<date>.md` for new findings, `docs/reviews/OPEN.md` re-verified, committed to main |
-| 00:20 daily | Nightly numbers + rendition repair | GitHub Actions `nightly-numbers.yml` | one line appended to `docs/NUMBERS.md`; an `ops_alerts` row (so a push to the owner) when something is broken; then `scripts/repair_renditions.py` rebuilds any thumb or feed card a capture lost |
-| Mon 08:00 | Social drafts | claude.ai routine `trig_016yUs6HtUepKBwDDNYvLeft` | `social/drafts/<date>.md` committed to main; Buffer stays the send gate |
+| 02:07 daily | Nightly review (the prompt below); on a night with no commits it deep-audits one module in rotation instead | Raspberry Pi, Claude Code | `docs/reviews/<date>.md` for new findings, `docs/reviews/OPEN.md` re-verified, committed to main |
+| 00:20 daily | Nightly numbers + rendition repair | GitHub Actions `nightly-numbers.yml` (GitHub's cron is best-effort; it has run up to five hours late) | one line appended to `docs/NUMBERS.md`; an `ops_alerts` row (so a push to the owner) when something is broken; then `scripts/repair_renditions.py` rebuilds any thumb or feed card a capture lost |
+| Mon 07:30 | Product memo | Raspberry Pi, Claude Code | `docs/memos/<date>.md`, committed to main |
+| Mon 08:00 | Social drafts (the prompt below) | Raspberry Pi, Claude Code | `social/drafts/<date>.md` committed to main; Buffer stays the send gate |
 | Mon 09:07 | R2 tripwire | GitHub Actions `r2-tripwire.yml` | silent while quiet, fails (email) when a migration trigger fires |
 | every 2 min | Social push | pg_cron `flim-social-push` | pushes, `push_deliveries`, drains `ops_alerts` to the owner |
-| every 5 min | Develop push | pg_cron `flim-develop-push` | roll-developed pushes |
-| nightly | pg_net cleanup, storage sweep | pg_cron | keeps `net._http_response` small; orphaned objects removed, `ops_alerts` on surprises |
+| every 5 min | Develop push, mark developed | pg_cron `flim-develop-push`, `flim-mark-developed` | roll-developed pushes |
+| hourly 10:00 to 21:00 | Daily digest | pg_cron `flim-daily-digest` | one digest push per person per day |
+| 04:20 daily | pg_net cleanup | pg_cron `flim-cron-cleanup` | keeps `net._http_response` small (runs BEFORE a late numbers job can read the day; see the numbers row) |
+| 05:17 daily | Storage sweep | pg_cron `flim-storage-sweep` | orphaned objects removed, `ops_alerts` on surprises |
+| Sun 05:00 / 05:30 | pg_net vacuum, invite rate sweep | pg_cron | housekeeping |
+| always | Uptime Kuma on flim-app.com, the AASA file, Supabase; App Store review watcher; webhook receiver at hooks.flim-app.com fed by `pi_hook_*` database triggers on crash_diagnostics, ops_alerts, user_reports, users, activation_events (applied in the SQL editor, not a migration) | Raspberry Pi | pushes to the owner, independent of the social-push path |
 
 ## The ledger
 
@@ -41,10 +51,9 @@ FLIM_SERVICE_KEY=... bash scripts/nightly_numbers.sh
 
 ## Routine prompts
 
-The claude.ai routines' prompts cannot be edited from this session (the auto-mode classifier
-refuses the update call), so the owner pastes them at the routine's page: Routines, open the
-routine, click the Instructions block, replace the text, Save. The review prompt went live
-2026-09-13. These are the current intended prompts; keep them in sync with what is live.
+These are the prompts the Pi runs (the review verbatim; the memo's prompt lives on the Pi and
+is not recorded here yet). Keep them in sync with what is live; a change here is a change
+there, by the owner's hand.
 
 ### Nightly review (`trig_016sRvtGxYpPVyN3mXtEHi2v`)
 

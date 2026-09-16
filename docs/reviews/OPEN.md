@@ -8,44 +8,46 @@ sat unread in pull requests; everything starts `unverified` and the first night 
 
 | Raised | Severity | Finding | Status | Note |
 |---|---|---|---|---|
-| 2026-08-27 | ? | Flim/ContentView.swift:109 | unverified | |
-| 2026-08-27 | ? | Flim/Views/Rolls/RollsView.swift:357-362 | unverified | |
-| 2026-08-27 | ? | Flim/Views/Feed/FeedView.swift:406 (via FeedUnitCard.swift onAuthorBlocked) | unverified | |
-| 2026-08-27 | ? | Flim/Views/Profile/BadgePickerSheet.swift:643-660 | unverified | |
-| 2026-08-27 | ? | Flim/Views/Rolls/RollsView.swift:398-406 and 733-739 | unverified | |
-| 2026-08-27 | ? | Flim/Views/Feed/UserPageView.swift:246-266 | unverified | |
-| 2026-08-27 | ? | Flim/Views/Profile/ProfileView.swift:501-507 | unverified | |
-| 2026-08-28 | high | RollDetailView.swift:366 (high) | unverified | |
-| 2026-08-28 | medium | RollRevealView.swift:134-137 (medium) | unverified | |
-| 2026-08-28 | low | RollRevealView.swift:387 (low) | unverified | |
-| 2026-08-28 | low | SharePreviewSheet.swift:310-313 (low) | unverified | |
-| 2026-08-30 | ? | Flim/Views/Feed/FeedView.swift:218 | unverified | |
-| 2026-08-31 | medium | Flim/Services/InstantFilmProcessor.swift:631-632 (severity: medium) | unverified | |
-| 2026-09-01 | ? | `admin_overview()`'s never_asked_notifications does not match the definition its own comment claims | unverified | |
-| 2026-09-01 | ? | Reveals week-over-week comparison in `admin_overview()` compares an 8-day window to a 7-day window | unverified | |
-| 2026-09-03 | high | Flim/Views/Darkroom/PhotoGridCell.swift:371 (severity: high) | unverified | |
-| 2026-09-03 | low | Flim/Services/RollSnapshotStore.swift:232 (severity: low) | unverified | |
-| 2026-09-05 | ? | Chapter recap pager reads and writes the wrong reactions/comments table | unverified | |
-| 2026-09-05 | ? | A burst pairing patch is silently and permanently dropped on a generic upload failure | unverified | |
-| 2026-09-05 | ? | A second push tap for the same roll can overwrite the wrong photo's comment intent | unverified | |
-| 2026-09-05 | ? | Burst grouping's 3-second window is measured against a timestamp taken after the previous shot's full pipeline | unverified | |
-| 2026-09-05 | ? | "Play again" on a chapter's closing card replays from a stale index | unverified | |
-| 2026-09-05 | ? | A reveal shown mid-poll can conflict with a pending push-photo presentation | unverified | |
-| 2026-09-05 | ? | Burst cover selection ties a measured zero sharpness score with an unmeasured one | unverified | |
-| 2026-09-06 | high | `Flim/Views/Main/MainTabView.swift:116` and `Flim/Views/Rolls/RollsView.swift:341,360,484,617` (high) | unverified | |
-| 2026-09-06 | medium | `Flim/Services/RemotePush.swift:111` (medium) | unverified | |
-| 2026-09-09 | ? | Flim/Services/FailedUploadStore.swift:104 | unverified | |
-| 2026-09-09 | ? | Flim/Services/ChapterCuration.swift:154 | unverified | |
-| 2026-09-10 | high | FeedService.swift:974, high | unverified | |
-| 2026-09-10 | high | Flim/Views/Rolls/RollRevealViewModel.swift:170-182, high | unverified | |
-| 2026-09-10 | high | supabase/functions/send-daily-digest/index.ts, high | unverified | |
-| 2026-09-10 | medium | Flim/Services/AuthService.swift:474-499, medium | unverified | |
-| 2026-09-10 | medium | supabase/functions/send-develop-push/index.ts:249, medium | unverified | |
-| 2026-09-10 | medium | Flim/Views/Feed/FeedView.swift:462 and Flim/Views/Rolls/RollsView.swift:230, medium | unverified | |
-| 2026-09-10 | medium | Flim/Services/Activation.swift:82-109, medium | unverified | |
-| 2026-09-10 | low | Flim/Views/Rolls/RollDevelopAskSheet.swift:24-25, low | unverified | |
-| 2026-09-10 | low | Flim/Views/Profile/ChapterRecapViewModel.swift:227-237, low | unverified | |
-| 2026-09-11 | medium | Flim/Services/ShareBreadcrumbs.swift:36 (medium) | unverified | |
-| 2026-09-12 | ? | Flim/Services/RollService.swift:27, :111 | unverified | |
-| 2026-09-12 | ? | supabase/functions/send-social-push/index.ts:272, 300-322, 729-772, 1048-1076 | unverified | |
+| 2026-08-27 | high | Flim/ContentView.swift:117 (account-change flush ran after the cache resets, dropping a pending undoable action) | fixed | 92c1fb9 |
+| 2026-08-27 | high | Flim/Views/Rolls/RollsView.swift:397-398 ("Shoot into this roll" posts a bare NotificationCenter notification instead of CameraRollSelection.select, camera can point at the wrong roll) | open | |
+| 2026-08-27 | high | Flim/Views/Feed/FeedView.swift:484,799-801 (onAuthorBlocked re-snapshots the ledger non-growOnly, can shrink the header's counts for unrelated already-read units) | open | |
+| 2026-08-27 | high | Flim/Views/Profile/BadgePickerSheet.swift:651-684 (commit() bypasses UndoCenter, a stale staged clear-badges action can overwrite a fresh save) | open | |
+| 2026-08-27 | medium | Flim/Views/Rolls/RollsView.swift frame-counts race (mine defaulted to 0 between two sequential writes) | fixed | 92c1fb9 |
+| 2026-08-27 | medium | Flim/Views/Feed/UserPageView.swift:327-347 (blockAccount defers dismiss into the staged commit closure, can pop whatever the user navigated to since) | open | |
+| 2026-08-27 | low | Flim/Views/Profile/ProfileView.swift:512-518 (photoError auto-dismiss timer is never cancelled, a second error can be cut short by the first one's timer) | open | |
+| 2026-08-28 | high | Flim/Views/Rolls/RollDetailView.swift:607-618 (reveal re-presents on every reappearance; presenting never marks it seen, only genuine completion does) | open | |
+| 2026-08-28 | medium | RollRevealView.swift selection/index desync after skipDeadFrame | fixed | 92c1fb9 |
+| 2026-08-28 | low | Flim/Views/Rolls/RollRevealView.swift:480-484 (stages a reportPhoto undo but has no undoCapsuleHost of its own, capsule unreachable during the reveal) | open | |
+| 2026-08-28 | low | SharePreviewSheet.swift Share button not gated on render completion | fixed | 92c1fb9 |
+| 2026-08-30 | low-medium | Flim/Views/Feed/FeedView.swift:260,723-736 (inviteQuota fetched once in .task, never refreshed by reload(), can hand out an already-dead invite code) | open | |
+| 2026-08-31 | medium | Flim/Services/InstantFilmProcessor.swift:668-669 (flashFalloff floors peak at 0.02 instead of treating it as 1, darkening an already near-black flash frame instead of leaving it untouched) | open | |
+| 2026-09-01 | medium | `admin_overview()`'s never_asked_notifications (2026-08-31_admin_overview_v2.sql:88-93) adds a device_tokens condition admin_reach()'s never_asked lacks, so the two panels disagree | open | |
+| 2026-09-01 | medium | `admin_overview()`'s reveals week-over-week (2026-08-31_admin_overview_v2.sql:31-32,45-48) compares an 8-day "now" window to a 7-day "prev" window | open | |
+| 2026-09-03 | high | PhotoGridCell.swift disk-cache-miss path had no loadGeneration guard | fixed | 92c1fb9 |
+| 2026-09-03 | low | Flim/Services/RollSnapshotStore.swift:55-61 (save() spawns an unordered detached Task per call; two persistSnapshot() calls for one account can finish out of order) | open | |
+| 2026-09-05 | high | Flim/Views/Profile/ChapterRecapView.swift:387-395 (recap pager still resolves reactions/comments by photo id against photo_reactions/photo_comments, not the post_reactions/post_comments chapter_stats() counts from) | fixed | 05933d7 |
+| 2026-09-05 | medium-high | Flim/Services/PhotoService.swift:568-634 (generic upload-failure catch never calls patchEarlierBurstGroup; the retry path at :393-396 also returns patchEarlier: nil, so the obligation is permanently dropped) | open | |
+| 2026-09-05 | medium | Flim/Views/Rolls/RollDetailView.swift:861-877 (openAwaitingPhotoIfReady reads awaitingPhotoComments after polling instead of capturing it with photoId; a second push for the same roll can attach the wrong comment intent) | open | |
+| 2026-09-05 | ? | Burst grouping's 3-second window is measured against a timestamp taken after the previous shot's full pipeline | fixed | 39d08b8 |
+| 2026-09-05 | medium | Flim/Views/Profile/ChapterRecapView.swift:469-471 ("Play again" sets isPlayerPresented = true without resetting selection to 0, so replaying after viewing a stat-line photo resumes from that photo's index instead of the start) | open | |
+| 2026-09-05 | low | Flim/Views/Rolls/RollDetailView.swift:862-876 (openAwaitingPhotoIfReady only checks !showReveal at entry, not before the final selectedPhoto = photo assignment after the poll, so a reveal that starts mid-poll can still get a photo cover presented on top of it) | open | |
+| 2026-09-05 | low | Flim/Services/BurstGrouping.swift:49 (sharpest(in:) coalesces nil sharpness to 0 via a.sharpness ?? 0, so a genuinely-measured 0.0 score ties with an unmeasured sibling instead of ranking above it) | open | |
+| 2026-09-06 | high | `Flim/Views/Main/MainTabView.swift:116` (rollsPathIds) and `Flim/Views/Rolls/RollsView.swift:363,382,506,726` (NavigationLink(value: roll) pushes bypass rollsPathIds, and nothing removes from it on pop either, so rollsPathAction's dedup/truncation logic silently desyncs from the real nav stack) | open | |
+| 2026-09-06 | medium | `Flim/Services/RemotePush.swift:111` (claim(_:) unconditionally cancels every pending local develop-roll reminder for the account on each successful device-token registration, not just the one race it was meant to cover) | open | |
+| 2026-09-09 | medium | Flim/Services/FailedUploadStore.swift:104-116 (Sidecar only encodes burstGroup/sharpness, so save()/load() silently drop quality, phash, and isMiss for a capture that failed once before uploading, permanently losing its dead-frame verdict) | open | |
+| 2026-09-09 | medium | Flim/Services/ChapterCuration.swift:154 (qualityScore(for:) returns early on a stored quality value before requesting a Vision feature print, so any photo with stored quality scores as 0 similarity to everything in the diversity/duplicate check, defeating dedup once a month mixes pre/post-2026-09-08 photos) | open | |
+| 2026-09-10 | high | FeedService.swift:974, high | fixed | 13cfba0 |
+| 2026-09-10 | high | Flim/Views/Rolls/RollRevealViewModel.swift:170-182 (deck retains dead frames while playedDeck filters them out; when a roll's only surviving photos are all dead frames, playedDeck.isEmpty routes to the "shots were deleted" empty state even though frames are still visible in the roll's own grid) | open | |
+| 2026-09-10 | high | supabase/functions/send-daily-digest/index.ts:363-557 (the Deno.serve handler has no acquire_push_lock/release_push_lock around its run, unlike send-develop-push and send-social-push, so two overlapping invocations can double-send the daily digest) | open | |
+| 2026-09-10 | medium | Flim/Services/AuthService.swift:476-486,498 (setAccent has no AccountEpoch guard unlike every other write path in this file, and reconcileAccent's .uploadLocal branch fires it from an uncaptured Task, so an account switch mid-flight can write account A's accent onto account B's row) | open | |
+| 2026-09-10 | medium | supabase/functions/send-develop-push/index.ts:249 (acquire_push_lock lease of 240s is shorter than the 5-minute flim-develop-push cron cadence, so a run over 240s has its lock expire and the next tick starts concurrently, sending duplicate "roll developed" pushes) | open | |
+| 2026-09-10 | medium | Flim/Views/Feed/FeedView.swift:468 and Flim/Views/Rolls/RollsView.swift:243 (FirstVisitLine marks itself seen onDisappear expecting to render for the whole first visit, but sits inside a LazyVStack, so scrolling it off and back on fires onDisappear/onAppear again and the banner vanishes mid-visit) | open | |
+| 2026-09-10 | medium | Flim/Services/Activation.swift:82-109, medium | fixed | 13cfba0 |
+| 2026-09-10 | low | Flim/Views/Rolls/RollDevelopAskSheet.swift:26 (timeLabel uses Calendar.isDate(_:inSameDayAs:), a midnight boundary, inconsistent with the app's 4am day boundary used elsewhere via FeedUnit.dayKey, so a roll developing between midnight and 4am is labeled with the new calendar weekday) | open | |
+| 2026-09-10 | low | Flim/Views/Profile/ChapterRecapViewModel.swift:194,234,237 (highlightIds from mostReacted/mostCommented/longestGap are unioned in from the unfiltered photos array rather than the dead-frame-filtered pool, so a dead-frame photo that happens to be the month's longestGap is force-included into the recap deck unlabelled) | open | |
+| 2026-09-11 | medium | Flim/Services/ShareBreadcrumbs.swift:36 (occurred_at: .now is stamped inside a fire-and-forget Task after the await supabase.auth.session suspension point, so two breadcrumbs logged in true order can have occurred_at reordered depending on which task's session lookup resolves first) | open | |
+| 2026-09-12 | high | Flim/Services/RollService.swift:26-32,109 (resetForAccountChange() clears rolls/memberCounts/coverPaths/error/isLoading but not followUpInvites despite its own doc comment claiming otherwise, so switching accounts on the same device leaves account A's follow-up invite card tappable for account B, and tapping Join enrolls B into A's roll) | open | |
+| 2026-09-12 | ? | supabase/functions/send-social-push/index.ts:272, 300-322, 729-772, 1048-1076 | fixed | 2d21be2 |
 | 2026-09-12 | ? | Flim/Services/PhotoService.swift:1262, 1285, 1398 | unverified | |
+| 2026-09-14 | high | .github/workflows/nightly-numbers.yml:25-30 (rendition-repair step has no continue-on-error, so repair_renditions.py's expected exit 1 skips the Commit the line step and silently drops that night's NUMBERS.md line) | fixed | 9394d3b |
+| 2026-09-14 | medium | supabase/functions/send-social-push/index.ts:1209-1230 (comment-likes push has no postVisibleTo gate like the thread-participant push does, can deep-link to a post the recipient can no longer open) | open | |
