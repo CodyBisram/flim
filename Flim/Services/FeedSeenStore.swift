@@ -1,12 +1,16 @@
 import Foundation
 import Observation
 
-/// Device-local record of which feed posts have been reached, and WHEN.
+/// Record of which feed posts have been reached, and WHEN.
 ///
-/// This never leaves the device. It is not synced, not sent to the server, and never visible
-/// to a post's author: nobody learns that you looked at their day and did not react. Two
-/// accepted consequences, both stated in the design and the privacy copy: a new device starts
-/// with everything unseen, and the header ledger only ever describes this device.
+/// Device-local first, and since 2026-09-16 mirrored to the account (`post_seen`, one row per
+/// person and post, readable and writable only by that person, so a post's author never learns
+/// that you looked at their day and did not react). The mirror exists for one reason: a
+/// reinstall, or a second phone, used to start with everything unseen ("16 shots from 8
+/// friends" the owner had already read). Marks are pushed in small batches (`flushPending`,
+/// on a timer and when the app leaves the foreground) and pulled once when an account
+/// activates (`pullFromServer`), which seeds whatever this device did not have. The local
+/// store stays the source of truth on this device; the server copy is a backup of it.
 ///
 /// "Reaching" a shot means the pager landed on it, whether by swiping the photograph, tapping
 /// its strip frame, or a unit opening on it, so a group with two unseen shots reads "1 new"
@@ -47,6 +51,16 @@ final class FeedSeenStore {
     private static let cap = 6000
 
     private(set) var seenAt: [UUID: Date] = [:]
+    /// Marks made on this device that the account's server copy does not have yet. Cleared as
+    /// batches land; a failed batch stays here and rides the next flush.
+    private var pendingSync: [UUID: Date] = [:]
+    private var flushTask: Task<Void, Never>?
+    /// Per account, so a switch never flushes one person's marks under another's session.
+    private var syncedUserId: UUID?
+    /// The account-copy pull in flight for the active account, so the feed can wait for it
+    /// before it snapshots its ledger: a "16 shots from 8 friends" computed a moment before the
+    /// server's marks land would be exactly the number this mirror exists to prevent.
+    private var pullTask: Task<Void, Never>?
 
     /// The signed-in account these marks belong to right now. Set explicitly at every place the
     /// signed-in account changes (app launch with a restored session, sign-in, sign-out, account
@@ -55,9 +69,12 @@ final class FeedSeenStore {
     var activeUserId: UUID? {
         didSet {
             guard activeUserId != oldValue else { return }
-            guard let activeUserId else { seenAt = [:]; return }
+            guard let activeUserId else { seenAt = [:]; pendingSync = [:]; flushTask?.cancel(); return }
             migrateLegacyMarksIfNeeded(into: activeUserId)
             seenAt = loadMarks(for: activeUserId)
+            pendingSync = [:]
+            syncedUserId = activeUserId
+            pullTask = Task { await pullFromServer(for: activeUserId) }
         }
     }
 
@@ -77,12 +94,75 @@ final class FeedSeenStore {
         guard let activeUserId else { return }
         // First-seen wins; see the type comment on why re-views never refresh the date.
         guard seenAt[id] == nil else { return }
-        seenAt[id] = .now
+        let now = Date.now
+        seenAt[id] = now
         if seenAt.count > Self.cap {
             let evictable = seenAt.sorted { $0.value < $1.value }.prefix(seenAt.count - Self.cap)
             for (id, _) in evictable { seenAt.removeValue(forKey: id) }
         }
         persist(for: activeUserId)
+        pendingSync[id] = now
+        scheduleFlush()
+    }
+
+    // MARK: - The account's copy
+
+    /// Waits for the pull started when the account activated, if it is still running. Bounded
+    /// by the request's own timeout; a failed pull returns at once.
+    func awaitPull() async { await pullTask?.value }
+
+    /// A short debounce, so a swipe through a day sends one batch rather than one row per frame.
+    private func scheduleFlush() {
+        guard flushTask == nil else { return }
+        flushTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(4))
+            await self?.flushPending()
+        }
+    }
+
+    /// Sends every pending mark for the active account. Safe to call any time; a failure keeps
+    /// the marks pending. Called on the debounce and when the app leaves the foreground.
+    func flushPending() async {
+        flushTask?.cancel(); flushTask = nil
+        guard let user = syncedUserId, user == activeUserId, !pendingSync.isEmpty else { return }
+        let batch = pendingSync
+        struct Row: Encodable { let user_id: UUID; let post_id: UUID; let seen_at: Date }
+        let rows = batch.map { Row(user_id: user, post_id: $0.key, seen_at: $0.value) }
+        do {
+            try await supabase.from("post_seen").upsert(rows, onConflict: "user_id,post_id", ignoreDuplicates: true).execute()
+            guard user == activeUserId else { return }
+            for id in batch.keys { pendingSync.removeValue(forKey: id) }
+        } catch {
+            // Left pending; the next flush tries again. A post deleted in between fails its
+            // foreign key and would stick forever, so drop anything older than a day.
+            let cutoff = Date.now.addingTimeInterval(-86400)
+            for (id, date) in batch where date < cutoff { pendingSync.removeValue(forKey: id) }
+        }
+    }
+
+    /// Seeds this device with the account's server copy, newest first, up to the cap. Marks
+    /// already held locally keep their own dates. Paged in thousands: PostgREST caps a request
+    /// at 1,000 rows, and a whole-account read that silently stopped there would leave the
+    /// oldest marks unseen on a new phone.
+    private func pullFromServer(for user: UUID) async {
+        struct Row: Decodable { let post_id: UUID; let seen_at: Date }
+        var marks: [(id: UUID, seenAt: Date)] = []
+        var from = 0
+        while from < Self.cap {
+            let page: [Row]
+            do {
+                page = try await supabase.from("post_seen").select("post_id, seen_at")
+                    .eq("user_id", value: user.uuidString)
+                    .order("seen_at", ascending: false)
+                    .range(from: from, to: from + 999)
+                    .execute().value
+            } catch { return }
+            marks.append(contentsOf: page.map { ($0.post_id, $0.seen_at) })
+            if page.count < 1000 { break }
+            from += 1000
+        }
+        guard user == activeUserId, !marks.isEmpty else { return }
+        seedBacklog(marks)
     }
 
     /// Seeds a batch of already-seen marks as a one-time backlog migration, each dated at the

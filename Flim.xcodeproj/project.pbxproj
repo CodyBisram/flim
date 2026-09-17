@@ -1675,7 +1675,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.5.3;
+				MARKETING_VERSION = 1.5.4;
 				PRODUCT_BUNDLE_IDENTIFIER = com.flim.app.RollActivityWidget;
 				PROVISIONING_PROFILE_SPECIFIER = "match AppStore com.flim.app.RollActivityWidget";
 				SDKROOT = iphoneos;
@@ -1756,7 +1756,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.5.3;
+				MARKETING_VERSION = 1.5.4;
 				PRODUCT_BUNDLE_IDENTIFIER = com.flim.app.RollActivityWidget;
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -1902,7 +1902,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.5.3;
+				MARKETING_VERSION = 1.5.4;
 				PRODUCT_BUNDLE_IDENTIFIER = com.flim.app;
 				SDKROOT = iphoneos;
 				SWIFT_VERSION = 5.9;
@@ -1946,7 +1946,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.5.3;
+				MARKETING_VERSION = 1.5.4;
 				PRODUCT_BUNDLE_IDENTIFIER = com.flim.app;
 				PROVISIONING_PROFILE_SPECIFIER = "match AppStore com.flim.app";
 				SDKROOT = iphoneos;

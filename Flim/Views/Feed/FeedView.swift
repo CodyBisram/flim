@@ -65,6 +65,8 @@ struct FeedView: View {
     /// arrived, not what is left, so reading a shot must not tick it down. It disappears
     /// (rather than recomputing) when the last mark clears.
     @State private var ledger: (shots: Int, friends: Int)?
+    /// Bumped by a tap on the ledger; the list scrolls to the first unit with an unseen frame.
+    @State private var jumpToUnseenSignal = 0
     /// What the ledger is made of, per unit id, so grow-only refreshes ratchet by MERGING
     /// units rather than taking a component-wise max of two totals (which paired shot and
     /// friend counts from different snapshots into a line that was never true of any
@@ -259,6 +261,9 @@ struct FeedView: View {
             // task of its own.
             inviteQuota = await auth.ownInviteQuota()
             if let path = auth.currentUser?.avatarPath { myAvatarURL = await feed.signedURL(for: path) }
+            // The account's seen-marks must be here before the first ledger is counted; see
+            // `FeedSeenStore.awaitPull`.
+            if ledger == nil { await seenStore.awaitPull() }
             if feed.feed.isEmpty {
                 await reload()
             } else {
@@ -342,12 +347,22 @@ struct FeedView: View {
                 Text("·")
                     .flimFont(12.5, relativeTo: .footnote)
                     .foregroundStyle(FlimTheme.textTertiary)
-                Text(ledgerLabel(ledger))
-                    .flimFont(12.5, relativeTo: .footnote)
-                    .foregroundStyle(accent)
-                    .shadow(color: accent.opacity(0.55), radius: 6)
-                    .lineLimit(1)
-                    .transition(.opacity)
+                // Tapping the count goes to the first day that still holds something unseen,
+                // which opens on its first unseen frame (owner's ask, 2026-09-16).
+                Button {
+                    Haptics.tap()
+                    jumpToUnseenSignal += 1
+                } label: {
+                    Text(ledgerLabel(ledger))
+                        .flimFont(12.5, relativeTo: .footnote)
+                        .foregroundStyle(accent)
+                        .shadow(color: accent.opacity(0.55), radius: 6)
+                        .lineLimit(1)
+                }
+                .buttonStyle(.plain)
+                .expandTapTarget(top: 12, bottom: 12)
+                .accessibilityLabel("\(ledgerLabel(ledger)). Go to the first one")
+                .transition(.opacity)
             }
             Spacer(minLength: 8)
 
@@ -483,6 +498,7 @@ struct FeedView: View {
                             catchUpGeneration: catchUpGeneration,
                             onAuthorBlocked: { snapshotLedger() }
                         )
+                        .id(unit.id)
                         .onAppear { unitAppeared(index: index) }
 
                         // The seam between new and old: the caught-up block below the last
@@ -510,6 +526,12 @@ struct FeedView: View {
             .task { proxy.scrollTo("top", anchor: .top) }
             .onChange(of: scrollToTop) {
                 withAnimation(.snappy) { proxy.scrollTo("top", anchor: .top) }
+            }
+            .onChange(of: jumpToUnseenSignal) {
+                // The first unit, in feed order, that still holds an unseen frame; that unit
+                // opens on its first unseen frame by itself (`openingIndex`).
+                guard let target = units.first(where: { $0.unseenCount(isSeen: { seenStore.isSeen($0) }) > 0 }) else { return }
+                withAnimation(.snappy) { proxy.scrollTo(target.id, anchor: .top) }
             }
             // The boundary-triggered reload replaced page one while the reader's scroll offset
             // was still wherever it was left; land back at the top exactly like the initial

@@ -202,6 +202,9 @@ struct ContentView: View {
                 // app killed there would silently lose an action the person watched happen.
                 // Leaving the foreground commits it now; see `UndoCenter`.
                 UndoCenter.shared.flush()
+                // Seen-marks made this session go to the account now, not on the next debounce
+                // an app suspended in the background never reaches.
+                Task { await FeedSeenStore.shared.flushPending() }
                 return
             }
             Task { await refreshVersionGate() }

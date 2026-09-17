@@ -343,13 +343,25 @@ sits at the top of the screen. Contacts matching deliberately parked (no phone n
 email match rate, a new permission); no Twilio needed for anything here. `DiscoverRanking` is
 pure and tested.
 
-## 1.5.4 (the v2 branch)
+## 1.5.4 (main, iterating on 1.5.3)
 
-1.5.3 went live 2026-09-15 on build 378 (`0e7991f`). The next candidate is `v2`: batch 1 of the
-redesign (docs/V2_RECONCILIATION.md), archived by hand from a pinned commit, version 1.5.4
-provisional. Gate before batch 2: the owner's review of the before/after feed and the copy table,
-then device checks for sorting, the capture chip, audience wording, the two-frame cue, VoiceOver
-and AX3 on that build.
+1.5.3 went live 2026-09-15 on build 378 (`0e7991f`). **v2 is on the back burner (owner,
+2026-09-16):** batches 1, 2 and 4a are built and on TestFlight (379 to 381) and the branch and
+its documents stay in place, but the next release iterates on 1.5.3 from main. Main's version
+moves to 1.5.4 for its own builds.
+
+### done 2026-09-16: seen-marks follow the account, and the ledger jumps to the first unseen
+
+A reinstall showed the owner "16 shots from 8 friends" he had already read: seen-marks were
+device-only by design, and his account is in `keptFullyUnseen`, so the reinstall seed never
+applied. Now `post_seen` (migration `2026-09-16_post_seen.sql`, APPLIED) holds one row per
+person and post, readable and writable only by that person (probed: the author reads zero).
+`FeedSeenStore` pushes marks in batches (4s debounce, and on leaving the foreground), pulls the
+account's copy once at activation (paged past PostgREST's 1,000-row cap), and the feed waits for
+that pull before its first ledger. Privacy page gains the line. The header ledger is a button:
+tapping "16 shots from 8 friends" scrolls to the first day that still holds an unseen frame,
+which opens on that frame.
+
 
 ### done 2026-09-15: post-release pass
 
