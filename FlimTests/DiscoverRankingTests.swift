@@ -53,3 +53,33 @@ struct DiscoverRankingTests {
         #expect(DiscoverRanking.sections(from: s, excluding: [me, followed, blocked]).isEmpty)
     }
 }
+
+// MARK: - The thin-feed row (2026-09-17)
+
+@Suite struct PeopleYouKnowRowTests {
+    private func profile(_ name: String) -> UserProfile {
+        UserProfile(id: UUID(), username: name, avatarPath: nil, bio: nil, displayName: nil, coverPath: nil, createdAt: .now, hiddenFromDiscovery: false, signupOrdinal: nil)
+    }
+
+    @Test("shows only under three follows, and only with someone to show")
+    func rule() {
+        #expect(PeopleYouKnowRow.shouldShow(followingCount: 0, candidates: 1))
+        #expect(PeopleYouKnowRow.shouldShow(followingCount: 2, candidates: 3))
+        #expect(!PeopleYouKnowRow.shouldShow(followingCount: 3, candidates: 3))
+        #expect(!PeopleYouKnowRow.shouldShow(followingCount: 1, candidates: 0))
+    }
+
+    @Test("picks three across the sections that carry a reason, never New on FLIM")
+    func picks() {
+        let a = profile("a"), b = profile("b"), c = profile("c"), d = profile("d"), n = profile("n")
+        let sections = [
+            FeedService.DiscoverSection(title: "New on FLIM", profiles: [n]),
+            FeedService.DiscoverSection(title: "Follows you", profiles: [a, b]),
+            FeedService.DiscoverSection(title: "In your rolls", profiles: [b, c, d]),
+        ]
+        let picked = PeopleYouKnowRow.pick(sections)
+        #expect(picked.map(\.profile.id) == [a.id, b.id, c.id])
+        #expect(picked.map(\.reason) == ["Follows you", "Follows you", "In your rolls"])
+        #expect(!picked.contains { $0.profile.id == n.id })
+    }
+}

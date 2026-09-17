@@ -416,6 +416,15 @@ The four from the audit the owner picked on 2026-09-10: the durable capture queu
 capture status, one invitation journey (a roll code admits you), deletion order, and the photo
 write boundary. In that order of value; built in the order of size.
 
+### done 2026-09-17: a thin feed gets three people you know
+
+Fourteen of the fifty people who opened FLIM this week follow fewer than three accounts, and
+posts are followers-only, so their feed is one or two people's days. `PeopleYouKnowRow` sits at
+the top of the feed when you follow fewer than three people and there is someone with a reason
+to show (the Find friends sections minus "New on FLIM"): three people, the reason, Follow, and
+"See all" into Find friends. Gone by itself at three follows. Rule and pick are pure and tested.
+Copy: "People you know", "See all"; the reasons are Find friends' own section titles.
+
 ### done 2026-09-17: four pieces of v2 batch 1 adopted, the feed card left where it is
 
 The owner asked what from v2 belongs in 1.5.4 besides the feed. Taken: the doubled "at" fix in

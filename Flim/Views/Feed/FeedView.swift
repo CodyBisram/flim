@@ -504,6 +504,11 @@ struct FeedView: View {
                     FirstVisitLine(surface: .feed,
                                    text: NewAccountIntro.inviter(for: auth.currentUser?.id ?? UUID())?.isCampaign == true
                                        ? NewAccountIntro.campaignFeedLine : nil)
+                    // A thin feed (under three follows) gets three people it knows, with the
+                    // reason, at the top; it goes away by itself once the feed has people in it.
+                    if !followsNobody {
+                        PeopleYouKnowRow { showDiscover = true }
+                    }
 
                     // Nothing anywhere was unseen at load: the block sits at the top of the
                     // scroll with the days already seen below it.
