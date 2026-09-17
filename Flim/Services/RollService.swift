@@ -28,6 +28,9 @@ final class RollService {
         rolls = []
         memberCounts = [:]
         coverPaths = [:]
+        // The Invited cards are the previous account's too; without this a second account on
+        // the same phone saw the first one's follow-up invitations (nightly review, 2026-09-12).
+        followUpInvites = []
         error = nil
         isLoading = false
         snapshotUserId = nil

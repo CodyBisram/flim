@@ -373,6 +373,16 @@ Deno.serve(async (req: Request) => {
   // calls the function URL with no query string at all, and that path must keep sending.
   const isDry = new URL(req.url).searchParams.get("dry") === "true";
 
+  // One run at a time, same lease the other two senders take: two overlapping invocations (a
+  // slow hour plus the next tick) both read digest_state before either wrote it and sent the
+  // digest twice (nightly review, 2026-09-10). A dry run takes no lease; it writes nothing.
+  let leaseToken: string | null = null;
+  if (!isDry) {
+    const { data } = await supabase.rpc("acquire_push_lock", { p_name: "digest", p_seconds: 240 });
+    leaseToken = (data as string | null) ?? null;
+    if (!leaseToken) return new Response("another run holds the lock");
+  }
+  try {
   const now = Date.now();
   const maxWindowStart = new Date(now - MAX_WINDOW_HOURS * 3600_000);
 
@@ -564,4 +574,7 @@ Deno.serve(async (req: Request) => {
     : `digest: ${sent} sent, ${considered} considered`;
   console.log(JSON.stringify({ at: "digest_run", dry: isDry, sent, considered }));
   return new Response(summary);
+  } finally {
+    if (leaseToken) await supabase.rpc("release_push_lock", { p_name: "digest", p_token: leaseToken });
+  }
 });

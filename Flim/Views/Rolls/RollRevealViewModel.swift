@@ -93,6 +93,10 @@ final class RollRevealViewModel {
     /// abandoned at frame 2 of 47 stays unwatched and replays from the cover.
     var completed = false
     var isEmpty = false
+    /// True when the roll has frames but every one of them is a dead frame (black or blurred
+    /// at capture), so there is nothing to play yet nothing was deleted; the empty state says
+    /// which (nightly review, 2026-09-10: "shots were deleted" was wrong for this case).
+    var onlyDeadFrames: Bool { isEmpty && !deck.isEmpty }
     /// Reactions across the whole deck, keyed by photo id, batch-loaded once in `loadDeck`.
     /// Includes the reactions others left BEFORE you opened the reveal, so the moment feels
     /// communal, you see the group's response accreting even though everyone arrives at their

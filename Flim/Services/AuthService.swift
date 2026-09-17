@@ -481,13 +481,23 @@ final class AuthService {
     /// profile load sends it again (see `AccentSync`).
     func setAccent(_ name: String) async throws {
         guard FlimAccentPalette.names.contains(name) else { return }
+        // Epoch-bound like every other write here: the session read and the update are both
+        // suspensions an account switch can land in, and the row written is whoever the SESSION
+        // is by then. Bound to the account this call started under, so a switch mid-flight
+        // writes nothing and never repaints the new account's `currentUser` with the old pick
+        // (nightly review, 2026-09-10).
+        let epoch = AccountEpoch.current
+        let startedAs = currentUser?.id
         let session = try await supabase.auth.session
+        // `startedAs` is nil during sign-up (the row is being made); nothing to protect then.
+        guard AccountEpoch.isCurrent(epoch), startedAs == nil || session.user.id == startedAs else { return }
         struct Update: Encodable { let accent_color: String }
         _ = try await supabase
             .from("users")
             .update(Update(accent_color: name), returning: .minimal)
             .eq("id", value: session.user.id.uuidString)
             .execute()
+        guard AccountEpoch.isCurrent(epoch) else { return }
         currentUser?.accentColor = name
     }
 

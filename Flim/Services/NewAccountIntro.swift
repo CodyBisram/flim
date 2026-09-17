@@ -56,8 +56,14 @@ enum NewAccountIntro {
 
     /// The line to show right now, or nil: only for a new account, only on a first visit.
     /// `text` overrides the surface's own sentence when the call site has a better one.
+    /// Surfaces whose line has been shown during this launch. A line marked seen mid-visit (it
+    /// is marked after a few seconds on screen) keeps showing for the rest of the launch, so a
+    /// scroll away and back never makes it vanish; the next launch is the first without it.
+    static var shownThisLaunch: Set<Surface> = []
+
     static func lineToShow(_ surface: Surface, userId: UUID?, createdAt: Date?, text: String? = nil) -> String? {
-        guard let userId, isNewAccount(createdAt: createdAt), !hasSeen(surface, userId: userId) else { return nil }
+        guard let userId, isNewAccount(createdAt: createdAt) else { return nil }
+        guard !hasSeen(surface, userId: userId) || shownThisLaunch.contains(surface) else { return nil }
         return text ?? surface.line
     }
 

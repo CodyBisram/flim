@@ -29,9 +29,16 @@ struct FirstVisitLine: View {
         .onAppear {
             line = NewAccountIntro.lineToShow(surface, userId: auth.currentUser?.id,
                                               createdAt: auth.currentUser?.createdAt, text: text)
+            if line != nil { NewAccountIntro.shownThisLaunch.insert(surface) }
         }
-        .onDisappear {
-            if line != nil, let uid = auth.currentUser?.id { NewAccountIntro.markSeen(surface, userId: uid) }
+        // Seen once it has had time to be read, not when it scrolls off: inside a LazyVStack
+        // `onDisappear` fires the moment the line leaves the screen, which marked it seen and
+        // made it vanish when the person scrolled back up (nightly review, 2026-09-10). The
+        // line stays for the rest of this launch either way (`shownThisLaunch`).
+        .task {
+            guard line != nil else { return }
+            try? await Task.sleep(for: .seconds(5))
+            if let uid = auth.currentUser?.id { NewAccountIntro.markSeen(surface, userId: uid) }
         }
     }
 }

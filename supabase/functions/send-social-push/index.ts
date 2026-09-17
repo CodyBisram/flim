@@ -1208,6 +1208,20 @@ Deno.serve(async (req: Request) => {
 
   for (const g of likesByComment.values()) {
     if (g.authorId && g.likerIds.size > 0) {
+      // The comment's author must still be able to open the post it is on: they may have
+      // unfollowed its owner since (nightly review, 2026-09-16). Same gate as the mention and
+      // thread pushes. The post's owner is read once here; a missing post skips the push and
+      // the rows are marked so they are not retried forever.
+      let canOpen = true;
+      if (g.postId) {
+        const { data: post } = await supabase.from("posts").select("user_id").eq("id", g.postId).maybeSingle();
+        const ownerId = (post as { user_id?: string } | null)?.user_id;
+        canOpen = !!ownerId && await postVisibleTo(g.authorId, g.postId, ownerId);
+      }
+      if (!canOpen) {
+        await supabase.from("comment_likes").update({ push_sent: true }).in("id", g.ids);
+        continue;
+      }
       const likers = [...g.likerIds];
       const title = likers.length === 1
         ? `${await handle(likers[0])} liked your comment`

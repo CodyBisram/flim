@@ -113,6 +113,12 @@ actor FailedUploadStore {
         // photo already queued on someone's device.
         let burstGroup: UUID?
         let sharpness: Double?
+        // Added 2026-09-17 (nightly review, 2026-09-09): without these a capture that failed
+        // once lost its quality, phash and Missed verdict for good, since a retry never
+        // re-analyzes. Optional for the same decode-old-sidecars reason.
+        let quality: Double?
+        let phash: Int64?
+        let isMiss: Bool?
     }
 
     private nonisolated func directory(for userId: UUID) -> URL {
@@ -133,7 +139,8 @@ actor FailedUploadStore {
             let sidecar = Sidecar(id: upload.id, userId: upload.userId,
                                   rollId: upload.rollId, capturedAt: upload.capturedAt,
                                   photoId: upload.photoId, storagePath: upload.storagePath,
-                                  burstGroup: upload.burstGroup, sharpness: upload.sharpness)
+                                  burstGroup: upload.burstGroup, sharpness: upload.sharpness,
+                                  quality: upload.quality, phash: upload.phash, isMiss: upload.isMiss)
             let meta = try JSONEncoder().encode(sidecar)
             // Image first. A crash between the two writes leaves an orphan jpg, which `load`
             // ignores and `prune` collects. The reverse order would leave a sidecar promising a
@@ -164,7 +171,8 @@ actor FailedUploadStore {
             result.append(FailedUpload(id: sidecar.id, data: imageData, userId: sidecar.userId,
                                        rollId: sidecar.rollId, capturedAt: sidecar.capturedAt,
                                        photoId: sidecar.photoId, storagePath: sidecar.storagePath,
-                                       burstGroup: sidecar.burstGroup, sharpness: sidecar.sharpness))
+                                       burstGroup: sidecar.burstGroup, sharpness: sidecar.sharpness,
+                                       quality: sidecar.quality, phash: sidecar.phash, isMiss: sidecar.isMiss))
         }
         return result.sorted { $0.capturedAt < $1.capturedAt }
     }

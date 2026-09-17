@@ -30,6 +30,13 @@ struct NewAccountIntroTests {
         #expect(NewAccountIntro.lineToShow(.feed, userId: UUID(), createdAt: created) != nil)
         // An old account never sees anything.
         #expect(NewAccountIntro.lineToShow(.feed, userId: UUID(), createdAt: Date(timeIntervalSince1970: 1_700_000_000)) == nil)
+        // A line shown this launch keeps showing after it is marked seen (scroll away, scroll
+        // back); a surface not shown this launch does not.
+        NewAccountIntro.shownThisLaunch.insert(.feed)
+        defer { NewAccountIntro.shownThisLaunch.remove(.feed) }
+        #expect(NewAccountIntro.lineToShow(.feed, userId: me, createdAt: created) == NewAccountIntro.Surface.feed.line)
+        NewAccountIntro.markSeen(.rolls, userId: me)
+        #expect(NewAccountIntro.lineToShow(.rolls, userId: me, createdAt: created) == nil)
     }
 
     @Test("every surface has a line with no em dash and no exclamation mark")

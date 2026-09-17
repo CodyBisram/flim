@@ -228,6 +228,19 @@ struct FailedUploadStoreTests {
         #expect(restored?.sharpness == 0.72)
     }
 
+    @Test("the rest of the capture-time analysis survives the disk too")
+    func analysisSurvivesDisk() async {
+        let (store, root) = makeStore(); defer { cleanUp(root) }
+        let user = UUID()
+        let upload = FailedUpload(data: jpeg(), userId: user, rollId: nil, burstGroup: UUID(), sharpness: 0.5,
+                                  quality: 0.81, phash: 1234567, isMiss: true)
+        #expect(await store.save(upload))
+        let restored = await FailedUploadStore(root: root).load(userId: user).first
+        #expect(restored?.quality == 0.81)
+        #expect(restored?.phash == 1234567)
+        #expect(restored?.isMiss == true)
+    }
+
     @Test("a sidecar written before burst_group/sharpness existed still loads, both nil")
     func legacySidecarHasNoBurstFields() async throws {
         // Same reasoning as `legacySidecarStillLoads` for `photoId`/`storagePath`: a capture

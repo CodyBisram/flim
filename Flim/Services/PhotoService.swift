@@ -453,6 +453,16 @@ final class PhotoService {
                                   capturedAt: record.capturedAt, photoId: record.photoId, storagePath: record.storagePath,
                                   burstGroup: burst.group, sharpness: burst.sharpness,
                                   quality: burst.quality, phash: burst.phash, isMiss: burst.isMiss)
+            // The disk copy carries the analysis too, so a retry after a relaunch inserts the
+            // numbers this capture actually scored (the first sidecar above predates them).
+            if persisted { _ = await Task.detached(priority: .utility) { [record] in await store.save(record) }.value }
+            // This capture is the SECOND frame of a fresh pair: the earlier frame's row already
+            // exists (it inserted before this one) and only just learned its group. Patched HERE,
+            // as soon as the verdict is known and whatever happens to this capture's own insert:
+            // a group of one on the earlier frame is harmless, while a patch that waited for
+            // success was dropped for good by any failure below (nightly review, 2026-09-05).
+            // One UPDATE, its own row only, best-effort, fire-and-forget.
+            Self.patchEarlierBurstGroup(burst.patchEarlier)
             let payload = InsertPhoto(
                 id: photoId,
                 userId: userId,
@@ -538,12 +548,6 @@ final class PhotoService {
             // the app is not, which is when it is most wrong.
             if let rollId { await syncRollActivity(rollId: rollId) }
             Usage.log(.photoCaptured)
-            // This capture is the SECOND frame of a fresh pair: the earlier frame's row already
-            // exists (it inserted before this one), and only just learned its group. One UPDATE,
-            // its own row only, best-effort like every other patch in this file, fire-and-forget
-            // rather than gating this capture's own success on it: a dropped patch just leaves the
-            // earlier frame temporarily ungrouped, not the current photo lost.
-            Self.patchEarlierBurstGroup(burst.patchEarlier)
 
             // The photo is still returned and its renditions still upload: it exists server-side
             // under the account that took it, and abandoning that work would lose a real photo.
@@ -686,10 +690,6 @@ final class PhotoService {
 
             // The row exists now, independent of whether this account is still the current one
             // below, same reasoning as the ordinary success path above.
-            // Same reasoning as the ordinary success path: a fresh pair's second frame can only
-            // ever reach ONE insert (this one, since the roll-developed refusal means it's the
-            // only insert that lands), so this is the sole place this fallback needs to fire it.
-            Self.patchEarlierBurstGroup(burst.patchEarlier)
             // Same seed as the ordinary success path: `imageData` is the exact byte buffer already
             // sitting in Storage under `path` (uploaded before the primary insert refused), so the
             // re-homed shot's later save/share reads from disk instead of re-downloading.

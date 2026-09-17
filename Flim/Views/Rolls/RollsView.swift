@@ -392,9 +392,11 @@ struct RollsView: View {
 
             Button {
                 Haptics.tap()
-                // The Camera already accepts a pre-selected roll; reuse that path, then
-                // switch tabs. Two notifications because they already exist separately.
-                NotificationCenter.default.post(name: .selectCameraRoll, object: roll)
+                // Persist the pick, do not just broadcast it: the camera is usually not
+                // mounted when this is tapped, and a bare notification then reaches nobody,
+                // leaving the camera on whatever roll it last had (nightly review, 2026-08-27).
+                // `CameraRollSelection.select` is the one door, same as create and join.
+                if let uid = auth.currentUser?.id { CameraRollSelection.select(roll, for: uid) }
                 NotificationCenter.default.post(name: .openCamera, object: nil)
             } label: {
                 HStack(spacing: 8) {

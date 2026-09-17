@@ -107,13 +107,14 @@ struct MainTabView: View {
     @Environment(ChapterService.self) private var chapters
     /// Owned here (not in RollsView) so a `reveal` push destination, and `-openRollId` in DEBUG,
     /// can push straight into a roll's detail without the Rolls tab needing to already be open.
-    @State private var rollsPath = NavigationPath()
-    /// The roll ids currently pushed onto `rollsPath`, oldest first, kept in lockstep with every
-    /// mutation of that path. A `NavigationPath` is opaque; it cannot be inspected for the `Roll`
-    /// values it carries, so this is the only way to answer "is this roll already in the stack"
-    /// before deciding whether `route(to: .reveal)` should append or pop back to it. See
-    /// `rollsPathAction(for:pushedRollIds:)`.
-    @State private var rollsPathIds: [UUID] = []
+    /// Typed, not a bare `NavigationPath`: the Rolls stack only ever holds `Roll` values (the one
+    /// `navigationDestination(for: Roll.self)` in RollsView), and a typed path can be READ. The
+    /// old shadow array `rollsPathIds` was kept in step only by the programmatic pushes here;
+    /// RollsView's own `NavigationLink(value:)` pushes and every Back bypassed it, so after one
+    /// tap-then-back a push for that roll found its id "already in the stack" and pushed nothing
+    /// (nightly review, 2026-09-06). Now the stack is its own record.
+    @State private var rollsPath: [Roll] = []
+    private var rollsPathIds: [UUID] { rollsPath.map(\.id) }
     /// A roll-photo push's intent (a specific photo, and whether to open its comment thread),
     /// handed alongside `rollsPath.append` so `RollDetailView` can open it once it's safe to. See
     /// `RollPhotoIntent`'s own doc for why this is id-keyed rather than positional.
@@ -327,7 +328,6 @@ struct MainTabView: View {
                         try? await rolls.fetchRolls(for: uid)   // refresh coverPaths
                         if args.contains("-seedRollOpen"),
                            let updated = rolls.rolls.first(where: { $0.id == first.id }) {
-                            rollsPathIds.append(updated.id)
                             rollsPath.append(updated)
                         }
                     }
@@ -353,7 +353,6 @@ struct MainTabView: View {
                     guard let uid = auth.currentUser?.id else { return }
                     try? await rolls.fetchRolls(for: uid)
                     if let roll = rolls.rolls.first(where: { $0.id == rollId }) {
-                        rollsPathIds.append(roll.id)
                         rollsPath.append(roll)
                     }
                 }
@@ -374,7 +373,6 @@ struct MainTabView: View {
                     try? await rolls.fetchRolls(for: uid)
                     guard let roll = rolls.rolls.first(where: { $0.id == debugRollId }) else { return }
                     pendingRollPhoto = RollPhotoIntent(rollId: debugRollId, photoId: debugPhotoId, comments: debugComments)
-                    rollsPathIds.append(roll.id)
                     rollsPath.append(roll)
                 }
             }
@@ -400,7 +398,6 @@ struct MainTabView: View {
                     try? await rolls.fetchRolls(for: uid)
                     guard let roll = rolls.rolls.first(where: { $0.isDeveloped }) else { return }
                     UserDefaults.standard.removeObject(forKey: "rollRevealSeen.\(roll.id.uuidString)")
-                    rollsPathIds.append(roll.id)
                     rollsPath.append(roll)
                 }
             }
@@ -466,8 +463,7 @@ struct MainTabView: View {
 
         case .rolls:
             selected = 2
-            rollsPath = NavigationPath()   // land on the tab's root, not whatever detail was pushed
-            rollsPathIds = []
+            rollsPath = []   // land on the tab's root, not whatever detail was pushed
 
         case .joinRoll(let code):
             selected = 2
@@ -490,13 +486,9 @@ struct MainTabView: View {
                 let shouldAppend: Bool
                 switch rollsPathAction(for: roll.id, pushedRollIds: rollsPathIds) {
                 case .popTo(let keepingFirst):
-                    while rollsPathIds.count > keepingFirst {
-                        rollsPath.removeLast()
-                        rollsPathIds.removeLast()
-                    }
+                    while rollsPath.count > keepingFirst { rollsPath.removeLast() }
                     shouldAppend = false
                 case .append:
-                    rollsPathIds.append(roll.id)
                     shouldAppend = true
                 }
                 // A comment/mention/reaction push on a roll photo. Set BEFORE the append below, so

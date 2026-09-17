@@ -664,14 +664,17 @@ struct RollRevealView: View {
         }
     }
 
-    /// Shown when every shot in the deck was deleted (either before this member opened the
-    /// reveal, or one by one as each dead frame was skipped during playback).
+    /// Shown when nothing can play: every shot was deleted (before this member opened the
+    /// reveal, or one by one as each was skipped during playback), or every surviving shot is a
+    /// dead frame, which the roll still holds and the grid still shows, marked.
     private var emptyState: some View {
         VStack(spacing: 14) {
             Image(systemName: "photo.on.rectangle.angled")
                 .font(.system(size: 40, weight: .ultraLight))
                 .foregroundStyle(accent.opacity(0.8))
-            Text("The shots in this roll were deleted.")
+            Text(viewModel.onlyDeadFrames
+                 ? "Every shot in this roll came out black or blurred. They're in the roll, marked Missed."
+                 : "The shots in this roll were deleted.")
                 .flimFont(20, weight: .light, relativeTo: .title3)
                 .foregroundStyle(.white)
                 .multilineTextAlignment(.center)

@@ -350,6 +350,36 @@ pure and tested.
 its documents stay in place, but the next release iterates on 1.5.3 from main. Main's version
 moves to 1.5.4 for its own builds.
 
+### The 1.5.4 game plan (2026-09-17, written with the week's data; owner gave full autonomy)
+
+**What the week said.** Seven-day uniques are up on every axis over the seven before (openers
+50 vs 37, shooters 33 vs 30, posters 29 vs 24, reactors 32 vs 25) while posts fell (134 vs 190):
+more people, each doing a little less, and the launch-weekend peak decaying through the week
+(daily openers 33 to 24, shooters 18 to 6). Responses hold (150 of 154 posts answered, median
+37 minutes, nobody unanswered). Reciprocal pairs flat at 53. Zero crashes, two pushes gave up
+of 633, zero missing renditions, zero open reports. Adoption: 22 on 1.5.3, 11 still on 1.5.2,
+5 on 1.5.4 builds. The three campaigns: first-photo moved one of seven to a first shot, and one
+of the seven (leed, a FLIMGO arrival) went and followed nineteen people the next day; the
+invites push produced one invitation, which signed up. The cohort-code landing (now on main)
+is the fix for the pattern behind both.
+
+**The plan, in order. Ship by the weekend, then run the Founding 30 campaign on it.**
+
+1. Correctness from the review ledger, the rows a person can hit (each its own commit):
+   "Shoot into this roll" can point the camera at the wrong roll; account switch keeps the old
+   account's follow-up invites; the Rolls navigation path bypass; a reveal whose survivors are
+   all dead frames says "shots were deleted"; a burst's pairing lost on a generic upload
+   failure; FirstVisitLine marked seen when scrolled off; the daily digest's missing run lock;
+   comment-like pushes skipping the audience check; setAccent without an epoch guard.
+2. Invite quota on your own page: already built (the Invite button reads "3 invites left"
+   once the count loads). Struck.
+3. NUMBERS.md header regenerated when the columns change (the Sep 15 and 16 rows carry a
+   column the header does not name; my job's bug).
+4. What's New, submit. Then: the Founding 30 code (30 spots, one week), the study.
+
+Not in 1.5.4: launch surface and tab order (study), anything from v2 batches 1 and 5, the
+supporter plan.
+
 ### done 2026-09-16: seen-marks follow the account, and the ledger jumps to the first unseen
 
 A reinstall showed the owner "16 shots from 8 friends" he had already read: seen-marks were
@@ -385,6 +415,21 @@ the reveal line); the no-known-person landing (a code arrival lands on Find frie
 The four from the audit the owner picked on 2026-09-10: the durable capture queue with visible
 capture status, one invitation journey (a roll code admits you), deletion order, and the photo
 write boundary. In that order of value; built in the order of size.
+
+### done 2026-09-17: nine ledger rows, and the numbers table's header
+
+Each a real defect a person could hit, from `docs/reviews/OPEN.md`: "Shoot into this roll" now
+persists the pick through `CameraRollSelection.select` (a bare notification reached no camera);
+`resetForAccountChange` clears follow-up invites; the Rolls stack is a typed `[Roll]` path so
+tap-then-back no longer leaves a ghost id that made a push do nothing; a reveal whose survivors
+are all dead frames says so instead of "shots were deleted"; the earlier burst frame is patched
+the moment the verdict is known (a generic failure used to drop it forever) and the sidecar
+carries quality, phash and the Missed verdict; the first-visit line is marked seen after five
+seconds on screen, not on scroll-off, and keeps showing for the launch; the daily digest takes
+the run lease the other senders take (DEPLOYED); comment-like pushes take the audience gate
+(DEPLOYED); `setAccent` is bound to the account it started under. NUMBERS.md rewrites its
+header when a column is added. Tests for the sidecar fields, the first-visit rule and the
+existing ones; suite green.
 
 ### done 2026-09-17: the feed's count is the whole window, and the tap always lands
 

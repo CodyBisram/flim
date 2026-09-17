@@ -34,6 +34,20 @@ text = path.read_text() if path.exists() else header
 if "\n| day |" not in text and not text.startswith(header.split("\n\n")[0]):
     text = header
 lines = [l for l in text.splitlines(keepends=True) if not l.startswith(f"| {d['day']} |")]
+# A column added since the file was born: rewrite the header and pad or trim every old row to
+# the new shape (new columns read blank for old days), so the table never carries a row with
+# more cells than the header names (which is what happened on 2026-09-15 and 16).
+header_line = "| " + " | ".join(cols) + " |\n"
+old_header_i = next((i for i, l in enumerate(lines) if l.startswith("| day |")), None)
+if old_header_i is not None and lines[old_header_i] != header_line:
+    old_cols = [c.strip() for c in lines[old_header_i].strip().strip("|").split("|")]
+    lines[old_header_i] = header_line
+    lines[old_header_i + 1] = "|" + "---|" * len(cols) + "\n"
+    for i in range(old_header_i + 2, len(lines)):
+        if not lines[i].startswith("| "): continue
+        cells = [c.strip() for c in lines[i].strip().strip("|").split("|")]
+        by = dict(zip(old_cols, cells)) if len(cells) == len(old_cols) else dict(zip(cols, cells))
+        lines[i] = "| " + " | ".join(by.get(c, "") for c in cols) + " |\n"
 lines.append(row)
 path.write_text("".join(lines))
 problems = []
