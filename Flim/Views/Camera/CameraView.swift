@@ -77,6 +77,20 @@ struct CameraView: View {
     @AppStorage("developNotificationsEnabled") private var notificationsEnabled = true
     @State private var unsortedCount = 0
     @State private var showSortDeck = false
+    /// True for a few seconds after the last shot in line finished uploading, so the chip can
+    /// say "Uploaded" before the sort shortcut takes the slot back.
+    @State private var justUploaded = false
+    @State private var uploadedNoticeId = UUID()
+    @Environment(NetworkMonitor.self) private var network
+
+    private var captureStatus: CaptureStatus? {
+        CaptureStatus.derive(localSaveFailed: photos.localSaveFailed,
+                             pendingCount: photos.pendingCaptureCount,
+                             isUploading: photos.isUploading,
+                             failedCount: photos.failedUploads.count,
+                             connected: network.isConnected,
+                             justUploaded: justUploaded)
+    }
     /// A queued shot's roll finished developing before its retry could land, so it was re-saved
     /// as a personal instant into the sort deck instead of staying stuck (see
     /// `PhotoService.captureAsPersonalFallback`). Not framed as an error: nothing was lost.
@@ -270,6 +284,18 @@ struct CameraView: View {
         // `personalFallbackCount` only ever goes up, so every genuine fallback is its own change
         // even if two land back to back with identical copy. Fires for both a fresh capture that
         // raced the roll's own develop and a manual "Retry" of an item queued before it developed.
+        // "Uploaded" for three seconds once the line empties cleanly, then the slot goes back
+        // to the sort shortcut. Scoped to its own notice so a new upload cannot be cut short.
+        .onChange(of: photos.isUploading) { was, now in
+            guard was, !now, photos.pendingCaptureCount == 0, photos.failedUploads.isEmpty else { return }
+            let notice = UUID()
+            uploadedNoticeId = notice
+            withAnimation { justUploaded = true }
+            Task {
+                try? await Task.sleep(for: .seconds(3))
+                if uploadedNoticeId == notice { withAnimation { justUploaded = false } }
+            }
+        }
         .onChange(of: photos.personalFallbackCount) { _, count in
             guard count > 0 else { return }
             Haptics.success()
@@ -558,52 +584,14 @@ struct CameraView: View {
 
                 Spacer()
 
-                // Upload status, compact spinner only, so it can't crowd the top row.
-                if photos.isUploading {
-                    // "Saving N" once more than one shot is in line, so a burst on a slow
-                    // connection reads as shots safely queued on this phone, not as a hang.
-                    HStack(spacing: 6) {
-                        ProgressView().tint(.white).controlSize(.mini)
-                        if photos.pendingCaptureCount > 1 {
-                            Text("Saving \(photos.pendingCaptureCount)")
-                                .flimFont(13, weight: .medium)
-                                .foregroundStyle(.white)
-                                .lineLimit(1).fixedSize()
-                        }
-                    }
-                    .frame(minWidth: 38, minHeight: 38)
-                    .padding(.horizontal, photos.pendingCaptureCount > 1 ? 12 : 0)
-                    .glassCapsule()
-                    // Uploading is not developing: a personal shot is on its way to the server,
-                    // not waiting for a group reveal. Say which.
-                    .accessibilityLabel(photos.pendingCaptureCount > 1
-                        ? "Saving \(photos.pendingCaptureCount) photos on this phone, then uploading"
-                        : "Uploading")
-                } else if photos.hasFailedUploads {
-                    Button {
+                // The capture's state, in words (v2): saved, uploading, queued, uploaded. The
+                // shortcut into the sort deck takes the slot once nothing is in flight.
+                if let status = captureStatus {
+                    CaptureStatusChip(status: status) {
                         Task { await photos.retryFailedUploads() }
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "exclamationmark.arrow.circlepath")
-                                .font(.system(size: 12))
-                            Text("Retry \(photos.failedUploads.count)")
-                                .flimFont(13, weight: .medium)
-                                .lineLimit(1).fixedSize()
-                        }
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 9)
-                        .background(Color(red: 0.8, green: 0.2, blue: 0.2).opacity(0.85), in: Capsule())
                     }
-                    // A bare count says something went wrong without saying what, which reads as
-                    // the app being flaky rather than the network being down. VoiceOver gets the
-                    // same sentence, since the pill's own label is just a number.
-                    .accessibilityLabel(photos.failedUploads.count == 1
-                        ? "Retry 1 photo that did not upload"
-                        : "Retry \(photos.failedUploads.count) photos that did not upload")
-                    .accessibilityHint(photos.uploadError ?? "")
+                    .frame(maxWidth: 260, alignment: .trailing)
                 } else if unsortedCount > 0 {
-                    // Shortcut into the sort deck, sits where the "Developing…" pill does.
                     Button { showSortDeck = true } label: {
                         HStack(spacing: 5) {
                             Image(systemName: "square.stack.3d.up.fill").font(.system(size: 12))
@@ -617,25 +605,6 @@ struct CameraView: View {
                     }
                     .accessibilityLabel("\(unsortedCount) to sort")
                 }
-            }
-
-            // The reason, once, under the pill. The count alone told someone that something had
-            // gone wrong without telling them it was the network, or that the photo was still
-            // safe, which is the difference between "the app lost my shot" and "I'll retry when
-            // I have signal". Kept to one line so the viewfinder stays a viewfinder.
-            // The unsaved-shot warning outranks a network message: one says the phone may lose
-            // the photo, the other says the network is slow. Neither clears the other.
-            if let warning = photos.localSaveFailed ? PhotoService.localSaveFailedMessage
-                : (photos.hasFailedUploads ? photos.uploadError : nil) {
-                Text(warning)
-                    .flimFont(11)
-                    .foregroundStyle(.white.opacity(0.85))
-                    .lineLimit(2)
-                    .multilineTextAlignment(.trailing)
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-                    .padding(.top, 6)
-                    .shadow(color: .black.opacity(0.6), radius: 3)
-                    .accessibilityHidden(true)   // already the pill's hint
             }
         }
         .padding(.top, 12)

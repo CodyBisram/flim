@@ -269,10 +269,16 @@ final class FeedService {
     }
 
     func followerCount(_ userId: UUID) async -> Int {
-        (try? await supabase.from("follows")
+        await followerCountIfKnown(userId) ?? 0
+    }
+
+    /// nil when the count could not be read, so a sentence like "That's N people right now"
+    /// is never said with a 0 that a flaky network produced.
+    func followerCountIfKnown(_ userId: UUID) async -> Int? {
+        try? await supabase.from("follows")
             .select("follower_id", head: true, count: .exact)
             .eq("following_id", value: userId.uuidString)
-            .execute().count) ?? 0
+            .execute().count
     }
 
     func followingCount(_ userId: UUID) async -> Int {

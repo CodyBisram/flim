@@ -49,6 +49,100 @@ extension View {
     }
 }
 
+/// The type roles (v2 foundations, 2026-09-14). Each names the system text style it grows
+/// with, and the styles do not grow at one rate: from Large to AX5 Apple scales .title3 by
+/// 2.35 but .caption2 by 3.64, so small type grows faster than large and the hierarchy
+/// compresses. Nothing essential lives below Meta, and Stamp never scales: it is part of the
+/// photograph. New surfaces take a role; older ones keep their hand-picked sizes until each is
+/// revisited, since the sizes are a design and a bulk rename would be a redesign.
+enum FlimType {
+    /// 26/300, one per screen, left-aligned. Wraps to two lines, never truncates.
+    case pageTitle
+    /// 17/500, centred in a sheet's own bar.
+    case sheetTitle
+    /// 16/500, a person's display name. Wraps before it truncates.
+    case name
+    /// 14.5/400, captions, comments, explanations. Never clamped below two lines.
+    case body
+    /// 14/600, button and control labels. The label never shrinks; the control grows.
+    case control
+    /// 13/500, secondary actions, relationship state, section routes.
+    case label
+    /// 12.5/400, handles, times, derived lines. Truncation allowed at default sizes only.
+    case meta
+    /// 11/500, pills and counters. Grows fastest, so it is always duplicated in words nearby.
+    case micro
+    /// 13/500 mono, invite and roll codes. Scales: you read it aloud and type it.
+    case code
+    /// 11/400 mono, the burned-in capture date. Does not scale, by definition.
+    case stamp
+    /// 11/400 mono, wide-tracked structural labels: MONTHS, RECENT.
+    case sectionRule
+
+    var size: CGFloat {
+        switch self {
+        case .pageTitle: 26
+        case .sheetTitle: 17
+        case .name: 16
+        case .body: 14.5
+        case .control: 14
+        case .label, .code: 13
+        case .meta: 12.5
+        case .micro, .stamp, .sectionRule: 11
+        }
+    }
+
+    var weight: Font.Weight {
+        switch self {
+        case .pageTitle: .light
+        case .body, .meta, .stamp, .sectionRule: .regular
+        case .control: .semibold
+        default: .medium
+        }
+    }
+
+    var design: Font.Design {
+        switch self {
+        case .code, .stamp, .sectionRule: .monospaced
+        default: .default
+        }
+    }
+
+    var textStyle: Font.TextStyle {
+        switch self {
+        case .pageTitle: .title3
+        case .sheetTitle: .body
+        case .name: .callout
+        case .body, .control: .subheadline
+        case .label, .meta, .code: .footnote
+        case .micro, .stamp, .sectionRule: .caption2
+        }
+    }
+
+    var tracking: CGFloat {
+        switch self {
+        case .pageTitle: 0.4
+        case .code: 0.8
+        case .stamp: 0.9
+        case .sectionRule: 1.8
+        default: 0
+        }
+    }
+}
+
+extension View {
+    /// A v2 type role. `.stamp` is the one role set at a fixed size, because it belongs to the
+    /// photograph rather than to the interface.
+    @ViewBuilder
+    func flimType(_ role: FlimType) -> some View {
+        if role == .stamp {
+            font(.system(size: role.size, weight: role.weight, design: role.design)).tracking(role.tracking)
+        } else {
+            flimFont(role.size, weight: role.weight, design: role.design, relativeTo: role.textStyle).tracking(role.tracking)
+        }
+    }
+}
+
 extension View {
     /// Extends the tappable area outward on every side without moving anything on screen.
     ///

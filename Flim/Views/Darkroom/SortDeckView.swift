@@ -155,9 +155,9 @@ struct SortDeckView: View {
     @ViewBuilder private var publishErrorBanner: some View {
         if postedNotice, publishError == nil {
             HStack(spacing: 10) {
-                Label("Posted to your page", systemImage: "checkmark.circle.fill")
-                    .flimFont(13, weight: .medium, relativeTo: .subheadline)
-                    .foregroundStyle(FlimTheme.textSecondary)
+                Label("Posted to your page. Your followers can see it.", systemImage: "checkmark.circle.fill")
+                    .flimType(.label)
+                    .foregroundStyle(FlimTheme.success)
                 Button("View") {
                     guard let uid = auth.currentUser?.id else { return }
                     closeDeck(then: .profile(userId: uid))
@@ -270,10 +270,10 @@ struct SortDeckView: View {
 
     private var dragLabels: some View {
         ZStack {
-            label("PUBLISH", color: .green, angle: -14)
+            label("POST", color: FlimTheme.success, angle: -14)
                 .opacity(Double(max(0, drag.width) / 90))
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            label("ARCHIVE", color: accent, angle: 14)
+            label("KEEP", color: accent, angle: 14)
                 .opacity(Double(max(0, -drag.width) / 90))
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
         }
@@ -293,13 +293,15 @@ struct SortDeckView: View {
 
     private var controls: some View {
         VStack(spacing: 14) {
-            HStack(spacing: 26) {
-                circleButton("tray.and.arrow.down", tint: accent, size: 54,
-                             caption: "Keep", label: "Keep. Only you see it, in your Darkroom") { performSwipe(.archive) }
-                circleButton("trash", tint: .red, size: 54,
+            // One sorting vocabulary (v2): the word under each circle says what happens, and
+            // the three consequential actions always pair their glyph with a word.
+            HStack(alignment: .top, spacing: 22) {
+                circleButton("lock", tint: accent, size: 54,
+                             caption: "Keep private", label: "Keep private. Only you see it, in your Darkroom") { performSwipe(.archive) }
+                circleButton("trash", tint: FlimTheme.destructive, size: 54,
                              caption: "Delete", label: "Delete photo") { performSwipe(.trash) }
-                circleButton("paperplane.fill", tint: .green, size: 54,
-                             caption: "Post", label: "Post to your page, for the people who follow you") { performSwipe(.publish) }
+                circleButton("paperplane", tint: FlimTheme.success, size: 54,
+                             caption: "Post to page", label: "Post to your page, for the people who follow you") { performSwipe(.publish) }
             }
 
             // One line, once, and only while it can still change what you do. Three tinted
@@ -307,9 +309,11 @@ struct SortDeckView: View {
             // card is already moving, so the first time through the only way to find out that
             // right means POST is to post something.
             if showSwipeHint {
-                Text("Right posts it to your page. Left keeps it private, in your Darkroom.")
-                    .flimFont(12, relativeTo: .caption)
+                Text("Keeping a photo puts it in your Darkroom, where only you can see it. Posting shows it to the people who follow you.")
+                    .flimType(.meta)
                     .foregroundStyle(FlimTheme.textSecondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, FlimSpace.xxl)
                     .transition(.opacity)
             }
         }
@@ -337,8 +341,10 @@ struct SortDeckView: View {
             // deliberately bigger than Keep/Post's.
             .frame(height: Self.largestCircleSize)
             Text(caption)
-                .flimFont(11, relativeTo: .caption2)
+                .flimType(.label)
                 .foregroundStyle(FlimTheme.textSecondary)
+                .multilineTextAlignment(.center)
+                .frame(width: 92)
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(label)

@@ -55,8 +55,56 @@ func shareDestinationDayLabel(_ dayKey: Date, calendar: Calendar = .current) -> 
     return formatter.string(from: dayKey)
 }
 
-/// The audience, under the sheet's title. One sentence, the same everywhere the rule is stated.
-let shareAudienceLine = "People who follow you can see it."
+/// The audience, said where the decision is made (v2). Followers, plus anyone tagged, never
+/// "friends". The count is read when the sheet opens; until it lands the sentence stands
+/// without it, and the tag sentence appears only when a tag exists, never as boilerplate.
+struct ShareAudience: Equatable {
+    var followerCount: Int?
+    var taggedNames: [String]
+
+    var title: String {
+        switch taggedNames.count {
+        case 0: return "Your followers can see this"
+        case 1: return "Your followers, and \(taggedNames[0])"
+        case 2: return "Your followers, \(taggedNames[0]) and \(taggedNames[1])"
+        default: return "Your followers, and \(taggedNames.count) people you tagged"
+        }
+    }
+
+    var detail: String {
+        var lines: [String] = []
+        if let n = followerCount {
+            lines.append(n == 1 ? "That's 1 person right now, and anyone who follows you later."
+                                : "That's \(n) people right now, and anyone who follows you later.")
+        } else {
+            lines.append("And anyone who follows you later.")
+        }
+        switch taggedNames.count {
+        case 0: break
+        case 1: lines.append("You tagged \(taggedNames[0]), so they can see this photo whether or not they follow you.")
+        default: lines.append("People you tag can see this photo whether or not they follow you.")
+        }
+        return lines.joined(separator: " ")
+    }
+}
+
+/// The audience sentence as a view: title in Body, detail in Meta, on the sheet's own ground.
+struct AudienceLine: View {
+    let audience: ShareAudience
+    var body: some View {
+        VStack(alignment: .leading, spacing: FlimSpace.xxs) {
+            Text(audience.title)
+                .flimType(.body)
+                .foregroundStyle(.white)
+            Text(audience.detail)
+                .flimType(.meta)
+                .foregroundStyle(FlimTheme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+    }
+}
 
 /// The consequence line under the primary button, matching the tag-chip count exactly. Never
 /// omitted: a share with nobody tagged still states that plainly, rather than leaving the
@@ -117,6 +165,8 @@ struct ShareToFeedSheet: View {
 
     @State private var caption = ""
     @State private var tags: [PendingTag] = []
+    /// Read when the sheet opens, for the audience sentence; nil until it lands.
+    @State private var followerCount: Int?
     @State private var showAddPeople = false
     @State private var todayCount: ShareDestinationCount = .loading
     /// In-flight guard: `share()` dismisses synchronously on tap, so a second tap has no button
@@ -156,18 +206,15 @@ struct ShareToFeedSheet: View {
                     .flimFont(17, weight: .light, relativeTo: .body)
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity, alignment: .center)
-                // Who will see it, said once, where the decision is made. Posts have been
-                // readable by followers since 2026-09-13 and the only place that said so was
-                // the sort deck's accessibility label (audit A8).
-                Text(shareAudienceLine)
-                    .flimFont(12, relativeTo: .caption)
-                    .foregroundStyle(FlimTheme.textTertiary)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.top, -10)
 
                 destinationRow
                 captionField
                 taggedSection
+                // Who will see it, said once, where the decision is made, under the tags so
+                // a tagged name is already in the sentence by the time you read it.
+                AudienceLine(audience: ShareAudience(
+                    followerCount: followerCount,
+                    taggedNames: tags.map { $0.user.displayName?.isEmpty == false ? $0.user.displayName! : ($0.user.username.map { "@" + $0 } ?? "them") }))
             }
             .padding(.horizontal, 20)
             .padding(.top, 14)
@@ -202,9 +249,10 @@ struct ShareToFeedSheet: View {
             // nothing to guard) leaves `todayCount` at `.loading`, not a resolved 0: a flaky
             // network must not produce the specific false claim "nothing from today is on the
             // feed yet" (see `todayPostCount`'s own doc and `shareDestinationLine2`).
-            guard let uid = auth.currentUser?.id, let count = await feed.todayPostCount(userId: uid)
-            else { return }
-            todayCount = .resolved(count)
+            guard let uid = auth.currentUser?.id else { return }
+            async let followers = feed.followerCountIfKnown(uid)
+            if let count = await feed.todayPostCount(userId: uid) { todayCount = .resolved(count) }
+            followerCount = await followers
         }
     }
 

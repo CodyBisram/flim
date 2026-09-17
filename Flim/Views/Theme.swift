@@ -22,6 +22,31 @@ enum FlimTheme {
     static let bgElevated = Color(white: 0.08)
     static let stroke = Color(white: 0.14)
 
+    // MARK: Semantic roles (v2 foundations, 2026-09-14)
+    //
+    // The v2 package measured the app's own values and named the ones the code stated inline
+    // (.red, .green, a 0.35 opacity for "disabled"). Named here so a state is drawn the same
+    // way everywhere and its contrast is a known number. Ratios are against `bg` unless said.
+    /// Cards, the tab bar, image wells. A step up from the ground, not a panel. 1.3:1.
+    static let surface = Color(white: 0.08)
+    /// Rows and fills that sit on a sheet.
+    static let row = Color.white.opacity(0.06)
+    /// Hairline seams and control borders. Same value as `stroke`; the name says what it is for.
+    static let divider = stroke
+    /// Uploaded, posted, joined. Always icon plus words, never a bare green dot. 10.9:1.
+    static let success = Color(red: 0.50, green: 0.82, blue: 0.60)
+    /// Delete, block, sign out. iOS's own dark-mode red, which `.red` already resolves to;
+    /// named so it can never be confused with rose, which is a person's colour. 5.8:1.
+    static let destructive = Color(red: 1.0, green: 0.27, blue: 0.23)
+    /// Text of an unavailable control. 3.2:1 on bg, under 3:1 on a row, so a disabled control
+    /// always says why in secondary text beside it; the dimming is never the only cue.
+    static let disabled = Color(white: 0.38)
+    /// Skeletons, at the real geometry of what is coming. Pulsed 35 to 70 percent by the caller.
+    static let loading = Color(white: 0.11)
+    /// "Not yet saved", "queued offline": the accent with a warning glyph, deliberately not a
+    /// third colour. A state to attend to, not an error.
+    static func warning(_ accent: Color) -> Color { accent }
+
     /// The user-chosen accent (defaults to warm amber). Read from UserDefaults so it applies
     /// everywhere `FlimTheme.accent` is used; changing it recolors the app as views re-render.
     static let accentKey = "accentColor"
@@ -77,6 +102,35 @@ enum FlimTheme {
     /// that while still being readable by someone who isn't looking at it in a dark room with
     /// young eyes.
     static let textTertiary = Color(white: 0.55)   // 5.9:1 on bg, 5.1:1 on a sheet; 0.48 was 4.0:1 on a sheet (AA fails)
+}
+
+/// The spacing scale. Nine steps; a gap that is not one of these is a gap nobody decided on.
+enum FlimSpace {
+    static let xxs: CGFloat = 2
+    static let xs: CGFloat = 4
+    static let s: CGFloat = 6
+    static let m: CGFloat = 9
+    static let l: CGFloat = 12
+    static let xl: CGFloat = 16
+    static let xxl: CGFloat = 22
+    static let xxxl: CGFloat = 28
+    static let huge: CGFloat = 36
+    /// The content margin flexes with the phone, the type does not: 14 on a compact iPhone,
+    /// 16 at the reference width, 18 on the large ones. Photographs keep their inset (see
+    /// `FeedUnitCard.photoInset`) and their 3:4, so a bigger phone shows more conversation
+    /// beside the same photograph rather than a bigger photograph.
+    static func margin(for width: CGFloat) -> CGFloat {
+        width < 390 ? 14 : (width > 415 ? 18 : 16)
+    }
+}
+
+/// Corner radii by what the corner belongs to. Two nested borders are never allowed.
+enum FlimRadius {
+    static let photo: CGFloat = 6
+    static let control: CGFloat = 12
+    static let panel: CGFloat = 14
+    static let sheet: CGFloat = 16
+    static let viewfinder: CGFloat = 28
 }
 
 /// The accent, as something SwiftUI can actually see change.

@@ -150,6 +150,10 @@ Twenty-two commits since 378; the copy below covers the seven a person can see.
 
     A push about your invites lands on your invites. Tap it and the sheet with your code is already open.
 
+    Sorting says what it does. The three choices read Keep private, Post to page and Delete, with one line under them saying where each one goes. Posting confirms who can see it. The share sheet says who your post reaches: your followers, how many that is today, and anyone you tagged.
+
+    The camera tells you where a shot is. Saved on this phone, uploading, queued until you're back online, or uploaded and waiting in the Darkroom. The camera asks for its permission the first time you open it, and if you've turned it off, the screen says where the switch is and offers the feed instead.
+
     Fixes. Shoot into this roll always points the camera at that roll. Tapping a roll notification after you had opened and closed that roll works again. A roll whose only shots came out black or blurred says so instead of saying they were deleted. A burst's frames stay grouped even if the first upload fails and retries. The one-line introductions on each screen stay put until you've read them. Switching accounts on one phone no longer shows the other account's roll invitations.
 
 ### Ship notes (internal, do NOT paste)

@@ -416,6 +416,19 @@ The four from the audit the owner picked on 2026-09-10: the durable capture queu
 capture status, one invitation journey (a roll code admits you), deletion order, and the photo
 write boundary. In that order of value; built in the order of size.
 
+### done 2026-09-17: four pieces of v2 batch 1 adopted, the feed card left where it is
+
+The owner asked what from v2 belongs in 1.5.4 besides the feed. Taken: the doubled "at" fix in
+develop times (a bug that only existed on v2, cherry-picked); camera permission on first Camera
+open with the refusal's Back to Feed (batch 2b, cherry-picked); the sort deck vocabulary (Keep
+private · Post to page · Delete, lock / paperplane / trash, the one-line explanation, KEEP /
+POST drag labels, "Posted to your page. Your followers can see it."); the five capture states
+on the camera (`CaptureStatusChip`); the share sheet's audience sentence with the follower
+count and the tagged name (`ShareAudience`, `followerCountIfKnown`). The token files
+(`FlimTheme` roles, `FlimSpace`, `FlimRadius`, `FlimType`) came with them. Left on v2: the
+feed card's inset, ResponseRow, PositionCue, the EmojiPickerSheet extraction. Copy is the
+owner's; he saw the deck and the chip on build 379.
+
 ### done 2026-09-17: nine ledger rows, and the numbers table's header
 ### done 2026-09-17: camera permission on first Camera open (v2 batch 2b, brought to main)
 
