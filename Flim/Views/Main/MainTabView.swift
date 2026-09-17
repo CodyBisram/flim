@@ -188,7 +188,7 @@ struct MainTabView: View {
                 // its own destination inside itself.
                 NavigationStack(path: $feedPath) {
                     FeedView(scrollToTop: scrollSignal[3, default: 0])
-                        .navigationDestination(for: ProfileRoute.self) { UserPageView(userId: $0.id) }
+                        .navigationDestination(for: ProfileRoute.self) { UserPageView(userId: $0.id, openInvite: $0.openInvite) }
                         .navigationDestination(for: FeedItem.self) { item in
                             let decision = focusCommentsDecision(currentFocusPostId: focusCommentsPostId, pushedPostId: item.id)
                             PostDetailView(
@@ -543,6 +543,10 @@ struct MainTabView: View {
             // its own real state, see `UserPageView.load()`), so there's nothing to pre-check here.
             selected = 3
             feedPath.append(ProfileRoute(id: userId))
+        case .invite:
+            guard let uid = auth.currentUser?.id else { return }
+            selected = 3
+            feedPath.append(ProfileRoute(id: uid, openInvite: true))
         }
     }
 

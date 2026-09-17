@@ -386,6 +386,20 @@ The four from the audit the owner picked on 2026-09-10: the durable capture queu
 capture status, one invitation journey (a roll code admits you), deletion order, and the photo
 write boundary. In that order of value; built in the order of size.
 
+### done 2026-09-16: the five from the data
+
+1. Batch 4a brought to main (cherry-pick): a cohort-code arrival lands on Find friends.
+2. Batch 2a brought to main (cherry-pick): thread rows in Activity open their comments over
+   Activity, one gesture back; `FeedCommentsReturnUITests`.
+3. `PushDestination.invite`: your own page with the invite sheet open (`ProfileRoute.openInvite`,
+   `UserPageView(openInvite:)`); `invites-left` routes there (an older build opens the app).
+4. The notification primer: "Know when a friend replies" / "We'll tell you when someone reacts or
+   comments on your shots, and the moment a roll you're in develops. Nothing else." A code arrival
+   with no roll had no reason to say yes to "Don't miss the reveal". Copy is the owner's to veto.
+5. The Versions panel names accounts active in the last 30 days on a build too old to report
+   (`admin_versions.unreported_active`; migration APPLIED; site DEPLOYED). Two today: arielkarina
+   (Aug 6 build, 35 reactions) and ron. A text from the owner, not a push.
+
 ### done 2026-09-16: a cohort-code arrival lands on Find friends (v2 batch 4a, brought to main)
 
 The September numbers' biggest hole: 13 people arrived by the FLIMGO code, ten followed nobody

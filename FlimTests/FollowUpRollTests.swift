@@ -16,6 +16,9 @@ struct FollowUpRollTests {
         let parsed = PushDestination.parse(userInfo: ["flim": ["t": "join", "code": "ab12cd"]])
         #expect(parsed == .joinRoll(code: "AB12CD"))
         #expect(PushDestination.joinRoll(code: "AB12CD").wireValue["t"] as? String == "join")
+        // The invite route (2026-09-16): your own page with the invite sheet open.
+        #expect(PushDestination.parse(userInfo: ["flim": ["t": "invite"]]) == .invite)
+        #expect(PushDestination.invite.wireValue["t"] as? String == "invite")
         #expect(PushDestination.joinRoll(code: "AB12CD").wireValue["code"] as? String == "AB12CD")
         #expect(PushDestination.parse(userInfo: ["flim": ["t": "join", "code": "nope"]]) == nil)
         #expect(PushDestination.parse(userInfo: ["flim": ["t": "join"]]) == nil)

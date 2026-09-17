@@ -1060,6 +1060,16 @@
                       String(v.last_seen || "").slice(0, 16).replace("T", " ")];
             }));
         }
+        var stale = d.unreported_active || [];
+        if (stale.length) {
+          section(host, "Active on a build too old to report",
+                  "a reaction, comment, post or photo in the last 30 days, and no census row: automatic updates are off; a text from you does more than a push");
+          table(host, ["Who", "Last activity"],
+            stale.map(function (s) {
+              return [{ text: s.username, cls: "who" },
+                      String(s.last_activity || "").slice(0, 16).replace("T", " ")];
+            }));
+        }
         host.appendChild(el("div", "card__note",
           "This is a census of accounts that opened a reporting build (1.4.3+), not App Store "
           + "Connect's opt-in sample. Not yet reported mixes people on older versions with "

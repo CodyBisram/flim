@@ -5,6 +5,8 @@ struct UserPageView: View {
     @Environment(\.flimAccent) private var accent
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let userId: UUID
+    /// Open the invite sheet as the page appears (the `invite` push destination). Own page only.
+    var openInvite: Bool = false
     @Environment(AuthService.self) private var auth
     @Environment(FeedService.self) private var feed
     @Environment(ChapterService.self) private var chapterService
@@ -250,6 +252,12 @@ struct UserPageView: View {
             }
         }
         .task {
+            // A push about your invites lands ON the sheet, not one tap short of it. Presented
+            // after the page has painted, so the sheet has a page to sit over.
+            if openInvite, isSelf {
+                try? await Task.sleep(for: .milliseconds(400))
+                showInvite = true
+            }
             await load()
             // Only the owner's own page shows a count, and it fails soft to `.unknown`, which
             // renders a plain "Invite" rather than a number that could be wrong.

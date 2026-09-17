@@ -59,6 +59,9 @@ enum PushDestination: Codable, Equatable {
     case rolls
     /// A follow-up roll invite: open the join sheet with this code filled in.
     case joinRoll(code: String)
+    /// Your own page with the invite sheet open (2026-09-16), so a push about your invites
+    /// lands on the code rather than one tap short of it.
+    case invite
 
     static func parse(userInfo: [AnyHashable: Any]) -> PushDestination? {
         guard let flim = userInfo["flim"] as? [String: Any],
@@ -84,6 +87,8 @@ enum PushDestination: Codable, Equatable {
         case "join":
             guard let raw = flim["code"] as? String, let code = InviteCodeStorage.normalize(raw) else { return nil }
             return .joinRoll(code: code)
+        case "invite":
+            return .invite
         default:
             // An unrecognized destination, most likely a newer server sending a case this build
             // doesn't know about yet. Falling back is the only safe move: opening nothing is
@@ -151,6 +156,8 @@ enum PushDestination: Codable, Equatable {
             return ["t": "rolls"]
         case .joinRoll(let code):
             return ["t": "join", "code": code]
+        case .invite:
+            return ["t": "invite"]
         }
     }
 }

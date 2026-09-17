@@ -489,7 +489,9 @@ async function invitesLeftCohort(): Promise<Recipient[]> {
       userId: id,
       title: invitesLeftTitle(left),
       body: brought > 0 ? invitesLeftBodyReturning(brought) : INVITES_LEFT_BODY_NEW,
-      route: { t: "profile", id },
+      // Lands on the invite sheet on 1.5.4 and later; an older build treats an unknown route
+      // as "open the app", so nobody gets a broken tap.
+      route: { t: "invite" },
     });
   }
   return out;

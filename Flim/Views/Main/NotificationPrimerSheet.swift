@@ -19,10 +19,14 @@ struct NotificationPrimerSheet: View {
             Image(systemName: "bell.badge.fill")
                 .font(.system(size: 46, weight: .light))
                 .foregroundStyle(accent)
-            Text("Don't miss the reveal")
+            // Two reasons, because there are two kinds of first day: a roll arrival has a reveal
+            // to miss; a code arrival with no roll has a friend's reply to miss, and the old
+            // headline gave that person no reason to say yes (2026-09-16).
+            Text("Know when a friend replies")
                 .flimFont(24, weight: .light, relativeTo: .title2)
                 .foregroundStyle(.white)
-            Text("We'll ping you the moment your roll develops, and when friends react or comment on your shots.")
+                .multilineTextAlignment(.center)
+            Text("We'll tell you when someone reacts or comments on your shots, and the moment a roll you're in develops. Nothing else.")
                 .flimFont(15, relativeTo: .subheadline)
                 .foregroundStyle(FlimTheme.textSecondary)
                 .multilineTextAlignment(.center)
