@@ -136,6 +136,39 @@ without either word appearing here.
 Two rules if this is edited again: never repeat a word across name, subtitle and keywords, and do
 not add plurals of words already present. Apple handles both.
 
+## What's New (version 1.5.4), draft 2026-09-17
+
+Twenty-two commits since 378; the copy below covers the seven a person can see.
+
+> **PASTE ONLY THE INDENTED BLOCK BELOW.** Everything under "Ship notes" is internal.
+
+    Your feed remembers what you've seen. Reinstall FLIM, or sign in on a new phone, and the shots you already reached stay reached. The count at the top of the feed is the whole week, not just what has loaded, and tapping it takes you to the newest day you haven't seen yet.
+
+    A reply is one swipe from where you were. Open a comment from Activity and it opens right there; swipe it down and you're back on Activity.
+
+    Joining with a code from a post or a link? FLIM says so plainly, and opens Find friends first, so your first minute is about finding the people you know.
+
+    A push about your invites lands on your invites. Tap it and the sheet with your code is already open.
+
+    Fixes. Shoot into this roll always points the camera at that roll. Tapping a roll notification after you had opened and closed that roll works again. A roll whose only shots came out black or blurred says so instead of saying they were deleted. A burst's frames stay grouped even if the first upload fails and retries. The one-line introductions on each screen stay put until you've read them. Switching accounts on one phone no longer shows the other account's roll invitations.
+
+### Ship notes (internal, do NOT paste)
+
+**Promotional text for the 1.5.4 window** (170 char max, editable anytime without review):
+> Your feed remembers what you've seen, on any phone. The count at the top is the whole week; tap it to jump to the newest day you haven't seen.
+
+**What was deliberately left out.** The server side of the seen-marks (post_seen, the backfill),
+the rendition repair job, the edge-failure ledger, the nightly routines moving to the Pi, the
+campaigns, the primer's new sentence (a code arrival reads it once; not a feature), the digest
+run lock and the comment-like audience gate (server, no user story), setAccent's epoch guard.
+
+**The look did not change in 1.5.4.**
+
+**Screenshots.** Unchanged from 1.5.3 (the owner reshot them 2026-09-13).
+
+**Description delta.** None needed; the description already says the feed is the people you
+follow and that your page is for the people who follow you.
+
 ## RELEASED: 1.5.3 went live 2026-09-15 21:13 UTC (build 378, 0e7991f), submitted 2026-09-14
 
 The train is closed. `app_release_gate.latest_version` was set to 1.5.3 the same evening, which
