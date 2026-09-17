@@ -67,6 +67,11 @@ struct FeedView: View {
     @State private var ledger: (shots: Int, friends: Int)?
     /// Bumped by a tap on the ledger; the list scrolls to the first unit with an unseen frame.
     @State private var jumpToUnseenSignal = 0
+    /// The whole window's count from the server (`feed_unseen_count`), read at every explicit
+    /// load. When it is known it IS the ledger; the unit-based count below is the fallback for
+    /// a failed read, and what the seam still keys off. Without this the header counted only
+    /// the pages loaded so far and grew as you scrolled ("5 shots from 1 friend", then 18).
+    @State private var serverLedger: (shots: Int, friends: Int)?
     /// What the ledger is made of, per unit id, so grow-only refreshes ratchet by MERGING
     /// units rather than taking a component-wise max of two totals (which paired shot and
     /// friend counts from different snapshots into a line that was never true of any
@@ -181,11 +186,15 @@ struct FeedView: View {
     /// indefinitely — your own deeper frames stay honestly unseen unless you swipe your own
     /// day, and those are exactly the posts the ledger refuses to count.
     private var anythingUnseen: Bool {
+        if let serverLedger, serverLedger.shots > 0 { return true }
         let uid = auth.currentUser?.id
         return units.contains {
             $0.author.id != uid && $0.unseenCount(isSeen: { seenStore.isSeen($0) }) > 0
         }
     }
+    /// What the header shows: the server's whole-window count when it answered, else what
+    /// the loaded pages add up to.
+    private var shownLedger: (shots: Int, friends: Int)? { serverLedger ?? ledger }
     /// First run: nobody followed and nothing to show. Not "caught up", which describes a
     /// feed that ran out rather than one that has not started.
     private var followsNobody: Bool {
@@ -354,7 +363,7 @@ struct FeedView: View {
                 .flimFont(17, weight: .light, relativeTo: .body)
                 .tracking(0.5)
                 .foregroundStyle(FlimTheme.textSecondary)
-            if let ledger, anythingUnseen {
+            if let ledger = shownLedger, anythingUnseen {
                 Text("·")
                     .flimFont(12.5, relativeTo: .footnote)
                     .foregroundStyle(FlimTheme.textTertiary)
@@ -543,9 +552,24 @@ struct FeedView: View {
             }
             .onChange(of: jumpToUnseenSignal) {
                 // The first unit, in feed order, that still holds an unseen frame; that unit
-                // opens on its first unseen frame by itself (`openingIndex`).
-                guard let target = units.first(where: { $0.unseenCount(isSeen: { seenStore.isSeen($0) }) > 0 }) else { return }
-                withAnimation(.snappy) { proxy.scrollTo(target.id, anchor: .top) }
+                // opens on its first unseen frame by itself (`openingIndex`). If every loaded
+                // day is read, the unseen one is further down than the pages fetched so far:
+                // page forward until it appears, bounded, so the tap always lands somewhere.
+                Task { @MainActor in
+                    let uid = auth.currentUser?.id
+                    let store = seenStore
+                    let firstUnseen: () -> FeedUnit? = {
+                        units.first { $0.author.id != uid && $0.unseenCount(isSeen: { store.isSeen($0) }) > 0 }
+                    }
+                    var pages = 0
+                    while firstUnseen() == nil, feed.hasMoreFeed, pages < 6, let uid {
+                        await feed.loadMoreFeed(currentUserId: uid)
+                        recomputeUnits()
+                        pages += 1
+                    }
+                    guard let target = firstUnseen() else { return }
+                    withAnimation(.snappy) { proxy.scrollTo(target.id, anchor: .top) }
+                }
             }
             // The boundary-triggered reload replaced page one while the reader's scroll offset
             // was still wherever it was left; land back at the top exactly like the initial
@@ -762,7 +786,12 @@ struct FeedView: View {
         // on a genuine failure, so `feed.feed` staying non-empty can't by itself say whether
         // this refresh worked.
         let hadContent = !feed.feed.isEmpty
+        // The account's copy of the seen-marks must be complete before the server counts, or
+        // a swipe made ten seconds ago reads as unseen in the number.
+        await seenStore.flushPending()
+        async let counted = feed.unseenCount()
         await feed.loadFeed(currentUserId: uid)
+        serverLedger = await counted
         didLoad = true
         hasNewPosts = false
         // Snapshotted from page one, BEFORE the straddle completion's extra round trips: the

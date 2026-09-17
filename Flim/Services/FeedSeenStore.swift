@@ -125,16 +125,20 @@ final class FeedSeenStore {
     func flushPending() async {
         flushTask?.cancel(); flushTask = nil
         guard let user = syncedUserId, user == activeUserId, !pendingSync.isEmpty else { return }
-        let batch = pendingSync
+        // 500 a request: a first-time backfill can be thousands of rows, and one huge body is
+        // slower to fail than several small ones.
+        let batch = Array(pendingSync.prefix(500))
         struct Row: Encodable { let user_id: UUID; let post_id: UUID; let seen_at: Date }
         let rows = batch.map { Row(user_id: user, post_id: $0.key, seen_at: $0.value) }
         do {
             try await supabase.from("post_seen").upsert(rows, onConflict: "user_id,post_id", ignoreDuplicates: true).execute()
             guard user == activeUserId else { return }
-            for id in batch.keys { pendingSync.removeValue(forKey: id) }
+            for (id, _) in batch { pendingSync.removeValue(forKey: id) }
+            if !pendingSync.isEmpty { await flushPending() }
         } catch {
-            // Left pending; the next flush tries again. A post deleted in between fails its
-            // foreign key and would stick forever, so drop anything older than a day.
+            // Left pending; the next flush tries again. A mark for a post deleted since fails
+            // its foreign key and would stick forever, so anything older than a day is dropped
+            // after a failure rather than retried into the ground.
             let cutoff = Date.now.addingTimeInterval(-86400)
             for (id, date) in batch where date < cutoff { pendingSync.removeValue(forKey: id) }
         }
@@ -161,8 +165,14 @@ final class FeedSeenStore {
             if page.count < 1000 { break }
             from += 1000
         }
-        guard user == activeUserId, !marks.isEmpty else { return }
-        seedBacklog(marks)
+        guard user == activeUserId else { return }
+        if !marks.isEmpty { seedBacklog(marks) }
+        // The other direction, once: marks this device made before the mirror existed (or
+        // while it was offline) that the account does not have. Queued and flushed in batches,
+        // so a device with years of marks catches the server up over a few requests.
+        let onServer = Set(marks.map(\.id))
+        for (id, date) in seenAt where !onServer.contains(id) { pendingSync[id] = date }
+        if !pendingSync.isEmpty { await flushPending() }
     }
 
     /// Seeds a batch of already-seen marks as a one-time backlog migration, each dated at the

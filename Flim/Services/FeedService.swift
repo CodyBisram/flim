@@ -193,6 +193,15 @@ final class FeedService {
         static func showsFollowsYouBadge(followsMe: Bool) -> Bool { followsMe }
     }
 
+    /// The feed header's count, for the whole seven-day window rather than the pages loaded so
+    /// far: unseen posts by people you follow, and how many people. nil when the server could
+    /// not answer, so the caller can fall back to counting what it has.
+    func unseenCount() async -> (shots: Int, friends: Int)? {
+        struct Row: Decodable { let shots: Int; let friends: Int }
+        guard let row: Row = try? await supabase.rpc("feed_unseen_count").single().execute().value else { return nil }
+        return (row.shots, row.friends)
+    }
+
     /// Returns whether the follow actually holds server-side, so a caller keeping its own
     /// derived state (the profile header's follower count) can skip updating it on failure
     /// instead of drifting from the button, which reverts via `followingIds`.

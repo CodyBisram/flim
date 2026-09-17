@@ -386,6 +386,17 @@ The four from the audit the owner picked on 2026-09-10: the durable capture queu
 capture status, one invitation journey (a roll code admits you), deletion order, and the photo
 write boundary. In that order of value; built in the order of size.
 
+### done 2026-09-17: the feed's count is the whole window, and the tap always lands
+
+The header counted only the pages loaded so far, so "5 shots from 1 friend" became 18 as the
+jump loaded older days. `feed_unseen_count()` (migration APPLIED; SECURITY INVOKER, so the
+posts policy applies) counts unseen posts by people you follow across the seven-day window,
+minus `post_seen`; the client uploads any device-only marks first (`FeedSeenStore` backfills a
+device's older marks to the account on activation, 500 a request) and reads the count beside
+page one. The unit-based count stays as the fallback and still keys the seam. The tap pages
+forward, bounded, when every loaded day is read. The owner's account was seeded once with
+every post before 2026-09-17 as seen, at his ask.
+
 ### done 2026-09-16: the five from the data
 
 1. Batch 4a brought to main (cherry-pick): a cohort-code arrival lands on Find friends.
