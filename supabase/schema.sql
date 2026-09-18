@@ -8228,6 +8228,143 @@ $function$;
 REVOKE ALL ON FUNCTION public.invite_preview(text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.invite_preview(text) TO anon, authenticated;
 
+-- Folded in from supabase/migrations/2026-08-21_client_versions.sql (applied 2026-08-21; found missing by the 2026-09-18 audit).
+-- ============================================================
+-- Migration: per-user client version (client_versions table,
+-- report_client_version RPC, admin_versions dashboard RPC).
+-- Paste into Supabase Dashboard -> SQL Editor and run. Safe to re-run.
+-- Requires 2026-08-07_admin_dashboard.sql (public.is_owner()).
+-- ⚠️ run this BEFORE releasing the Swift client that calls
+--    report_client_version (the client call is try?-swallowed, so nothing
+--    breaks either way, but rows only start appearing once this is live).
+--
+-- WHY: "how many users are on the latest version" was unanswerable on
+-- 2026-08-21, the day after 1.4.2 released. The only tables carrying
+-- app_version were crash_diagnostics and feedback, both biased slivers.
+-- App Store Connect's version analytics cover only the ~third of users who
+-- opted into sharing, and lag a day. One row per user, overwritten on every
+-- launch, is a census instead of a sample.
+--
+-- PRIVACY: one current version string per account, no history. Which version
+-- someone runs is already collected (linked to identity) by every crash row
+-- and feedback row; this adds no new category to the nutrition label
+-- (Usage Data > Product Interaction / Diagnostics, already declared).
+-- Deliberately NOT an event stream and deliberately no per-day history:
+-- the question is "who is behind today", never "when did they update".
+-- ============================================================
+
+-- ------------------------------------------------------------
+-- 1. The table. One row per user, latest wins. `build` kept beside
+--    `version` because TestFlight testers all share a version string and
+--    differ only by build, and the dashboard should say so.
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.client_versions (
+    user_id    UUID NOT NULL PRIMARY KEY REFERENCES public.users(id) ON DELETE CASCADE,
+    version    TEXT NOT NULL,
+    build      TEXT,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- ------------------------------------------------------------
+-- 2. RLS. Same posture as usage_events: owner-read, and deliberately NO
+--    insert/update policy for authenticated. The only writer is the
+--    SECURITY DEFINER function below, so a client cannot claim a version
+--    it is not running (harmless-looking, but a forged "everyone updated"
+--    would hide a broken rollout).
+-- ------------------------------------------------------------
+ALTER TABLE public.client_versions ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "client_versions: owner reads" ON public.client_versions;
+CREATE POLICY "client_versions: owner reads"
+    ON public.client_versions FOR SELECT TO authenticated
+    USING (public.is_owner());
+
+-- ------------------------------------------------------------
+-- 3. report_client_version. Same carelessness contract as log_usage_event:
+--    no-ops when signed out, fire on every launch, the upsert makes repeats
+--    free. Length caps reject junk without ever failing the app (the client
+--    call is try?-swallowed anyway).
+-- ------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.report_client_version(p_version TEXT, p_build TEXT DEFAULT NULL)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    IF auth.uid() IS NULL THEN
+        RETURN;
+    END IF;
+    IF p_version IS NULL OR length(p_version) = 0 OR length(p_version) > 32
+       OR length(COALESCE(p_build, '')) > 32 THEN
+        RETURN;
+    END IF;
+
+    INSERT INTO public.client_versions (user_id, version, build, updated_at)
+    VALUES (auth.uid(), p_version, p_build, now())
+    ON CONFLICT (user_id)
+    DO UPDATE SET version = EXCLUDED.version,
+                  build   = EXCLUDED.build,
+                  updated_at = now();
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.report_client_version(TEXT, TEXT) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.report_client_version(TEXT, TEXT) FROM anon;
+GRANT EXECUTE ON FUNCTION public.report_client_version(TEXT, TEXT) TO authenticated;
+
+-- ------------------------------------------------------------
+-- 4. admin_versions, for the dashboard's Versions panel. Owner-gated like
+--    every admin_* function: the gate is repeated here, never assumed.
+--    `unreported` is the honest bucket: accounts that have not yet opened a
+--    build that reports (or have not opened the app at all since this
+--    shipped). It stays large at first and drains as people update; reading
+--    it as "on an old version" is wrong for the first weeks.
+-- ------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.admin_versions()
+RETURNS jsonb
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  WITH gate AS (SELECT public.is_owner() AS ok)
+  SELECT CASE WHEN (SELECT ok FROM gate) THEN jsonb_build_object(
+    'accounts', (SELECT count(*) FROM public.users),
+    'reported', (SELECT count(*) FROM public.client_versions),
+    'unreported', (SELECT count(*) FROM public.users u
+                    WHERE NOT EXISTS (SELECT 1 FROM public.client_versions c
+                                       WHERE c.user_id = u.id)),
+    'versions', (
+      SELECT COALESCE(jsonb_agg(jsonb_build_object(
+               'version', v.version,
+               'users', v.users,
+               'builds', v.builds,
+               'last_seen', v.last_seen
+             ) ORDER BY v.users DESC, v.version DESC), '[]'::jsonb)
+      FROM (
+        SELECT version,
+               count(*) AS users,
+               string_agg(DISTINCT COALESCE(build, '?'), ', ' ORDER BY COALESCE(build, '?')) AS builds,
+               max(updated_at) AS last_seen
+        FROM public.client_versions
+        GROUP BY version
+      ) v
+    )
+  ) ELSE NULL END;
+$$;
+
+REVOKE ALL ON FUNCTION public.admin_versions() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.admin_versions() FROM anon;
+GRANT EXECUTE ON FUNCTION public.admin_versions() TO authenticated;
+
+-- ------------------------------------------------------------
+-- 5. No backfill. Nothing has ever recorded a per-user version, so the
+--    table starts empty and fills as reporting clients launch. The first
+--    honest read of "who is behind" is roughly a week after the first
+--    reporting build reaches the App Store.
+-- ------------------------------------------------------------
+
 -- Folded in from supabase/migrations/2026-09-16_admin_versions_active_unreported.sql (applied 2026-09-16).
 -- The version census tells "not yet reported" apart from "active on a build too old to report"
 -- (2026-09-16). An account with no client_versions row but a reaction, comment, post or photo in
@@ -8307,11 +8444,699 @@ GRANT EXECUTE ON FUNCTION public.feed_unseen_count() TO authenticated;
 -- to the owner, so an arrival follows him and, on 1.5.4, lands on Find friends. 24 rather than
 -- the 29 Founding spots left, the owner's number: the card says "Next cohort, 24 seats", and a
 -- code that fills is the honest scarcity the Founding 100 badge already carries.
+-- SELECT from users rather than VALUES, so a fresh bootstrap (no owner row) inserts nothing
+-- instead of failing the foreign key.
 INSERT INTO public.invite_campaigns (code, inviter_id, valid_from, valid_until, max_uses, note)
-VALUES ('BALI26',
-        'f43287d4-f239-415b-af45-650bbee62e83',
-        NOW(),
-        timestamptz '2026-09-25 00:00 America/New_York',
-        24,
-        'Bali promo cohort, 2026-09-17 through 2026-09-24, 24 seats, attributed to the owner')
+SELECT 'BALI26', u.id, NOW(), timestamptz '2026-09-25 00:00 America/New_York', 24,
+       'Bali promo cohort, 2026-09-17 through 2026-09-24, 24 seats, attributed to the owner'
+FROM public.users u WHERE u.id = 'f43287d4-f239-415b-af45-650bbee62e83'
 ON CONFLICT (code) DO NOTHING;
+
+-- Folded from production on 2026-09-18 (database boundary audit): fourteen functions and one table
+-- that lived only in dated migrations, so a fresh bootstrap lacked the admin dashboard, the darkroom
+-- month RPCs, the version census writer and the one-shot push ledger. Definitions are
+-- pg_get_functiondef output; grants restated from production's routine_privileges.
+CREATE TABLE IF NOT EXISTS public.one_shot_push (
+    campaign text NOT NULL,
+    user_id uuid NOT NULL,
+    claimed_at timestamptz NOT NULL DEFAULT now(),
+    sent_at timestamptz,
+    PRIMARY KEY (campaign, user_id),
+    FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+);
+ALTER TABLE public.one_shot_push ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.one_shot_push FROM PUBLIC, anon, authenticated;
+-- policies in production: []
+CREATE OR REPLACE FUNCTION public.account_inventory()
+ RETURNS TABLE(photos bigint, rolls_created bigint, posts bigint)
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+    SELECT
+        (SELECT count(*) FROM public.photos WHERE user_id = auth.uid()),
+        (SELECT count(*) FROM public.rolls  WHERE created_by = auth.uid()),
+        (SELECT count(*) FROM public.posts  WHERE user_id = auth.uid());
+$function$;
+REVOKE ALL ON FUNCTION public.account_inventory() FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.account_inventory() TO authenticated;
+CREATE OR REPLACE FUNCTION public.admin_campaigns()
+ RETURNS jsonb
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  with gate as (select public.is_owner() as ok)
+  select case when (select ok from gate) then coalesce((
+    select jsonb_agg(jsonb_build_object(
+      'campaign', campaign,
+      'claimed', claimed,
+      'delivered', delivered,
+      'first_sent', first_sent,
+      -- Did it work: how many of the people contacted have shot since being contacted.
+      'shot_after', shot_after
+    ) order by first_sent desc)
+    from (
+      select o.campaign,
+             count(*) as claimed,
+             count(*) filter (where o.sent_at is not null) as delivered,
+             min(o.sent_at) as first_sent,
+             count(*) filter (where exists (
+               select 1 from public.photos x
+                where x.user_id = o.user_id and x.taken_at > o.sent_at)) as shot_after
+      from public.one_shot_push o group by o.campaign
+    ) t
+  ), '[]'::jsonb) else null end;
+$function$;
+REVOKE ALL ON FUNCTION public.admin_campaigns() FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_campaigns() TO authenticated;
+CREATE OR REPLACE FUNCTION public.admin_funnel(p_since timestamp with time zone DEFAULT NULL::timestamp with time zone)
+ RETURNS jsonb
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  with gate as (select public.is_owner() as ok),
+  starts as (
+    select event, min(created_at) as first_seen
+    from public.activation_events group by event
+  ),
+  since as (
+    select coalesce(
+      p_since,
+      (select max(first_seen) from starts where first_seen <= now() - interval '7 days'),
+      (select min(first_seen) from starts)
+    ) as d
+  ),
+  cohort as (
+    select id from auth.users where created_at >= (select d from since)
+  ),
+  steps(step, ord) as (values
+    ('first_launch',1),('onboarding_finished',2),('camera_authorized',3),
+    ('camera_ready',4),('shutter_tapped',5),('first_shot',6),
+    ('notifications_authorized',7),('roll_joined',8),('post_shared',9),('reveal_watched',10))
+  select case when (select ok from gate) then jsonb_build_object(
+    'since', (select d from since),
+    'cohort_size', (select count(*) from cohort),
+    'derived', p_since is null,
+    'steps', (
+      select coalesce(jsonb_agg(jsonb_build_object(
+               'step', s.step, 'ord', s.ord,
+               'reached', (select count(distinct a.user_id) from public.activation_events a
+                            where a.event = s.step and a.user_id in (select id from cohort)),
+               'logging_since', (select first_seen from starts where starts.event = s.step),
+               -- False when this step began logging after the cohort started, or has never
+               -- logged at all. Its number is then a floor, not a measurement.
+               'comparable', coalesce(
+                 (select first_seen from starts where starts.event = s.step) <= (select d from since),
+                 false)
+             ) order by s.ord), '[]'::jsonb)
+      from steps s
+    )
+  ) else null end;
+$function$;
+REVOKE ALL ON FUNCTION public.admin_funnel(p_since timestamp with time zone) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_funnel(p_since timestamp with time zone) TO authenticated;
+CREATE OR REPLACE FUNCTION public.admin_overview()
+ RETURNS jsonb
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  WITH gate AS (SELECT public.is_owner() AS ok),
+  w AS (
+    SELECT now() AS t_now,
+           now() - interval '7 days'  AS t0,
+           now() - interval '14 days' AS t1,
+           (current_date - 7)  AS d0,
+           (current_date - 14) AS d1
+  )
+  SELECT CASE WHEN (SELECT ok FROM gate) THEN jsonb_build_object(
+    'generated_at', (SELECT t_now FROM w),
+
+    'totals', jsonb_build_object(
+      'users',     (SELECT count(*) FROM public.users),
+      'ever_shot', (SELECT count(DISTINCT user_id) FROM public.photos),
+      'photos',    (SELECT count(*) FROM public.photos),
+      'rolls',     (SELECT count(*) FROM public.rolls)
+    ),
+
+    'week', jsonb_build_object(
+      'new_users', jsonb_build_object(
+        'now',  (SELECT count(*) FROM public.users, w WHERE created_at >= t0),
+        'prev', (SELECT count(*) FROM public.users, w WHERE created_at >= t1 AND created_at < t0)),
+      'active_shooters', jsonb_build_object(
+        'now',  (SELECT count(DISTINCT user_id) FROM public.photos, w WHERE taken_at >= t0),
+        'prev', (SELECT count(DISTINCT user_id) FROM public.photos, w WHERE taken_at >= t1 AND taken_at < t0)),
+      'shots', jsonb_build_object(
+        'now',  (SELECT count(*) FROM public.photos, w WHERE taken_at >= t0),
+        'prev', (SELECT count(*) FROM public.photos, w WHERE taken_at >= t1 AND taken_at < t0)),
+      'posts', jsonb_build_object(
+        'now',  (SELECT count(*) FROM public.posts, w WHERE created_at >= t0),
+        'prev', (SELECT count(*) FROM public.posts, w WHERE created_at >= t1 AND created_at < t0)),
+      'reveals', jsonb_build_object(
+        'now',  (SELECT coalesce(sum(occurrences), 0) FROM public.usage_events, w
+                  WHERE event = 'reveal_watched' AND day >= d0),
+        'prev', (SELECT coalesce(sum(occurrences), 0) FROM public.usage_events, w
+                  WHERE event = 'reveal_watched' AND day >= d1 AND day < d0)),
+      'invites_redeemed', jsonb_build_object(
+        'now',  (SELECT count(*) FROM public.allowed_emails, w
+                  WHERE note LIKE 'invited_by:%' AND added_at >= t0),
+        'prev', (SELECT count(*) FROM public.allowed_emails, w
+                  WHERE note LIKE 'invited_by:%' AND added_at >= t1 AND added_at < t0))
+    ),
+
+    -- NEW: which surface an invite share came from. All-time volume, since the
+    -- question is "does the reveal placement get used at all", not this week only.
+    'invite_sources', jsonb_build_object(
+      'profile', (SELECT coalesce(sum(occurrences), 0) FROM public.usage_events WHERE event = 'invite_shared_profile'),
+      'feed',    (SELECT coalesce(sum(occurrences), 0) FROM public.usage_events WHERE event = 'invite_shared_feed'),
+      'reveal',  (SELECT coalesce(sum(occurrences), 0) FROM public.usage_events WHERE event = 'invite_shared_reveal')
+    ),
+
+    -- NEW: new users per day, oldest first, last 14 days. A trend strip for the panel.
+    'signups_daily', (
+      SELECT coalesce(jsonb_agg(jsonb_build_object(
+               'day', to_char(dd, 'MM-DD'),
+               'n',   (SELECT count(*) FROM public.users u
+                        WHERE u.created_at >= dd AND u.created_at < dd + interval '1 day'))
+             ORDER BY dd), '[]'::jsonb)
+      FROM generate_series((current_date - 13)::timestamptz, current_date::timestamptz, interval '1 day') dd
+    ),
+
+    'attention', jsonb_build_object(
+      'never_asked_notifications', (
+        SELECT count(*) FROM public.users u
+        WHERE NOT EXISTS (SELECT 1 FROM public.device_tokens d WHERE d.user_id = u.id)
+          AND NOT EXISTS (SELECT 1 FROM public.activation_events a
+                          WHERE a.user_id = u.id
+                            AND a.event IN ('notifications_authorized', 'notifications_denied'))),
+      'invite_senders_ever', (
+        SELECT count(DISTINCT substring(note FROM 12))
+        FROM public.allowed_emails WHERE note LIKE 'invited_by:%'),
+      'days_since_last_roll', (
+        SELECT floor(extract(epoch FROM now() - max(created_at)) / 86400)::int
+        FROM public.rolls)
+    )
+  ) ELSE NULL END;
+$function$;
+REVOKE ALL ON FUNCTION public.admin_overview() FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_overview() TO authenticated;
+CREATE OR REPLACE FUNCTION public.admin_pulse(p_days integer DEFAULT 21)
+ RETURNS jsonb
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  with gate as (select public.is_owner() as ok),
+  days as (
+    select generate_series(
+      (current_date - (least(greatest(p_days, 1), 90) - 1))::date, current_date, '1 day'
+    )::date as d
+  )
+  select case when (select ok from gate) then coalesce((
+    select jsonb_agg(jsonb_build_object(
+      'day', days.d,
+      'signups', (select count(*) from auth.users u where u.created_at::date = days.d),
+      'shots', (select count(*) from public.photos x where x.taken_at::date = days.d),
+      'posts', (select count(*) from public.posts po where po.created_at::date = days.d),
+      'reactions', (select count(*) from public.post_reactions r where r.created_at::date = days.d),
+      'shooters', (select count(distinct x.user_id) from public.photos x where x.taken_at::date = days.d)
+    ) order by days.d) from days
+  ), '[]'::jsonb) else null end;
+$function$;
+REVOKE ALL ON FUNCTION public.admin_pulse(p_days integer) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_pulse(p_days integer) TO authenticated;
+CREATE OR REPLACE FUNCTION public.admin_reach()
+ RETURNS jsonb
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  with gate as (select public.is_owner() as ok),
+  people as (
+    select u.id,
+           exists(select 1 from public.device_tokens d where d.user_id = u.id) as has_token,
+           exists(select 1 from public.activation_events a
+                   where a.user_id = u.id and a.event = 'notifications_authorized') as said_yes,
+           exists(select 1 from public.activation_events a
+                   where a.user_id = u.id and a.event = 'notifications_denied') as said_no
+    from auth.users u
+  )
+  select case when (select ok from gate) then jsonb_build_object(
+    'accounts', (select count(*) from people),
+    'with_token', (select count(*) from people where has_token),
+    'authorized', (select count(*) from people where said_yes),
+    'denied', (select count(*) from people where said_no and not said_yes),
+    -- The actionable bucket. Not a recorded state: it is everyone the prompt never reached.
+    'never_asked', (select count(*) from people where not said_yes and not said_no),
+    'tokens', (select count(*) from public.device_tokens),
+    'newest_token', (select max(updated_at) from public.device_tokens)
+  ) else null end;
+$function$;
+REVOKE ALL ON FUNCTION public.admin_reach() FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_reach() TO authenticated;
+CREATE OR REPLACE FUNCTION public.admin_retention()
+ RETURNS jsonb
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  with gate as (select public.is_owner() as ok),
+  cohorts as (
+    select u.id, date_trunc('week', u.created_at)::date as wk, u.created_at
+    from auth.users u
+  ),
+  acts as (
+    select user_id, taken_at as at from public.photos
+    union all select user_id, created_at from public.posts
+    union all select user_id, created_at from public.post_reactions
+  )
+  select case when (select ok from gate) then coalesce((
+    select jsonb_agg(jsonb_build_object(
+      'week', wk,
+      'size', size,
+      'd1', d1, 'd7', d7, 'd14', d14
+    ) order by wk) from (
+      select c.wk,
+             count(distinct c.id) as size,
+             count(distinct c.id) filter (where exists (
+               select 1 from acts a where a.user_id = c.id
+                 and a.at >= c.created_at + interval '1 day'
+                 and a.at <  c.created_at + interval '2 days')) as d1,
+             count(distinct c.id) filter (where exists (
+               select 1 from acts a where a.user_id = c.id
+                 and a.at >= c.created_at + interval '7 days'
+                 and a.at <  c.created_at + interval '8 days')) as d7,
+             count(distinct c.id) filter (where exists (
+               select 1 from acts a where a.user_id = c.id
+                 and a.at >= c.created_at + interval '14 days'
+                 and a.at <  c.created_at + interval '15 days')) as d14
+      from cohorts c group by c.wk
+    ) t
+  ), '[]'::jsonb) else null end;
+$function$;
+REVOKE ALL ON FUNCTION public.admin_retention() FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_retention() TO authenticated;
+CREATE OR REPLACE FUNCTION public.admin_storage()
+ RETURNS jsonb
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  with gate as (select public.is_owner() as ok)
+  select case when (select ok from gate) then jsonb_build_object(
+    'photos', (select count(*) from public.photos),
+    'photos_7d', (select count(*) from public.photos where taken_at > now() - interval '7 days'),
+    'missing_thumb', (select count(*) from public.photos where thumb_path is null),
+    'missing_feed', (select count(*) from public.photos where feed_path is null),
+    'posts', (select count(*) from public.posts),
+    'reactions', (select count(*) from public.post_reactions),
+    'comments', (select count(*) from public.post_comments),
+    'rolls', (select count(*) from public.rolls),
+    'rolls_developing', (select count(*) from public.rolls
+                          where created_at + interval '12 hours' > now()),
+    'storage_bytes', (select coalesce(sum((metadata->>'size')::bigint), 0)
+                        from storage.objects where bucket_id = 'photos'),
+    'storage_bytes_14d', (select coalesce(sum((metadata->>'size')::bigint), 0)
+                            from storage.objects
+                           where bucket_id = 'photos'
+                             and created_at > now() - interval '14 days'),
+    'app_opens_7d', (select coalesce(sum(occurrences), 0) from public.usage_events
+                      where event = 'app_open' and day > current_date - 7)
+  ) else null end;
+$function$;
+REVOKE ALL ON FUNCTION public.admin_storage() FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_storage() TO authenticated;
+CREATE OR REPLACE FUNCTION public.admin_stuck()
+ RETURNS jsonb
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  with gate as (select public.is_owner() as ok),
+  p as (
+    select pr.id, pr.username, pr.created_at,
+           (select count(*) from public.photos x where x.user_id = pr.id) as photos,
+           (select count(*) from public.photos x where x.user_id = pr.id and not x.is_sorted) as to_sort,
+           (select min(x.taken_at) from public.photos x where x.user_id = pr.id and not x.is_sorted) as oldest_unsorted,
+           (select count(*) from public.posts po where po.user_id = pr.id) as posts,
+           exists(select 1 from public.device_tokens d where d.user_id = pr.id) as reachable
+    from public.profiles pr
+  )
+  select case when (select ok from gate) then jsonb_build_object(
+    'never_shot', (
+      select coalesce(jsonb_agg(jsonb_build_object(
+        'username', username, 'joined', created_at::date, 'reachable', reachable
+      ) order by created_at), '[]'::jsonb) from p where photos = 0),
+    'shot_never_posted', (
+      select coalesce(jsonb_agg(jsonb_build_object(
+        'username', username, 'photos', photos, 'to_sort', to_sort, 'reachable', reachable
+      ) order by photos desc), '[]'::jsonb) from p where photos > 0 and posts = 0),
+    -- Two days, and the floor is the point: somebody actively shooting today has a deck because
+    -- they are using the app, and telling them it is waiting describes their afternoon back.
+    'deck_sitting', (
+      select coalesce(jsonb_agg(jsonb_build_object(
+        'username', username, 'to_sort', to_sort,
+        'oldest', oldest_unsorted::date, 'reachable', reachable
+      ) order by to_sort desc), '[]'::jsonb)
+      from p where to_sort > 0 and oldest_unsorted < now() - interval '48 hours')
+  ) else null end;
+$function$;
+REVOKE ALL ON FUNCTION public.admin_stuck() FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_stuck() TO authenticated;
+CREATE OR REPLACE FUNCTION public.darkroom_month_counts(p_timezone text)
+ RETURNS TABLE(month_start date, photo_count integer)
+ LANGUAGE plpgsql
+ STABLE
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+    v_tz TEXT;
+BEGIN
+    SELECT name INTO v_tz FROM pg_timezone_names WHERE name = p_timezone;
+    IF v_tz IS NULL THEN
+        v_tz := 'UTC';
+    END IF;
+
+    RETURN QUERY
+    SELECT
+        date_trunc('month', (p.taken_at - interval '4 hours') AT TIME ZONE v_tz)::date AS month_start,
+        count(*)::integer AS photo_count
+    FROM public.photos p
+    WHERE p.user_id = auth.uid()
+      AND p.is_sorted = true
+    GROUP BY 1
+    ORDER BY 1;
+END;
+$function$;
+REVOKE ALL ON FUNCTION public.darkroom_month_counts(p_timezone text) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.darkroom_month_counts(p_timezone text) TO authenticated;
+CREATE OR REPLACE FUNCTION public.darkroom_month_summary(p_timezone text, p_covers integer DEFAULT 4)
+ RETURNS TABLE(month_start date, shot_count integer, night_count integer, developing_count integer, cover_paths text[])
+ LANGUAGE plpgsql
+ STABLE
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+    v_tz TEXT;
+    v_covers INT;
+BEGIN
+    SELECT name INTO v_tz FROM pg_timezone_names WHERE name = p_timezone;
+    IF v_tz IS NULL THEN
+        v_tz := 'UTC';
+    END IF;
+
+    v_covers := LEAST(GREATEST(COALESCE(p_covers, 4), 1), 12);
+
+    RETURN QUERY
+    WITH shifted AS (
+        SELECT
+            p.taken_at,
+            p.develops_at,
+            COALESCE(p.thumb_path, p.storage_path) AS display_path,
+            (p.taken_at - interval '4 hours') AT TIME ZONE v_tz AS local_ts
+        FROM public.photos p
+        WHERE p.user_id = auth.uid()
+          AND p.is_sorted = true
+    ),
+    bucketed AS (
+        SELECT
+            date_trunc('month', local_ts)::date AS bucket_month,
+            date_trunc('day', local_ts)::date AS night_start,
+            taken_at,
+            develops_at,
+            display_path
+        FROM shifted
+    ),
+    month_agg AS (
+        SELECT
+            bucket_month,
+            count(*)::integer AS agg_shots,
+            count(DISTINCT night_start)::integer AS agg_nights,
+            count(*) FILTER (WHERE develops_at > now())::integer AS agg_developing
+        FROM bucketed
+        GROUP BY bucket_month
+    ),
+    night_first_shot AS (
+        SELECT
+            bucket_month,
+            night_start,
+            display_path,
+            row_number() OVER (
+                PARTITION BY bucket_month, night_start
+                ORDER BY taken_at ASC
+            ) AS rn_in_night
+        FROM bucketed
+    ),
+    night_ranked AS (
+        SELECT
+            bucket_month,
+            night_start,
+            display_path,
+            row_number() OVER (
+                PARTITION BY bucket_month
+                ORDER BY night_start ASC
+            ) AS night_rank
+        FROM night_first_shot
+        WHERE rn_in_night = 1
+    ),
+    month_covers AS (
+        SELECT
+            bucket_month,
+            array_agg(display_path ORDER BY night_start ASC) AS agg_covers
+        FROM night_ranked
+        WHERE night_rank <= v_covers
+        GROUP BY bucket_month
+    )
+    SELECT
+        m.bucket_month,
+        m.agg_shots,
+        m.agg_nights,
+        m.agg_developing,
+        COALESCE(c.agg_covers, ARRAY[]::text[])
+    FROM month_agg m
+    LEFT JOIN month_covers c ON c.bucket_month = m.bucket_month
+    ORDER BY m.bucket_month;
+END;
+$function$;
+REVOKE ALL ON FUNCTION public.darkroom_month_summary(p_timezone text, p_covers integer) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.darkroom_month_summary(p_timezone text, p_covers integer) TO authenticated;
+CREATE OR REPLACE FUNCTION public.darkroom_month_summary_v2(p_timezone text, p_covers integer DEFAULT 4)
+ RETURNS TABLE(month_start date, shot_count integer, night_count integer, developing_count integer, cover_paths text[], top_cover_path text)
+ LANGUAGE plpgsql
+ STABLE
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+    v_tz TEXT;
+    v_covers INT;
+BEGIN
+    SELECT name INTO v_tz FROM pg_timezone_names WHERE name = p_timezone;
+    IF v_tz IS NULL THEN
+        v_tz := 'UTC';
+    END IF;
+
+    v_covers := LEAST(GREATEST(COALESCE(p_covers, 4), 1), 12);
+
+    RETURN QUERY
+    WITH shifted AS (
+        SELECT
+            p.id AS photo_id,
+            p.taken_at,
+            p.develops_at,
+            COALESCE(p.thumb_path, p.storage_path) AS display_path,
+            (p.taken_at - interval '4 hours') AT TIME ZONE v_tz AS local_ts
+        FROM public.photos p
+        WHERE p.user_id = auth.uid()
+          AND p.is_sorted = true
+    ),
+    bucketed AS (
+        SELECT
+            photo_id,
+            date_trunc('month', local_ts)::date AS bucket_month,
+            date_trunc('day', local_ts)::date AS night_start,
+            taken_at,
+            develops_at,
+            display_path
+        FROM shifted
+    ),
+    month_agg AS (
+        SELECT
+            bucket_month,
+            count(*)::integer AS agg_shots,
+            count(DISTINCT night_start)::integer AS agg_nights,
+            count(*) FILTER (WHERE develops_at > now())::integer AS agg_developing
+        FROM bucketed
+        GROUP BY bucket_month
+    ),
+    reaction_counts AS (
+        SELECT
+            b.photo_id,
+            b.bucket_month,
+            b.taken_at,
+            b.display_path,
+            (COALESCE(pr.cnt, 0) + COALESCE(po.cnt, 0))::integer AS agg_reactions
+        FROM bucketed b
+        LEFT JOIN LATERAL (
+            SELECT count(*) AS cnt
+            FROM public.photo_reactions r
+            WHERE r.photo_id = b.photo_id
+        ) pr ON true
+        LEFT JOIN LATERAL (
+            SELECT count(*) AS cnt
+            FROM public.posts po2
+            JOIN public.post_reactions r2 ON r2.post_id = po2.id
+            WHERE po2.photo_id = b.photo_id
+        ) po ON true
+    ),
+    reacted_ranked AS (
+        SELECT
+            photo_id,
+            bucket_month,
+            taken_at,
+            display_path,
+            agg_reactions,
+            row_number() OVER (
+                PARTITION BY bucket_month
+                ORDER BY agg_reactions DESC, taken_at DESC
+            ) AS agg_reacted_rank
+        FROM reaction_counts
+        WHERE agg_reactions > 0
+    ),
+    top_reacted AS (
+        SELECT photo_id, bucket_month, taken_at, display_path, agg_reacted_rank
+        FROM reacted_ranked
+        WHERE agg_reacted_rank <= v_covers
+    ),
+    reacted_selected_counts AS (
+        SELECT bucket_month, count(*)::integer AS agg_reacted_selected
+        FROM top_reacted
+        GROUP BY bucket_month
+    ),
+    backfill_quota AS (
+        SELECT
+            m.bucket_month,
+            (v_covers - COALESCE(rsc.agg_reacted_selected, 0)) AS agg_needed
+        FROM month_agg m
+        LEFT JOIN reacted_selected_counts rsc ON rsc.bucket_month = m.bucket_month
+    ),
+    backfill_pool AS (
+        SELECT rc.photo_id, rc.bucket_month, rc.taken_at, rc.display_path
+        FROM reaction_counts rc
+        WHERE NOT EXISTS (
+            SELECT 1 FROM top_reacted tr WHERE tr.photo_id = rc.photo_id
+        )
+    ),
+    backfill_ranked AS (
+        SELECT
+            photo_id,
+            bucket_month,
+            taken_at,
+            display_path,
+            row_number() OVER (
+                PARTITION BY bucket_month
+                ORDER BY taken_at ASC
+            ) AS agg_backfill_rank
+        FROM backfill_pool
+    ),
+    backfill_selected AS (
+        SELECT br.photo_id, br.bucket_month, br.taken_at, br.display_path, br.agg_backfill_rank
+        FROM backfill_ranked br
+        JOIN backfill_quota bq ON bq.bucket_month = br.bucket_month
+        WHERE br.agg_backfill_rank <= bq.agg_needed
+    ),
+    final_covers AS (
+        SELECT
+            bucket_month, photo_id, taken_at, display_path,
+            agg_reacted_rank AS agg_selection_order
+        FROM top_reacted
+        UNION ALL
+        SELECT
+            bucket_month, photo_id, taken_at, display_path,
+            (v_covers + agg_backfill_rank) AS agg_selection_order
+        FROM backfill_selected
+    ),
+    month_covers AS (
+        SELECT
+            bucket_month,
+            array_agg(display_path ORDER BY taken_at ASC) AS agg_covers
+        FROM final_covers
+        GROUP BY bucket_month
+    ),
+    month_top_cover AS (
+        SELECT bucket_month, display_path AS agg_top_cover
+        FROM (
+            SELECT
+                bucket_month,
+                display_path,
+                row_number() OVER (
+                    PARTITION BY bucket_month
+                    ORDER BY agg_selection_order ASC
+                ) AS agg_top_rank
+            FROM final_covers
+        ) ranked_final
+        WHERE agg_top_rank = 1
+    )
+    SELECT
+        m.bucket_month,
+        m.agg_shots,
+        m.agg_nights,
+        m.agg_developing,
+        COALESCE(c.agg_covers, ARRAY[]::text[]),
+        tc.agg_top_cover
+    FROM month_agg m
+    LEFT JOIN month_covers c ON c.bucket_month = m.bucket_month
+    LEFT JOIN month_top_cover tc ON tc.bucket_month = m.bucket_month
+    ORDER BY m.bucket_month;
+END;
+$function$;
+REVOKE ALL ON FUNCTION public.darkroom_month_summary_v2(p_timezone text, p_covers integer) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.darkroom_month_summary_v2(p_timezone text, p_covers integer) TO authenticated;
+CREATE OR REPLACE FUNCTION public.r2_watch_numbers()
+ RETURNS jsonb
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  select jsonb_build_object(
+    'storage_bytes', (select coalesce(sum((metadata->>'size')::bigint),0)
+                        from storage.objects where bucket_id='photos'),
+    'storage_bytes_14d', (select coalesce(sum((metadata->>'size')::bigint),0)
+                            from storage.objects
+                           where bucket_id='photos' and created_at > now() - interval '14 days'),
+    'app_opens_7d', (select coalesce(sum(occurrences),0) from public.usage_events
+                      where event='app_open' and day > current_date - 7)
+  );
+$function$;
+REVOKE ALL ON FUNCTION public.r2_watch_numbers() FROM PUBLIC, anon, authenticated;
+CREATE OR REPLACE FUNCTION public.report_client_version(p_version text, p_build text DEFAULT NULL::text)
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+BEGIN
+    IF auth.uid() IS NULL THEN
+        RETURN;
+    END IF;
+    IF p_version IS NULL OR length(p_version) = 0 OR length(p_version) > 32
+       OR length(COALESCE(p_build, '')) > 32 THEN
+        RETURN;
+    END IF;
+
+    INSERT INTO public.client_versions (user_id, version, build, updated_at)
+    VALUES (auth.uid(), p_version, p_build, now())
+    ON CONFLICT (user_id)
+    DO UPDATE SET version = EXCLUDED.version,
+                  build   = EXCLUDED.build,
+                  updated_at = now();
+END;
+$function$;
+REVOKE ALL ON FUNCTION public.report_client_version(p_version text, p_build text) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.report_client_version(p_version text, p_build text) TO authenticated;
+
+-- admin_versions was re-created on 2026-09-16 without restating its grants; a fresh bootstrap would
+-- otherwise leave it executable by PUBLIC (harmless, it null-gates on is_owner, but wrong).
+REVOKE ALL ON FUNCTION public.admin_versions() FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.admin_versions() TO authenticated;
