@@ -41,7 +41,7 @@ struct DiscoverRankingTests {
         s.newest = ids(12)
         let sections = DiscoverRanking.sections(from: s, excluding: [])
         #expect(sections.count == 1)
-        #expect(sections[0].title == "New on FLIM")
+        #expect(sections[0].title == DiscoverRanking.newOnFlimTitle)
         #expect(sections[0].ids.count == DiscoverRanking.newOnFlimCap)
         #expect(Array(s.newest.prefix(3)) == sections[0].ids)
     }
@@ -73,7 +73,7 @@ struct DiscoverRankingTests {
     func picks() {
         let a = profile("a"), b = profile("b"), c = profile("c"), d = profile("d"), n = profile("n")
         let sections = [
-            FeedService.DiscoverSection(title: "New on FLIM", profiles: [n]),
+            FeedService.DiscoverSection(title: DiscoverRanking.newOnFlimTitle, profiles: [n]),
             FeedService.DiscoverSection(title: "Follows you", profiles: [a, b]),
             FeedService.DiscoverSection(title: "In your rolls", profiles: [b, c, d]),
         ]

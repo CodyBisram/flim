@@ -72,6 +72,8 @@ struct FeedView: View {
     /// a failed read, and what the seam still keys off. Without this the header counted only
     /// the pages loaded so far and grew as you scrolled ("5 shots from 1 friend", then 18).
     @State private var serverLedger: (shots: Int, friends: Int)?
+    /// When `serverLedger` was read, so marks made after it can be subtracted from it.
+    @State private var serverLedgerAt: Date?
     /// What the ledger is made of, per unit id, so grow-only refreshes ratchet by MERGING
     /// units rather than taking a component-wise max of two totals (which paired shot and
     /// friend counts from different snapshots into a line that was never true of any
@@ -186,8 +188,17 @@ struct FeedView: View {
     /// indefinitely — your own deeper frames stay honestly unseen unless you swipe your own
     /// day, and those are exactly the posts the ledger refuses to count.
     private var anythingUnseen: Bool {
-        if let serverLedger, serverLedger.shots > 0 { return true }
         let uid = auth.currentUser?.id
+        // The server's number is a snapshot; reading in this session does not refresh it. So
+        // what is LEFT is that number minus the frames reached since the snapshot (only posts
+        // by others count, which is all the server counted). Without this the pill stayed lit
+        // for the whole session after everything was read (code audit, 2026-09-18).
+        if let serverLedger, let snapshotAt = serverLedgerAt {
+            let reachedSince = units.flatMap(\.items).filter {
+                $0.author.id != uid && (seenStore.seenDate($0.post.id).map { $0 >= snapshotAt } ?? false)
+            }.count
+            if serverLedger.shots - reachedSince > 0 { return true }
+        }
         return units.contains {
             $0.author.id != uid && $0.unseenCount(isSeen: { seenStore.isSeen($0) }) > 0
         }
@@ -797,6 +808,7 @@ struct FeedView: View {
         async let counted = feed.unseenCount()
         await feed.loadFeed(currentUserId: uid)
         serverLedger = await counted
+        serverLedgerAt = .now
         didLoad = true
         hasNewPosts = false
         // Snapshotted from page one, BEFORE the straddle completion's extra round trips: the

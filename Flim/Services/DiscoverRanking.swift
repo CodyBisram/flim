@@ -26,6 +26,9 @@ enum DiscoverRanking {
     }
 
     static let newOnFlimCap = 3
+    /// The one section that is not "someone you know"; callers that want only known people
+    /// skip it by name. `AppInfo.appName`, never the literal (flow audit, 2026-09-18).
+    static let newOnFlimTitle = "New on \(AppInfo.appName)"
 
     static func sections(from s: Signals, excluding: Set<UUID>) -> [Section] {
         var seen = excluding
@@ -53,12 +56,12 @@ enum DiscoverRanking {
             ("Invited by the same person", s.siblings),
             ("You invited", s.invited),
             ("Friends of friends", friendsOfFriends()),
-            ("New on FLIM", Array(s.newest.prefix(newOnFlimCap * 4))),
+            (newOnFlimTitle, Array(s.newest.prefix(newOnFlimCap * 4))),
         ]
         var out: [Section] = []
         for (title, ids) in candidates {
             var kept = take(ids)
-            if title == "New on FLIM" { kept = Array(kept.prefix(newOnFlimCap)) }
+            if title == newOnFlimTitle { kept = Array(kept.prefix(newOnFlimCap)) }
             if !kept.isEmpty { out.append(Section(title: title, ids: kept)) }
         }
         return out

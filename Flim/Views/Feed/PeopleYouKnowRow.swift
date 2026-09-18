@@ -31,7 +31,7 @@ struct PeopleYouKnowRow: View {
     /// a newcomer with no signal is not someone you know.
     static func pick(_ sections: [FeedService.DiscoverSection], limit: Int = shownCount) -> [(profile: UserProfile, reason: String)] {
         var out: [(profile: UserProfile, reason: String)] = []
-        for section in sections where section.title != "New on FLIM" {
+        for section in sections where section.title != DiscoverRanking.newOnFlimTitle {
             for profile in section.profiles where !out.contains(where: { $0.profile.id == profile.id }) {
                 out.append((profile, section.title))
                 if out.count == limit { return out }
@@ -60,16 +60,23 @@ struct PeopleYouKnowRow: View {
                     }
                     ForEach(people, id: \.profile.id) { entry in
                         HStack(spacing: 12) {
-                            AvatarView(path: entry.profile.avatarPath, name: entry.profile.username, size: 36)
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text(entry.profile.displayName?.isEmpty == false ? entry.profile.displayName! : entry.profile.handle)
-                                    .flimFont(14, weight: .medium, relativeTo: .subheadline)
-                                    .foregroundStyle(FlimTheme.textPrimary)
-                                    .lineLimit(1)
-                                Text(entry.reason)
-                                    .flimFont(12, relativeTo: .caption)
-                                    .foregroundStyle(FlimTheme.textTertiary)
+                            // The person opens their page, the same as every other row of this
+                            // shape in the app; only the pill follows (flow audit, 2026-09-18).
+                            NavigationLink(value: ProfileRoute(id: entry.profile.id)) {
+                                HStack(spacing: 12) {
+                                    AvatarView(path: entry.profile.avatarPath, name: entry.profile.username, size: 36)
+                                    VStack(alignment: .leading, spacing: 1) {
+                                        Text(entry.profile.displayName?.isEmpty == false ? entry.profile.displayName! : entry.profile.handle)
+                                            .flimFont(14, weight: .medium, relativeTo: .subheadline)
+                                            .foregroundStyle(FlimTheme.textPrimary)
+                                            .lineLimit(1)
+                                        Text(entry.reason)
+                                            .flimFont(12, relativeTo: .caption)
+                                            .foregroundStyle(FlimTheme.textTertiary)
+                                    }
+                                }
                             }
+                            .buttonStyle(.plain)
                             Spacer(minLength: 8)
                             FollowButton(userId: entry.profile.id)
                         }

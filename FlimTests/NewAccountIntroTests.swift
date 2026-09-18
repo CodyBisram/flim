@@ -32,9 +32,13 @@ struct NewAccountIntroTests {
         #expect(NewAccountIntro.lineToShow(.feed, userId: UUID(), createdAt: Date(timeIntervalSince1970: 1_700_000_000)) == nil)
         // A line shown this launch keeps showing after it is marked seen (scroll away, scroll
         // back); a surface not shown this launch does not.
-        NewAccountIntro.shownThisLaunch.insert(.feed)
-        defer { NewAccountIntro.shownThisLaunch.remove(.feed) }
+        NewAccountIntro.shownThisLaunch.insert(NewAccountIntro.shownKey(.feed, userId: me))
+        defer { NewAccountIntro.shownThisLaunch.remove(NewAccountIntro.shownKey(.feed, userId: me)) }
         #expect(NewAccountIntro.lineToShow(.feed, userId: me, createdAt: created) == NewAccountIntro.Surface.feed.line)
+        // Another account on the same phone, in the same launch, that already saw it: no line.
+        let other = UUID()
+        NewAccountIntro.markSeen(.feed, userId: other)
+        #expect(NewAccountIntro.lineToShow(.feed, userId: other, createdAt: created) == nil)
         NewAccountIntro.markSeen(.rolls, userId: me)
         #expect(NewAccountIntro.lineToShow(.rolls, userId: me, createdAt: created) == nil)
     }

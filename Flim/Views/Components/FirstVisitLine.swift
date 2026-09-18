@@ -29,7 +29,7 @@ struct FirstVisitLine: View {
         .onAppear {
             line = NewAccountIntro.lineToShow(surface, userId: auth.currentUser?.id,
                                               createdAt: auth.currentUser?.createdAt, text: text)
-            if line != nil { NewAccountIntro.shownThisLaunch.insert(surface) }
+            if line != nil, let uid = auth.currentUser?.id { NewAccountIntro.shownThisLaunch.insert(NewAccountIntro.shownKey(surface, userId: uid)) }
         }
         // Seen once it has had time to be read, not when it scrolls off: inside a LazyVStack
         // `onDisappear` fires the moment the line leaves the screen, which marked it seen and
