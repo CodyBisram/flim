@@ -416,6 +416,23 @@ The four from the audit the owner picked on 2026-09-10: the durable capture queu
 capture status, one invitation journey (a roll code admits you), deletion order, and the photo
 write boundary. In that order of value; built in the order of size.
 
+### done 2026-09-18: the full audit (four passes, report at claude.ai/code/artifact/e3fa797e-c2af-4535-b8d8-837cd19c65a8)
+
+Code, flows, database boundary, production data, run in parallel over `b503bf4`. Fixed the same
+night (`28f67ae`, `3e5680a`): the feed pill stayed lit after the week was read (server count
+never reconciled with marks made since); the first-visit line's shown-set was per surface, not
+per account; the People you know row's name was not tappable; "New on FLIM" hardcoded; fourteen
+functions, the `client_versions` and `one_shot_push` tables, and admin_versions' grants were
+missing from schema.sql (the bootstrap builds twice again: 44 tables, 102 functions); the
+BALI26 insert failed on an empty database. Boundary probed live and clean (an author reads zero
+`post_seen` rows). Data: seven-day uniques up on every axis; **no roll created since Sep 6 and no
+follow-up roll ever**; reciprocity runs through the owner (22 of 54 pairs); the invites push
+produced one invitation; 13 of 49 active people never answered the notification ask.
+
+Open from it: six pg_cron jobs live only in dated migrations; main's TestFlight workflow still
+cancels in-progress builds and does not share v2's concurrency group; the invite_redeemed
+activation event undercounts parts of August. Owner: the roll question, and build 387.
+
 ### done 2026-09-17: a thin feed gets three people you know
 
 Fourteen of the fifty people who opened FLIM this week follow fewer than three accounts, and
