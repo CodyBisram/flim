@@ -94,10 +94,11 @@ final class FeedService {
 
     private func fetchFollowingIds(userId: UUID) async -> Set<UUID> {
         struct Row: Decodable { let following_id: UUID }
-        let rows: [Row] = (try? await supabase
-            .from("follows").select("following_id")
-            .eq("follower_id", value: userId.uuidString)
-            .execute().value) ?? []
+        let rows: [Row] = await QueryBatch.allPages { from, to in
+            (try? await supabase.from("follows").select("following_id")
+                .eq("follower_id", value: userId.uuidString)
+                .range(from: from, to: to).execute().value) ?? []
+        }
         return Set(rows.map(\.following_id))
     }
 
@@ -114,10 +115,11 @@ final class FeedService {
 
     private func fetchFollowerIds(userId: UUID) async -> Set<UUID> {
         struct Row: Decodable { let follower_id: UUID }
-        let rows: [Row] = (try? await supabase
-            .from("follows").select("follower_id")
-            .eq("following_id", value: userId.uuidString)
-            .execute().value) ?? []
+        let rows: [Row] = await QueryBatch.allPages { from, to in
+            (try? await supabase.from("follows").select("follower_id")
+                .eq("following_id", value: userId.uuidString)
+                .range(from: from, to: to).execute().value) ?? []
+        }
         return Set(rows.map(\.follower_id))
     }
 
@@ -251,15 +253,21 @@ final class FeedService {
     /// the *rendered lists* filter blocked users out client-side, defense-in-depth over RLS.
     func fetchFollowers(of userId: UUID) async -> [UserProfile] {
         struct Row: Decodable { let follower_id: UUID }
-        let rows: [Row] = (try? await supabase.from("follows").select("follower_id")
-            .eq("following_id", value: userId.uuidString).execute().value) ?? []
+        let rows: [Row] = await QueryBatch.allPages { from, to in
+            (try? await supabase.from("follows").select("follower_id")
+                .eq("following_id", value: userId.uuidString)
+                .range(from: from, to: to).execute().value) ?? []
+        }
         return await orderedProfiles(rows.map(\.follower_id).filter { !blockedIds.contains($0) })
     }
 
     func fetchFollowingProfiles(of userId: UUID) async -> [UserProfile] {
         struct Row: Decodable { let following_id: UUID }
-        let rows: [Row] = (try? await supabase.from("follows").select("following_id")
-            .eq("follower_id", value: userId.uuidString).execute().value) ?? []
+        let rows: [Row] = await QueryBatch.allPages { from, to in
+            (try? await supabase.from("follows").select("following_id")
+                .eq("follower_id", value: userId.uuidString)
+                .range(from: from, to: to).execute().value) ?? []
+        }
         return await orderedProfiles(rows.map(\.following_id).filter { !blockedIds.contains($0) })
     }
 
@@ -315,10 +323,10 @@ final class FeedService {
 
     func fetchProfiles(ids: [UUID]) async -> [UUID: UserProfile] {
         guard !ids.isEmpty else { return [:] }
-        let list: [UserProfile] = (try? await supabase
-            .from("profiles").select()
-            .in("id", values: ids.map(\.uuidString))
-            .execute().value) ?? []
+        let list: [UserProfile] = await QueryBatch.inChunks(ids.map(\.uuidString)) { chunk in
+            (try? await supabase.from("profiles").select()
+                .in("id", values: chunk).execute().value) ?? []
+        }
         return Dictionary(list.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
     }
 
@@ -594,9 +602,10 @@ final class FeedService {
     private func rankedMutualFollowIds(excluding: Set<UUID>) async -> [UUID] {
         guard !followingIds.isEmpty else { return [] }
         struct Row: Decodable { let following_id: UUID }
-        let rows: [Row] = (try? await supabase.from("follows").select("following_id")
-            .in("follower_id", values: followingIds.map(\.uuidString))
-            .execute().value) ?? []
+        let rows: [Row] = await QueryBatch.inChunks(followingIds.map(\.uuidString)) { chunk in
+            (try? await supabase.from("follows").select("following_id")
+                .in("follower_id", values: chunk).execute().value) ?? []
+        }
 
         return Self.rankByFrequency(rows.map(\.following_id), excluding: excluding)
     }
@@ -1362,13 +1371,15 @@ final class FeedService {
         authorIds.append(currentUserId)   // your own posts show in your feed too
 
         // Only the newest post's id is compared (for the "new posts" pill), so keep this light.
-        let posts: [Post] = (try? await supabase
+        let posts: [Post] = await QueryBatch.inChunks(authorIds.map(\.uuidString)) { chunk in
+            (try? await supabase
             .from("posts").select()
-            .in("user_id", values: authorIds.map(\.uuidString))
+            .in("user_id", values: chunk)
             .eq("hidden", value: false)
             .order("created_at", ascending: false)
             .limit(5)
             .execute().value) ?? []
+        }.sorted { $0.createdAt > $1.createdAt }.prefix(5).map { $0 }
 
         let visible = posts.filter { !blockedIds.contains($0.userId) }
         let profiles = await fetchProfiles(ids: Array(Set(visible.map(\.userId))))
@@ -1579,10 +1590,10 @@ final class FeedService {
     func postedPhotoIds(_ ids: [UUID]) async -> Set<UUID> {
         guard !ids.isEmpty else { return [] }
         struct Row: Decodable { let photo_id: UUID }
-        let rows: [Row] = (try? await supabase
-            .from("posts").select("photo_id")
-            .in("photo_id", values: ids.map(\.uuidString))
-            .execute().value) ?? []
+        let rows: [Row] = await QueryBatch.inChunks(ids.map(\.uuidString)) { chunk in
+            (try? await supabase.from("posts").select("photo_id")
+                .in("photo_id", values: chunk).execute().value) ?? []
+        }
         return Set(rows.map(\.photo_id))
     }
 
@@ -1591,22 +1602,25 @@ final class FeedService {
     /// seeds from `profilePostsCache`, and folding failure into an empty array would let one
     /// dropped request wipe a cached grid into the "no posts yet" state.
     func fetchUserPosts(userId: UUID) async -> [Post]? {
-        try? await supabase
-            .from("posts").select()
-            .eq("user_id", value: userId.uuidString)
-            .eq("hidden", value: false)
-            .order("taken_at", ascending: false)
-            .execute().value
+        try? await QueryBatch.allPages { from, to in
+            try await supabase
+                .from("posts").select()
+                .eq("user_id", value: userId.uuidString)
+                .eq("hidden", value: false)
+                .order("taken_at", ascending: false)
+                .range(from: from, to: to)
+                .execute().value
+        }
     }
 
     /// Batch-fetches posts by id, mirrors `fetchProfiles(ids:)`. Used to attach a post (for a
     /// thumbnail + navigation) to activity rows without a query per row.
     func fetchPosts(ids: [UUID]) async -> [UUID: Post] {
         guard !ids.isEmpty else { return [:] }
-        let list: [Post] = (try? await supabase
-            .from("posts").select()
-            .in("id", values: ids.map(\.uuidString))
-            .execute().value) ?? []
+        let list: [Post] = await QueryBatch.inChunks(ids.map(\.uuidString)) { chunk in
+            (try? await supabase.from("posts").select()
+                .in("id", values: chunk).execute().value) ?? []
+        }
         return Dictionary(list.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
     }
 
@@ -1788,12 +1802,16 @@ final class FeedService {
 
         let postIds = (await fetchUserPosts(userId: userId) ?? []).map(\.id.uuidString)
         if !postIds.isEmpty {
-            let reactions: [Row] = (try? await supabase.from("post_reactions").select("created_at")
-                .in("post_id", values: postIds).neq("user_id", value: userId.uuidString)
-                .gt("created_at", value: sinceStr).execute().value) ?? []
-            let comments: [Row] = (try? await supabase.from("post_comments").select("created_at")
-                .in("post_id", values: postIds).neq("user_id", value: userId.uuidString)
-                .gt("created_at", value: sinceStr).execute().value) ?? []
+            let reactions: [Row] = await QueryBatch.inChunks(postIds) { chunk in
+                (try? await supabase.from("post_reactions").select("created_at")
+                    .in("post_id", values: chunk).neq("user_id", value: userId.uuidString)
+                    .gt("created_at", value: sinceStr).execute().value) ?? []
+            }
+            let comments: [Row] = await QueryBatch.inChunks(postIds) { chunk in
+                (try? await supabase.from("post_comments").select("created_at")
+                    .in("post_id", values: chunk).neq("user_id", value: userId.uuidString)
+                    .gt("created_at", value: sinceStr).execute().value) ?? []
+            }
             total += reactions.count + comments.count
         }
         let follows: [Row] = (try? await supabase.from("follows").select("created_at")
@@ -1818,9 +1836,11 @@ final class FeedService {
         let ownedIds = Set(postIds)
         let taggedNotOwned = tags.map(\.post_id.uuidString).filter { !ownedIds.contains($0) }
         if !taggedNotOwned.isEmpty {
-            let taggedReactions: [Row] = (try? await supabase.from("post_reactions").select("created_at")
-                .in("post_id", values: taggedNotOwned).neq("user_id", value: userId.uuidString)
-                .gt("created_at", value: sinceStr).execute().value) ?? []
+            let taggedReactions: [Row] = await QueryBatch.inChunks(taggedNotOwned) { chunk in
+                (try? await supabase.from("post_reactions").select("created_at")
+                    .in("post_id", values: chunk).neq("user_id", value: userId.uuidString)
+                    .gt("created_at", value: sinceStr).execute().value) ?? []
+            }
             total += taggedReactions.count
         }
 
@@ -1829,13 +1849,18 @@ final class FeedService {
         // source. `.gt("created_at", ...)` at the DB already excludes the column's nullable-but-rare
         // NULLs (NULL never satisfies a comparison), so `Row`'s non-optional `created_at` is safe here.
         struct OwnComment: Decodable { let id: UUID }
-        let ownComments: [OwnComment] = (try? await supabase.from("post_comments").select("id")
-            .eq("user_id", value: userId.uuidString).execute().value) ?? []
+        let ownComments: [OwnComment] = await QueryBatch.allPages { from, to in
+            (try? await supabase.from("post_comments").select("id")
+                .eq("user_id", value: userId.uuidString)
+                .range(from: from, to: to).execute().value) ?? []
+        }
         let ownCommentIds = ownComments.map(\.id.uuidString)
         if !ownCommentIds.isEmpty {
-            let commentLikes: [Row] = (try? await supabase.from("comment_likes").select("created_at")
-                .in("comment_id", values: ownCommentIds).neq("user_id", value: userId.uuidString)
-                .gt("created_at", value: sinceStr).execute().value) ?? []
+            let commentLikes: [Row] = await QueryBatch.inChunks(ownCommentIds) { chunk in
+                (try? await supabase.from("comment_likes").select("created_at")
+                    .in("comment_id", values: chunk).neq("user_id", value: userId.uuidString)
+                    .gt("created_at", value: sinceStr).execute().value) ?? []
+            }
             total += commentLikes.count
         }
 
@@ -2082,21 +2107,25 @@ final class FeedService {
 
         async let reactions: [ActivityRaw] = {
             struct R: Decodable { let user_id: UUID; let emoji: String; let created_at: Date; let post_id: UUID }
-            let rs: [R] = try await supabase.from("post_reactions")
-                .select("user_id,emoji,created_at,post_id")
-                .in("post_id", values: postIds)
-                .neq("user_id", value: userId.uuidString)
-                .order("created_at", ascending: false).limit(40).execute().value
+            let rs: [R] = try await QueryBatch.inChunks(postIds) { chunk in
+                try await supabase.from("post_reactions")
+                    .select("user_id,emoji,created_at,post_id")
+                    .in("post_id", values: chunk)
+                    .neq("user_id", value: userId.uuidString)
+                    .order("created_at", ascending: false).limit(40).execute().value
+            }
             return rs.map { ActivityRaw(kind: .like($0.emoji), actorId: $0.user_id, date: $0.created_at, postId: $0.post_id) }
         }()
 
         async let comments: [ActivityRaw] = {
             struct C: Decodable { let user_id: UUID; let body: String; let created_at: Date; let post_id: UUID }
-            let cs: [C] = try await supabase.from("post_comments")
-                .select("user_id,body,created_at,post_id")
-                .in("post_id", values: postIds)
-                .neq("user_id", value: userId.uuidString)
-                .order("created_at", ascending: false).limit(40).execute().value
+            let cs: [C] = try await QueryBatch.inChunks(postIds) { chunk in
+                try await supabase.from("post_comments")
+                    .select("user_id,body,created_at,post_id")
+                    .in("post_id", values: chunk)
+                    .neq("user_id", value: userId.uuidString)
+                    .order("created_at", ascending: false).limit(40).execute().value
+            }
             return cs.map { ActivityRaw(kind: .comment($0.body), actorId: $0.user_id, date: $0.created_at, postId: $0.post_id) }
         }()
 
@@ -2159,11 +2188,13 @@ final class FeedService {
         guard !postIds.isEmpty else { return [] }
 
         struct R: Decodable { let user_id: UUID; let emoji: String; let created_at: Date; let post_id: UUID }
-        let rs: [R] = try await supabase.from("post_reactions")
-            .select("user_id,emoji,created_at,post_id")
-            .in("post_id", values: postIds)
-            .neq("user_id", value: userId.uuidString)
-            .order("created_at", ascending: false).limit(40).execute().value
+        let rs: [R] = try await QueryBatch.inChunks(postIds) { chunk in
+            try await supabase.from("post_reactions")
+                .select("user_id,emoji,created_at,post_id")
+                .in("post_id", values: chunk)
+                .neq("user_id", value: userId.uuidString)
+                .order("created_at", ascending: false).limit(40).execute().value
+        }
 
         return rs.compactMap { r in
             guard let owner = owners[r.post_id],
@@ -2195,10 +2226,13 @@ final class FeedService {
     /// never selected here.
     private func activityCommentLikes(userId: UUID) async throws -> [ActivityRaw] {
         struct Own: Decodable { let id: UUID }
-        let owned: [Own] = try await supabase.from("post_comments")
-            .select("id")
-            .eq("user_id", value: userId.uuidString)
-            .execute().value
+        let owned: [Own] = try await QueryBatch.allPages { from, to in
+            try await supabase.from("post_comments")
+                .select("id")
+                .eq("user_id", value: userId.uuidString)
+                .range(from: from, to: to)
+                .execute().value
+        }
         let commentIds = owned.map(\.id.uuidString)
         guard !commentIds.isEmpty else { return [] }
 
@@ -2209,11 +2243,13 @@ final class FeedService {
             let post_comments: C?
             struct C: Decodable { let user_id: UUID; let body: String; let post_id: UUID }
         }
-        let ls: [L] = try await supabase.from("comment_likes")
-            .select("user_id,created_at,post_comments(user_id,body,post_id)")
-            .in("comment_id", values: commentIds)
-            .neq("user_id", value: userId.uuidString)
-            .order("created_at", ascending: false).limit(40).execute().value
+        let ls: [L] = try await QueryBatch.inChunks(commentIds) { chunk in
+            try await supabase.from("comment_likes")
+                .select("user_id,created_at,post_comments(user_id,body,post_id)")
+                .in("comment_id", values: chunk)
+                .neq("user_id", value: userId.uuidString)
+                .order("created_at", ascending: false).limit(40).execute().value
+        }
 
         return ls.compactMap { like in
             // No embedded comment (deleted between the two queries) or no created_at (can't be

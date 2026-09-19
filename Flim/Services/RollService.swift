@@ -233,13 +233,14 @@ final class RollService {
             return
         }
 
-        let fetched: [Roll] = try await supabase
-            .from("rolls")
-            .select()
-            .in("id", values: rollIds)
-            .order("created_at", ascending: false)
-            .execute()
-            .value
+        let fetched: [Roll] = try await QueryBatch.inChunks(rollIds) { chunk in
+            try await supabase
+                .from("rolls")
+                .select()
+                .in("id", values: chunk)
+                .execute()
+                .value
+        }.sorted { $0.createdAt > $1.createdAt }
         guard AccountEpoch.isCurrent(epoch) else { return }
         rolls = fetched
 
@@ -270,15 +271,17 @@ final class RollService {
     private func loadCovers(rollIds: [String], epoch: Int) async {
         struct CoverRow: Decodable { let roll_id: UUID; let storage_path: String; let thumb_path: String? }
         let nowISO = ISO8601DateFormatter().string(from: Date.now)
-        let rows: [CoverRow] = (try? await supabase
-            .from("photos")
-            .select("roll_id,storage_path,thumb_path")
-            .in("roll_id", values: rollIds)
-            .eq("hidden", value: false)
-            .lte("develops_at", value: nowISO)
-            .order("taken_at", ascending: false)
-            .execute()
-            .value) ?? []
+        let rows: [CoverRow] = await QueryBatch.inChunks(rollIds) { chunk in
+            (try? await supabase
+                .from("photos")
+                .select("roll_id,storage_path,thumb_path")
+                .in("roll_id", values: chunk)
+                .eq("hidden", value: false)
+                .lte("develops_at", value: nowISO)
+                .order("taken_at", ascending: false)
+                .execute()
+                .value) ?? []
+        }
 
         // storage_path → thumb_path, so a creator-chosen cover (stored as a storage_path) can
         // still resolve to its thumbnail rendition rather than downloading the full image.
@@ -303,12 +306,14 @@ final class RollService {
     /// read every membership row of a roll they belong to, so the grouped count is exact.
     private func loadMemberCounts(rollIds: [String], epoch: Int) async {
         struct CountRow: Decodable { let roll_id: UUID }
-        let rows: [CountRow] = (try? await supabase
-            .from("roll_members")
-            .select("roll_id")
-            .in("roll_id", values: rollIds)
-            .execute()
-            .value) ?? []
+        let rows: [CountRow] = await QueryBatch.inChunks(rollIds) { chunk in
+            (try? await supabase
+                .from("roll_members")
+                .select("roll_id")
+                .in("roll_id", values: chunk)
+                .execute()
+                .value) ?? []
+        }
 
         var counts: [UUID: Int] = [:]
         for row in rows { counts[row.roll_id, default: 0] += 1 }
@@ -335,13 +340,14 @@ final class RollService {
     private func seedRevealSeen(userId: UUID, rollIds: [String], epoch: Int) async {
         guard !rollIds.isEmpty else { return }
         struct Row: Decodable { let roll_id: UUID }
-        guard let rows: [Row] = try? await supabase
-            .from("roll_reveal_views")
-            .select("roll_id")
-            .eq("user_id", value: userId.uuidString)
-            .in("roll_id", values: rollIds)
-            .execute().value
-        else { return }
+        guard let rows: [Row] = try? await QueryBatch.inChunks(rollIds, { chunk in
+            try await supabase
+                .from("roll_reveal_views")
+                .select("roll_id")
+                .eq("user_id", value: userId.uuidString)
+                .in("roll_id", values: chunk)
+                .execute().value
+        }) else { return }
         guard AccountEpoch.isCurrent(epoch) else { return }
         let defaults = UserDefaults.standard
         for row in rows {
@@ -385,12 +391,14 @@ final class RollService {
         // `profiles` (not `users`), the safe-columns view every other cross-user read in this
         // app uses post column-grant hardening (see FeedService). Roll rosters only need
         // username/avatar/etc, never email/invite_code.
-        return try await supabase
-            .from("profiles")
-            .select()
-            .in("id", values: userIds)
-            .execute()
-            .value
+        return try await QueryBatch.inChunks(userIds) { chunk in
+            try await supabase
+                .from("profiles")
+                .select()
+                .in("id", values: chunk)
+                .execute()
+                .value
+        }
     }
 
     /// Roll members as plain ids, ordered by when they joined. Feeds `TagPhotoSheet`'s quick-tag

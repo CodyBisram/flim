@@ -416,6 +416,15 @@ The four from the audit the owner picked on 2026-09-10: the durable capture queu
 capture status, one invitation journey (a roll code admits you), deletion order, and the photo
 write boundary. In that order of value; built in the order of size.
 
+### done 2026-09-19: audit item 10
+
+10. Every `.in()` list that scales with a person's history (their posts, their comments,
+    everyone they follow, the photos of a roll) goes through `QueryBatch.inChunks` at 200 ids a
+    request, and the whole-history reads (follows both ways, own posts, own comments) page at
+    1000 through `QueryBatch.allPages`. Nothing hit either limit yet; both fail as a whole
+    request, silently, when they do. Per-chunk `.limit(40)` on the activity reads is merged
+    and trimmed by the caller as before.
+
 ### done 2026-09-19: audit items 7 and 9
 
 7. Feed and thumb renditions are resampled with CILanczosScaleTransform, the master's own

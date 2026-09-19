@@ -87,6 +87,7 @@
 		3A185DD5541644068ABB02B4 /* RollDevelopAskSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4F999D7EC066CFB6B9D2D7F /* RollDevelopAskSheet.swift */; };
 		3B9C5D883F61F8F4D2587186 /* PhoneAuthView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C14C96ED4A714B7DD3274C7E /* PhoneAuthView.swift */; };
 		3CDB4AB529E03B6548245534 /* RenderLookTool.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75C61E7AE94F80685E08BEDD /* RenderLookTool.swift */; };
+		3DF79A66064AED08805471AA /* QueryBatching.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40855AB15E2E66BF936A8F31 /* QueryBatching.swift */; };
 		3E4B2CD914C331A443B11EB0 /* DarkroomDayUnitTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27A6A72391A59B32B3529736 /* DarkroomDayUnitTests.swift */; };
 		3F3DF3063A089C8F1EEC906E /* FeedServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17748DA0845B5512541A214D /* FeedServiceTests.swift */; };
 		3F49B2B6996C065BA82A0395 /* ReactionBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 235D6F50F5FDD8BE4BB9DE4E /* ReactionBar.swift */; };
@@ -180,6 +181,7 @@
 		8B7C3BF19F45CCFFCB310081 /* PushDestinationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A39D03E2C81983BA17AB2800 /* PushDestinationTests.swift */; };
 		8BEC2E8D676465909519274E /* WidgetSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DF84E2ABEB95328CF9208B4 /* WidgetSync.swift */; };
 		8BF491172773725C2AC536E0 /* BurstGroupingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD19DA158EF993D8B99D03E7 /* BurstGroupingTests.swift */; };
+		8CAC3FFCC3FCA5BC4ADF429F /* QueryBatchingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B27A888E0190B5F707C1170 /* QueryBatchingTests.swift */; };
 		9143720C8C6DE2ACEACA0686 /* CaptureStatusChip.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3804E47454C897F9AA0AED60 /* CaptureStatusChip.swift */; };
 		920BFC8ACEA1520367FF1A6B /* ReviewerSignInTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EA7BE7861AAE3A37C3729F8 /* ReviewerSignInTests.swift */; };
 		93AF4DC60B300A9DECFE8319 /* RestorableOverride.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B6C985931C1B2E532B36448 /* RestorableOverride.swift */; };
@@ -457,6 +459,7 @@
 		3EF17B9249B262F2D8A2C799 /* PinchZoom.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinchZoom.swift; sourceTree = "<group>"; };
 		3F90A7FA0AD7F2B443E7E332 /* OTPInputTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OTPInputTests.swift; sourceTree = "<group>"; };
 		4016CE892900287C20E82E97 /* FeedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedView.swift; sourceTree = "<group>"; };
+		40855AB15E2E66BF936A8F31 /* QueryBatching.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QueryBatching.swift; sourceTree = "<group>"; };
 		409A6D3129F94E675E11C751 /* CubeLUTTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CubeLUTTests.swift; sourceTree = "<group>"; };
 		40C6E2279C5B9F7F042A3349 /* NotificationPrimerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationPrimerSheet.swift; sourceTree = "<group>"; };
 		41A387A8908C61FB39ABB6DB /* EmojiSuggestionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmojiSuggestionTests.swift; sourceTree = "<group>"; };
@@ -568,6 +571,7 @@
 		9A9A45FD713A54E4C2F2140E /* DarkroomMonthSummaryV2Tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DarkroomMonthSummaryV2Tests.swift; sourceTree = "<group>"; };
 		9AE61FE9182CC567D4698F8A /* CameraRollSelection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraRollSelection.swift; sourceTree = "<group>"; };
 		9B22CA37A589546819FD3D43 /* ProfileCropGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileCropGeometry.swift; sourceTree = "<group>"; };
+		9B27A888E0190B5F707C1170 /* QueryBatchingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QueryBatchingTests.swift; sourceTree = "<group>"; };
 		9B5A93AEC9F3404C135FBFB4 /* KeyboardDismiss.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardDismiss.swift; sourceTree = "<group>"; };
 		9BE06A9CEC95AF492BDBD575 /* PrimaryButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrimaryButton.swift; sourceTree = "<group>"; };
 		9C88A1B2B8D3C13A145B9501 /* BurstStackMark.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BurstStackMark.swift; sourceTree = "<group>"; };
@@ -977,6 +981,7 @@
 				01ECCD46517220EBFD0EC621 /* PhotoService.swift */,
 				9B22CA37A589546819FD3D43 /* ProfileCropGeometry.swift */,
 				D22ACB97D61072B25DA50604 /* PushDestination.swift */,
+				40855AB15E2E66BF936A8F31 /* QueryBatching.swift */,
 				F5F4E6A1053D1FADA991924E /* QuickCaptureIntent.swift */,
 				FE6E3DB97398A385FA3C9489 /* RemotePush.swift */,
 				7B6C985931C1B2E532B36448 /* RestorableOverride.swift */,
@@ -1133,6 +1138,7 @@
 				E36FE0B8735BA0AADE0C8C7C /* ProfileCropGeometryTests.swift */,
 				E24F9D0E24ECACB558EE4F01 /* ProfileViewTests.swift */,
 				A39D03E2C81983BA17AB2800 /* PushDestinationTests.swift */,
+				9B27A888E0190B5F707C1170 /* QueryBatchingTests.swift */,
 				C70C734A3C9E58C37BDA61F9 /* QuickTagChipsTests.swift */,
 				09D7D1B34FF3ABA360DFCCC6 /* ReactionBarTests.swift */,
 				0675161FF2ACC25A92800B14 /* ReactionGlyphTests.swift */,
@@ -1424,6 +1430,7 @@
 				D38ED66624883730EBF8F9FB /* ProfileCropGeometryTests.swift in Sources */,
 				E32D66765B2C8FFB2C8883DC /* ProfileViewTests.swift in Sources */,
 				8B7C3BF19F45CCFFCB310081 /* PushDestinationTests.swift in Sources */,
+				8CAC3FFCC3FCA5BC4ADF429F /* QueryBatchingTests.swift in Sources */,
 				CE43EAA4C8AA517D557EB845 /* QuickTagChipsTests.swift in Sources */,
 				DAEB96A018A4AC97A9C2B097 /* ReactionBarTests.swift in Sources */,
 				9ACB6AA5B0C0568525DF6DBA /* ReactionGlyphTests.swift in Sources */,
@@ -1599,6 +1606,7 @@
 				68FF7D104A8EF2C313166D40 /* ProfileIdentityView.swift in Sources */,
 				94D54440B811F938257FD796 /* ProfileView.swift in Sources */,
 				0212683D4BD3A1A67CDE57A5 /* PushDestination.swift in Sources */,
+				3DF79A66064AED08805471AA /* QueryBatching.swift in Sources */,
 				793DFF7AB411740E0874DD22 /* QuickCaptureIntent.swift in Sources */,
 				56D4F900308EC62AA80D17CE /* QuickTagChips.swift in Sources */,
 				3F49B2B6996C065BA82A0395 /* ReactionBar.swift in Sources */,

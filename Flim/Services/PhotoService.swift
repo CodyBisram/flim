@@ -1360,12 +1360,14 @@ final class PhotoService {
         if !byPhotoId.isEmpty {
             struct Row: Decodable { let id: UUID; let thumb_path: String?; let feed_path: String? }
             let ids = Array(Set(byPhotoId.map(\.photoId)))
-            let rows: [Row] = (try? await supabase
-                .from("photos")
-                .select("id, thumb_path, feed_path")
-                .in("id", values: ids.map { $0.uuidString })
-                .execute()
-                .value) ?? []
+            let rows: [Row] = await QueryBatch.inChunks(ids.map { $0.uuidString }) { chunk in
+                (try? await supabase
+                    .from("photos")
+                    .select("id, thumb_path, feed_path")
+                    .in("id", values: chunk)
+                    .execute()
+                    .value) ?? []
+            }
             existingPhotoIds = Set(rows.map(\.id))
             missingRenditions = Set(rows.filter { $0.thumb_path == nil || $0.feed_path == nil }.map(\.id))
         }
@@ -1374,12 +1376,14 @@ final class PhotoService {
         if !byPathOnly.isEmpty {
             struct Row: Decodable { let storage_path: String }
             let paths = Array(Set(byPathOnly.map(\.path)))
-            let rows: [Row] = (try? await supabase
-                .from("photos")
-                .select("storage_path")
-                .in("storage_path", values: paths)
-                .execute()
-                .value) ?? []
+            let rows: [Row] = await QueryBatch.inChunks(paths) { chunk in
+                (try? await supabase
+                    .from("photos")
+                    .select("storage_path")
+                    .in("storage_path", values: chunk)
+                    .execute()
+                    .value) ?? []
+            }
             existingStoragePaths = Set(rows.map(\.storage_path))
         }
 
@@ -1584,7 +1588,9 @@ final class PhotoService {
         // photo is gone from every read, and the objects are removed best-effort. A failure
         // there leaves orphaned bytes, which `sweep-orphaned-storage` exists to reconcile.
         do {
-            try await supabase.from("photos").delete().in("id", values: ids).execute()
+            try await QueryBatch.forEachChunk(ids) { chunk in
+                try await supabase.from("photos").delete().in("id", values: chunk).execute()
+            }
         } catch {
             await reportDeleteFailure(error, context: "batch row delete")
             return false
@@ -1667,12 +1673,14 @@ final class PhotoService {
     /// develops.
     func fetchReactions(photoIds: [UUID]) async -> [UUID: [PhotoReaction]] {
         guard !photoIds.isEmpty else { return [:] }
-        let all: [PhotoReaction] = (try? await supabase
-            .from("photo_reactions")
-            .select()
-            .in("photo_id", values: photoIds.map(\.uuidString))
-            .execute()
-            .value) ?? []
+        let all: [PhotoReaction] = await QueryBatch.inChunks(photoIds.map(\.uuidString)) { chunk in
+            (try? await supabase
+                .from("photo_reactions")
+                .select()
+                .in("photo_id", values: chunk)
+                .execute()
+                .value) ?? []
+        }
         return Dictionary(grouping: all, by: \.photoId)
     }
 
@@ -2362,11 +2370,13 @@ final class PhotoService {
         // Darkroom load, every pagination page, and the 60-second refresh poll, a batch of, say,
         // 30 shots that just crossed their develop time was firing 30 sequential network writes
         // while the user waited. `deletePhotos` already batches this way with `.in()`.
-        _ = try? await supabase
-            .from("photos")
-            .update(["is_developed": true])
-            .in("id", values: readyIds)
-            .execute()
+        try? await QueryBatch.forEachChunk(readyIds) { chunk in
+            _ = try await supabase
+                .from("photos")
+                .update(["is_developed": true])
+                .in("id", values: chunk)
+                .execute()
+        }
 
         await MainActor.run {
             for i in loadedPhotos.indices where readyIds.contains(loadedPhotos[i].id.uuidString) {
