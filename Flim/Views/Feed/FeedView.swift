@@ -14,6 +14,7 @@ struct FeedView: View {
     var scrollToTop: Int = 0
     @Environment(AuthService.self) private var auth
     @Environment(FeedService.self) private var feed
+    @Environment(TabSignals.self) private var signals
     @Environment(PhotoService.self) private var photos
     @Environment(\.displayScale) private var displayScale
     @Environment(\.scenePhase) private var scenePhase
@@ -372,6 +373,7 @@ struct FeedView: View {
                 // own (later) query time, and an earlier one can't undo it.
                 lastActivitySeen = max(lastActivitySeen, queriedAt.timeIntervalSince1970)
                 unreadActivity = 0
+                signals.feedHasUnread = TabSignals.feedDot(unseenShots: remainingLedger?.shots, unreadActivity: 0)
             }
         }
     }
@@ -823,6 +825,7 @@ struct FeedView: View {
         await feed.loadFeed(currentUserId: uid)
         serverLedger = await counted
         serverLedgerAt = .now
+        signals.feedHasUnread = TabSignals.feedDot(unseenShots: counted?.shots, unreadActivity: unreadActivity)
         didLoad = true
         hasNewPosts = false
         // Snapshotted from page one, BEFORE the straddle completion's extra round trips: the

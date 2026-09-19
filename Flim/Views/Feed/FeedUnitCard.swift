@@ -643,9 +643,14 @@ struct FeedUnitCard: View {
     private func saveToCameraRoll() {
         let target = post
         Task {
-            guard let full = await feed.signedURL(for: target.storagePath),
-                  let (data, _) = try? await URLSession.shared.data(from: full),
-                  let image = UIImage(data: data) else { return }
+            // Cache first, same as every other share; a miss downloads and files it.
+            var bytes = await DiskImageCache.loadRaw(path: target.storagePath)
+            if bytes == nil, let full = await feed.signedURL(for: target.storagePath),
+               let (data, _) = try? await URLSession.shared.data(from: full) {
+                bytes = data
+                DiskImageCache.saveRaw(data, path: target.storagePath)
+            }
+            guard let data = bytes, let image = UIImage(data: data) else { return }
             // Date only: a feed post carries no roll, so the footer runs the date flush left and
             // the wordmark flush right.
             shareItem = ShareImage(image: image,

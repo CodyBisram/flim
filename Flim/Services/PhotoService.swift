@@ -973,11 +973,18 @@ final class PhotoService {
 
             var thumbPath: String?
             if let thumbEncoded {
-                thumbPath = await upload(thumbEncoded, to: "\(prefix)_thumb.\(thumbEncoded.format.pathExtension)")
+                let path = "\(prefix)_thumb.\(thumbEncoded.format.pathExtension)"
+                // The bytes were made on this phone; filing them under their own path means the
+                // Darkroom grid and the pager never download this shot's renditions back
+                // (egress audit, 2026-09-19: 0.4 to 2.3 MB a day per shooter).
+                DiskImageCache.saveRaw(thumbEncoded.data, path: path)
+                thumbPath = await upload(thumbEncoded, to: path)
             }
             var feedPath: String?
             if let feedEncoded {
-                feedPath = await upload(feedEncoded, to: "\(prefix)_feed.\(feedEncoded.format.pathExtension)")
+                let path = "\(prefix)_feed.\(feedEncoded.format.pathExtension)"
+                DiskImageCache.saveRaw(feedEncoded.data, path: path)
+                feedPath = await upload(feedEncoded, to: path)
             }
             guard thumbPath != nil || feedPath != nil else { return }
 
@@ -1118,9 +1125,17 @@ final class PhotoService {
         }
 
         var newThumb: String?
-        if let thumbEncoded { newThumb = await upload(thumbEncoded, to: "\(prefix)_thumb.\(thumbEncoded.format.pathExtension)") }
+        if let thumbEncoded {
+            let path = "\(prefix)_thumb.\(thumbEncoded.format.pathExtension)"
+            DiskImageCache.saveRaw(thumbEncoded.data, path: path)
+            newThumb = await upload(thumbEncoded, to: path)
+        }
         var newFeed: String?
-        if let feedEncoded { newFeed = await upload(feedEncoded, to: "\(prefix)_feed.\(feedEncoded.format.pathExtension)") }
+        if let feedEncoded {
+            let path = "\(prefix)_feed.\(feedEncoded.format.pathExtension)"
+            DiskImageCache.saveRaw(feedEncoded.data, path: path)
+            newFeed = await upload(feedEncoded, to: path)
+        }
 
         guard newThumb != nil || newFeed != nil else { return }
 

@@ -5,6 +5,7 @@ struct ContentView: View {
     @Environment(PhotoService.self) private var photos
     @Environment(FeedService.self) private var feed
     @Environment(RollService.self) private var rolls
+    @Environment(TabSignals.self) private var tabSignals
     @Environment(ChapterService.self) private var chapters
     @Environment(NotificationService.self) private var notifications
     @Environment(VersionGateService.self) private var versionGate
@@ -208,6 +209,10 @@ struct ContentView: View {
                 return
             }
             Task { await refreshVersionGate() }
+            // The tab dots: a friend may have posted or a roll developed while the app was away.
+            if let uid = auth.currentUser?.id {
+                Task { await tabSignals.refresh(feed: feed, rolls: rolls, userId: uid, lastActivitySeen: UserDefaults.standard.double(forKey: "lastActivitySeen")) }
+            }
             // Save-on-develop, not save-on-capture: this is the one place that decides "the app
             // just came to the foreground", which is exactly when a photo shot earlier may have
             // developed since. No background execution, ever; the sweep only ever runs from here

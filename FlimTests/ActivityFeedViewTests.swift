@@ -267,3 +267,27 @@ final class ActivityDestinationTests: XCTestCase {
         XCTAssertFalse(activityOpensThread(.follow))
     }
 }
+
+// MARK: - The tab dots (2026-09-19)
+
+final class TabSignalsTests: XCTestCase {
+    func testFeedDotLightsForUnseenPostsOrUnreadActivity() {
+        XCTAssertTrue(TabSignals.feedDot(unseenShots: 3, unreadActivity: 0))
+        XCTAssertTrue(TabSignals.feedDot(unseenShots: 0, unreadActivity: 1))
+        XCTAssertTrue(TabSignals.feedDot(unseenShots: nil, unreadActivity: 2))
+        XCTAssertFalse(TabSignals.feedDot(unseenShots: 0, unreadActivity: 0))
+        XCTAssertFalse(TabSignals.feedDot(unseenShots: nil, unreadActivity: 0))
+    }
+
+    func testRollsDotLightsForADevelopedRollNotYetWatched() {
+        let now = Date()
+        func roll(_ revealAt: Date) -> Roll {
+            Roll(id: UUID(), name: "r", inviteCode: "ABC123", createdBy: UUID(), createdAt: now.addingTimeInterval(-86400), coverPath: nil, revealAt: revealAt, parentRollId: nil)
+        }
+        let developed = roll(now.addingTimeInterval(-60)), pending = roll(now.addingTimeInterval(3600))
+        XCTAssertTrue(TabSignals.rollsDot(rolls: [developed, pending], revealSeen: { _ in false }, now: now))
+        XCTAssertFalse(TabSignals.rollsDot(rolls: [developed], revealSeen: { $0 == developed.id }, now: now))
+        XCTAssertFalse(TabSignals.rollsDot(rolls: [pending], revealSeen: { _ in false }, now: now))
+        XCTAssertFalse(TabSignals.rollsDot(rolls: [], revealSeen: { _ in false }, now: now))
+    }
+}

@@ -25,6 +25,7 @@
 		0C7C060D5AAE5F404B56DA5C /* WidgetSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 287FF4EBE30A5F8F1CB00635 /* WidgetSnapshotTests.swift */; };
 		0D787E73255739D7801ED3F6 /* NewAccountIntro.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64805C0EDB37CD85F9616D39 /* NewAccountIntro.swift */; };
 		0D80A4E64324784932627EC2 /* CaptionSaveOutcomeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B56B57E60E3BDB61525E938 /* CaptionSaveOutcomeTests.swift */; };
+		0D9B04D725203663A6B7BB26 /* TabSignals.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFA1288B267FA4DCBEDC4718 /* TabSignals.swift */; };
 		0DAD8E1E42DA8B2B10137202 /* VersionGateService.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA572719CB09DB023B6F4FA8 /* VersionGateService.swift */; };
 		0DBA3E873DDEC31193540E99 /* PendingInviter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97BF90CA3E49DBDC6F7AC540 /* PendingInviter.swift */; };
 		0E4C555DA32570F306A25E9A /* FeedServiceTaggedReactionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCECA298D090FCA6707ED245 /* FeedServiceTaggedReactionTests.swift */; };
@@ -624,6 +625,7 @@
 		CDD12AED157BD394A1D49095 /* PhotoServicePaginationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoServicePaginationTests.swift; sourceTree = "<group>"; };
 		CEF88DC660A8BC9D5C2936AA /* TagSaveOutcomeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TagSaveOutcomeTests.swift; sourceTree = "<group>"; };
 		CF062148240A383A260E8EE3 /* Photo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Photo.swift; sourceTree = "<group>"; };
+		CFA1288B267FA4DCBEDC4718 /* TabSignals.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabSignals.swift; sourceTree = "<group>"; };
 		D12980C0CB6174D144ED01F5 /* DarkroomDayUnit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DarkroomDayUnit.swift; sourceTree = "<group>"; };
 		D22ACB97D61072B25DA50604 /* PushDestination.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushDestination.swift; sourceTree = "<group>"; };
 		D30B42EBEE797C8D0DEC4848 /* RollRevealViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollRevealViewModel.swift; sourceTree = "<group>"; };
@@ -979,6 +981,7 @@
 				633F60D6D348ADEA4D94D263 /* RollService.swift */,
 				6E55D7D1D90A614F669F3462 /* RollSnapshotStore.swift */,
 				85C6F9C983DFB1E2ECF57092 /* SignedURLStore.swift */,
+				CFA1288B267FA4DCBEDC4718 /* TabSignals.swift */,
 				C5CF40AEDBC8243F837F246F /* UndoCenter.swift */,
 				3CCBDC1090FC4BA019AF8114 /* Usage.swift */,
 				E76395E2FEC6D1DFCEAC9E84 /* UserFacingError.swift */,
@@ -1628,6 +1631,7 @@
 				6B257D4605E1FA791E7A4846 /* SquareCropSheet.swift in Sources */,
 				1A636EF87FB2E349B9F555DC /* SupabaseClient.swift in Sources */,
 				521CDDD234317A8496499477 /* SwipeToDismiss.swift in Sources */,
+				0D9B04D725203663A6B7BB26 /* TabSignals.swift in Sources */,
 				58ACCFC04DEF968BFD005E0A /* TagPhotoSheet.swift in Sources */,
 				F8B7B0BD9EA2812E69282C03 /* Theme.swift in Sources */,
 				F61C62F3A0DFCBF91078F2A1 /* UndoCapsule.swift in Sources */,

@@ -101,9 +101,18 @@ enum PhotoExport {
     /// Downloads one photo into a specific export's directory. Returns nil if it could not be
     /// fetched or written, so the caller can report a partial result rather than silently
     /// shipping a short roll.
-    static func download(_ url: URL, into directory: URL, index: Int, total: Int) async -> URL? {
-        guard let (data, _) = try? await URLSession.shared.data(from: url), !data.isEmpty
-        else { return nil }
+    static func download(_ url: URL, into directory: URL, index: Int, total: Int,
+                         cachePath: String? = nil) async -> URL? {
+        // The reveal and the pager leave the cards on disk under their storage path; a Save all
+        // that re-downloaded them cost 7 to 28 MB a roll for bytes already on the phone
+        // (egress audit, 2026-09-19). Miss falls through to the download and files the result.
+        var data: Data? = nil
+        if let cachePath { data = await DiskImageCache.loadRaw(path: cachePath) }
+        if data == nil, let (fetched, _) = try? await URLSession.shared.data(from: url), !fetched.isEmpty {
+            data = fetched
+            if let cachePath { DiskImageCache.saveRaw(fetched, path: cachePath) }
+        }
+        guard let data else { return nil }
         // Derived from the actual downloaded bytes, a new capture's original may now be HEIC;
         // an existing photo's is still JPEG. Never assumed from a hardcoded extension.
         let ext = InstantFilmProcessor.detectedEncoding(of: data).pathExtension

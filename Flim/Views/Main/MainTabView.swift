@@ -104,6 +104,11 @@ struct MainTabView: View {
     @Environment(AuthService.self) private var auth
     @Environment(RollService.self) private var rolls
     @Environment(FeedService.self) private var feed
+    @Environment(TabSignals.self) private var signals
+    /// Hoisted out of the TabView builder, which cannot type-check a ternary in a `.badge`.
+    private var rollsBadge: String? { signals.rollsHaveUnwatched ? "•" : nil }
+    private var feedBadge: String? { signals.feedHasUnread ? "•" : nil }
+    @AppStorage("lastActivitySeen") private var lastActivitySeenForDot: Double = 0
     @Environment(ChapterService.self) private var chapters
     /// Owned here (not in RollsView) so a `reveal` push destination, and `-openRollId` in DEBUG,
     /// can push straight into a roll's detail without the Rolls tab needing to already be open.
@@ -177,6 +182,8 @@ struct MainTabView: View {
                 NavigationStack(path: $rollsPath) {
                     RollsView(scrollToTop: scrollSignal[2, default: 0], pendingPhotoIntent: $pendingRollPhoto)
                 }
+                // A dot, not a number: a developed roll whose reveal has not been watched here.
+                .badge(rollsBadge)
             }
             Tab("Feed", systemImage: "house", value: 3) {
                 // Both destinations are declared INSIDE the stack, on its content, not on the
@@ -199,7 +206,10 @@ struct MainTabView: View {
                             )
                         }
                 }
+                // Unread posts in the feed, or unread activity.
+                .badge(feedBadge)
             }
+
         }
         // Tint via the OBSERVED accentColor (not the static accent) so the tab bar
         // re-tints the moment the user picks a new accent, the static read never invalidates
@@ -271,6 +281,7 @@ struct MainTabView: View {
             Activation.log(.firstLaunch)
             Usage.log(.appOpen)
             Usage.reportClientVersion()
+            Task { if let uid = auth.currentUser?.id { await signals.refresh(feed: feed, rolls: rolls, userId: uid, lastActivitySeen: lastActivitySeenForDot) } }
             // Once per launch, not on every feed reload: this ratchets twelve predicates
             // server-side, and badges are not time critical. This is also the only reliable path
             // that lights the tab dot for a badge earned since the last launch, see

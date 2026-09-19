@@ -196,6 +196,7 @@ struct RollDetailView: View {
     var pendingPhotoIntent: Binding<RollPhotoIntent?> = .constant(nil)
     @Environment(PhotoService.self) private var photoService
     @Environment(RollService.self) private var rollService
+    @Environment(TabSignals.self) private var signals
     @Environment(AuthService.self) private var auth
     @Environment(NotificationService.self) private var notifications
     /// The new-account notification ask, see the `.task` below and `RollDevelopAskSheet`.
@@ -717,7 +718,12 @@ struct RollDetailView: View {
         .fullScreenCover(isPresented: $showReveal) {
             RollRevealView(rollId: roll.id, rollName: roll.name,
                            photos: chronologicalDeveloped, memberNames: memberNames,
-                           onCompleted: { UserDefaults.standard.set(true, forKey: revealSeenKey) },
+                           onCompleted: {
+                               UserDefaults.standard.set(true, forKey: revealSeenKey)
+                               signals.rollsHaveUnwatched = TabSignals.rollsDot(rolls: rollService.rolls, revealSeen: {
+                                   UserDefaults.standard.bool(forKey: "rollRevealSeen.\($0.uuidString)")
+                               })
+                           },
                            onStartAnother: { followUpAfterReveal = true })
         }
         .onChange(of: showReveal) { wasShowing, isShowing in
@@ -929,7 +935,7 @@ struct RollDetailView: View {
             var images: [URL] = []
             for (i, photo) in deck.enumerated() {
                 guard let url = signed[photo.viewPath] else { continue }
-                if let file = await PhotoExport.download(url, into: exportDir, index: i, total: deck.count) {
+                if let file = await PhotoExport.download(url, into: exportDir, index: i, total: deck.count, cachePath: photo.viewPath) {
                     images.append(file)
                 }
             }
@@ -1110,12 +1116,18 @@ struct RollDetailView: View {
     private func share(_ photo: Photo) {
         Haptics.tap()
         Task {
+            // Cache first, same as the Darkroom's share: the master may already be on disk.
+            if let raw = await DiskImageCache.loadRaw(path: photo.storagePath), let image = UIImage(data: raw) {
+                shareItem = ShareImage(image: image, caption: BrandedExport.Caption(date: photo.takenAt))
+                return
+            }
             guard let url = try? await photoService.signedURL(for: photo.storagePath),
                   let (data, _) = try? await URLSession.shared.data(from: url),
                   let image = UIImage(data: data) else {
                 Haptics.error()
                 return
             }
+            DiskImageCache.saveRaw(data, path: photo.storagePath)
             shareItem = ShareImage(
                 image: image,
                 caption: BrandedExport.Caption(date: photo.takenAt))

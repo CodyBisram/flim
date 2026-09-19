@@ -150,6 +150,8 @@ Twenty-two commits since 378; the copy below covers the seven a person can see.
 
     A feed with almost nobody in it shows you three people you know, and why: they follow you, they're in your rolls, or you came in the same door. Follow them from right there.
 
+    A dot on the Feed tab when there's something you haven't seen, and on Rolls when a roll of yours has developed. A dot, not a number.
+
     A push about your invites lands on your invites. Tap it and the sheet with your code is already open.
 
     Sorting says what it does. The three choices read Keep private, Post to page and Delete, with one line under them saying where each one goes. Posting confirms who can see it. The share sheet says who your post reaches: your followers, how many that is today, and anyone you tagged.

@@ -408,7 +408,7 @@ final class RollRevealViewModel {
             let mine = PhotoExport.eligible(deck, viewer: viewer, inRoll: true)
             for (i, photo) in mine.enumerated() {
                 guard let url = urls[photo.viewPath] else { continue }
-                if let file = await PhotoExport.download(url, into: exportDir, index: i, total: mine.count) {
+                if let file = await PhotoExport.download(url, into: exportDir, index: i, total: mine.count, cachePath: photo.viewPath) {
                     images.append(file)
                 }
             }

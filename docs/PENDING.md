@@ -416,6 +416,19 @@ The four from the audit the owner picked on 2026-09-10: the durable capture queu
 capture status, one invitation journey (a roll code admits you), deletion order, and the photo
 write boundary. In that order of value; built in the order of size.
 
+### done 2026-09-19: audit items 1 and 2, the tab dots and the egress fixes
+
+1. `TabSignals` (app-wide observable): a dot, never a number, on the Feed tab when the week has
+   unseen posts or Activity has unread rows, and on the Rolls tab when a roll you are in has
+   developed and its reveal is unwatched here. Refreshed at launch and every foreground; the feed
+   clears its own as the live count reaches zero and when Activity is opened; a reveal clears the
+   roll's on completion. Rules pure and tested. Before this nothing outside the Feed tab said
+   anything had happened, and 34 of 75 accounts have no push token.
+2. Egress: the thumb and card bytes made on the phone are filed under their own paths at upload
+   (and in the repair leg), so a shooter never downloads their own renditions back; Save all
+   (reveal and roll) and the roll-grid and feed-card shares read the disk cache first and file
+   what they fetch. The audit's estimate: 20 to 40 percent of egress.
+
 ### done 2026-09-19: the senior engineering audit, five passes (claude.ai/code/artifact/3bf6f52f-f8fd-473b-a9cd-77805a55a930)
 
 Races, caching/egress, the look (measured on the 11 clean calibration pairs), usability/growth,
