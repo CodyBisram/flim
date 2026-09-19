@@ -142,7 +142,7 @@ Twenty-two commits since 378; the copy below covers the seven a person can see.
 
 > **PASTE ONLY THE INDENTED BLOCK BELOW.** Everything under "Ship notes" is internal.
 
-    Your feed remembers what you've seen. Reinstall FLIM, or sign in on a new phone, and the shots you already reached stay reached. The count at the top of the feed is the whole week, not just what has loaded, and tapping it takes you to the newest day you haven't seen yet.
+    Your feed remembers what you've seen. Reinstall FLIM, or sign in on a new phone, and the shots you already reached stay reached. The count at the top of the feed is what's left for the week, it counts down as you read, and tapping it takes you to the newest day you haven't seen yet.
 
     A reply is one swipe from where you were. Open a comment from Activity and it opens right there; swipe it down and you're back on Activity.
 

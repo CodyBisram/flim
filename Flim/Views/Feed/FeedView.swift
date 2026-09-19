@@ -187,25 +187,40 @@ struct FeedView: View {
     /// FRIEND mark clears. Counting your own units here kept a stale friend count lit
     /// indefinitely — your own deeper frames stay honestly unseen unless you swipe your own
     /// day, and those are exactly the posts the ledger refuses to count.
-    private var anythingUnseen: Bool {
+    /// What is LEFT to see, live: the server's whole-window count minus the frames reached
+    /// since it was read, and the friends whose unseen shots remain. It ticks down as you read
+    /// and goes out at zero (owner, 2026-09-19: a number that held at "16" while you read was
+    /// stale, not a ledger). Friends: the server's count minus every loaded author whose shots
+    /// are all read now; an author with unseen shots the pages have not reached stays counted.
+    /// Falls back to the loaded-pages count when the server did not answer.
+    private var remainingLedger: (shots: Int, friends: Int)? {
         let uid = auth.currentUser?.id
-        // The server's number is a snapshot; reading in this session does not refresh it. So
-        // what is LEFT is that number minus the frames reached since the snapshot (only posts
-        // by others count, which is all the server counted). Without this the pill stayed lit
-        // for the whole session after everything was read (code audit, 2026-09-18).
-        if let serverLedger, let snapshotAt = serverLedgerAt {
-            let reachedSince = units.flatMap(\.items).filter {
-                $0.author.id != uid && (seenStore.seenDate($0.post.id).map { $0 >= snapshotAt } ?? false)
-            }.count
-            if serverLedger.shots - reachedSince > 0 { return true }
-        }
+        guard let serverLedger, let snapshotAt = serverLedgerAt else { return ledger }
+        let others = units.filter { $0.author.id != uid }
+        let reachedSince = others.flatMap(\.items).filter {
+            seenStore.seenDate($0.post.id).map { $0 >= snapshotAt } ?? false
+        }.count
+        let shots = max(0, serverLedger.shots - reachedSince)
+        // Authors the pages have loaded who had something unseen at the snapshot and have
+        // nothing unseen now: they are done, and leave the friend count.
+        let finishedAuthors = Set(others.filter { unit in
+            unit.items.contains { seenStore.seenDate($0.post.id).map { $0 >= snapshotAt } ?? false }
+                && unit.unseenCount(isSeen: { seenStore.isSeen($0) }) == 0
+        }.map(\.author.id))
+        let stillOpenAuthors = Set(others.filter { $0.unseenCount(isSeen: { seenStore.isSeen($0) }) > 0 }.map(\.author.id))
+        let friends = shots == 0 ? 0 : max(stillOpenAuthors.count, min(serverLedger.friends, serverLedger.friends - finishedAuthors.count), 1)
+        return (shots, friends)
+    }
+
+    private var anythingUnseen: Bool {
+        if let remainingLedger, remainingLedger.shots > 0 { return true }
+        let uid = auth.currentUser?.id
         return units.contains {
             $0.author.id != uid && $0.unseenCount(isSeen: { seenStore.isSeen($0) }) > 0
         }
     }
-    /// What the header shows: the server's whole-window count when it answered, else what
-    /// the loaded pages add up to.
-    private var shownLedger: (shots: Int, friends: Int)? { serverLedger ?? ledger }
+    /// What the header shows: what is left, live.
+    private var shownLedger: (shots: Int, friends: Int)? { remainingLedger }
     /// First run: nobody followed and nothing to show. Not "caught up", which describes a
     /// feed that ran out rather than one that has not started.
     private var followsNobody: Bool {
@@ -701,10 +716,9 @@ struct FeedView: View {
     /// header.
     private var caughtLine: String {
         let closer = "Nothing new until someone shoots something."
-        guard let ledger else { return closer }
-        return anythingUnseen
-            ? "\(ledgerLabel(ledger)).\n\(closer)"
-            : "\(ledgerLabel(ledger)), all seen.\n\(closer)"
+        // Live, like the header: what is still unread above this seam, or that it is all seen.
+        guard let remaining = remainingLedger, remaining.shots > 0 else { return closer }
+        return "\(ledgerLabel(remaining)) still above.\n\(closer)"
     }
 
     // MARK: - First run, loading
