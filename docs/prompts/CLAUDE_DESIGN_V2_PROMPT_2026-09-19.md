@@ -1,3 +1,6 @@
+> SUPERSEDED 2026-09-19 by `CLAUDE_DESIGN_V2_BRIEF_2026-09-19.md`, which adds the Contact Sheet
+> and the four-stage structure. Kept for the record of the six-board version.
+
 # Prompt for Claude Design: FLIM v2, second attempt
 
 Paste everything below the line into a new Claude Design project. Attach: three screenshots
