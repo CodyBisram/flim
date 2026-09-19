@@ -279,17 +279,26 @@ enum InstantFilmProcessor {
     /// Downsampled image bytes at an exact long edge, via ImageIO (no full decode of the
     /// source), in the format `encoding` asks for, see `encodeImage`.
     static func rendition(from data: Data, longEdge: CGFloat, encoding: EncodeSpec) -> EncodedImage? {
-        let srcOptions = [kCGImageSourceShouldCache: false] as CFDictionary
-        guard let source = CGImageSourceCreateWithData(data as CFData, srcOptions) else { return nil }
-        let options: [CFString: Any] = [
-            kCGImageSourceCreateThumbnailFromImageAlways: true,
-            kCGImageSourceCreateThumbnailWithTransform: true,
-            kCGImageSourceThumbnailMaxPixelSize: longEdge
-        ]
-        guard let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
-        // Re-encode through CGImageDestination so the downscaled rendition keeps an ICC tag.
-        // The source here is our own sRGB-tagged image, so the thumbnail CGImage is already
-        // sRGB; encodeImage embeds the profile (UIImage.jpegData would drop it, the export bug).
+        // Lanczos, the same resampler the master already goes through, instead of ImageIO's
+        // thumbnailer (bicubic-class). Measured 2026-09-19 on four calibration scenes: +8% grain
+        // retention and +1.6% edge acutance at the 1400 card, where the card sits at 0.67 of
+        // the Lapse reference's texture. The master is untouched, so the look pin is untouched;
+        // renditions are re-derivable through the repair path.
+        guard let source = CIImage(data: data, options: [.applyOrientationProperty: true]) else { return nil }
+        let extent = source.extent
+        let srcLong = max(extent.width, extent.height)
+        guard srcLong > 0 else { return nil }
+        var image = source
+        if srcLong > longEdge {
+            image = image.applyingFilter("CILanczosScaleTransform", parameters: [
+                kCIInputScaleKey: longEdge / srcLong,
+                kCIInputAspectRatioKey: 1.0
+            ])
+        }
+        // sRGB out, tagged, like every other render here; encodeImage embeds the profile
+        // (UIImage.jpegData would drop it, the export bug).
+        guard let cg = context.createCGImage(image, from: image.extent, format: .RGBA8,
+                                             colorSpace: CGColorSpace(name: CGColorSpace.sRGB)) else { return nil }
         return encodeImage(cg, encoding)
     }
 

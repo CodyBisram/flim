@@ -240,6 +240,10 @@ struct RollsView: View {
             ScrollView {
                 LazyVStack(spacing: 0) {
                     // One sentence, once, for a brand-new account: see NewAccountIntro.
+                    // The same standing nudge the feed shows. A person who lives on Camera and
+                    // Rolls never saw it, and a roll with no push token cannot tell them it
+                    // developed (engineering audit, 2026-09-19). It gates and hides itself.
+                    NotificationNudgeBanner()
                     FirstVisitLine(surface: .rolls)
                     Color.clear.frame(height: 0).id("rollsTop")
 

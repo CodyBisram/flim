@@ -416,6 +416,16 @@ The four from the audit the owner picked on 2026-09-10: the durable capture queu
 capture status, one invitation journey (a roll code admits you), deletion order, and the photo
 write boundary. In that order of value; built in the order of size.
 
+### done 2026-09-19: audit items 7 and 9
+
+7. Feed and thumb renditions are resampled with CILanczosScaleTransform, the master's own
+   resampler, instead of ImageIO's thumbnailer: +8% grain retention and +1.6% edge acutance at
+   the 1400 card (measured on four calibration scenes). Master untouched; look pin untouched
+   (the baselines passed unchanged). Renditions are re-derivable through the repair path.
+9. Your own empty page offers "Take a photo" (every other empty state offered the next thing);
+   the notification nudge banner sits at the top of Rolls too, so someone who lives on Camera
+   and Rolls meets it, since a roll with no push token cannot say it developed.
+
 ### done 2026-09-19: audit items 3 to 6
 
 3. A friend's-link arrival following fewer than three people gets "See who else <inviter> knows
@@ -430,11 +440,9 @@ write boundary. In that order of value; built in the order of size.
    (a duplicate counts as landed). A fast double-tap can no longer leave the server and the screen
    disagreeing.
 6. `2026-09-19_path_indexes.sql`: eight btrees on the storage-policy path columns (photos, posts,
-   users). WRITTEN AND FOLDED, NOT YET APPLIED: the management token expired; apply when the owner
-   mints a new one. The daily digest honours `fetchAllPages`' failed flag (a failed client_versions
+   users). APPLIED 2026-09-19 (eight indexes confirmed in pg_indexes). The daily digest honours `fetchAllPages`' failed flag (a failed client_versions
    read no longer means "nobody launched recently") and takes the 200 s run budget the other
-   senders have. NOT YET DEPLOYED, same token; deploy with `supabase functions deploy
-   send-daily-digest --no-verify-jwt --project-ref wxvwamwrjlrvqmuaafjv` after `supabase login`.
+   senders have. DEPLOYED 2026-09-19.
 
 ### done 2026-09-19: audit items 1 and 2, the tab dots and the egress fixes
 

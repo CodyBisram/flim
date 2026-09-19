@@ -787,6 +787,23 @@ struct UserPageView: View {
                     .font(.system(size: 26, weight: .ultraLight)).foregroundStyle(FlimTheme.textTertiary)
                 Text(isSelf ? "You haven't posted anything yet" : "No posts yet")
                     .flimFont(14, relativeTo: .subheadline).foregroundStyle(FlimTheme.textTertiary)
+                // Every other empty state in the app offers the next thing; this one did not
+                // (engineering audit, 2026-09-19). Your own page's next thing is a photo.
+                if isSelf {
+                    Button {
+                        Haptics.tap()
+                        NotificationCenter.default.post(name: .openCamera, object: nil)
+                    } label: {
+                        Label("Take a photo", systemImage: "camera.aperture")
+                            .flimFont(14, weight: .medium, relativeTo: .subheadline)
+                            .foregroundStyle(accent)
+                            .padding(.horizontal, 20)
+                            .frame(minHeight: 44)
+                            .overlay(Capsule().strokeBorder(accent, lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.top, 6)
+                }
             }
         }
         .padding(.top, 40)
