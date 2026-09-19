@@ -416,6 +416,19 @@ The four from the audit the owner picked on 2026-09-10: the durable capture queu
 capture status, one invitation journey (a roll code admits you), deletion order, and the photo
 write boundary. In that order of value; built in the order of size.
 
+### done 2026-09-19: the senior engineering audit, five passes (claude.ai/code/artifact/3bf6f52f-f8fd-473b-a9cd-77805a55a930)
+
+Races, caching/egress, the look (measured on the 11 clean calibration pairs), usability/growth,
+scale, run in parallel over 24f479e and compiled into one ranked plan. Nothing blocks 1.5.4. The
+ten-item plan, in order: a tab dot for unread; cache-first exports and rendition seeding (20 to
+40% of egress); Find friends for personal-invite arrivals; "Start another" on the roll screen and
+a default roll name; the reaction-race helper applied to roll photos and comment likes; six path
+indexes and the digest budget; Lanczos for the feed card resampler (zero-risk look win); the
+look A/B on device (vignette 0.75 to 0.34, black pull in the cube; owner's eye); the own-page
+empty route and the nudge for Camera-only users; chunked .in() before 400 accounts. Leave alone:
+launch and tabs (study), one-tap reactions, the photo width, JPEG/q79/1536x2048, shadow grain,
+R2. Companions: docs/prompts/V2_GAME_PLAN_2026-09-19.md, CLAUDE_DESIGN_V2_PROMPT_2026-09-19.md.
+
 ### done 2026-09-18: the full audit (four passes, report at claude.ai/code/artifact/e3fa797e-c2af-4535-b8d8-837cd19c65a8)
 
 Code, flows, database boundary, production data, run in parallel over `b503bf4`. Fixed the same
