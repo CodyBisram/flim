@@ -376,14 +376,19 @@ final class RollRevealViewModel {
         guard let uid = auth.currentUser?.id else { return }
         var list = reactionsByPhoto[photo.id] ?? []
         let mine = list.contains { $0.emoji == emoji && $0.userId == uid }
+        let key = "photo|\(photo.id)|\(emoji)|\(uid)"
         if mine {
             list.removeAll { $0.emoji == emoji && $0.userId == uid }
             reactionsByPhoto[photo.id] = list
-            Task { await photoService.removeReaction(photoId: photo.id, emoji: emoji, userId: uid) }
+            OptimisticToggle.shared.perform(key: key, write: { await photoService.removeReaction(photoId: photo.id, emoji: emoji, userId: uid) }) { [weak self] in
+                self?.reactionsByPhoto[photo.id, default: []].append(PhotoReaction(id: UUID(), photoId: photo.id, userId: uid, emoji: emoji))
+            }
         } else {
             list.append(PhotoReaction(id: UUID(), photoId: photo.id, userId: uid, emoji: emoji))
             reactionsByPhoto[photo.id] = list
-            Task { await photoService.addReaction(photoId: photo.id, emoji: emoji, userId: uid) }
+            OptimisticToggle.shared.perform(key: key, write: { await photoService.addReaction(photoId: photo.id, emoji: emoji, userId: uid) }) { [weak self] in
+                self?.reactionsByPhoto[photo.id, default: []].removeAll { $0.emoji == emoji && $0.userId == uid }
+            }
         }
     }
 

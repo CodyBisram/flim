@@ -114,6 +114,7 @@
 		521CDDD234317A8496499477 /* SwipeToDismiss.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB877D87534CC98FE281A6C2 /* SwipeToDismiss.swift */; };
 		52CF9D7CCAFEFE3011047AE5 /* DarkroomMonthPaging.swift in Sources */ = {isa = PBXBuildFile; fileRef = 788074CB36AF18B6BA347641 /* DarkroomMonthPaging.swift */; };
 		539DA206E23BE57487C12F48 /* RenditionBudgetTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F68633DB99EF94E78C8EB57 /* RenditionBudgetTests.swift */; };
+		543FC47EDB5AD8172BC5B893 /* OptimisticToggle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95BF87338BCCF06D3919FDCE /* OptimisticToggle.swift */; };
 		55270E18B1D6C49F02C7C77D /* ShareToFeedSheetTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BFC8CFD92B4F94277E5880B /* ShareToFeedSheetTests.swift */; };
 		55B5718300D138F542351FCE /* GrainCompositeSweep.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18CA22877447A7870546FAFB /* GrainCompositeSweep.swift */; };
 		5611040FA9BB44A4D0A8A212 /* FeedServiceMentionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B9BDF1F7E813164FE9D6B1E /* FeedServiceMentionTests.swift */; };
@@ -560,6 +561,7 @@
 		91F74C74BB63D759AD36FD8F /* LookRegressionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LookRegressionTests.swift; sourceTree = "<group>"; };
 		9249229E385AAD5E2A06EBB0 /* FeedUnitCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedUnitCard.swift; sourceTree = "<group>"; };
 		950384B61AF8316D3517594E /* PostDetailSwipeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PostDetailSwipeTests.swift; sourceTree = "<group>"; };
+		95BF87338BCCF06D3919FDCE /* OptimisticToggle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OptimisticToggle.swift; sourceTree = "<group>"; };
 		9733A56107406A4222E1AE1C /* DarkroomWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DarkroomWidget.swift; sourceTree = "<group>"; };
 		97BF90CA3E49DBDC6F7AC540 /* PendingInviter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PendingInviter.swift; sourceTree = "<group>"; };
 		982135580D7C1245419DF28E /* AccountDeleteView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountDeleteView.swift; sourceTree = "<group>"; };
@@ -967,6 +969,7 @@
 				49C42E0C072E983E45F3535C /* NetworkMonitor.swift */,
 				64805C0EDB37CD85F9616D39 /* NewAccountIntro.swift */,
 				7148B48A915D24BFBDEB23E0 /* NotificationService.swift */,
+				95BF87338BCCF06D3919FDCE /* OptimisticToggle.swift */,
 				E0ECC255A635FB5A6DDBDB14 /* PendingInvite.swift */,
 				97BF90CA3E49DBDC6F7AC540 /* PendingInviter.swift */,
 				5EDFD7F431FDA7B7408A49EB /* PendingInviteRedeemed.swift */,
@@ -1573,6 +1576,7 @@
 				5AD497FC90DCDC3592EA12FE /* NotificationService.swift in Sources */,
 				46BB284536C9EFB9CB87A36C /* OTPView.swift in Sources */,
 				3329F6BEB76AA76B288DE250 /* OnboardingView.swift in Sources */,
+				543FC47EDB5AD8172BC5B893 /* OptimisticToggle.swift in Sources */,
 				190AE824AFE7011E41CCEC4A /* PendingInvite.swift in Sources */,
 				FED3D0B6682D508B89CE788D /* PendingInviteRedeemed.swift in Sources */,
 				0DBA3E873DDEC31193540E99 /* PendingInviter.swift in Sources */,

@@ -416,6 +416,26 @@ The four from the audit the owner picked on 2026-09-10: the durable capture queu
 capture status, one invitation journey (a roll code admits you), deletion order, and the photo
 write boundary. In that order of value; built in the order of size.
 
+### done 2026-09-19: audit items 3 to 6
+
+3. A friend's-link arrival following fewer than three people gets "See who else <inviter> knows
+   on FLIM" in the first-frame Darkroom state, into Find friends (the cohort-code path already
+   opened it by itself).
+4. "Start another with this group" is a visible button under the DEVELOPED header on a roll
+   (it had lived only in the overflow menu and on the reveal's closing card); a new roll's name
+   is prefilled with the day ("Saturday, Sep 20"), editable (`Roll.defaultName`, tested).
+5. `OptimisticToggle`: the queue-revision-rollback pattern from `reactToPost`, factored out and
+   applied to roll-photo reactions in the reveal, the carousel and the pager, and to comment
+   likes; `addReaction`/`removeReaction`/`likeComment`/`unlikeComment` return whether they landed
+   (a duplicate counts as landed). A fast double-tap can no longer leave the server and the screen
+   disagreeing.
+6. `2026-09-19_path_indexes.sql`: eight btrees on the storage-policy path columns (photos, posts,
+   users). WRITTEN AND FOLDED, NOT YET APPLIED: the management token expired; apply when the owner
+   mints a new one. The daily digest honours `fetchAllPages`' failed flag (a failed client_versions
+   read no longer means "nobody launched recently") and takes the 200 s run budget the other
+   senders have. NOT YET DEPLOYED, same token; deploy with `supabase functions deploy
+   send-daily-digest --no-verify-jwt --project-ref wxvwamwrjlrvqmuaafjv` after `supabase login`.
+
 ### done 2026-09-19: audit items 1 and 2, the tab dots and the egress fixes
 
 1. `TabSignals` (app-wide observable): a dot, never a number, on the Feed tab when the week has

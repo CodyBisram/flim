@@ -39,6 +39,8 @@ struct DarkroomView: View {
     @Environment(PhotoService.self) private var photoService
     @Environment(RollService.self) private var rolls
     @Environment(FeedService.self) private var feed
+    /// Find friends, from the first-frame state (see below).
+    @State private var showDiscover = false
     @Environment(\.displayScale) private var displayScale
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -537,6 +539,7 @@ Text("Darkroom")
         // still-pending delete is flushed rather than left to its own 4s timer, see
         // `commitPendingDelete`'s own doc.
         .onDisappear { vm.stopRefreshing(); anchoredJumpTask?.cancel(); commitPendingDelete() }
+        .sheet(isPresented: $showDiscover) { DiscoverPeopleView() }
         .sheet(isPresented: $showCreateRoll) { CreateRollView() }
         .fullScreenCover(item: $selectedPhoto) { photo in
             pager(for: photo)
@@ -1258,6 +1261,25 @@ Text("Darkroom")
                 }
                 .buttonStyle(.plain)
                 .padding(.top, 10)
+                // A friend's-link arrival follows exactly one person, and this is the one
+                // screen they read on day one; Find friends otherwise lives behind the fourth
+                // tab. Same under-three-follows rule as the feed's People you know row
+                // (engineering audit, 2026-09-19).
+                if feed.followingIds.count < PeopleYouKnowRow.followThreshold {
+                    Button {
+                        Haptics.tap()
+                        showDiscover = true
+                    } label: {
+                        HStack(spacing: 6) {
+                            Text(inviter.map { "See who else \($0.name) knows on FLIM" } ?? "Find people you know on FLIM")
+                            Image(systemName: "chevron.right").font(.system(size: 11, weight: .semibold))
+                        }
+                        .flimFont(14, weight: .medium, relativeTo: .subheadline)
+                        .foregroundStyle(.white)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.top, 8)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 20)

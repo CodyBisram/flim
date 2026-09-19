@@ -1947,20 +1947,17 @@ struct PhotoPagerView: View {
             return
         }
         let mine = reactionsByPhoto[photo.id]?.contains { $0.emoji == emoji && $0.userId == uid } ?? false
-        Task {
-            if mine {
-                reactionsByPhoto[photo.id, default: []].removeAll { $0.emoji == emoji && $0.userId == uid }
-                await photoService.removeReaction(photoId: photo.id, emoji: emoji, userId: uid)
-            } else {
+        let key = "photo|\(photo.id)|\(emoji)|\(uid)"
+        if mine {
+            reactionsByPhoto[photo.id, default: []].removeAll { $0.emoji == emoji && $0.userId == uid }
+            OptimisticToggle.shared.perform(key: key, write: { await photoService.removeReaction(photoId: photo.id, emoji: emoji, userId: uid) }) {
                 reactionsByPhoto[photo.id, default: []].append(PhotoReaction(id: UUID(), photoId: photo.id, userId: uid, emoji: emoji))
-                await photoService.addReaction(photoId: photo.id, emoji: emoji, userId: uid)
             }
-            // Written straight into this photo's own key regardless of whether it's still
-            // `current`: with keyed storage there is no shared slot left for a late response to
-            // land under the wrong row, so the old fast-swipe guard here is no longer needed, and
-            // dropping it means a swipe away and back finds the fresh count already in place.
-            let fetched = await photoService.fetchReactions(photoId: photo.id)
-            reactionsByPhoto[photo.id] = fetched
+        } else {
+            reactionsByPhoto[photo.id, default: []].append(PhotoReaction(id: UUID(), photoId: photo.id, userId: uid, emoji: emoji))
+            OptimisticToggle.shared.perform(key: key, write: { await photoService.addReaction(photoId: photo.id, emoji: emoji, userId: uid) }) {
+                reactionsByPhoto[photo.id, default: []].removeAll { $0.emoji == emoji && $0.userId == uid }
+            }
         }
     }
 

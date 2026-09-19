@@ -391,6 +391,25 @@ struct RollDetailView: View {
                                 }
                                 if !vm.developedPhotos.isEmpty {
                                     sectionHeader("DEVELOPED")
+                                    // Visible, not only in the overflow menu and the reveal's
+                                    // closing card: a member who missed the ceremony can still
+                                    // restart the group. Everyone is invited, nobody is added
+                                    // (engineering audit, 2026-09-19; no follow-up roll had ever
+                                    // been started).
+                                    Button {
+                                        Haptics.tap()
+                                        showFollowUp = true
+                                    } label: {
+                                        Label("Start another with this group", systemImage: "plus.square.on.square")
+                                            .flimFont(14, weight: .medium, relativeTo: .subheadline)
+                                            .foregroundStyle(accent)
+                                            .padding(.horizontal, 16)
+                                            .frame(minHeight: 44)
+                                            .overlay(Capsule().strokeBorder(accent, lineWidth: 1))
+                                    }
+                                    .buttonStyle(.plain)
+                                    .padding(.horizontal, 16)
+                                    .padding(.bottom, 6)
                                     // Oldest to newest: a roll reads like a strip of film, not the
                                     // server's `id DESC` append order (every shot in a roll shares
                                     // one `develops_at`, so that order is random ids). The load-more

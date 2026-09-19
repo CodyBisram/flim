@@ -285,15 +285,17 @@ struct RollCarouselView: View {
         guard let uid = auth.currentUser?.id else { return }
         let mine = reactions.contains { $0.emoji == emoji && $0.userId == uid }
         Haptics.tap()
-        Task {
-            if mine {
-                reactions.removeAll { $0.emoji == emoji && $0.userId == uid }
-                await photoService.removeReaction(photoId: photo.id, emoji: emoji, userId: uid)
-            } else {
+        let key = "photo|\(photo.id)|\(emoji)|\(uid)"
+        if mine {
+            reactions.removeAll { $0.emoji == emoji && $0.userId == uid }
+            OptimisticToggle.shared.perform(key: key, write: { await photoService.removeReaction(photoId: photo.id, emoji: emoji, userId: uid) }) {
                 reactions.append(PhotoReaction(id: UUID(), photoId: photo.id, userId: uid, emoji: emoji))
-                await photoService.addReaction(photoId: photo.id, emoji: emoji, userId: uid)
             }
-            reactions = await photoService.fetchReactions(photoId: photo.id)
+        } else {
+            reactions.append(PhotoReaction(id: UUID(), photoId: photo.id, userId: uid, emoji: emoji))
+            OptimisticToggle.shared.perform(key: key, write: { await photoService.addReaction(photoId: photo.id, emoji: emoji, userId: uid) }) {
+                reactions.removeAll { $0.emoji == emoji && $0.userId == uid }
+            }
         }
     }
 

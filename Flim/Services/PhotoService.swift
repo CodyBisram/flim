@@ -1726,22 +1726,30 @@ final class PhotoService {
         }
     }
 
-    func addReaction(photoId: UUID, emoji: String, userId: UUID) async {
+    /// Whether the write landed, so an optimistic caller can roll back (see `OptimisticToggle`).
+    /// A duplicate insert (23505) means the reaction is already there, which is the desired
+    /// end state, so it counts as landed.
+    @discardableResult
+    func addReaction(photoId: UUID, emoji: String, userId: UUID) async -> Bool {
         struct R: Encodable { let photo_id: UUID; let user_id: UUID; let emoji: String }
-        _ = try? await supabase
-            .from("photo_reactions")
-            .insert(R(photo_id: photoId, user_id: userId, emoji: emoji))
-            .execute()
+        do {
+            try await supabase.from("photo_reactions").insert(R(photo_id: photoId, user_id: userId, emoji: emoji)).execute()
+            return true
+        } catch let error as PostgrestError where error.code == "23505" {
+            return true
+        } catch { return false }
     }
 
-    func removeReaction(photoId: UUID, emoji: String, userId: UUID) async {
-        _ = try? await supabase
-            .from("photo_reactions")
-            .delete()
-            .eq("photo_id", value: photoId.uuidString)
-            .eq("user_id", value: userId.uuidString)
-            .eq("emoji", value: emoji)
-            .execute()
+    @discardableResult
+    func removeReaction(photoId: UUID, emoji: String, userId: UUID) async -> Bool {
+        do {
+            try await supabase.from("photo_reactions").delete()
+                .eq("photo_id", value: photoId.uuidString)
+                .eq("user_id", value: userId.uuidString)
+                .eq("emoji", value: emoji)
+                .execute()
+            return true
+        } catch { return false }
     }
 
     // MARK: - Roll photo comments

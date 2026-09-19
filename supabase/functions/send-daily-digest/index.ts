@@ -431,7 +431,7 @@ Deno.serve(async (req: Request) => {
   // paged the same way as the other whole/large reads above in case that set ever exceeds
   // PostgREST's 1000-row cap.
   const recipientIds = [...tokensByUser.keys()];
-  const { rows: clientVersionRows } = await fetchAllPages<{ user_id: string; updated_at: string }>(
+  const { rows: clientVersionRows, failed: clientVersionsFailed } = await fetchAllPages<{ user_id: string; updated_at: string }>(
     (from, to) =>
       supabase.from("client_versions").select("user_id, updated_at")
         .in("user_id", recipientIds)
@@ -439,6 +439,9 @@ Deno.serve(async (req: Request) => {
         .range(from, to),
     "client_versions",
   );
+  // A failed read here is not "nobody launched recently": without this guard the digest went
+  // to people who had opened the app minutes earlier (scale audit, 2026-09-19).
+  if (clientVersionsFailed) return new Response("client_versions read failed; no digests sent", { status: 200 });
   const lastLaunch = new Map<string, number>(
     clientVersionRows.map((r) => [r.user_id, new Date(r.updated_at).getTime()]),
   );
@@ -491,7 +494,12 @@ Deno.serve(async (req: Request) => {
   let sent = 0;
   let considered = 0;
 
+  // Stop taking new recipients before the 240 s lease can lapse under a live run; the next
+  // hour's tick finishes the rest (the same budget the other two senders keep).
+  const RUN_BUDGET_MS = 200_000;
+  const runStartedAt = Date.now();
   for (const [userId, tokens] of tokensByUser) {
+    if (Date.now() - runStartedAt > RUN_BUDGET_MS) { console.warn(JSON.stringify({ at: "digest_budget_hit" })); break; }
     const following = followingByUser.get(userId);
     if (!following || following.size === 0) continue;
 

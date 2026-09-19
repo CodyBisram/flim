@@ -49,6 +49,9 @@ struct CreateRollView: View {
         .presentationDetents([.medium, .large], selection: $detent)
         .onAppear {
             if name.isEmpty, let followUpOf { name = Roll.followUpName(after: followUpOf.name) }
+            // A blank name was the one decision between wanting a roll and having its code
+            // (engineering audit, 2026-09-19). Prefilled with the day, fully editable.
+            if name.isEmpty { name = Roll.defaultName(on: .now) }
         }
     }
 

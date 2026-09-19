@@ -112,6 +112,14 @@ struct RollMember: Codable {
 extension Roll {
     /// The name the create sheet prefills for a follow-up: "Orlando" becomes "Orlando, day 2",
     /// "Orlando, day 2" becomes "Orlando, day 3". Only a suggestion; the person can type anything.
+    /// The name a new roll starts with when nobody typed one: the weekday and date, which is
+    /// what most rolls are about anyway ("Saturday, Sep 20"). Always editable.
+    static func defaultName(on date: Date, calendar: Calendar = .current, locale: Locale = .current) -> String {
+        let f = DateFormatter(); f.calendar = calendar; f.locale = locale; f.timeZone = calendar.timeZone
+        f.setLocalizedDateFormatFromTemplate("EEEE MMM d")
+        return f.string(from: date)
+    }
+
     static func followUpName(after name: String) -> String {
         let trimmed = name.trimmingCharacters(in: .whitespaces)
         let suggested: String

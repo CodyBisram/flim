@@ -1693,25 +1693,44 @@ final class FeedService {
         _ = try? await supabase.from("post_comments").delete().eq("id", value: id.uuidString).execute()
     }
 
-    func likeComment(id: UUID, userId: UUID) async {
+    @discardableResult
+    func likeComment(id: UUID, userId: UUID) async -> Bool {
         struct L: Encodable { let comment_id: UUID; let user_id: UUID }
-        _ = try? await supabase.from("comment_likes").insert(L(comment_id: id, user_id: userId)).execute()
+        do {
+            try await supabase.from("comment_likes").insert(L(comment_id: id, user_id: userId)).execute()
+            return true
+        } catch let error as PostgrestError where error.code == "23505" {
+            return true
+        } catch { return false }
     }
 
-    func unlikeComment(id: UUID, userId: UUID) async {
-        _ = try? await supabase.from("comment_likes").delete()
-            .eq("comment_id", value: id.uuidString).eq("user_id", value: userId.uuidString).execute()
+    @discardableResult
+    func unlikeComment(id: UUID, userId: UUID) async -> Bool {
+        do {
+            try await supabase.from("comment_likes").delete()
+                .eq("comment_id", value: id.uuidString).eq("user_id", value: userId.uuidString).execute()
+            return true
+        } catch { return false }
     }
 
-    /// Toggle a comment's like from the feed, updating the shared cache so every card stays in sync.
+    /// Toggle a comment's like from the feed, updating the shared cache so every card stays in
+    /// sync. Optimistic, serialized and rolled back through `OptimisticToggle`, like every other
+    /// on/off write; before 2026-09-19 a refused like stayed lit forever.
     func toggleCommentLike(_ info: CommentInfo, postId: UUID, userId: UUID) async {
-        if var list = commentsByPost[postId], let i = list.firstIndex(where: { $0.id == info.id }) {
-            list[i].likedByMe.toggle()
-            list[i].likeCount += list[i].likedByMe ? 1 : -1
-            commentsByPost[postId] = list
+        func flip() {
+            if var list = commentsByPost[postId], let i = list.firstIndex(where: { $0.id == info.id }) {
+                list[i].likedByMe.toggle()
+                list[i].likeCount += list[i].likedByMe ? 1 : -1
+                commentsByPost[postId] = list
+            }
         }
-        if info.likedByMe { await unlikeComment(id: info.comment.id, userId: userId) }
-        else { await likeComment(id: info.comment.id, userId: userId) }
+        flip()
+        let wasLiked = info.likedByMe
+        OptimisticToggle.shared.perform(key: "commentlike|\(info.comment.id)|\(userId)", write: { [weak self] in
+            guard let self else { return true }
+            return wasLiked ? await self.unlikeComment(id: info.comment.id, userId: userId)
+                            : await self.likeComment(id: info.comment.id, userId: userId)
+        }) { flip() }
     }
 
     // MARK: - Storage

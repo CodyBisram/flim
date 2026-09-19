@@ -12,6 +12,16 @@ struct FollowUpRollTests {
         #expect(Roll.followUpName(after: "Day 2 vibes") == "Day 2 vibes, day 2")
     }
 
+    @Test func aNewRollStartsWithTheDay() {
+        var cal = Calendar(identifier: .gregorian); cal.timeZone = TimeZone(identifier: "America/New_York")!
+        let date = cal.date(from: DateComponents(year: 2026, month: 9, day: 20, hour: 12))!
+        let name = Roll.defaultName(on: date, calendar: cal, locale: Locale(identifier: "en_US"))
+        // The localized template may render "Sat" or "Saturday", "Sep" or "September"; the
+        // day and the weekday are what must be there.
+        #expect(name == "Sunday, Sep 20")
+        #expect(name.count <= 60)
+    }
+
     @Test func theJoinPushRouteRoundTrips() {
         let parsed = PushDestination.parse(userInfo: ["flim": ["t": "join", "code": "ab12cd"]])
         #expect(parsed == .joinRoll(code: "AB12CD"))
