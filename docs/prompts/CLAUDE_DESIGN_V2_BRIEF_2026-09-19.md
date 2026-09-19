@@ -4,7 +4,7 @@ Paste everything below the line into a new Claude Design project. Attach, in thi
 
 1. Six screenshots of the live 1.5.4 build: the feed with a two-frame day, the feed with a
    four-frame day (strip), the sort deck, your own page, a friend's page you follow, Rolls.
-2. `Flim/Views/Theme.swift` and `Flim/Views/FlimFont.swift` from the repo (the tokens).
+2. `Flim/Views/Theme.swift` and `Flim/Views/Components/FlimFont.swift` from the repo (the tokens).
 3. Eight calibration photographs from `pairs/` with the shipped look applied, objects and places
    only, no faces.
 4. The Italy and Bali promo cards (the feel the owner wants the app itself to have).
