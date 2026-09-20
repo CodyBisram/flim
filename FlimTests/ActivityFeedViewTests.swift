@@ -256,7 +256,7 @@ final class ActivityDestinationTests: XCTestCase {
 
     // MARK: - v2 batch 2: thread rows open the sheet over Activity, photo rows open the post
 
-    func testThreadRowsOpenTheCommentsSheetAndPhotoRowsOpenThePost() {
+    func testThreadRowsOpenThePostWithTheComposerFocusedAndPhotoRowsOpenItPlain() {
         XCTAssertTrue(activityOpensThread(.comment("hi")))
         XCTAssertTrue(activityOpensThread(.commentLiked("hi")))
         XCTAssertTrue(activityOpensThread(.mentioned("@you")))

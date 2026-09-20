@@ -63,6 +63,13 @@ func activityActionText(_ kind: ActivityItem.Kind) -> String {
 /// the photograph. Thread rows open the comments sheet directly over Activity, so closing it is
 /// one gesture back to where you were; a reaction or a tag opens the post, because the
 /// photograph is the point. Top-level so the rule is testable (v2 batch 2, 2026-09-15).
+/// Whether a row's post opens with the comment composer already focused. The row is about a
+/// thread, so the thread is what you came for; but it opens ON the photograph, the same place a
+/// comment push lands (`MainTabView.route(to: .post(comments: true))`). It used to present a
+/// bare `CommentsSheet` over Activity instead (2026-09-15, "one gesture back"): that sheet
+/// never showed the photo the comment was about, and at its 0.75 detent the Activity row
+/// beneath showed through under the composer. Owner's call, 2026-09-20: "it should direct you
+/// to the photo."
 func activityOpensThread(_ kind: ActivityItem.Kind) -> Bool {
     switch kind {
     case .comment, .commentLiked, .mentioned, .threadComment: return true
@@ -110,13 +117,11 @@ struct ActivityFeedView: View {
     /// path itself), and `feed.signedURLs(for:)` already returns exactly this shape.
     @State private var rollPhotoThumbURLs: [String: URL] = [:]
     @State private var profileRoute: ProfileRoute?
-    /// A thread row's comments sheet, presented HERE rather than over a pushed post, so Back is
-    /// one gesture and lands on Activity by construction (the package's "comments remember
-    /// their origin"; no new navigation form, see the note above `navigationDestination`).
-    @State private var commentsFor: FeedItem?
-    /// A handle tapped inside that sheet: navigated to after the sheet is gone, never under it.
-    @State private var pendingProfile: ProfileRoute?
     @State private var postRoute: FeedItem?
+    /// Armed with the post whose row was a thread row, so its `PostDetailView` opens with the
+    /// composer focused. One-shot: cleared by the view once consumed (see
+    /// `PostDetailView.onCommentsFocusConsumed` for why it must be cleared at all).
+    @State private var focusCommentsPostId: UUID?
     /// When Activity was last opened, captured BEFORE this visit stamped it. Anything newer sits
     /// under "New". nil means no New section (first ever visit, or the caller didn't pass one).
     var seenBefore: Date?
@@ -176,19 +181,17 @@ struct ActivityFeedView: View {
                 }
             }
             .navigationDestination(item: $profileRoute) { UserPageView(userId: $0.id) }
-            .sheet(item: $commentsFor, onDismiss: {
-                if let pending = pendingProfile { pendingProfile = nil; profileRoute = pending }
-            }) { item in
-                CommentsSheet(post: item.post, authorHandle: item.author.handle) {
-                    pendingProfile = ProfileRoute(id: $0)
-                }
-            }
             // No zoom transition here either. The identical pair of modifiers on the profile
             // grid's push to this same destination caused it to open a previously-opened post,
             // and survived three different navigation forms underneath it. This one was added in
             // the same commit and has never been verified; it is not worth carrying a construct
             // that has already cost four attempts elsewhere for an animation nobody asked for.
-            .navigationDestination(item: $postRoute) { PostDetailView(item: $0) }
+            .navigationDestination(item: $postRoute) { item in
+                PostDetailView(
+                    item: item,
+                    focusCommentsOnAppear: focusCommentsPostId == item.post.id,
+                    onCommentsFocusConsumed: { focusCommentsPostId = nil })
+            }
             .task { await load() }
         }
         .flimSheetSurface()
@@ -292,11 +295,8 @@ struct ActivityFeedView: View {
     private func openDestination(_ item: ActivityItem) {
         switch activityDestination(for: item) {
         case .post(let feedItem):
-            if activityOpensThread(item.kind) {
-                commentsFor = feedItem
-            } else {
-                postRoute = feedItem
-            }
+            focusCommentsPostId = activityOpensThread(item.kind) ? feedItem.post.id : nil
+            postRoute = feedItem
         case .roll(let rollId, let photoId, let comments):
             // A roll photo has no `Post`/`PostDetailView` home; it opens in the roll's own
             // viewer, the same place a push notification's `.reveal` destination lands

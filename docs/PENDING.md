@@ -416,6 +416,15 @@ The four from the audit the owner picked on 2026-09-10: the durable capture queu
 capture status, one invitation journey (a roll code admits you), deletion order, and the photo
 write boundary. In that order of value; built in the order of size.
 
+### done 2026-09-20: Activity comment rows open the photograph
+
+Reverses the 2026-09-15 "comments remember their origin" change on the owner's word ("it should
+direct you to the photo"). A comment, mention, comment-liked or thread row in Activity now
+pushes `PostDetailView` with the composer focused, the same landing a comment push has; the
+nested `CommentsSheet` over Activity is gone. That sheet was also the bug in the screenshot:
+at its 0.75 detent the Activity row underneath showed through below the composer.
+`activityOpensThread(kind)` keeps its meaning (which rows focus the composer) and its test.
+
 ### done 2026-09-19: audit item 10
 
 10. Every `.in()` list that scales with a person's history (their posts, their comments,
