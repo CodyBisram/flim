@@ -25,9 +25,12 @@ on:
   pull_request:
   workflow_dispatch:
 
+# One lane for every branch: the build number is "TestFlight's latest plus one", so two
+# branches archiving at once would collide. Not cancelled: a push must not kill an upload
+# mid-flight; the next run simply waits its turn.
 concurrency:
-  group: ios-testflight-${{ github.ref }}
-  cancel-in-progress: true
+  group: ios-testflight
+  cancel-in-progress: false
 
 jobs:
   # --------------------------------------------------------------------------
