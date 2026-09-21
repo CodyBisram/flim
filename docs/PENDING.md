@@ -1713,6 +1713,24 @@ The bump this section used to ask for has already happened. Status: `done`.
   surfaces came down from 1600.
 - **owner** — Site analytics on flim-app.com is live but collects nothing until three owner
   steps are done.
+- **owner, 2026-09-21:** three migrations from work package A of the third audit, applied in
+  this order (the third depends on a column the first adds):
+  1. `pbcopy < supabase/migrations/2026-09-21_reveal_completion.sql`
+  2. `pbcopy < supabase/migrations/2026-09-21_roll_covers.sql`
+  3. `pbcopy < supabase/migrations/2026-09-21_nightly_numbers_day_bound.sql`
+
+  After each `pbcopy`, open the Supabase SQL editor, paste, and run before copying the next one.
+  Then redeploy the two edge functions touched in the same package:
+  - `supabase functions deploy send-invite-digest --no-verify-jwt`
+  - `supabase functions deploy send-daily-digest --no-verify-jwt`
+
+  `send-invite-digest` has no `cron.schedule` anywhere in the migrations despite its own header
+  comment describing one (`flim-invite-digest`, `0 13 * * *`); nothing currently calls it on a
+  schedule, so redeploying it does not need a matching cron header change.
+
+  **Do not let a build that calls `complete_reveal_view` or `roll_covers` reach TestFlight before
+  all three migrations above are applied.** Both are new RPCs; a client calling either before the
+  migration lands gets a hard failure, not a soft fallback.
 
 ## Waiting on device, from work already shipped
 

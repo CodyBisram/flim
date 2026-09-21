@@ -9144,7 +9144,7 @@ GRANT EXECUTE ON FUNCTION public.admin_versions() TO authenticated;
 -- Folded in from supabase/migrations/2026-09-19_path_indexes.sql (applied 2026-09-19 via service key).
 -- The storage policies match objects by path across photos, posts and users, and none of those
 -- columns had an index (scale audit, 2026-09-19): every signed-URL batch was a sequential scan
--- per object, fine at 3,000 photos and the top CPU cost near 50,000. Six btrees.
+-- per object, fine at 3,000 photos and the top CPU cost near 50,000. Eight btrees.
 CREATE INDEX IF NOT EXISTS photos_storage_path_idx ON public.photos (storage_path);
 CREATE INDEX IF NOT EXISTS photos_thumb_path_idx   ON public.photos (thumb_path);
 CREATE INDEX IF NOT EXISTS photos_feed_path_idx    ON public.photos (feed_path);
@@ -9153,3 +9153,233 @@ CREATE INDEX IF NOT EXISTS posts_thumb_path_idx    ON public.posts (thumb_path);
 CREATE INDEX IF NOT EXISTS posts_feed_path_idx     ON public.posts (feed_path);
 CREATE INDEX IF NOT EXISTS users_avatar_path_idx   ON public.users (avatar_path);
 CREATE INDEX IF NOT EXISTS users_cover_path_idx    ON public.users (cover_path);
+
+-- Folded in from supabase/migrations/2026-09-21_reveal_completion.sql (applied 2026-09-21).
+-- Reveal completion, not just opened (audit item 1, 2026-09-21).
+--
+-- roll_reveal_views.viewed_at is written the moment a reveal deck opens. Every reader that feeds
+-- "am I done with this roll" (rollRevealSeen, the Rolls dot, the widget, save-on-develop) is
+-- downstream of that row existing, so opening a reveal and bailing at frame two reads exactly
+-- like finishing it. completed_at is a second timestamp, set only once the reveal actually
+-- finishes, so a client can seed its local seen flag from completion instead of the open.
+ALTER TABLE public.roll_reveal_views ADD COLUMN IF NOT EXISTS completed_at timestamptz;
+
+-- Every historical open is treated as watched, because replaying every reveal for everyone would be worse.
+UPDATE public.roll_reveal_views SET completed_at = viewed_at WHERE completed_at IS NULL;
+
+-- A member's own row used to be readable only through "read for member rolls"
+-- (is_roll_member(roll_id)), which stops being true the moment they leave the roll
+-- ("roll_members: leave or creator removes" lets a member delete their own membership). Their
+-- roll_reveal_views row survives that delete (no cascade from roll_members), so without this a
+-- departed member's own completion could no longer be read back, even by themselves.
+DROP POLICY IF EXISTS "reveal_views: read own" ON public.roll_reveal_views;
+CREATE POLICY "reveal_views: read own"
+    ON public.roll_reveal_views FOR SELECT TO authenticated
+    USING (user_id = auth.uid());
+
+-- Records (or completes) the caller's own reveal view. Called once a reveal deck actually
+-- finishes, distinct from the open recorded elsewhere. Upserts rather than requiring the open to
+-- have happened first: a reveal that somehow finishes without an earlier open-row still gets one.
+-- completed_at only ever moves from NULL to a timestamp, never back, and never forward once set.
+CREATE OR REPLACE FUNCTION public.complete_reveal_view(p_roll_id uuid)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM public.roll_members
+        WHERE roll_id = p_roll_id AND user_id = auth.uid()
+    ) THEN
+        RAISE EXCEPTION 'not a member of this roll';
+    END IF;
+
+    INSERT INTO public.roll_reveal_views (roll_id, user_id, viewed_at, completed_at)
+    VALUES (p_roll_id, auth.uid(), now(), now())
+    ON CONFLICT (roll_id, user_id) DO UPDATE
+        SET completed_at = COALESCE(public.roll_reveal_views.completed_at, now());
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.complete_reveal_view(uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.complete_reveal_view(uuid) TO authenticated;
+
+-- Folded in from supabase/migrations/2026-09-21_roll_covers.sql (applied 2026-09-21).
+-- Roll covers, batched (audit item 9, 2026-09-21).
+--
+-- One row per developed photo, capped at PostgREST's 1000-row default, was how roll covers got
+-- picked client-side: the oldest rolls (past the cap) lost their cover and the client fell back
+-- to the master. SECURITY INVOKER (not DEFINER): photos RLS still decides what each caller can
+-- see, this just does the per-roll "latest visible photo" pick server-side, in one round trip for
+-- however many roll ids the caller asks about.
+CREATE OR REPLACE FUNCTION public.roll_covers(p_roll_ids uuid[])
+RETURNS TABLE (roll_id uuid, storage_path text, thumb_path text)
+LANGUAGE sql
+SECURITY INVOKER
+STABLE
+SET search_path = public
+AS $$
+    SELECT DISTINCT ON (roll_id) roll_id, storage_path, thumb_path
+    FROM public.photos
+    WHERE roll_id = ANY(p_roll_ids)
+      AND hidden = false
+      AND develops_at <= now()
+    ORDER BY roll_id, taken_at DESC;
+$$;
+
+REVOKE ALL ON FUNCTION public.roll_covers(uuid[]) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.roll_covers(uuid[]) TO authenticated;
+
+-- photos_roll_idx is (roll_id, develops_at DESC), which does not serve this query's
+-- ORDER BY roll_id, taken_at DESC. Partial on hidden = false since every reader of this
+-- function excludes hidden rows.
+CREATE INDEX IF NOT EXISTS photos_roll_taken_idx
+    ON public.photos (roll_id, taken_at DESC)
+    WHERE hidden = false;
+
+-- Folded in from supabase/migrations/2026-09-21_nightly_numbers_day_bound.sql (applied 2026-09-21).
+-- nightly_numbers: two column fixes, day-bounded (audit item 10, 2026-09-21).
+--
+-- 1. accounts counted every row in public.users at the moment the function ran, a running total
+--    as of "now", while new_accounts names a specific day (today - 1 in New York). A run any
+--    time after midnight already includes accounts created since that boundary, so Sep 18 could
+--    show +2 accounts with 0 new_accounts: both numbers were true, they just did not name the
+--    same day. accounts now counts everyone created before that same boundary, so it agrees
+--    with new_accounts.
+-- 2. reveals_watched counted viewed_at (the open), which the reveal-completion change above
+--    retires as the "watched" signal everywhere else. Counts completed_at on the named day
+--    instead.
+--
+-- Every other column is byte-identical to the definition this replaces. docs/NUMBERS.md's
+-- header describes the shape of the payload, not these two columns' exact source column, so it
+-- does not change.
+CREATE OR REPLACE FUNCTION public.nightly_numbers()
+RETURNS JSONB
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+STABLE
+AS $$
+WITH ny AS (SELECT (NOW() AT TIME ZONE 'America/New_York')::date AS today)
+SELECT jsonb_build_object(
+    'day', (SELECT (today - 1)::text FROM ny),
+    'accounts', (SELECT COUNT(*) FROM public.users u, ny WHERE (u.created_at AT TIME ZONE 'America/New_York')::date < ny.today AND u.username <> 'applereview'),
+    'new_accounts', (SELECT COUNT(*) FROM public.users u, ny WHERE (u.created_at AT TIME ZONE 'America/New_York')::date = ny.today - 1),
+    'openers', (SELECT COUNT(DISTINCT user_id) FROM public.usage_events e, ny WHERE e.event = 'app_open' AND e.day = ny.today - 1),
+    'openers_7d_avg', (SELECT ROUND(AVG(n)) FROM (
+        SELECT d, (SELECT COUNT(DISTINCT user_id) FROM public.usage_events e WHERE e.event = 'app_open' AND e.day = d) n
+        FROM ny, generate_series(ny.today - 7, ny.today - 1, INTERVAL '1 day') d) x),
+    'shooters', (SELECT COUNT(DISTINCT user_id) FROM public.photos p, ny WHERE (p.taken_at AT TIME ZONE 'America/New_York')::date = ny.today - 1),
+    'photos', (SELECT COUNT(*) FROM public.photos p, ny WHERE (p.taken_at AT TIME ZONE 'America/New_York')::date = ny.today - 1),
+    'posts', (SELECT COUNT(*) FROM public.posts p, ny WHERE (p.created_at AT TIME ZONE 'America/New_York')::date = ny.today - 1),
+    'reactions', (SELECT COUNT(*) FROM public.post_reactions r, ny WHERE (r.created_at AT TIME ZONE 'America/New_York')::date = ny.today - 1),
+    'comments', (SELECT COUNT(*) FROM public.post_comments c, ny WHERE (c.created_at AT TIME ZONE 'America/New_York')::date = ny.today - 1),
+    'follows', (SELECT COUNT(*) FROM public.follows f, ny WHERE (f.created_at AT TIME ZONE 'America/New_York')::date = ny.today - 1),
+    'rolls_created', (SELECT COUNT(*) FROM public.rolls r, ny WHERE (r.created_at AT TIME ZONE 'America/New_York')::date = ny.today - 1),
+    'reveals_watched', (SELECT COUNT(*) FROM public.roll_reveal_views v, ny WHERE (v.completed_at AT TIME ZONE 'America/New_York')::date = ny.today - 1),
+    'invites_redeemed', (SELECT COUNT(*) FROM public.allowed_emails a, ny WHERE (a.added_at AT TIME ZONE 'America/New_York')::date = ny.today - 1),
+    'reciprocal_pairs_7d', (SELECT public.reciprocal_pairs(7)),
+    'founding_left', (SELECT 100 - COUNT(*) FROM public.users WHERE signup_ordinal IS NOT NULL AND username <> 'applereview'),
+    'photos_missing_renditions_24h', (SELECT COUNT(*) FROM public.photos p WHERE p.taken_at > NOW() - INTERVAL '1 day' AND p.taken_at < NOW() - INTERVAL '1 hour' AND (p.thumb_path IS NULL OR p.feed_path IS NULL)),
+    'photos_24h', (SELECT COUNT(*) FROM public.photos p WHERE p.taken_at > NOW() - INTERVAL '1 day' AND p.taken_at < NOW() - INTERVAL '1 hour'),
+    'develop_pushes_unsent_over_1h', (SELECT COUNT(DISTINCT roll_id) FROM public.photos WHERE roll_id IS NOT NULL AND push_sent = FALSE AND develops_at < NOW() - INTERVAL '1 hour'),
+    'push_deliveries_failed_terminal_24h', (SELECT COUNT(*) FROM public.push_deliveries WHERE NOT delivered AND attempts >= 3 AND updated_at > NOW() - INTERVAL '1 day'),
+    'push_deliveries_24h', (SELECT COUNT(*) FROM public.push_deliveries WHERE updated_at > NOW() - INTERVAL '1 day'),
+    'cron_failures_24h', (SELECT COUNT(*) FROM cron.job_run_details WHERE status <> 'succeeded' AND start_time > NOW() - INTERVAL '1 day'),
+    'edge_non_200_24h', (SELECT COUNT(*) FROM public.edge_response_log WHERE created > NOW() - INTERVAL '1 day' AND status_code IS NOT NULL),
+    'edge_timeouts_24h', (SELECT COUNT(*) FROM public.edge_response_log WHERE created > NOW() - INTERVAL '1 day' AND status_code IS NULL),
+    'ops_alerts_unsent', (SELECT COUNT(*) FROM public.ops_alerts WHERE NOT push_sent),
+    'crash_rows_24h', (SELECT COUNT(*) FROM public.crash_diagnostics WHERE kind IN ('crash','hang') AND created_at > NOW() - INTERVAL '1 day'),
+    'reports_unnotified', (SELECT (SELECT COUNT(*) FROM public.photo_reports WHERE NOT push_sent) + (SELECT COUNT(*) FROM public.user_reports WHERE NOT push_sent)),
+    'db_mb', (SELECT ROUND(pg_database_size(current_database()) / 1048576.0)),
+    'storage_gb', (SELECT ROUND(COALESCE(SUM((metadata->>'size')::bigint), 0) / 1073741824.0, 2) FROM storage.objects WHERE bucket_id = 'photos')
+);
+$$;
+
+-- ============================================================
+-- Cron schedules, folded in as one block (audit item 6, 2026-09-21). These seven jobs were
+-- scheduled against production by hand from six dated migrations
+-- (2026-08-06_authenticate_cron_invocations.sql: flim-social-push, flim-develop-push,
+-- flim-daily-digest; 2026-08-08_schedule_storage_sweep.sql: flim-storage-sweep;
+-- 2026-08-24_disk_io_cron_hygiene.sql: flim-cron-cleanup; 2026-08-28_cron_hygiene.sql:
+-- flim-mark-developed; 2026-09-05_pg_net_vacuum_cron.sql: flim-net-response-vacuum), so a fresh
+-- bootstrap never got them even though production has run them for weeks (audit item 10,
+-- 2026-09-21: "SEVEN cron schedules live only in dated migrations"). Guarded so a Postgres image
+-- without pg_cron installed (this project's own local bootstrap image has it; a bare Postgres
+-- does not) does not fail the whole file. Each job unschedules itself first, so re-running this
+-- block (schema.sql is always re-applied whole, never diffed) updates the existing job in place
+-- instead of erroring or duplicating. The two push jobs carry the cadences production has run
+-- since 2026-08-24_disk_io_cron_hygiene.sql altered them in place (*/2 and */5), not the
+-- per-minute schedules the 2026-08-06 migration first gave them.
+--
+-- <SERVICE_ROLE_KEY>, <ANON_KEY> and <SWEEP_CONFIRM_TOKEN> below are placeholders, kept exactly
+-- as the source migrations keep them: this file is not a place to hold a real key. After a fresh
+-- apply, replace them by hand, e.g.:
+--   SELECT cron.alter_job((SELECT jobid FROM cron.job WHERE jobname = 'flim-social-push'),
+--       command := $job$ SELECT net.http_post(url := '...', headers := jsonb_build_object(
+--       'Content-Type', 'application/json', 'Authorization', 'Bearer <real key>')); $job$);
+-- ============================================================
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_cron') THEN
+        PERFORM cron.unschedule('flim-social-push') WHERE EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'flim-social-push');
+        PERFORM cron.schedule('flim-social-push', '*/2 * * * *', $job$
+          SELECT net.http_post(
+            url := 'https://wxvwamwrjlrvqmuaafjv.supabase.co/functions/v1/send-social-push',
+            headers := jsonb_build_object(
+              'Content-Type', 'application/json',
+              'Authorization', 'Bearer <SERVICE_ROLE_KEY>'
+            )
+          );
+        $job$);
+
+        PERFORM cron.unschedule('flim-develop-push') WHERE EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'flim-develop-push');
+        PERFORM cron.schedule('flim-develop-push', '*/5 * * * *', $job$
+          SELECT net.http_post(
+            url := 'https://wxvwamwrjlrvqmuaafjv.supabase.co/functions/v1/send-develop-push',
+            headers := jsonb_build_object(
+              'Content-Type', 'application/json',
+              'Authorization', 'Bearer <SERVICE_ROLE_KEY>'
+            )
+          );
+        $job$);
+
+        PERFORM cron.unschedule('flim-daily-digest') WHERE EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'flim-daily-digest');
+        PERFORM cron.schedule('flim-daily-digest', '0 14-23,0-1 * * *', $job$
+          SELECT net.http_post(
+            url := 'https://wxvwamwrjlrvqmuaafjv.supabase.co/functions/v1/send-daily-digest',
+            headers := jsonb_build_object(
+              'Content-Type', 'application/json',
+              'Authorization', 'Bearer <SERVICE_ROLE_KEY>'
+            )
+          );
+        $job$);
+
+        PERFORM cron.unschedule('flim-storage-sweep') WHERE EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'flim-storage-sweep');
+        PERFORM cron.schedule('flim-storage-sweep', '17 9 * * *', $job$
+          SELECT net.http_post(
+            url := 'https://wxvwamwrjlrvqmuaafjv.supabase.co/functions/v1/sweep-orphaned-storage',
+            headers := jsonb_build_object(
+              'Content-Type', 'application/json',
+              'Authorization', 'Bearer <ANON_KEY>'
+            ),
+            body := jsonb_build_object(
+              'dryRun', false,
+              'confirm', '<SWEEP_CONFIRM_TOKEN>'
+            )
+          );
+        $job$);
+
+        PERFORM cron.unschedule('flim-mark-developed') WHERE EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'flim-mark-developed');
+        PERFORM cron.schedule('flim-mark-developed', '*/5 * * * *', 'SELECT public.mark_developed_photos()');
+
+        PERFORM cron.unschedule('flim-cron-cleanup') WHERE EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'flim-cron-cleanup');
+        PERFORM cron.schedule('flim-cron-cleanup', '20 8 * * *',
+            $job$DELETE FROM cron.job_run_details WHERE end_time < now() - interval '3 days'$job$);
+
+        PERFORM cron.unschedule('flim-net-response-vacuum') WHERE EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'flim-net-response-vacuum');
+        PERFORM cron.schedule('flim-net-response-vacuum', '0 9 * * 0',
+            $job$VACUUM (FULL, ANALYZE) net._http_response$job$);
+    END IF;
+END $$;

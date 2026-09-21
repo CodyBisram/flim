@@ -1,6 +1,6 @@
 -- The storage policies match objects by path across photos, posts and users, and none of those
 -- columns had an index (scale audit, 2026-09-19): every signed-URL batch was a sequential scan
--- per object, fine at 3,000 photos and the top CPU cost near 50,000. Six btrees.
+-- per object, fine at 3,000 photos and the top CPU cost near 50,000. Eight btrees.
 CREATE INDEX IF NOT EXISTS photos_storage_path_idx ON public.photos (storage_path);
 CREATE INDEX IF NOT EXISTS photos_thumb_path_idx   ON public.photos (thumb_path);
 CREATE INDEX IF NOT EXISTS photos_feed_path_idx    ON public.photos (feed_path);

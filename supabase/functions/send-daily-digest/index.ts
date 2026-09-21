@@ -67,8 +67,10 @@ const supabase = createClient(
 // incident. Every query in this file that has no filter narrowing it to "this run's backlog" (i.e.
 // it reads the WHOLE table: `device_tokens`, `digest_state`, `blocks`, `covered_post_windows`) is
 // exactly that shape, so all four page through `.range()` instead of a single unbounded select.
-// Ordered by a stable, unique column so a page boundary can't skip or repeat a row if the table is
-// written to mid-pagination.
+// `posts` joined the list 2026-09-21: its 48-hour window is bounded by time, not row count, and a
+// busy window can cross the cap the same way.
+// Ordered by a stable, unique column (or a unique tiebreak added to a non-unique one) so a page
+// boundary can't skip or repeat a row if the table is written to mid-pagination.
 const PAGE_SIZE = 1000;
 /// `failed` is true only when a page errored, so a caller that must fail CLOSED on an unreadable
 /// table (covered_post_windows below) can tell "we saw zero rows" apart from "we couldn't read the
@@ -447,14 +449,21 @@ Deno.serve(async (req: Request) => {
   );
 
   // Posts inside the widest window any user could need. Fetched once, then filtered per user,
-  // rather than a query per candidate.
-  const { data: recentPosts } = await supabase
-    .from("posts")
-    .select("id, user_id, created_at")
-    .eq("hidden", false)
-    .gte("created_at", maxWindowStart.toISOString())
-    .order("created_at", { ascending: false });
-  if (!recentPosts || recentPosts.length === 0) return new Response("no recent posts");
+  // rather than a query per candidate. Paged the same way as the whole-table reads above: this
+  // window is bounded by time, not row count, and a busy 48 hours can cross PostgREST's 1000-row
+  // cap the same way the unfiltered tables can (scale audit, 2026-09-19).
+  const { rows: recentPosts } = await fetchAllPages<{ id: string; user_id: string; created_at: string }>(
+    (from, to) =>
+      supabase.from("posts")
+        .select("id, user_id, created_at")
+        .eq("hidden", false)
+        .gte("created_at", maxWindowStart.toISOString())
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: false })
+        .range(from, to),
+    "posts",
+  );
+  if (recentPosts.length === 0) return new Response("no recent posts");
 
   const posterIds = [...new Set(recentPosts.map((p) => p.user_id as string))];
 
