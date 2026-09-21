@@ -61,6 +61,17 @@ final class FeedSeenStore {
     /// before it snapshots its ledger: a "16 shots from 8 friends" computed a moment before the
     /// server's marks land would be exactly the number this mirror exists to prevent.
     private var pullTask: Task<Void, Never>?
+    /// A coalesced disk write not yet applied; see `schedulePersist`. Non-nil means `seenAt`
+    /// has marks the on-disk copy doesn't yet.
+    private var persistTask: Task<Void, Never>?
+    /// How many times a mark actually reached `UserDefaults`, not `private` so tests can pin
+    /// the debounce: a burst of marks must cost one write, not one per mark.
+    private(set) var diskWriteCount = 0
+
+    /// The network push behind `flushPending` and the departing-account flush below, factored
+    /// out so tests can substitute a spy instead of hitting the network. Returns whichever ids
+    /// actually landed (in practice all of `marks` or none, since one upsert is one request).
+    private let pushRows: (_ user: UUID, _ marks: [UUID: Date]) async -> Set<UUID>
 
     /// The signed-in account these marks belong to right now. Set explicitly at every place the
     /// signed-in account changes (app launch with a restored session, sign-in, sign-out, account
@@ -69,7 +80,25 @@ final class FeedSeenStore {
     var activeUserId: UUID? {
         didSet {
             guard activeUserId != oldValue else { return }
-            guard let activeUserId else { seenAt = [:]; pendingSync = [:]; flushTask?.cancel(); return }
+            // Everything below reads/resets `seenAt`/`pendingSync` for the INCOMING account, so
+            // whatever the OLD account still owed disk and the server must be captured and sent
+            // on its behalf first, synchronously, before any of that happens.
+            if let oldValue {
+                // The coalesced write is a plain dictionary set, not a network call: flush it in
+                // place rather than losing the last second of marks to a debounce that will
+                // never get to fire for this account again.
+                if persistTask != nil { flushPersist(for: oldValue) }
+                // The server mirror IS a network call and can't run synchronously here. Capture
+                // the batch and the account it belongs to now, then push it in a Task pinned to
+                // `oldValue`: `flushDeparting` never reads `activeUserId`, so it can't be made to
+                // write under whoever is signed in by the time the request lands.
+                if !pendingSync.isEmpty {
+                    let departing = pendingSync
+                    Task { [weak self] in await self?.flushDeparting(departing, for: oldValue) }
+                }
+            }
+            flushTask?.cancel(); flushTask = nil
+            guard let activeUserId else { seenAt = [:]; pendingSync = [:]; return }
             migrateLegacyMarksIfNeeded(into: activeUserId)
             seenAt = loadMarks(for: activeUserId)
             pendingSync = [:]
@@ -80,8 +109,21 @@ final class FeedSeenStore {
 
     private let defaults: UserDefaults
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = .standard,
+         pushRows: @escaping (_ user: UUID, _ marks: [UUID: Date]) async -> Set<UUID> = FeedSeenStore.defaultPushRows) {
         self.defaults = defaults
+        self.pushRows = pushRows
+    }
+
+    private static func defaultPushRows(user: UUID, marks: [UUID: Date]) async -> Set<UUID> {
+        struct Row: Encodable { let user_id: UUID; let post_id: UUID; let seen_at: Date }
+        let rows = marks.map { Row(user_id: user, post_id: $0.key, seen_at: $0.value) }
+        do {
+            try await supabase.from("post_seen").upsert(rows, onConflict: "user_id,post_id", ignoreDuplicates: true).execute()
+            return Set(marks.keys)
+        } catch {
+            return []
+        }
     }
 
     func isSeen(_ id: UUID) -> Bool { activeUserId != nil && seenAt[id] != nil }
@@ -100,9 +142,39 @@ final class FeedSeenStore {
             let evictable = seenAt.sorted { $0.value < $1.value }.prefix(seenAt.count - Self.cap)
             for (id, _) in evictable { seenAt.removeValue(forKey: id) }
         }
-        persist(for: activeUserId)
+        // `seenAt` (in memory) is authoritative for every read in the meantime; only the disk
+        // copy is debounced, so a swipe through a whole day costs one write, not one per frame.
+        schedulePersist(for: activeUserId)
         pendingSync[id] = now
         scheduleFlush()
+    }
+
+    /// Coalesces a burst of marks into one disk write about a second later. `seenAt` already
+    /// holds every mark by the time this fires; a crash inside the window costs only the marks
+    /// made in that last second, never a stale answer while the app is running.
+    private func schedulePersist(for userId: UUID) {
+        guard persistTask == nil else { return }
+        persistTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(1))
+            guard !Task.isCancelled else { return }
+            self?.flushPersist(for: userId)
+        }
+    }
+
+    /// Writes `seenAt` to disk now and cancels any pending debounce for it. Synchronous: the
+    /// write itself is a small dictionary set, not a network call.
+    private func flushPersist(for userId: UUID) {
+        persistTask?.cancel()
+        persistTask = nil
+        persist(for: userId)
+    }
+
+    /// Forces the coalesced write immediately, for the moments the debounce's own timer will
+    /// never get to fire: leaving the foreground, signing out. Mirrors `flushPending`'s own
+    /// "commit now" role for the server side of the same marks.
+    func flushPersistNow() {
+        guard let activeUserId, persistTask != nil else { return }
+        flushPersist(for: activeUserId)
     }
 
     // MARK: - The account's copy
@@ -127,20 +199,35 @@ final class FeedSeenStore {
         guard let user = syncedUserId, user == activeUserId, !pendingSync.isEmpty else { return }
         // 500 a request: a first-time backfill can be thousands of rows, and one huge body is
         // slower to fail than several small ones.
-        let batch = Array(pendingSync.prefix(500))
-        struct Row: Encodable { let user_id: UUID; let post_id: UUID; let seen_at: Date }
-        let rows = batch.map { Row(user_id: user, post_id: $0.key, seen_at: $0.value) }
-        do {
-            try await supabase.from("post_seen").upsert(rows, onConflict: "user_id,post_id", ignoreDuplicates: true).execute()
-            guard user == activeUserId else { return }
-            for (id, _) in batch { pendingSync.removeValue(forKey: id) }
+        let batch = Dictionary(uniqueKeysWithValues: Array(pendingSync.prefix(500)))
+        let landed = await pushRows(user, batch)
+        guard user == activeUserId else { return }
+        for id in landed { pendingSync.removeValue(forKey: id) }
+        if landed.count == batch.count {
             if !pendingSync.isEmpty { await flushPending() }
-        } catch {
+        } else {
             // Left pending; the next flush tries again. A mark for a post deleted since fails
             // its foreign key and would stick forever, so anything older than a day is dropped
             // after a failure rather than retried into the ground.
             let cutoff = Date.now.addingTimeInterval(-86400)
-            for (id, date) in batch where date < cutoff { pendingSync.removeValue(forKey: id) }
+            for (id, date) in batch where !landed.contains(id) && date < cutoff {
+                pendingSync.removeValue(forKey: id)
+            }
+        }
+    }
+
+    /// Pushes marks made under an account that just stopped being active, addressed explicitly
+    /// to `user` rather than to whatever `activeUserId` reads by the time the request lands (by
+    /// then, the incoming account). Never touches `pendingSync` or `seenAt`, both already reset
+    /// (or about to be) for the incoming account in `activeUserId`'s own didSet; this only owns
+    /// the local copy of the departing batch it was handed.
+    private func flushDeparting(_ marks: [UUID: Date], for user: UUID) async {
+        var remaining = marks
+        while !remaining.isEmpty {
+            let batch = Dictionary(uniqueKeysWithValues: Array(remaining.prefix(500)))
+            let landed = await pushRows(user, batch)
+            guard !landed.isEmpty else { return }   // best-effort; the account's own device copy still has these
+            for id in landed { remaining.removeValue(forKey: id) }
         }
     }
 
@@ -209,10 +296,12 @@ final class FeedSeenStore {
         return marks
     }
 
-    /// Written synchronously: one small dictionary, at most once per swipe. A debounce would
-    /// add a window where a fast app kill forgets what was just read.
+    /// The actual disk write. `markSeen` no longer calls this directly (see `schedulePersist`);
+    /// `seedBacklog` and the migration still write immediately, since those are one-shot batch
+    /// operations, not a per-mark hot path.
     private func persist(for userId: UUID) {
         writeMarks(seenAt, for: userId)
+        diskWriteCount += 1
     }
 
     private func writeMarks(_ marks: [UUID: Date], for userId: UUID) {

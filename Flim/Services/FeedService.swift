@@ -32,6 +32,11 @@ final class FeedService {
     var feedError: String?
     /// The same, for the activity list.
     var activityError: String?
+    /// One `unreadActivityCount` run in flight at a time per (user, since): both `TabSignals.refresh`
+    /// and `FeedView.reload` call this on cold launch and every foreground, and the query itself is
+    /// roughly ten round trips. Concurrent callers await the SAME task instead of paying for it
+    /// twice; see `unreadActivityCount`.
+    private var unreadActivityCountTasks: [String: Task<Int, Never>] = [:]
 
     // Reactions + comments for the loaded feed, batch-fetched once per page (vs a query per
     // card). Feed cards read + mutate these, so they're the single source of truth.
@@ -139,14 +144,23 @@ final class FeedService {
         if let posted { myPostedPhotoIds = posted }
     }
 
+    /// Paged past PostgREST's 1000-row cap (`QueryBatch.allPages`): an account with more posts
+    /// than that used to silently lose the "shared to your page" badge on everything past the
+    /// cap. Returning `nil` on ANY page failing (not just partial results) keeps the caller's
+    /// "last known set" contract: a page that throws propagates out of `allPages`, caught below.
     private func fetchMyPostedPhotoIds(userId: UUID) async -> Set<UUID>? {
         struct Row: Decodable { let photo_id: UUID }
-        guard let rows: [Row] = try? await supabase
-            .from("posts").select("photo_id")
-            .eq("user_id", value: userId.uuidString)
-            .execute().value
-        else { return nil }
-        return Set(rows.map(\.photo_id))
+        do {
+            let rows: [Row] = try await QueryBatch.allPages { from, to in
+                try await supabase.from("posts").select("photo_id")
+                    .eq("user_id", value: userId.uuidString)
+                    .range(from: from, to: to)
+                    .execute().value
+            }
+            return Set(rows.map(\.photo_id))
+        } catch {
+            return nil
+        }
     }
 
     func hasSharedPhoto(_ id: UUID) -> Bool { myPostedPhotoIds.contains(id) }
@@ -1795,40 +1809,61 @@ final class FeedService {
     /// followers. Merged and sorted newest-first.
     /// A lightweight unread count for the Activity bell, fetches only `created_at` of activity
     /// since `since` (no bodies, no profile lookups), unlike the full `fetchActivity`.
+    ///
+    /// Single-flighted per (user, since): `TabSignals.refresh` and `FeedView.reload` both call
+    /// this on cold launch and on every foreground, and the underlying query is roughly ten
+    /// round trips. Without this, that pair paid for it twice, back to back, every single time.
     func unreadActivityCount(userId: UUID, since: Date) async -> Int {
-        struct Row: Decodable { let created_at: Date }
+        let key = "\(userId.uuidString)|\(since.timeIntervalSince1970)"
+        if let inFlight = unreadActivityCountTasks[key] {
+            return await inFlight.value
+        }
+        let task = Task { [weak self] () -> Int in
+            guard let self else { return 0 }
+            return await self.computeUnreadActivityCount(userId: userId, since: since)
+        }
+        unreadActivityCountTasks[key] = task
+        let result = await task.value
+        unreadActivityCountTasks[key] = nil
+        return result
+    }
+
+    private func computeUnreadActivityCount(userId: UUID, since: Date) async -> Int {
         let sinceStr = since.ISO8601Format()
         var total = 0
 
         let postIds = (await fetchUserPosts(userId: userId) ?? []).map(\.id.uuidString)
         if !postIds.isEmpty {
-            let reactions: [Row] = await QueryBatch.inChunks(postIds) { chunk in
-                (try? await supabase.from("post_reactions").select("created_at")
+            // Counts only, nothing downstream reads a row, so these are `head: true` counts
+            // rather than fetching (and discarding) every reaction/comment body.
+            for chunk in postIds.chunked(into: QueryBatch.inListLimit) {
+                total += (try? await supabase.from("post_reactions")
+                    .select("created_at", head: true, count: .exact)
                     .in("post_id", values: chunk).neq("user_id", value: userId.uuidString)
-                    .gt("created_at", value: sinceStr).execute().value) ?? []
-            }
-            let comments: [Row] = await QueryBatch.inChunks(postIds) { chunk in
-                (try? await supabase.from("post_comments").select("created_at")
+                    .gt("created_at", value: sinceStr).execute().count) ?? 0
+                total += (try? await supabase.from("post_comments")
+                    .select("created_at", head: true, count: .exact)
                     .in("post_id", values: chunk).neq("user_id", value: userId.uuidString)
-                    .gt("created_at", value: sinceStr).execute().value) ?? []
+                    .gt("created_at", value: sinceStr).execute().count) ?? 0
             }
-            total += reactions.count + comments.count
         }
-        let follows: [Row] = (try? await supabase.from("follows").select("created_at")
+        total += (try? await supabase.from("follows")
+            .select("created_at", head: true, count: .exact)
             .eq("following_id", value: userId.uuidString)
-            .gt("created_at", value: sinceStr).execute().value) ?? []
-        total += follows.count
+            .gt("created_at", value: sinceStr).execute().count) ?? 0
 
         // Being tagged, and reactions to a photo you are IN, both appear on the Activity screen but
         // were never counted here, so the bell stayed dark while the list had something new in it.
         // A notification that leads to a screen whose badge disagrees with its contents reads as
         // the app losing track, which is the same complaint that surfaced the tagged-reaction row
-        // in the first place.
+        // in the first place. Rows are needed here (not just a count): `post_id` feeds the
+        // tagged-reactions scan just below, matching `activityReactionsOnTaggedPosts`'s own
+        // exclusions.
         struct TagRow: Decodable { let post_id: UUID; let created_at: Date }
         let tags: [TagRow] = (try? await supabase.from("post_tags").select("post_id,created_at")
             .eq("tagged_user_id", value: userId.uuidString)
-            .execute().value) ?? []
-        total += tags.filter { $0.created_at > since }.count
+            .gt("created_at", value: sinceStr).execute().value) ?? []
+        total += tags.count
 
         // Reactions on those posts, minus the ones already counted above (a post you own) and your
         // own reactions, matching `activityReactionsOnTaggedPosts`'s exclusions exactly so the
@@ -1836,18 +1871,17 @@ final class FeedService {
         let ownedIds = Set(postIds)
         let taggedNotOwned = tags.map(\.post_id.uuidString).filter { !ownedIds.contains($0) }
         if !taggedNotOwned.isEmpty {
-            let taggedReactions: [Row] = await QueryBatch.inChunks(taggedNotOwned) { chunk in
-                (try? await supabase.from("post_reactions").select("created_at")
+            for chunk in taggedNotOwned.chunked(into: QueryBatch.inListLimit) {
+                total += (try? await supabase.from("post_reactions")
+                    .select("created_at", head: true, count: .exact)
                     .in("post_id", values: chunk).neq("user_id", value: userId.uuidString)
-                    .gt("created_at", value: sinceStr).execute().value) ?? []
+                    .gt("created_at", value: sinceStr).execute().count) ?? 0
             }
-            total += taggedReactions.count
         }
 
         // Likes on your own comments, same "the badge can never disagree with the list" reasoning
         // as the tagged-reaction count above; `activityCommentLikes` is the matching Activity-list
-        // source. `.gt("created_at", ...)` at the DB already excludes the column's nullable-but-rare
-        // NULLs (NULL never satisfies a comparison), so `Row`'s non-optional `created_at` is safe here.
+        // source. Rows are needed here: `id` feeds the comment-likes scan just below.
         struct OwnComment: Decodable { let id: UUID }
         let ownComments: [OwnComment] = await QueryBatch.allPages { from, to in
             (try? await supabase.from("post_comments").select("id")
@@ -1856,35 +1890,30 @@ final class FeedService {
         }
         let ownCommentIds = ownComments.map(\.id.uuidString)
         if !ownCommentIds.isEmpty {
-            let commentLikes: [Row] = await QueryBatch.inChunks(ownCommentIds) { chunk in
-                (try? await supabase.from("comment_likes").select("created_at")
+            for chunk in ownCommentIds.chunked(into: QueryBatch.inListLimit) {
+                total += (try? await supabase.from("comment_likes")
+                    .select("created_at", head: true, count: .exact)
                     .in("comment_id", values: chunk).neq("user_id", value: userId.uuidString)
-                    .gt("created_at", value: sinceStr).execute().value) ?? []
+                    .gt("created_at", value: sinceStr).execute().count) ?? 0
             }
-            total += commentLikes.count
         }
 
         // Comments and reactions on a roll photo you own, same "badge can't disagree with the
         // list" reasoning as everything else in this function; `activityRollPhotoComments` /
         // `activityRollPhotoReactions` below are the matching Activity-list sources. Embeds
         // `photos!inner(user_id)` the same way `activityRollPhotoComments` does, so the filter
-        // runs server-side rather than fetching every comment/reaction first.
-        struct OwnedPhotoRow: Decodable { let created_at: Date; let photos: Owner?
-            struct Owner: Decodable { let user_id: UUID }
-        }
-        let rollComments: [OwnedPhotoRow] = (try? await supabase.from("photo_comments")
-            .select("created_at, photos!inner(user_id)")
+        // runs server-side; counts only, nothing downstream reads a row, so `head: true`.
+        total += (try? await supabase.from("photo_comments")
+            .select("created_at, photos!inner(user_id)", head: true, count: .exact)
             .eq("photos.user_id", value: userId.uuidString)
             .neq("user_id", value: userId.uuidString)
-            .gt("created_at", value: sinceStr).execute().value) ?? []
-        total += rollComments.count
+            .gt("created_at", value: sinceStr).execute().count) ?? 0
 
-        let rollReactions: [OwnedPhotoRow] = (try? await supabase.from("photo_reactions")
-            .select("created_at, photos!inner(user_id)")
+        total += (try? await supabase.from("photo_reactions")
+            .select("created_at, photos!inner(user_id)", head: true, count: .exact)
             .eq("photos.user_id", value: userId.uuidString)
             .neq("user_id", value: userId.uuidString)
-            .gt("created_at", value: sinceStr).execute().value) ?? []
-        total += rollReactions.count
+            .gt("created_at", value: sinceStr).execute().count) ?? 0
 
         // @mentions of you, on a post or a roll photo, yours or not; `activityMentions` below is
         // the matching Activity-list source. Prefiltered server-side with `.ilike` (cheap, but can
@@ -2114,7 +2143,11 @@ final class FeedService {
                     .neq("user_id", value: userId.uuidString)
                     .order("created_at", ascending: false).limit(40).execute().value
             }
-            return rs.map { ActivityRaw(kind: .like($0.emoji), actorId: $0.user_id, date: $0.created_at, postId: $0.post_id) }
+            // Each CHUNK's own `.limit(40)` only bounds that chunk: with more than one chunk of
+            // post ids, the merge above can hold up to 40 per chunk, not 40 overall. Re-sort and
+            // re-trim after the merge, same as the posts-pill call site (`peekFeed`) does.
+            let newest = rs.sorted { $0.created_at > $1.created_at }.prefix(40)
+            return newest.map { ActivityRaw(kind: .like($0.emoji), actorId: $0.user_id, date: $0.created_at, postId: $0.post_id) }
         }()
 
         async let comments: [ActivityRaw] = {
@@ -2126,7 +2159,8 @@ final class FeedService {
                     .neq("user_id", value: userId.uuidString)
                     .order("created_at", ascending: false).limit(40).execute().value
             }
-            return cs.map { ActivityRaw(kind: .comment($0.body), actorId: $0.user_id, date: $0.created_at, postId: $0.post_id) }
+            let newest = cs.sorted { $0.created_at > $1.created_at }.prefix(40)
+            return newest.map { ActivityRaw(kind: .comment($0.body), actorId: $0.user_id, date: $0.created_at, postId: $0.post_id) }
         }()
 
         return try await reactions + comments
@@ -2195,8 +2229,11 @@ final class FeedService {
                 .neq("user_id", value: userId.uuidString)
                 .order("created_at", ascending: false).limit(40).execute().value
         }
+        // Same re-trim as `activityOnOwnPosts`: a chunk's own `.limit(40)` only bounds that
+        // chunk, not the merged whole.
+        let newest = rs.sorted { $0.created_at > $1.created_at }.prefix(40)
 
-        return rs.compactMap { r in
+        return newest.compactMap { r in
             guard let owner = owners[r.post_id],
                   Self.shouldIncludeTaggedPostReaction(
                       postOwnerId: owner, reactorId: r.user_id, viewerId: userId)
@@ -2250,8 +2287,12 @@ final class FeedService {
                 .neq("user_id", value: userId.uuidString)
                 .order("created_at", ascending: false).limit(40).execute().value
         }
+        // Same re-trim as `activityOnOwnPosts`/`activityReactionsOnTaggedPosts`. A missing
+        // `created_at` sorts as though it were the oldest possible row, matching the "no
+        // fabricated date" rule the `guard` below already applies when it drops such a row.
+        let newest = ls.sorted { ($0.created_at ?? .distantPast) > ($1.created_at ?? .distantPast) }.prefix(40)
 
-        return ls.compactMap { like in
+        return newest.compactMap { like in
             // No embedded comment (deleted between the two queries) or no created_at (can't be
             // placed in the feed's newest-first order, and no fabricated date is more honest than
             // a wrong one) drops the row rather than guessing.

@@ -27,9 +27,13 @@ final class TabSignals {
     }
 
     func refresh(feed: FeedService, rolls: RollService, userId: UUID, lastActivitySeen: Double) async {
+        // Two round trips sit between the read and the write below; a sign-out or an
+        // account switch mid-flight must not let a stale answer light the NEW account's dots.
+        let epoch = AccountEpoch.current
         async let unseen = feed.unseenCount()
         async let unread = feed.unreadActivityCount(userId: userId, since: Date(timeIntervalSince1970: lastActivitySeen))
         let (shots, activity) = await (unseen?.shots, unread)
+        guard AccountEpoch.isCurrent(epoch) else { return }
         feedHasUnread = Self.feedDot(unseenShots: shots, unreadActivity: activity)
         rollsHaveUnwatched = Self.rollsDot(rolls: rolls.rolls, revealSeen: {
             UserDefaults.standard.bool(forKey: "rollRevealSeen.\($0.uuidString)")

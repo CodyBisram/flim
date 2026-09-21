@@ -552,7 +552,9 @@ struct FeedView: View {
                             seenStore: seenStore,
                             markingEnabled: ledgerSnapshotted,
                             catchUpGeneration: catchUpGeneration,
-                            onAuthorBlocked: { snapshotLedger() }
+                            // growOnly: blocking an author must not shrink the counts of units
+                            // nobody has read yet, the same ratchet paging already obeys.
+                            onAuthorBlocked: { snapshotLedger(growOnly: true) }
                         )
                         .id(unit.id)
                         .onAppear { unitAppeared(index: index) }
@@ -814,6 +816,10 @@ struct FeedView: View {
 
     private func reload() async {
         guard let uid = auth.currentUser?.id else { didLoad = true; return }
+        // Captured before the first await: several round trips sit between here and the dot
+        // write below, and an account switch mid-flight must not let a stale answer light the
+        // NEW account's tab dot; same pattern as `OptimisticToggle`.
+        let epoch = AccountEpoch.current
         // Captured before the load: `loadFeed` leaves an already-populated `feed` untouched
         // on a genuine failure, so `feed.feed` staying non-empty can't by itself say whether
         // this refresh worked.
@@ -825,7 +831,9 @@ struct FeedView: View {
         await feed.loadFeed(currentUserId: uid)
         serverLedger = await counted
         serverLedgerAt = .now
-        signals.feedHasUnread = TabSignals.feedDot(unseenShots: counted?.shots, unreadActivity: unreadActivity)
+        if AccountEpoch.isCurrent(epoch) {
+            signals.feedHasUnread = TabSignals.feedDot(unseenShots: counted?.shots, unreadActivity: unreadActivity)
+        }
         didLoad = true
         hasNewPosts = false
         // Snapshotted from page one, BEFORE the straddle completion's extra round trips: the

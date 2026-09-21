@@ -233,6 +233,34 @@ final class ActivityDestinationTests: XCTestCase {
         XCTAssertEqual(activityDestination(for: item), .profile(userId: actor.id))
     }
 
+    /// A row that WAS about a post (`postId` set) but whose post never resolved (deleted, or the
+    /// author blocked either way since) must not fall through to the actor's profile: that
+    /// silently sent someone to a stranger's page with no explanation. It routes `.unavailable`
+    /// instead, so the caller can say why in place and leave the row retryable-looking (there's
+    /// nothing to retry, but nothing pretends to have worked either).
+    func testPostBasedRowWhosePostNeverResolvedIsUnavailable() {
+        let item = ActivityItem(kind: .comment("nice!"), actor: profile(), date: .now,
+                                 postId: UUID(), post: nil, postAuthor: nil)
+        XCTAssertEqual(activityDestination(for: item), .unavailable)
+    }
+
+    /// Same rule for a reaction row, not just a comment: the discriminator is `postId`, not the
+    /// kind.
+    func testReactionOnAPostThatNoLongerResolvesIsUnavailable() {
+        let item = ActivityItem(kind: .like("❤️"), actor: profile(), date: .now,
+                                 postId: UUID(), post: nil, postAuthor: nil)
+        XCTAssertEqual(activityDestination(for: item), .unavailable)
+    }
+
+    /// A roll-photo row never carries `postId` at all, so a missing `post` there must keep
+    /// routing to the roll (already covered above), never to `.unavailable`.
+    func testRollPhotoRowNeverBecomesUnavailable() {
+        let rollId = UUID()
+        let item = ActivityItem(kind: .rollPhotoReaction("❤️"), actor: profile(), date: .now,
+                                 postId: nil, post: nil, postAuthor: nil, rollId: rollId)
+        XCTAssertNotEqual(activityDestination(for: item), .unavailable)
+    }
+
     /// A thread comment on a post you commented on but do not own routes exactly like an ordinary
     /// `.comment`: the post, with the thread open (`PostDetailView` always shows its own comments).
     func testPostThreadCommentRoutesToThePost() {

@@ -85,6 +85,12 @@ enum ActivityDestination: Equatable {
     /// photo, with its thread showing when the event was a comment or mention.
     case roll(rollId: UUID, photoId: UUID? = nil, comments: Bool = false)
     case profile(userId: UUID)
+    /// The row was genuinely about a post (`postId` is set) but that post could not be resolved:
+    /// deleted, or its author blocked either way since the activity happened. Distinct from
+    /// `.follow`, which never had a post to begin with and correctly opens the actor's profile;
+    /// falling through to the profile here instead silently sent someone to a stranger's page
+    /// with no explanation for why a comment or reaction row landed there.
+    case unavailable
 }
 
 func activityDestination(for item: ActivityItem) -> ActivityDestination {
@@ -99,6 +105,9 @@ func activityDestination(for item: ActivityItem) -> ActivityDestination {
         return .roll(rollId: rollId, photoId: item.rollPhotoId, comments: comments)
     }
     if let post = item.post, let author = item.postAuthor { return .post(FeedItem(post: post, author: author)) }
+    // `postId` set but the post/author never resolved: this row IS about a post, it just isn't
+    // reachable any more. Only `.follow` (postId nil) should ever fall through to the profile.
+    if item.postId != nil { return .unavailable }
     return .profile(userId: item.actor.id)
 }
 
@@ -122,6 +131,11 @@ struct ActivityFeedView: View {
     /// composer focused. One-shot: cleared by the view once consumed (see
     /// `PostDetailView.onCommentsFocusConsumed` for why it must be cleared at all).
     @State private var focusCommentsPostId: UUID?
+    /// Top-slot toast for a tap that can't go anywhere (the post it was about is gone) and for a
+    /// follow/unfollow that failed server-side; both stay on Activity and say so, rather than
+    /// falling through to a stranger's profile or silently reverting with no explanation.
+    @State private var toastMessage: String?
+    @State private var toastDismiss: Task<Void, Never>?
     /// When Activity was last opened, captured BEFORE this visit stamped it. Anything newer sits
     /// under "New". nil means no New section (first ever visit, or the caller didn't pass one).
     var seenBefore: Date?
@@ -170,6 +184,17 @@ struct ActivityFeedView: View {
                     // Someone following a thread should not have to close and reopen the sheet
                     // to see the reply. A failed refresh keeps what is on screen.
                     .refreshable { await load(keepingOnFailure: true) }
+                }
+            }
+            .overlay(alignment: .top) {
+                if let toastMessage {
+                    Label(toastMessage, systemImage: "exclamationmark.triangle.fill")
+                        .flimFont(13, weight: .medium, relativeTo: .subheadline)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 16).padding(.vertical, 10)
+                        .background(.ultraThinMaterial, in: Capsule())
+                        .padding(.top, 8)
+                        .transition(.move(edge: .top).combined(with: .opacity))
                 }
             }
             .navigationBarTitleDisplayMode(.inline)
@@ -312,6 +337,22 @@ struct ActivityFeedView: View {
             )
         case .profile(let userId):
             profileRoute = ProfileRoute(id: userId)
+        case .unavailable:
+            // Stay on Activity rather than opening nothing (the old fall-through-to-profile
+            // behavior) or a broken destination: say why, in place, and let the rest of the
+            // list stay tappable.
+            Haptics.error()
+            showToast("That photo isn't there anymore.")
+        }
+    }
+
+    private func showToast(_ text: String) {
+        withAnimation { toastMessage = text }
+        toastDismiss?.cancel()
+        toastDismiss = Task {
+            try? await Task.sleep(for: .seconds(2.4))
+            guard !Task.isCancelled else { return }
+            withAnimation { toastMessage = nil }
         }
     }
 
@@ -334,7 +375,7 @@ struct ActivityFeedView: View {
     @ViewBuilder
     private func followBackControl(_ item: ActivityItem) -> some View {
         if !feed.isFollowing(item.actor.id) {
-            FollowButton(userId: item.actor.id)
+            FollowButton(userId: item.actor.id, onFailure: { showToast($0) })
         }
     }
 

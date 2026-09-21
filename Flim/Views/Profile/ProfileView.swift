@@ -383,6 +383,11 @@ struct EditProfileView: View {
     /// Surfaced when an avatar or cover change fails. Those calls return Bool precisely so this
     /// can be reported, and for a while nothing read the result.
     @State private var photoError: String?
+    /// The auto-dismiss timer for `photoError` above; held and cancelled before a new one starts,
+    /// so a second failure inside the first one's window doesn't leave two timers racing to clear
+    /// the same state (the second landing early would blank the newer message while it's still
+    /// meant to be showing).
+    @State private var photoErrorDismiss: Task<Void, Never>?
     @State private var showEditName = false
     @State private var showEditUsername = false
     @State private var showEditBio = false
@@ -510,9 +515,11 @@ struct EditProfileView: View {
             }
             .animation(.snappy(duration: 0.25), value: photoError)
             .onChange(of: photoError) { _, error in
+                photoErrorDismiss?.cancel()
                 guard error != nil else { return }
-                Task {
+                photoErrorDismiss = Task {
                     try? await Task.sleep(for: .seconds(2.6))
+                    guard !Task.isCancelled else { return }
                     withAnimation { photoError = nil }
                 }
             }

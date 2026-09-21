@@ -117,4 +117,56 @@ final class FeedSeenStoreTests: XCTestCase {
         XCTAssertEqual(reloaded.seenDate(postId)?.timeIntervalSince1970 ?? -1,
                        firstSeenDate?.timeIntervalSince1970 ?? -2, accuracy: 0.001)
     }
+
+    /// A mark made just before an account switch used to be dropped on the floor: `flushPending`
+    /// only ever pushes under `activeUserId`, and by the time anything ran that was already the
+    /// incoming account. The fix hands the departing account's still-pending marks to a push
+    /// pinned to ITS id, in a `Task` spawned synchronously from `activeUserId`'s own `didSet`.
+    func testMarksMadeJustBeforeASwitchAreStillHandedToTheOldAccountsPush() async throws {
+        actor Spy {
+            private(set) var pushedFor: [UUID: Set<UUID>] = [:]
+            func record(_ user: UUID, _ ids: Set<UUID>) {
+                pushedFor[user, default: []].formUnion(ids)
+            }
+        }
+        let spy = Spy()
+        let store = FeedSeenStore(defaults: defaults, pushRows: { user, marks in
+            await spy.record(user, Set(marks.keys))
+            return Set(marks.keys)   // simulate every push landing
+        })
+        let accountA = UUID()
+        let accountB = UUID()
+        let postId = UUID()
+
+        store.activeUserId = accountA
+        store.markSeen(postId)   // sits in pendingSync, well inside the 4s debounce window
+
+        store.activeUserId = accountB   // switch before that debounce ever fires
+
+        // The departing push runs in a detached Task; give it a beat to land.
+        try await Task.sleep(for: .milliseconds(50))
+
+        let pushed = await spy.pushedFor
+        XCTAssertEqual(pushed[accountA], [postId], "account A's own mark must reach account A's row")
+        XCTAssertNil(pushed[accountB], "the incoming account must never receive the departing mark")
+    }
+
+    /// `markSeen` used to re-serialize the WHOLE seen-set into `UserDefaults` on every call.
+    /// Swiping through a ten-shot day cost ten writes; now a burst coalesces into one, and only
+    /// fires (or is forced, as here) once.
+    func testABurstOfMarksYieldsOnePersist() {
+        let store = FeedSeenStore(defaults: defaults)
+        store.activeUserId = UUID()
+
+        for _ in 0..<8 { store.markSeen(UUID()) }
+        XCTAssertEqual(store.diskWriteCount, 0, "the 1s debounce hasn't fired yet")
+
+        store.flushPersistNow()
+        XCTAssertEqual(store.diskWriteCount, 1, "eight marks in one burst should cost exactly one disk write")
+
+        // A second burst after the first flush schedules and forces its own, independent write.
+        for _ in 0..<3 { store.markSeen(UUID()) }
+        store.flushPersistNow()
+        XCTAssertEqual(store.diskWriteCount, 2)
+    }
 }

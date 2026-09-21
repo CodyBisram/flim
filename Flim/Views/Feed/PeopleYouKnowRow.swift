@@ -78,7 +78,13 @@ struct PeopleYouKnowRow: View {
                             }
                             .buttonStyle(.plain)
                             Spacer(minLength: 8)
-                            FollowButton(userId: entry.profile.id)
+                            // This row has no toast of its own; `FeedView` (its only host)
+                            // already listens for `.feedNotice` and shows it in the same top
+                            // slot a failed pull-to-refresh uses, so a failed follow reuses that
+                            // rather than growing new chrome just for this row.
+                            FollowButton(userId: entry.profile.id, onFailure: { text in
+                                NotificationCenter.default.post(name: .feedNotice, object: text)
+                            })
                         }
                         .frame(minHeight: 44)
                     }

@@ -1287,17 +1287,35 @@ struct FollowListView: View {
 struct FollowButton: View {
     @Environment(\.flimAccent) private var accent
     let userId: UUID
+    /// Reports a failed follow/unfollow with the sentence to show, for callers that host a
+    /// toast on their own screen. The default (no-op) means the caller has no such host; the
+    /// haptic and the automatic revert (already inside `FeedService.follow`/`unfollow`) still
+    /// happen regardless, only the in-place notice is opt-in.
+    var onFailure: (String) -> Void = { _ in }
     @Environment(AuthService.self) private var auth
     @Environment(FeedService.self) private var feed
+    /// In-flight guard: a second tap before the first request lands must not fire a second,
+    /// possibly-conflicting request.
+    @State private var busy = false
 
     var body: some View {
         let following = feed.isFollowing(userId)
         Button {
-            guard let uid = auth.currentUser?.id else { return }
+            guard let uid = auth.currentUser?.id, !busy else { return }
             Haptics.tap()
+            busy = true
             Task {
-                if following { await feed.unfollow(userId, from: uid) }
-                else { await feed.follow(userId, from: uid) }
+                let landed = following
+                    ? await feed.unfollow(userId, from: uid)
+                    : await feed.follow(userId, from: uid)
+                busy = false
+                guard !landed else { return }
+                // `feed.follow`/`unfollow` already put the optimistic flip back on failure
+                // (the "restore input" half); this is the "say so and stay retryable" half.
+                Haptics.error()
+                onFailure(following
+                    ? "Couldn't unfollow. Check your connection and try again."
+                    : "Couldn't follow. Check your connection and try again.")
             }
         } label: {
             Text(FeedService.FollowRelationship.buttonLabel(following: following, followsMe: feed.followsMe(userId)))
@@ -1306,6 +1324,7 @@ struct FollowButton: View {
                 .padding(.horizontal, 16).padding(.vertical, 7)
                 .background(following ? Color.white.opacity(0.12) : accent, in: Capsule())
         }
+        .disabled(busy)
     }
 }
 

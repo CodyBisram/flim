@@ -204,7 +204,9 @@ struct ContentView: View {
                 // Leaving the foreground commits it now; see `UndoCenter`.
                 UndoCenter.shared.flush()
                 // Seen-marks made this session go to the account now, not on the next debounce
-                // an app suspended in the background never reaches.
+                // an app suspended in the background never reaches: the disk copy first
+                // (synchronous), then the server mirror.
+                FeedSeenStore.shared.flushPersistNow()
                 Task { await FeedSeenStore.shared.flushPending() }
                 return
             }
