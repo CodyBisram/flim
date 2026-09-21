@@ -416,6 +416,65 @@ The four from the audit the owner picked on 2026-09-10: the durable capture queu
 capture status, one invitation journey (a roll code admits you), deletion order, and the photo
 write boundary. In that order of value; built in the order of size.
 
+### done 2026-09-21: the audit's plan, items 1 to 11, built the same night
+
+Owner's word: "work on everything you think." Seven commits on main, each its own domain.
+
+1. **A reveal is watched when it finishes.** `roll_reveal_views.completed_at` (migration
+   `2026-09-21_reveal_completion.sql`, backfilled from viewed_at so nobody's history replays),
+   written through `complete_reveal_view` from the view model's completion path, which is now the
+   only place `Activation.revealWatched` logs. `seedRevealSeen` reads completed rows only. The
+   decision on an abandoned reveal: it auto-plays again once per launch, then the roll's button
+   reads "Play reveal" (it read "Play reveal again" whether or not you ever had) until it is
+   genuinely finished. Rule pure and tested.
+2. `send-invite-digest` checks `x-cron-secret` like its siblings (source only; redeploy is an
+   owner step). No cron for it exists in any migration, so today nothing invokes it.
+3. The six ledger rows: carousel reactions keyed by photo; `growOnly` on block; the departing
+   account's seen-marks pushed under its own id; the 4am boundary in the develop-ask weekday and
+   the default roll name; the flash-falloff floor (below: a threshold with a smoothstep ramp,
+   every existing baseline unchanged, new `flashDark` fixture; **owner's eye still owed on a real
+   dark flash frame**); the profile error timer.
+4. `AccountEpoch` guards on both tab-dot writes.
+5. Activity: a row whose photograph is gone stays on Activity and says "That photo isn't there
+   anymore." A failed follow says "Couldn't follow. Check your connection and try again."
+   (and the unfollow twin) where a toast host exists (Activity's follow-back rows, People you
+   know via the feed notice); on the user page, Find friends and the follower lists it reverts
+   with the error haptic and no line, because those screens have no host and adding chrome was
+   out of scope. Queued.
+6. `unreadActivityCount` single-flighted per (user, since); post_tags bounded by since; the
+   sub-reads that only feed a count are head counts (the two roll-photo ones keep their inner
+   embed, which PostgREST counts with the filter applied; **device check: the Rolls-related
+   Activity count**); the three chunked reads re-trim to 40 after the merge;
+   `fetchMyPostedPhotoIds` pages.
+7. What's New: "A comment in Activity opens the photograph it's about, ready for your reply.
+   One tap back and you're on Activity again."
+8. One decode per shutter: the capture is decoded once, cropped in image space with the
+   cropper's own geometry, graded and classified from that frame, released after; the 0.95 JPEG
+   generation before the grade is gone (byte-identical master when nothing is trimmed; chroma
+   comes back when it is: saturation moves UP 0.0003 to 0.006 on the crop fixtures); renditions
+   scale the graded CGImage, no PNG round trip. Shutter callback 66 ms to 0; shutter to master
+   262 to 226 ms; transient footprint per master 12 to 58 MB (the decoded frame lives across the
+   grade, one at a time, released before upload).
+9. `roll_covers` (one row per roll, `DISTINCT ON`, new partial index `photos_roll_taken_idx`) with
+   a fallback to the old query for a build that reaches a database without it; the camera's
+   unsorted count is a head count; the avatar picker pages at 60. Not done: the feed join at a
+   thousand follows (next train).
+10. Workflow concurrency group `ios-testflight`, never cancelled; `LookRegressionTests`
+    serialized; the Darkroom's `Photo` equality covers all 16 fields with a Mirror test that
+    fails by name on drift; seen-marks disk write debounced; the nightly `accounts` column bound
+    to the day and `reveals_watched` counting completions (`2026-09-21_nightly_numbers_day_bound.sql`);
+    the digest's 48-hour read paged; the seven crons in schema.sql at production cadence
+    (`*/2`, `*/5` for the pushes); the path-index comment.
+11. `UndoCenter` tests (two ledger rows pinned as known issues), `OptimisticToggle` tests
+    against the class.
+
+Owner, before the next TestFlight push: apply the three migrations in order and redeploy the two
+functions (steps under Owner actions, 2026-09-21). Then on device: the six flash and capture
+shots listed in the look package's report (dark room at a far wall with flash; a dim room lit
+in a patch, two frames a second apart; an arm's-length flash portrait and one at three metres,
+which must match build 393; a daylight and a no-flash night shot; a shot right after opening
+the camera and one mid tab-switch, framing intact; a burst of ten with a kill mid-burst).
+
 ### done 2026-09-21: the third engineering audit, six passes (claude.ai/code/artifact/fae7345c-72a2-4b7a-84b9-4a3823e39b31)
 
 Code review of everything since 24f479e plus a re-verification of all 25 open ledger rows,

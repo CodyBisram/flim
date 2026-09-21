@@ -32,6 +32,15 @@ struct PhotoPickerSheet: View {
     @State private var importing = false
     @State private var cropSource: CropSource?
 
+    /// Paging state for the Darkroom grid, local to this sheet: `PhotoService.fetchDarkroomPage`
+    /// deliberately does not touch the shared `loadedPhotos`/`photoCursor` the Darkroom screen
+    /// owns, so this picker can page on its own without racing (or truncating) whatever the
+    /// Darkroom is doing at the same time. See `fetchDarkroomPage`'s own doc.
+    @State private var pickerCursor: PhotoService.PhotoCursor?
+    @State private var pickerHasMore = true
+    @State private var isLoadingMorePickerPhotos = false
+    private let pickerPageSize = 60
+
     /// Identifiable so the cropper can be presented with `fullScreenCover(item:)`, which ties the
     /// presentation to the data instead of to a separate bool that can drift out of sync with it.
     private struct CropSource: Identifiable {
@@ -60,6 +69,13 @@ struct PhotoPickerSheet: View {
                     ScrollView {
                         LazyVGrid(columns: columns, spacing: 3) {
                             ForEach(photos) { photo in
+                                // The load-more trigger, not a bare `.task`/`.onAppear`: this
+                                // cell's identity can persist across a page load if the grid
+                                // scrolls back up, and a bare `.task` fires once per identity for
+                                // life. Keying on `photos.count`, which changes every page, is
+                                // what re-arms it, the same sentinel shape every other load-more
+                                // trigger in this app uses (see RollDetailView.photoCell).
+                                let isTail = photo.id == photos.last?.id
                                 Button {
                                     choose(photo)
                                 } label: {
@@ -77,6 +93,10 @@ struct PhotoPickerSheet: View {
                                         .clipShape(RoundedRectangle(cornerRadius: 4))
                                 }
                                 .buttonStyle(.plain)
+                                .task(id: isTail ? photos.count : -1) {
+                                    guard isTail else { return }
+                                    await loadMorePickerPhotos()
+                                }
                             }
                         }
                         .padding(3)
@@ -136,20 +156,45 @@ struct PhotoPickerSheet: View {
                 }
             }
             .task {
-                guard let uid = auth.currentUser?.id else { loaded = true; return }
-                photos = await photoService.fetchDarkroom(userId: uid)
+                guard auth.currentUser?.id != nil else { loaded = true; return }
+                await loadMorePickerPhotos()
                 loaded = true
-                // One batched call rather than one round trip per photo: this grid can hold a
-                // whole Darkroom, so the thumbnails used to fill in one by one, top to bottom.
-                //
-                // Signs displayPath, matching the grid cell's cacheKey exactly (see the
-                // CachedImage below): signing storagePath here downloaded the ~1.25MB master and
-                // filed it under the thumb's own key, a cache miss on every single cell.
-                let map = await photoService.signedURLs(for: photos.map(\.displayPath))
-                for photo in photos { urls[photo.id] = map[photo.displayPath] }
             }
         }
         .flimSheetSurface()
+    }
+
+    /// Fetches the next page of Darkroom photos into this sheet's own local `photos`/
+    /// `pickerCursor` state (never the shared `loadedPhotos` the Darkroom screen owns) and signs
+    /// its thumbnails. Both the initial `.task` and the tail-cell sentinel above call this same
+    /// function, so there is exactly one place that advances the cursor.
+    ///
+    /// In-flight guarded: the sentinel can re-fire before a prior page lands (a fast scroll past
+    /// the tail cell while it is still mounted), and a second overlapping request would double up
+    /// on the same page since neither has advanced `pickerCursor` yet.
+    private func loadMorePickerPhotos() async {
+        guard pickerHasMore, !isLoadingMorePickerPhotos else { return }
+        guard let uid = auth.currentUser?.id else { return }
+        isLoadingMorePickerPhotos = true
+        defer { isLoadingMorePickerPhotos = false }
+        do {
+            let (page, next) = try await photoService.fetchDarkroomPage(userId: uid, limit: pickerPageSize, before: pickerCursor)
+            if page.count < pickerPageSize { pickerHasMore = false }
+            pickerCursor = next
+            photos.append(contentsOf: page)
+            // One batched call rather than one round trip per photo: this grid can hold a whole
+            // Darkroom, so the thumbnails used to fill in one by one, top to bottom.
+            //
+            // Signs displayPath, matching the grid cell's cacheKey exactly (see the CachedImage
+            // above): signing storagePath here downloaded the ~1.25MB master and filed it under
+            // the thumb's own key, a cache miss on every single cell.
+            let map = await photoService.signedURLs(for: page.map(\.displayPath))
+            for photo in page { urls[photo.id] = map[photo.displayPath] }
+        } catch {
+            // Leave `pickerHasMore`/`pickerCursor` untouched so the sentinel (still mounted on
+            // the same tail cell, whose `photos.count` has not changed) simply retries on its
+            // next re-arm rather than getting stuck believing the grid already ends here.
+        }
     }
 
     /// A Darkroom photo goes straight through unless a crop was requested, in which case its

@@ -471,7 +471,7 @@ struct CameraView: View {
         guard let uid = auth.currentUser?.id else { return }
         // `nil` (a dropped fetch) keeps the last known badge count rather than flashing it to
         // zero, same keep-last-known rule as `DarkroomView.reload`'s own `fetchUnsorted` read.
-        guard let count = await photos.fetchUnsorted(userId: uid)?.count else { return }
+        guard let count = await photos.unsortedPhotoCount(userId: uid) else { return }
         await MainActor.run { withAnimation { unsortedCount = count } }
     }
 

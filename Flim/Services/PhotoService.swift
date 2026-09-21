@@ -2144,15 +2144,33 @@ final class PhotoService {
     }
     #endif
 
-    /// All of the user's Darkroom photos (sorted = kept), newest first, for the profile-photo
-    /// / cover picker. Returns without touching the shared `photos` feed.
-    func fetchDarkroom(userId: UUID) async -> [Photo] {
-        (try? await supabase
-            .from("photos").select()
+    /// One page of the user's Darkroom photos (sorted = kept), for the profile-photo / cover
+    /// picker grid. Same keyset shape as `fetchPersonalPhotos` (`is_sorted = true`, `taken_at
+    /// DESC, id DESC`, `KeysetPagination.bandFilter`'s millisecond-band tie break), but entirely
+    /// separate from it: does NOT read or write `loadedPhotos`, `photoCursor`, `hasMore`, or
+    /// `fetchGeneration`. Those four belong to the Darkroom screen's own pagination session, and a
+    /// picker opened mid-scroll used to pull the caller's ENTIRE kept library (`fetchDarkroom`, no
+    /// limit) just to fill a grid, which meant every sheet open paid for however many thousand
+    /// photos the account had. Keeping the picker's cursor local (the caller's own `@State`)
+    /// instead of shared state is what lets it page independently without racing, or truncating,
+    /// whatever the Darkroom is doing at the same time.
+    ///
+    /// `before` is `nil` for the first page, then whatever a prior call's own `next` returned.
+    /// `next` is `nil` once a page comes back with nothing to anchor to (an empty page); the
+    /// caller should also treat `photos.count < limit` as "no more", the same short-page signal
+    /// `fetchPage` itself uses, since a `next` cursor can exist on a page that's already the last.
+    func fetchDarkroomPage(userId: UUID, limit: Int, before: PhotoCursor?) async throws -> (photos: [Photo], next: PhotoCursor?) {
+        let base = supabase.from("photos").select()
             .eq("user_id", value: userId.uuidString)
             .eq("is_sorted", value: true)
-            .order("taken_at", ascending: false)
-            .execute().value) ?? []
+        let cursored = before.map { base.or(PhotoService.keysetFilter(after: $0)) } ?? base
+        let page: [Photo] = try await cursored
+            .order(PhotoOrderColumn.takenAt.column, ascending: false)
+            .order("id", ascending: false)
+            .limit(limit)
+            .execute()
+            .value
+        return (page, PhotoService.nextPhotoCursor(afterPage: page, orderBy: .takenAt))
     }
 
     /// Personal instants that haven't been sorted yet (shown in the swipe deck), oldest first: you
@@ -2172,6 +2190,20 @@ final class PhotoService {
             .eq("is_sorted", value: false)
             .order("taken_at", ascending: true)
             .execute().value
+    }
+
+    /// The sort deck's true count, same filter as `fetchUnsorted` (`is_sorted = false`), a
+    /// headless `count: .exact` request (no rows transferred), so the camera's "to sort" badge
+    /// doesn't have to pull every unsorted row just to read `.count`. Same `Int?` / nil-on-failure
+    /// contract as `personalPhotoCount`: callers keep their last known value rather than flashing
+    /// the badge to zero on a dropped round trip.
+    func unsortedPhotoCount(userId: UUID) async -> Int? {
+        guard let count = try? await supabase.from("photos")
+            .select("id", head: true, count: .exact)
+            .eq("user_id", value: userId.uuidString)
+            .eq("is_sorted", value: false)
+            .execute().count else { return nil }
+        return count
     }
 
     /// Photos this user shot that are eligible for camera-roll auto-save: kept (personal, sorted)
