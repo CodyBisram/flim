@@ -276,15 +276,52 @@ enum InstantFilmProcessor {
         rendition(from: data, longEdge: 1400, encoding: encoding)
     }
 
-    /// Downsampled image bytes at an exact long edge, via ImageIO (no full decode of the
-    /// source), in the format `encoding` asks for, see `encodeImage`.
+    /// Downsampled image bytes at an exact long edge, from encoded bytes, in the format
+    /// `encoding` asks for, see `encodeImage`.
+    ///
+    /// This is the leg for callers whose only copy of the image is a FILE: the rendition repair
+    /// path, which reads bytes back out of the disk cache, and the capture fallbacks, which have
+    /// nothing but the original capture. A fresh capture still has the graded pixels in memory and
+    /// takes the `CGImage` overload below instead.
     static func rendition(from data: Data, longEdge: CGFloat, encoding: EncodeSpec) -> EncodedImage? {
+        // `.applyOrientationProperty`, because these bytes can carry an EXIF orientation tag (the
+        // capture fallback hands over the camera's own file). The CGImage overload below does not
+        // need it and must not have it: a CGImage has its orientation in its pixels already.
+        guard let source = CIImage(data: data, options: [.applyOrientationProperty: true]) else { return nil }
+        return rendition(of: source, longEdge: longEdge, encoding: encoding)
+    }
+
+    /// The same downsample and encode, from pixels ALREADY in memory.
+    ///
+    /// A fresh capture grades to a `CGImage` and then encodes the master from it, so at that
+    /// moment the exact pixels both renditions want are sitting right there. The path before this
+    /// existed re-encoded them to a lossless PNG and decoded that PNG once per rendition, i.e. a
+    /// full-frame encode and two full-frame decodes of a 2048px image, per shot, purely to hand
+    /// the same pixels to a function that only accepted bytes.
+    ///
+    /// It is the same resampler at the same scale, the same sRGB render and the same encoder at
+    /// the same quality, and the source pixels are identical (rendered 1:1 both routes come back
+    /// bit-identical to the graded CGImage, in the same colour space). The output is nonetheless
+    /// NOT byte-identical: `CILanczosScaleTransform` resamples a data-backed source a little
+    /// differently from a CGImage-backed one. Measured on all nine fixtures and the owner's five
+    /// real captures, worst channel 14 of 255 at the shipping qualities, and every statistic the
+    /// look pin speaks in either inside the pin's tolerance or NEARER the master than the carrier
+    /// route was (`PhotoServiceGradedRenditionTests.testTheCGImageRenditionMatchesTheCarrierItReplaced`
+    /// has the table). Renditions are re-derivable and the master is untouched either way.
+    ///
+    /// No orientation option, deliberately: the grade already baked orientation into these pixels
+    /// (`processSync` decodes with `.applyOrientationProperty` at the top of the pipeline), and a
+    /// CGImage carries no EXIF to apply a second time.
+    static func rendition(from cgImage: CGImage, longEdge: CGFloat, encoding: EncodeSpec) -> EncodedImage? {
+        rendition(of: CIImage(cgImage: cgImage), longEdge: longEdge, encoding: encoding)
+    }
+
+    private static func rendition(of source: CIImage, longEdge: CGFloat, encoding: EncodeSpec) -> EncodedImage? {
         // Lanczos, the same resampler the master already goes through, instead of ImageIO's
         // thumbnailer (bicubic-class). Measured 2026-09-19 on four calibration scenes: +8% grain
         // retention and +1.6% edge acutance at the 1400 card, where the card sits at 0.67 of
         // the Lapse reference's texture. The master is untouched, so the look pin is untouched;
         // renditions are re-derivable through the repair path.
-        guard let source = CIImage(data: data, options: [.applyOrientationProperty: true]) else { return nil }
         let extent = source.extent
         let srcLong = max(extent.width, extent.height)
         guard srcLong > 0 else { return nil }
@@ -372,6 +409,31 @@ enum InstantFilmProcessor {
         guard !extent.isEmpty else { return nil }
         return gradedPixels(source, extent: extent, stock: stock, grain: grain,
                             flashFired: flashOverride ?? flashFired(in: data))
+    }
+
+    /// The same grade, from a capture that has already been decoded.
+    ///
+    /// This is the shutter's path as of 2026-09-21. The capture is decoded and cropped ONCE
+    /// (`CapturedPhotoCropper.prepare`) and those pixels come straight here, where they used to be
+    /// re-encoded to a q0.95 JPEG inside the capture callback and decoded again by the line above.
+    /// The master is therefore one JPEG generation cleaner than it was, and the shutter callback
+    /// no longer pays a decode, a full-frame redraw and an encode before it returns.
+    ///
+    /// `flashFired` is a PARAMETER here rather than something read from the image, and it has to
+    /// be: a `CGImage` carries no EXIF. The caller reads the capture's `Flash` tag while it still
+    /// has the bytes (`CapturedPhotoCropper.Prepared.exifFlash`) and passes the answer in. Getting
+    /// this wrong is silent, the flash look simply stops happening.
+    ///
+    /// No orientation handling, deliberately: `prepare` bakes it into the pixels, and a CGImage
+    /// has no tag left to apply a second time.
+    static func gradedPixels(_ cgImage: CGImage, stock: FilmStock,
+                             grain: GrainComposite = .sourceOver,
+                             flashFired: Bool) -> CGImage? {
+        let source = CIImage(cgImage: cgImage)
+        let extent = source.extent
+        guard !extent.isEmpty else { return nil }
+        return gradedPixels(source, extent: extent, stock: stock, grain: grain,
+                            flashFired: flashFired)
     }
 
     private static func gradedPixels(_ source: CIImage, extent: CGRect, stock: FilmStock,
@@ -566,6 +628,44 @@ enum InstantFilmProcessor {
     /// darkest possible outcome is a 4-stop drop, not an erasure.
     private static let flashFalloffFloor: CGFloat = 0.06
 
+    /// The least coarse illumination peak, in LINEAR light, that counts as a lit subject.
+    ///
+    /// Below this there is no flash to shape. The stage normalises the whole frame against its
+    /// own brightest blurred region, so on a frame that has no lit region the anchor is whatever
+    /// the sensor's noise happened to leave highest, and dividing by it is dividing by nothing:
+    /// at a peak of 0.005 the gain is 200, every part of the frame that is not that speck
+    /// multiplies down to `flashFalloffFloor`, and a dark flash frame comes out crushed flat
+    /// rather than re-expanded. The previous shape of this constant floored the DIVISOR at 0.02,
+    /// which did not refuse the frame, it only capped the gain at 50 and crushed it slightly less.
+    ///
+    /// 0.02 linear is about 0.15 of an 8-bit sRGB ramp, i.e. a frame whose brightest blurred
+    /// region is darker than mid-shadow. Nothing a flash actually reached lands there: measured on
+    /// this map, the `flash` fixture and the owner's real `parkview-flash` capture both peak at
+    /// 1.00 (`flashAnchorSitsFarBelowEveryRealFlashFrame` prints the numbers).
+    private static let flashAnchorThreshold: CGFloat = 0.02
+
+    /// The peak at which the stage reaches full strength. Between this and `flashAnchorThreshold`
+    /// it ramps in.
+    ///
+    /// A hard cut at the threshold would be a switch between two different photographs: one 8-bit
+    /// level of difference in a frame's brightest region would decide between an untouched frame
+    /// and one re-expanded down to the floor. Two frames of the same dim scene, a second apart,
+    /// would not match. So the strength ramps from nothing at the threshold to the full stage at
+    /// 0.04 (about 0.21 of an 8-bit ramp), which is a band real flash frames are nowhere near, and
+    /// a frame moving through it changes gradually instead of flipping.
+    private static let flashAnchorFullStrength: CGFloat = 0.04
+
+    /// How much of the flash stage a frame gets, from the peak of its own coarse illumination map
+    /// (LINEAR light): 0 at or below `flashAnchorThreshold`, 1 at or above
+    /// `flashAnchorFullStrength`, smoothstep between so the two ends meet with no step and no
+    /// kink. Pure, so the shape can be asserted without rendering anything.
+    static func flashFalloffStrength(peak: CGFloat) -> CGFloat {
+        guard peak > flashAnchorThreshold else { return 0 }
+        guard peak < flashAnchorFullStrength else { return 1 }
+        let t = (peak - flashAnchorThreshold) / (flashAnchorFullStrength - flashAnchorThreshold)
+        return t * t * (3 - 2 * t)
+    }
+
     /// Linear-light sRGB, used only to read the illumination map's peak back as a number that can
     /// be divided into the map INSIDE the Core Image graph, where values are linear. Reading the
     /// peak in display-referred sRGB and then dividing by it in linear light would normalise
@@ -599,7 +699,10 @@ enum InstantFilmProcessor {
     ///                        the flash actually landed, which on a real frame is a face at the
     ///                        left edge as readily as the middle. The peak is taken from the
     ///                        already-blurred coarse map, so a single specular pixel cannot
-    ///                        become the anchor.
+    ///                        become the anchor. A peak below `flashAnchorThreshold` means there
+    ///                        is no lit subject in the frame at all, and the stage RETURNS THE
+    ///                        FRAME UNTOUCHED rather than normalising against noise; through the
+    ///                        band above it (`flashAnchorFullStrength`) the stage fades in.
     ///   5. `CIColorMatrix`   divide by that peak (in linear light, where the division means
     ///                        what it says), then `CIColorClamp` to 0…1.
     ///   6. `CIGammaAdjust`   raise to `exponent`. This is the falloff curve, and it is the only
@@ -611,7 +714,10 @@ enum InstantFilmProcessor {
     ///                        clamps together are what make this stage unable to BRIGHTEN a
     ///                        pixel, interior or edge, which `flashFalloffOnlyEverDarkens` and
     ///                        `flashFalloffLeavesTheFrameEdgeAlone` assert.
-    ///   9. `CIMultiplyCompositing` the map onto the frame.
+    ///   9. `CIColorMatrix`   on a frame inside the ramp band only, blend the finished map toward
+    ///                        white by `flashFalloffStrength`, which is what makes the threshold a
+    ///                        fade rather than a switch between two different photographs.
+    ///  10. `CIMultiplyCompositing` the map onto the frame.
     ///
     /// The multiply resolves in linear working space, and that is the correct space for it:
     /// illumination is a multiplicative term on scene radiance, and radiance is linear. It scales
@@ -622,59 +728,17 @@ enum InstantFilmProcessor {
     /// at 0 anyway, so the parameter has a true off position.
     static func flashFalloff(on image: CIImage, exponent: CGFloat, extent: CGRect) -> CIImage {
         guard exponent > 0, !extent.isEmpty, !extent.isInfinite else { return image }
-        let longEdge = max(extent.width, extent.height)
-        guard longEdge > 0 else { return image }
-        // Never upscale to build the map, and never shrink a small frame to mush: the map keeps at
-        // least a 48px long edge, which still leaves it far coarser than any subject detail.
-        let scale = min(1, max(flashMapScale, 48 / longEdge))
+        guard let (coarse, mapExtent) = illuminationMap(of: image, extent: extent) else { return image }
+        var map = coarse
+        let scale = mapScale(forExtent: extent)
 
-        // Alpha is PASSED THROUGH here rather than forced opaque with a bias. Measured, forcing it
-        // is what silently disables this whole stage: a `CIColorMatrix` whose bias makes the
-        // transparent-black outside the frame non-zero produces an image Core Image considers
-        // INFINITE in extent, every downstream extent goes infinite with it, and the guard below
-        // then hands the frame back untouched. The input here is an opaque photograph, so passing
-        // alpha through gives the same opaque map with a finite extent. The explicit crop is the
-        // belt to that braces.
-        let luma = CIVector(x: 0.299, y: 0.587, z: 0.114, w: 0)
-        var map = image.applyingFilter("CIColorMatrix", parameters: [
-            "inputRVector": luma, "inputGVector": luma, "inputBVector": luma,
-            "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 1)
-        ]).cropped(to: extent)
-
-        // BOTH Lanczos passes (this downscale and the upscale in step 8) are clamped to extent
-        // before and cropped after, exactly like the blur below. Lanczos samples a few pixels
-        // past the edge of its input, and past the edge of a finite image is transparent black,
-        // so an unclamped pass leaves the outermost pixels of the map with alpha below 1. That
-        // alpha survives the clamps (they floor colour, not alpha), the floor bias then lifts a
-        // partly transparent pixel into a super-luminous premultiplied one, and the multiply at
-        // the end BRIGHTENS the frame edge instead of darkening it: measured 2026-09-05, a flat
-        // 16/255 frame came out with edges at 100 to 119, a visible light border on every
-        // flash-fired night shot. The previous placement clamped after the upscale, which was
-        // too late, the soft edge was already inside the extent by then.
-        if scale < 1 {
-            let smallExtent = map.applyingFilter("CILanczosScaleTransform", parameters: [
-                kCIInputScaleKey: scale, kCIInputAspectRatioKey: 1.0
-            ]).extent
-            guard !smallExtent.isEmpty, !smallExtent.isInfinite else { return image }
-            map = map
-                .clampedToExtent()
-                .applyingFilter("CILanczosScaleTransform", parameters: [
-                    kCIInputScaleKey: scale, kCIInputAspectRatioKey: 1.0
-                ])
-                .cropped(to: smallExtent)
-        }
-        let mapExtent = map.extent
-        guard !mapExtent.isEmpty, !mapExtent.isInfinite else { return image }
-        map = map
-            .clampedToExtent()
-            .applyingFilter("CIGaussianBlur", parameters: [kCIInputRadiusKey: flashMapBlur])
-            .cropped(to: mapExtent)
-
-        // A near-black frame has no lit subject to anchor to, so refuse to normalise against
-        // noise: below this the peak is treated as 1 and the map falls away from absolute white,
-        // which leaves an already-black frame essentially untouched instead of amplifying its
-        // brightest speck into a fake subject.
-        let peak = max(0.02, areaMaximum(of: map, extent: mapExtent))
+        // A frame with no lit subject has nothing for this stage to anchor to, and the anchor is
+        // what every later step is measured against. Below `flashAnchorThreshold` the frame is
+        // handed back UNTOUCHED (see that constant), and through the band above it the stage fades
+        // in rather than switching on.
+        let peak = areaMaximum(of: map, extent: mapExtent)
+        let strength = flashFalloffStrength(peak: peak)
+        guard strength > 0 else { return image }
         let gain = 1 / peak
         map = map
             .applyingFilter("CIColorMatrix", parameters: [
@@ -714,9 +778,96 @@ enum InstantFilmProcessor {
                 "inputMaxComponents": CIVector(x: 1, y: 1, z: 1, w: 1)
             ])
 
+        // Fade the whole map toward white (1 = the frame untouched) on a frame whose anchor sits
+        // inside the ramp band. Applied to the FINISHED map, after the floor and both clamps, so
+        // it is a blend between this stage and no stage at all and cannot move a pixel outside
+        // `flashFalloffFloor`...1: a value between two values in that range is in that range.
+        if strength < 1 {
+            map = map.applyingFilter("CIColorMatrix", parameters: [
+                "inputRVector": CIVector(x: strength, y: 0, z: 0, w: 0),
+                "inputGVector": CIVector(x: 0, y: strength, z: 0, w: 0),
+                "inputBVector": CIVector(x: 0, y: 0, z: strength, w: 0),
+                "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 1),
+                "inputBiasVector": CIVector(x: 1 - strength, y: 1 - strength, z: 1 - strength, w: 0)
+            ])
+        }
+
         return map
             .applyingFilter("CIMultiplyCompositing", parameters: [kCIInputBackgroundImageKey: image])
             .cropped(to: extent)
+    }
+
+    /// How far down the map is built, for a frame of this extent. Never upscales, and never
+    /// shrinks a small frame to mush: the map keeps at least a 48px long edge, which still leaves
+    /// it far coarser than any subject detail.
+    private static func mapScale(forExtent extent: CGRect) -> CGFloat {
+        let longEdge = max(extent.width, extent.height)
+        guard longEdge > 0 else { return 1 }
+        return min(1, max(flashMapScale, 48 / longEdge))
+    }
+
+    /// Steps 1 to 3 of `flashFalloff`: the frame's own coarse illumination, as luma, downscaled
+    /// and blurred, with the extent it lives in.
+    ///
+    /// Split out of `flashFalloff` so the anchor this stage keys off can be MEASURED from a test
+    /// or the sweep (`flashIlluminationPeak`) without rebuilding the graph by hand, which would
+    /// make the measurement a fact about the test instead of about the shipped stage.
+    private static func illuminationMap(of image: CIImage, extent: CGRect) -> (map: CIImage, extent: CGRect)? {
+        guard !extent.isEmpty, !extent.isInfinite else { return nil }
+        let scale = mapScale(forExtent: extent)
+
+        // Alpha is PASSED THROUGH here rather than forced opaque with a bias. Measured, forcing it
+        // is what silently disables this whole stage: a `CIColorMatrix` whose bias makes the
+        // transparent-black outside the frame non-zero produces an image Core Image considers
+        // INFINITE in extent, every downstream extent goes infinite with it, and the guard below
+        // then hands the frame back untouched. The input here is an opaque photograph, so passing
+        // alpha through gives the same opaque map with a finite extent. The explicit crop is the
+        // belt to that braces.
+        let luma = CIVector(x: 0.299, y: 0.587, z: 0.114, w: 0)
+        var map = image.applyingFilter("CIColorMatrix", parameters: [
+            "inputRVector": luma, "inputGVector": luma, "inputBVector": luma,
+            "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 1)
+        ]).cropped(to: extent)
+
+        // BOTH Lanczos passes (this downscale and the upscale in step 8) are clamped to extent
+        // before and cropped after, exactly like the blur below. Lanczos samples a few pixels
+        // past the edge of its input, and past the edge of a finite image is transparent black,
+        // so an unclamped pass leaves the outermost pixels of the map with alpha below 1. That
+        // alpha survives the clamps (they floor colour, not alpha), the floor bias then lifts a
+        // partly transparent pixel into a super-luminous premultiplied one, and the multiply at
+        // the end BRIGHTENS the frame edge instead of darkening it: measured 2026-09-05, a flat
+        // 16/255 frame came out with edges at 100 to 119, a visible light border on every
+        // flash-fired night shot. The previous placement clamped after the upscale, which was
+        // too late, the soft edge was already inside the extent by then.
+        if scale < 1 {
+            let smallExtent = map.applyingFilter("CILanczosScaleTransform", parameters: [
+                kCIInputScaleKey: scale, kCIInputAspectRatioKey: 1.0
+            ]).extent
+            guard !smallExtent.isEmpty, !smallExtent.isInfinite else { return nil }
+            map = map
+                .clampedToExtent()
+                .applyingFilter("CILanczosScaleTransform", parameters: [
+                    kCIInputScaleKey: scale, kCIInputAspectRatioKey: 1.0
+                ])
+                .cropped(to: smallExtent)
+        }
+        let mapExtent = map.extent
+        guard !mapExtent.isEmpty, !mapExtent.isInfinite else { return nil }
+        map = map
+            .clampedToExtent()
+            .applyingFilter("CIGaussianBlur", parameters: [kCIInputRadiusKey: flashMapBlur])
+            .cropped(to: mapExtent)
+        return (map, mapExtent)
+    }
+
+    /// The anchor `flashFalloff` would key off for this frame: the peak of its coarse illumination
+    /// map, in linear light. Returns 0 when there is no map to read.
+    ///
+    /// Internal so the flash tests and the sweep can say where a real photograph sits relative to
+    /// `flashAnchorThreshold` as a measurement rather than an assumption.
+    static func flashIlluminationPeak(of image: CIImage, extent: CGRect) -> CGFloat {
+        guard let (map, mapExtent) = illuminationMap(of: image, extent: extent) else { return 0 }
+        return areaMaximum(of: map, extent: mapExtent)
     }
 
     /// The brightest value anywhere in `image`, read back in LINEAR light (see `linearSRGB`).

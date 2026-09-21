@@ -50,6 +50,9 @@ final class CameraViewModel: NSObject {
 
     var flashOpacity: Double = 0
     var isCapturing = false
+    /// The last capture's own bytes, exactly as `AVCapturePhotoOutput` delivered them. Uncropped
+    /// and un-re-encoded since 2026-09-21: the crop happens once inside the capture pipeline now,
+    /// where the decoded frame also feeds the grade and the classifier.
     var capturedData: Data?
     var onPhotoCapture: ((Data) -> Void)?
 
@@ -779,34 +782,17 @@ extension CameraViewModel: AVCapturePhotoCaptureDelegate {
         // reproducible, so an unexpected miss here must not risk dropping a real photo.
         let expectedGeneration = takeCaptureGeneration(forSettingsID: photo.resolvedSettings.uniqueID)
 
-        let rawData = photo.fileDataRepresentation()
-        // Crop to match what the full-bleed viewfinder actually framed: `.resizeAspectFill`
-        // center-crops the LIVE PREVIEW to fill the screen, but AVCapturePhotoOutput always
-        // delivers the full, uncropped sensor frame, so the saved photo otherwise shows more
-        // scene at the left/right edges than what was on screen at capture time. Done here,
-        // synchronously, on this delegate's own background queue (like `fileDataRepresentation()`
-        // just above) since decode/redraw/re-encode is real CPU work that shouldn't run after
-        // the `@MainActor` hop below. Falls back to the untouched bytes if the aspect ratio
-        // isn't known yet or the crop fails, a photo must never be lost to this.
-        let data = rawData.flatMap { raw -> Data in
-            guard let targetAspectRatio = previewAspectRatio,
-                  // `previewAspectRatio` is written from the preview view's LIVE bounds on every
-                  // layout pass, so a transient pass (before `.aspectRatio(3:4)` settles, during a
-                  // tab change, any momentary layout) can briefly report something near a
-                  // full-screen ratio. Cropping a 4:3 capture to ~0.46 throws away roughly 40% of
-                  // the frame width, symmetrically, so subjects at the far left and far right
-                  // vanish while the middle of the shot looks completely normal, intermittently,
-                  // depending on catching a bad layout pass. The viewfinder is a fixed 3:4 box, so
-                  // anything outside that band did not come from it.
-                  //
-                  // Skipping the crop can only ever keep MORE of the photo than was framed, which
-                  // is the safe direction: slightly wider edges beats deleting whoever was
-                  // standing at the sides.
-                  CapturedPhotoCropper.isPlausibleTargetAspect(targetAspectRatio),
-                  let cropped = CapturedPhotoCropper.croppedJPEGData(from: raw, targetAspectRatio: targetAspectRatio)
-            else { return raw }
-            return cropped
-        }
+        // The capture's own bytes, and nothing else done to them here.
+        //
+        // This callback used to crop: decode the 12MP frame, redraw it into a full CGContext to
+        // bake orientation, and re-encode it at q0.95, synchronously, before the shutter could
+        // come back. The crop still happens, against the same measured viewfinder aspect and with
+        // the same geometry, but it happens once inside the capture pipeline
+        // (`PhotoService.enqueueCapture` -> `CapturedPhotoCropper.prepare`) where the decoded
+        // frame is also what the grade and the classifier use, instead of each of the three
+        // decoding the same photograph again. Nothing here is lost by that: `previewAspectRatio`
+        // is already passed to `enqueueCapture` by `CameraView`, and it is read there now.
+        let data = photo.fileDataRepresentation()
         Task { @MainActor in
             // Stale: the watchdog already reset `isCapturing`/`flashOpacity` and let the user
             // shoot again, possibly already mid a NEWER capture that owns those same properties

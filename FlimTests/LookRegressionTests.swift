@@ -25,6 +25,13 @@ import Foundation
 ///
 /// then paste the printed table over the baselines below. Recording is opt-in so the numbers can
 /// never be silently rewritten by the thing they are supposed to be guarding.
+///
+/// `.serialized`: every rendering test here shares `LookMeasure.context`, one `CIContext`, and
+/// Swift Testing otherwise runs a parameterized test's cases concurrently. Two fixtures decoding
+/// through the same context at once crashed the test host during the 2026-09-21 audit run.
+/// Serializing costs wall-clock time, not correctness, and this suite has no other reason to run
+/// its cases in parallel.
+@Suite(.serialized)
 struct LookRegressionTests {
 
     // MARK: - Tolerances
@@ -99,7 +106,14 @@ struct LookRegressionTests {
         // surround. Only this row moved; the real `parkview-flash` scene recorded identically,
         // its edges are lit and had nothing for the defect to lift.
         "flash": LookStats(meanR: 0.12244, meanG: 0.10975, meanB: 0.09822, lumP5: 0.00784, lumP50: 0.03529, lumP95: 0.56078, meanSaturation: 0.11272, localContrast: 0.00296),
-        "flashAmbient": LookStats(meanR: 0.24452, meanG: 0.23669, meanB: 0.21725, lumP5: 0.07843, lumP50: 0.17255, lumP95: 0.66275, meanSaturation: 0.14545, localContrast: 0.00682)
+        "flashAmbient": LookStats(meanR: 0.24452, meanG: 0.23669, meanB: 0.21725, lumP5: 0.07843, lumP50: 0.17255, lumP95: 0.66275, meanSaturation: 0.14545, localContrast: 0.00682),
+        // ADDED 2026-09-21 with `flashAnchorThreshold`, a fixture and a row that did not exist
+        // before. Nothing else in either table moved with it: the anchor change only reaches a
+        // frame whose coarse illumination peaks below 0.04 in linear light, and every other scene
+        // here, plus all five of the owner's real captures, peaks at 0.15 or above (the peaks are
+        // printed by `FlashFalloffTests.theAnchorBandIsNowhereNearARealFlashFrame`). Re-recorded
+        // from four runs, spread exactly zero, like every row above.
+        "flashDark": LookStats(meanR: 0.07169, meanG: 0.08009, meanB: 0.07846, lumP5: 0.04706, lumP50: 0.07451, lumP95: 0.10588, meanSaturation: 0.12246, localContrast: 0.00163)
     ]
 
     /// Recorded from the owner's real neutral captures, on the current pipeline. Restored on
@@ -133,7 +147,8 @@ struct LookRegressionTests {
         "gamut": LookStats(meanR: 0.40648, meanG: 0.40648, meanB: 0.40634, lumP5: 0.07059, lumP50: 0.39608, lumP95: 0.86667, meanSaturation: 0.55260, localContrast: 0.00065),
         "oversize": LookStats(meanR: 0.38167, meanG: 0.35410, meanB: 0.32741, lumP5: 0.28235, lumP50: 0.35294, lumP95: 0.43529, meanSaturation: 0.13572, localContrast: 0.00097),
         "flash": LookStats(meanR: 0.25072, meanG: 0.22804, meanB: 0.21138, lumP5: 0.07059, lumP50: 0.16471, lumP95: 0.69804, meanSaturation: 0.13046, localContrast: 0.00079),
-        "flashAmbient": LookStats(meanR: 0.25072, meanG: 0.22804, meanB: 0.21138, lumP5: 0.07059, lumP50: 0.16471, lumP95: 0.69804, meanSaturation: 0.13046, localContrast: 0.00079)
+        "flashAmbient": LookStats(meanR: 0.25072, meanG: 0.22804, meanB: 0.21138, lumP5: 0.07059, lumP50: 0.16471, lumP95: 0.69804, meanSaturation: 0.13046, localContrast: 0.00079),
+        "flashDark": LookStats(meanR: 0.02668, meanG: 0.02581, meanB: 0.02775, lumP5: 0.01569, lumP50: 0.02353, lumP95: 0.04314, meanSaturation: 0.09193, localContrast: 0.00013)
     ]
 
     // MARK: - Comparison

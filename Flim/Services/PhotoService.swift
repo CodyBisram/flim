@@ -159,11 +159,14 @@ final class PhotoService {
     ///   any (see `developDate(forRoll:knownRevealAt:)`); passed straight through, unused for
     ///   personal shots.
     /// - Parameter previewAspect: the live viewfinder's measured aspect at capture time
-    ///   (`CameraViewModel.previewAspectRatio`), the same value `CapturedPhotoCropper` was given
-    ///   to crop against. Diagnostic only, DEBUG builds: logged alongside the processed image's
-    ///   own pixel aspect when that deviates from `FlimTheme.frameAspect`, so an off-aspect
-    ///   capture (see the roll viewer's own per-photo log) can be traced back to whether the crop
-    ///   ran at all, or ran against a measurement that was itself off.
+    ///   (`CameraViewModel.previewAspectRatio`). This is what the shot is CROPPED against, as of
+    ///   2026-09-21: the crop used to run inside the camera's capture callback, and it moved here
+    ///   so the capture is decoded once for the crop, the grade and the classifier together
+    ///   instead of once each. Subject to the plausibility band below, and still logged in DEBUG
+    ///   alongside the processed image's own pixel aspect when that deviates from
+    ///   `FlimTheme.frameAspect`, so an off-aspect capture (see the roll viewer's own per-photo
+    ///   log) can be traced back to whether the crop ran at all, or ran against a measurement
+    ///   that was itself off.
     func enqueueCapture(rawData: Data, stock: FilmStock, userId: UUID, rollId: UUID?,
                         knownRevealAt: Date? = nil,
                         previewAspect: CGFloat? = nil,
@@ -178,8 +181,35 @@ final class PhotoService {
         let meta = PendingCapture(id: photoId, userId: userId, rollId: rollId, capturedAt: capturedAt,
                                   stockId: stock.id, knownRevealAt: knownRevealAt)
         let queueStore = captureQueueStore
+
+        // The capture, decoded exactly once, for everything downstream: the grade, the durable
+        // copy on disk, and the on-device classifier. This runs HERE rather than in the camera's
+        // capture callback (where the crop used to live) so the shutter is free the moment
+        // AVFoundation hands the bytes over, and the one decode replaces three.
+        //
+        // The plausibility policy is applied here, at the point the viewfinder's measurement is
+        // read, exactly as it was when the callback owned the crop: a target outside the band did
+        // not come from the 3:4 box, so the shot is left uncropped rather than having 40% of its
+        // width thrown away (`CapturedPhotoCropper.plausibleTargetAspectRange`).
+        //
+        // `bytes` is the shot as it goes to disk and as every fallback path uses it: the cropped
+        // q0.95 JPEG when the crop actually trimmed something, and otherwise the camera's own
+        // untouched bytes, which is byte for byte what this queue held before. Producing them is
+        // skipped entirely on the replay path, whose file is already on disk.
+        let prepared: Task<PreparedCapture, Never> = Task.detached(priority: .userInitiated) {
+            let target = previewAspect.flatMap {
+                CapturedPhotoCropper.isPlausibleTargetAspect($0) ? $0 : nil
+            }
+            guard let frame = CapturedPhotoCropper.prepare(from: rawData, targetAspectRatio: target)
+            else { return PreparedCapture(frame: nil, bytes: rawData) }
+            guard !alreadyQueued, frame.didCrop,
+                  let jpeg = CapturedPhotoCropper.jpegData(from: frame)
+            else { return PreparedCapture(frame: frame, bytes: rawData) }
+            return PreparedCapture(frame: frame, bytes: jpeg)
+        }
         let saved: Task<Bool, Never> = Task.detached(priority: .userInitiated) {
-            alreadyQueued ? true : await queueStore.save(meta, raw: rawData)
+            if alreadyQueued { return true }
+            return await queueStore.save(meta, raw: prepared.value.bytes)
         }
         Task { [weak self] in
             // Say so if the phone could not keep the shot: it is only in memory until it uploads.
@@ -216,7 +246,18 @@ final class PhotoService {
             // pixels the master was encoded from (see `gradeForCapture`), so `captureAndUpload`
             // can thread them straight into the thumb/feed renditions instead of re-decoding the
             // master JPEG a second time.
-            let (processed, graded) = await Self.gradeForCapture(rawData: rawData, stock: stock)
+            let capture = await prepared.value
+            let (processed, graded) = await Self.gradeForCapture(frame: capture.frame,
+                                                                 bytes: capture.bytes, stock: stock)
+            // Classify NOW, off the same pixels, and let go of them. The suggestion cannot be
+            // written until the row exists, which is after the upload, and holding a decoded 12MP
+            // frame for the length of an upload is roughly 48 MB pinned on a slow network. So the
+            // frame's life ends here: `takeFrame` hands it to this one task and clears it, and the
+            // bitmap is freed as soon as Vision is done with it. The same discipline
+            // `uploadRenditions` already applies to the graded bitmap.
+            let classification: Task<[String], Never>? = capture.takeFrame().map { frame in
+                Task.detached(priority: .utility) { EmojiSuggestion.classify(frame.image) }
+            }
             #if DEBUG
             Self.logCaptureAspectIfMismatched(processed: processed, graded: graded, previewAspect: previewAspect)
             #endif
@@ -239,9 +280,12 @@ final class PhotoService {
             )
 
             if let photo {
-                // Fire-and-forget, on the RAW bytes (not `processed`, see `EmojiSuggestion`'s own
-                // doc for why), and only once the row exists so it has something to attach a
-                // suggestion to. Placed after the row lands and before `onFinish`, same spot as
+                // Fire-and-forget, on the UNGRADED capture (not `processed`, see
+                // `EmojiSuggestion`'s own doc for why), and only once the row exists so it has
+                // something to attach a suggestion to. The classification itself already ran, on
+                // the same pixels the master was graded from, decoded once at the top of this
+                // pipeline: this only writes the answer. The byte form is the fallback for a
+                // capture that could not be decoded, which is also a capture that did not grade. Placed after the row lands and before `onFinish`, same spot as
                 // `Activation.log(.firstShot)` inside `captureAndUpload`: nothing here is awaited,
                 // so it can never delay the capture this photo belongs to.
                 //
@@ -251,11 +295,45 @@ final class PhotoService {
                 // `negativeCacheTTL`. See `suggestedEmojiByPhoto`'s own doc for why both this and
                 // the TTL exist together.
                 let epoch = AccountEpoch.current
-                EmojiSuggestion.suggest(rawData: rawData, photoId: photo.id) { [weak self] emoji in
+                let written: @MainActor ([String]) -> Void = { [weak self] emoji in
                     self?.noteSuggestionWritten(photoId: photo.id, emoji: emoji, epoch: epoch)
+                }
+                if let classification {
+                    EmojiSuggestion.suggest(classification: classification, photoId: photo.id,
+                                            onWritten: written)
+                } else {
+                    EmojiSuggestion.suggest(rawData: capture.bytes, photoId: photo.id, onWritten: written)
                 }
                 await onFinish(photo)
             }
+        }
+    }
+
+    /// One shot on its way through the capture pipeline: the bytes that go to disk, and the
+    /// decoded frame that the grade and the classifier share.
+    ///
+    /// A class, and mutable, for one reason: the frame has to be RELEASABLE before the pipeline
+    /// task that carries it finishes. A tuple or a struct would be stored inside the `Task` that
+    /// produced it and pinned for as long as anything references that task, which on this path is
+    /// the whole capture, upload included. `takeFrame()` is what ends its life, and it is called
+    /// the moment the grade and the classification have the pixels they need.
+    ///
+    /// `bytes` is immutable and is what the durable copy and every fallback use; `frame` is
+    /// touched only by the pipeline task, in order, which is what makes the unchecked conformance
+    /// honest rather than a wish.
+    private final class PreparedCapture: @unchecked Sendable {
+        private(set) var frame: CapturedPhotoCropper.Prepared?
+        let bytes: Data
+
+        init(frame: CapturedPhotoCropper.Prepared?, bytes: Data) {
+            self.frame = frame
+            self.bytes = bytes
+        }
+
+        /// The frame, once, after which this holds no bitmap.
+        func takeFrame() -> CapturedPhotoCropper.Prepared? {
+            defer { frame = nil }
+            return frame
         }
     }
 
@@ -265,9 +343,13 @@ final class PhotoService {
     /// what that used to cost: worse quality AND larger files, at once).
     ///
     /// Mirrors `InstantFilmProcessor.process`'s own non-calibration branch exactly, `gradedPixels`
-    /// then `encodeImage` at `fullEncoding`, so the master bytes this produces are byte-identical
-    /// to what `process` would have produced. Nothing about the master's quality, dimensions, or
-    /// encoding changes here, only what gets handed onward alongside it.
+    /// then `encodeImage` at `fullEncoding`, so from the same input the master bytes this produces
+    /// are byte-identical to what `process` would have produced. Nothing about the master's
+    /// quality, dimensions, or encoding changes here, only what gets handed onward alongside it.
+    ///
+    /// The overload below grades from the capture's already-decoded pixels instead of from bytes.
+    /// That is the same grade on a cleaner input, not a different grade: what it skips is the
+    /// q0.95 JPEG generation the crop used to put between the sensor and the pipeline.
     ///
     /// The Film Lab calibration path (`neutralCaptureKey`, TestFlight-only) stays on the ORIGINAL
     /// `process` entry point instead: it deliberately returns an UNGRADED image, so there is no
@@ -286,14 +368,35 @@ final class PhotoService {
     /// deterministic given its inputs and the `neutralCaptureKey` default, which is what makes the
     /// calibration branch above directly testable without a live capture.
     nonisolated static func gradeForCapture(rawData: Data, stock: FilmStock) async -> (data: Data, graded: CGImage?) {
+        await gradeForCapture(frame: nil, bytes: rawData, stock: stock)
+    }
+
+    /// The same thing from an already-decoded capture (`CapturedPhotoCropper.prepare`), which is
+    /// what the shutter has.
+    ///
+    /// `bytes` is still required and is not redundant: it is the calibration branch's input, the
+    /// fallback when grading fails, and the only thing either of those can be. `frame` being nil
+    /// means the capture could not be decoded at all, and the byte path runs exactly as before.
+    ///
+    /// The flash gate moves with the pixels: a `CGImage` has no EXIF, so the tag read off the
+    /// original bytes during `prepare` is passed in explicitly. Absent counts as did-not-fire,
+    /// the same fail-closed rule `InstantFilmProcessor.flashFired` documents.
+    nonisolated static func gradeForCapture(frame: CapturedPhotoCropper.Prepared?, bytes: Data,
+                                            stock: FilmStock) async -> (data: Data, graded: CGImage?) {
         if UserDefaults.standard.bool(forKey: InstantFilmProcessor.neutralCaptureKey), !AppInfo.isAppStore {
-            let data = await InstantFilmProcessor.process(rawData, stock: stock)?.data ?? rawData
+            let data = await InstantFilmProcessor.process(bytes, stock: stock)?.data ?? bytes
             return (data, nil)
         }
         return await Task.detached(priority: .userInitiated) { () -> (Data, CGImage?) in
-            guard let cg = InstantFilmProcessor.gradedPixels(rawData, stock: stock),
-                  let master = InstantFilmProcessor.encodeImage(cg, InstantFilmProcessor.fullEncoding)
-            else { return (rawData, nil) }
+            let cg: CGImage?
+            if let frame {
+                cg = InstantFilmProcessor.gradedPixels(frame.image, stock: stock,
+                                                       flashFired: frame.exifFlash.map { $0 & 1 == 1 } ?? false)
+            } else {
+                cg = InstantFilmProcessor.gradedPixels(bytes, stock: stock)
+            }
+            guard let cg, let master = InstantFilmProcessor.encodeImage(cg, InstantFilmProcessor.fullEncoding)
+            else { return (bytes, nil) }
             return (master.data, cg)
         }.value
     }
@@ -911,8 +1014,13 @@ final class PhotoService {
     /// photo downloads the full image instead of a ~30KB thumbnail, forever.
     ///
     /// - Parameter gradedImage: when present (a fresh capture, see `gradeForCapture`), both
-    ///   renditions are downsampled and encoded from THESE pixels, via `losslessPNG`, the same
-    ///   pixels `imageData` itself was encoded from. Without this, both renditions used to encode
+    ///   renditions are downsampled and encoded from THESE pixels directly, the same pixels
+    ///   `imageData` itself was encoded from. Until 2026-09-21 they went through a lossless PNG,
+    ///   because `rendition` only took `Data`: one full-frame PNG encode and one full-frame decode
+    ///   per rendition, on every shot, to move pixels that were already in memory. `rendition` now
+    ///   takes the CGImage and the renditions come out byte for byte the same (measured, see
+    ///   `InstantFilmProcessor.rendition(from:longEdge:encoding:)`). Without any of this, both
+    ///   renditions used to encode
     ///   from `imageData`, which is already a lossy q0.85 JPEG, so the smaller renditions were a
     ///   JPEG-of-a-JPEG: measurably worse (median 1.56 8-bit levels of error on the feed card, the
     ///   rendition people see most, p99 9, max 45) AND ~3% larger, at once. `nil` on every retry
@@ -962,9 +1070,9 @@ final class PhotoService {
             // still to come below.
             var gradedImage = gradedImage
             let (thumbEncoded, feedEncoded) = await Task.detached(priority: .utility) { [gradedImage] in
-                if let gradedImage, let losslessPNG = Self.losslessPNG(gradedImage) {
-                    return (InstantFilmProcessor.rendition(from: losslessPNG, longEdge: 500, encoding: InstantFilmProcessor.thumbEncoding),
-                            InstantFilmProcessor.rendition(from: losslessPNG, longEdge: 1400, encoding: InstantFilmProcessor.feedEncoding))
+                if let gradedImage {
+                    return (InstantFilmProcessor.rendition(from: gradedImage, longEdge: 500, encoding: InstantFilmProcessor.thumbEncoding),
+                            InstantFilmProcessor.rendition(from: gradedImage, longEdge: 1400, encoding: InstantFilmProcessor.feedEncoding))
                 }
                 return (InstantFilmProcessor.thumbnail(from: imageData),
                         InstantFilmProcessor.feedRendition(from: imageData))
@@ -1030,29 +1138,6 @@ final class PhotoService {
                 if let feedPath { self.loadedPhotos[i].feedPath = feedPath }
             }
         }
-    }
-
-    /// A lossless PNG of an already-graded `CGImage`, so `InstantFilmProcessor.rendition(from:
-    /// longEdge:encoding:)` — the SAME ImageIO downsample-then-encode path every other rendition
-    /// already goes through (`thumbnail`, `feedRendition`, `repairRenditions`) — can produce the
-    /// thumb/feed renditions straight from the graded pixels instead of from the lossy q0.85
-    /// master JPEG.
-    ///
-    /// The PNG never leaves this process; it exists only as a lossless carrier between "pixels
-    /// already in memory" and the `Data`-shaped entry point `rendition` expects, so the two
-    /// renditions cost one extra downsample each rather than a second generation of JPEG loss.
-    /// This is the same technique `LookRenditionSweep.generationLoss` uses to measure that loss:
-    /// a PNG round-trip is bit-for-bit lossless, so nothing but the downsample differs from
-    /// resampling the CGImage directly.
-    ///
-    /// Not `private`, so it can be pinned directly: pure pixels-in-bytes-out, no access to any
-    /// state on this class.
-    nonisolated static func losslessPNG(_ cg: CGImage) -> Data? {
-        let out = NSMutableData()
-        guard let dest = CGImageDestinationCreateWithData(out, "public.png" as CFString, 1, nil) else { return nil }
-        CGImageDestinationAddImage(dest, cg, nil)
-        guard CGImageDestinationFinalize(dest) else { return nil }
-        return out as Data
     }
 
     /// Photos this session has already tried to repair, so a swipe back and forth doesn't retry a

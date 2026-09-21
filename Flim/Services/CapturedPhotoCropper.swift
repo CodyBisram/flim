@@ -44,7 +44,7 @@ enum CapturedPhotoCropper {
     }
 
     /// Pure center-crop math: given a captured image's VISUAL size (already accounting for
-    /// any EXIF rotation, see `croppedJPEGData` below) and the aspect ratio (width / height)
+    /// any EXIF rotation, see `prepare` below) and the aspect ratio (width / height)
     /// the live preview showed, returns the rect, in that same visual coordinate space, to
     /// crop to.
     ///
@@ -76,11 +76,37 @@ enum CapturedPhotoCropper {
         }
     }
 
-    /// Crops raw captured JPEG/HEIC `Data` to `targetAspectRatio` and returns re-encoded JPEG
-    /// `Data` with a plain "up" orientation baked in, removing any EXIF orientation ambiguity
-    /// for `InstantFilmProcessor` and everything downstream. Returns `nil` if no crop is
-    /// needed (aspect ratios already match) or if decoding/re-encoding fails, the caller
-    /// falls back to the original, untouched bytes in either case, so a photo is never lost.
+    /// One capture, decoded ONCE: upright pixels, already cropped to what the viewfinder framed,
+    /// plus the two facts about the original bytes that survive nowhere else.
+    ///
+    /// A decoded frame is what every consumer of a capture actually wants. The grade wants pixels,
+    /// the on-device classifier wants pixels, and the durable copy on disk wants bytes made FROM
+    /// those pixels. Until 2026-09-21 each of them decoded the 12MP frame for itself: the crop
+    /// decoded and re-encoded at q0.95 inside the capture callback, the grade decoded that JPEG
+    /// again, and `EmojiSuggestion` decoded the capture a third time. This type is handed around
+    /// instead, so the decode happens once and the JPEG generation the grade used to read through
+    /// is gone from the master's path entirely.
+    struct Prepared {
+        /// Orientation baked in, cropped, in the capture's OWN colour space (see `prepare`).
+        let image: CGImage
+        /// EXIF `Flash` (tag 0x9209) as the camera wrote it, or nil if the capture carried none.
+        /// A `CGImage` has no metadata, so the flash gate cannot read this off the pixels: it has
+        /// to be carried here or the disposable-flash falloff silently stops happening.
+        let exifFlash: Int?
+        /// Whether the crop actually trimmed anything. When it did, the durable copy on disk has
+        /// to be re-encoded from these pixels; when it did not, the capture's own bytes are
+        /// already the right bytes and nothing is re-encoded at all.
+        let didCrop: Bool
+    }
+
+    /// Decodes a capture once and returns it upright and cropped to `targetAspectRatio`.
+    ///
+    /// `nil` for `targetAspectRatio` means "do not crop", which is what the replay path passes:
+    /// a shot coming back off disk was already cropped before it was written. The PLAUSIBILITY
+    /// policy (`isPlausibleTargetAspect`) is deliberately not applied here, for the same reason
+    /// it was never applied inside `centerCropRect`: this is geometry, that is a policy about
+    /// what this app's viewfinder can be, and it belongs where the measurement is read (see
+    /// `PhotoService.enqueueCapture`).
     ///
     /// Decodes via `UIImage(data:)` deliberately, NOT `CGImageSourceCreateImageAtIndex` /
     /// a bare `CGImage`: `AVCapturePhotoOutput`'s JPEG can carry pixel data still in
@@ -92,15 +118,21 @@ enum CapturedPhotoCropper {
     /// `CIImage(data:options:[.applyOrientationProperty: true])`). Cropping against raw
     /// pixel-buffer dimensions instead would risk trimming the wrong axis (top/bottom
     /// instead of left/right) whenever the buffer is landscape-native.
-    static func croppedJPEGData(
-        from data: Data,
-        targetAspectRatio: CGFloat,
-        quality: CGFloat = 0.95
-    ) -> Data? {
+    ///
+    /// The redraw is skipped entirely when there is nothing to do: an already-upright capture that
+    /// needs no crop comes back as its own decoded `CGImage`.
+    static func prepare(from data: Data, targetAspectRatio: CGFloat?) -> Prepared? {
         guard let image = UIImage(data: data) else { return nil }
+        let flash = exifFlash(in: data)
         let visualSize = image.size   // already accounts for imageOrientation
-        let cropRect = centerCropRect(capturedSize: visualSize, targetAspectRatio: targetAspectRatio)
-        guard cropRect.size != visualSize else { return nil }   // aspect already matches
+        let cropRect = targetAspectRatio.map {
+            centerCropRect(capturedSize: visualSize, targetAspectRatio: $0)
+        } ?? CGRect(origin: .zero, size: visualSize)
+        let didCrop = cropRect.size != visualSize
+
+        if !didCrop, image.imageOrientation == .up, let cg = image.cgImage {
+            return Prepared(image: cg, exifFlash: flash, didCrop: false)
+        }
 
         let width = Int(visualSize.width.rounded())
         let height = Int(visualSize.height.rounded())
@@ -111,7 +143,7 @@ enum CapturedPhotoCropper {
         // very likely delivers Display P3-tagged JPEGs on modern iPhones. We render into a
         // CGContext built with the DECODED image's OWN color space (not a default/sRGB
         // context), so the wide-gamut pixel data is neither lost nor silently reinterpreted, 
-        // `InstantFilmProcessor`'s later CIImage decode still sees the correct tag and handles
+        // `InstantFilmProcessor`'s later decode still sees the correct space and handles
         // the eventual sRGB conversion itself, at its own declared export boundary.
         let colorSpace = image.cgImage?.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB)!
         guard let ctx = CGContext(
@@ -141,13 +173,43 @@ enum CapturedPhotoCropper {
         UIGraphicsPopContext()
 
         guard let normalizedCG = ctx.makeImage() else { return nil }
+        guard didCrop else { return Prepared(image: normalizedCG, exifFlash: flash, didCrop: false) }
         // Clamp to the actual bitmap bounds in case rounding `visualSize` to whole pixels above
         // left `cropRect` fractionally outside them.
         let bounds = CGRect(x: 0, y: 0, width: width, height: height)
         guard let croppedCG = normalizedCG.cropping(to: cropRect.integral.intersection(bounds))
         else { return nil }
+        return Prepared(image: croppedCG, exifFlash: flash, didCrop: true)
+    }
 
-        return encodeJPEG(croppedCG, quality: quality, exifFlash: exifFlash(in: data))
+    /// The durable copy of a prepared capture: q0.95 JPEG, orientation baked, carrying the flash
+    /// tag and nothing else (see `exifFlash`).
+    ///
+    /// This is the shot as `CaptureQueueStore` keeps it while it waits its turn, and as the replay
+    /// path reads it back after a crash. It is no longer on the master's path: the grade takes the
+    /// `CGImage` directly, so these bytes exist for durability alone and one generation of JPEG
+    /// loss has left the photograph people actually see.
+    static func jpegData(from prepared: Prepared, quality: CGFloat = 0.95) -> Data? {
+        encodeJPEG(prepared.image, quality: quality, exifFlash: prepared.exifFlash)
+    }
+
+    /// Crops raw captured JPEG/HEIC `Data` to `targetAspectRatio` and returns re-encoded JPEG
+    /// `Data` with a plain "up" orientation baked in, removing any EXIF orientation ambiguity
+    /// for `InstantFilmProcessor` and everything downstream. Returns `nil` if no crop is
+    /// needed (aspect ratios already match) or if decoding/re-encoding fails, the caller
+    /// falls back to the original, untouched bytes in either case, so a photo is never lost.
+    ///
+    /// `prepare` + `jpegData`, which is all this ever was. The capture path takes those two
+    /// separately now (it wants the pixels, not another JPEG); this stays as the one-shot form
+    /// for callers that only deal in bytes.
+    static func croppedJPEGData(
+        from data: Data,
+        targetAspectRatio: CGFloat,
+        quality: CGFloat = 0.95
+    ) -> Data? {
+        guard let prepared = prepare(from: data, targetAspectRatio: targetAspectRatio),
+              prepared.didCrop else { return nil }
+        return jpegData(from: prepared, quality: quality)
     }
 
     /// The capture's raw EXIF `Flash` value (tag 0x9209), if it carried one.

@@ -181,12 +181,23 @@ struct FlashFalloffTests {
     /// Lanczos passes sampling past the map's edge (see `flashFalloff`). This renders a flat dark
     /// frame, which has NO content to hide a lift, and reads every pixel of the outer 12px band on
     /// all four sides against the centre.
+    ///
+    /// The flat frame is 64/255, where it was 16/255 until 2026-09-21. That is still a dark frame
+    /// with nothing in it to hide a lift, but it sits ABOVE `flashAnchorThreshold`, and a frame
+    /// below the threshold is now handed back untouched: at 16/255 this test would still pass and
+    /// would be measuring the identity return rather than the map's edges. The assertion below
+    /// that the stage is at full strength for this frame is what stops it going quietly vacuous
+    /// again if that threshold ever moves.
     @Test("the stage leaves the frame edge as dark as the centre")
     func flashFalloffLeavesTheFrameEdgeAlone() throws {
         let extent = CGRect(x: 0, y: 0, width: 1200, height: 1600)
-        let value: CGFloat = 16.0 / 255.0
+        let value: CGFloat = 64.0 / 255.0
         let source = CIImage(color: CIColor(red: value, green: value, blue: value, alpha: 1))
             .cropped(to: extent)
+        let peak = InstantFilmProcessor.flashIlluminationPeak(of: source, extent: extent)
+        #expect(InstantFilmProcessor.flashFalloffStrength(peak: peak) == 1, """
+            this frame peaks at \(peak), which is not full strength, so the stage is not really             building a map for it and the edges below are nobody's edges.
+            """)
         let out = InstantFilmProcessor.flashFalloff(on: source, exponent: 1.0, extent: extent)
         let cg = try #require(Self.render(out, extent: extent))
         let px = try #require(Self.pixels(of: cg))
@@ -323,6 +334,129 @@ struct FlashFalloffTests {
         // frame type. Re-fit with `FlashFalloffSweep` and get the owner to look at real photos
         // before moving it.
         #expect(FilmStock.original.params.flashFalloff == 1.0)
+    }
+
+    // MARK: - The anchor: a frame with nothing lit in it
+
+    /// The frame the stage has nothing to say about must come out of it unchanged.
+    ///
+    /// `flashFalloff` normalises the frame against the peak of its own coarse illumination, which
+    /// asks the frame to contain a lit subject. `flashDark` is a capture whose EXIF says the flash
+    /// fired and whose content says it reached nothing, and before the anchor threshold that frame
+    /// was the one the stage changed MOST: the divisor was floored at 0.02, so a frame peaking at
+    /// 0.005 took a gain of 50 and everything that was not its brightest speck of noise multiplied
+    /// down toward `flashFalloffFloor`. A dark frame came back crushed, keyed on noise.
+    ///
+    /// Stated as byte identity rather than as a tolerance, like the gate tests above, because the
+    /// claim is identity: below the threshold this stage is not gentler, it is absent.
+    @Test("a flash frame with no lit subject comes out of the pipeline untouched")
+    func aFrameWithNothingLitIsLeftAlone() async throws {
+        let data = LookFixture.flashDark.pngData()
+        #expect(InstantFilmProcessor.flashFired(in: data),
+                "this fixture only measures anything if the gate opens for it")
+        let gated = try #require(await InstantFilmProcessor.process(data, stock: .original))
+        let stageOff = try #require(await InstantFilmProcessor.process(data, stock: .original,
+                                                                       flashOverride: false))
+        #expect(Self.digest(gated.data) == Self.digest(stageOff.data), """
+            a near-black flash frame was still reshaped by the falloff. Below             `flashAnchorThreshold` there is no lit subject to anchor to and the frame must be             handed back exactly as it arrived.
+            """)
+    }
+
+    /// Where real flash frames sit, against where the threshold is.
+    ///
+    /// The threshold is only defensible if nothing a flash actually reached lands near it. These
+    /// are the peaks of the same coarse illumination map the stage anchors on, read in linear
+    /// light off the INPUT (the grade only ever lifts the shadows from here, so an input already
+    /// far above the band is further above it after grading).
+    @Test("the anchor band is nowhere near a frame the flash reached")
+    func theAnchorBandIsNowhereNearARealFlashFrame() throws {
+        func peak(_ data: Data) -> CGFloat? {
+            guard let image = CIImage(data: data) else { return nil }
+            return InstantFilmProcessor.flashIlluminationPeak(of: image, extent: image.extent)
+        }
+        for fixture in LookFixture.allCases {
+            print("MAPPEAK \(fixture.rawValue): \(peak(fixture.pngData()) ?? -1)")
+        }
+        if LookPairs.isAvailable {
+            for scene in LookPairs.scenes {
+                guard let data = LookPairs.neutralData(scene) else { continue }
+                print("MAPPEAK \(scene): \(peak(data) ?? -1)")
+            }
+        }
+        let lit = try #require(peak(LookFixture.flash.pngData()))
+        #expect(InstantFilmProcessor.flashFalloffStrength(peak: lit) == 1,
+                "the lit flash fixture peaks at \(lit), inside the ramp band; the band is too high")
+        let unlit = try #require(peak(LookFixture.flashDark.pngData()))
+        #expect(InstantFilmProcessor.flashFalloffStrength(peak: unlit) == 0,
+                "the unlit flash fixture peaks at \(unlit), which the stage would still act on")
+        if LookPairs.isAvailable, let real = LookPairs.neutralData("parkview-flash").flatMap(peak) {
+            #expect(InstantFilmProcessor.flashFalloffStrength(peak: real) == 1,
+                    "the owner's real flash capture peaks at \(real), inside the ramp band")
+        }
+    }
+
+    /// The threshold is a fade, not a switch.
+    ///
+    /// A hard cut would make one 8-bit level in a frame's brightest region decide between an
+    /// untouched photograph and one re-expanded to the floor, so two frames of the same dim scene
+    /// taken a second apart could come back looking like different photographs. The shape:
+    @Test("the strength ramp has no step in it")
+    func theStrengthRampHasNoStep() {
+        #expect(InstantFilmProcessor.flashFalloffStrength(peak: 0) == 0)
+        #expect(InstantFilmProcessor.flashFalloffStrength(peak: 0.019) == 0)
+        #expect(InstantFilmProcessor.flashFalloffStrength(peak: 0.02) == 0)
+        #expect(InstantFilmProcessor.flashFalloffStrength(peak: 0.04) == 1)
+        #expect(InstantFilmProcessor.flashFalloffStrength(peak: 1.0) == 1)
+        // Smoothstep: half strength at the middle of the band, monotone, and flat at both ends so
+        // the two joins have no kink either.
+        #expect(abs(InstantFilmProcessor.flashFalloffStrength(peak: 0.03) - 0.5) < 1e-9)
+        var previous: CGFloat = 0
+        for step in 0...200 {
+            let peak = 0.015 + 0.03 * CGFloat(step) / 200
+            let strength = InstantFilmProcessor.flashFalloffStrength(peak: peak)
+            #expect(strength >= previous, "the ramp went backwards at peak \(peak)")
+            #expect(strength - previous < 0.02, "the ramp stepped \(strength - previous) at peak \(peak)")
+            previous = strength
+        }
+    }
+
+    /// The same claim, rendered: a frame whose anchor is walked up through the band changes
+    /// gradually rather than flipping between two looks.
+    ///
+    /// The frame is `flashDark` pushed with `CIExposureAdjust`, which is the honest way to move
+    /// the anchor while holding the CONTENT fixed: every step is the same photograph at a
+    /// different exposure, so the only thing changing is where its peak lands relative to the
+    /// threshold. `kept` is the mean light the stage leaves behind, 1.0 being untouched.
+    @Test("a frame walked across the threshold changes gradually, not in one jump")
+    func theStageFadesInAcrossTheBand() throws {
+        let source = try #require(CIImage(data: LookFixture.flashDark.pngData()))
+        let extent = source.extent
+        var kept: [(peak: CGFloat, kept: Double)] = []
+        for step in 0...16 {
+            let image = source.applyingFilter("CIExposureAdjust",
+                                              parameters: ["inputEV": 0.25 * CGFloat(step)])
+            let peak = InstantFilmProcessor.flashIlluminationPeak(of: image, extent: extent)
+            let out = InstantFilmProcessor.flashFalloff(on: image, exponent: 1.0, extent: extent)
+            let beforeCG = try #require(Self.render(image, extent: extent))
+            let afterCG = try #require(Self.render(out, extent: extent))
+            let before = try #require(Self.regionLuma(beforeCG, u: 0.5, v: 0.5, radius: 400))
+            let after = try #require(Self.regionLuma(afterCG, u: 0.5, v: 0.5, radius: 400))
+            kept.append((peak, before > 0 ? after / before : 1))
+        }
+        for row in kept { print(String(format: "BAND peak=%.5f kept=%.4f", row.peak, row.kept)) }
+        // Below the threshold: exactly untouched.
+        for row in kept where row.peak <= 0.02 {
+            #expect(abs(row.kept - 1) < 0.005,
+                    "a frame peaking at \(row.peak), below the threshold, kept \(row.kept)")
+        }
+        // Across the whole walk, no single step may account for most of the change. A hard cut
+        // puts the entire drop into one step by construction.
+        let total = (kept.map(\.kept).max() ?? 1) - (kept.map(\.kept).min() ?? 1)
+        var worst = 0.0
+        for (a, b) in zip(kept, kept.dropFirst()) { worst = max(worst, abs(a.kept - b.kept)) }
+        #expect(total > 0.05, "the walk never left the stage's off state; it measures nothing")
+        #expect(worst < total * 0.6,
+                "the biggest single step was \(worst) of a total \(total); the threshold is behaving like a switch")
     }
 
     // MARK: - Measurement helpers

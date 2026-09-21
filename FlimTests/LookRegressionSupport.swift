@@ -164,6 +164,7 @@ enum LookMeasure {
 /// | shadowRamp   | 0.410                | WHERE grain lands on the tone curve (see below)   |
 /// | flash        | 0.315                | the flash falloff stage, with the EXIF gate OPEN  |
 /// | flashAmbient | 0.315                | the same pixels with the gate SHUT (see below)    |
+/// | flashDark    | 0.028                | a flash frame with NO lit subject (see below)     |
 /// | oversize     | 0.366                | the >2048 downscale, and grain averaged by it     |
 /// | daylight     | 0.504                | no EV, full bloom, ordinary content               |
 /// | gamut        | 0.529                | the LUT across the whole colour cube              |
@@ -204,12 +205,26 @@ enum LookMeasure {
 /// receives: the falloff physically happened at capture and the ISP tone-mapped it back up, so the
 /// stage's job is to re-expand a flattened gradient rather than to darken a frame that is already
 /// dark. A fixture with a black background would pin nothing.
+///
+/// `flashDark` is the frame at the OTHER end of that argument, added 2026-09-21 with the anchor
+/// threshold. Its EXIF says the flash fired and nothing in it was lit: the tube went off, the
+/// subject was out of reach, and what came back is a near-black frame with no anchor anywhere in
+/// it. The stage normalises against the brightest region it can find, so before the threshold
+/// existed this frame's brightest speck of noise became its "subject" and every other pixel
+/// multiplied down toward `flashFalloffFloor`, i.e. the one input the stage had nothing to say
+/// about was the one it changed most. Nothing else in this set could see that: `flash` has a lit
+/// subject by construction, and every dark fixture (`night`, `dusk`) has the gate shut.
+///
+/// It is NOT a darker copy of `flash`. The point is the absence of a lit region, so the subject
+/// here is a shape you can just make out rather than one the flash reached, and the frame carries
+/// the coarse sensor texture a real night capture has, since that texture is exactly what the old
+/// anchor promoted.
 enum LookFixture: String, CaseIterable {
-    case night, dusk, shadowRamp, speculars, daylight, gamut, oversize, flash, flashAmbient
+    case night, dusk, shadowRamp, speculars, daylight, gamut, oversize, flash, flashAmbient, flashDark
 
     /// Whether this fixture's PNG carries an EXIF `Flash` tag with the fired bit set, i.e. whether
     /// the real gate in `InstantFilmProcessor.flashFired` will open for it.
-    var firesFlash: Bool { self == .flash }
+    var firesFlash: Bool { self == .flash || self == .flashDark }
 
     /// Which fixture's pixels this one is made of. Only the flash pair differs from itself.
     private var pixelSource: LookFixture { self == .flashAmbient ? .flash : self }
@@ -421,6 +436,22 @@ enum LookFixture: String, CaseIterable {
             // A corner the flash never reached at all.
             let corner = LookFixture.spot(u, v, 0.97, 0.03, 0.45)
             r -= corner * 0.030; g -= corner * 0.028; b -= corner * 0.022
+            return (r, g, b)
+
+        case .flashDark:
+            // The flash fired and reached nothing. A room-sized subject at the far end of a dark
+            // space, or a frame shot through glass: the tube emptied into the distance and the ISP
+            // brought back what little the sensor had, which is a flat, noisy near-black.
+            //
+            // Everything here is deliberately within a few 8-bit levels of black. The faint shape
+            // at (0.44, 0.55) is what the eye finds in such a frame, and it is what a normalising
+            // anchor would have latched onto; the texture is the sensor noise that the anchor
+            // would otherwise have promoted into a subject when even the shape is absent.
+            let su = (u - 0.44) / 0.34, sv = (v - 0.55) / 0.38
+            let shape = max(0, 1 - (su * su + sv * sv))
+            let base = 0.018 + 0.010 * (1 - v) + 0.010 * texture
+            var r = base * 1.02, g = base * 1.00, b = base * 1.12
+            r += shape * 0.026; g += shape * 0.024; b += shape * 0.020
             return (r, g, b)
 
         case .oversize:

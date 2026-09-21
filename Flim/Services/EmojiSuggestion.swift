@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 import Supabase
 import Vision
@@ -67,16 +68,43 @@ enum EmojiSuggestion {
     ///   write or the write failed, both of which already leave the caller's own state untouched.
     static func suggest(rawData: Data, photoId: UUID,
                         onWritten: @escaping @MainActor ([String]) -> Void = { _ in }) {
+        suggest(photoId: photoId, onWritten: onWritten) { classify(rawData) }
+    }
+
+    /// The same thing for a capture that has ALREADY been classified, or is being classified
+    /// right now, off a frame the pipeline held only briefly.
+    ///
+    /// The split exists for memory, not for tidiness. The classifier wants the capture's own
+    /// pixels and the row it attaches to does not exist until the upload lands, so passing a
+    /// decoded 12MP frame into this call would pin roughly 48 MB of bitmap for the whole upload,
+    /// on a network that can take seconds. Instead the capture pipeline runs `classify` the
+    /// moment the grade is done, drops the frame, and hands the pending ANSWER here. Nothing is
+    /// awaited on the capture's own path either way: this returns immediately, like the form
+    /// above, and a photo that never uploads simply never gets written.
+    static func suggest(classification: Task<[String], Never>, photoId: UUID,
+                        onWritten: @escaping @MainActor ([String]) -> Void = { _ in }) {
         Task.detached(priority: .utility) {
-            let emoji = classify(rawData)
-            guard !emoji.isEmpty else { return }
-            struct Params: Encodable { let p_photo_id: UUID; let p_emoji: [String] }
-            guard (try? await supabase
-                .rpc("set_photo_suggested_emoji", params: Params(p_photo_id: photoId, p_emoji: emoji))
-                .execute()) != nil
-            else { return }
-            await onWritten(emoji)
+            await write(classification.value, photoId: photoId, onWritten: onWritten)
         }
+    }
+
+    private static func suggest(photoId: UUID,
+                                onWritten: @escaping @MainActor ([String]) -> Void,
+                                classifying: @escaping @Sendable () -> [String]) {
+        Task.detached(priority: .utility) {
+            await write(classifying(), photoId: photoId, onWritten: onWritten)
+        }
+    }
+
+    private static func write(_ emoji: [String], photoId: UUID,
+                              onWritten: @escaping @MainActor ([String]) -> Void) async {
+        guard !emoji.isEmpty else { return }
+        struct Params: Encodable { let p_photo_id: UUID; let p_emoji: [String] }
+        guard (try? await supabase
+            .rpc("set_photo_suggested_emoji", params: Params(p_photo_id: photoId, p_emoji: emoji))
+            .execute()) != nil
+        else { return }
+        await onWritten(emoji)
     }
 
     /// Up to three emoji for one image, most-confident first, never more than one per emoji.
@@ -97,12 +125,27 @@ enum EmojiSuggestion {
         // worse than what `try?` already gives this call for free. A real device's ordinary,
         // un-forced backend selection is Apple's own well-exercised default path and is what
         // every other app calling this request already relies on.
-        let handler = VNImageRequestHandler(data: rawData, options: [:])
+        return pick(fromQualifyingIdentifiers:
+            qualifyingIdentifiers(request, VNImageRequestHandler(data: rawData, options: [:])))
+    }
+
+    /// The same classification from pixels already in memory, with no decode at all.
+    ///
+    /// `VNImageRequestHandler(cgImage:)` is the handler's own documented entry point for exactly
+    /// this: a frame the caller already holds. Everything about the request, the floors and the
+    /// picking rule is shared with the `Data` form above, so the two cannot drift apart.
+    static func classify(_ image: CGImage) -> [String] {
+        let request = VNClassifyImageRequest()
+        return pick(fromQualifyingIdentifiers:
+            qualifyingIdentifiers(request, VNImageRequestHandler(cgImage: image, options: [:])))
+    }
+
+    private static func qualifyingIdentifiers(_ request: VNClassifyImageRequest,
+                                              _ handler: VNImageRequestHandler) -> [String] {
         guard (try? handler.perform([request])) != nil, let results = request.results else { return [] }
-        let qualifying = results
+        return results
             .filter { $0.hasMinimumRecall(recallFloor, forPrecision: precisionFloor) }
             .map(\.identifier)
-        return pick(fromQualifyingIdentifiers: qualifying)
     }
 
     /// The pure dedup/cap-at-3 picking rule, over identifiers that already cleared the
