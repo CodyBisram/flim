@@ -71,4 +71,6 @@ COMMIT. If anything changed under docs/reviews/, commit it on main with the one-
 The weekly draft batch ran on the Pi from 2026-09-14 (`social/drafts/<date>.md`, Buffer as the
 send gate). Retired on the owner's word: nothing drafted was ever sent, so the job produced files
 and nothing else. The past drafts stay in `social/drafts/`; the `/social-drafts` skill stays
-callable by hand for a launch week. The Pi's crontab line for it is removed by the owner.
+callable by hand for a launch week. The Pi ran it from a systemd user timer, not a crontab line;
+`flim-social.timer` and its service were disabled and deleted on 2026-09-21, the `social` case was
+removed from the Pi's job runner, and the prompt copy on the Pi was deleted.
