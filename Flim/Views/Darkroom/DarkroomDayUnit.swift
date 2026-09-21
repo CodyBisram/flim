@@ -51,17 +51,34 @@ struct DarkroomDayUnit: Identifiable {
 
     // MARK: - Title
 
-    /// `Tonight` / `Last night`, else a short (`Sat 16`) or full (`Sat 16 Aug`) form depending
-    /// on whether the list is rendering month bands (bands already say the month, so the day
-    /// title drops it).
+    /// `Tonight` / `Last night` when the night's latest frame was shot in the evening or the small
+    /// hours, `Today` / `Yesterday` when it was shot in daylight (a unit whose last shot is from
+    /// 11am is not "tonight", however the 04:00 boundary files it); else a short (`Sat 16`) or
+    /// full (`Sat 16 Aug`) form depending on whether the list is rendering month bands (bands
+    /// already say the month, so the day title drops it). The latest frame decides because a
+    /// unit that runs from lunch into the night IS that night; one that never reaches it is a day.
     func title(shortForm: Bool, calendar: Calendar = .current, now: Date = .now) -> String {
         let today = FeedUnit.dayKey(for: now, calendar: calendar)
-        if dayKey == today { return "Tonight" }
+        let night = Self.isNight(latestTakenAt: photos.map(\.takenAt).max(), calendar: calendar)
+        if dayKey == today { return night ? "Tonight" : "Today" }
         if let yesterday = calendar.date(byAdding: .day, value: -1, to: today), dayKey == yesterday {
-            return "Last night"
+            return night ? "Last night" : "Yesterday"
         }
         let formatter = Self.dayFormatter(full: !shortForm, calendar: calendar)
         return formatter.string(from: dayKey)
+    }
+
+    /// Evening starts at 18:00. A frame shot at or after that hour, or before the 04:00 day
+    /// boundary (the small hours belong to the night before), makes the unit a night. With no
+    /// frames to judge by (the pager asks with an empty list only when it has nothing loaded)
+    /// the answer is the older wording, a night, so nothing that used to read "Tonight" can
+    /// flip to "Today" for lack of data.
+    static let eveningHour = 18
+
+    static func isNight(latestTakenAt: Date?, calendar: Calendar = .current) -> Bool {
+        guard let latestTakenAt else { return true }
+        let hour = calendar.component(.hour, from: latestTakenAt)
+        return hour >= eveningHour || hour < Int(FeedUnit.dayBoundaryHour / 3600)
     }
 
     /// Fixed `EEE d` / `EEE d MMM` formats, deliberately not locale-driven date styles: the

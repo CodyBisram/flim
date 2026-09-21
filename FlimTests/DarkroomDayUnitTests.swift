@@ -214,6 +214,33 @@ final class DarkroomDayUnitTests: XCTestCase {
         XCTAssertEqual(lastNight.title(shortForm: true, calendar: calendar, now: now), "Last night")
     }
 
+    func testTitleTodayAndYesterdayForDaylightFrames() {
+        // A friend posted at 11am; the unit's latest frame is daylight, so it is a day, not a night.
+        let now = date(21, 14)
+        let today = FeedUnit.dayKey(for: now, calendar: calendar)
+        let daytime = DarkroomDayUnit(dayKey: today, photos: [photo(takenAt: date(21, 11))])
+        let yesterdayDaytime = DarkroomDayUnit(
+            dayKey: calendar.date(byAdding: .day, value: -1, to: today)!,
+            photos: [photo(takenAt: date(20, 9)), photo(takenAt: date(20, 15))])
+        XCTAssertEqual(daytime.title(shortForm: true, calendar: calendar, now: now), "Today")
+        XCTAssertEqual(yesterdayDaytime.title(shortForm: true, calendar: calendar, now: now), "Yesterday")
+    }
+
+    func testTitleTheLatestFrameDecidesTheNight() {
+        let now = date(21, 23)
+        let today = FeedUnit.dayKey(for: now, calendar: calendar)
+        // Lunch into the night: a night.
+        let ranIntoTheNight = DarkroomDayUnit(dayKey: today, photos: [photo(takenAt: date(21, 12)), photo(takenAt: date(21, 21))])
+        XCTAssertEqual(ranIntoTheNight.title(shortForm: true, calendar: calendar, now: now), "Tonight")
+        // Evening starts at 18:00 exactly; 17:59 is still the day.
+        XCTAssertTrue(DarkroomDayUnit.isNight(latestTakenAt: date(21, 18), calendar: calendar))
+        XCTAssertFalse(DarkroomDayUnit.isNight(latestTakenAt: date(21, 17, 59), calendar: calendar))
+        // The small hours belong to the night: a 1:30am frame is a night frame.
+        XCTAssertTrue(DarkroomDayUnit.isNight(latestTakenAt: date(22, 1, 30), calendar: calendar))
+        // No frames to judge by keeps the older wording.
+        XCTAssertTrue(DarkroomDayUnit.isNight(latestTakenAt: nil, calendar: calendar))
+    }
+
     func testTitleShortAndFullForm() {
         // Aug 15, 2026 is a Saturday.
         let unit = DarkroomDayUnit(dayKey: FeedUnit.dayKey(for: date(15, 20), calendar: calendar),

@@ -1416,7 +1416,7 @@ struct PhotoPagerView: View {
     private var currentNightTitle: String {
         guard let current else { return "" }
         let key = FeedUnit.dayKey(for: current.takenAt)
-        return DarkroomDayUnit(dayKey: key, photos: []).title(shortForm: false)
+        return DarkroomDayUnit(dayKey: key, photos: currentNightPhotos).title(shortForm: false)
     }
 
     /// Inset 16pt each side, night-rack mode only, so the rounded corners below never touch the
