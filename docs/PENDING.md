@@ -416,6 +416,67 @@ The four from the audit the owner picked on 2026-09-10: the durable capture queu
 capture status, one invitation journey (a roll code admits you), deletion order, and the photo
 write boundary. In that order of value; built in the order of size.
 
+### done 2026-09-21: the third engineering audit, six passes (claude.ai/code/artifact/fae7345c-72a2-4b7a-84b9-4a3823e39b31)
+
+Code review of everything since 24f479e plus a re-verification of all 25 open ledger rows,
+database boundary (bootstrap built twice: 44 tables, 102 functions, 62 policies, 21 triggers),
+flows and copy, release readiness, performance and scale, tests (1385 run, 1368 passed, 16
+deliberate skips, one flake). The production data pass could not run (the saved management
+token is dead); the nightly rows stood in. Build 393 (`337ee3b`) already carries every code
+commit. Nothing blocks 1.5.4 except the What's New paragraph below.
+
+The plan, in order:
+
+1. **A reveal counts as watched when it is opened.** `RollRevealViewModel.loadDeck` records
+   the view in `roll_reveal_views` for the presence line; `RollService.seedRevealSeen` reads
+   that table on every roll fetch and sets `rollRevealSeen.<id>`, the flag that is written
+   only on completion everywhere else. Open a reveal, bail at frame two, switch to Rolls: the
+   roll leaves the ready list, the Rolls dot clears, the widget stops calling it ready, the
+   reveal no longer auto-plays, and save-on-develop copies every photo unseen. Live since the
+   seed shipped 2026-09-09. `Activation.revealWatched` logs at the same spot, so the nightly
+   `reveals_watched` counts opens. Fix: a completion signal on the server row, seed from that
+   only; decide with it what an abandoned reveal does on return (the open ledger row).
+2. `send-invite-digest` has no `x-cron-secret` check, alone among the five functions deployed
+   with JWT verification off. Copy the check from `send-daily-digest`, redeploy.
+3. Six ledger rows under half an hour each: `RollCarouselView` reactions keyed by photo id;
+   `FeedView` line 555 `growOnly`; `FeedSeenStore` flush before an account switch drops marks;
+   the 4am boundary in `RollDevelopAskSheet` and `Roll.defaultName`; the flash-falloff peak
+   floor (a look change, baseline re-record and the owner's eye); the profile error timer.
+4. `AccountEpoch` guards on `TabSignals.refresh` and `FeedView.reload`'s dot writes.
+5. An Activity row whose post is gone opens the actor's profile silently; a Follow that fails
+   reverts silently. Two strings for the owner: "That photo isn't there anymore." and
+   "Couldn't follow. Check your connection and try again."
+6. `unreadActivityCount` is ten round trips with two unindexed `ilike` mention scans, run twice
+   per launch and per foreground; one server-side count RPC.
+7. **What's New (docs/APP_STORE.md line 147) describes the comments-over-Activity flow that
+   `337ee3b` reversed.** Rewrite before submission.
+8. The shutter pays three full decodes and a lossy 0.95 re-encode before the grade; renditions
+   round-trip through PNG. Crop the CIImage inside the grade, build renditions from the graded
+   CGImage. Changes the master's bytes: run the look pin, expect to re-record.
+9. Four one-query scale cliffs: roll covers (one row per developed photo, 1000 cap, oldest rolls
+   lose covers and download the master), `fetchMyPostedPhotoIds` unpaged, the avatar picker
+   fetching every photo, the camera fetching every unsorted row for a count.
+10. Housekeeping: main's TestFlight concurrency group to `ios-testflight` / no cancel (two
+    same-branch cancellations this week); `LookRegressionTests` `.serialized` (shared CIContext
+    crashed the host once); `DarkroomView`'s manual `Photo` Equatable is five fields behind;
+    `FeedSeenStore` persists all marks per swipe; the chunked activity reads never re-trim
+    `.limit(40)` after the merge; the nightly `accounts` column is counted at run time while
+    `new_accounts` is per day (Sep 18 shows +2 accounts, 0 new); the digest's 48-hour posts
+    read is unpaged; SEVEN cron schedules live only in dated migrations (not six); the
+    path-index comment says six of eight.
+11. Tests: `UndoCenter` has none; `OptimisticToggle`'s rollback test exercises a private copy.
+12. Next train: the feed page's `.in("user_id", following)` cannot be chunked (keyset cursor)
+    and fails whole at roughly a thousand follows; mentions as a table; the Rolls tab's two
+    counts per roll per appearance.
+
+Data (nightly rows): openers held in the mid twenties while shooters fell to six to eight
+midweek, sixteen on Friday; reciprocal pairs 54 to 35 in three days as the launch weekend
+rolled out of the window; no roll created in eight days, three of them with Start another live;
+edge timeouts swing 2 to 18 a day with no function named. Owner: a fresh token for the data
+pass, build 393 in ASC, cert expiry, the two strings, the flash frame, the abandoned-reveal
+decision. For awareness: the Pi hook posts the full new `users` row (email, invite code) to
+hooks.flim-app.com under a shared header secret.
+
 ### done 2026-09-20: Activity comment rows open the photograph
 
 Reverses the 2026-09-15 "comments remember their origin" change on the owner's word ("it should
