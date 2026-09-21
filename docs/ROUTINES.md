@@ -5,7 +5,7 @@ Everything that fires without a person, what it produces, and where to look. Rew
 (fifteen sat unread for two weeks); they now commit straight to main into CI-ignored folders,
 and the review keeps a ledger it re-verifies every night. A nightly numbers job was added.
 
-Moved 2026-09-14: the review, the social drafts and a new weekly product memo run on the
+Moved 2026-09-14: the review, the social drafts (retired 2026-09-21) and a new weekly product memo run on the
 owner's Raspberry Pi (a clone at `~/work/flim`, a fine-grained token scoped to this repo,
 committing as `Cody Bisram (pi)` so git log tells the Pi from the owner and from the old cloud
 runs). The two claude.ai routines (`trig_016sRvtGxYpPVyN3mXtEHi2v` review,
@@ -17,7 +17,6 @@ there is exactly one reviewer. The five "check on PR #N" reminders are disabled 
 | 02:07 daily | Nightly review (the prompt below); on a night with no commits it deep-audits one module in rotation instead | Raspberry Pi, Claude Code | `docs/reviews/<date>.md` for new findings, `docs/reviews/OPEN.md` re-verified, committed to main |
 | 00:20 daily | Nightly numbers + rendition repair | GitHub Actions `nightly-numbers.yml` (GitHub's cron is best-effort; it has run up to five hours late) | one line appended to `docs/NUMBERS.md`; an `ops_alerts` row (so a push to the owner) when something is broken; then `scripts/repair_renditions.py` rebuilds any thumb or feed card a capture lost |
 | Mon 07:30 | Product memo | Raspberry Pi, Claude Code | `docs/memos/<date>.md`, committed to main |
-| Mon 08:00 | Social drafts (the prompt below) | Raspberry Pi, Claude Code | `social/drafts/<date>.md` committed to main; Buffer stays the send gate |
 | Mon 09:07 | R2 tripwire | GitHub Actions `r2-tripwire.yml` | silent while quiet, fails (email) when a migration trigger fires |
 | every 2 min | Social push | pg_cron `flim-social-push` | pushes, `push_deliveries`, drains `ops_alerts` to the owner |
 | every 5 min | Develop push, mark developed | pg_cron `flim-develop-push`, `flim-mark-developed` | roll-developed pushes |
@@ -67,10 +66,9 @@ JOB 2, re-verify the ledger. docs/reviews/OPEN.md is the list of findings still 
 COMMIT. If anything changed under docs/reviews/, commit it on main with the one-line message 'Review notes for <Mon DD>: N new, M fixed, K open.' where N is new findings tonight, M is rows you moved to fixed or not a bug, and K is rows still open after tonight; if there are no new findings, the message is 'Review ledger for <Mon DD>: M fixed, K open.' Use NO tool or assistant attribution of any kind (no Co-Authored-By, no generated-with lines, nothing naming an AI anywhere). Then run git pull --rebase origin main and git push origin main; if the push is rejected, pull --rebase and push again, up to three times. Never open a branch or a PR. Touch nothing outside docs/reviews/. Never modify app code, never merge anything, never comment on PRs or issues. Use no em dashes anywhere in anything you write.
 ```
 
-### Social drafts (`trig_016yUs6HtUepKBwDDNYvLeft`)
+### Social drafts: retired 2026-09-21
 
-```
-You are drafting this week's social media post batch for FLIM, the invite-only instant-camera iOS app this repository contains. Read .claude/skills/social-drafts/SKILL.md and follow it exactly: it defines the sources (git log since the most recent file in social/drafts/, plus docs/ for context), the voice rules (no em dashes anywhere, short declarative sentences, no hype, no growth CTAs, features not in a released App Store build are always framed as in progress; docs/APP_STORE.md says what is released), the output format, and the asset rules. Also read the previous two files in social/drafts/ so you do not repeat a beat. Write ONE new file, social/drafts/<today's date as YYYY-MM-DD>.md, containing 3-4 X drafts and 2-3 Instagram concepts, a 'Reply bank' of three short replies to the questions people actually ask (when does it develop, how do I get in, is it free; the only public answer to getting in is 'ask a friend who has it'), plus a 'Skipped on purpose' section. Never mention invite codes or a link, never quote users or usernames, never give numbers about users.
-
-Then commit that single file on main with the one-line commit message 'Social drafts, week of <Mon DD>.' and NO tool or assistant attribution of any kind (no Co-Authored-By, no generated-with lines, nothing that names an AI). Run git pull --rebase origin main and git push origin main; if the push is rejected, pull --rebase and push again, up to three times. social/ is ignored by CI, so the commit costs nothing and nobody has to merge it; do not open a branch or a PR. Touch nothing outside social/drafts/. If the skill file is missing or the repo looks unlike what is described here, stop and do nothing rather than improvise.
-```
+The weekly draft batch ran on the Pi from 2026-09-14 (`social/drafts/<date>.md`, Buffer as the
+send gate). Retired on the owner's word: nothing drafted was ever sent, so the job produced files
+and nothing else. The past drafts stay in `social/drafts/`; the `/social-drafts` skill stays
+callable by hand for a launch week. The Pi's crontab line for it is removed by the owner.
