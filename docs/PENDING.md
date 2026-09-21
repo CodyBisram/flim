@@ -468,8 +468,12 @@ Owner's word: "work on everything you think." Seven commits on main, each its ow
 11. `UndoCenter` tests (two ledger rows pinned as known issues), `OptimisticToggle` tests
     against the class.
 
-Owner, before the next TestFlight push: apply the three migrations in order and redeploy the two
-functions (steps under Owner actions, 2026-09-21). Then on device: the six flash and capture
+All three migrations APPLIED 2026-09-21 (column, backfill with zero null rows, both functions,
+the index and the policy confirmed in production) and both functions DEPLOYED the same
+night, through the saved management token once the owner confirmed it was still valid. Also
+that night: the Darkroom called a morning's shots "Tonight" (the owner's friend posted at 11am);
+the latest frame decides now, 18:00 or the small hours make a night, otherwise the unit reads
+"Today" / "Yesterday" (new strings, shown to the owner in the reply). On device: the six flash and capture
 shots listed in the look package's report (dark room at a far wall with flash; a dim room lit
 in a patch, two frames a second apart; an arm's-length flash portrait and one at three metres,
 which must match build 393; a daylight and a no-flash night shot; a shot right after opening
