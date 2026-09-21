@@ -22,6 +22,9 @@ extension Photo: Equatable {
             && lhs.feedPath == rhs.feedPath && lhs.takenAt == rhs.takenAt
             && lhs.developsAt == rhs.developsAt && lhs.isDeveloped == rhs.isDeveloped
             && lhs.caption == rhs.caption && lhs.isSorted == rhs.isSorted
+            && lhs.burstGroup == rhs.burstGroup && lhs.sharpness == rhs.sharpness
+            && lhs.quality == rhs.quality && lhs.phash == rhs.phash
+            && lhs.isMiss == rhs.isMiss
     }
 }
 
