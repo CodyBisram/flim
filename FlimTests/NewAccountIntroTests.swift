@@ -132,14 +132,32 @@ struct NewAccountIntroTests {
     func developAskTime() {
         var cal = Calendar(identifier: .gregorian); cal.timeZone = TimeZone(identifier: "America/New_York")!
         let locale = Locale(identifier: "en_US")
-        let today = cal.date(bySettingHour: 21, minute: 14, second: 0, of: .now)!
-        #expect(RollDevelopAskSheet.timeLabel(for: today, calendar: cal, locale: locale) == "9:14 PM")
+        // A fixed instant for "now" rather than the real `.now`: the label's own "same day" check
+        // is shifted onto `FeedUnit`'s 04:00-bounded day, so anchoring "now" to whatever moment
+        // the test suite actually runs at made the outcome depend on the wall clock, and this
+        // test failed for a stretch every night between midnight and 4am (engineering audit,
+        // 2026-09-21). Noon is comfortably away from that boundary either direction.
+        let now = cal.date(from: DateComponents(year: 2026, month: 9, day: 20, hour: 12))!
+        let today = cal.date(bySettingHour: 21, minute: 14, second: 0, of: now)!
+        #expect(RollDevelopAskSheet.timeLabel(for: today, calendar: cal, locale: locale, now: now) == "9:14 PM")
         let later = cal.date(byAdding: .day, value: 3, to: today)!
-        let label = RollDevelopAskSheet.timeLabel(for: later, calendar: cal, locale: locale)
+        let label = RollDevelopAskSheet.timeLabel(for: later, calendar: cal, locale: locale, now: now)
         #expect(label.hasSuffix("at 9:14 PM") && label.count > "at 9:14 PM".count)
         // The sentence form carries its own "at" today and none on another day, so "Develops
         // in 2h, at 9:14 PM" and "Develops in 50h, Saturday at 9:14 PM" both read once.
-        #expect(RollDevelopAskSheet.whenLabel(for: today, calendar: cal, locale: locale) == "at 9:14 PM")
-        #expect(RollDevelopAskSheet.whenLabel(for: later, calendar: cal, locale: locale) == label)
+        #expect(RollDevelopAskSheet.whenLabel(for: today, calendar: cal, locale: locale, now: now) == "at 9:14 PM")
+        #expect(RollDevelopAskSheet.whenLabel(for: later, calendar: cal, locale: locale, now: now) == label)
+    }
+
+    @Test("a develop time just after midnight still reads as tonight, the 04:00 boundary")
+    func developAskTimeCrossesTheFourAMBoundaryAsToday() {
+        var cal = Calendar(identifier: .gregorian); cal.timeZone = TimeZone(identifier: "America/New_York")!
+        let locale = Locale(identifier: "en_US")
+        // "Now" is Saturday 11pm; a roll developing at 1:30am Sunday is still tonight by the
+        // app's own day boundary, so the label must not say "Sunday at 1:30 AM".
+        let now = cal.date(from: DateComponents(year: 2026, month: 9, day: 19, hour: 23))!
+        let developsAt = cal.date(from: DateComponents(year: 2026, month: 9, day: 20, hour: 1, minute: 30))!
+        #expect(RollDevelopAskSheet.timeLabel(for: developsAt, calendar: cal, locale: locale, now: now) == "1:30 AM")
+        #expect(RollDevelopAskSheet.whenLabel(for: developsAt, calendar: cal, locale: locale, now: now) == "at 1:30 AM")
     }
 }

@@ -35,6 +35,33 @@ final class RollRevealViewModel {
         self.fallbackPhotos = photos
     }
 
+    /// Stored from `loadDeck`'s own parameter: `finish()` needs it to report completion, and it
+    /// is the same instance the view's `@Environment(RollService.self)` resolves for the whole
+    /// session, so threading it through `finish()` as a second parameter would only mean also
+    /// touching `RollRevealView`'s existing call site for no functional gain.
+    private weak var rollService: RollService?
+
+    /// Roll ids whose reveal was opened and then dismissed unfinished (closed, backgrounded,
+    /// swiped away) THIS APP LAUNCH. `RollDetailView`'s auto-present check skips a roll in this
+    /// set, so an abandoned reveal does not pop back up on every reappearance of the roll for the
+    /// rest of the session; the always-reachable "Play reveal" button (see
+    /// `RollDetailView.replayReveal`) still opens it on request. Cleared on account change by
+    /// `RollService.resetForAccountChange()`, the same static per-launch shape
+    /// `NewAccountIntro.shownThisLaunch` uses, and for the same reason: two accounts signing in
+    /// and out on one phone in one launch must not leak one's abandoned reveals into the other's.
+    static var dismissedThisLaunch: Set<UUID> = []
+
+    /// Whether the reveal should auto-present the moment a developed roll's photos finish
+    /// loading. Pure, so the rule is pinned without mounting `RollDetailView`: `developed` and
+    /// `hasPhotos` are the roll's own state, `seen` is `rollRevealSeen.<id>` (written only on
+    /// genuine completion, see `finish()`), and `dismissedThisLaunch` is whether this roll is in
+    /// the set above. `nonisolated`: it touches no actor-isolated state of its own, every input
+    /// arrives already resolved by the caller, so it is callable (and testable) without hopping
+    /// to the main actor this class otherwise requires.
+    nonisolated static func shouldAutoPresent(developed: Bool, hasPhotos: Bool, seen: Bool, dismissedThisLaunch: Bool) -> Bool {
+        developed && hasPhotos && !seen && !dismissedThisLaunch
+    }
+
     /// Synced from the view's environment (`.task` on appear, `.onChange` for Reduce Motion,
     /// which can flip mid-reveal via the accessibility shortcut). Read directly by every
     /// playback method below rather than threaded through each call, the same values SwiftUI
@@ -163,6 +190,7 @@ final class RollRevealViewModel {
     /// top: a stale response is internally consistent, it's just consistent with an account that
     /// isn't signed in anymore. See `AccountEpoch`.
     func loadDeck(photoService: PhotoService, auth: AuthService, rollService: RollService) async {
+        self.rollService = rollService
         let epoch = AccountEpoch.current
         let fresh: [Photo]
         do {
@@ -229,14 +257,12 @@ final class RollRevealViewModel {
         // Bounded to a sliding window, see prefetchAhead.
         prefetchAhead(from: 0)
         // Record that we opened it and learn the group's progress, shown on the summary card.
+        // Presence only, not a watched signal: opening used to fire `Activation.revealWatched`
+        // and `Usage.revealWatched` right here, which meant a reveal abandoned at frame two of
+        // forty-seven still counted as watched in every nightly number that reads those events.
+        // Both now fire only from `finish()`, the one place completion is genuine.
         if let uid = auth.currentUser?.id {
             let recorded = await rollService.recordRevealView(rollId: rollId, userId: uid)
-            // Alongside the DB record above, not inside RollService, so the two can never drift:
-            // this fires exactly when the reveal open is recorded, whether or not `recorded`
-            // itself came back non-nil (a nil presence just means the viewer count read failed,
-            // the view was still recorded).
-            Activation.log(.revealWatched)
-            Usage.log(.revealWatched)
             guard AccountEpoch.isCurrent(epoch) else { return }
             presence = recorded
         }
@@ -363,8 +389,17 @@ final class RollRevealViewModel {
 
     /// The end of the reveal, and the ONLY thing that counts as having watched it: reached by
     /// paging past the last frame or by tapping Done. See `completed`.
+    ///
+    /// The only call site for `Activation.revealWatched` / `Usage.revealWatched` and for
+    /// `RollService.completeRevealView`: `loadDeck`'s own `recordRevealView` records that the
+    /// reveal was OPENED, for the presence line only. Genuine completion is what
+    /// `seedRevealSeen` now keys the local `rollRevealSeen.<id>` flag on everywhere else this
+    /// account signs in, so this is the one place that signal is allowed to originate.
     func finish() {
         completed = true
+        Activation.log(.revealWatched)
+        Usage.log(.revealWatched)
+        rollService?.completeRevealView(rollId: rollId)
         withAnimation(.easeInOut(duration: 0.3)) { showSummary = true }
     }
 

@@ -114,10 +114,15 @@ extension Roll {
     /// "Orlando, day 2" becomes "Orlando, day 3". Only a suggestion; the person can type anything.
     /// The name a new roll starts with when nobody typed one: the weekday and date, which is
     /// what most rolls are about anyway ("Saturday, Sep 20"). Always editable.
+    ///
+    /// Shifted onto `FeedUnit.dayKey`'s own 04:00-bounded day, not the raw calendar day: a group
+    /// creating a roll for their Saturday-night outing at 1:30am would otherwise be offered
+    /// "Sunday, Sep 21" for the night they are actually naming, and the Feed's own grouping of
+    /// the very shots this roll will hold uses that same shifted day.
     static func defaultName(on date: Date, calendar: Calendar = .current, locale: Locale = .current) -> String {
         let f = DateFormatter(); f.calendar = calendar; f.locale = locale; f.timeZone = calendar.timeZone
         f.setLocalizedDateFormatFromTemplate("EEEE MMM d")
-        return f.string(from: date)
+        return f.string(from: FeedUnit.dayKey(for: date, calendar: calendar))
     }
 
     static func followUpName(after name: String) -> String {

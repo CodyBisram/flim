@@ -20,23 +20,32 @@ struct RollDevelopAskSheet: View {
     var onDecision: (_ accepted: Bool) -> Void = { _ in }
 
     /// "9:14 PM", in the phone's own locale. Pure and internal so the copy can be pinned.
-    static func timeLabel(for date: Date, calendar: Calendar = .current, locale: Locale = .current) -> String {
+    static func timeLabel(for date: Date, calendar: Calendar = .current, locale: Locale = .current, now: Date = .now) -> String {
         let formatter = DateFormatter()
         formatter.locale = locale
         formatter.calendar = calendar
         formatter.timeZone = calendar.timeZone
         // Same day: the time alone. Another day: the weekday and the time, so "Develops at
-        // 9:14 PM" can never mean tomorrow when it means Saturday.
-        formatter.dateFormat = calendar.isDate(date, inSameDayAs: .now) ? "h:mm a" : "EEEE 'at' h:mm a"
+        // 9:14 PM" can never mean tomorrow when it means Saturday. "Same day" is the app's own
+        // 04:00-bounded day (`FeedUnit.dayKey`), not the calendar's midnight cut, so a roll set
+        // to develop at 1:30am still reads as tonight, the night it belongs to.
+        formatter.dateFormat = isSameAppDay(date, now, calendar: calendar) ? "h:mm a" : "EEEE 'at' h:mm a"
         return formatter.string(from: date)
     }
 
     /// `timeLabel` with its own preposition, for sentences that continue "It develops ...":
     /// "at 9:14 PM" today, "Saturday at 9:14 PM" otherwise. Callers that already wrote "at"
     /// keep using `timeLabel`; the two together produced "at Monday at 5:51 AM".
-    static func whenLabel(for date: Date, calendar: Calendar = .current, locale: Locale = .current) -> String {
-        let label = timeLabel(for: date, calendar: calendar, locale: locale)
-        return calendar.isDate(date, inSameDayAs: .now) ? "at \(label)" : label
+    static func whenLabel(for date: Date, calendar: Calendar = .current, locale: Locale = .current, now: Date = .now) -> String {
+        let label = timeLabel(for: date, calendar: calendar, locale: locale, now: now)
+        return isSameAppDay(date, now, calendar: calendar) ? "at \(label)" : label
+    }
+
+    /// Whether `a` and `b` fall on the same app-day, `FeedUnit`'s own 04:00-bounded day rather
+    /// than the calendar's midnight cut. Shared by `timeLabel` and `whenLabel` so the two can
+    /// never disagree about which day a develop time belongs to.
+    private static func isSameAppDay(_ a: Date, _ b: Date, calendar: Calendar) -> Bool {
+        FeedUnit.dayKey(for: a, calendar: calendar) == FeedUnit.dayKey(for: b, calendar: calendar)
     }
 
     var body: some View {

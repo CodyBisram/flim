@@ -22,6 +22,25 @@ struct FollowUpRollTests {
         #expect(name.count <= 60)
     }
 
+    @Test("a roll created just after midnight still names the night it belongs to")
+    func aNewRollBeforeFourAMNamesThePreviousNight() {
+        var cal = Calendar(identifier: .gregorian); cal.timeZone = TimeZone(identifier: "America/New_York")!
+        // Monday 1:30am: the app's own 04:00 boundary (`FeedUnit.dayKey`) still counts this as
+        // Sunday night, the outing the roll is actually for.
+        let date = cal.date(from: DateComponents(year: 2026, month: 9, day: 21, hour: 1, minute: 30))!
+        let name = Roll.defaultName(on: date, calendar: cal, locale: Locale(identifier: "en_US"))
+        #expect(name == "Sunday, Sep 20")
+    }
+
+    @Test("a roll created past the boundary names the day that has actually started")
+    func aNewRollAfterFourAMNamesTheNewDay() {
+        var cal = Calendar(identifier: .gregorian); cal.timeZone = TimeZone(identifier: "America/New_York")!
+        // Monday 5am: past the 04:00 cut, so it is genuinely Monday now.
+        let date = cal.date(from: DateComponents(year: 2026, month: 9, day: 21, hour: 5))!
+        let name = Roll.defaultName(on: date, calendar: cal, locale: Locale(identifier: "en_US"))
+        #expect(name == "Monday, Sep 21")
+    }
+
     @Test func theJoinPushRouteRoundTrips() {
         let parsed = PushDestination.parse(userInfo: ["flim": ["t": "join", "code": "ab12cd"]])
         #expect(parsed == .joinRoll(code: "AB12CD"))

@@ -34,6 +34,12 @@ final class RollService {
         error = nil
         isLoading = false
         snapshotUserId = nil
+        // A per-launch set, not per-account, but this is the one place every account-change path
+        // (sign-in, sign-out, switch) already runs through, so it clears here rather than needing
+        // its own listener: a departing account's abandoned reveals must not suppress the next
+        // account's auto-present for a roll that happens to share an id (never in practice, but
+        // the leak would be silent if it ever did).
+        RollRevealViewModel.dismissedThisLaunch.removeAll()
     }
 
     /// Restores `userId`'s persisted cover-path/roll-list snapshot into memory, synchronously, so
@@ -268,19 +274,44 @@ final class RollService {
     /// is_developed flag sync).
     /// `epoch` is the account generation captured by the caller before its first await. Each
     /// helper re-checks it immediately before writing, because each makes its own round trip.
+    ///
+    /// Reads through `roll_covers`, a server-side "latest developed photo per roll" pick, one row
+    /// per roll id, so this never has the shape of the query it replaces: a plain `photos` select
+    /// ordered by `taken_at` with no per-roll limit read one row for every developed photo across
+    /// every roll being asked about, uncapped, and PostgREST silently caps any single read at 1000
+    /// rows. Past that, whichever rolls' photos hadn't been read yet lost their cover and fell back
+    /// to downloading the master (engineering audit, 2026-09-21, item 9).
     private func loadCovers(rollIds: [String], epoch: Int) async {
         struct CoverRow: Decodable { let roll_id: UUID; let storage_path: String; let thumb_path: String? }
-        let nowISO = ISO8601DateFormatter().string(from: Date.now)
-        let rows: [CoverRow] = await QueryBatch.inChunks(rollIds) { chunk in
-            (try? await supabase
-                .from("photos")
-                .select("roll_id,storage_path,thumb_path")
-                .in("roll_id", values: chunk)
-                .eq("hidden", value: false)
-                .lte("develops_at", value: nowISO)
-                .order("taken_at", ascending: false)
+        struct RollCoversParams: Encodable { let p_roll_ids: [String] }
+
+        let rows: [CoverRow]
+        if let rpcRows: [CoverRow] = try? await QueryBatch.inChunks(rollIds) { chunk in
+            try await supabase
+                .rpc("roll_covers", params: RollCoversParams(p_roll_ids: chunk))
                 .execute()
-                .value) ?? []
+                .value
+        } {
+            rows = rpcRows
+        } else {
+            // FALLBACK for a build that ships before the `roll_covers` migration is live: the
+            // exact query this RPC replaces, uncapped-photos-per-roll bug and all. Remove once
+            // every build in the field is past this migration (no version to key that off; watch
+            // for it going unreached in a coverage report and delete then). Without this, a
+            // client built today talking to today's still-unmigrated database would 404 on every
+            // roll fetch's cover read instead of just losing the fix.
+            let nowISO = ISO8601DateFormatter().string(from: Date.now)
+            rows = await QueryBatch.inChunks(rollIds) { chunk in
+                (try? await supabase
+                    .from("photos")
+                    .select("roll_id,storage_path,thumb_path")
+                    .in("roll_id", values: chunk)
+                    .eq("hidden", value: false)
+                    .lte("develops_at", value: nowISO)
+                    .order("taken_at", ascending: false)
+                    .execute()
+                    .value) ?? []
+            }
         }
 
         // storage_path → thumb_path, so a creator-chosen cover (stored as a storage_path) can
@@ -330,13 +361,22 @@ final class RollService {
 
     /// Records that the current user opened this roll's reveal (idempotent, a duplicate insert on
     /// the PK just no-ops), then returns their position and the member total. `position` counts
-    /// the current user, so the very first opener sees position 1.
+    /// the current user, so the very first opener sees position 1. Presence only: opening is not
+    /// the same as watching, see `completeRevealView` for the signal that is.
     /// The reveal-seen flag (`rollRevealSeen.<id>`) lives in UserDefaults, so a reinstall forgot
     /// every reveal ever watched and the Rolls tab lined up every developed roll to be revealed
     /// again, one by one (the owner, 2026-09-09, after reinstalling for a test). The server
-    /// already knows: `roll_reveal_views` gets a row the moment a reveal opens, for the badges.
-    /// Seed the local flag from it after every roll fetch. Once watched, always watched, on any
-    /// phone this account signs into. Never clears a flag, and never writes for another account.
+    /// already knows: `roll_reveal_views` gets a `completed_at` the moment a reveal genuinely
+    /// finishes (`complete_reveal_view`, called from `RollRevealViewModel.finish()`), not merely
+    /// opens. Before that column existed, this seeded from the mere open, so bailing out of a
+    /// reveal at frame two of forty-seven still cleared it everywhere else that reads the flag
+    /// (the Rolls dot, the widget, save-on-develop). Seed the local flag from completed rows
+    /// only, after every roll fetch. Once watched, always watched, on any phone this account
+    /// signs into. Never clears a flag, and never writes for another account.
+    /// Fails soft: on a build talking to a database that hasn't run the `completed_at` migration
+    /// yet, the column reference 400s and `try?` below yields nothing, same as any other
+    /// not-yet-deployed column read in this file, rather than seeding nothing being worse than
+    /// seeding from the open (silence, not a wrong flag).
     private func seedRevealSeen(userId: UUID, rollIds: [String], epoch: Int) async {
         guard !rollIds.isEmpty else { return }
         struct Row: Decodable { let roll_id: UUID }
@@ -345,6 +385,7 @@ final class RollService {
                 .from("roll_reveal_views")
                 .select("roll_id")
                 .eq("user_id", value: userId.uuidString)
+                .not("completed_at", operator: .is, value: "null")
                 .in("roll_id", values: chunk)
                 .execute().value
         }) else { return }
@@ -373,6 +414,23 @@ final class RollService {
         guard viewers > 0 else { return nil }
         // total can't sensibly be below viewers (e.g. a just-left member); clamp so copy reads right.
         return RevealPresence(position: viewers, total: max(members, viewers))
+    }
+
+    /// Tells the server this member actually finished the reveal (paged past the last frame, or
+    /// tapped Done): the ONLY signal `seedRevealSeen` treats as watched. Called once, from
+    /// `RollRevealViewModel.finish()`.
+    ///
+    /// Fire-and-forget, `try?`, no local state to guard behind `AccountEpoch`: the local
+    /// `rollRevealSeen.<id>` flag is already written by the caller the instant `finish()` runs,
+    /// this only feeds the shared table other surfaces (this seeding, on any other phone the
+    /// account signs into) read back. Fails soft if `complete_reveal_view` doesn't exist yet on
+    /// this deployment (a build shipped ahead of the migration): the RPC 404s and `try?`
+    /// swallows it, same as `seedRevealSeen`'s own column read.
+    func completeRevealView(rollId: UUID) {
+        Task {
+            struct Params: Encodable { let p_roll_id: UUID }
+            _ = try? await supabase.rpc("complete_reveal_view", params: Params(p_roll_id: rollId)).execute()
+        }
     }
 
     // MARK: - Fetch members of a roll

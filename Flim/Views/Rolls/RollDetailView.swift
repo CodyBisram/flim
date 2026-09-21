@@ -347,7 +347,12 @@ struct RollDetailView: View {
                         Haptics.tap()
                         replayReveal()
                     } label: {
-                        Label("Play reveal again", systemImage: "play.circle.fill")
+                        // "again" only once it has genuinely finished: a roll whose reveal was
+                        // never watched, or was opened and abandoned, still has its one ceremony
+                        // ahead of it, "again" there would be a small lie about what this button
+                        // is about to do.
+                        Label(UserDefaults.standard.bool(forKey: revealSeenKey) ? "Play reveal again" : "Play reveal",
+                              systemImage: "play.circle.fill")
                             .flimFont(15, weight: .semibold)
                             .foregroundStyle(.black)
                             .frame(maxWidth: .infinity)
@@ -623,9 +628,20 @@ struct RollDetailView: View {
             // self-paced reveal (Rolls redesign) lets someone swipe away at frame 2 of 47,
             // and writing on open would burn their only ceremony AND fire the camera-roll
             // auto-save gate for a reveal nobody watched. `RollRevealView` reports genuine
-            // completion instead; see its `onCompleted`.
-            if roll.isDeveloped, !vm.developedPhotos.isEmpty,
-               !UserDefaults.standard.bool(forKey: revealSeenKey) {
+            // completion instead; see its `onCompleted`. `seedRevealSeen` now backs the very
+            // same flag with a server-side `completed_at`, written only by
+            // `RollRevealViewModel.finish()`, so an abandoned reveal reads as unwatched on every
+            // phone this account ever signs into, not just this one. An abandoned reveal WOULD
+            // therefore auto-present again on every later reappearance of this roll until it is
+            // finally finished; `RollRevealViewModel.dismissedThisLaunch` bounds that to once per
+            // app launch (see its own doc and `onChange(of: showReveal)` below), while the
+            // "Play reveal" button above stays reachable regardless.
+            if RollRevealViewModel.shouldAutoPresent(
+                developed: roll.isDeveloped,
+                hasPhotos: !vm.developedPhotos.isEmpty,
+                seen: UserDefaults.standard.bool(forKey: revealSeenKey),
+                dismissedThisLaunch: RollRevealViewModel.dismissedThisLaunch.contains(roll.id)
+            ) {
                 // A pending push-photo intent for THIS roll (checked and set by
                 // `adoptPendingPhotoIntent`, called from `onAppear` before this task runs) means
                 // the reveal is about to auto-play in front of whatever the push actually pointed
@@ -751,6 +767,14 @@ struct RollDetailView: View {
             // photo activity around exactly this roll). Fire-and-forget: worst case is the tab
             // dot catching up a moment later, never a blocking spinner on the roll screen.
             if wasShowing, !isShowing {
+                // Closed unfinished (swipe-down, the X, backgrounding, anything short of
+                // `finish()`): `revealSeenKey` is still false, so without this it would auto-
+                // present again the next time this roll's `.task` pipeline runs, which for a
+                // roll left open in the background can be moments later. One offer per launch;
+                // the "Play reveal" button above always still works.
+                if !UserDefaults.standard.bool(forKey: revealSeenKey) {
+                    RollRevealViewModel.dismissedThisLaunch.insert(roll.id)
+                }
                 Task { await feed.refreshOwnBadges() }
                 // The reveal just finished (watched or swiped away, either way it played, never
                 // skipped): a photo a push was waiting on can open now.

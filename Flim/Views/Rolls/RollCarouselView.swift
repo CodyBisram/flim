@@ -18,7 +18,13 @@ struct RollCarouselView: View {
 
     @State private var selection = 0
     @State private var urls: [UUID: URL] = [:]
-    @State private var reactions: [PhotoReaction] = []
+    /// Keyed by photo id, not a single flat list that gets reassigned per swipe: an
+    /// `OptimisticToggle` revert closure captured at photo A can fire after `selection` has
+    /// already moved to photo B, and a flat `reactions` array would apply that revert against
+    /// whatever is on screen NOW rather than the photo it was actually about (nightly review,
+    /// 2026-09-20). `RollRevealViewModel.reactionsByPhoto` and `PhotoPagerView` key the same way
+    /// for the same reason.
+    @State private var reactionsByPhoto: [UUID: [PhotoReaction]] = [:]
     @State private var shareItem: ShareImage?
     @State private var preparingShare = false
     @State private var showComments = false
@@ -207,8 +213,8 @@ struct RollCarouselView: View {
                 }
                 ReactionBar(
                     defaults: photoService.reactionDefaults(for: photo.id),
-                    counts: Dictionary(grouping: reactions, by: \.emoji).mapValues(\.count),
-                    mine: Set(reactions.filter { $0.userId == auth.currentUser?.id }.map(\.emoji))
+                    counts: Dictionary(grouping: reactionsByPhoto[photo.id] ?? [], by: \.emoji).mapValues(\.count),
+                    mine: Set((reactionsByPhoto[photo.id] ?? []).filter { $0.userId == auth.currentUser?.id }.map(\.emoji))
                 ) { toggleReaction($0, on: photo) }
                 .id(photo.id)   // fresh reaction bar per photo as you swipe
                 .frame(maxWidth: .infinity)
@@ -252,11 +258,6 @@ struct RollCarouselView: View {
     }
 
     private func loadAround(_ index: Int) async {
-        // Drop the previous photo's reactions the moment the photo changes. The fetch below is
-        // async, so until it lands this state still holds the LAST photo's reactions, and the
-        // bar was rendering those counts and highlights underneath the NEW photo, then seeding
-        // its emoji order from them.
-        reactions = []
         // ONE batched `signedURLs` call for the whole ±1 window's misses, rather than one
         // `signedURL` await per photo, sequentially — the same fix as `PhotoPagerView
         // .resolveAround`, see its own doc for why the batched API is the shape to reach for
@@ -277,24 +278,24 @@ struct RollCarouselView: View {
             // Guard against fast swipes: only apply the fetch if this is still the visible photo.
             let id = photo.id
             let fetched = await photoService.fetchReactions(photoId: id)
-            if current?.id == id { reactions = fetched }
+            if current?.id == id { reactionsByPhoto[id] = fetched }
         }
     }
 
     private func toggleReaction(_ emoji: String, on photo: Photo) {
         guard let uid = auth.currentUser?.id else { return }
-        let mine = reactions.contains { $0.emoji == emoji && $0.userId == uid }
+        let mine = (reactionsByPhoto[photo.id] ?? []).contains { $0.emoji == emoji && $0.userId == uid }
         Haptics.tap()
         let key = "photo|\(photo.id)|\(emoji)|\(uid)"
         if mine {
-            reactions.removeAll { $0.emoji == emoji && $0.userId == uid }
+            reactionsByPhoto[photo.id, default: []].removeAll { $0.emoji == emoji && $0.userId == uid }
             OptimisticToggle.shared.perform(key: key, write: { await photoService.removeReaction(photoId: photo.id, emoji: emoji, userId: uid) }) {
-                reactions.append(PhotoReaction(id: UUID(), photoId: photo.id, userId: uid, emoji: emoji))
+                reactionsByPhoto[photo.id, default: []].append(PhotoReaction(id: UUID(), photoId: photo.id, userId: uid, emoji: emoji))
             }
         } else {
-            reactions.append(PhotoReaction(id: UUID(), photoId: photo.id, userId: uid, emoji: emoji))
+            reactionsByPhoto[photo.id, default: []].append(PhotoReaction(id: UUID(), photoId: photo.id, userId: uid, emoji: emoji))
             OptimisticToggle.shared.perform(key: key, write: { await photoService.addReaction(photoId: photo.id, emoji: emoji, userId: uid) }) {
-                reactions.removeAll { $0.emoji == emoji && $0.userId == uid }
+                reactionsByPhoto[photo.id, default: []].removeAll { $0.emoji == emoji && $0.userId == uid }
             }
         }
     }
