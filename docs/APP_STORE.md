@@ -144,7 +144,7 @@ Twenty-two commits since 378; the copy below covers the seven a person can see.
 
     Your feed remembers what you've seen. Reinstall FLIM, or sign in on a new phone, and the shots you already reached stay reached. The count at the top of the feed is what's left for the week, it counts down as you read, and tapping it takes you to the newest day you haven't seen yet.
 
-    A reply is one swipe from where you were. Open a comment from Activity and it opens right there; swipe it down and you're back on Activity.
+    A comment in Activity opens the photograph it's about, ready for your reply. One tap back and you're on Activity again.
 
     Joining with a code from a post or a link? FLIM says so plainly, and opens Find friends first, so your first minute is about finding the people you know.
 
