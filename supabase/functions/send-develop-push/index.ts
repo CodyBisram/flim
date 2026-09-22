@@ -1,7 +1,7 @@
 // ============================================================
 // FLIM, send-develop-push  (Supabase Edge Function, Deno)
 //
-// Scheduled (e.g. every minute) function that finds photos which have just
+// Scheduled (every 5 minutes) function that finds photos which have just
 // developed in a shared roll and sends ONE APNs push per (roll, recipient),
 // regardless of how many shots the roll holds.
 //
@@ -26,7 +26,9 @@
 // Deploy:
 //   supabase functions deploy send-develop-push --no-verify-jwt
 // Schedule (Dashboard → Edge Functions → Schedules, or pg_cron):
-//   every 1 minute
+//   */5 * * * *  (every 5 minutes, since the 2026-08-24 disk IO fix; a
+//   per-minute cadence was part of what drove the pg_net bloat that fix
+//   addressed)
 //
 // Required function secrets (supabase secrets set ...):
 //   APNS_KEY_ID         – 10-char key ID from your .p8
