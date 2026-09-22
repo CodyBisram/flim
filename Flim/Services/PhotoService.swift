@@ -179,8 +179,16 @@ final class PhotoService {
         // loses it; `restorePendingCaptures` replays it on the next launch with this capture
         // time. `alreadyQueued` is that replay, whose files are already there.
         let meta = PendingCapture(id: photoId, userId: userId, rollId: rollId, capturedAt: capturedAt,
-                                  stockId: stock.id, knownRevealAt: knownRevealAt)
+                                  stockId: stock.id, knownRevealAt: knownRevealAt,
+                                  previewAspect: previewAspect)
         let queueStore = captureQueueStore
+        // The camera's own bytes go to disk NOW, before the decode below, so a kill during the
+        // decode, crop or grade still finds the shot on the next launch. The queue holds the raw
+        // capture, never a cropped copy: the crop is recomputed on replay from `previewAspect`.
+        let saved: Task<Bool, Never> = Task.detached(priority: .userInitiated) {
+            if alreadyQueued { return true }
+            return await queueStore.save(meta, raw: rawData)
+        }
 
         // The capture, decoded exactly once, for everything downstream: the grade, the durable
         // copy on disk, and the on-device classifier. This runs HERE rather than in the camera's
@@ -192,24 +200,20 @@ final class PhotoService {
         // not come from the 3:4 box, so the shot is left uncropped rather than having 40% of its
         // width thrown away (`CapturedPhotoCropper.plausibleTargetAspectRange`).
         //
-        // `bytes` is the shot as it goes to disk and as every fallback path uses it: the cropped
-        // q0.95 JPEG when the crop actually trimmed something, and otherwise the camera's own
-        // untouched bytes, which is byte for byte what this queue held before. Producing them is
-        // skipped entirely on the replay path, whose file is already on disk.
+        // `bytes` is the shot as every fallback path uses it (the upload when the grade fails,
+        // the classifier when the frame is unavailable): the cropped q0.95 JPEG when the crop
+        // actually trimmed something, otherwise the camera's own untouched bytes. It no longer
+        // goes to disk; the queue has the raw bytes already.
         let prepared: Task<PreparedCapture, Never> = Task.detached(priority: .userInitiated) {
             let target = previewAspect.flatMap {
                 CapturedPhotoCropper.isPlausibleTargetAspect($0) ? $0 : nil
             }
             guard let frame = CapturedPhotoCropper.prepare(from: rawData, targetAspectRatio: target)
             else { return PreparedCapture(frame: nil, bytes: rawData) }
-            guard !alreadyQueued, frame.didCrop,
+            guard frame.didCrop,
                   let jpeg = CapturedPhotoCropper.jpegData(from: frame)
             else { return PreparedCapture(frame: frame, bytes: rawData) }
             return PreparedCapture(frame: frame, bytes: jpeg)
-        }
-        let saved: Task<Bool, Never> = Task.detached(priority: .userInitiated) {
-            if alreadyQueued { return true }
-            return await queueStore.save(meta, raw: prepared.value.bytes)
         }
         Task { [weak self] in
             // Say so if the phone could not keep the shot: it is only in memory until it uploads.
@@ -948,6 +952,7 @@ final class PhotoService {
             enqueueCapture(rawData: raw, stock: FilmStock.stock(id: entry.meta.stockId),
                            userId: userId, rollId: entry.meta.rollId,
                            knownRevealAt: entry.meta.knownRevealAt,
+                           previewAspect: entry.meta.previewAspect,
                            capturedAt: entry.meta.capturedAt, photoId: entry.meta.id,
                            alreadyQueued: true) { _ in }
         }

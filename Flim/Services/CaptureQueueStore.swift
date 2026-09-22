@@ -29,11 +29,17 @@ struct PendingCapture: Codable, Equatable, Sendable {
     let capturedAt: Date
     let stockId: String
     let knownRevealAt: Date?
+    /// The viewfinder's measured aspect at the shutter, so a replay crops the raw bytes exactly
+    /// as the live path would have (the queue holds the camera's own bytes, never a cropped
+    /// copy, since 2026-09-22). Absent on sidecars written before then, which replays uncropped.
+    var previewAspect: CGFloat? = nil
     var stage: Stage = .writing
 
-    init(id: UUID, userId: UUID, rollId: UUID?, capturedAt: Date, stockId: String, knownRevealAt: Date?, stage: Stage = .writing) {
+    init(id: UUID, userId: UUID, rollId: UUID?, capturedAt: Date, stockId: String, knownRevealAt: Date?,
+         previewAspect: CGFloat? = nil, stage: Stage = .writing) {
         self.id = id; self.userId = userId; self.rollId = rollId; self.capturedAt = capturedAt
-        self.stockId = stockId; self.knownRevealAt = knownRevealAt; self.stage = stage
+        self.stockId = stockId; self.knownRevealAt = knownRevealAt
+        self.previewAspect = previewAspect; self.stage = stage
     }
 }
 
