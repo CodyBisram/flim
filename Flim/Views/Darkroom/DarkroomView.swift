@@ -853,8 +853,15 @@ Text("Darkroom")
 
     /// Reconstructs a `Date` (first of the month) from a `DarkroomYearMonth`, for the loading-state
     /// Year rows, which have no `DarkroomMonthSummaryV2.monthStart` to read yet.
+    ///
+    /// Gregorian explicitly, not `Calendar.current`: `ym.year`/`ym.month` are always Gregorian
+    /// (they came from `DarkroomMonthSummaryV2.parseMonthStart`, which reads them that way), and
+    /// reconstructing them through whatever calendar the device is set to would put this
+    /// loading-state row on a different date than the real row that replaces it.
     private func dateFromYearMonth(_ ym: DarkroomYearMonth) -> Date {
-        Calendar.current.date(from: DateComponents(year: ym.year, month: ym.month, day: 1)) ?? .now
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = .current
+        return calendar.date(from: DateComponents(year: ym.year, month: ym.month, day: 1)) ?? .now
     }
 
     /// A rung with nothing in it (a real, server-confirmed zero, not "unavailable").

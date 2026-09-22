@@ -9,7 +9,12 @@ struct ContentView: View {
     @Environment(ChapterService.self) private var chapters
     @Environment(NotificationService.self) private var notifications
     @Environment(VersionGateService.self) private var versionGate
+    @Environment(NetworkMonitor.self) private var network
     @Environment(\.scenePhase) private var scenePhase
+
+    /// Debounces the reconnect retry below so a flapping connection (a subway platform, a weak
+    /// Wi-Fi handoff) doesn't fire `retryFailedUploads()` once per flap.
+    @State private var reconnectRetryTask: Task<Void, Never>?
 
     /// The account the caches currently belong to. Compared against the live one so a SWITCH is
     /// detected, not just a sign-out: signing out and straight back in as someone else is exactly
@@ -177,6 +182,24 @@ struct ContentView: View {
             Activation.activeUserId = nil
             Task { await NotificationService.cancelAllRollDevelopNotifications() }
             RollLiveActivity.endAll()
+            // The departing account's tiles must not keep showing on the home screen for
+            // whoever uses this device next.
+            WidgetSync.clear()
+        }
+        // The capture chip promises "It will send when you're back online," but until now
+        // nothing acted on that beyond the next foreground or a manual Retry tap: a shot taken
+        // in a dead zone and left alone (app stays open, connection comes back on its own) sat
+        // queued indefinitely. Debounced 2 seconds so a flapping connection retries once, not
+        // once per flap, and routed through the exact same entry point the foreground handler
+        // below uses.
+        .onChange(of: network.isConnected) { wasConnected, isConnected in
+            guard !wasConnected, isConnected else { return }
+            reconnectRetryTask?.cancel()
+            reconnectRetryTask = Task {
+                try? await Task.sleep(for: .seconds(2))
+                guard !Task.isCancelled, photos.hasFailedUploads else { return }
+                await photos.retryFailedUploads()
+            }
         }
         // Attached to the outer Group, not inside any one branch, so it covers whichever of
         // auth/onboarding/MainTabView is showing right now: a blocked build must not be able to
@@ -208,6 +231,7 @@ struct ContentView: View {
                 // (synchronous), then the server mirror.
                 FeedSeenStore.shared.flushPersistNow()
                 Task { await FeedSeenStore.shared.flushPending() }
+                rolls.flushPendingRevealCompletions()
                 return
             }
             Task { await refreshVersionGate() }

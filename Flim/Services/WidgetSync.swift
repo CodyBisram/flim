@@ -35,6 +35,22 @@ enum WidgetSync {
 
     @MainActor private static var pending: Task<Void, Never>?
 
+    /// Wipes the departing account's tiles: without this, sign-out and delete-account left the
+    /// previous account's snapshot and cached JPEGs sitting in the App Group, so the home-screen
+    /// tiles kept showing that account's darkroom count, roll, and memories to whoever used the
+    /// device next. `writtenAt` is `.now`, a real write, not `.empty`'s `.distantPast`: this IS
+    /// the app answering "nothing to show", not the container having never been reached.
+    @MainActor
+    static func clear() {
+        guard WidgetStore.container != nil else { return }
+        pending?.cancel()
+        let cleared = WidgetSnapshot(unsortedCount: 0, developingRoll: nil, readyToReveal: false,
+                                     memories: [], accent: FlimAccentPalette.fallback, writtenAt: .now)
+        WidgetStore.write(cleared)
+        WidgetStore.prune(keeping: [])
+        for kind in widgetKinds { WidgetCenter.shared.reloadTimelines(ofKind: kind) }
+    }
+
     /// Every kind this extension publishes that reads the snapshot. Reloading by kind rather than
     /// reloading everything keeps the Live Activity, which is driven by ActivityKit and not by
     /// this file at all, out of it.

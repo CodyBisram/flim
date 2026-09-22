@@ -97,6 +97,15 @@ struct PushDestinationTests {
         #expect(PushDestination.parse(userInfo: userInfo) == .sortDeck)
     }
 
+    /// send-one-shot-push's "Post one." campaign sends exactly this payload over real APNs. Same
+    /// regression as `cameraDecodes` and `sortDeckDecodes`: unrecognized before this case existed,
+    /// silently landing on the Camera tab instead of the Darkroom the push named.
+    @Test("darkroom carries no id, and is recognized from a real push, not just a widget link")
+    func darkroomDecodes() {
+        let userInfo: [AnyHashable: Any] = ["flim": ["t": "darkroom"]]
+        #expect(PushDestination.parse(userInfo: userInfo) == .darkroom)
+    }
+
     // MARK: - The mandatory fallback
 
     @Test("no flim key at all falls back, exactly today's pushes and every pre-existing local notification")
@@ -400,7 +409,11 @@ struct NotificationMatrixTests {
             // send-one-shot-push: waitingToSortCohort sends `{ t: "sortdeck" }`.
             ("one-shot: waiting-to-sort",
              ["flim": ["t": "sortdeck"]],
-             .sortDeck)
+             .sortDeck),
+            // send-one-shot-push: the "Post one." campaign sends `{ t: "darkroom" }`.
+            ("one-shot: post one",
+             ["flim": ["t": "darkroom"]],
+             .darkroom)
         ]
 
         for row in rows {

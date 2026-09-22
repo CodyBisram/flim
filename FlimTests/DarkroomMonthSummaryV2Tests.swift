@@ -24,6 +24,36 @@ final class DarkroomMonthSummaryV2Tests: XCTestCase {
         XCTAssertEqual(comps.day, 1)
     }
 
+    /// Regression: a device set to a non-Gregorian calendar (Buddhist, Japanese, ...) must not
+    /// change what "2026-08-01" parses to. `parseMonthStart`'s default calendar is Gregorian
+    /// explicitly, not `Calendar.current`, because building a date FROM
+    /// `DateComponents(year: 2026, ...)` under a Buddhist calendar reinterprets `2026` as the
+    /// Buddhist year 2026 (about 543 years earlier), not the Gregorian year the server sent.
+    func testParseMonthStartIgnoresDeviceCalendarIdentifier() throws {
+        // Stands in for a device whose `Calendar.current` reports Buddhist: exactly the calendar
+        // `parseMonthStart`'s fixed Gregorian default now refuses to inherit from.
+        var buddhist = Calendar(identifier: .buddhist)
+        buddhist.timeZone = calendar.timeZone
+
+        // Confirms the failure mode this fix guards against: building the date under a Buddhist
+        // calendar from the server's literal digits does NOT land on Gregorian 2026.
+        let misreadUnderBuddhist = try XCTUnwrap(buddhist.date(from: DateComponents(year: 2026, month: 8, day: 1)))
+        let misreadComps = calendar.dateComponents([.year, .month, .day], from: misreadUnderBuddhist)
+        XCTAssertNotEqual(misreadComps.year, 2026)
+
+        // `parseMonthStart` itself must never do this: it reads "2026-08-01" as the real
+        // Gregorian date regardless of what a Buddhist-set device's `Calendar.current` would have
+        // produced. Passed explicitly here (as every other test in this file does) so the read-
+        // back below can't drift against the machine running the test; the fix under test is the
+        // function's default no longer being `Calendar.current` at all, which
+        // `testParseMonthStartReadsYearMonthDay` above already exercises for the ordinary case.
+        let date = try XCTUnwrap(DarkroomMonthSummaryV2.parseMonthStart("2026-08-01", calendar: calendar))
+        let comps = calendar.dateComponents([.year, .month, .day], from: date)
+        XCTAssertEqual(comps.year, 2026)
+        XCTAssertEqual(comps.month, 8)
+        XCTAssertEqual(comps.day, 1)
+    }
+
     func testParseMonthStartRejectsMalformedInput() {
         XCTAssertNil(DarkroomMonthSummaryV2.parseMonthStart("not-a-date", calendar: calendar))
         XCTAssertNil(DarkroomMonthSummaryV2.parseMonthStart("2026-03", calendar: calendar))

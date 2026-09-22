@@ -801,7 +801,7 @@ struct PhotoPagerView: View {
                         .contentShape(Rectangle())
                     }
                     .disabled(preparingShare)
-                    .accessibilityLabel(preparingShare ? "Preparing to share" : "Share photo")
+                    .accessibilityLabel("Share")
                     }
 
                     Menu {
@@ -891,7 +891,7 @@ struct PhotoPagerView: View {
                         .contentShape(Rectangle())
                     }
                     .disabled(preparingShare)
-                    .accessibilityLabel(preparingShare ? "Preparing to share" : "Share photo")
+                    .accessibilityLabel("Share")
                     }
 
                     let isOwn = photo.userId == auth.currentUser?.id

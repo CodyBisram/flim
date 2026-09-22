@@ -75,8 +75,16 @@ struct FlimApp: App {
                         NotificationCenter.default.post(name: .openPushDestination,
                                                         object: destination)
                     } else if let code = FlimApp.routePersonalInviteCode(from: url) {
-                        PendingInvite.store(code)
-                        NotificationCenter.default.post(name: .openPersonalInvite, object: code)
+                        // A personal invite means "get someone into the app", which a
+                        // signed-in device has already happened for. Storing it anyway left it
+                        // sitting in `PendingInvite` for whoever signs into this device NEXT, who
+                        // would see a stranger's invite code prefilled and get attributed to it.
+                        // Only the sign-in screen reads this, and only a signed-out device shows
+                        // that screen, so there is nothing here for a signed-in tap to do.
+                        if auth.currentUser == nil {
+                            PendingInvite.store(code)
+                            NotificationCenter.default.post(name: .openPersonalInvite, object: code)
+                        }
                     } else if let code = FlimApp.routeInviteCode(from: url) {
                         // Written down AND broadcast: on a cold launch this fires before
                         // MainTabView exists, and a notification with no listener is just lost.

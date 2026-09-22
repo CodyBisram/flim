@@ -829,13 +829,20 @@ struct FeedView: View {
         await seenStore.flushPending()
         async let counted = feed.unseenCount()
         await feed.loadFeed(currentUserId: uid)
-        serverLedger = await counted
-        serverLedgerAt = .now
+        let unseen = await counted
+        // A stale reload (the account switched while `loadFeed` was in flight) must not write
+        // any of these: not just the dot, which is the only one this used to guard, but the
+        // ledger and its timestamp, and the two flags that say the load finished. Writing them
+        // from the DEPARTED account's answer would show that account's unseen count and unread
+        // state under the new one's feed for a moment, and the reload for the new account that
+        // follows would find `didLoad` already true and never restart its own loading state.
         if AccountEpoch.isCurrent(epoch) {
-            signals.feedHasUnread = TabSignals.feedDot(unseenShots: counted?.shots, unreadActivity: unreadActivity)
+            serverLedger = unseen
+            serverLedgerAt = .now
+            signals.feedHasUnread = TabSignals.feedDot(unseenShots: unseen?.shots, unreadActivity: unreadActivity)
+            didLoad = true
+            hasNewPosts = false
         }
-        didLoad = true
-        hasNewPosts = false
         // Snapshotted from page one, BEFORE the straddle completion's extra round trips: the
         // units render the moment the page lands, and the caught-up block waiting on the
         // completion appeared a beat after them, popping in at the top of an already-drawn

@@ -758,6 +758,7 @@ struct RollDetailView: View {
                                signals.rollsHaveUnwatched = TabSignals.rollsDot(rolls: rollService.rolls, revealSeen: {
                                    UserDefaults.standard.bool(forKey: "rollRevealSeen.\($0.uuidString)")
                                })
+                               WidgetSync.refresh()
                            },
                            onStartAnother: { followUpAfterReveal = true })
         }

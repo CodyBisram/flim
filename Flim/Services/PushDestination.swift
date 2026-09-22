@@ -25,6 +25,8 @@ import Foundation
 ///     "sortdeck" no id         -> the Darkroom's sort deck sheet. Sent remotely by
 ///                                 send-one-shot-push's waiting-to-sort campaign, same
 ///                                 compatibility story as "camera" above.
+///     "darkroom" no id         -> the Darkroom tab. Sent remotely by send-one-shot-push's
+///                                 "Post one." campaign, same compatibility story as "camera".
 ///
 /// Named for WHERE TO GO rather than for what happened, so a future notification reusing a
 /// destination needs no client change.
@@ -75,6 +77,8 @@ enum PushDestination: Codable, Equatable {
             return .camera
         case "sortdeck":
             return .sortDeck
+        case "darkroom":
+            return .darkroom
         case "reveal":
             guard let id = uuid(flim["id"]) else { return nil }
             return .reveal(rollId: id, photoId: uuid(flim["photo"]), comments: (flim["comments"] as? Bool) ?? false)

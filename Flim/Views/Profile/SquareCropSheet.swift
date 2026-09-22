@@ -20,6 +20,12 @@ struct SquareCropSheet: View {
     @State private var image: UIImage?
     @State private var failed = false
     @State private var working = false
+    /// Surfaced when the crop/encode step itself fails (not the initial decode, see `failed`
+    /// above): the same banner shape `EditProfileView` uses for its own avatar/cover failures,
+    /// so a save that quietly did nothing beyond a haptic doesn't leave someone re-tapping Use
+    /// with no idea why the sheet won't close.
+    @State private var useError: String?
+    @State private var useErrorDismiss: Task<Void, Never>?
 
     @State private var scale: CGFloat = 1
     @State private var lastScale: CGFloat = 1
@@ -71,6 +77,28 @@ struct SquareCropSheet: View {
                 }
             }
             .task { await load() }
+            // Same shape as `EditProfileView`'s avatar/cover failure banner: over the screen
+            // where retrying is one tap away, never a modal whose only button admits it.
+            .overlay(alignment: .top) {
+                if let useError {
+                    Label(useError, systemImage: "exclamationmark.triangle.fill")
+                        .flimFont(13, weight: .medium).foregroundStyle(.white)
+                        .padding(.horizontal, 16).padding(.vertical, 10)
+                        .background(.ultraThinMaterial, in: Capsule())
+                        .padding(.top, 6).padding(.horizontal, 16)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
+            }
+            .animation(.snappy(duration: 0.25), value: useError)
+            .onChange(of: useError) { _, error in
+                useErrorDismiss?.cancel()
+                guard error != nil else { return }
+                useErrorDismiss = Task {
+                    try? await Task.sleep(for: .seconds(2.6))
+                    guard !Task.isCancelled else { return }
+                    withAnimation { useError = nil }
+                }
+            }
         }
         .presentationBackground(.black)
     }
@@ -196,7 +224,11 @@ struct SquareCropSheet: View {
             guard let cropped = cg.cropping(to: rect.integral),
                   let data = InstantFilmProcessor.jpegData(from: cropped, quality: 0.92)
             else {
-                await MainActor.run { working = false; Haptics.error() }
+                await MainActor.run {
+                    working = false
+                    Haptics.error()
+                    useError = "Couldn't prepare that photo. Try a different one or try again."
+                }
                 return
             }
             await MainActor.run {

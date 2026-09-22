@@ -75,7 +75,21 @@ struct DarkroomMonthSummaryV2: Decodable, Equatable {
     /// either throw or silently misparse a bare date, so this decodes the column as `String` and
     /// splits it by hand instead of gambling on one of them. `nonisolated static`, pure input to
     /// output, so it's directly testable without a live decode.
-    nonisolated static func parseMonthStart(_ raw: String, calendar: Calendar = .current) -> Date? {
+    ///
+    /// `calendar` defaults to Gregorian with the device's current time zone, not `Calendar
+    /// .current`: `y-M-d` from the server is always a Gregorian year/month/day, and reading it
+    /// back through whatever calendar the device happens to be set to (Buddhist, Japanese, ...)
+    /// reinterprets those same digits as a date in a different era, putting every Darkroom month
+    /// on the wrong date. `ChapterService`'s and `ChapterCurationCache`'s own date formatters make
+    /// the same choice for the same reason.
+    nonisolated static func parseMonthStart(
+        _ raw: String,
+        calendar: Calendar = {
+            var cal = Calendar(identifier: .gregorian)
+            cal.timeZone = .current
+            return cal
+        }()
+    ) -> Date? {
         let parts = raw.split(separator: "-")
         guard parts.count == 3,
               let year = Int(parts[0]), let month = Int(parts[1]), let day = Int(parts[2])

@@ -12,19 +12,32 @@ import UIKit
 /// iOS's expiration handler rather than left to kill the app.
 @MainActor
 enum BackgroundKeepAlive {
-    struct Token { fileprivate let id: UIBackgroundTaskIdentifier }
-
-    static func begin(_ name: String) -> Token {
-        var id: UIBackgroundTaskIdentifier = .invalid
-        id = UIApplication.shared.beginBackgroundTask(withName: name) {
-            // Out of time: release the assertion ourselves, or the system terminates the app.
-            UIApplication.shared.endBackgroundTask(id)
-        }
-        return Token(id: id)
+    /// A reference type, not a struct: iOS's expiration handler and the caller's own `defer` can
+    /// both end the same assertion (the system calls the handler when time runs out; the caller
+    /// ends it separately once its work finishes), and a struct's immutable `id` gave both call
+    /// sites nothing to coordinate through, so a token that had already expired was ended a
+    /// second time by the caller's `defer`. A class lets `end` mark the token spent so the second
+    /// call is a no-op instead of a double `endBackgroundTask` on the same identifier.
+    final class Token {
+        fileprivate var id: UIBackgroundTaskIdentifier = .invalid
     }
 
+    static func begin(_ name: String) -> Token {
+        let token = Token()
+        token.id = UIApplication.shared.beginBackgroundTask(withName: name) {
+            // Out of time: release the assertion ourselves, or the system terminates the app.
+            end(token)
+        }
+        return token
+    }
+
+    /// Idempotent: ends the assertion once, then invalidates the token, so a second call (the
+    /// expiration handler above firing after the caller's own `defer` already ran, or the
+    /// reverse) is a no-op.
     static func end(_ token: Token) {
         guard token.id != .invalid else { return }
-        UIApplication.shared.endBackgroundTask(token.id)
+        let id = token.id
+        token.id = .invalid
+        UIApplication.shared.endBackgroundTask(id)
     }
 }

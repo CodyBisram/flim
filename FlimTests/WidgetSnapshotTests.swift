@@ -132,6 +132,29 @@ struct WidgetSnapshotTests {
         #expect(try JSONDecoder().decode(WidgetSnapshot.self, from: data) == original)
     }
 
+    /// `writtenAt` is set to `.now` on every write, so a synthesized `==` would never consider two
+    /// otherwise-identical snapshots equal. `WidgetSync.run()`'s dedupe compares a freshly composed
+    /// snapshot against the one already on disk specifically to skip a redundant write and timeline
+    /// reload when nothing a tile shows changed; before this manual `==`, that comparison always
+    /// failed, and every refresh rewrote the file and reloaded all three widgets regardless.
+    @Test("two snapshots differing only in writtenAt compare equal")
+    func writtenAtIsExcludedFromEquality() {
+        let memory = WidgetSnapshot.Memory(horizon: .latest, imageName: "frame-y.jpg",
+                                           takenAt: Date(timeIntervalSince1970: 1_700_000_000),
+                                           subtitle: "Roommates", link: WidgetLink.photo(UUID()))
+        // Built once and reused: `roll(startedAgo:revealsIn:)` mints a fresh UUID per call, and
+        // this test's whole point is that `writtenAt` is the ONLY thing differing between `a`
+        // and `b`.
+        let developing = roll(startedAgo: 1200, revealsIn: 400)
+        let a = snapshot(unsorted: 3, developing: developing,
+                         ready: true, memories: [memory],
+                         writtenAt: Date(timeIntervalSince1970: 1_700_000_000))
+        let b = snapshot(unsorted: 3, developing: developing,
+                         ready: true, memories: [memory],
+                         writtenAt: Date(timeIntervalSince1970: 1_800_000_000))
+        #expect(a == b)
+    }
+
     @Test("a roll's cover initial skips emoji and punctuation")
     func coverInitial() {
         // Roll names in this product routinely lead with an emoji, and drawing that as the cover

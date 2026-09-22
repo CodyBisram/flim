@@ -305,7 +305,12 @@ struct DarkroomAllTimeRow: View {
     }
 
     private func monthName(_ month: Int) -> String {
-        guard let date = Calendar.current.date(from: DateComponents(year: 2000, month: month, day: 1)) else { return "" }
+        // Gregorian explicitly: `month` is always a Gregorian month number (it came from
+        // `DarkroomMonthSummaryV2.parseMonthStart`), and reading it back through whatever
+        // calendar the device is set to would print the wrong month's name.
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = .current
+        guard let date = calendar.date(from: DateComponents(year: 2000, month: month, day: 1)) else { return "" }
         return DarkroomDayUnit.monthNameFormatter.string(from: date)
     }
 }

@@ -52,6 +52,9 @@ final class RollService {
     /// have no snapshot yet (a first-ever sign-in): `RollSnapshotStore.load` just returns nil.
     func restore(for userId: UUID) {
         snapshotUserId = userId
+        // This account's activation path: any reveal completion that finished offline under
+        // this account gets its retry here, not just on the next foreground.
+        flushPendingRevealCompletions()
         guard rolls.isEmpty, coverPaths.isEmpty,
               let snapshot = RollSnapshotStore.load(for: userId) else { return }
         rolls = snapshot.rolls
@@ -286,14 +289,22 @@ final class RollService {
         struct RollCoversParams: Encodable { let p_roll_ids: [String] }
 
         let rows: [CoverRow]
-        if let rpcRows: [CoverRow] = try? await QueryBatch.inChunks(rollIds) { chunk in
-            try await supabase
-                .rpc("roll_covers", params: RollCoversParams(p_roll_ids: chunk))
-                .execute()
-                .value
-        } {
-            rows = rpcRows
-        } else {
+        do {
+            rows = try await QueryBatch.inChunks(rollIds) { chunk in
+                try await supabase
+                    .rpc("roll_covers", params: RollCoversParams(p_roll_ids: chunk))
+                    .execute()
+                    .value
+            }
+        } catch {
+            // Only "the function doesn't exist yet" (undefined_function / PostgREST's own
+            // "no such RPC" code) means the fallback query below applies. Anything else, a
+            // timeout on a flaky link included, must NOT fall through to the uncapped
+            // per-roll photos read: return and leave the existing covers untouched, and let
+            // the next refresh try the RPC again.
+            let code = (error as? PostgrestError)?.code
+            guard code == "42883" || code == "PGRST202" else { return }
+
             // FALLBACK for a build that ships before the `roll_covers` migration is live: the
             // exact query this RPC replaces, uncapped-photos-per-roll bug and all. Remove once
             // every build in the field is past this migration (no version to key that off; watch
@@ -420,17 +431,85 @@ final class RollService {
     /// tapped Done): the ONLY signal `seedRevealSeen` treats as watched. Called once, from
     /// `RollRevealViewModel.finish()`.
     ///
-    /// Fire-and-forget, `try?`, no local state to guard behind `AccountEpoch`: the local
-    /// `rollRevealSeen.<id>` flag is already written by the caller the instant `finish()` runs,
-    /// this only feeds the shared table other surfaces (this seeding, on any other phone the
-    /// account signs into) read back. Fails soft if `complete_reveal_view` doesn't exist yet on
-    /// this deployment (a build shipped ahead of the migration): the RPC 404s and `try?`
-    /// swallows it, same as `seedRevealSeen`'s own column read.
+    /// The local `rollRevealSeen.<id>` flag is already written by the caller the instant
+    /// `finish()` runs, this only feeds the shared table other surfaces (this seeding, on any
+    /// other phone the account signs into) read back. Durable: the roll id is recorded in
+    /// `pendingRevealCompletions.<userId>` BEFORE the RPC goes out and removed only once it
+    /// succeeds, so a reveal finished with no connection (or an app killed mid-request) is
+    /// retried by `flushPendingRevealCompletions()` instead of silently lost, which previously
+    /// meant a reinstall could replay the whole reveal since nothing had told the server it
+    /// finished. Also fails soft if `complete_reveal_view` doesn't exist yet on this deployment
+    /// (a build shipped ahead of the migration): that 404 stays pending too and is harmless to
+    /// keep retrying since the RPC call itself is the migration gate, not a fallback path.
     func completeRevealView(rollId: UUID) {
+        // The widget's Live Activity / countdown surfaces read the seen flag; nothing else tells
+        // them a reveal just finished.
+        WidgetSync.refresh()
+        guard let userId = snapshotUserId else {
+            // No account known yet to namespace the pending queue under (should not happen in
+            // practice, `finish()` only runs once a roll has been loaded). Try once, unretried.
+            Task {
+                struct Params: Encodable { let p_roll_id: UUID }
+                _ = try? await supabase.rpc("complete_reveal_view", params: Params(p_roll_id: rollId)).execute()
+            }
+            return
+        }
+        var pending = Self.pendingRevealIds(for: userId)
+        pending.insert(rollId.uuidString)
+        Self.setPendingRevealIds(pending, for: userId)
+        let epoch = AccountEpoch.current
         Task {
             struct Params: Encodable { let p_roll_id: UUID }
-            _ = try? await supabase.rpc("complete_reveal_view", params: Params(p_roll_id: rollId)).execute()
+            do {
+                _ = try await supabase.rpc("complete_reveal_view", params: Params(p_roll_id: rollId)).execute()
+                guard AccountEpoch.isCurrent(epoch) else { return }
+                Self.removePendingReveal(rollId, for: userId)
+            } catch {
+                // Stays in the pending set; `flushPendingRevealCompletions()` retries it.
+            }
         }
+    }
+
+    /// Retries every reveal completion that didn't reach the server yet for the current
+    /// account: finished offline, or the app was killed before the RPC returned. Called from
+    /// this account's activation path (`restore(for:)`) and on every foreground, the same
+    /// cadence as `FeedSeenStore`'s own pending flush.
+    func flushPendingRevealCompletions() {
+        guard let userId = snapshotUserId else { return }
+        let pending = Self.pendingRevealIds(for: userId)
+        guard !pending.isEmpty else { return }
+        let epoch = AccountEpoch.current
+        for idString in pending {
+            guard let rollId = UUID(uuidString: idString) else { continue }
+            Task {
+                struct Params: Encodable { let p_roll_id: UUID }
+                do {
+                    _ = try await supabase.rpc("complete_reveal_view", params: Params(p_roll_id: rollId)).execute()
+                    guard AccountEpoch.isCurrent(epoch) else { return }
+                    Self.removePendingReveal(rollId, for: userId)
+                } catch {
+                    // Stays pending; retried on the next flush.
+                }
+            }
+        }
+    }
+
+    private static func pendingRevealKey(for userId: UUID) -> String {
+        "pendingRevealCompletions.\(userId.uuidString)"
+    }
+
+    private static func pendingRevealIds(for userId: UUID) -> Set<String> {
+        Set(UserDefaults.standard.stringArray(forKey: pendingRevealKey(for: userId)) ?? [])
+    }
+
+    private static func setPendingRevealIds(_ ids: Set<String>, for userId: UUID) {
+        UserDefaults.standard.set(Array(ids), forKey: pendingRevealKey(for: userId))
+    }
+
+    private static func removePendingReveal(_ rollId: UUID, for userId: UUID) {
+        var pending = pendingRevealIds(for: userId)
+        pending.remove(rollId.uuidString)
+        setPendingRevealIds(pending, for: userId)
     }
 
     // MARK: - Fetch members of a roll

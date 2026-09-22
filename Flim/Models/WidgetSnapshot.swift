@@ -14,7 +14,7 @@ import Foundation
 ///
 /// The extension does no routing either. Each card carries the link to open when it is tapped,
 /// written by the app, which is the side that knows what a photo id is. See `WidgetLink`.
-struct WidgetSnapshot: Codable, Equatable {
+struct WidgetSnapshot: Codable {
     /// Personal instants waiting in the sort deck. They develop instantly, so this is a count
     /// with no clock attached, and it is the Darkroom tile's headline.
     let unsortedCount: Int
@@ -129,6 +129,21 @@ struct WidgetSnapshot: Codable, Equatable {
     static let empty = WidgetSnapshot(unsortedCount: 0, developingRoll: nil, readyToReveal: false,
                                       memories: [], accent: FlimAccentPalette.fallback,
                                       writtenAt: .distantPast)
+}
+
+extension WidgetSnapshot: Equatable {
+    /// `writtenAt` is excluded on purpose: it is set to `.now` on every write, so a synthesized
+    /// `==` would never consider two snapshots equal and the dedupe in `WidgetSync.refresh()`
+    /// that compares against the last-written snapshot would never fire, rewriting the file and
+    /// reloading all three widget timelines on every refresh regardless of whether anything a
+    /// tile actually shows had changed.
+    static func == (lhs: WidgetSnapshot, rhs: WidgetSnapshot) -> Bool {
+        lhs.unsortedCount == rhs.unsortedCount
+            && lhs.developingRoll == rhs.developingRoll
+            && lhs.readyToReveal == rhs.readyToReveal
+            && lhs.memories == rhs.memories
+            && lhs.accent == rhs.accent
+    }
 }
 
 /// The links a widget can hand back to the app.

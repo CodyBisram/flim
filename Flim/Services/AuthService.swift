@@ -327,6 +327,11 @@ final class AuthService {
         try await supabase.auth.verifyOTP(email: email, token: token, type: .email)
         let session = try await supabase.auth.session
         noteSession(session.user.id)
+        // Whatever is left in `PendingInvite` at this point either was already consumed into
+        // this sign-in's invite field or never applied to it (a code typed by hand takes
+        // priority, see `adoptPendingInvite`). Either way it must not survive to prefill the
+        // NEXT account that signs into this device.
+        _ = PendingInvite.take()
         // Keyed by `email`, not a bare flag: only a redemption that actually belongs to THIS
         // email can complete here, so a code redeemed for one address and abandoned can never
         // attach itself to a later, unrelated sign-in. See `PendingInviteRedeemed`.
@@ -786,6 +791,10 @@ final class AuthService {
         try? await supabase.auth.signOut()
         currentUser = nil
         isAuthenticated = false
+        // The deleted account's tiles must not keep showing on the home screen: there is no
+        // account left to own them, and a reinstall on the same device would otherwise start
+        // from stale widgets rather than a clean slate.
+        WidgetSync.clear()
         // Same reason signOut bumps: clearing the account without advancing the generation leaves
         // an in-flight profile fetch from the departing session able to repopulate currentUser.
         noteSession(nil)

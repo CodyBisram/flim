@@ -252,7 +252,7 @@ struct RollMembersView: View {
         do {
             members = try await rollService.fetchMembers(for: roll.id)
         } catch {
-            loadError = error.localizedDescription
+            loadError = UserFacingError.messageIfNotCancelled(for: error)
         }
         isLoading = false
     }

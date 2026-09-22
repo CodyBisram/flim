@@ -267,7 +267,11 @@ struct ChapterRecapView: View {
     /// `BrandedExport`), read off the month's most recent shot so a still-growing month's stamp
     /// keeps advancing as new shots land.
     private var heroDateStamp: String {
-        let calendar = Calendar.current
+        // Gregorian explicitly, matching the burned-in date-back's own digits (`BrandedExport`):
+        // `Calendar.current` on a Buddhist or Japanese device reads `.year` in that calendar's
+        // era, printing a stamp that doesn't match the photograph it is burned into.
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = .current
         let comps = calendar.dateComponents([.year, .month, .day], from: viewModel.chapter.lastShotAt)
         let year = (comps.year ?? 0) % 100
         return String(format: "%02d %02d %02d", year, comps.month ?? 0, comps.day ?? 0)

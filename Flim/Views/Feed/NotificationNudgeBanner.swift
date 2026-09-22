@@ -80,6 +80,7 @@ struct NotificationNudgeBanner: View {
                 }
                 .buttonStyle(.plain)
                 .expandTapTarget(by: 8)
+                .accessibilityLabel("Dismiss")
             }
             .background(FlimTheme.bgElevated)
             .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(FlimTheme.stroke, lineWidth: 1))

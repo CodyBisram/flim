@@ -206,6 +206,7 @@ struct SortDeckView: View {
                 Button { closeDeck() } label: {
                     Image(systemName: "xmark").font(.system(size: 16, weight: .medium)).foregroundStyle(.white)
                 }
+                .accessibilityLabel("Close")
                 Spacer()
                 if lastPhoto != nil {
                     Button { undo() } label: {

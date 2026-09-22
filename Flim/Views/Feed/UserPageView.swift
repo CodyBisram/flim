@@ -327,7 +327,7 @@ struct UserPageView: View {
         let targetId = userId
         let feedService = feed
         UndoCenter.shared.stage(
-            title: "Reported \(handle)",
+            title: "Reported \(handle). We'll look into it.",
             failureText: "Couldn't send that report",
             commit: { await feedService.reportUser(targetId, from: uid) })
     }
