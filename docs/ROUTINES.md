@@ -16,7 +16,7 @@ there is exactly one reviewer. The five "check on PR #N" reminders are disabled 
 |---|---|---|---|
 | 02:07 daily | Nightly review (the prompt below); on a night with no commits it deep-audits one module in rotation instead | Raspberry Pi | `docs/reviews/<date>.md` for new findings, `docs/reviews/OPEN.md` re-verified, committed to main |
 | 00:20 daily | Nightly numbers + rendition repair | GitHub Actions `nightly-numbers.yml` (GitHub's cron is best-effort; it has run up to five hours late) | one line appended to `docs/NUMBERS.md`; an `ops_alerts` row (so a push to the owner) when something is broken; then `scripts/repair_renditions.py` rebuilds any thumb or feed card a capture lost |
-| Mon 07:30 | Product memo | Raspberry Pi | `docs/memos/<date>.md`, committed to main. A "What the database says" section is waiting on the read-only role (below) |
+| Mon 07:30 | Product memo | Raspberry Pi | `docs/memos/<date>.md`, committed to main. A "What the database says" section reads `public.memo_snapshot()` through the read-only role (below) |
 | Sun 06:00 | Ledger burn (the prompt below): up to five small open ledger rows a person can hit, fixed one commit each on `burn/<date>`, one pull request | Raspberry Pi | PR "Ledger burn, week of <Mon DD>"; CI verifies, the owner merges; `OPEN.md` is left for the nightly review to update once the merge lands. Never main. Added 2026-09-21 |
 | every 30 min | TestFlight build checklist: a green `ios-testflight` run on main plus ninety minutes is a processed build (the App Store Connect key on the Pi is Sales and Reports only, so `/v1/builds` is closed to it); the build number is read from the run's log | Raspberry Pi | one push per build, never repeated, with the "On device:" list from the newest done block in `docs/PENDING.md` that names the build's train, or "nothing owed on device for this build". Added 2026-09-21 |
 | Mon 09:07 | R2 tripwire | GitHub Actions `r2-tripwire.yml` | silent while quiet, fails (email) when a migration trigger fires |
@@ -36,12 +36,13 @@ handled is remembered on disk, so a redelivered webhook writes nothing twice. Ea
 appended to a log on the Pi with the email dropped before it touches disk, so any event can be
 replayed for a test. Three inserts get an answer, not just an announcement (added 2026-09-21):
 
-- **A new `users` row.** One line: who invited them (the `allowed_emails` note that
-  `redeem_invite` writes, resolved to a username; a cohort code is named when the inviter had one
-  live at signup, otherwise it was the personal code), how many people they will already know on
+- **A new `users` row.** One line: who invited them and how many people they will already know on
   day one (the same set the Find friends screen ranks: the inviter, the inviter's other invitees,
-  the inviter's follows, and roll mates), and, once their first diagnostic row arrives, the client
-  version and device. The email in the payload is never pushed, logged or queried by value.
+  the inviter's follows, and roll mates), and the client version once it reports, all from a
+  single call to `public.receiver_lookup(user_id)` (the `allowed_emails` note that `redeem_invite`
+  writes, resolved to a username; a cohort code is named alongside it when the inviter had one
+  live at signup, otherwise it was the personal code). The email in the payload is never pushed,
+  logged or queried by value, and `receiver_lookup` never returns it either.
 - **A new `user_reports` row** (and `photo_reports`, once its trigger exists: the SQL is in
   `docs/sql/pi_hook_photo_reports.sql`, to be run in the SQL editor and mirrored by the owner).
   Reporter and reported as usernames, the reason, the photo's roll or the page, and a drafted
@@ -55,20 +56,24 @@ replayed for a test. Three inserts get an answer, not just an announcement (adde
   claimed as a match.
 
 The inviter, day-one and username lookups need a database credential the Pi does not have
-today. `docs/sql/flim_reader_role.sql` creates a read-only role for it; until the owner runs it
-and hands the Pi the pooler URI, those parts of the line say so and the rest still arrives.
+today. `public.receiver_lookup(uuid)` (migration `2026-09-22_pi_reader.sql`) answers the whole
+line in one call; `docs/sql/flim_reader_role.sql` creates the read-only role that can call it.
+Until the owner applies the migration, runs that script and hands the Pi the pooler URI, those
+parts of the line say so and the rest still arrives.
 
 ## The memo on live data
 
-Planned 2026-09-21, waiting on the same read-only role. The Monday memo keeps its "The number"
-section and gains "What the database says" under it: tables only, one line of reading each, for
-the eleven questions the 2026-09-21 audit's data pass answered (seven-day uniques against the
-seven before, first-open cohort retention, adoption by build, rolls created and follow-up rolls,
-push coverage and the never-answered notification ask, renditions missing, photos per day and
-storage, invite campaign redemptions and signups by source, reciprocal pairs and how many run
-through the owner, reports, blocks, crashes and edge errors, and cron health), using the tested
-SQL in `docs/METRICS.md` and never a hand-rolled count. The Pi holds no service key and no
-management token, so nothing of this runs yet.
+`public.memo_snapshot()` (migration `2026-09-22_pi_reader.sql`) answers the eleven questions the
+2026-09-21 audit's data pass raised in one JSON document, reshaped from the tested SQL in
+`docs/METRICS.md` and the `admin_*` functions rather than a hand-rolled count: seven-day uniques
+against the seven before, first-open cohort retention, adoption by build, rolls created and
+follow-up rolls, push coverage and the never-answered notification ask, renditions missing,
+photos per day and storage, invite campaign redemptions and signups by day, reciprocal pairs and
+how many run through the owner, reports/blocks/crashes/edge errors, and cron health. The Monday
+memo keeps its "The number" section and gains "What the database says" under it, one line of
+reading per key. Waiting on the same read-only role as the receiver: the Pi holds no service key
+and no management token, so nothing of this runs until the owner applies the migration, runs
+`docs/sql/flim_reader_role.sql` and hands the Pi the pooler URI.
 
 ## The ledger
 
