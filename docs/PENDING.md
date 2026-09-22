@@ -416,6 +416,53 @@ The four from the audit the owner picked on 2026-09-10: the durable capture queu
 capture status, one invitation journey (a roll code admits you), deletion order, and the photo
 write boundary. In that order of value; built in the order of size.
 
+### done 2026-09-22: the fourth audit, seven passes, and the night's twenty-three fixes (claude.ai/code/artifact/ff30a58e-69b2-4bbb-8e03-13322e994517)
+
+Pointed at what the first three never opened: the Sep 21 batch read adversarially, the widget
+and Live Activity, background and offline, push routing, account lifecycle, links, accessibility,
+calendars, dependencies, the site and privacy surface, production query performance with a live
+read path (pg_stat_statements, EXPLAIN, never ANALYZE), and a deeper data cut. The Contact Sheet
+plan is its own document (claude.ai/code/artifact/8f6b17bb-94d1-4370-bf06-31f3141c678d): name
+with alternates, every screen and string, table, RPCs, three pushes, stages, risks, eight owner
+decisions.
+
+Fixed the same night (build 395; suite 777 XCTest + 655 Swift Testing green, two pinned known
+issues): `roll_covers` fallback only on an undefined function (it fired on any error); reveal
+completion durable via `pendingRevealCompletions.<userId>` flushed on foreground, and the widget
+refreshed on completion; `WidgetSnapshot` equality ignores `writtenAt` (the dedupe never fired,
+three timeline reloads per refresh) and `WidgetSync.clear()` on account change and delete;
+`darkroom` push route parsed; a personal invite link tapped while signed in is not stored;
+Gregorian calendar for server dates in four places; uploads retry 2 s after reconnect; every
+post-await write in `FeedView.reload` guarded; the members sheet's error line; "Reported
+@handle. We'll look into it."; "Couldn't prepare that photo. Try a different one or try again.";
+labels on four icon buttons; PrivacyInfo declares CrashData and ProductInteraction; keep-alive
+ends once; the raw capture reaches disk BEFORE the decode (last night's change had gated it on
+the decode) with the aspect stored in the sidecar for replay; own posted ids by keyset; the
+digest fails closed on a bad posts page. Backend, APPLIED and DEPLOYED: the Pi reads through
+`memo_snapshot()` and `receiver_lookup()` (`2026-09-22_pi_reader.sql`; the owner sets the
+role's password with docs/sql/flim_reader_role.sql); the three `darkroom_month_*` functions
+probe the zone with AT TIME ZONE instead of scanning `pg_timezone_names` (300 ms a call, the
+slowest real query); `pi_hook_notify` strips email and invite_code; one-shot pushes prune 410
+tokens; the develop-push comment says */5.
+
+Open, ranked on the page: the photo bucket has NO backup (owner: nightly sync to R2 from a
+workflow, and confirm PITR); nothing watches the Pi (owner: an external heartbeat); five writes
+that drop silently offline (markSorted, setRollCover, deleteComment, setTags, removeMyTag; copy
+proposed); report and block from a comment and from the roll carousel; AccountEpoch on
+follow/unfollow/unblock; Activity's "isn't there anymore" on a transient failure; the privacy
+page line for the hooks relay (copy proposed, manual deploy); chapter stats in Eastern for
+everyone (M); lineLimit(1) on user text; supabase-swift 2.46 to 2.55 and pins; the Swift 6 job
+never runs on a push; one-shot cohorts loop per user; Live Activity's 8-hour cap; no failure
+reason in push_deliveries; the numbers job runs five hours late nightly.
+
+Data (live): the Sep 7 cohort falls 58% to 26% by week two while Aug 10 holds near half; all
+48 first posts were answered (no control), answered-within-a-day returns 82%; the 12 never-asked
+actives are camera-only on 378 with no token, 11 of 12 never touched a roll; rolls stopped for
+everyone in the Sep 4 to 6 window; reaction pushes bring 80 to 100% same-day opens; median
+comments per post is zero every week; reciprocity 35 pairs, one component of 20, three people
+connected only through the owner; BALI26's three never shot. The digest table is one overwritten
+row per person, so its 41 recent rows are the digest working daily, not a gap.
+
 ### done 2026-09-21: the audit's plan, items 1 to 11, built the same night
 
 Owner's word: "work on everything you think." Seven commits on main, each its own domain.
