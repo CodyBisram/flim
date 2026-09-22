@@ -144,20 +144,30 @@ final class FeedService {
         if let posted { myPostedPhotoIds = posted }
     }
 
-    /// Paged past PostgREST's 1000-row cap (`QueryBatch.allPages`): an account with more posts
-    /// than that used to silently lose the "shared to your page" badge on everything past the
-    /// cap. Returning `nil` on ANY page failing (not just partial results) keeps the caller's
-    /// "last known set" contract: a page that throws propagates out of `allPages`, caught below.
+    /// Paged past PostgREST's 1000-row cap: an account with more posts than that used to
+    /// silently lose the "shared to your page" badge on everything past the cap. Keyset on the
+    /// post id, not `.range`: `posts` is inserted into constantly and has no uniqueness on
+    /// `created_at`, so a page fetched by row position drifts under concurrent writes (the
+    /// property comment on `feedCursor` above). Ordering by id is arbitrary but stable, which
+    /// is all a whole-set read needs. Returning `nil` on ANY page failing (not just partial
+    /// results) keeps the caller's "last known set" contract.
     private func fetchMyPostedPhotoIds(userId: UUID) async -> Set<UUID>? {
-        struct Row: Decodable { let photo_id: UUID }
+        struct Row: Decodable { let id: UUID; let photo_id: UUID }
+        var out = Set<UUID>()
+        var after: UUID?
         do {
-            let rows: [Row] = try await QueryBatch.allPages { from, to in
-                try await supabase.from("posts").select("photo_id")
+            while true {
+                var query = supabase.from("posts").select("id, photo_id")
                     .eq("user_id", value: userId.uuidString)
-                    .range(from: from, to: to)
+                if let after { query = query.gt("id", value: after.uuidString) }
+                let rows: [Row] = try await query
+                    .order("id", ascending: true)
+                    .limit(QueryBatch.pageSize)
                     .execute().value
+                out.formUnion(rows.map(\.photo_id))
+                guard rows.count == QueryBatch.pageSize, let last = rows.last else { return out }
+                after = last.id
             }
-            return Set(rows.map(\.photo_id))
         } catch {
             return nil
         }

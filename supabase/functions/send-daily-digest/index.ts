@@ -452,7 +452,7 @@ Deno.serve(async (req: Request) => {
   // rather than a query per candidate. Paged the same way as the whole-table reads above: this
   // window is bounded by time, not row count, and a busy 48 hours can cross PostgREST's 1000-row
   // cap the same way the unfiltered tables can (scale audit, 2026-09-19).
-  const { rows: recentPosts } = await fetchAllPages<{ id: string; user_id: string; created_at: string }>(
+  const { rows: recentPosts, failed: recentPostsFailed } = await fetchAllPages<{ id: string; user_id: string; created_at: string }>(
     (from, to) =>
       supabase.from("posts")
         .select("id, user_id, created_at")
@@ -463,6 +463,9 @@ Deno.serve(async (req: Request) => {
         .range(from, to),
     "posts",
   );
+  // Fail closed like the client_versions read above: a page that errored means the window is
+  // incomplete, and a digest built from a partial window would tell people about part of a day.
+  if (recentPostsFailed) return new Response("posts read failed; no digests sent", { status: 200 });
   if (recentPosts.length === 0) return new Response("no recent posts");
 
   const posterIds = [...new Set(recentPosts.map((p) => p.user_id as string))];
