@@ -151,6 +151,33 @@ final class FeedSeenStoreTests: XCTestCase {
         XCTAssertNil(pushed[accountB], "the incoming account must never receive the departing mark")
     }
 
+    /// A batch the server refused used to shed every mark older than a day, for good; the
+    /// server never learned those days were read and the header counted them again. Now a
+    /// failed push settles nothing, a landed one settles everything it sent, and the feed
+    /// hears about the landing.
+    func testAFailedPushKeepsEveryMarkPendingAndALandedOneSettlesThem() async {
+        actor Gate { var accept = false; func open() { accept = true } }
+        let gate = Gate()
+        let store = FeedSeenStore(defaults: defaults, pushRows: { _, marks in
+            await gate.accept ? Set(marks.keys) : []
+        })
+        let account = UUID(), old = UUID(), fresh = UUID()
+        store.activeUserId = account
+        store.markSeen(old)
+        store.markSeen(fresh)
+
+        await store.flushPending()   // refused
+        XCTAssertTrue(store.isPendingSync(old))
+        XCTAssertTrue(store.isPendingSync(fresh))
+        XCTAssertEqual(store.flushGeneration, 0)
+
+        await gate.open()
+        await store.flushPending()   // lands
+        XCTAssertFalse(store.isPendingSync(old))
+        XCTAssertFalse(store.isPendingSync(fresh))
+        XCTAssertEqual(store.flushGeneration, 1)
+    }
+
     /// `markSeen` used to re-serialize the WHOLE seen-set into `UserDefaults` on every call.
     /// Swiping through a ten-shot day cost ten writes; now a burst coalesces into one, and only
     /// fires (or is forced, as here) once.

@@ -105,8 +105,19 @@ struct FeedUnitCard: View {
     /// yet as seen.
     @State private var repositioningProgrammatically = false
 
+    /// Bumped by a tap on the header's count, with `isJumpTarget` naming the one unit the
+    /// tap scrolled to: that card opens on its first unseen frame and marks it reached, since
+    /// the reader asked to be taken there and the scroll guarantees they are looking at it.
+    /// The scroll alone left a card already on screen parked on the frame it was on, which
+    /// was usually one already read: "it took me to new photos but the number never moved".
+    let jumpGeneration: Int
+    let isJumpTarget: Bool
+
     init(unit: FeedUnit, width: CGFloat, opening: Int, seenStore: FeedSeenStore,
-         markingEnabled: Bool, catchUpGeneration: Int, onAuthorBlocked: @escaping () -> Void) {
+         markingEnabled: Bool, catchUpGeneration: Int, jumpGeneration: Int = 0,
+         isJumpTarget: Bool = false, onAuthorBlocked: @escaping () -> Void) {
+        self.jumpGeneration = jumpGeneration
+        self.isJumpTarget = isJumpTarget
         self.unit = unit
         self.width = width
         self.seenStore = seenStore
@@ -208,12 +219,10 @@ struct FeedUnitCard: View {
         // An explicit catch-up re-opens a LIVING unit the way a fresh launch would open it:
         // on its first unseen shot. Never fired by background refreshes, so the pager is
         // yanked only when the reader just asked to be taken to the new.
-        .onChange(of: catchUpGeneration) {
-            let opening = unit.openingIndex(isSeen: { seenStore.isSeen($0) })
-            if opening != selection {
-                repositioningProgrammatically = true
-                withAnimation(.snappy(duration: 0.25)) { selection = opening }
-            }
+        .onChange(of: catchUpGeneration) { openOnFirstUnseen(markIfVisible: true) }
+        .onChange(of: jumpGeneration) {
+            guard isJumpTarget else { return }
+            openOnFirstUnseen(markIfVisible: true)
         }
         .onChange(of: selection) {
             // ONLY visibility (`maybeMarkReached`) or an explicit user gesture on a visible
@@ -369,7 +378,12 @@ struct FeedUnitCard: View {
             .id("page-\(item.post.id)-\(retryTokens[item.post.id] ?? 0)")
             .frame(width: photoWidth, height: photoHeight)
             .clipped()
-            .overlay { GrainOverlay().opacity(0.5) }
+            // No decorative GrainOverlay on the photograph. It was 320 white 1.2pt squares per
+            // 160pt tile, screen-blended at half opacity: invisible on light areas and a fixed
+            // field of faint white dots on dark ones, which the owner saw as specks in his
+            // night shots (2026-09-23; the stored files were scanned and are clean). The real
+            // grain is baked into the file at full resolution, the same reason the sort deck
+            // never drew it.
             .overlay {
                 Image(systemName: "heart.fill")
                     .font(.system(size: 90))

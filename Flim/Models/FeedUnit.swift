@@ -243,6 +243,38 @@ struct FeedUnit: Identifiable, Equatable {
         }
     }
 
+    /// What the header shows while you read: the server's whole-window count minus every
+    /// loaded frame (not your own) the server cannot know is seen, which is a mark made
+    /// since the count was taken OR a mark still waiting to be pushed. Friends: the server's
+    /// count minus the loaded authors whose days are all read now, never below the authors
+    /// still holding something unseen, never below one while shots remain.
+    ///
+    /// `countedAt` must be the instant the count was ASKED for, not when its answer arrived:
+    /// a swipe during the round trip is a mark the server did not see (FeedView, 2026-09-23,
+    /// where the timestamp was taken after the page load and every mark made in that window
+    /// was neither in the server's count nor subtracted from it).
+    static func remainingLedger(serverShots: Int, serverFriends: Int, countedAt: Date,
+                                units: [FeedUnit], currentUserId: UUID?,
+                                seenDate: (UUID) -> Date?, isPendingSync: (UUID) -> Bool) -> (shots: Int, friends: Int) {
+        let others = units.filter { $0.author.id != currentUserId }
+        let loadedIds = others.flatMap(\.items).map(\.post.id)
+        // Resolved into sets up front: the two closures are non-escaping parameters, and
+        // the per-unit derivations below need plain predicates they can hold.
+        let seenIds = Set(loadedIds.filter { seenDate($0) != nil })
+        let unknownToServer = Set(loadedIds.filter { id in
+            guard let date = seenDate(id) else { return false }
+            return date >= countedAt || isPendingSync(id)
+        })
+        let shots = max(0, serverShots - unknownToServer.count)
+        let isSeen: (UUID) -> Bool = { seenIds.contains($0) }
+        let finishedAuthors = Set(others.filter { unit in
+            unit.items.contains { unknownToServer.contains($0.post.id) } && unit.unseenCount(isSeen: isSeen) == 0
+        }.map(\.author.id))
+        let stillOpenAuthors = Set(others.filter { $0.unseenCount(isSeen: isSeen) > 0 }.map(\.author.id))
+        let friends = shots == 0 ? 0 : max(stillOpenAuthors.count, serverFriends - finishedAuthors.count, 1)
+        return (shots, friends)
+    }
+
     /// The caught-up block's position: after the last unit that still holds anything unseen,
     /// so it reads as the seam between new and old rather than the end of the scroll. `nil`
     /// means nothing anywhere is unseen and the block belongs at the very top, with the days

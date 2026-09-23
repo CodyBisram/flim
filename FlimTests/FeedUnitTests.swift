@@ -266,6 +266,63 @@ final class FeedUnitTests: XCTestCase {
         XCTAssertEqual(FeedUnit.ledgerTotal(merged)?.friends, 1)
     }
 
+    // MARK: - The live header (2026-09-23)
+
+    func testRemainingLedgerSubtractsMarksTheServerCannotKnowAbout() {
+        // The server said 5 shots from 3 friends. Since then the reader reached one frame
+        // (dated after the count) and one older mark is still waiting to be pushed; both
+        // are unknown to the server, so both come off. A mark dated BEFORE the count that
+        // did reach the server is already excluded from its answer and must not come off
+        // again.
+        let counted = date(21, 12)
+        let mira = profile(UUID(), name: "mira"), dev = profile(UUID(), name: "dev.k"), sam = profile(UUID(), name: "sam")
+        let miraItems = (0..<3).map { item(author: mira, at: date(21, 8 + $0)) }
+        let devItems = [item(author: dev, at: date(21, 9))]
+        let samItems = [item(author: sam, at: date(21, 10))]
+        let units = FeedUnit.units(from: miraItems + devItems + samItems, calendar: calendar)
+        let seen: [UUID: Date] = [
+            miraItems[0].post.id: date(21, 13),   // reached after the count
+            devItems[0].post.id: date(21, 11),    // before the count, but never pushed
+            samItems[0].post.id: date(21, 11),    // before the count, on the server
+        ]
+        let pending: Set<UUID> = [devItems[0].post.id]
+        let remaining = FeedUnit.remainingLedger(
+            serverShots: 5, serverFriends: 3, countedAt: counted, units: units, currentUserId: nil,
+            seenDate: { seen[$0] }, isPendingSync: { pending.contains($0) })
+        XCTAssertEqual(remaining.shots, 3)
+        // dev's only frame is read and unknown to the server: dev is finished. mira still
+        // holds two unseen frames. sam's mark was already in the server's count.
+        XCTAssertEqual(remaining.friends, 2)
+    }
+
+    func testRemainingLedgerNeverCountsFewerFriendsThanAuthorsStillOpen() {
+        // The server's friend count is a floor for nobody: authors with unseen frames on
+        // the loaded pages keep it honest even when the server said fewer.
+        let counted = date(21, 12)
+        let a = profile(UUID(), name: "a"), b = profile(UUID(), name: "b")
+        let units = FeedUnit.units(from: [item(author: a, at: date(21, 8)), item(author: b, at: date(21, 9))], calendar: calendar)
+        let remaining = FeedUnit.remainingLedger(
+            serverShots: 2, serverFriends: 1, countedAt: counted, units: units, currentUserId: nil,
+            seenDate: { _ in nil }, isPendingSync: { _ in false })
+        XCTAssertEqual(remaining.shots, 2)
+        XCTAssertEqual(remaining.friends, 2)
+    }
+
+    func testRemainingLedgerGoesToZeroAndIgnoresOwnPosts() {
+        let counted = date(21, 12)
+        let me = profile(UUID(), name: "me"), dev = profile(UUID(), name: "dev.k")
+        let mine = [item(author: me, at: date(21, 8))]
+        let devItems = [item(author: dev, at: date(21, 9))]
+        let units = FeedUnit.units(from: mine + devItems, calendar: calendar)
+        // My own unseen post must not be subtracted from the server's count of my friends'.
+        let seen: [UUID: Date] = [devItems[0].post.id: date(21, 13), mine[0].post.id: date(21, 13)]
+        let remaining = FeedUnit.remainingLedger(
+            serverShots: 1, serverFriends: 1, countedAt: counted, units: units, currentUserId: me.id,
+            seenDate: { seen[$0] }, isPendingSync: { _ in false })
+        XCTAssertEqual(remaining.shots, 0)
+        XCTAssertEqual(remaining.friends, 0)
+    }
+
     func testLedgerTotalOfNothingIsNil() {
         // The ledger is never a zero: no contributions means no line at all.
         XCTAssertNil(FeedUnit.ledgerTotal([:]))

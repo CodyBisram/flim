@@ -55,6 +55,9 @@ final class FeedSeenStore {
     /// batches land; a failed batch stays here and rides the next flush.
     private var pendingSync: [UUID: Date] = [:]
     private var flushTask: Task<Void, Never>?
+    /// The push in progress, so a second `flushPending` (the reload's, the foreground one,
+    /// a debounce waking) waits for it instead of sending the same batch alongside it.
+    private var flushInFlight: Task<Void, Never>?
     /// Per account, so a switch never flushes one person's marks under another's session.
     private var syncedUserId: UUID?
     /// The account-copy pull in flight for the active account, so the feed can wait for it
@@ -115,18 +118,37 @@ final class FeedSeenStore {
         self.pushRows = pushRows
     }
 
+    /// Through `record_posts_seen`, not a plain upsert: `post_seen.post_id` references `posts`,
+    /// so one mark for a post deleted since failed the whole 500-row batch with a foreign-key
+    /// error, every flush, until the poison mark aged out a day later (and took every other
+    /// mark older than a day in that batch with it, permanently, so the server never learned
+    /// they were read and the header counted them again). The function inserts only the ids
+    /// that still exist and answers with them; a mark for a post that is gone has nothing to
+    /// land on and is settled here, not retried. Every id sent is settled when the call
+    /// succeeds; a failed call settles nothing and the next flush tries the batch again.
     private static func defaultPushRows(user: UUID, marks: [UUID: Date]) async -> Set<UUID> {
-        struct Row: Encodable { let user_id: UUID; let post_id: UUID; let seen_at: Date }
-        let rows = marks.map { Row(user_id: user, post_id: $0.key, seen_at: $0.value) }
+        struct Params: Encodable { let p_post_ids: [UUID]; let p_seen_at: [Date] }
+        let ids = Array(marks.keys)
         do {
-            try await supabase.from("post_seen").upsert(rows, onConflict: "user_id,post_id", ignoreDuplicates: true).execute()
-            return Set(marks.keys)
+            _ = try await supabase
+                .rpc("record_posts_seen", params: Params(p_post_ids: ids, p_seen_at: ids.map { marks[$0]! }))
+                .execute()
+            return Set(ids)
         } catch {
             return []
         }
     }
 
     func isSeen(_ id: UUID) -> Bool { activeUserId != nil && seenAt[id] != nil }
+
+    /// Whether the account's server copy is still missing this mark, so the feed header can
+    /// subtract it from a server count that could not have excluded it.
+    func isPendingSync(_ id: UUID) -> Bool { activeUserId != nil && pendingSync[id] != nil }
+
+    /// Bumped each time a flush lands marks on the server. The feed header re-reads the
+    /// server's count on it, so the number is the server's truth again within seconds of a
+    /// swipe rather than an arithmetic the client keeps running until the next reload.
+    private(set) var flushGeneration = 0
 
     func seenDate(_ id: UUID) -> Date? { activeUserId != nil ? seenAt[id] : nil }
 
@@ -188,6 +210,8 @@ final class FeedSeenStore {
         guard flushTask == nil else { return }
         flushTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(4))
+            // An explicit flush cancels this one; a cancelled sleep must not flush anyway.
+            guard !Task.isCancelled else { return }
             await self?.flushPending()
         }
     }
@@ -196,23 +220,25 @@ final class FeedSeenStore {
     /// the marks pending. Called on the debounce and when the app leaves the foreground.
     func flushPending() async {
         flushTask?.cancel(); flushTask = nil
-        guard let user = syncedUserId, user == activeUserId, !pendingSync.isEmpty else { return }
-        // 500 a request: a first-time backfill can be thousands of rows, and one huge body is
-        // slower to fail than several small ones.
-        let batch = Dictionary(uniqueKeysWithValues: Array(pendingSync.prefix(500)))
-        let landed = await pushRows(user, batch)
-        guard user == activeUserId else { return }
-        for id in landed { pendingSync.removeValue(forKey: id) }
-        if landed.count == batch.count {
-            if !pendingSync.isEmpty { await flushPending() }
-        } else {
-            // Left pending; the next flush tries again. A mark for a post deleted since fails
-            // its foreign key and would stick forever, so anything older than a day is dropped
-            // after a failure rather than retried into the ground.
-            let cutoff = Date.now.addingTimeInterval(-86400)
-            for (id, date) in batch where !landed.contains(id) && date < cutoff {
-                pendingSync.removeValue(forKey: id)
-            }
+        if let inFlight = flushInFlight { await inFlight.value; return }
+        let task = Task<Void, Never> { [weak self] in await self?.pushUntilDone() }
+        flushInFlight = task
+        await task.value
+        flushInFlight = nil
+    }
+
+    /// Batches of 500 until nothing is pending or a call fails: a first-time backfill can be
+    /// thousands of rows, and one huge body is slower to fail than several small ones. A
+    /// short answer is a failed call: everything stays pending and the next flush tries
+    /// again. Nothing is ever dropped for being old; the push settles dead posts itself.
+    private func pushUntilDone() async {
+        while let user = syncedUserId, user == activeUserId, !pendingSync.isEmpty {
+            let batch = Dictionary(uniqueKeysWithValues: Array(pendingSync.prefix(500)))
+            let landed = await pushRows(user, batch)
+            guard user == activeUserId else { return }
+            for id in landed { pendingSync.removeValue(forKey: id) }
+            if !landed.isEmpty { flushGeneration += 1 }
+            if landed.count < batch.count { return }
         }
     }
 

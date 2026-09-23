@@ -68,6 +68,11 @@ struct FeedView: View {
     @State private var ledger: (shots: Int, friends: Int)?
     /// Bumped by a tap on the ledger; the list scrolls to the first unit with an unseen frame.
     @State private var jumpToUnseenSignal = 0
+    /// The unit that tap scrolled to, and a generation the card watches: the target opens on
+    /// its first unseen frame and marks it, so a tap always shows a new photograph and the
+    /// number moves. See `FeedUnitCard.isJumpTarget`.
+    @State private var jumpTargetId: String?
+    @State private var jumpGeneration = 0
     /// The whole window's count from the server (`feed_unseen_count`), read at every explicit
     /// load. When it is known it IS the ledger; the unit-based count below is the fallback for
     /// a failed read, and what the seam still keys off. Without this the header counted only
@@ -195,22 +200,11 @@ struct FeedView: View {
     /// are all read now; an author with unseen shots the pages have not reached stays counted.
     /// Falls back to the loaded-pages count when the server did not answer.
     private var remainingLedger: (shots: Int, friends: Int)? {
-        let uid = auth.currentUser?.id
-        guard let serverLedger, let snapshotAt = serverLedgerAt else { return ledger }
-        let others = units.filter { $0.author.id != uid }
-        let reachedSince = others.flatMap(\.items).filter {
-            seenStore.seenDate($0.post.id).map { $0 >= snapshotAt } ?? false
-        }.count
-        let shots = max(0, serverLedger.shots - reachedSince)
-        // Authors the pages have loaded who had something unseen at the snapshot and have
-        // nothing unseen now: they are done, and leave the friend count.
-        let finishedAuthors = Set(others.filter { unit in
-            unit.items.contains { seenStore.seenDate($0.post.id).map { $0 >= snapshotAt } ?? false }
-                && unit.unseenCount(isSeen: { seenStore.isSeen($0) }) == 0
-        }.map(\.author.id))
-        let stillOpenAuthors = Set(others.filter { $0.unseenCount(isSeen: { seenStore.isSeen($0) }) > 0 }.map(\.author.id))
-        let friends = shots == 0 ? 0 : max(stillOpenAuthors.count, min(serverLedger.friends, serverLedger.friends - finishedAuthors.count), 1)
-        return (shots, friends)
+        guard let serverLedger, let countedAt = serverLedgerAt else { return ledger }
+        return FeedUnit.remainingLedger(
+            serverShots: serverLedger.shots, serverFriends: serverLedger.friends, countedAt: countedAt,
+            units: units, currentUserId: auth.currentUser?.id,
+            seenDate: { seenStore.seenDate($0) }, isPendingSync: { seenStore.isPendingSync($0) })
     }
 
     private var anythingUnseen: Bool {
@@ -280,6 +274,10 @@ struct FeedView: View {
         // view's own reload path; see that property's own doc for why `snapshotLedger` ALSO calls
         // `recomputeUnits()` explicitly rather than relying on this alone.
         .onChange(of: feed.feed) { _, _ in recomputeUnits() }
+        // Marks just landed on the server: read its count again, so the header is the
+        // server's own answer within seconds of a swipe instead of an arithmetic the client
+        // keeps running until the next reload.
+        .onChange(of: seenStore.flushGeneration) { Task { await recountUnseen() } }
         .onReceive(NotificationCenter.default.publisher(for: .feedNotice)) { note in
             guard let text = note.object as? String else { return }
             withAnimation { feedNotice = text }
@@ -552,6 +550,8 @@ struct FeedView: View {
                             seenStore: seenStore,
                             markingEnabled: ledgerSnapshotted,
                             catchUpGeneration: catchUpGeneration,
+                            jumpGeneration: jumpGeneration,
+                            isJumpTarget: jumpTargetId == unit.id,
                             // growOnly: blocking an author must not shrink the counts of units
                             // nobody has read yet, the same ratchet paging already obeys.
                             onAuthorBlocked: { snapshotLedger(growOnly: true) }
@@ -596,14 +596,21 @@ struct FeedView: View {
                     let firstUnseen: () -> FeedUnit? = {
                         units.first { $0.author.id != uid && $0.unseenCount(isSeen: { store.isSeen($0) }) > 0 }
                     }
+                    // Bounded by the seven-day window itself (`hasMoreFeed` ends there); the
+                    // page cap is a guard, not the limit. Six pages stopped short of a day
+                    // that sat a hundred posts down, which made the tap do nothing at all.
                     var pages = 0
-                    while firstUnseen() == nil, feed.hasMoreFeed, pages < 6, let uid {
+                    while firstUnseen() == nil, feed.hasMoreFeed, pages < 40, let uid {
                         await feed.loadMoreFeed(currentUserId: uid)
                         recomputeUnits()
                         pages += 1
                     }
                     guard let target = firstUnseen() else { return }
                     withAnimation(.snappy) { proxy.scrollTo(target.id, anchor: .top) }
+                    // The card opens on its first unseen frame and marks it; the scroll alone
+                    // left an already-mounted card on whatever frame it was showing.
+                    jumpTargetId = target.id
+                    jumpGeneration += 1
                 }
             }
             // The boundary-triggered reload replaced page one while the reader's scroll offset
@@ -827,6 +834,11 @@ struct FeedView: View {
         // The account's copy of the seen-marks must be complete before the server counts, or
         // a swipe made ten seconds ago reads as unseen in the number.
         await seenStore.flushPending()
+        // Stamped when the count is ASKED for: a mark made during the round trips below is
+        // one the server did not see, and `remainingLedger` subtracts marks from this
+        // instant on. Stamping after the page load left every mark made in that window
+        // neither in the count nor subtracted from it.
+        let countedAt = Date.now
         async let counted = feed.unseenCount()
         await feed.loadFeed(currentUserId: uid)
         let unseen = await counted
@@ -838,7 +850,7 @@ struct FeedView: View {
         // follows would find `didLoad` already true and never restart its own loading state.
         if AccountEpoch.isCurrent(epoch) {
             serverLedger = unseen
-            serverLedgerAt = .now
+            serverLedgerAt = countedAt
             signals.feedHasUnread = TabSignals.feedDot(unseenShots: unseen?.shots, unreadActivity: unreadActivity)
             didLoad = true
             hasNewPosts = false
@@ -873,6 +885,18 @@ struct FeedView: View {
         _ = await badgeTask
         prefetchedThrough = 0
         await prefetchUnitHeroes()
+    }
+
+    /// The server's count again, after marks landed there. Same stamp discipline as `reload`,
+    /// same account guard; a failed read keeps the arithmetic running on the old count.
+    private func recountUnseen() async {
+        guard didLoad, auth.currentUser != nil else { return }
+        let epoch = AccountEpoch.current
+        let countedAt = Date.now
+        guard let unseen = await feed.unseenCount(), AccountEpoch.isCurrent(epoch) else { return }
+        serverLedger = unseen
+        serverLedgerAt = countedAt
+        signals.feedHasUnread = TabSignals.feedDot(unseenShots: unseen.shots, unreadActivity: unreadActivity)
     }
 
     /// `nil` when there's no avatar path to resolve at all (skip the assignment in `reload()`
