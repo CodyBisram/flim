@@ -416,6 +416,101 @@ The four from the audit the owner picked on 2026-09-10: the durable capture queu
 capture status, one invitation journey (a roll code admits you), deletion order, and the photo
 write boundary. In that order of value; built in the order of size.
 
+### done 2026-09-23: the sort deck's compose sheet came up empty
+
+Tapping a card, or the caption pill, in the sort deck showed a blank dark sheet (no title, no
+fields) for a few seconds before the compose form appeared. `SortDeckView` presented it with
+`.sheet(isPresented:) { if let composePhoto { ... } }`: SwiftUI can build that content from
+the optional as it was before the same transaction's write, so the sheet opened on nothing
+and stayed so until something else re-rendered it. Now `.sheet(item: $composePhoto)`, which
+hands the photo to the content directly; `showCompose` is gone.
+
+Also asked the same day: "white dots on the images". The owner's newest master, feed and thumb
+renditions were pulled and scanned; nothing in the bytes. The Darkroom grid draws a white
+checkmark in a dark circle at the top right of every photo already shared
+(`PhotoGridCell`), which reads as a white dot at grid size; awaiting the owner's confirmation
+that this is what he means before touching it.
+
+On device: sort deck, tap a card: the New Post sheet appears at once with the photo, the Tag
+people row and the caption field.
+
+### done 2026-09-23: the white dots on dark areas, and the sort deck's empty compose sheet
+
+**The specks.** The owner saw small white dots on dark areas of his photographs and suspected
+the grain. Deep dive, in order: his newest master and its feed and thumb renditions, plus four
+night masters, pulled and scanned (dark flat areas: about 0.05% of pixels sit +20 levels or
+more over their neighbourhood, faint and sparse, and the raw sensor captures in `pairs/`
+carry slightly MORE of them than the graded output); flat near-black patches through the real
+grain stage lift at most +2 to +6 levels with no specks above +15 (`GrainShadowSpeckProbe`);
+four dark neutral captures through the real capture path with grain off, halation off and
+both off (`GrainStageIsolationProbe`, both probes silent unless `TEST_RUNNER_FLIM_GRAIN_PROBE=1`)
+show halation does nothing in the dark and grain adds soft texture with nothing above +25; and
+Lanczos, bicubic and box resampling of a master to the feed size count the same. The files
+are clean. The dots were `GrainOverlay` (`PhotoGridCell.swift`): 320 white 1.2pt squares per
+160pt tile at random alpha 0.03 to 0.12, screen-blended over the photograph at half opacity
+in the feed card and the post detail view, so invisible on light areas and a fixed field of
+about 2,500 faint white dots per feed image on dark ones. Removed from both photo views; the
+developing placeholder in the grid keeps it (a solid panel, not a photograph). The sort deck
+never drew it, for the reason its comment gives.
+
+**The compose sheet.** Tapping a card, or the caption pill, in the sort deck showed a blank
+dark sheet for a few seconds. `SortDeckView` presented it with `.sheet(isPresented:) { if let
+composePhoto { ... } }`, which SwiftUI can build from the optional as it was before the same
+transaction's write; now `.sheet(item: $composePhoto)`, and `showCompose` is gone.
+
+On device: a night shot in the feed and in post detail has no white dots on its blacks; the
+Darkroom grid's developing tile still has its texture; sort deck, tap a card: the New Post
+sheet appears at once with the photo, the Tag people row and the caption field.
+
+### done 2026-09-23: the feed's "N shots from N friends", audited and made honest
+
+The owner's header sat at "5 shots from 3 friends" after tapping it. The analyst evaluated the
+server's count as him: the five were real, unmarked posts (four from Sep 16 sitting about a
+hundred posts down, and one lele frame from Sep 20 between two frames he HAD marked). The
+number was honest; the feature around it was not.
+
+Three defects, the first confirmed by his own data:
+1. A programmatic reposition never marked the frame it showed. On every explicit catch-up
+   (launch, pull-to-refresh, the New-posts button) a visible card re-opened on its first
+   unseen frame with `repositioningProgrammatically` set, so the `selection` onChange did not
+   mark it and no visibility event ever would (the card was already visible). The reader
+   looked at frame two, swiped, and frame three was marked; frame two stayed "new" for good.
+   That is exactly lele's day. `FeedUnitCard.openOnFirstUnseen(markIfVisible:)` now marks the
+   frame a visible card lands on.
+2. The tap only scrolled. `jumpToUnseenSignal` scrolled to the first unit with an unseen
+   frame but never told that card to open on it, so an already-mounted card stayed on the
+   frame it was showing, usually one already read: "it took me to new photos but the number
+   never moved". The card now gets `jumpGeneration` + `isJumpTarget` and opens on the frame,
+   marking it; each tap is "next new photograph". The paging bound rose from six pages to the
+   window's own end (the Sep 16 posts were past six pages, so the tap did nothing).
+3. The flush could lose marks for good. `post_seen.post_id` references `posts`, so one mark
+   for a since-deleted post failed the whole 500-row upsert, every flush, and the age rule
+   then dropped every OTHER mark older than a day in that batch, permanently; the server never
+   learned those days were read and counted them again after the next reload. Marks now go
+   through `record_posts_seen(uuid[], timestamptz[])` (`2026-09-23_record_posts_seen.sql`,
+   SECURITY INVOKER so "exists" means "exists for this viewer", the same policy the count
+   uses), which inserts what still exists and answers with it; the client settles every id
+   it sent and never drops anything for age. Proved on the bootstrap DB with a live and a
+   dead id (count 1 to 0, the row is the viewer's, idempotent; the plain insert fails the FK).
+
+And the arithmetic: `serverLedgerAt` was stamped AFTER the page load, so a mark made during
+the round trips was neither in the count nor subtracted; it is stamped when the count is
+asked for. Marks still pending push are subtracted whatever their date (the server cannot
+have them). After every flush that lands, the header re-reads the server's count
+(`FeedSeenStore.flushGeneration`), so it is the server's truth within seconds of a swipe.
+The math lives in `FeedUnit.remainingLedger` with three tests; the store has one for the
+flush contract.
+
+Kept, as design: a frame is reached only when the pager lands on it, so a four-shot day
+needs four swipes (or four taps of the count) to clear; the pill on the band says what is
+left. Worth an owner decision: whether scrolling a whole strip past should count.
+
+On device: tap the count, land ON a new photograph (not a day already read), the number
+drops by one; tap again, the next; pull to refresh, a day that re-opens on a new frame
+counts that frame as reached; the four Sep 16 posts are reachable by tapping.
+
+Migration applied 2026-09-23, before the build.
+
 ### done 2026-09-23: the prompt audit, applied, and the tripwire's arithmetic moved into a script
 
 An audit of everything that reaches a model as text (the ten agent files, four skills, the
