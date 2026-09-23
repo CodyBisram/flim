@@ -35,7 +35,13 @@ struct SortDeckView: View {
     /// Which posted notice the running three-second timer belongs to; see `commit`.
     @State private var postedNoticeId: UUID?
     /// The compose sheet, opened from the pill under the top card or a tap on the card itself.
-    @State private var showCompose = false
+    /// The photo the compose sheet is open for; nil is no sheet. Presented by ITEM, not by a
+    /// Bool beside an optional: `.sheet(isPresented:) { if let composePhoto { ... } }` built
+    /// the sheet's content from the optional as it was when presentation began, which SwiftUI
+    /// can evaluate before the same transaction's write to it is visible, so the sheet came
+    /// up empty (no title, no fields, a dark rectangle) and stayed that way until something
+    /// else re-rendered it, seconds later. `.sheet(item:)` hands the photo to the content
+    /// directly, so there is nothing to be nil.
     @State private var composePhoto: Photo?
     @State private var composeCaption = ""
     @State private var composeTags: [PendingTag] = []
@@ -115,16 +121,14 @@ struct SortDeckView: View {
                 Task { await commit(p, a, caption: caption, tags: tags) }
             }
         }
-        .sheet(isPresented: $showCompose) {
-            if let composePhoto {
-                SortDeckComposeSheet(photo: composePhoto, url: urls[composePhoto.id],
-                                      caption: $composeCaption, tags: $composeTags) {
-                    // Same publish path as swipe-right/the Post button, just carrying what was
-                    // typed into the sheet: `performSwipe` already commits the PREVIOUS held
-                    // action, flies this card off, and holds this one for undo exactly as it does
-                    // for the fast path.
-                    performSwipe(.publish, caption: composeCaption, tags: composeTags)
-                }
+        .sheet(item: $composePhoto) { composePhoto in
+            SortDeckComposeSheet(photo: composePhoto, url: urls[composePhoto.id],
+                                  caption: $composeCaption, tags: $composeTags) {
+                // Same publish path as swipe-right/the Post button, just carrying what was
+                // typed into the sheet: `performSwipe` already commits the PREVIOUS held
+                // action, flies this card off, and holds this one for undo exactly as it does
+                // for the fast path.
+                performSwipe(.publish, caption: composeCaption, tags: composeTags)
             }
         }
     }
@@ -181,12 +185,11 @@ struct SortDeckView: View {
     }
 
     private func openCompose(for photo: Photo) {
-        guard !showCompose else { return }
+        guard composePhoto == nil else { return }
         Haptics.tap()
-        composePhoto = photo
         composeCaption = ""
         composeTags = []
-        showCompose = true
+        composePhoto = photo
     }
 
     // MARK: - Header
