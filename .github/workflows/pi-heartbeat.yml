@@ -1,0 +1,38 @@
+name: Pi heartbeat
+
+# Everything that watches FLIM (Uptime Kuma, the nightly review, the Monday memo, the ledger
+# burn, the build checklist, the webhook receiver) runs on the one Raspberry Pi, and until this
+# nothing watched the Pi: a power cut looked like a quiet week. GitHub's runners are the one
+# piece of the loop that does not live on it, so this asks the receiver at hooks.flim-app.com
+# for its health line every hour and fails the run, which emails the owner, when three tries a
+# minute apart get anything but a 200 whose body is "ok". Cloudflare answers 530 when the
+# tunnel is gone (the Pi is off or offline) and 502 when the tunnel is up but the receiver is
+# not, so both land here. The receiver answers "ok" to any GET, so /health is a name, not a
+# route it has to know.
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  heartbeat:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ask the receiver for its health line
+        run: |
+          for attempt in 1 2 3; do
+            answer=$(curl -sS -m 15 -w '\n%{http_code}' https://hooks.flim-app.com/health 2>/dev/null || true)
+            code=${answer##*$'\n'}
+            body=$(printf '%s' "${answer%$'\n'*}" | tr -d '\r\n')
+            if [ "$code" = "200" ] && [ "$body" = "ok" ]; then
+              echo "The receiver answered ok on attempt $attempt."
+              exit 0
+            fi
+            echo "Attempt $attempt: HTTP ${code:-no answer}, body '${body:0:120}'."
+            [ "$attempt" -lt 3 ] && sleep 60
+          done
+          echo "::error::hooks.flim-app.com did not answer ok in three tries over two minutes. The Pi, its tunnel, or the receiver is down, and with it every monitor that runs there."
+          exit 1
