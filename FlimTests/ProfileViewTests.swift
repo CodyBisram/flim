@@ -21,6 +21,28 @@ final class ProfileViewTests: XCTestCase {
         XCTAssertFalse(isOwnerAccount(email: "someone-else@gmail.com", username: "notcody"))
     }
 
+    // MARK: - Display name limit (2026-09-22)
+
+    func testDisplayNameKeepsUpToTheLimit() {
+        let forty = String(repeating: "a", count: 40)
+        XCTAssertEqual(AuthService.fitDisplayName(forty), forty)
+        XCTAssertEqual(AuthService.fitDisplayName(forty + "bcd"), forty)
+    }
+
+    func testDisplayNameTrimsWhitespaceBeforeCounting() {
+        XCTAssertEqual(AuthService.fitDisplayName("  Cody \n"), "Cody")
+        let padded = "  " + String(repeating: "b", count: 40) + "  "
+        XCTAssertEqual(AuthService.fitDisplayName(padded).count, 40)
+    }
+
+    func testDisplayNameCountsEmojiAsOneCharacter() {
+        // The field's count and the writer's must agree, or a name of flags would pass the
+        // field and lose its last flag at save.
+        let flags = String(repeating: "🇺🇸", count: 40)
+        XCTAssertEqual(AuthService.fitDisplayName(flags), flags)
+        XCTAssertEqual(AuthService.fitDisplayName(flags + "🇮🇩").count, 40)
+    }
+
     func testNilEmailAndUsernameDoesNotMatch() {
         XCTAssertFalse(isOwnerAccount(email: nil, username: nil))
     }

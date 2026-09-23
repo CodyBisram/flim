@@ -69,6 +69,20 @@ struct UsernameView: View {
                         .padding(.horizontal, 16)
                         .padding(.vertical, 16)
                         .background(Color(white: 0.1), in: RoundedRectangle(cornerRadius: 12))
+                        // The same limit the profile's Name sheet keeps. This field took any
+                        // length, so a long name got in here and was cut the first time it was
+                        // edited. Stops as you type; the count appears only once it is near,
+                        // because the field is optional and a "0/40" under it would be noise.
+                        .onChange(of: name) { _, typed in
+                            if typed.count > AuthService.displayNameMaxLength {
+                                name = String(typed.prefix(AuthService.displayNameMaxLength))
+                            }
+                        }
+                    if name.count >= AuthService.displayNameMaxLength - 10 {
+                        Text("\(name.count)/\(AuthService.displayNameMaxLength)")
+                            .flimFont(12, relativeTo: .caption)
+                            .foregroundStyle(FlimTheme.textTertiary)
+                    }
                 }
                 .padding(.top, 18)
 

@@ -401,7 +401,7 @@ final class AuthService {
         let session = try await supabase.auth.session
         let userId = session.user.id
         let email = session.user.email ?? ""
-        let name = displayName?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = displayName.map(Self.fitDisplayName)
         let trimmedName = (name?.isEmpty ?? true) ? nil : name
 
         struct InsertUser: Encodable {
@@ -467,13 +467,27 @@ final class AuthService {
         return text.contains("users_pkey") || text.contains("(id)")
     }
 
+    /// The display name's ceiling, counted the way the phone counts characters. Signup took any
+    /// length and the profile's Name sheet cut at 40 on save without saying so (found
+    /// 2026-09-22): a name written long at signup lost its tail the first time that sheet was
+    /// opened and saved, even unchanged. One number now, kept by both fields as they are typed
+    /// (with a count in view) and by the column (`users_display_name_length_check`), so nothing
+    /// is ever thrown away at save time.
+    nonisolated static let displayNameMaxLength = 40
+
+    /// A name as it is stored: surrounding whitespace dropped, never past `displayNameMaxLength`.
+    /// Both fields already stop at the limit; this is the writer's own guarantee of the same.
+    nonisolated static func fitDisplayName(_ name: String) -> String {
+        String(name.trimmingCharacters(in: .whitespacesAndNewlines).prefix(displayNameMaxLength))
+    }
+
     /// Updates the optional display name and refreshes `currentUser`.
     func setDisplayName(_ name: String) async throws {
         let session = try await supabase.auth.session
         struct Update: Encodable { let display_name: String }
         _ = try await supabase
             .from("users")
-            .update(Update(display_name: name.trimmingCharacters(in: .whitespacesAndNewlines)),
+            .update(Update(display_name: Self.fitDisplayName(name)),
                     returning: .minimal)
             .eq("id", value: session.user.id.uuidString)
             .execute()

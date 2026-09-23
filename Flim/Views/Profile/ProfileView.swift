@@ -685,6 +685,17 @@ private struct EditNameSheet: View {
                         .tint(.white)
                         .padding(16)
                         .background(Color(white: 0.1), in: RoundedRectangle(cornerRadius: 12))
+                        // Stops at the limit as you type, the same limit signup keeps, so Save
+                        // never has anything to cut. It used to save the first 40 and drop the
+                        // rest with no counter and no word, which read as the app eating names.
+                        .onChange(of: name) { _, typed in
+                            if typed.count > AuthService.displayNameMaxLength {
+                                name = String(typed.prefix(AuthService.displayNameMaxLength))
+                            }
+                        }
+                    Text("\(name.count)/\(AuthService.displayNameMaxLength)")
+                        .flimFont(12, relativeTo: .caption)
+                        .foregroundStyle(FlimTheme.textTertiary)
                     if let saveError {
                         Text(saveError)
                             .flimFont(13, relativeTo: .subheadline)
@@ -706,7 +717,7 @@ private struct EditNameSheet: View {
                         isSaving = true
                         Task {
                             do {
-                                try await auth.setDisplayName(String(name.prefix(40)))
+                                try await auth.setDisplayName(name)
                                 dismiss()
                             } catch {
                                 // Dismissing on failure told people the edit saved when it had not.
