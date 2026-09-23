@@ -54,11 +54,10 @@ Do not silently decide it needs nothing.
 
 ## Copy rule
 
-Never use em dashes anywhere: user-facing copy (UI strings, notifications, email,
-App Store metadata, release notes, flim-app.com) AND all repository documentation
-(README, docs/, supabase READMEs). The owner extended the rule to documentation on
-2026-07-18. Rephrase with commas, periods, colons, or parentheses. Only source-code
-comments inside code files remain exempt.
+No em dashes in anything you write: user-facing copy (UI strings, notifications, email,
+App Store metadata, release notes, flim-app.com) and all repository documentation
+(README, docs/, supabase READMEs). Rephrase with commas, periods, colons, or
+parentheses. Source-code comments inside code files are the one exemption.
 
 ## Completion
 

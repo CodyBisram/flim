@@ -416,6 +416,111 @@ The four from the audit the owner picked on 2026-09-10: the durable capture queu
 capture status, one invitation journey (a roll code admits you), deletion order, and the photo
 write boundary. In that order of value; built in the order of size.
 
+### done 2026-09-23: the prompt audit, applied, and the tripwire's arithmetic moved into a script
+
+An audit of everything that reaches a model as text (the ten agent files, four skills, the
+completion rule, the two live Pi prompts) against the current models. The surface was clean
+of model-era workarounds; what had rotted was facts. Applied: the four files that said the
+management token is pasted per conversation and rotates daily now name `~/.flim-supabase-token`
+(seven-day; read inline in the curl, the classifier blocks reading it into a variable) and the
+tripwire skill no longer stops to ask for one; `profiles` is described as running with
+`security_invoker` on (it has since 2026-09-02); the Swift agents are told the deployment
+target is iOS 18.0 with iOS 26 APIs behind availability checks (they said "iOS 26"); the
+retired scheduled-PR section left `social-drafts`; the nightly review's heading names the Pi,
+not the disabled cloud routine; two dated "owner extended the rule" asides and one
+one-incident scolding line went. Left alone on purpose: the stale-async-write sections (the
+failure reproduced this week), the flow-critic's examples, the em-dash and attribution rules,
+the simulator UDID (exists), the backlog-burn skill next to the Pi's ledger burn (they do not
+disagree).
+
+The one architecture finding: `/tripwire` had a model recomputing thresholds a script already
+runs. `scripts/tripwire_check.sh` now does all five (it calls `r2_trigger_check.sh` for the
+egress line, then pg_net size, cron cadences against the expected four, push backlog over an
+hour across every table the senders poll, database size against the last logged line) and
+appends the `docs/TRIPWIRE.md` line itself with `--log`; the skill runs it and judges only
+whether database growth has a known cause. Inputs come from `tripwire_numbers()`
+(`2026-09-23_tripwire_numbers.sql`, service role only, APPLIED 2026-09-23, same shape as
+`r2_watch_numbers`). Found on the way: `2026-08-26_index_hygiene.sql` (applied in August) was
+never folded into `schema.sql`, so a fresh environment lacked `post_reactions.push_sent`, the
+column the social sender polls; folded now, ahead of the new function. Proved on the bootstrap
+DB (function shape, grants) and by a dry run of the script with canned numbers (PASS and
+ALERT paths, the appended line).
+
+Applied 2026-09-23; the script's first live run read five PASS lines from production.
+
+### done 2026-09-22, evening: the display name has one limit, and it is visible
+
+A tester on 1.5.3 wrote a long name and saw it cut when editing. Signup's name field took any
+length; the profile's Name sheet saved the first 40 characters and dropped the rest with no
+counter and no word (`String(name.prefix(40))`), so a long name lost its tail the first time
+that sheet was opened and saved, even unchanged; the column had no rule at all. Production
+today holds no name over 11 characters (analyst, SELECT only), so the tester shortened it by
+hand or saw the edit row's one-line ellipsis; the mismatch was real either way.
+
+`AuthService.displayNameMaxLength = 40` and `fitDisplayName(_:)`; both fields stop at 40 as you
+type (the sheet shows `n/40` like the bio sheet beside it; signup shows the count only from 30
+on, the field being optional and the screen sparse); both writers (`setUsername`'s insert,
+`setDisplayName`) fit the value the same way; `2026-09-22_display_name_length.sql`, APPLIED
+2026-09-23, adds `users_display_name_length_check` at 100 code points (a flag is one character on
+the phone and two to Postgres; a family emoji, seven). Three tests in `ProfileViewTests`,
+including the emoji agreement. Constraint proved on the bootstrap DB: 101 code points is
+refused. Folded into `schema.sql`.
+
+On device: type past 40 in the Name sheet and at signup, the field stops and the count reads
+40/40. Migration applied 2026-09-23.
+
+### done 2026-09-22, afternoon: report and block where abuse arrives, a heartbeat for the Pi, and Chapters on the phone's clock
+
+Three of the fourth audit's open items, on the owner's "work on these".
+
+**Report and block from a comment and from the roll viewer.** A comment's long-press menu
+(`CommentsSheet`, and `PhotoCommentsSheet`, which had no menu at all, not even Copy) now
+offers Report @handle and Block @handle on someone else's comment, next to Copy; the roll
+viewer's overflow menu (`PhotoPagerView`, roll-rack header) offers Report @handle and Block
+@handle under Report photo. Every one goes through the existing actions and strings: the
+profile page's "Reported @handle. We'll look into it." and "Blocked @handle, and unfollowed
+them" with "Reversible in Blocked accounts", staged through the undo capsule. A block from a
+comment drops that person's rows from the thread at the tap and puts them back on undo, the
+shape of `PostDetailView.blockAuthor`; a block from the roll viewer closes the viewer first,
+then the roll reloads without their frames once it lands (`onBlock`, new on the pager). Both
+comment sheets host the capsule themselves now: the root host sits under a sheet, so a
+report staged from one had nowhere to show. `user_reports.reason` says where it came from
+("comment", "roll comment", "roll photo") so the receiver's drafted call knows where to look.
+`RollCarouselView` turned out to have no caller; the roll viewer is the pager's roll mode. Left
+in place, noted for the ledger.
+
+**The Pi heartbeat.** `.github/workflows/pi-heartbeat.yml`, hourly at :17: three tries a minute
+apart at hooks.flim-app.com/health (the receiver answers `ok` to any GET, verified from here),
+and a failed run, which is an email to the owner, when none is a 200 with `ok` in the body.
+Cloudflare answers 530 for a dead tunnel and 502 for a dead receiver, so a power cut and a
+crashed receiver both land. GitHub's runners are the one watcher that does not live on the
+Pi. Nothing happens until it is pushed; a scheduled workflow notifies whoever last committed
+the file. Row added to `docs/ROUTINES.md`.
+
+**Chapters take the phone's time zone.** `2026-09-22_chapters_timezone.sql`, APPLIED 2026-09-23:
+`profile_chapters`, `chapter_photos` and `chapter_stats` gain `p_timezone text DEFAULT
+'America/New_York'` and bucket months, days, night shots and the golden hour in it, through a
+new `chapter_timezone(text)` validator that probes with AT TIME ZONE (never
+`pg_timezone_names`). The two-argument signatures are dropped so PostgREST resolves one
+function. `ChapterService` sends `TimeZone.current.identifier` on all three calls, the same
+parameter the Darkroom's month functions have taken since August. Old builds keep today's
+answers (within an hour in winter; the fixed shift never observed standard time). Why now: the
+owner believed there were Bali users; the analyst's read of 45 days of shooting hours found the
+three BALI26 redeemers have never shot, but one active account (113 shots, invited by the owner
+in August) is silent across photos, posts and reactions in exactly the window that is a night's
+sleep at UTC+8 and midday in New York. For that person "between 10pm and 4am" was the afternoon.
+Folded into `schema.sql`; `schema_bootstrap.sh` builds it twice.
+
+On device (build after 395): long-press a friend's comment on a feed post, see Report and Block,
+report one and watch the capsule show above the sheet; the same on a roll photo's comments; open
+a roll photo someone else shot, the overflow menu shows Report photo, Report @handle, Block
+@handle; block from there, the viewer closes, the capsule shows on the roll, undo brings the
+frames back, letting it land removes them; open a chapter and confirm the month still holds the
+same shots (Eastern phones should see no change).
+
+Migration applied 2026-09-23. Owner: push, so the heartbeat starts; the `ash` account is
+the one to ask, if a question is wanted, about where they are.
+
 ### done 2026-09-22: the fourth audit, seven passes, and the night's twenty-three fixes (claude.ai/code/artifact/ff30a58e-69b2-4bbb-8e03-13322e994517)
 
 Pointed at what the first three never opened: the Sep 21 batch read adversarially, the widget

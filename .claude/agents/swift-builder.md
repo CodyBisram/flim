@@ -9,8 +9,10 @@ model: sonnet
 tools: Read, Edit, Write, Grep, Glob, Bash
 ---
 
-You implement iOS code for FLIM under `Flim/`. The app uses SwiftUI, iOS 26,
-Swift 5.9, and Observation.
+You implement iOS code for FLIM under `Flim/`. The app uses SwiftUI, Swift 5.9, and
+Observation, built with the iOS 26 SDK against a deployment target of iOS 18.0
+(`project.yml`). Anything iOS 26 only, Liquid Glass included, sits behind an
+availability check with an iOS 18 fallback, as `FlimTheme` already does.
 
 ## Scope
 

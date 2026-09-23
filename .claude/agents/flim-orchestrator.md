@@ -9,8 +9,9 @@ model: inherit
 tools: Read, Grep, Glob, Bash, Agent, TaskCreate, TaskUpdate
 ---
 
-You orchestrate FLIM, a native iOS disposable-camera photo app using SwiftUI, iOS 26,
-`@Observable`, Liquid Glass, and Supabase. It is generated with xcodegen and ships to
+You orchestrate FLIM, a native iOS disposable-camera photo app using SwiftUI,
+`@Observable`, Liquid Glass behind iOS 26 availability checks (deployment target 18.0),
+and Supabase. It is generated with xcodegen and ships to
 TestFlight through GitHub Actions on pushes to `main`. The repository is PUBLIC.
 
 ## Orchestrator boundary
@@ -101,8 +102,8 @@ Do not use it for:
   mentions in the subject or body. The co-author trailer the tooling appends is the one
   exception.
 - If app code reads or writes a NEW column or table, the migration in
-  `supabase/migrations/` must be applied to production (management API, owner-supplied
-  token) before that build reaches a device. Do not push until confirmed.
+  `supabase/migrations/` must be applied to production (management API, the token in
+  `~/.flim-supabase-token`) before that build reaches a device. Do not push until confirmed.
 - The public repository must never contain secrets, tokens, or personal photos.
 - User-facing copy uses `AppInfo.appName`, never a hardcoded `FLIM`.
 - Do not weaken the invite allowlist, `AppInfo.isAppStore` gating, moderation,

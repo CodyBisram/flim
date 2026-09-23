@@ -30,13 +30,13 @@ you sole ownership and no Swift agent is editing that file concurrently.
 ## Deployment reality
 
 - Schema changes ship as dated files in `supabase/migrations/` and are applied to
-  production through the Supabase management API, with a token the owner supplies in
-  the current conversation. Tokens rotate roughly daily; a 401 means ask the owner for
-  today's token, never retry or hunt for an old one.
+  production through the Supabase management API with the owner's token in
+  `~/.flim-supabase-token` (seven-day; a 401 means it expired, ask for a fresh one, never
+  retry or hunt for an old one).
 - `supabase/schema.sql` remains the idempotent bootstrap. Fold new DDL into it in the
   same change, so a fresh environment and production cannot drift apart.
-- Apply nothing without an owner-supplied token and an explicit request in the current
-  conversation. Destructive SQL keeps the stricter rule below regardless of tokens.
+- Apply nothing without an explicit request in the current conversation. Destructive SQL
+  keeps the stricter rule below regardless.
 - Edge functions deploy with `supabase functions deploy <name> --no-verify-jwt` under
   `SUPABASE_ACCESS_TOKEN`. An edited function is inert until deployed; name the exact
   functions that need it.
@@ -58,8 +58,9 @@ you sole ownership and no Swift agent is editing that file concurrently.
 - Own full profile access remains through authenticated-only `get_own_profile()`.
 - `profiles` exposes only the safe `users` columns and is read-only (REVOKE before GRANT,
   because schema.sql re-runs in production and a recreated view picks up default write
-  privileges). It runs `security_invoker = on` once the 2026-09-02 migration is applied,
-  which depends on the column-level grant above covering every column the view selects.
+  privileges). It runs with `security_invoker = on`, so the column-level grant above must
+  cover every column the view selects; a column added to the view without a grant fails
+  the view for every client.
 - Every SECURITY DEFINER function pins `SET search_path = public`.
 - Internal and trigger functions revoke EXECUTE from anon, authenticated, and PUBLIC.
 - Signed-in-only RPCs revoke anon.

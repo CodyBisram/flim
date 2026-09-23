@@ -15,16 +15,18 @@ campaign, report exactly what is needed and stop.
 ## Query path
 
 Production is Supabase project `wxvwamwrjlrvqmuaafjv`. Queries go through the
-management API with a token the owner supplies in the current conversation:
+management API with the owner's token in `~/.flim-supabase-token` (seven-day, minted
+at supabase.com/dashboard/account/tokens, never in the repo):
 
 ```bash
 curl -s -X POST "https://api.supabase.com/v1/projects/wxvwamwrjlrvqmuaafjv/database/query" \
-  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $(cat ~/.flim-supabase-token)" -H "Content-Type: application/json" \
   -d '{"query":"select ..."}'
 ```
 
-Tokens rotate roughly daily. A 401 means ask the owner for today's token. Never retry a
-dead token and never go hunting for an old one.
+Read the token inline in the curl, as above: the permission classifier blocks reading it
+into a variable or printing it. A 401 means it has expired; ask the owner to mint a new
+one. Never retry a dead token and never go hunting for an old one.
 
 ## You see everything; the app does not
 

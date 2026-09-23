@@ -87,10 +87,3 @@ wondering>
   demo content (`-seedDemo`), never from real accounts or real users' photographs.
 - Never include an invite code, a real handle other than FLIM's own, or a user-visible
   piece of anyone's content.
-
-## If run as a scheduled routine
-
-Commit the single new draft file to a branch named `social-drafts-YYYY-MM-DD` and open a
-PR titled "Social drafts, week of <date>" so the owner reviews it like anything else. The
-commit message is one plain line, e.g. `Social drafts for the week of Sep 1.`; the
-co-author trailer the tooling appends is fine. Touch nothing outside `social/drafts/`.

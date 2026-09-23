@@ -9384,7 +9384,7 @@ BEGIN
     END IF;
 END $$;
 
--- Folded in from supabase/migrations/2026-09-22_pi_reader.sql (written 2026-09-22, not yet applied).
+-- Folded in from supabase/migrations/2026-09-22_pi_reader.sql (applied 2026-09-22).
 -- The Pi's read-only database role, fixed (docs/reviews/2026-09-22.md finding 1).
 --
 -- docs/sql/flim_reader_role.sql, written last night, granted flim_reader plain table SELECT.
@@ -10187,3 +10187,560 @@ begin
 end $$;
 
 revoke all on function public.pi_hook_notify() from public, anon, authenticated;
+
+-- Folded in from supabase/migrations/2026-09-22_chapters_timezone.sql (applied 2026-09-23).
+-- ============================================================
+-- Chapters take the phone's time zone.
+--
+-- profile_chapters, chapter_photos and chapter_stats bucketed months and days
+-- with a fixed four-hour shift (`taken_at - interval '4 hours'`, i.e. UTC-4,
+-- Eastern daylight time with no winter change), and golden_hour and
+-- night_shots read the hour in America/New_York outright. That was FLIM's
+-- user base when Chapters shipped on 2026-09-03; it is not any more. The
+-- 2026-09-22 audit's data pass found at least one active account whose
+-- shooting, posting and reacting all fall silent in a window that is a normal
+-- night's sleep at UTC+8 and midday in New York, so for that person "between
+-- 10pm and 4am" counted their afternoon, the busiest day was off by one, and
+-- a shot at 2am on the first of the month belonged to the wrong chapter.
+--
+-- Each function now takes p_timezone, an IANA zone name, the same parameter
+-- and the same validation the Darkroom's month functions have used since
+-- 2026-08-24 (darkroom_month_counts, darkroom_month_summary), so the two
+-- surfaces that describe "your month" agree on where a month begins. The
+-- app sends TimeZone.current.identifier (ChapterService.swift): the zone the
+-- phone is in when the chapter is opened, which for the closing card after
+-- your own reveal is your own. A viewer in another zone sees the owner's month
+-- bucketed by the viewer's clock; the alternative, a stored per-user zone, is
+-- a column and a write path FLIM does not have, and the difference is only
+-- ever a shot taken within hours of a month boundary.
+--
+-- DEFAULT 'America/New_York', not UTC: a client that does not send the
+-- parameter (build 395 and everything before it) keeps today's answers,
+-- within an hour in winter, because the fixed shift never observed standard
+-- time and the named zone does. The two-argument signatures are dropped so
+-- PostgREST has one function to resolve a call to whether or not p_timezone
+-- is in the body.
+--
+-- chapter_timezone(text) is the validator: NULL and an unknown name both fall
+-- back to the default. It asks Postgres directly whether the name is usable
+-- (`now() AT TIME ZONE p_timezone` raises invalid_parameter_value, SQLSTATE
+-- 22023, for a name it does not know) rather than scanning pg_timezone_names,
+-- the 300ms catalog walk the 2026-09-22_darkroom_timezone_validation
+-- migration took out of the Darkroom's path. The three functions stay
+-- LANGUAGE sql and read the resolved zone once through a one-row `tz` CTE
+-- (an uncorrelated scalar subquery is an InitPlan, evaluated once per call),
+-- so nothing about their plans or their grants changes.
+--
+-- Same DROP FUNCTION IF EXISTS + CREATE OR REPLACE + re-grant dance as every
+-- prior return-shape change to these functions. Safe to re-run.
+-- ============================================================
+
+CREATE OR REPLACE FUNCTION public.chapter_timezone(p_timezone text)
+RETURNS text
+LANGUAGE plpgsql
+STABLE
+SET search_path = public
+AS $$
+BEGIN
+    IF p_timezone IS NULL THEN
+        RETURN 'America/New_York';
+    END IF;
+    PERFORM now() AT TIME ZONE p_timezone;
+    RETURN p_timezone;
+EXCEPTION WHEN invalid_parameter_value THEN
+    RETURN 'America/New_York';
+END;
+$$;
+
+COMMENT ON FUNCTION public.chapter_timezone(text) IS
+    'The IANA zone Chapters bucket a month in: the caller''s if Postgres knows it, America/New_York otherwise.';
+
+-- ---- profile_chapters --------------------------------------------------------
+
+DROP FUNCTION IF EXISTS public.profile_chapters(uuid);
+
+CREATE OR REPLACE FUNCTION public.profile_chapters(p_profile_id uuid, p_timezone text DEFAULT 'America/New_York')
+ RETURNS TABLE(month_start date, shot_count integer, roll_count integer, cover_paths text[], first_shot_at timestamp with time zone, last_shot_at timestamp with time zone)
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+    WITH tz AS (
+        SELECT public.chapter_timezone(p_timezone) AS z
+    ),
+    source AS (
+        SELECT p.id, po.taken_at, p.roll_id, p.quality, p.is_miss,
+               COALESCE(po.thumb_path, po.storage_path) AS display_path
+        FROM public.posts po
+        JOIN public.photos p ON p.id = po.photo_id
+        WHERE po.user_id = p_profile_id
+          AND NOT po.hidden
+          AND NOT public.is_blocked_either_way(auth.uid(), po.user_id)
+          AND public.covered_post_visible(auth.uid(), po.user_id, po.created_at)
+          AND public.post_visible_to(auth.uid(), po.id, po.user_id)
+    ),
+    bucketed AS (
+        SELECT
+            date_trunc('month', taken_at AT TIME ZONE (SELECT z FROM tz))::date AS bucket_month,
+            taken_at, roll_id, display_path, quality, is_miss
+        FROM source
+    ),
+    ranked_covers AS (
+        SELECT bucket_month, display_path,
+               row_number() OVER (
+                   PARTITION BY bucket_month
+                   ORDER BY quality DESC NULLS LAST, taken_at DESC
+               ) AS rn
+        FROM bucketed
+        WHERE NOT is_miss
+    )
+    SELECT
+        b.bucket_month,
+        count(*)::integer,
+        count(DISTINCT b.roll_id) FILTER (WHERE b.roll_id IS NOT NULL)::integer,
+        COALESCE(
+            (SELECT array_agg(rc.display_path ORDER BY rc.rn)
+             FROM ranked_covers rc
+             WHERE rc.bucket_month = b.bucket_month AND rc.rn <= 4),
+            ARRAY[]::text[]
+        ),
+        min(b.taken_at),
+        max(b.taken_at)
+    FROM bucketed b
+    GROUP BY b.bucket_month
+    ORDER BY b.bucket_month DESC;
+$function$;
+
+REVOKE ALL ON FUNCTION public.profile_chapters(uuid, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.profile_chapters(uuid, text) FROM anon;
+GRANT EXECUTE ON FUNCTION public.profile_chapters(uuid, text) TO authenticated;
+
+-- ---- chapter_photos ----------------------------------------------------------
+
+DROP FUNCTION IF EXISTS public.chapter_photos(uuid, date);
+
+CREATE OR REPLACE FUNCTION public.chapter_photos(p_profile_id uuid, p_month_start date, p_timezone text DEFAULT 'America/New_York')
+ RETURNS TABLE(id uuid, taken_at timestamp with time zone, thumb_path text, feed_path text, storage_path text, roll_id uuid, roll_name text, post_id uuid, quality real, phash bigint, sharpness real, is_miss boolean)
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+    WITH tz AS (
+        SELECT public.chapter_timezone(p_timezone) AS z
+    ),
+    source AS (
+        SELECT p.id, po.taken_at, po.thumb_path, po.feed_path, po.storage_path, p.roll_id,
+               po.id AS post_id, p.quality, p.phash, p.sharpness, p.is_miss
+        FROM public.posts po
+        JOIN public.photos p ON p.id = po.photo_id
+        WHERE po.user_id = p_profile_id
+          AND NOT po.hidden
+          AND NOT public.is_blocked_either_way(auth.uid(), po.user_id)
+          AND public.covered_post_visible(auth.uid(), po.user_id, po.created_at)
+          AND public.post_visible_to(auth.uid(), po.id, po.user_id)
+    )
+    SELECT s.id, s.taken_at, s.thumb_path, s.feed_path, s.storage_path, s.roll_id, r.name, s.post_id,
+           s.quality, s.phash, s.sharpness, s.is_miss
+    FROM source s
+    LEFT JOIN public.rolls r ON r.id = s.roll_id
+    WHERE date_trunc('month', s.taken_at AT TIME ZONE (SELECT z FROM tz))::date = p_month_start
+    ORDER BY s.taken_at ASC
+    LIMIT 1000;
+$function$;
+
+REVOKE ALL ON FUNCTION public.chapter_photos(uuid, date, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.chapter_photos(uuid, date, text) FROM anon;
+GRANT EXECUTE ON FUNCTION public.chapter_photos(uuid, date, text) TO authenticated;
+
+-- ---- chapter_stats -----------------------------------------------------------
+-- Body as 2026-09-13_followers_only_reads.sql left it, with every
+-- `- interval '4 hours' AT TIME ZONE 'utc'` and every 'America/New_York'
+-- replaced by the resolved zone. Nothing else moves.
+
+DROP FUNCTION IF EXISTS public.chapter_stats(uuid, date);
+
+CREATE OR REPLACE FUNCTION public.chapter_stats(p_profile_id uuid, p_month_start date, p_timezone text DEFAULT 'America/New_York')
+ RETURNS TABLE(stat_key text, value_int integer, value_text text, photo_id uuid, photo_thumb_path text, post_id uuid, user_id uuid)
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+    WITH tz AS (
+        SELECT public.chapter_timezone(p_timezone) AS z
+    ),
+    source AS (
+        -- Byte-for-byte the same predicate as chapter_photos' own source CTE,
+        -- narrowed to the one month up front so every CTE below it is already
+        -- scoped correctly.
+        SELECT po.id AS post_id, p.id AS photo_id, po.taken_at, p.roll_id,
+               COALESCE(po.thumb_path, po.storage_path) AS display_path
+        FROM public.posts po
+        JOIN public.photos p ON p.id = po.photo_id
+        WHERE po.user_id = p_profile_id
+          AND NOT po.hidden
+          AND NOT public.is_blocked_either_way(auth.uid(), po.user_id)
+          AND public.covered_post_visible(auth.uid(), po.user_id, po.created_at)
+          AND public.post_visible_to(auth.uid(), po.id, po.user_id)
+          AND date_trunc('month', po.taken_at AT TIME ZONE (SELECT z FROM tz))::date = p_month_start
+    ),
+    reaction_counts AS (
+        SELECT s.post_id, s.photo_id, s.display_path, s.taken_at, count(*) AS cnt
+        FROM source s
+        JOIN public.post_reactions pr ON pr.post_id = s.post_id
+        GROUP BY s.post_id, s.photo_id, s.display_path, s.taken_at
+    ),
+    comment_counts AS (
+        SELECT s.post_id, s.photo_id, s.display_path, s.taken_at, count(*) AS cnt
+        FROM source s
+        JOIN public.post_comments pc ON pc.post_id = s.post_id
+        GROUP BY s.post_id, s.photo_id, s.display_path, s.taken_at
+    ),
+    reaction_emoji AS (
+        SELECT pr.emoji, count(*) AS cnt
+        FROM source s
+        JOIN public.post_reactions pr ON pr.post_id = s.post_id
+        GROUP BY pr.emoji
+    ),
+    day_bucketed AS (
+        SELECT s.photo_id, s.post_id, s.display_path, s.taken_at,
+               date_trunc('day', s.taken_at AT TIME ZONE (SELECT z FROM tz))::date AS shot_day
+        FROM source s
+    ),
+    day_counts AS (
+        SELECT shot_day, count(*) AS cnt FROM day_bucketed GROUP BY shot_day
+    ),
+    streaks AS (
+        -- Classic gaps-and-islands: within a sequence of distinct days, a run of
+        -- CONSECUTIVE days shares the same (day - row_number()) value.
+        SELECT shot_day, shot_day - (row_number() OVER (ORDER BY shot_day))::int AS grp
+        FROM (SELECT DISTINCT shot_day FROM day_bucketed) d
+    ),
+    streak_lengths AS (
+        SELECT grp, count(*) AS len FROM streaks GROUP BY grp
+    ),
+    roll_ids AS (
+        SELECT DISTINCT roll_id FROM source WHERE roll_id IS NOT NULL
+    ),
+    -- ---- biggest_fan ----
+    fan_counts AS (
+        SELECT pr.user_id AS reactor_id, count(*) AS cnt, max(pr.created_at) AS last_reacted_at
+        FROM source s
+        JOIN public.post_reactions pr ON pr.post_id = s.post_id
+        WHERE pr.user_id <> p_profile_id
+        GROUP BY pr.user_id
+    ),
+    -- ---- top_given_reaction (owner's own behaviour, source CTE does not apply) ----
+    given_reactions AS (
+        SELECT pr.emoji, count(*) AS cnt
+        FROM public.post_reactions pr
+        JOIN public.posts po ON po.id = pr.post_id
+        WHERE pr.user_id = p_profile_id
+          AND NOT public.is_blocked_either_way(auth.uid(), po.user_id)
+          AND date_trunc('month', pr.created_at AT TIME ZONE (SELECT z FROM tz))::date = p_month_start
+        GROUP BY pr.emoji
+    ),
+    -- ---- golden_hour ----
+    hour_counts AS (
+        SELECT EXTRACT(HOUR FROM (s.taken_at AT TIME ZONE (SELECT z FROM tz)))::int AS hr, count(*) AS cnt
+        FROM source s
+        GROUP BY hr
+    ),
+    -- ---- roll_mvp: same visibility predicate as the "photos: roll members can
+    -- read shared" storage policy, not the simpler unfiltered people_shot_with
+    -- count -- see 2026-09-05_chapter_stats_more.sql for why. ----
+    roll_mvp_counts AS (
+        SELECT p.user_id AS shooter_id, count(*) AS cnt
+        FROM public.photos p
+        WHERE p.roll_id IN (SELECT roll_id FROM roll_ids)
+          AND p.user_id <> p_profile_id
+          AND NOT p.hidden
+          AND public.is_roll_member(p.roll_id)
+          AND NOT public.is_blocked_either_way(auth.uid(), p.user_id)
+        GROUP BY p.user_id
+    ),
+    -- ---- longest_gap ----
+    distinct_days AS (
+        SELECT DISTINCT shot_day FROM day_bucketed
+    ),
+    day_gaps AS (
+        SELECT shot_day, shot_day - LAG(shot_day) OVER (ORDER BY shot_day) AS gap_days
+        FROM distinct_days
+    ),
+    gap_pick AS (
+        SELECT shot_day, gap_days
+        FROM day_gaps
+        WHERE gap_days IS NOT NULL
+        ORDER BY gap_days DESC, shot_day ASC
+        LIMIT 1
+    ),
+    gap_ending_photo AS (
+        -- The earliest shot on the day that ended the gap (first shot back
+        -- after the drought), matched back to day_bucketed rather than
+        -- re-deriving shot_day from taken_at a second time.
+        SELECT db.photo_id, db.display_path, db.post_id, gp.gap_days
+        FROM gap_pick gp
+        JOIN day_bucketed db ON db.shot_day = gp.shot_day
+        ORDER BY db.taken_at ASC
+        LIMIT 1
+    ),
+    stats (stat_key, value_int, value_text, photo_id, photo_thumb_path, post_id, user_id) AS (
+        (SELECT 'shots'::text, count(*)::int, NULL::text, NULL::uuid, NULL::text, NULL::uuid, NULL::uuid
+         FROM source
+         HAVING count(*) > 0)
+
+        UNION ALL
+        (SELECT 'reactions_received', count(*)::int, NULL, NULL, NULL, NULL, NULL
+         FROM source s JOIN public.post_reactions pr ON pr.post_id = s.post_id
+         HAVING count(*) > 0)
+
+        UNION ALL
+        (SELECT 'comments_received', count(*)::int, NULL, NULL, NULL, NULL, NULL
+         FROM source s JOIN public.post_comments pc ON pc.post_id = s.post_id
+         HAVING count(*) > 0)
+
+        UNION ALL
+        (SELECT 'most_reacted', rc.cnt::int, NULL, rc.photo_id, rc.display_path, rc.post_id, NULL
+         FROM reaction_counts rc
+         ORDER BY rc.cnt DESC, rc.taken_at DESC
+         LIMIT 1)
+
+        UNION ALL
+        (SELECT 'most_commented', cc.cnt::int, NULL, cc.photo_id, cc.display_path, cc.post_id, NULL
+         FROM comment_counts cc
+         ORDER BY cc.cnt DESC, cc.taken_at DESC
+         LIMIT 1)
+
+        UNION ALL
+        (SELECT 'top_reaction', re.cnt::int, re.emoji, NULL, NULL, NULL, NULL
+         FROM reaction_emoji re
+         ORDER BY re.cnt DESC, re.emoji ASC
+         LIMIT 1)
+
+        UNION ALL
+        (SELECT 'busiest_day', dc.cnt::int, to_char(dc.shot_day, 'YYYY-MM-DD'), NULL, NULL, NULL, NULL
+         FROM day_counts dc
+         ORDER BY dc.cnt DESC, dc.shot_day DESC
+         LIMIT 1)
+
+        UNION ALL
+        (SELECT 'night_shots', count(*)::int, NULL, NULL, NULL, NULL, NULL
+         FROM source s
+         WHERE EXTRACT(HOUR FROM (s.taken_at AT TIME ZONE (SELECT z FROM tz))) >= 22
+            OR EXTRACT(HOUR FROM (s.taken_at AT TIME ZONE (SELECT z FROM tz))) < 4
+         HAVING count(*) > 0)
+
+        UNION ALL
+        (SELECT 'streak_days', max(len)::int, NULL, NULL, NULL, NULL, NULL
+         FROM streak_lengths)
+
+        UNION ALL
+        (SELECT 'rolls_count', count(*)::int, NULL, NULL, NULL, NULL, NULL
+         FROM roll_ids
+         HAVING count(*) > 0)
+
+        UNION ALL
+        (SELECT 'people_shot_with', count(DISTINCT rm.user_id)::int, NULL, NULL, NULL, NULL, NULL
+         FROM public.roll_members rm
+         WHERE rm.roll_id IN (SELECT roll_id FROM roll_ids)
+           AND rm.user_id <> p_profile_id
+         HAVING count(DISTINCT rm.user_id) > 0)
+
+        UNION ALL
+        (SELECT 'first_shot', NULL, NULL, s.photo_id, s.display_path, s.post_id, NULL
+         FROM source s
+         ORDER BY s.taken_at ASC
+         LIMIT 1)
+
+        UNION ALL
+        (SELECT 'last_shot', NULL, NULL, s.photo_id, s.display_path, s.post_id, NULL
+         FROM source s
+         ORDER BY s.taken_at DESC
+         LIMIT 1)
+
+        UNION ALL
+        (SELECT 'biggest_fan', fc.cnt::int, u.username, NULL, NULL, NULL, fc.reactor_id
+         FROM fan_counts fc
+         JOIN public.users u ON u.id = fc.reactor_id
+         WHERE NOT public.is_blocked_either_way(auth.uid(), fc.reactor_id)
+         ORDER BY fc.cnt DESC, fc.last_reacted_at DESC
+         LIMIT 1)
+
+        UNION ALL
+        (SELECT 'top_given_reaction', gr.cnt::int, gr.emoji, NULL, NULL, NULL, NULL
+         FROM given_reactions gr
+         ORDER BY gr.cnt DESC, gr.emoji ASC
+         LIMIT 1)
+
+        UNION ALL
+        (SELECT 'golden_hour', hc.hr::int, hc.cnt::text, NULL, NULL, NULL, NULL
+         FROM hour_counts hc
+         WHERE (SELECT count(*) FROM source) >= 3
+         ORDER BY hc.cnt DESC, hc.hr ASC
+         LIMIT 1)
+
+        UNION ALL
+        (SELECT 'roll_mvp', rmc.cnt::int, u.username, NULL, NULL, NULL, rmc.shooter_id
+         FROM roll_mvp_counts rmc
+         JOIN public.users u ON u.id = rmc.shooter_id
+         ORDER BY rmc.cnt DESC, u.username ASC
+         LIMIT 1)
+
+        UNION ALL
+        (SELECT 'longest_gap', gep.gap_days::int, NULL, gep.photo_id, gep.display_path, gep.post_id, NULL
+         FROM gap_ending_photo gep
+         WHERE gep.gap_days >= 3)
+    ),
+    owner_pick AS (
+        SELECT chapter_public_stats FROM public.users WHERE id = p_profile_id
+    )
+    SELECT st.stat_key, st.value_int, st.value_text, st.photo_id, st.photo_thumb_path, st.post_id, st.user_id
+    FROM stats st
+    WHERE auth.uid() = p_profile_id
+       OR EXISTS (
+            SELECT 1 FROM owner_pick op
+            WHERE COALESCE(array_length(op.chapter_public_stats, 1), 0) = 0
+               OR st.stat_key = ANY(op.chapter_public_stats)
+          );
+$function$;
+
+REVOKE ALL ON FUNCTION public.chapter_stats(uuid, date, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.chapter_stats(uuid, date, text) FROM anon;
+GRANT EXECUTE ON FUNCTION public.chapter_stats(uuid, date, text) TO authenticated;
+
+-- Folded in from supabase/migrations/2026-09-22_display_name_length.sql (applied 2026-09-23).
+-- ============================================================
+-- users.display_name gets a ceiling.
+--
+-- Signup accepted a display name of any length and the profile's Name sheet
+-- cut it to 40 on save without saying so (found 2026-09-22 from a tester's
+-- report); the column itself is plain text with no rule, so whichever client
+-- wrote last decided. The app now keeps 40 characters in both fields as they
+-- are typed (AuthService.displayNameMaxLength); this is the column's own copy
+-- of that rule, so no client can write past it.
+--
+-- 100, not 40: Postgres counts code points and the phone counts characters as
+-- a person sees them. A flag is one character on screen and two code points
+-- here; a family emoji is one and seven. 100 lets any 40-character name
+-- through and still stops a runaway write. NULL stays allowed: the name is
+-- optional. Every existing value is 11 characters or under (checked in
+-- production 2026-09-22), so the constraint validates on add.
+-- ============================================================
+
+ALTER TABLE public.users
+    DROP CONSTRAINT IF EXISTS users_display_name_length_check,
+    ADD CONSTRAINT users_display_name_length_check
+        CHECK (display_name IS NULL OR char_length(display_name) <= 100);
+
+-- Folded in from supabase/migrations/2026-08-26_index_hygiene.sql (applied 2026-08-26; folded 2026-09-23 when
+-- the tripwire function below needed post_reactions.push_sent, which only this migration creates).
+-- ============================================================
+-- Migration: index hygiene, from the 2026-08-26 database audit.
+-- Four items, all additive except one deliberate index REPLACEMENT
+-- whose predecessor becomes a strict prefix-subset (see item 1).
+-- Idempotent; safe to re-run.
+--
+-- 1. THE PERSONAL-PHOTOS COMPOSITE. Every hot personal query filters
+--    user_id AND is_sorted and orders taken_at DESC, id DESC (the
+--    keyset), but photos_user_idx only covers (user_id, taken_at DESC):
+--    is_sorted is filtered row-by-row after the index, and the keyset's
+--    id tiebreak has no index backing. The new composite serves
+--    fetchPersonalPhotos (both variants), fetchDarkroom, fetchUnsorted,
+--    personalPhotoCount, AND the initial scan of darkroom_month_counts /
+--    darkroom_month_summary. photos_user_idx then duplicates a prefix of
+--    it and is dropped so photo writes do not pay for two indexes where
+--    one serves.
+--
+-- 2. THE MISSING push_sent PARTIAL on photos. Every other push-scanned
+--    table (post_tags, follows, photo_reactions, post_comments,
+--    photo_comments, comment_likes, photo_reports, user_reports) carries
+--    a WHERE flag = FALSE partial index for its cron scan; photos, the
+--    largest table, scanned every 5 minutes by send-develop-push, is the
+--    one that does not. Same pattern, overdue.
+--
+-- 3. post_reactions.push_sent DRIFT FIX. send-social-push reads and
+--    writes this column in production, but no migration and no
+--    schema.sql statement creates it: a fresh environment built from the
+--    repo would break the reaction-push path. ADD COLUMN IF NOT EXISTS
+--    restores repo/production parity (a no-op in production, where the
+--    column already exists), and the partial index matches its siblings.
+--
+-- 4. THE UNDEVELOPED PARTIAL. mark_developed_photos() flips
+--    is_developed with no index support: a sequential scan of photos on
+--    every run. The partial keeps that scan bounded to the (small) set
+--    of still-developing rows.
+--    OWNER STEP, separate from this paste: the cron schedule for
+--    mark_developed_photos is not tracked anywhere in the repo. Check
+--    Dashboard -> Database -> Cron Jobs for its cadence and record it in
+--    the next migration touching crons.
+-- ============================================================
+
+-- 1. Personal-photos composite, then retire the redundant prefix index.
+CREATE INDEX IF NOT EXISTS photos_user_sorted_taken_idx
+    ON public.photos (user_id, is_sorted, taken_at DESC, id DESC);
+DROP INDEX IF EXISTS public.photos_user_idx;
+
+-- 2. The develop-push cron's scan.
+CREATE INDEX IF NOT EXISTS photos_unpushed_develop_idx
+    ON public.photos (push_sent) WHERE push_sent = FALSE;
+
+-- 3. Repo/production drift fix + the sibling-pattern partial.
+ALTER TABLE public.post_reactions
+    ADD COLUMN IF NOT EXISTS push_sent BOOLEAN NOT NULL DEFAULT FALSE;
+CREATE INDEX IF NOT EXISTS post_reactions_unpushed_idx
+    ON public.post_reactions (push_sent) WHERE push_sent = FALSE;
+
+-- 4. The developed-flag flip's scan.
+CREATE INDEX IF NOT EXISTS photos_undeveloped_idx
+    ON public.photos (develops_at) WHERE is_developed = FALSE;
+
+-- Folded in from supabase/migrations/2026-09-23_tripwire_numbers.sql (applied 2026-09-23).
+-- The four inputs of the weekly tripwire's arithmetic (scripts/tripwire_check.sh), callable by
+-- service role only, the same shape as r2_watch_numbers(): the check runs from a script with the
+-- long-lived service key, so the /tripwire skill judges the numbers instead of computing them.
+--
+--   pg_net_bytes          size of net._http_response; over 20 MB means the cleanup cron stopped
+--   crons                 every cron.job with its schedule and active flag, for cadence drift
+--   push_backlog_over_1h  rows the push crons poll that are still unsent an hour after they were
+--                         written (every push_sent table send-social-push reads, plus developed
+--                         roll photos), which the poll should never leave behind
+--   db_bytes              pg_database_size, compared against the last logged week
+create or replace function public.tripwire_numbers()
+returns jsonb
+language sql
+stable
+security definer
+set search_path to 'public'
+as $$
+  select jsonb_build_object(
+    'pg_net_bytes', (select pg_total_relation_size('net._http_response')),
+    'crons', (
+      select coalesce(jsonb_agg(jsonb_build_object(
+               'jobname', j.jobname, 'schedule', j.schedule, 'active', j.active
+             ) order by j.jobname), '[]'::jsonb)
+      from cron.job j
+    ),
+    'push_backlog_over_1h', (
+      -- Every table send-social-push polls on push_sent (plus the develop push's photos),
+      -- counting only rows older than an hour so a row the next two-minute run will take
+      -- is not a backlog. earned_badges is polled too but has no created_at; it is left out.
+      (select count(*) from public.post_comments          where not push_sent and created_at < now() - interval '1 hour')
+    + (select count(*) from public.post_reactions         where not push_sent and created_at < now() - interval '1 hour')
+    + (select count(*) from public.posts                  where not push_sent and created_at < now() - interval '1 hour')
+    + (select count(*) from public.post_tags              where not push_sent and created_at < now() - interval '1 hour')
+    + (select count(*) from public.comment_likes          where not push_sent and created_at < now() - interval '1 hour')
+    + (select count(*) from public.photo_comments         where not push_sent and created_at < now() - interval '1 hour')
+    + (select count(*) from public.photo_reactions        where not push_sent and created_at < now() - interval '1 hour')
+    + (select count(*) from public.follows                where not push_sent and created_at < now() - interval '1 hour')
+    + (select count(*) from public.photo_reports          where not push_sent and created_at < now() - interval '1 hour')
+    + (select count(*) from public.user_reports           where not push_sent and created_at < now() - interval '1 hour')
+    + (select count(*) from public.ops_alerts             where not push_sent and created_at < now() - interval '1 hour')
+    + (select count(*) from public.roll_follow_up_invites where not push_sent and created_at < now() - interval '1 hour')
+    + (select count(distinct roll_id) from public.photos
+        where roll_id is not null and push_sent = false and develops_at < now() - interval '1 hour')
+    ),
+    'db_bytes', (select pg_database_size(current_database()))
+  );
+$$;
+revoke all on function public.tripwire_numbers() from public, anon, authenticated;
+-- Revoking PUBLIC strips the default grant service_role rode in on; it needs its own.
+grant execute on function public.tripwire_numbers() to service_role;

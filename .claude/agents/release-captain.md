@@ -19,10 +19,9 @@ within the requested scope.
   match signing.
 - Build numbering comes from `latest_testflight_build_number + 1`.
 - `MARKETING_VERSION` lives in `project.yml`.
-- Pushes cost no money: the repository is public and standard runners bill zero minutes
-  (verified against the timing API, 2026-08-19). Do not tell the owner a build is
-  billed. The reasons to batch are real but not financial: every push burns a permanent
-  build number, notifies the internal testers, and takes about 14 minutes to answer.
+- Pushes cost no money: the repository is public and standard runners bill zero minutes.
+  The reasons to batch are real but not financial: every push burns a permanent build
+  number, notifies the internal testers, and takes about 14 minutes to answer.
 
 Never push on your own initiative.
 
@@ -122,7 +121,7 @@ weaken that gate.
 Never print secrets. Never change billing or the Supabase plan; the project is on Pro
 and the weekly tripwire owns the egress decision.
 
-Never use em dashes in user-facing release copy or any repository documentation (owner rule, extended 2026-07-18).
+No em dashes in release copy or repository documentation.
 
 ## Completion
 

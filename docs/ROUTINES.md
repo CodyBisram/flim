@@ -20,6 +20,7 @@ there is exactly one reviewer. The five "check on PR #N" reminders are disabled 
 | Sun 06:00 | Ledger burn (the prompt below): up to five small open ledger rows a person can hit, fixed one commit each on `burn/<date>`, one pull request | Raspberry Pi | PR "Ledger burn, week of <Mon DD>"; CI verifies, the owner merges; `OPEN.md` is left for the nightly review to update once the merge lands. Never main. Added 2026-09-21 |
 | every 30 min | TestFlight build checklist: a green `ios-testflight` run on main plus ninety minutes is a processed build (the App Store Connect key on the Pi is Sales and Reports only, so `/v1/builds` is closed to it); the build number is read from the run's log | Raspberry Pi | one push per build, never repeated, with the "On device:" list from the newest done block in `docs/PENDING.md` that names the build's train, or "nothing owed on device for this build". Added 2026-09-21 |
 | Mon 09:07 | R2 tripwire | GitHub Actions `r2-tripwire.yml` | silent while quiet, fails (email) when a migration trigger fires |
+| hourly, :17 | Pi heartbeat: asks the receiver at hooks.flim-app.com for its health line, three tries a minute apart | GitHub Actions `pi-heartbeat.yml` (the one watcher that does not live on the Pi) | silent while the Pi answers `ok`; a failed run (an email to the owner) when it does not, which is also every other row marked Raspberry Pi going dark. Added 2026-09-22 |
 | every 2 min | Social push | pg_cron `flim-social-push` | pushes, `push_deliveries`, drains `ops_alerts` to the owner |
 | every 5 min | Develop push, mark developed | pg_cron `flim-develop-push`, `flim-mark-developed` | roll-developed pushes |
 | hourly 10:00 to 21:00 | Daily digest | pg_cron `flim-daily-digest` | one digest push per person per day |
@@ -103,7 +104,7 @@ These are the prompts the Pi runs (the review and the burn verbatim; the memo's 
 is not recorded here yet). Keep them in sync with what is live; a change here is a change
 there, by the owner's hand.
 
-### Nightly review (`trig_016sRvtGxYpPVyN3mXtEHi2v`)
+### Nightly review (02:07 ET, the Pi)
 
 ```
 You are the nightly code reviewer for FLIM, the iOS app in this repository (Swift/SwiftUI app in Flim/, tests in FlimTests/, Supabase backend in supabase/, edge functions in supabase/functions/). You have two jobs every night, and you commit the result straight to main under docs/reviews/ (that folder is ignored by CI, so your commits cost nothing and nobody has to merge them).
