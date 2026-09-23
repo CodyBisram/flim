@@ -99,6 +99,10 @@ struct CommentsSheet: View {
                     composer
                 }
             }
+            // The undo capsule is hosted at the tab root, which a sheet covers; Report and
+            // Block below stage through it, so it needs a host in here to be seen at all.
+            // Same host `PhotoPagerView` carries for the same reason. Clears the composer.
+            .undoCapsuleHost(bottomPadding: 72)
             .navigationBarTitleDisplayMode(.inline)
             .flimInlineTitle("Comments")
             .toolbarColorScheme(.dark, for: .navigationBar)
@@ -171,6 +175,14 @@ struct CommentsSheet: View {
             if info.comment.userId == auth.currentUser?.id {
                 Divider()
                 Button(role: .destructive) { delete(info) } label: { Label("Delete", systemImage: "trash") }
+            } else {
+                // Abuse shows up first in a comment, and until now the only way to report or
+                // block its author from here was to remember the handle and find their
+                // profile. The same two actions, with the same strings, as the profile page
+                // and the post menu.
+                Divider()
+                Button { report(info) } label: { Label("Report \(info.handle)", systemImage: "flag") }
+                Button(role: .destructive) { block(info) } label: { Label("Block \(info.handle)", systemImage: "hand.raised") }
             }
         }
     }
@@ -290,6 +302,47 @@ struct CommentsSheet: View {
             await feed.deleteComment(id: info.comment.id)
             await reload()
         }
+    }
+
+    /// Reports the comment's author, the same `user_reports` row the profile page writes, with
+    /// a reason naming where it came from so the owner's receiver knows where to look.
+    private func report(_ info: CommentInfo) {
+        guard let uid = auth.currentUser?.id, info.comment.userId != uid else { return }
+        Haptics.tap()
+        let targetId = info.comment.userId
+        let handle = info.handle
+        let feedService = feed
+        UndoCenter.shared.stage(
+            title: "Reported \(handle). We'll look into it.",
+            failureText: "Couldn't send that report",
+            commit: { await feedService.reportUser(targetId, from: uid, reason: "comment") })
+    }
+
+    /// Mirrors `PostDetailView.blockAuthor`: their comments leave the thread now and come back
+    /// on undo; the block itself, and the unfollow it implies, lands when the capsule closes.
+    private func block(_ info: CommentInfo) {
+        guard let uid = auth.currentUser?.id, info.comment.userId != uid else { return }
+        Haptics.warning()
+        let targetId = info.comment.userId
+        let handle = info.handle
+        let feedService = feed
+        let postId = post.id
+        let removed = (feedService.commentsByPost[postId] ?? []).filter { $0.comment.userId == targetId }
+        withAnimation { feedService.commentsByPost[postId]?.removeAll { $0.comment.userId == targetId } }
+        UndoCenter.shared.stage(
+            title: "Blocked \(handle), and unfollowed them",
+            subtitle: "Reversible in Blocked accounts",
+            failureText: "Couldn't block \(handle)",
+            revert: {
+                var list = feedService.commentsByPost[postId] ?? []
+                list.append(contentsOf: removed)
+                list.sort { $0.comment.createdAt < $1.comment.createdAt }
+                feedService.commentsByPost[postId] = list
+            },
+            commit: {
+                await feedService.block(targetId, from: uid)
+                return feedService.isBlocked(targetId)
+            })
     }
 
     /// Compact relative time, Instagram-style: now / 15m / 3h / 2d / 5w.

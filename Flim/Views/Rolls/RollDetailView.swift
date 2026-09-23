@@ -745,6 +745,8 @@ struct RollDetailView: View {
                 // always this roll's, regardless of the (all-identical) rollId.
                 rollName: { _ in roll.name },
                 onDelete: { Task { await reloadRoll() } },
+                // A block from the viewer's menu: `loadRoll` already takes `feed.blockedIds`.
+                onBlock: { Task { await reloadRoll() } },
                 openCommentsOnAppear: openComments
             )
             .navigationTransition(.zoom(sourceID: photo.id, in: photoNS))

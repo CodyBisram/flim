@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// Comments on a shared roll photo. Reachable from the roll photo viewer + carousel.
 /// Notifications (owner + thread) are handled server-side by send-social-push.
@@ -60,6 +61,9 @@ struct PhotoCommentsSheet: View {
                     composer
                 }
             }
+            // See CommentsSheet: the capsule's root host sits under this sheet, so Report and
+            // Block need one in here to be seen. Clears the composer.
+            .undoCapsuleHost(bottomPadding: 72)
             .navigationBarTitleDisplayMode(.inline)
             .flimInlineTitle("Comments")
             .toolbarColorScheme(.dark, for: .navigationBar)
@@ -116,6 +120,23 @@ struct PhotoCommentsSheet: View {
             }
             Spacer()
         }
+        // CommentsSheet has had this menu since it was written; this sheet had none, so a
+        // roll mate's comment could be copied nowhere and its author reported only from
+        // their profile. Same actions, same strings.
+        .contextMenu {
+            Button {
+                UIPasteboard.general.string = comment.body
+                Haptics.tap()
+            } label: { Label("Copy", systemImage: "doc.on.doc") }
+            if comment.userId == auth.currentUser?.id {
+                Divider()
+                Button(role: .destructive) { delete(comment) } label: { Label("Delete", systemImage: "trash") }
+            } else {
+                Divider()
+                Button { report(comment) } label: { Label("Report \(handle(comment.userId))", systemImage: "flag") }
+                Button(role: .destructive) { block(comment) } label: { Label("Block \(handle(comment.userId))", systemImage: "hand.raised") }
+            }
+        }
     }
 
     private var composer: some View {
@@ -171,5 +192,42 @@ struct PhotoCommentsSheet: View {
 
     private func delete(_ comment: PhotoComment) {
         Task { await photoService.deletePhotoComment(id: comment.id); await load() }
+    }
+
+    /// See CommentsSheet.report: the author, through `user_reports`, with the origin as reason.
+    private func report(_ comment: PhotoComment) {
+        guard let uid = auth.currentUser?.id, comment.userId != uid else { return }
+        Haptics.tap()
+        let targetId = comment.userId
+        let name = handle(targetId)
+        let feedService = feed
+        UndoCenter.shared.stage(
+            title: "Reported \(name). We'll look into it.",
+            failureText: "Couldn't send that report",
+            commit: { await feedService.reportUser(targetId, from: uid, reason: "roll comment") })
+    }
+
+    /// See CommentsSheet.block. `comments` is this sheet's own state, so the rows leave and
+    /// return here rather than through the feed cache.
+    private func block(_ comment: PhotoComment) {
+        guard let uid = auth.currentUser?.id, comment.userId != uid else { return }
+        Haptics.warning()
+        let targetId = comment.userId
+        let name = handle(targetId)
+        let feedService = feed
+        let removed = comments.filter { $0.userId == targetId }
+        withAnimation { comments.removeAll { $0.userId == targetId } }
+        UndoCenter.shared.stage(
+            title: "Blocked \(name), and unfollowed them",
+            subtitle: "Reversible in Blocked accounts",
+            failureText: "Couldn't block \(name)",
+            revert: {
+                comments.append(contentsOf: removed)
+                comments.sort { $0.createdAt < $1.createdAt }
+            },
+            commit: {
+                await feedService.block(targetId, from: uid)
+                return feedService.isBlocked(targetId)
+            })
     }
 }

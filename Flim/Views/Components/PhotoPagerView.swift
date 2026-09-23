@@ -190,6 +190,10 @@ struct PhotoPagerView: View {
     /// the delete-confirmation wording. A roll grid passes a closure returning its own name.
     var rollName: (UUID?) -> String? = { _ in nil }
     var onDelete: () -> Void = {}
+    /// Called once a block staged from the roll header has landed. The blocked person's frames
+    /// are still in `photos`, which this view cannot edit, so the pager closes at the tap and
+    /// the roll underneath reloads without them here. No-op everywhere else.
+    var onBlock: () -> Void = {}
     /// What the X does when this viewer is mounted inline rather than presented: the host tears
     /// it down itself. Nil (every presented use) keeps the environment `dismiss()`. Added for
     /// the chapter player (2026-09-10): presenting the export sheet from inside two stacked
@@ -381,7 +385,8 @@ struct PhotoPagerView: View {
          showsReactions: Bool = false, showsComments: Bool = false, showsAttribution: Bool = false,
          showsNightRack: Bool = false, showsRollRack: Bool = false,
          memberNames: [UUID: String] = [:], rollName: @escaping (UUID?) -> String? = { _ in nil },
-         onDelete: @escaping () -> Void = {}, openCommentsOnAppear: Bool = false,
+         onDelete: @escaping () -> Void = {}, onBlock: @escaping () -> Void = {},
+         openCommentsOnAppear: Bool = false,
          showsDelete: Bool = true, posts: [UUID: Post] = [:], onClose: (() -> Void)? = nil) {
         self.photos = photos
         self.startIndex = startIndex
@@ -394,6 +399,7 @@ struct PhotoPagerView: View {
         self.memberNames = memberNames
         self.rollName = rollName
         self.onDelete = onDelete
+        self.onBlock = onBlock
         self.openCommentsOnAppear = openCommentsOnAppear
         self.showsDelete = showsDelete
         self.posts = posts
@@ -920,6 +926,19 @@ struct PhotoPagerView: View {
                                       systemImage: reported ? "flag.fill" : "flag")
                             }
                             .disabled(reported)
+                            // The person, not only the shot. A roll is the one place you meet
+                            // someone else's photographs full screen, and until now the only
+                            // way to report or block them from here was their profile. The
+                            // same two actions and strings as the profile page and the post
+                            // menu; the roll grid's credit row already opens the profile.
+                            let handle = memberNames[photo.userId].map { "@\($0)" }
+                            Button { reportPerson(photo) } label: {
+                                Label(handle.map { "Report \($0)" } ?? "Report person",
+                                      systemImage: "person.crop.circle.badge.exclamationmark")
+                            }
+                            Button(role: .destructive) { blockPerson(photo) } label: {
+                                Label(handle.map { "Block \($0)" } ?? "Block", systemImage: "hand.raised")
+                            }
                         }
                     } label: {
                         Image(systemName: "ellipsis")
@@ -1770,6 +1789,42 @@ struct PhotoPagerView: View {
             onDelete()
             dismiss()
         }
+    }
+
+    /// Reports the photographer, the same `user_reports` row the profile page writes, with a
+    /// reason naming where it came from. Distinct from `reportCurrent`, which reports the shot.
+    private func reportPerson(_ photo: Photo) {
+        guard let uid = auth.currentUser?.id, photo.userId != uid else { return }
+        Haptics.tap()
+        let handle = memberNames[photo.userId].map { "@\($0)" } ?? "them"
+        let service = feed
+        let targetId = photo.userId
+        UndoCenter.shared.stage(
+            title: "Reported \(handle). We'll look into it.",
+            failureText: "Couldn't send that report",
+            commit: { await service.reportUser(targetId, from: uid, reason: "roll photo") })
+    }
+
+    /// Mirrors `PostDetailView.blockAuthor`: closes first, then stages, so the capsule shows on
+    /// the roll underneath; `onBlock` lets that screen drop the person's frames once it lands.
+    private func blockPerson(_ photo: Photo) {
+        guard let uid = auth.currentUser?.id, photo.userId != uid else { return }
+        Haptics.warning()
+        let handle = memberNames[photo.userId].map { "@\($0)" } ?? "this person"
+        let service = feed
+        let targetId = photo.userId
+        let afterBlock = onBlock
+        close()
+        UndoCenter.shared.stage(
+            title: "Blocked \(handle), and unfollowed them",
+            subtitle: "Reversible in Blocked accounts",
+            failureText: "Couldn't block \(handle)",
+            commit: {
+                await service.block(targetId, from: uid)
+                guard service.isBlocked(targetId) else { return false }
+                afterBlock()
+                return true
+            })
     }
 
     private func reportCurrent() {
