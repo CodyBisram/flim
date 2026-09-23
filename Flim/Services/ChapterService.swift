@@ -63,9 +63,9 @@ final class ChapterService {
         let epoch = AccountEpoch.current
         isLoadingChapters.insert(profileId)
         defer { isLoadingChapters.remove(profileId) }
-        struct Params: Encodable { let p_profile_id: UUID }
+        struct Params: Encodable { let p_profile_id: UUID; let p_timezone: String }
         let rows: [ChapterSummary] = (try? await supabase
-            .rpc("profile_chapters", params: Params(p_profile_id: profileId))
+            .rpc("profile_chapters", params: Params(p_profile_id: profileId, p_timezone: Self.timezone))
             .execute()
             .value) ?? []
         guard AccountEpoch.isCurrent(epoch) else { return }
@@ -81,10 +81,11 @@ final class ChapterService {
         guard !usesDemoFixture else { return [] }
         #endif
         let epoch = AccountEpoch.current
-        struct Params: Encodable { let p_profile_id: UUID; let p_month_start: String }
+        struct Params: Encodable { let p_profile_id: UUID; let p_month_start: String; let p_timezone: String }
         let rows: [ChapterPhoto] = (try? await supabase
             .rpc("chapter_photos", params: Params(p_profile_id: profileId,
-                                                   p_month_start: Self.dateOnly.string(from: monthStart)))
+                                                   p_month_start: Self.dateOnly.string(from: monthStart),
+                                                   p_timezone: Self.timezone))
             .execute()
             .value) ?? []
         guard AccountEpoch.isCurrent(epoch) else { return rows }
@@ -102,10 +103,11 @@ final class ChapterService {
         guard !usesDemoFixture else { return [:] }
         #endif
         let epoch = AccountEpoch.current
-        struct Params: Encodable { let p_profile_id: UUID; let p_month_start: String }
+        struct Params: Encodable { let p_profile_id: UUID; let p_month_start: String; let p_timezone: String }
         let rows: [ChapterStatRow] = (try? await supabase
             .rpc("chapter_stats", params: Params(p_profile_id: profileId,
-                                                  p_month_start: Self.dateOnly.string(from: monthStart)))
+                                                  p_month_start: Self.dateOnly.string(from: monthStart),
+                                                  p_timezone: Self.timezone))
             .execute()
             .value) ?? []
         let map = rows.keyedByStat()
@@ -155,6 +157,15 @@ final class ChapterService {
             .value
         return saved
     }
+
+    /// The zone a month is bucketed in, sent with every chapter RPC as `p_timezone`. The
+    /// phone's own, read at call time: Chapters used a fixed Eastern shift server-side until
+    /// 2026-09-22, which put a 2am shot on the first of the month in the wrong chapter and
+    /// counted the afternoon as "night" for anyone eight hours from New York. The Darkroom's
+    /// month functions have taken the same parameter since they shipped, so the two screens
+    /// that describe "your month" now agree on where it begins. Unknown to the server, or
+    /// absent (older builds), it falls back to America/New_York, today's answer.
+    private static var timezone: String { TimeZone.current.identifier }
 
     private static let dateOnly: DateFormatter = {
         let formatter = DateFormatter()
