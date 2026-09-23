@@ -110,7 +110,7 @@ struct PostDetailView: View {
                         } else { ShimmerPlaceholder(cornerRadius: 14).aspectRatio(3.0 / 4.0, contentMode: .fit) }
                     }
                         .frame(maxWidth: .infinity)
-                        .overlay { GrainOverlay().opacity(0.5) }
+                        // No decorative GrainOverlay: see FeedUnitCard, the same white dots.
                         .overlay {
                             PhotoTags(tags: feed.tagsByPost[post.id] ?? [], profiles: feed.tagProfiles) { route = ProfileRoute(id: $0) }
                         }

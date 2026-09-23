@@ -571,6 +571,24 @@ struct FeedUnitCard: View {
         seenStore.markSeen(current.post.id)
     }
 
+    /// Re-opens a living card on its first unseen frame, the way a fresh launch would open
+    /// it, and marks that frame reached when the card is on screen. The mark is the part
+    /// that was missing: a programmatic reposition deliberately does not mark through the
+    /// `selection` onChange (below-the-fold cards reposition too), so a VISIBLE card landed
+    /// on a new frame the reader then looked at, and nothing ever recorded it. The next swipe
+    /// marked the frame after it, and the one they had just seen stayed "new" in the header
+    /// for good (the owner's lele day, 2026-09-23: frames one and three marked, two never).
+    private func openOnFirstUnseen(markIfVisible: Bool) {
+        let opening = unit.openingIndex(isSeen: { seenStore.isSeen($0) })
+        if opening != selection {
+            repositioningProgrammatically = true
+            withAnimation(.snappy(duration: 0.25)) { selection = opening }
+        }
+        if markIfVisible, isVisible, markingEnabled {
+            seenStore.markSeen(unit.items[min(opening, unit.items.count - 1)].post.id)
+        }
+    }
+
     /// The one door for every programmatic `selection` write. Arms the flag only when the
     /// value will actually change, because the flag is consumed by the very next `selection`
     /// onChange: armed for a write that never fires, it would swallow the mark for the next

@@ -1042,3 +1042,87 @@ struct GrainProfileSweep {
         GrainCompositeSweep.lapseData(scene).flatMap { LookMeasure.decode($0) }
     }
 }
+
+// MARK: - Probe: specks in the shadows (2026-09-23)
+
+/// The owner sees "small white dots on dark areas". The layer is white at a random opacity and
+/// composited source-over, so in a black region it can only add light, and the sRGB transfer
+/// turns a small linear lift into a bright 8-bit level. This renders flat near-black patches
+/// through the shipped path, then through the same 0.5x downscale the storage master gets, and
+/// reports what lands in 8-bit sRGB: how far the brightest pixels sit above the patch, and how
+/// many pixels read as specks. Run with `TEST_RUNNER_FLIM_GRAIN_PROBE=1`; silent otherwise.
+struct GrainShadowSpeckProbe {
+    static func srgbLevels(_ image: CIImage, side: Int) -> [Int] {
+        let bounds = CGRect(x: 0, y: 0, width: side, height: side)
+        var buffer = [UInt8](repeating: 0, count: side * side * 4)
+        GrainCompositeProbe.context.render(image, toBitmap: &buffer, rowBytes: side * 4, bounds: bounds,
+                                           format: .RGBA8, colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!)
+        return stride(from: 0, to: buffer.count, by: 4).map { Int(buffer[$0]) }
+    }
+
+    static func report(_ label: String, level: Int, profile: GrainProfile) {
+        let side = 1024
+        let patch = GrainCompositeProbe.patch(level: level, side: side)
+        let grained = InstantFilmProcessor.grainOverlay(on: patch, amount: 0.06, composite: .sourceOver, profile: profile)
+        let half = grained.applyingFilter("CILanczosScaleTransform", parameters: [kCIInputScaleKey: 0.5, kCIInputAspectRatioKey: 1.0])
+        for (name, image, s) in [("full-res", grained, side), ("stored 0.5x", half, side / 2)] {
+            let v = srgbLevels(image, side: s).sorted()
+            let n = v.count
+            let lift = { (p: Double) in v[min(n - 1, Int(Double(n) * p))] - level }
+            let specks15 = v.filter { $0 - level >= 15 }.count
+            let specks25 = v.filter { $0 - level >= 25 }.count
+            print("SPECKS \(label) base=\(level) \(name): p50 +\(lift(0.5)) p99 +\(lift(0.99)) p99.9 +\(lift(0.999)) max +\(v[n - 1] - level)  >=+15: \(String(format: "%.2f", 100 * Double(specks15) / Double(n)))%  >=+25: \(String(format: "%.3f", 100 * Double(specks25) / Double(n)))%")
+        }
+    }
+
+    @Test("shadow specks, shipped profile against a sunk-shadow candidate", arguments: [4, 8, 16, 24, 32, 48, 80, 128])
+    func specks(_ level: Int) {
+        guard GrainCompositeProbe.isProbing else { return }
+        Self.report("shipped", level: level, profile: .midtone)
+        let sunk = GrainProfile(anchors: [
+            GrainAnchor(luminance: 0.00, visibility: 0.04),
+            GrainAnchor(luminance: 0.25, visibility: 0.55),
+            GrainAnchor(luminance: 0.50, visibility: 1.00),
+            GrainAnchor(luminance: 0.75, visibility: 0.62),
+            GrainAnchor(luminance: 1.00, visibility: 0.10)
+        ], chroma: 0, evPush: 0)
+        Self.report("sunk", level: level, profile: sunk)
+    }
+}
+
+// MARK: - Probe: which stage makes the shadow specks (2026-09-23)
+
+/// Real dark neutral captures from `pairs/` (the owner's machine only), rendered through the real
+/// capture path with one stage at a time switched off, written out for a speck count. Run with
+/// `TEST_RUNNER_FLIM_GRAIN_PROBE=1` and `TEST_RUNNER_FLIM_PROBE_OUT=<dir>`; silent otherwise.
+struct GrainStageIsolationProbe {
+    static let scenes = ["corner-dark", "hallway-noflash", "wide-dim", "restaurant-b"]
+
+    static func variant(_ name: String, _ edit: (inout FilmParams) -> Void) -> FilmStock {
+        var p = FilmStock.original.params
+        edit(&p)
+        return FilmStock(id: "probe_\(name)", name: name, tagline: "", params: p)
+    }
+
+    @Test("stage isolation on dark neutral captures", arguments: scenes)
+    func isolate(_ scene: String) async throws {
+        guard GrainCompositeProbe.isProbing,
+              let outDir = ProcessInfo.processInfo.environment["FLIM_PROBE_OUT"] else { return }
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        let file = root.appendingPathComponent("pairs/\(scene)_neutral.jpg")
+        guard let data = try? Data(contentsOf: file) else { print("STAGE \(scene): no neutral capture on disk"); return }
+        try? FileManager.default.createDirectory(atPath: outDir, withIntermediateDirectories: true)
+        let variants: [(String, FilmStock)] = [
+            ("shipped", .original),
+            ("nograin", Self.variant("nograin") { $0.grain = 0 }),
+            ("nobloom", Self.variant("nobloom") { $0.bloom = 0 }),
+            ("neither", Self.variant("neither") { $0.grain = 0; $0.bloom = 0 }),
+        ]
+        for (name, stock) in variants {
+            guard let out = await InstantFilmProcessor.process(data, stock: stock) else { print("STAGE \(scene) \(name): render failed"); continue }
+            let url = URL(fileURLWithPath: outDir).appendingPathComponent("\(scene)_\(name).\(out.format == .jpeg ? "jpg" : "heic")")
+            try out.data.write(to: url)
+            print("STAGE \(scene) \(name): \(out.data.count) bytes -> \(url.lastPathComponent)")
+        }
+    }
+}
