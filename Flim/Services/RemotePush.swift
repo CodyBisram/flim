@@ -48,7 +48,27 @@ enum RemotePush {
     /// sign-in on the same device: a success recorded for the PREVIOUS account must not be read as
     /// "this account can receive push" the instant someone else signs in, that's exactly the gap
     /// `NotificationService.scheduleRollDevelopNotification` exists to fall back into.
-    private static var registeredAccountId: UUID?
+    ///
+    /// Behind `state`'s lock rather than a bare static: it is written from `claim` and the
+    /// detach paths, which run in unstructured tasks off the main actor, and read on main.
+    private static var registeredAccountId: UUID? {
+        get { state.withLock { $0.registeredAccountId } }
+        set { state.withLock { $0.registeredAccountId = newValue } }
+    }
+
+    /// Mutable state shared across tasks. One lock for both fields so a claim can never observe
+    /// a half-applied session-loss detach.
+    private struct State {
+        var registeredAccountId: UUID?
+        /// The in-flight `detach_device_token` call from `detachAfterSessionLoss()`. `claim`
+        /// waits on it first, so a quick sign-in after a forced sign-out can never have its fresh
+        /// registration deleted by a detach that was still on the wire.
+        var sessionLossDetach: Task<Void, Never>?
+        /// Bumped by every `detachAfterSessionLoss()`. `claim` reads it before its RPC and
+        /// compares after, so a session loss that lands mid-claim is never overwritten by it.
+        var sessionLossGeneration = 0
+    }
+    private static let state = OSAllocatedUnfairLock(initialState: State())
 
     /// Whether the server has confirmed this device's token is attached to `userId`, this
     /// session. Read by `NotificationService.scheduleRollDevelopNotification` to decide whether a
@@ -99,11 +119,25 @@ enum RemotePush {
             log.notice("claim: no session, dropping device token claim")
             return
         }
+        if let detach = state.withLock({ $0.sessionLossDetach }) { await detach.value }
+        let generation = state.withLock { $0.sessionLossGeneration }
         do {
             try await supabase
                 .rpc("register_device_token", params: ["p_token": hex, "p_platform": "ios"])
                 .execute()
-            registeredAccountId = session.user.id
+            // The session was lost while the RPC was on the wire: its detach may have landed
+            // before this registration, leaving the device attached to a departed account. Skip
+            // the claim and detach again, under the same lock read as the write.
+            let superseded = state.withLock { s -> Bool in
+                guard s.sessionLossGeneration == generation else { return true }
+                s.registeredAccountId = session.user.id
+                return false
+            }
+            if superseded {
+                log.notice("claim: session lost during register_device_token, detaching again")
+                detachAfterSessionLoss()
+                return
+            }
             // Push can now reach this device for this account. A fresh capture may have already
             // scheduled a local develop reminder before this round trip landed (`isTokenRegistered`
             // reads false until it does), and if the roll is never reopened nothing else would
@@ -125,7 +159,8 @@ enum RemotePush {
         // This device is about to lose its claim either way, below or via the pending-detach
         // retry; either path means push can no longer reach it for this account, so the develop
         // reminder's local fallback must be considered live again from this point.
-        if registeredAccountId == session.user.id { registeredAccountId = nil }
+        let departing = session.user.id
+        state.withLock { if $0.registeredAccountId == departing { $0.registeredAccountId = nil } }
         do {
             try await supabase
                 .from("device_tokens")
@@ -144,6 +179,41 @@ enum RemotePush {
             // so the next chance has to be able to find it on disk.
             UserDefaults.standard.set(hex, forKey: pendingDetachTokenKey)
             UserDefaults.standard.set(session.user.id.uuidString, forKey: pendingDetachOwnerKey)
+        }
+    }
+
+    /// Detaches this device when the session is ALREADY gone: the SDK's `.signedOut` for an
+    /// expired or revoked refresh token, where `unregisterCurrentDevice()` has nothing left to
+    /// authenticate with. Goes through `detach_device_token`, which deletes by token and needs no
+    /// session; holding the token is the proof, since only this device was ever handed it.
+    ///
+    /// Best effort and fire-and-forget: a failure is logged, not retried, because a later sign-in
+    /// on this device reassigns the token through `register_device_token` anyway. The claim
+    /// state is reset unconditionally so that sign-in re-registers rather than trusting a claim
+    /// made for the departed account.
+    static func detachAfterSessionLoss() {
+        guard let hex = UserDefaults.standard.string(forKey: tokenKey), !hex.isEmpty else {
+            state.withLock {
+                $0.registeredAccountId = nil
+                $0.sessionLossGeneration += 1
+            }
+            return
+        }
+        let detach = Task {
+            do {
+                try await supabase
+                    .rpc("detach_device_token", params: ["p_token": hex])
+                    .execute()
+                // A marker for this same token is moot now that the row is gone.
+                if UserDefaults.standard.string(forKey: pendingDetachTokenKey) == hex { clearPendingDetach() }
+            } catch {
+                log.error("detachAfterSessionLoss: detach_device_token failed: \(String(describing: error), privacy: .public)")
+            }
+        }
+        state.withLock {
+            $0.registeredAccountId = nil
+            $0.sessionLossDetach = detach
+            $0.sessionLossGeneration += 1
         }
     }
 
@@ -214,6 +284,8 @@ extension Notification.Name {
 /// App delegate: forwards the APNs token to `RemotePush`, and handles notification
 /// presentation (show develop reminders even while the app is open) + taps (open Darkroom).
 final class FlimAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
+    private static let log = Logger(subsystem: "com.flim.app", category: "push")
+
     func application(
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
@@ -233,7 +305,7 @@ final class FlimAppDelegate: NSObject, UIApplicationDelegate, UNUserNotification
         _ application: UIApplication,
         didFailToRegisterForRemoteNotificationsWithError error: Error
     ) {
-        print("APNs registration failed: \(error.localizedDescription)")
+        Self.log.error("APNs registration failed: \(error.localizedDescription, privacy: .public)")
     }
 
     // Show develop notifications as a banner even when the app is in the foreground.

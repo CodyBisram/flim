@@ -53,9 +53,6 @@ struct DarkroomView: View {
     @State private var selectedURL: URL?
     @State private var isSelecting = false
     @State private var selectedIDs: Set<UUID> = []
-    @State private var pendingDelete: [Photo] = []
-    @State private var showUndoToast = false
-    @State private var undoTask: Task<Void, Never>?
     /// A failure that must not fail silently, e.g. "Set as profile photo" not sticking.
     @State private var errorToast: String?
     @AppStorage("lastRevealCheck") private var lastRevealCheck: Double = 0
@@ -483,23 +480,6 @@ Text("Darkroom")
                 .background(.ultraThinMaterial)
             }
         }
-        // Undo toast, deletes are deferred a few seconds so an accidental tap is recoverable.
-        .overlay(alignment: .bottom) {
-            if showUndoToast {
-                HStack(spacing: 14) {
-                    Text("Deleted \(pendingDelete.count) photo\(pendingDelete.count == 1 ? "" : "s")")
-                        .flimFont(14).foregroundStyle(.white)
-                    Button("Undo") { undoDelete() }
-                        .flimFont(14, weight: .semibold)
-                        .foregroundStyle(accent)
-                }
-                .padding(.horizontal, 18).padding(.vertical, 12)
-                .background(.ultraThinMaterial, in: Capsule())
-                .padding(.bottom, 90)
-                .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
-        }
-        .animation(.snappy(duration: 0.25), value: showUndoToast)
         .overlay(alignment: .top) {
             if let errorToast {
                 Label(errorToast, systemImage: "exclamationmark.triangle.fill")
@@ -539,9 +519,8 @@ Text("Darkroom")
         .onChange(of: anchor) { _, _ in recomputeDayUnits() }
         // The 60s develop poll only needs to run while this screen is on it, and an in-flight
         // anchored jump has no reason to keep running once nobody's watching for it to land. A
-        // still-pending delete is flushed rather than left to its own 4s timer, see
-        // `commitPendingDelete`'s own doc.
-        .onDisappear { vm.stopRefreshing(); anchoredJumpTask?.cancel(); commitPendingDelete() }
+        // still-pending delete lives in `UndoCenter`, which flushes it on its own terms.
+        .onDisappear { vm.stopRefreshing(); anchoredJumpTask?.cancel() }
         .sheet(isPresented: $showDiscover) { DiscoverPeopleView() }
         .sheet(isPresented: $showCreateRoll) { CreateRollView() }
         .fullScreenCover(item: $selectedPhoto) { photo in
@@ -1051,7 +1030,7 @@ Text("Darkroom")
         requestDelete((vm.developedPhotos + vm.developingPhotos).filter { selectedIDs.contains($0.id) })
     }
 
-    /// Optimistically hides the photos and shows an Undo toast; the real (irreversible) server
+    /// Optimistically hides the photos and stages an Undo capsule; the real (irreversible) server
     /// delete only commits after a few seconds if the user doesn't undo. The single delete
     /// entry point for both the selection toolbar and a cell's long-press menu. Roll shots
     /// used to ALSO confirm in a dialog first, which was two safety nets for one tap
@@ -1062,100 +1041,94 @@ Text("Darkroom")
         commitDeleteBatch(toDelete)
     }
 
+    /// Stages the batch through `UndoCenter`, like every other reversible action in the app.
+    /// This screen used to run its own 4s timer, flushed only by `.onDisappear`, so a delete
+    /// inside the window was lost when the app was backgrounded or killed, and an account switch
+    /// inside it fired a stale delete that reported success. The center brings the scene and
+    /// account-change flushes for free, and its capsule replaces the old local toast.
+    ///
+    /// The closures capture the view model and services, never view state: they can run after
+    /// this screen is gone. The account epoch is captured here, at staging, so a commit flushed
+    /// by an account change is refused rather than run under the next account's session, and a
+    /// revert never writes the departing account's photos into the next account's grid.
     private func commitDeleteBatch(_ toDelete: [Photo]) {
-        // If a previous pending delete is still waiting, commit it now before starting a new one.
-        commitPendingDelete()
-
         let ids = Set(toDelete.map(\.id))
-        vm.photos.removeAll { ids.contains($0.id) }   // optimistic hide
+        let model = vm
+        let service = photoService
+        let feedService = feed
+        let epoch = AccountEpoch.current
+        // Filled by `commit` with the ids the server confirmed, so a partial delete's `revert`
+        // restores only the frames that are still there.
+        let confirmedGone = ConfirmedIds()
+        model.photos.removeAll { ids.contains($0.id) }   // optimistic hide
         // Held for the whole undo window (and past it, until the server delete actually
         // resolves), so a reload or the 60s develop poll landing in between can't reassign
-        // `vm.photos` from the server and resurrect this batch with the Undo toast still up.
+        // `vm.photos` from the server and resurrect this batch with the capsule still up.
         // See `DarkroomViewModel.assign`.
-        vm.pendingHiddenIds.formUnion(ids)
-        pendingDelete = toDelete
+        model.pendingHiddenIds.formUnion(ids)
         selectedIDs = []
         isSelecting = false
-        showUndoToast = true
 
-        undoTask = Task {
-            try? await Task.sleep(for: .seconds(4))
-            guard !Task.isCancelled else { return }
-            let batch = pendingDelete
-            let ok = await photoService.deletePhotos(batch)
-            showUndoToast = false
-            pendingDelete = []
-            vm.pendingHiddenIds.subtract(ids)
-            if ok {
+        let count = toDelete.count
+        UndoCenter.shared.stage(
+            title: count == 1 ? "Photo deleted" : "\(count) photos deleted",
+            failureText: count == 1
+                ? "Couldn't delete that photo. Check your connection and try again."
+                : "Couldn't delete those photos. Check your connection and try again.",
+            // Runs on Undo and on a failed commit alike. Nothing remote has happened in either
+            // case, except for the ids a partial commit confirmed, so putting the other frames
+            // back locally is the whole restore.
+            revert: {
+                model.pendingHiddenIds.subtract(ids)
+                guard AccountEpoch.isCurrent(epoch) else { return }
+                Self.restore(toDelete.filter { !confirmedGone.ids.contains($0.id) }, into: model)
+            },
+            commit: {
+                let confirmed = await service.deletePhotosConfirmed(toDelete, epoch: epoch)
+                guard !confirmed.isEmpty else { return false }
+                confirmedGone.ids = confirmed
+                if confirmed.count < ids.count {
+                    // Partial: drop what the server confirmed, then fail so the center reverts
+                    // (restoring only the rest) and shows the failure line.
+                    guard AccountEpoch.isCurrent(epoch) else { return false }
+                    model.photos.removeAll { confirmed.contains($0.id) }
+                    feedService.dropPosts(forDeletedPhotoIds: Array(confirmed))
+                    return false
+                }
+                model.pendingHiddenIds.subtract(ids)
+                guard AccountEpoch.isCurrent(epoch) else { return true }
                 // Confirmed gone server-side, so any post among these photos has to go too, or
                 // this device's already-loaded feed keeps showing an imageless card for it.
                 // Removed directly rather than trusting the (now-lifted) `pendingHiddenIds`
                 // filter alone: a reload could have landed inside the window and, filtered or
                 // not, this batch belongs gone from `vm.photos` regardless of what it currently
                 // holds.
-                vm.photos.removeAll { ids.contains($0.id) }
-                feed.dropPosts(forDeletedPhotoIds: batch.map(\.id))
-            } else {
-                restoreAfterFailedDelete(batch)
-            }
-        }
+                model.photos.removeAll { ids.contains($0.id) }
+                feedService.dropPosts(forDeletedPhotoIds: Array(ids))
+                return true
+            })
     }
 
-    private func undoDelete() {
-        undoTask?.cancel()
-        showUndoToast = false
-        // Lifted before the restoring reload below, or that reload's own reassignment would
-        // filter this batch right back out.
-        vm.pendingHiddenIds.subtract(pendingDelete.map(\.id))
-        pendingDelete = []
-        Task { await reload() }   // restore from the server, nothing was actually deleted
+    /// The ids a staged delete's commit confirmed, shared with its revert.
+    private final class ConfirmedIds {
+        var ids: Set<UUID> = []
     }
 
-    /// Flush a still-pending delete immediately: a new delete starting while one is still in its
-    /// undo window, or the screen disappearing (wired from `.onDisappear`) while one is still
-    /// waiting out its 4 seconds. Timing a delete's commit to a view that may already be torn
-    /// down is what the undo window risks otherwise; flushing on disappear is strictly safer than
-    /// leaving the timer to fire into whatever is left of this screen.
-    private func commitPendingDelete() {
-        guard !pendingDelete.isEmpty else { return }
-        undoTask?.cancel()
-        let batch = pendingDelete
-        let ids = Set(batch.map(\.id))
-        pendingDelete = []
-        showUndoToast = false
-        Task {
-            let ok = await photoService.deletePhotos(batch)
-            vm.pendingHiddenIds.subtract(ids)
-            if ok {
-                vm.photos.removeAll { ids.contains($0.id) }
-                feed.dropPosts(forDeletedPhotoIds: batch.map(\.id))
-            } else {
-                restoreAfterFailedDelete(batch)
-            }
-        }
-    }
-
-    /// Puts photos back into the grid after the server refused a delete (network dropped, the
-    /// Storage removal itself failed). `commitDeleteBatch` already hid these optimistically the
-    /// moment Undo's window opened; `deletePhotos` returning `false` means the row was
-    /// deliberately left in place rather than deleted out from under a failed Storage removal
-    /// (see its own doc), so without this the photo stays correctly present server-side but
-    /// invisible here until the next full reload.
-    private func restoreAfterFailedDelete(_ batch: [Photo]) {
+    /// Puts photos back into the grid after Undo or a refused delete (network dropped, zero rows
+    /// came back). `commitDeleteBatch` hid these optimistically the moment the window opened;
+    /// without this the photo stays correctly present server-side but invisible here until the
+    /// next full reload. Static so the staged closures can call it without capturing the view.
+    private static func restore(_ batch: [Photo], into model: DarkroomViewModel) {
         guard !batch.isEmpty else { return }
-        let existingIds = Set(vm.photos.map(\.id))
+        let existingIds = Set(model.photos.map(\.id))
         let restored = batch.filter { !existingIds.contains($0.id) }
         guard !restored.isEmpty else { return }
-        vm.photos.append(contentsOf: restored)
+        model.photos.append(contentsOf: restored)
         // The personal Darkroom now pages (and renders) in `taken_at` order, not `develops_at`,
         // see `PhotoService.PhotoOrderColumn`'s own doc; restoring here has to land these frames
         // back where that order would have put them, or a restored photo can appear under the
         // wrong night.
-        vm.photos.sort { $0.takenAt > $1.takenAt }
-        Haptics.error()
-        flashError(restored.count == 1
-            ? "Couldn't delete that photo. Check your connection and try again."
-            : "Couldn't delete those photos. Check your connection and try again.")
+        model.photos.sort { $0.takenAt > $1.takenAt }
     }
 
     /// Long-press a photo to jump into selection mode with it selected.
@@ -1414,9 +1387,13 @@ Text("Darkroom")
             selectedPhoto = loaded          // already on screen: no round trip, keeps the zoom transition
             return
         }
+        // Epoch captured before the fetch: a deep link resolved across an account switch must
+        // not open the departing account's photo over the next account's Darkroom.
+        let epoch = AccountEpoch.current
         Task {
-            guard let photo = await photoService.fetchPhoto(id: id) else { return }
-            await MainActor.run { selectedPhoto = photo }
+            guard let photo = await photoService.fetchPhoto(id: id),
+                  AccountEpoch.isCurrent(epoch) else { return }
+            selectedPhoto = photo
         }
     }
 

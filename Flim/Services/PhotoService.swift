@@ -651,9 +651,9 @@ final class PhotoService {
             WidgetSync.refresh()
             // And the lock-screen card, which carries its own shot count. It was only ever
             // re-synced from the Rolls list, so shooting into a roll left the card reading "no
-            // shots yet" until that tab was next visited — the card is on screen precisely when
+            // shots yet" until that tab was next visited. The card is on screen precisely when
             // the app is not, which is when it is most wrong.
-            if let rollId { await syncRollActivity(rollId: rollId) }
+            if let rollId { scheduleRollActivitySync(rollId: rollId) }
             Usage.log(.photoCaptured)
 
             // The photo is still returned and its renditions still upload: it exists server-side
@@ -1668,33 +1668,74 @@ final class PhotoService {
     /// than looping `deletePhoto` for multi-select. Same ordering as `deletePhoto`: the rows are
     /// only ever deleted after the storage removal has actually succeeded. Same reasoning for the
     /// return value too.
+    ///
+    /// A DELETE that does not throw is not proof: RLS filters a row this session cannot see
+    /// (another account's, after a switch) to zero rows without an error. So the deleted ids are
+    /// read back, and only those count. Zero rows back is a failure; the local list and the
+    /// Storage objects are touched only for the ids the server confirmed.
+    ///
+    /// `epoch` is the account generation the caller staged the delete under (an undo window can
+    /// close after a switch); nil means "now". A stale epoch refuses before any request, and
+    /// every write after an await re-checks it.
+    ///
+    /// Returns true when at least one row was confirmed deleted, so for a batch it cannot tell a
+    /// partial delete from a whole one. A caller that hid a batch optimistically uses
+    /// `deletePhotosConfirmed` instead and restores whatever is not in the returned set.
     @discardableResult
-    func deletePhotos(_ toDelete: [Photo]) async -> Bool {
+    func deletePhotos(_ toDelete: [Photo], epoch: Int? = nil) async -> Bool {
         guard !toDelete.isEmpty else { return true }
+        return await !deletePhotosConfirmed(toDelete, epoch: epoch).isEmpty
+    }
+
+    /// `deletePhotos`, returning exactly the ids the server confirmed deleted (empty on any
+    /// failure). Only these are removed locally and have their Storage objects removed.
+    ///
+    /// Known limit, kept on purpose: a retry of a batch whose rows were already deleted by an
+    /// earlier attempt gets zero rows back and reports failure, even though the end state holds.
+    /// The caller restores those frames and the next reload drops them again.
+    func deletePhotosConfirmed(_ toDelete: [Photo], epoch: Int? = nil) async -> Set<UUID> {
+        guard !toDelete.isEmpty else { return [] }
+        let epoch = epoch ?? AccountEpoch.current
+        guard AccountEpoch.isCurrent(epoch) else { return [] }
         let ids = toDelete.map(\.id.uuidString)
         // Row first, bytes second (1.5.3, audit item 3). The old order removed the objects and
         // then deleted the row; if the row delete failed, the app restored a photograph whose
         // bytes were already gone. Now the row is the record of intent: once it is gone the
         // photo is gone from every read, and the objects are removed best-effort. A failure
         // there leaves orphaned bytes, which `sweep-orphaned-storage` exists to reconcile.
+        struct DeletedRow: Decodable { let id: UUID }
+        let deleted: [DeletedRow]
         do {
-            try await QueryBatch.forEachChunk(ids) { chunk in
-                try await supabase.from("photos").delete().in("id", values: chunk).execute()
+            deleted = try await QueryBatch.inChunks(ids) { chunk in
+                try await supabase.from("photos").delete().in("id", values: chunk)
+                    .select("id").execute().value
             }
         } catch {
+            guard AccountEpoch.isCurrent(epoch) else { return [] }
             await reportDeleteFailure(error, context: "batch row delete")
-            return false
+            return []
         }
-        await MainActor.run {
-            loadedPhotos.removeAll { ids.contains($0.id.uuidString) }
+        let confirmed = Set(deleted.map(\.id))
+        guard !confirmed.isEmpty else {
+            Self.errorLog.error("batch row delete removed zero of \(ids.count, privacy: .public) rows")
+            return []
+        }
+        if confirmed.count < toDelete.count {
+            Self.errorLog.error("batch row delete removed \(confirmed.count, privacy: .public) of \(ids.count, privacy: .public) rows")
+        }
+        let gone = toDelete.filter { confirmed.contains($0.id) }
+        if AccountEpoch.isCurrent(epoch) {
+            loadedPhotos.removeAll { confirmed.contains($0.id) }
             WidgetSync.refresh()
+            // The lock-screen card carries a roll-wide shot count; a delete changes it too.
+            for rollId in Set(gone.compactMap(\.rollId)) { scheduleRollActivitySync(rollId: rollId) }
         }
         do {
-            try await supabase.storage.from("photos").remove(paths: toDelete.flatMap(\.allStoragePaths))
+            try await supabase.storage.from("photos").remove(paths: gone.flatMap(\.allStoragePaths))
         } catch {
             Self.errorLog.error("storage remove after row delete failed, sweeper will reconcile: \(String(describing: error), privacy: .public)")
         }
-        return true
+        return confirmed
     }
 
     /// One-time test reset: removes EVERY Storage object in your folder (photos, thumbs, avatar,
@@ -2084,7 +2125,25 @@ final class PhotoService {
     /// Guarded on a card actually being live, because the count is a round trip and there is no
     /// reason to pay for it when there is nothing to update. `sync` is itself a no-op when the
     /// state has not changed, so a burst of captures costs one update, not one per frame.
-    private func syncRollActivity(rollId: UUID) async {
+    /// Coalesced per roll, the same 700ms shape as `WidgetSync.refresh()`. A burst of shots
+    /// changes `shotCount` every frame, so ActivityKit's own dedupe of identical states never
+    /// applied and every capture spent two queries and one activity update. The last call in a
+    /// burst wins and runs shortly after it.
+    func scheduleRollActivitySync(rollId: UUID) {
+        guard RollLiveActivity.isRunning(rollId) else { return }
+        rollActivitySyncTasks[rollId]?.cancel()
+        let epoch = AccountEpoch.current
+        rollActivitySyncTasks[rollId] = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(700))
+            guard !Task.isCancelled, let self else { return }
+            self.rollActivitySyncTasks[rollId] = nil
+            await self.syncRollActivity(rollId: rollId, epoch: epoch)
+        }
+    }
+
+    @ObservationIgnored private var rollActivitySyncTasks: [UUID: Task<Void, Never>] = [:]
+
+    private func syncRollActivity(rollId: UUID, epoch: Int) async {
         guard RollLiveActivity.isRunning(rollId) else { return }
         struct Row: Decodable { let name: String; let created_at: Date; let reveal_at: Date }
         // Read here rather than taken from RollService: this is reached from a capture, which
@@ -2095,6 +2154,7 @@ final class PhotoService {
             .execute().value) ?? []
         guard let roll = rows.first else { return }
         let shots = await rollTotalShotCount(rollId: rollId)
+        guard AccountEpoch.isCurrent(epoch) else { return }
         RollLiveActivity.sync(rollId: rollId, rollName: roll.name, revealAt: roll.reveal_at,
                               shotCount: shots, developFrom: roll.created_at)
     }

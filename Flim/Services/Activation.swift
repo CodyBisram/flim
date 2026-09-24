@@ -1,4 +1,5 @@
 import Foundation
+import os
 import Supabase
 
 /// The ten activation milestones the product can act on. Each is a one-time-per-user
@@ -76,7 +77,15 @@ enum Activation {
     /// (first launch, onboarding) waits under a neutral key until an account exists and is then
     /// attributed to it: those events happen before there is a user, and the first account
     /// on this phone is the one they belong to.
-    static var activeUserId: UUID? = nil
+    ///
+    /// Behind a lock rather than `@MainActor`: ContentView writes it on main, but `log(_:)` is
+    /// called from background capture tasks and the flush task re-reads it between sends, so
+    /// neither side can be required to hop to main.
+    static var activeUserId: UUID? {
+        get { activeUserLock.withLock { $0 } }
+        set { activeUserLock.withLock { $0 = newValue } }
+    }
+    private static let activeUserLock = OSAllocatedUnfairLock<UUID?>(initialState: nil)
     private static let neutralOwner = "none"
     private static var owner: String { activeUserId?.uuidString.lowercased() ?? neutralOwner }
     private static let flushLock = NSLock()

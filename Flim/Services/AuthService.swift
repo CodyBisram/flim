@@ -733,6 +733,11 @@ final class AuthService {
             noteSession(nil)
             NotificationCenter.default.post(name: .flimAccountDidChange, object: nil)
         }
+        // A staged undoable action (a Darkroom delete inside its window) belongs to this
+        // account and commits with this session. It must land before the session goes:
+        // the account-change flush in ContentView runs after the sign-out, when the epoch
+        // has moved and no credential is left, so a commit from there cannot reach the server.
+        await UndoCenter.shared.flushAndWait()
         // Before the session goes, not after: the device_tokens row is only deletable
         // by the account that owns it, so once signOut() lands there is no longer any
         // way to detach this device. Leaving it attached meant the next digest for
@@ -763,44 +768,26 @@ final class AuthService {
     }
 
     /// Permanently deletes the account + all associated data (App Store Guideline 5.1.1(v)).
-    /// The `delete_account` RPC removes the auth user, which cascades to the profile, rolls,
-    /// memberships, photos, and reports. Then we clear the local session.
+    ///
+    /// ONE server call. `delete_account` removes the auth user, and the delete cascades
+    /// auth.users to public.users to every dependent row (photos, rolls, memberships, posts,
+    /// reports) inside a single transaction: it either all happens or none of it does. The
+    /// stored bytes are not touched here at all. Once the photo rows are gone every object under
+    /// the user's prefix is an orphan, and the daily `sweep-orphaned-storage` run removes it,
+    /// every rendition and the avatar and cover included, so nothing depends on a hand-kept list
+    /// of paths that could drift.
+    ///
+    /// The client used to do this in three steps: delete the photo rows, remove the storage
+    /// folder page by page, then call the RPC. When the RPC failed after the first two had
+    /// succeeded (a timeout, a dropped connection, a transient 5xx), the account survived with
+    /// every row and byte already gone while the page said "Nothing was deleted." With the whole
+    /// thing in one transaction that sentence is true for every failure, and a retry starts from
+    /// exactly where the person left it. Nothing needs remembering across launches.
     func deleteAccount() async throws {
-        // Remove the user's stored image files first, the RPC cascades the DB rows but
-        // not the physical objects in Storage, which would otherwise be orphaned.
-        //
-        // Everything in their folder, not a list derived from the photos table.
-        //
-        // This used to select `storage_path` alone and delete only that, which left every
-        // thumbnail, every 1400px card, and the avatar and cover behind. On a promise to delete
-        // an account that is worse than a leak: someone asks to be forgotten and their
-        // photographs stay in the bucket at two of the three sizes. It is also the exact shape of
-        // the bug that stranded 160 MB of feed cards, written a second time in a second place.
-        //
-        // Enumerating the folder cannot drift the way a hand-written column list does: a fourth
-        // rendition, or anything else ever written under the user's prefix, is covered without
-        // anyone remembering to come back here.
-        // Rows before bytes (1.5.3, audit item 3): the photo rows go first, so from this point
-        // nothing can read or restore a photograph whose objects are about to be removed. Then the
-        // folder, best-effort; anything left is an orphan for `sweep-orphaned-storage`. Then the
-        // account itself.
-        let session = try await supabase.auth.session
-        let uid = session.user.id.uuidString.lowercased()
-        // The rows must be gone before any byte is; if this throws, nothing has been removed and
-        // the person sees the error and can try again. (The old `try?` here let a failed row
-        // delete fall through to the object removal, which is exactly the order this exists to
-        // prevent.)
-        try await supabase.from("photos").delete().eq("user_id", value: session.user.id.uuidString).execute()
-        // The folder, best-effort and bounded: a page that will not delete must not loop
-        // forever between us and `delete_account`. Anything left is an orphan for the sweeper.
-        for _ in 0..<20 {
-            guard let objects = try? await supabase.storage.from("photos")
-                .list(path: uid, options: SearchOptions(limit: 1000)), !objects.isEmpty else { break }
-            let removed = (try? await supabase.storage.from("photos")
-                .remove(paths: objects.map { "\(uid)/\($0.name)" })) != nil
-            if !removed || objects.count < 1000 { break }
-        }
-
+        // Same reason as signOut(): a pending undoable action commits while the account and
+        // its session still exist, instead of failing against a deleted account and showing
+        // its failure line on the sign-in screen.
+        await UndoCenter.shared.flushAndWait()
         try await supabase.rpc("delete_account").execute()
         try? await supabase.auth.signOut()
         currentUser = nil
@@ -878,6 +865,17 @@ final class AuthService {
                 noteSession(nil)
                 currentUser = nil
                 isAuthenticated = false
+                // The same departure broadcast signOut() posts, so a revoked or expired session
+                // gets the same teardown as a tapped Sign Out: caches reset, reminders and Live
+                // Activities ended, and `WidgetSync.clear()`, which only this notification's
+                // observer in ContentView calls. Before this, the home-screen widget kept showing
+                // the departed account under the sign-in screen. After a user-initiated sign-out
+                // this is the second post; every step in that observer is idempotent.
+                NotificationCenter.default.post(name: .flimAccountDidChange, object: nil)
+                // No session is left to delete the device_tokens row with, so this goes through
+                // the session-less detach. Best effort, and a no-op after a user-initiated
+                // sign-out, which already detached while its session was alive.
+                RemotePush.detachAfterSessionLoss()
             default:
                 break
             }

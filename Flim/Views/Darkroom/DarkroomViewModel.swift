@@ -5,7 +5,7 @@ import Observation
 /// `pendingHiddenIds`, the photos `DarkroomView` has optimistically hidden for a delete that
 /// hasn't resolved yet. Free function so the rule itself, "a server reassignment of `photos`
 /// cannot resurrect a photo still pending a delete", is testable without a live `PhotoService` or
-/// the 4s undo timer.
+/// the `UndoCenter` window.
 func filterHiddenPhotos(_ photos: [Photo], hiding pendingHiddenIds: Set<UUID>) -> [Photo] {
     pendingHiddenIds.isEmpty ? photos : photos.filter { !pendingHiddenIds.contains($0.id) }
 }
@@ -62,8 +62,8 @@ final class DarkroomViewModel {
     /// to eager-load in full), the personal Darkroom can grow unbounded, so pagination itself
     /// stays lazy; only the total is fetched eagerly, via a headless count query.
     var totalCount: Int?
-    /// Photos `DarkroomView` has optimistically hidden for a delete still inside its 4s undo
-    /// window (or a still-pending delete about to be flushed), filtered out of every server
+    /// Photos `DarkroomView` has optimistically hidden for a delete still inside the shared
+    /// `UndoCenter` window (or a still-pending delete about to be flushed), filtered out of every server
     /// reassignment of `photos` (see `assign`) so a reload or the 60s develop poll landing inside
     /// that window can't reintroduce a batch the person just "deleted" while the Undo toast is
     /// still up. `DarkroomView` owns the lifecycle: added when a batch is hidden, removed once

@@ -46,7 +46,7 @@ struct AccountDeleteView: View {
     private var explainer: String {
         switch mode {
         case .deleteAccount:
-            return "There is no restore, no grace period, and no copy on our side. Save anything you want first."
+            return "There is no restore and no grace period. Your account goes at once, and your photo files are erased from our storage within a few days. Save anything you want first."
         case .wipeData:
             return "Deletes all your photos, thumbnails, avatar and cover, and posts from storage, and resets your egress baseline. Your account stays."
         }
@@ -240,7 +240,10 @@ struct AccountDeleteView: View {
                     isWorking = false
                     holdProgress = 0
                     Haptics.error()
-                    failureText = "Couldn't finish deleting. Nothing was deleted."
+                    // True for every failure: `deleteAccount()` is a single `delete_account`
+                    // call whose cascade runs in one transaction, so a throw means nothing
+                    // committed and Try again starts clean.
+                    failureText = "Couldn't delete your account. Nothing was deleted."
                 }
             case .wipeData:
                 guard let uid = auth.currentUser?.id else { isWorking = false; return }

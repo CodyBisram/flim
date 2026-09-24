@@ -49,6 +49,9 @@ final class UndoCenter {
 
     private var expiryTask: Task<Void, Never>?
     private var noticeTask: Task<Void, Never>?
+    /// Commits `expire` sent off and that have not finished yet, keyed by the staged id.
+    /// `flushAndWait` awaits them, so a window that closed just before sign-out cannot race it.
+    private var inFlightCommits: [UUID: Task<Void, Never>] = [:]
 
     func stage(title: String, subtitle: String? = nil, failureText: String? = nil,
                revert: @escaping () -> Void = {}, commit: @escaping () async -> Bool) {
@@ -81,14 +84,39 @@ final class UndoCenter {
         expire(item)
     }
 
+    /// `flush()`, but waited on: the commit has landed (or failed and reverted) when this
+    /// returns. Sign-out and account deletion call it FIRST, while the session that owns the
+    /// pending action still exists. `ContentView`'s account-change flush fires after the
+    /// session is already gone and the epoch has moved, so from there a server write can only
+    /// fail; it still runs, as the backstop for anything staged in between.
+    ///
+    /// Also waits for a commit already in flight: a window that closed on its own a moment
+    /// earlier has nothing staged but may still be talking to the server.
+    func flushAndWait() async {
+        if let item = staged {
+            expiryTask?.cancel()
+            expiryTask = nil
+            staged = nil
+            await perform(item)
+        }
+        for task in Array(inFlightCommits.values) { await task.value }
+    }
+
     private func expire(_ item: Staged) {
         staged = nil
-        Task { [weak self] in
-            guard await item.commit() == false else { return }
-            item.revert()
-            Haptics.error()
-            if let failure = item.failureText { self?.showNotice(failure) }
+        // Main-actor Task: it cannot start before this function returns, so the entry below is
+        // always in place before the Task's own cleanup removes it.
+        inFlightCommits[item.id] = Task { [weak self] in
+            await self?.perform(item)
+            self?.inFlightCommits[item.id] = nil
         }
+    }
+
+    private func perform(_ item: Staged) async {
+        guard await item.commit() == false else { return }
+        item.revert()
+        Haptics.error()
+        if let failure = item.failureText { showNotice(failure) }
     }
 
     private func showNotice(_ text: String) {
