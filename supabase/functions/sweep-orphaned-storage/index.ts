@@ -22,6 +22,15 @@
 // bucket as captures -- an earlier draft of this sweep that only checked
 // photos+posts would have deleted six users' profile pictures.
 //
+// DEAD-OWNER PHASE (2026-09-24): account deletion is server-only now (the
+// app calls delete_account() and nothing else), so every run FIRST removes
+// objects whose top-level folder is the id of no current account, as listed
+// by public.list_dead_owner_photos_objects(). Those skip the 48h age check
+// and do not count toward HARD_CAP (list_orphaned_photos_objects excludes
+// them); a deleted account with hundreds of photos used to stop the whole
+// sweep at the cap. Bounded per run by DEAD_OWNER_MAX_PER_RUN, logged as a
+// count only. Same dry-run gate as everything else.
+//
 // DRY RUN IS THE DEFAULT. Deletion only happens when the caller passes
 // dryRun=false AND the correct SWEEP_CONFIRM_TOKEN secret. Getting dryRun
 // wrong (a stray query param, a copy-pasted curl) degrades to "reports what
@@ -39,6 +48,7 @@
 //   so a request needs a valid Supabase JWT just to be *heard*, on top of
 //   the confirm-token gate below for the delete branch specifically.)
 // Requires: supabase/migrations/2026-08-08_orphaned_storage_sweep.sql
+// Requires: supabase/migrations/2026-09-24_account_purge_complete.sql
 // Requires the SWEEP_CONFIRM_TOKEN secret for real (non-dry-run) runs:
 //   supabase secrets set SWEEP_CONFIRM_TOKEN=<random string>
 // SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY are injected automatically.
@@ -72,6 +82,11 @@ const MIN_AGE_HOURS = 48;
 /// orphan query must not be able to empty the bucket in one run.
 const HARD_CAP = 500;
 
+/// Dead-owner objects removed per run, at most. The account is gone, so the
+/// rest simply wait for tomorrow's run; the bound keeps one run's work and
+/// its Storage API traffic predictable.
+const DEAD_OWNER_MAX_PER_RUN = 5000;
+
 /// Storage API accepts a `prefixes` array per request; kept small and
 /// bounded rather than relying on an undocumented server-side limit.
 const DELETE_BATCH_SIZE = 64;
@@ -91,6 +106,102 @@ interface Candidate {
 
 function totalBytes(rows: Candidate[]): number {
   return rows.reduce((sum, r) => sum + (r.size_bytes ?? 0), 0);
+}
+
+interface DeleteResult {
+  deletedCount: number;
+  deletedBytes: number;
+  failedBatches: string[][];
+}
+
+/// Real deletion, through the Storage API only. Never storage.objects rows
+/// directly. BUCKET is a hardcoded constant, never taken from the request, so
+/// this can only ever touch the `photos` bucket. `perObjectLog` writes one
+/// line per deleted object (name + size); the dead-owner phase turns it off
+/// and logs a count, since a deleted account's file names are its user id.
+async function removeCandidates(
+  candidates: Candidate[],
+  failedAt: string,
+  perObjectLog: boolean,
+): Promise<DeleteResult> {
+  let deletedCount = 0;
+  let deletedBytes = 0;
+  const failedBatches: string[][] = [];
+
+  for (let i = 0; i < candidates.length; i += DELETE_BATCH_SIZE) {
+    const batch = candidates.slice(i, i + DELETE_BATCH_SIZE);
+    const names = batch.map((c) => c.object_name);
+
+    const { data: removed, error: removeError } = await supabase.storage.from(BUCKET).remove(names);
+
+    if (removeError) {
+      failedBatches.push(names);
+      console.log(JSON.stringify({
+        at: failedAt,
+        ...(perObjectLog ? { names } : { batchSize: names.length }),
+        message: removeError.message,
+      }));
+      continue;
+    }
+
+    const removedNames = new Set((removed ?? []).map((r) => r.name));
+    for (const c of batch) {
+      const wasDeleted = removedNames.has(c.object_name) || (removed?.length ?? 0) === batch.length;
+      if (!wasDeleted) continue;
+      deletedCount++;
+      deletedBytes += c.size_bytes ?? 0;
+      if (perObjectLog) {
+        console.log(JSON.stringify({ at: "sweep_deleted_object", name: c.object_name, sizeBytes: c.size_bytes }));
+      }
+    }
+  }
+
+  return { deletedCount, deletedBytes, failedBatches };
+}
+
+interface DeadOwnerSummary {
+  candidates: number;
+  candidateBytes: number;
+  deletedCount: number;
+  deletedBytes: number;
+  failedBatchCount: number;
+  error?: string;
+}
+
+/// Phase 1: objects under the folder of an account that no longer exists.
+/// A failure here is logged and reported but does not stop the ordinary
+/// sweep below; the two are independent.
+async function sweepDeadOwners(dryRun: boolean): Promise<DeadOwnerSummary> {
+  const { data, error } = await supabase.rpc("list_dead_owner_photos_objects", {
+    p_max_rows: DEAD_OWNER_MAX_PER_RUN,
+  });
+  if (error) {
+    console.log(JSON.stringify({ at: "sweep_dead_owner_query_failed", message: error.message }));
+    return { candidates: 0, candidateBytes: 0, deletedCount: 0, deletedBytes: 0, failedBatchCount: 0, error: error.message };
+  }
+  const rows = (data ?? []) as Candidate[];
+  const summary: DeadOwnerSummary = {
+    candidates: rows.length,
+    candidateBytes: totalBytes(rows),
+    deletedCount: 0,
+    deletedBytes: 0,
+    failedBatchCount: 0,
+  };
+  if (rows.length > 0 && !dryRun) {
+    const r = await removeCandidates(rows, "sweep_dead_owner_batch_failed", false);
+    summary.deletedCount = r.deletedCount;
+    summary.deletedBytes = r.deletedBytes;
+    summary.failedBatchCount = r.failedBatches.length;
+  }
+  console.log(JSON.stringify({ at: "sweep_dead_owner_run", dryRun, cap: DEAD_OWNER_MAX_PER_RUN, ...summary }));
+  return summary;
+}
+
+function deadOwnerLine(d: DeadOwnerSummary, dryRun: boolean): string {
+  if (d.error) return `dead-owner phase failed: ${d.error}`;
+  return dryRun
+    ? `dead-owner: ${d.candidates} objects (${d.candidateBytes} bytes) would be deleted`
+    : `dead-owner: ${d.deletedCount}/${d.candidates} objects deleted (${d.deletedBytes} bytes), ${d.failedBatchCount} batch(es) failed`;
 }
 
 Deno.serve(async (req) => {
@@ -131,6 +242,11 @@ Deno.serve(async (req) => {
     console.log(JSON.stringify({ at: "sweep_forced_dry_run", reason: forcedReason }));
   }
 
+  // Phase 1, before the age-and-cap logic: dead-owner objects never wait and
+  // never count toward HARD_CAP.
+  const deadOwner = await sweepDeadOwners(dryRun);
+
+  // Phase 2: the ordinary orphan sweep, unchanged in behaviour.
   const { data, error } = await supabase.rpc("list_orphaned_photos_objects", {
     p_min_age_hours: MIN_AGE_HOURS,
     p_max_rows: 5000,
@@ -138,7 +254,7 @@ Deno.serve(async (req) => {
 
   if (error) {
     console.log(JSON.stringify({ at: "sweep_query_failed", message: error.message }));
-    return new Response(`query failed: ${error.message}`, { status: 500 });
+    return new Response(`query failed: ${error.message}\n${deadOwnerLine(deadOwner, dryRun)}`, { status: 500 });
   }
 
   const allCandidates = (data ?? []) as Candidate[];
@@ -147,7 +263,7 @@ Deno.serve(async (req) => {
 
   if (allCandidates.length === 0) {
     console.log(JSON.stringify({ at: "sweep_run", dryRun, candidates: 0 }));
-    return new Response("no orphaned objects found");
+    return new Response(`no orphaned objects found\n${deadOwnerLine(deadOwner, dryRun)}`);
   }
 
   // Cap check happens before anything else, and blocks the run outright
@@ -180,7 +296,8 @@ Deno.serve(async (req) => {
       }
       return new Response(
         `ABORTED: ${candidates.length} candidate objects exceeds the safety cap of ${HARD_CAP}. ` +
-          `Deleted nothing. Owner alerted. Check list_orphaned_photos_objects() for a bad match, then run with {"batch": true}.`,
+          `Deleted nothing. Owner alerted. Check list_orphaned_photos_objects() for a bad match, then run with {"batch": true}.\n` +
+          deadOwnerLine(deadOwner, dryRun),
         { status: 200 },
       );
     }
@@ -201,6 +318,7 @@ Deno.serve(async (req) => {
           candidateCount: candidates.length,
           candidateBytes,
           objects: candidates,
+          deadOwner,
         },
         null,
         2,
@@ -210,35 +328,11 @@ Deno.serve(async (req) => {
   }
 
   // ---- Real deletion, through the Storage API only. Never storage.objects rows directly. ----
-  let deletedCount = 0;
-  let deletedBytes = 0;
-  const failedBatches: string[][] = [];
-
-  for (let i = 0; i < candidates.length; i += DELETE_BATCH_SIZE) {
-    const batch = candidates.slice(i, i + DELETE_BATCH_SIZE);
-    const names = batch.map((c) => c.object_name);
-
-    // BUCKET is a hardcoded constant, never taken from the request, so this
-    // function can only ever touch the `photos` bucket.
-    const { data: removed, error: removeError } = await supabase.storage.from(BUCKET).remove(names);
-
-    if (removeError) {
-      failedBatches.push(names);
-      console.log(JSON.stringify({ at: "sweep_delete_batch_failed", names, message: removeError.message }));
-      continue;
-    }
-
-    const removedNames = new Set((removed ?? []).map((r) => r.name));
-    for (const c of batch) {
-      const wasDeleted = removedNames.has(c.object_name) || (removed?.length ?? 0) === batch.length;
-      if (!wasDeleted) continue;
-      deletedCount++;
-      deletedBytes += c.size_bytes ?? 0;
-      // One line per deleted object: name + size, the audit trail the run
-      // total below is built from.
-      console.log(JSON.stringify({ at: "sweep_deleted_object", name: c.object_name, sizeBytes: c.size_bytes }));
-    }
-  }
+  const { deletedCount, deletedBytes, failedBatches } = await removeCandidates(
+    candidates,
+    "sweep_delete_batch_failed",
+    true,
+  );
 
   const summary = {
     at: "sweep_run_complete",
@@ -253,6 +347,6 @@ Deno.serve(async (req) => {
 
   return new Response(
     `sweep: ${deletedCount}/${candidates.length} objects deleted (${deletedBytes} bytes), ` +
-      `${failedBatches.length} batch(es) failed`,
+      `${failedBatches.length} batch(es) failed\n${deadOwnerLine(deadOwner, dryRun)}`,
   );
 });
