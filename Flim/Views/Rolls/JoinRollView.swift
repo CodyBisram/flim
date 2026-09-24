@@ -58,7 +58,7 @@ struct JoinRollView: View {
                     .tracking(2)
                     .foregroundStyle(FlimTheme.textTertiary)
 
-                TextField("", text: $code, prompt: Text("ABC123").foregroundStyle(Color(white: 0.3)))
+                TextField("", text: $code, prompt: Text("ABC123").foregroundStyle(FlimTheme.placeholder))
                     .flimFont(28, weight: .thin, design: .monospaced, relativeTo: .title2)
                     .tracking(6)
                     .multilineTextAlignment(.center)
@@ -77,7 +77,7 @@ struct JoinRollView: View {
             if let error {
                 Text(error)
                     .flimFont(13, relativeTo: .subheadline)
-                    .foregroundStyle(Color(red: 1, green: 0.4, blue: 0.4))
+                    .foregroundStyle(FlimTheme.error)
             }
 
             // Say what joining a roll actually means before they commit.

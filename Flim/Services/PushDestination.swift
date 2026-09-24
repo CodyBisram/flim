@@ -111,9 +111,10 @@ enum PushDestination: Codable, Equatable {
     /// here, add its constructor there; a link the extension can emit and this cannot read opens
     /// the app to nowhere in particular, which looks exactly like the widget being broken.
     static func parse(url: URL) -> PushDestination? {
-        guard url.scheme == WidgetLink.scheme else { return nil }
+        // Scheme and host are case-insensitive by spec; the UUID path segment is parsed as is.
+        guard url.scheme?.lowercased() == WidgetLink.scheme.lowercased() else { return nil }
         let id = { UUID(uuidString: url.pathComponents.first { $0 != "/" } ?? "") }
-        switch url.host {
+        switch url.host?.lowercased() {
         case "camera":   return .camera
         case "darkroom": return .darkroom
         case "sortdeck": return .sortDeck

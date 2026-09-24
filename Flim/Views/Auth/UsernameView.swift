@@ -14,7 +14,7 @@ struct UsernameView: View {
 
     var body: some View {
         ZStack {
-            Color(red: 0.04, green: 0.04, blue: 0.04).ignoresSafeArea()
+            FlimTheme.bg.ignoresSafeArea()
 
             VStack(alignment: .leading, spacing: 0) {
                 Spacer()
@@ -38,7 +38,7 @@ struct UsernameView: View {
                     HStack {
                         Text("@")
                             .foregroundStyle(FlimTheme.textTertiary)
-                        TextField("", text: $username, prompt: Text("yourname").foregroundStyle(Color(white: 0.3)))
+                        TextField("", text: $username, prompt: Text("yourname").foregroundStyle(FlimTheme.placeholder))
                             .autocorrectionDisabled()
                             .textInputAutocapitalization(.never)
                             .flimFont(17, relativeTo: .body)
@@ -60,7 +60,7 @@ struct UsernameView: View {
                         .tracking(2)
                         .foregroundStyle(FlimTheme.textTertiary)
 
-                    TextField("", text: $name, prompt: Text("First name").foregroundStyle(Color(white: 0.3)))
+                    TextField("", text: $name, prompt: Text("First name").foregroundStyle(FlimTheme.placeholder))
                         .textContentType(.givenName)
                         .autocorrectionDisabled()
                         .flimFont(17, relativeTo: .body)
@@ -121,7 +121,7 @@ struct UsernameView: View {
                 if let error {
                     Text(error)
                         .flimFont(13, relativeTo: .subheadline)
-                        .foregroundStyle(Color(red: 1, green: 0.4, blue: 0.4))
+                        .foregroundStyle(FlimTheme.error)
                         .padding(.top, 8)
                 }
 

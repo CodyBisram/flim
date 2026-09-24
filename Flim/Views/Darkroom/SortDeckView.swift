@@ -176,7 +176,7 @@ struct SortDeckView: View {
         if let publishError {
             Text(publishError)
                 .flimFont(13, relativeTo: .subheadline)
-                .foregroundStyle(Color(red: 1, green: 0.42, blue: 0.42))
+                .foregroundStyle(FlimTheme.error)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 24)
                 .padding(.bottom, 4)

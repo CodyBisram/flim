@@ -39,7 +39,7 @@ struct EmailAuthView: View {
 
     var body: some View {
         ZStack {
-            Color(red: 0.04, green: 0.04, blue: 0.04).ignoresSafeArea()
+            FlimTheme.bg.ignoresSafeArea()
 
             VStack(alignment: .leading, spacing: 0) {
                 Spacer()
@@ -62,7 +62,7 @@ struct EmailAuthView: View {
                         .tracking(2)
                         .foregroundStyle(FlimTheme.textTertiary)
 
-                    TextField("", text: $email, prompt: Text("you@example.com").foregroundStyle(Color(white: 0.3)))
+                    TextField("", text: $email, prompt: Text("you@example.com").foregroundStyle(FlimTheme.placeholder))
                         .keyboardType(.emailAddress)
                         .textContentType(.emailAddress)
                         .autocorrectionDisabled()
@@ -78,7 +78,7 @@ struct EmailAuthView: View {
                 if let error {
                     Text(error)
                         .flimFont(13, relativeTo: .subheadline)
-                        .foregroundStyle(Color(red: 1, green: 0.4, blue: 0.4))
+                        .foregroundStyle(FlimTheme.error)
                         .padding(.top, 8)
                 }
 
@@ -132,7 +132,7 @@ struct EmailAuthView: View {
                     .flimFont(12, relativeTo: .caption)
                     .foregroundStyle(FlimTheme.textSecondary)
 
-                TextField("", text: $inviteCode, prompt: Text("ABC123").foregroundStyle(Color(white: 0.3)))
+                TextField("", text: $inviteCode, prompt: Text("ABC123").foregroundStyle(FlimTheme.placeholder))
                     .flimFont(24, weight: .thin, design: .monospaced, relativeTo: .title2)
                     .tracking(6)
                     .multilineTextAlignment(.center)
@@ -154,7 +154,7 @@ struct EmailAuthView: View {
                 if let inviteError {
                     Text(inviteError)
                         .flimFont(13, relativeTo: .subheadline)
-                        .foregroundStyle(Color(red: 1, green: 0.4, blue: 0.4))
+                        .foregroundStyle(FlimTheme.error)
                         .padding(.top, 4)
                 }
 

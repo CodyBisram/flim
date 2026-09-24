@@ -30,6 +30,25 @@ struct PersonalInviteLinkTests {
         #expect(FlimApp.routePersonalInviteCode(from: url) == "ABC123")
     }
 
+    @Test("host and scheme match case-insensitively, and the code keeps its case")
+    func mixedCaseHostAndScheme() throws {
+        for raw in [
+            "https://FLIM-APP.COM/i/AbC123",
+            "HTTPS://Flim-App.com/i/AbC123",
+            "COM.LAPSE.APP://i/AbC123",
+            "com.lapse.app://I/AbC123",
+        ] {
+            let url = try #require(URL(string: raw))
+            #expect(FlimApp.routePersonalInviteCode(from: url) == "AbC123", "\(raw)")
+            #expect(FlimApp.routeInviteCode(from: url) == nil, "\(raw)")
+        }
+        for raw in ["https://FLIM-APP.COM/join/AbC123", "COM.LAPSE.APP://JOIN/AbC123"] {
+            let url = try #require(URL(string: raw))
+            #expect(FlimApp.routeInviteCode(from: url) == "AbC123", "\(raw)")
+            #expect(FlimApp.routePersonalInviteCode(from: url) == nil, "\(raw)")
+        }
+    }
+
     @Test("a personal link is NOT read as a roll invite")
     func personalIsNotARoll() {
         let url = URL(string: "https://flim-app.com/i/ABC123")!

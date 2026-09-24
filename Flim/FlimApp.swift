@@ -106,8 +106,11 @@ struct FlimApp: App {
     /// Accepts the universal link (https://flim-app.com/i/CODE) and the custom scheme
     /// (com.lapse.app://i/CODE). Returns nil for anything else, including auth callbacks.
     static func routePersonalInviteCode(from url: URL) -> String? {
-        let isUniversal = url.host == "flim-app.com" && url.pathComponents.dropFirst().first == "i"
-        guard url.host == "i" || isUniversal else { return nil }
+        // Hosts are case-insensitive, so a link typed as FLIM-APP.COM/i/CODE still routes. The
+        // code itself is left exactly as it arrived.
+        let host = url.host?.lowercased()
+        let isUniversal = host == "flim-app.com" && url.pathComponents.dropFirst().first == "i"
+        guard host == "i" || isUniversal else { return nil }
         let code = url.lastPathComponent
         guard !code.isEmpty, code != "/", code != "i" else { return nil }
         return code
@@ -117,8 +120,9 @@ struct FlimApp: App {
     /// (https://flim-app.com/join/CODE). Returns the invite code, or `nil` if `url` isn't a
     /// recognized invite link (e.g. an auth callback) or the invite link carries no real code.
     static func routeInviteCode(from url: URL) -> String? {
-        let isUniversalJoin = url.host == "flim-app.com" && url.pathComponents.dropFirst().first == "join"
-        guard url.host == "join" || isUniversalJoin else { return nil }
+        let host = url.host?.lowercased()
+        let isUniversalJoin = host == "flim-app.com" && url.pathComponents.dropFirst().first == "join"
+        guard host == "join" || isUniversalJoin else { return nil }
         let code = url.lastPathComponent
         guard !code.isEmpty, code != "/", code != "join" else { return nil }
         return code

@@ -277,6 +277,23 @@ struct WidgetLinkRoutingTests {
         }
     }
 
+    @Test("scheme and host match case-insensitively")
+    func mixedCaseSchemeAndHost() throws {
+        let rollId = UUID()
+        let pairs: [(String, PushDestination)] = [
+            ("COM.LAPSE.APP://camera", .camera),
+            ("com.lapse.app://DARKROOM", .darkroom),
+            ("Com.Lapse.App://SortDeck", .sortDeck),
+            ("COM.LAPSE.APP://Reveal/\(rollId.uuidString)", .reveal(rollId: rollId))
+        ]
+        for (raw, expected) in pairs {
+            let url = try #require(URL(string: raw))
+            #expect(PushDestination.parse(url: url) == expected, "\(raw)")
+        }
+        let foreign = try #require(URL(string: "FLIM://camera"))
+        #expect(PushDestination.parse(url: foreign) == nil)
+    }
+
     /// The reason `parse(url:)` is scoped to our own scheme. Invite links arrive as https
     /// universal links and are checked AFTER the widget routes in `FlimApp.onOpenURL`, so a
     /// parser that answered for them would swallow every invite in the product.

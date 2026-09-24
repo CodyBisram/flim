@@ -41,6 +41,10 @@ enum FlimTheme {
     /// Text of an unavailable control. 3.2:1 on bg, under 3:1 on a row, so a disabled control
     /// always says why in secondary text beside it; the dimming is never the only cue.
     static let disabled = Color(white: 0.38)
+    /// Inline validation and failure text under a field or form.
+    static let error = Color(red: 1, green: 0.4, blue: 0.4)
+    /// Prompt text inside an empty text field.
+    static let placeholder = Color(white: 0.3)
     /// Skeletons, at the real geometry of what is coming. Pulsed 35 to 70 percent by the caller.
     static let loading = Color(white: 0.11)
     /// "Not yet saved", "queued offline": the accent with a warning glyph, deliberately not a

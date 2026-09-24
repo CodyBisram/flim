@@ -65,7 +65,7 @@ struct CreateRollView: View {
                     .tracking(2)
                     .foregroundStyle(FlimTheme.textTertiary)
 
-                TextField("", text: $name, prompt: Text("Summer Road Trip").foregroundStyle(Color(white: 0.3)))
+                TextField("", text: $name, prompt: Text("Summer Road Trip").foregroundStyle(FlimTheme.placeholder))
                     .flimFont(17, relativeTo: .body)
                     .foregroundStyle(.white)
                     .tint(.white)
@@ -77,7 +77,7 @@ struct CreateRollView: View {
             if let error {
                 Text(error)
                     .flimFont(13, relativeTo: .subheadline)
-                    .foregroundStyle(Color(red: 1, green: 0.4, blue: 0.4))
+                    .foregroundStyle(FlimTheme.error)
             }
 
             Spacer()

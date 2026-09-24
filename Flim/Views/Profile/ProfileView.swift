@@ -622,7 +622,7 @@ private struct EditBioSheet: View {
                     if let saveError {
                         Text(saveError)
                             .flimFont(13, relativeTo: .subheadline)
-                            .foregroundStyle(Color(red: 1, green: 0.42, blue: 0.42))
+                            .foregroundStyle(FlimTheme.error)
                     }
                     Spacer()
                 }
@@ -699,7 +699,7 @@ private struct EditNameSheet: View {
                     if let saveError {
                         Text(saveError)
                             .flimFont(13, relativeTo: .subheadline)
-                            .foregroundStyle(Color(red: 1, green: 0.42, blue: 0.42))
+                            .foregroundStyle(FlimTheme.error)
                     }
                     Spacer()
                 }
@@ -760,7 +760,7 @@ private struct EditUsernameSheet: View {
 
                     HStack {
                         Text("@").foregroundStyle(FlimTheme.textTertiary)
-                        TextField("", text: $username, prompt: Text("yourname").foregroundStyle(Color(white: 0.3)))
+                        TextField("", text: $username, prompt: Text("yourname").foregroundStyle(FlimTheme.placeholder))
                             .autocorrectionDisabled()
                             .textInputAutocapitalization(.never)
                             .flimFont(17, relativeTo: .body)
@@ -784,7 +784,7 @@ private struct EditUsernameSheet: View {
                     if let error {
                         Text(error)
                             .flimFont(13, relativeTo: .subheadline)
-                            .foregroundStyle(Color(red: 1, green: 0.4, blue: 0.4))
+                            .foregroundStyle(FlimTheme.error)
                     }
 
                     Spacer()

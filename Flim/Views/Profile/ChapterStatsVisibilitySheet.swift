@@ -78,7 +78,7 @@ private struct ChapterStatsVisibilityContent: View {
                     if let saveError {
                         Text(saveError)
                             .flimFont(13, relativeTo: .subheadline)
-                            .foregroundStyle(Color(red: 1, green: 0.42, blue: 0.42))
+                            .foregroundStyle(FlimTheme.error)
                             .multilineTextAlignment(.center)
                             .padding(.horizontal, 20)
                     }

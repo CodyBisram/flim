@@ -48,7 +48,7 @@ struct ReviewerSignInSheet: View {
                     if let error {
                         Text(error)
                             .flimFont(13, relativeTo: .subheadline)
-                            .foregroundStyle(Color(red: 1, green: 0.42, blue: 0.42))
+                            .foregroundStyle(FlimTheme.error)
                     }
 
                     Spacer()

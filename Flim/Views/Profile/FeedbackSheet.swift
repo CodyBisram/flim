@@ -38,7 +38,7 @@ struct FeedbackSheet: View {
                         VStack(alignment: .leading, spacing: 8) {
                             Text(sendError)
                                 .flimFont(13, relativeTo: .subheadline)
-                                .foregroundStyle(Color(red: 1, green: 0.42, blue: 0.42))
+                                .foregroundStyle(FlimTheme.error)
                             if let url = AppInfo.feedbackMailURL {
                                 Button("Email us instead") { openURL(url) }
                                     .flimFont(13, weight: .medium, relativeTo: .subheadline)

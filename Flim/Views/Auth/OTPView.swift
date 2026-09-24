@@ -27,7 +27,7 @@ struct OTPView: View {
 
     var body: some View {
         ZStack {
-            Color(red: 0.04, green: 0.04, blue: 0.04).ignoresSafeArea()
+            FlimTheme.bg.ignoresSafeArea()
 
             VStack(alignment: .leading, spacing: 0) {
                 Spacer()
@@ -73,7 +73,7 @@ struct OTPView: View {
                 if let error {
                     Text(error)
                         .flimFont(13, relativeTo: .subheadline)
-                        .foregroundStyle(Color(red: 1, green: 0.4, blue: 0.4))
+                        .foregroundStyle(FlimTheme.error)
                         .padding(.top, 12)
                 }
 
