@@ -556,8 +556,13 @@ final class RollService {
     /// The creator picks a specific photo as the roll's cover (RLS: creator-only update).
     func setRollCover(rollId: UUID, path: String) async {
         struct U: Encodable { let cover_path: String }
+        let epoch = AccountEpoch.current
         _ = try? await supabase.from("rolls").update(U(cover_path: path))
             .eq("id", value: rollId.uuidString).execute()
+        // Every other mutator in this file guards its post-await writes; without this one, an
+        // account switch mid-request wrote the departing account's cover into the next account's
+        // cache and snapshot.
+        guard AccountEpoch.isCurrent(epoch) else { return }
         coverPaths[rollId] = path
         if let i = rolls.firstIndex(where: { $0.id == rollId }) {
             let r = rolls[i]

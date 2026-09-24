@@ -44,7 +44,11 @@ struct FeedView: View {
     @State private var unreadActivity = 0
     /// The previous `lastActivitySeen`, handed to Activity so it can show a "New" section.
     @State private var activitySeenBefore: Date?
-    @AppStorage("lastActivitySeen") private var lastActivitySeen: Double = 0
+    /// Per account, through `ActivitySeenMark`; read only inside actions, so no observation needed.
+    private var lastActivitySeen: Double {
+        get { ActivitySeenMark.value(userId: auth.currentUser?.id) }
+        nonmutating set { ActivitySeenMark.set(newValue, userId: auth.currentUser?.id) }
+    }
     /// The container width, which every unit needs up front: the pager's height is derived
     /// from it before any image arrives, so nothing reflows when one does.
     @State private var containerWidth: CGFloat = 0

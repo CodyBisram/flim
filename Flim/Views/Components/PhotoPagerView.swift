@@ -2009,10 +2009,20 @@ struct PhotoPagerView: View {
                 reactionsByPhoto[photo.id, default: []].append(PhotoReaction(id: UUID(), photoId: photo.id, userId: uid, emoji: emoji))
             }
         } else {
-            reactionsByPhoto[photo.id, default: []].append(PhotoReaction(id: UUID(), photoId: photo.id, userId: uid, emoji: emoji))
-            OptimisticToggle.shared.perform(key: key, write: { await photoService.addReaction(photoId: photo.id, emoji: emoji, userId: uid) }) {
-                reactionsByPhoto[photo.id, default: []].removeAll { $0.emoji == emoji && $0.userId == uid }
-            }
+            addPhotoReaction(emoji, on: photo, userId: uid)
+        }
+    }
+
+    /// The one add path for a reaction on a photo that is not a post, shared by the reaction bar
+    /// and the double tap. Keyed through `OptimisticToggle` on the same key `toggleReaction`
+    /// uses, so a tap and a double tap on the same heart queue behind each other instead of
+    /// racing, and a failed write reverts only this reaction rather than the whole array.
+    private func addPhotoReaction(_ emoji: String, on photo: Photo, userId uid: UUID) {
+        let key = "photo|\(photo.id)|\(emoji)|\(uid)"
+        let service = photoService
+        reactionsByPhoto[photo.id, default: []].append(PhotoReaction(id: UUID(), photoId: photo.id, userId: uid, emoji: emoji))
+        OptimisticToggle.shared.perform(key: key, write: { await service.addReaction(photoId: photo.id, emoji: emoji, userId: uid) }) {
+            reactionsByPhoto[photo.id, default: []].removeAll { $0.emoji == emoji && $0.userId == uid }
         }
     }
 
@@ -2033,13 +2043,10 @@ struct PhotoPagerView: View {
             return
         }
         guard !(reactionsByPhoto[photo.id]?.contains { $0.emoji == "❤️" && $0.userId == uid } ?? false) else { return }
-        Task {
-            reactionsByPhoto[photo.id, default: []].append(PhotoReaction(id: UUID(), photoId: photo.id, userId: uid, emoji: "❤️"))
-            await photoService.addReaction(photoId: photo.id, emoji: "❤️", userId: uid)
-            // Keyed write, no fast-swipe guard needed: see `toggleReaction`'s own note.
-            let fetched = await photoService.fetchReactions(photoId: photo.id)
-            reactionsByPhoto[photo.id] = fetched
-        }
+        // Through the keyed toggle, not a write followed by a whole-array refetch: that
+        // overwrite raced `toggleReaction`'s queued writes and could wipe a reaction the
+        // person had just added from the bar.
+        addPhotoReaction("❤️", on: photo, userId: uid)
     }
 
     /// Resolves full-res URLs for the ±1 window around `index`, and (when the roll grid shows

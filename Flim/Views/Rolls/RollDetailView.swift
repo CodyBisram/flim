@@ -849,10 +849,18 @@ struct RollDetailView: View {
                 name: roll.name,
                 people: rollService.memberCounts[roll.id]
                     ?? (memberNames.isEmpty ? nil : memberNames.count))) {
-                notifications.cancelRollDevelopNotification(rollId: roll.id)
                 Task {
-                    try? await rollService.deleteRoll(rollId: roll.id)
-                    dismiss()
+                    do {
+                        try await rollService.deleteRoll(rollId: roll.id)
+                        // Same order as Leave below: the develop reminder is the owner's only
+                        // "your roll developed" channel, so it is cancelled only once the server
+                        // confirms the roll is gone, and a failed delete keeps the screen open.
+                        notifications.cancelRollDevelopNotification(rollId: roll.id)
+                        dismiss()
+                    } catch {
+                        Haptics.error()
+                        showToast("Couldn't delete the roll. Check your connection and try again.", isError: true)
+                    }
                 }
             }
         }
@@ -1152,7 +1160,7 @@ struct RollDetailView: View {
         withAnimation { toastMessage = message }
         toastDismiss?.cancel()
         toastDismiss = Task {
-            try? await Task.sleep(for: .seconds(isError ? 2.4 : 1.6))
+            try? await Task.sleep(for: .seconds(isError ? 3.0 : 1.6))
             guard !Task.isCancelled else { return }
             withAnimation { toastMessage = nil }
         }

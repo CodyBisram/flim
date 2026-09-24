@@ -224,8 +224,14 @@ struct ContentView: View {
             guard phase == .active else {
                 // A staged undoable action must not ride out its window in the background: an
                 // app killed there would silently lose an action the person watched happen.
-                // Leaving the foreground commits it now; see `UndoCenter`.
-                UndoCenter.shared.flush()
+                // Leaving the foreground commits it now; see `UndoCenter`. Held under a
+                // background assertion (taken here, before suspension can begin) so the commit,
+                // or one whose window closed a moment earlier, lands before iOS suspends us.
+                let undoKeepAlive = BackgroundKeepAlive.begin("undo commit")
+                Task {
+                    await UndoCenter.shared.flushAndWait()
+                    BackgroundKeepAlive.end(undoKeepAlive)
+                }
                 // Seen-marks made this session go to the account now, not on the next debounce
                 // an app suspended in the background never reaches: the disk copy first
                 // (synchronous), then the server mirror.
@@ -237,7 +243,7 @@ struct ContentView: View {
             Task { await refreshVersionGate() }
             // The tab dots: a friend may have posted or a roll developed while the app was away.
             if let uid = auth.currentUser?.id {
-                Task { await tabSignals.refresh(feed: feed, rolls: rolls, userId: uid, lastActivitySeen: UserDefaults.standard.double(forKey: "lastActivitySeen")) }
+                Task { await tabSignals.refresh(feed: feed, rolls: rolls, userId: uid, lastActivitySeen: ActivitySeenMark.value(userId: uid)) }
             }
             // Save-on-develop, not save-on-capture: this is the one place that decides "the app
             // just came to the foreground", which is exactly when a photo shot earlier may have

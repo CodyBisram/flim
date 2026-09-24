@@ -205,16 +205,21 @@ struct FeedUnitCard: View {
         // ones the LazyVStack built below the fold, and a bare assignment reads as a swipe
         // to the `selection` onChange, which marked shots seen that nobody had scrolled to.
         .onChange(of: unit.items.map(\.post.id)) { oldIds, newIds in
-            guard selection < oldIds.count else {
+            if selection < oldIds.count {
+                let viewing = oldIds[selection]
+                if let kept = newIds.firstIndex(of: viewing) {
+                    reposition(to: kept)
+                } else if selection >= newIds.count {
+                    reposition(to: max(0, newIds.count - 1))
+                }
+            } else {
                 reposition(to: min(selection, max(0, newIds.count - 1)))
-                return
             }
-            let viewing = oldIds[selection]
-            if let kept = newIds.firstIndex(of: viewing) {
-                reposition(to: kept)
-            } else if selection >= newIds.count {
-                reposition(to: max(0, newIds.count - 1))
-            }
+            // The neighbours may be new even when the selection is not: an insertion right
+            // after the shown frame leaves `selection` unchanged, so the selection onChange
+            // never runs and the new page would sit without a URL until swiped to. Radius 1,
+            // no byte prefetch: this fires on cards below the fold too.
+            Task { await resolveURLs(around: selection) }
         }
         // An explicit catch-up re-opens a LIVING unit the way a fresh launch would open it:
         // on its first unseen shot. Never fired by background refreshes, so the pager is

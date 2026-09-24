@@ -43,8 +43,13 @@ struct RevealCover: Equatable {
         // system clock instead, so it would ignore the `now` passed in here: correct in the app,
         // wrong under test, and quietly wrong for any caller that ever needs a different anchor.
         // A date function whose answer does not depend on the date it was given is a trap.
-        let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: startedAt),
-                                           to: calendar.startOfDay(for: now)).day ?? 0
+        //
+        // Days are the app's 04:00-bounded nights (`FeedUnit.dayKey`), not the calendar's
+        // midnight cut, the same fix `Roll.defaultName` and `RollDevelopAskSheet` took: a roll
+        // started at 11:50pm and opened at 1:15am is tonight's, and every other surface says so.
+        let startedDay = FeedUnit.dayKey(for: startedAt, calendar: calendar)
+        let today = FeedUnit.dayKey(for: now, calendar: calendar)
+        let days = calendar.dateComponents([.day], from: startedDay, to: today).day ?? 0
         if days == 0 { return "Shot today" }
         if days == 1 { return "Shot yesterday" }
 
@@ -57,12 +62,13 @@ struct RevealCover: Equatable {
         // any Tuesday, so it stops being information.
         if (2...6).contains(days) {
             formatter.setLocalizedDateFormatFromTemplate("EEEE")
-            return "Shot \(formatter.string(from: startedAt))"
+            return "Shot \(formatter.string(from: startedDay))"
         }
 
-        let sameYear = calendar.component(.year, from: startedAt) == calendar.component(.year, from: now)
+        // Named from the night's key too, so a 2am frame is dated to the evening it belongs to.
+        let sameYear = calendar.component(.year, from: startedDay) == calendar.component(.year, from: today)
         formatter.setLocalizedDateFormatFromTemplate(sameYear ? "MMMMd" : "MMMMdyyyy")
-        return "Shot \(formatter.string(from: startedAt))"
+        return "Shot \(formatter.string(from: startedDay))"
     }
 
     /// How long the card holds before dissolving into the first frame.

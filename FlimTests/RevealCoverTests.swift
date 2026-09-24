@@ -81,6 +81,28 @@ struct RevealCoverTests {
         #expect(yesterday.dateLine(now: now, calendar: calendar) == "Shot yesterday")
     }
 
+    @Test("a roll started just before midnight is still tonight's after midnight")
+    func midnightBelongsToTheNight() throws {
+        // The app's day turns at 04:00 (`FeedUnit.dayKey`), not at midnight. A roll started at
+        // 11:50pm and opened at 1:15am is the same night on every other surface, so the card
+        // must not call it yesterday.
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try #require(TimeZone(identifier: "America/New_York"))
+        let started = try #require(calendar.date(from: DateComponents(year: 2026, month: 9, day: 23,
+                                                                       hour: 23, minute: 50)))
+        let viewed = try #require(calendar.date(from: DateComponents(year: 2026, month: 9, day: 24,
+                                                                      hour: 1, minute: 15)))
+
+        let line = RevealCover(photos: [photo(takenAt: started)]).dateLine(now: viewed, calendar: calendar)
+        #expect(line == "Shot today", "got: \(line ?? "nil")")
+
+        // And the cut is real: the same start, opened the next evening, is yesterday's.
+        let nextEvening = try #require(calendar.date(from: DateComponents(year: 2026, month: 9, day: 24,
+                                                                           hour: 20, minute: 0)))
+        #expect(RevealCover(photos: [photo(takenAt: started)]).dateLine(now: nextEvening, calendar: calendar)
+                == "Shot yesterday")
+    }
+
     @Test("inside a week it reads as a weekday")
     func weekdayInsideAWeek() {
         let now = Date(timeIntervalSince1970: 1_700_000_000)

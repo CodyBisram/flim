@@ -234,23 +234,26 @@ final class FeedService {
     @discardableResult
     func follow(_ targetId: UUID, from userId: UUID) async -> Bool {
         struct F: Encodable { let follower_id: UUID; let following_id: UUID }
+        // Captured before the await: an account switch during the insert must not write this
+        // account's follow into the next account's sets.
+        let epoch = AccountEpoch.current
         followingIds.insert(targetId)   // optimistic
         do {
             try await supabase.from("follows")
                 .insert(F(follower_id: userId, following_id: targetId)).execute()
-            confirmedFollowingIds.insert(targetId)
+            if AccountEpoch.isCurrent(epoch) { confirmedFollowingIds.insert(targetId) }
             return true
         } catch let error as PostgrestError where error.code == "23505" {
             // follows' PK is (follower_id, following_id): a duplicate insert means the row
             // already exists server-side (e.g. a stale followingIds read racing this call), so
             // the desired end state already holds, leave the optimistic insert in place rather
             // than rolling back a follow that's actually there.
-            confirmedFollowingIds.insert(targetId)
+            if AccountEpoch.isCurrent(epoch) { confirmedFollowingIds.insert(targetId) }
             return true
         } catch {
             // The insert never landed (offline, RLS), without this the button was stuck
             // reading "Following" forever even though the server never recorded it.
-            followingIds.remove(targetId)
+            if AccountEpoch.isCurrent(epoch) { followingIds.remove(targetId) }
             return false
         }
     }
@@ -258,17 +261,19 @@ final class FeedService {
     /// Same contract as `follow`: whether the unfollow holds server-side.
     @discardableResult
     func unfollow(_ targetId: UUID, from userId: UUID) async -> Bool {
+        // Same epoch capture as `follow`.
+        let epoch = AccountEpoch.current
         followingIds.remove(targetId)   // optimistic
         do {
             try await supabase.from("follows").delete()
                 .eq("follower_id", value: userId.uuidString)
                 .eq("following_id", value: targetId.uuidString)
                 .execute()
-            confirmedFollowingIds.remove(targetId)
+            if AccountEpoch.isCurrent(epoch) { confirmedFollowingIds.remove(targetId) }
             return true
         } catch {
             // Same as above, mirrored: the delete never landed, so put the follow back.
-            followingIds.insert(targetId)
+            if AccountEpoch.isCurrent(epoch) { followingIds.insert(targetId) }
             return false
         }
     }
@@ -702,8 +707,8 @@ final class FeedService {
     /// shape below, plus `reactToPost`'s `Haptics.error()` on a failed write, since there's no
     /// button here whose own state reverting would tell the story on its own.
     func block(_ targetId: UUID, from userId: UUID) async {
-        // Captured before the first await so the followerIds write below can be guarded, same
-        // shape as every other id-keyed mutation in this file.
+        // Captured before the first await so the writes after each await below can be guarded,
+        // same shape as every other id-keyed mutation in this file.
         let epoch = AccountEpoch.current
         struct B: Encodable { let blocker_id: UUID; let blocked_id: UUID }
         blockedIds.insert(targetId)   // optimistic
@@ -716,23 +721,30 @@ final class FeedService {
         } catch {
             // The insert never landed, put it back exactly where it started rather than let the
             // person believe someone is blocked who isn't.
-            blockedIds.remove(targetId)
+            if AccountEpoch.isCurrent(epoch) { blockedIds.remove(targetId) }
             Haptics.error()
             return
         }
+        // An account switch during the insert: the unfollow would write the new account's
+        // following set, so stop here. Server-side the block already severed the follows.
+        guard AccountEpoch.isCurrent(epoch) else { return }
         await unfollow(targetId, from: userId)          // blocking implies unfollow
+        // And again across the unfollow's own await, for the local cache writes that follow.
+        guard AccountEpoch.isCurrent(epoch) else { return }
         feed.removeAll { $0.author.id == targetId }      // drop their posts from the current feed
         purgeCachedContent(from: targetId)               // and their reactions/comments/tags on everyone else's
         // `block_severs_follows_trigger` deletes the target's follow of ME server-side too, so
         // drop it from the local set now rather than let it sit stale until the next
         // `loadFollowers` happens to run (it could otherwise keep showing a "Follows you" badge
         // and "Follow back" copy for someone who no longer can).
-        if AccountEpoch.isCurrent(epoch) { followerIds.remove(targetId) }
+        followerIds.remove(targetId)
     }
 
     /// Mirrors `block`'s shape: optimistic, rolled back on a failed write so an "unblocked"
     /// person doesn't reappear only once the next `loadBlocked()` happens to notice they didn't.
     func unblock(_ targetId: UUID, from userId: UUID) async {
+        // Same epoch capture as `block`.
+        let epoch = AccountEpoch.current
         blockedIds.remove(targetId)   // optimistic
         do {
             try await supabase.from("blocks").delete()
@@ -741,7 +753,7 @@ final class FeedService {
         } catch {
             // The delete never landed, put the block back rather than claim an unblock that
             // didn't happen server-side.
-            blockedIds.insert(targetId)
+            if AccountEpoch.isCurrent(epoch) { blockedIds.insert(targetId) }
             Haptics.error()
         }
     }
@@ -1373,8 +1385,12 @@ final class FeedService {
     /// composer can restore the draft instead of silently losing what was typed.
     @discardableResult
     func commentOnPost(_ postId: UUID, body: String, userId: UUID) async -> Bool {
+        // Captured before the first await: a comment sent just before an account switch must
+        // not land the old account's comment list (with its likedByMe) in the new one's cache.
+        let epoch = AccountEpoch.current
         let created = await addComment(postId: postId, body: body, userId: userId)
-        commentsByPost[postId] = await fetchComments(postId: postId, currentUserId: userId)
+        let fresh = await fetchComments(postId: postId, currentUserId: userId)
+        if AccountEpoch.isCurrent(epoch) { commentsByPost[postId] = fresh }
         return created != nil
     }
 
@@ -1514,6 +1530,11 @@ final class FeedService {
             return false
         }
         feed.removeAll { $0.post.id == id }
+        // Same per-post caches `dropPosts(forDeletedPhotoIds:)` clears, so nothing stays keyed
+        // to a post id no card displays anymore.
+        reactionsByPost.removeValue(forKey: id)
+        commentsByPost.removeValue(forKey: id)
+        tagsByPost.removeValue(forKey: id)
         return true
     }
 
@@ -2629,3 +2650,34 @@ func shouldTreatAsDeleted(afterDeleting saved: Bool?) -> Bool { saved == true }
 /// failure is something to fix; a success (with or without tags) or a cancellation both mean
 /// there's nothing wrong to tell anyone about.
 func shouldWarnThatTagsDidNotSave(_ tagsSaved: Bool?) -> Bool { tagsSaved == false }
+
+/// The Activity "New" watermark, per account. It lived under one global key, so a second
+/// account on the same phone inherited the first account's cutoff (audit 2026-09-24, finding 8).
+/// Every read and write goes through here so the three call sites cannot drift.
+///
+/// Migration: the first read for an account with no per-account value adopts the old global
+/// value and stores it under the account's own key, so an existing install does not see every
+/// past activity flagged "new" after updating. The global key is then removed, so only the
+/// first account read on this install inherits it; any other account starts at 0.
+enum ActivitySeenMark {
+    static var store: UserDefaults = .standard
+    static let legacyKey = "lastActivitySeen"
+
+    static func key(userId: UUID) -> String { "\(legacyKey).\(userId.uuidString)" }
+
+    /// Seconds since 1970, or 0 when this account has never opened Activity.
+    static func value(userId: UUID?) -> Double {
+        guard let userId else { return 0 }
+        let perAccount = key(userId: userId)
+        if store.object(forKey: perAccount) != nil { return store.double(forKey: perAccount) }
+        let legacy = store.double(forKey: legacyKey)
+        store.set(legacy, forKey: perAccount)
+        store.removeObject(forKey: legacyKey)
+        return legacy
+    }
+
+    static func set(_ seconds: Double, userId: UUID?) {
+        guard let userId else { return }
+        store.set(seconds, forKey: key(userId: userId))
+    }
+}

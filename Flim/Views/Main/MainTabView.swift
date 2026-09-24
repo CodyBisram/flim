@@ -108,7 +108,6 @@ struct MainTabView: View {
     /// Hoisted out of the TabView builder, which cannot type-check a ternary in a `.badge`.
     private var rollsBadge: String? { signals.rollsHaveUnwatched ? "•" : nil }
     private var feedBadge: String? { signals.feedHasUnread ? "•" : nil }
-    @AppStorage("lastActivitySeen") private var lastActivitySeenForDot: Double = 0
     @Environment(ChapterService.self) private var chapters
     /// Owned here (not in RollsView) so a `reveal` push destination, and `-openRollId` in DEBUG,
     /// can push straight into a roll's detail without the Rolls tab needing to already be open.
@@ -281,7 +280,7 @@ struct MainTabView: View {
             Activation.log(.firstLaunch)
             Usage.log(.appOpen)
             Usage.reportClientVersion()
-            Task { if let uid = auth.currentUser?.id { await signals.refresh(feed: feed, rolls: rolls, userId: uid, lastActivitySeen: lastActivitySeenForDot) } }
+            Task { if let uid = auth.currentUser?.id { await signals.refresh(feed: feed, rolls: rolls, userId: uid, lastActivitySeen: ActivitySeenMark.value(userId: uid)) } }
             // Once per launch, not on every feed reload: this ratchets twelve predicates
             // server-side, and badges are not time critical. This is also the only reliable path
             // that lights the tab dot for a badge earned since the last launch, see

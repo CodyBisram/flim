@@ -43,7 +43,11 @@ struct PostDetailView: View {
     @Environment(PhotoService.self) private var photoService
 
     @State private var url: URL?
-    @State private var reactions: [PostReaction] = []
+    /// Read from the shared cache every feed card reads, so a reaction made here is on the card
+    /// when the person goes back, and a failed write rolls back here and there alike.
+    private var reactions: [PostReaction] {
+        (feed.reactionsByPost[post.id] ?? []).filter { !feed.blockedIds.contains($0.userId) }
+    }
     /// Drives the heart that blooms over a double tap, matching the feed's.
     @State private var heartBurst = false
     @State private var comments: [CommentInfo] = []
@@ -430,10 +434,7 @@ struct PostDetailView: View {
             Task { try? await Task.sleep(for: .milliseconds(650)); heartBurst = false }
         }
         guard !reactions.contains(where: { $0.emoji == "\u{2764}\u{FE0F}" && $0.userId == uid }) else { return }
-        Task {
-            await feed.reactToPost(post.id, emoji: "\u{2764}\u{FE0F}", userId: uid)
-            reactions = await feed.fetchReactions(postId: post.id)
-        }
+        Task { await feed.reactToPost(post.id, emoji: "\u{2764}\u{FE0F}", userId: uid) }
     }
 
     private var reactionBar: some View {
@@ -524,7 +525,9 @@ struct PostDetailView: View {
 
     private func load() async {
         url = await feed.signedURL(for: post.cardPath)
-        reactions = await feed.fetchReactions(postId: post.id)
+        // Seeds the shared cache for a post opened from a profile or Activity, which the feed
+        // may never have loaded. Epoch-guarded, and skips a post with a reaction write in flight.
+        await feed.refreshReactions(postIds: [post.id])
         await feed.loadTags(for: post.id)
         await reloadComments()
     }
@@ -555,20 +558,12 @@ struct PostDetailView: View {
         }
     }
 
+    /// Same path as the feed card: `reactToPost` applies the change to the shared cache at once
+    /// and rolls it back with `Haptics.error()` if the write never lands.
     private func toggle(_ emoji: String) {
         guard let uid = auth.currentUser?.id else { return }
-        let mine = reactions.contains { $0.emoji == emoji && $0.userId == uid }
         Haptics.tap()
-        Task {
-            if mine {
-                reactions.removeAll { $0.emoji == emoji && $0.userId == uid }
-                await feed.removeReaction(postId: post.id, emoji: emoji, userId: uid)
-            } else {
-                reactions.append(PostReaction(id: UUID(), postId: post.id, userId: uid, emoji: emoji))
-                await feed.addReaction(postId: post.id, emoji: emoji, userId: uid)
-            }
-            reactions = await feed.fetchReactions(postId: post.id)
-        }
+        Task { await feed.reactToPost(post.id, emoji: emoji, userId: uid) }
     }
 
     private func send() {
