@@ -1,15 +1,21 @@
 # FLIM v2, the full redesign. Prompt for Claude Design, third attempt (2026-09-24)
 
 Supersedes `CLAUDE_DESIGN_V2_FULL_REDESIGN_2026-09-20.md` and `CLAUDE_DESIGN_V2_BRIEF_2026-09-19.md`.
-What changed since September 20: 1.5.4 shipped the engineering fixes of September 24 (the camera
-recovers from interruptions, deletion cannot lie, the feed's rules applied everywhere); iOS 27 is
-out and Liquid Glass is no longer optional; the numbers moved (reciprocity 33 to 39, rolls still
-zero, Founding 100 at 24 seats); and the owner asked for the resilience states, the analytics, the
+What changed since September 20: 1.5.4 build 398 shipped the engineering fixes of September 24 (the
+camera recovers from interruptions, deletion cannot lie, the feed's rules applied everywhere); iOS 27
+is out; the numbers moved; and the owner asked for the resilience states, the analytics, the
 platform and the weekly feature's review flow to be in the brief rather than assumed.
+
+Revised the same evening by the owner's session, with what the cloud audit could not reach: section
+4 is now read from the live database (September 24), section 5 states the platform as it stands
+in people's hands and in the toolchain rather than on Apple's calendar, the weekly feature is
+called Spotlight, the owner's word (Contact Sheet and Selects are out; section 10 says why),
+the undo window is settled at five seconds everywhere, account deletion is one step, and section
+14 asks for the instrumentation v2 needs so the next brief is not written from guesses.
 
 Paste everything below the line into a new Claude Design project. Attach, in this order:
 
-1. A screenshot of every screen of the live 1.5.4 build (build after 395): splash, sign in, code,
+1. A screenshot of every screen of the live 1.5.4 build (build 398): splash, sign in, code,
    OTP, username, onboarding, camera (personal, inside a roll, the unavailable overlay, the
    permission refusal), the capture chip in each of its five states, Darkroom (empty, first frame,
    unsorted banner, a sorted month, year, all-time), the sort deck (a card, mid-swipe, the compose
@@ -144,7 +150,7 @@ honesty about what went wrong.
   is under 350ms and honours Reduce Motion. The reveal is the one exception, and it has its own
   board.
 - **Copy is the design.** Plain, warm, specific, in FLIM's words: roll, develop, Darkroom, keep
-  private, post to page, chapter, sheet, circled. No exclamation marks. No em dashes anywhere, in
+  private, post to page, chapter, Spotlight, circled. No exclamation marks. No em dashes anywhere, in
   copy or in your notes. Never "friends" where the truth is "people who follow you". Never
   "submit", "entry", "winner", "featured", "content", "engage".
 - **Nothing fails silently.** Every action that can fail shows where it failed, in the app's
@@ -158,51 +164,96 @@ honesty about what went wrong.
 
 ## 4. The people and the numbers
 
-Design for these people, not for a persona. Every number is from the nightly count on September
-23 or the recorded runs of the metrics functions; the audit (attached) has the sources.
+Design for these people, not for a persona. Every number below was read from the live database on
+the evening of September 24, 2026 (SELECT only; the queries are kept in the owner's session), except
+where it says it came from the nightly count. Where the database cannot answer, it says so. Do not
+fill a gap with a guess; a cohort under ten people is named as too small.
 
-- **77 accounts.** 23 to 33 open on a given day; the trailing week is 25 to 29, drifting down as
-  accounts grow. About a third of the roster on a given day.
-- **Two of three opens end with no photograph.** 6 to 18 people shoot on a given day. The camera is
-  the landing tab and most people walk past it.
-- **Reactions are the living part.** 30 to 180 a day, ten to one over comments; median comments
-  per post is zero every week. Everyone who posts is answered, median 40 minutes. A reaction push
-  brings 80 to 100% same-day opens.
-- **Reciprocal pairs, the proxy for a social layer,** went 53, 33, 39 over twelve days. 22 of 54
-  pairs run through the owner; three people are connected only through him.
-- **Rolls: zero created on every one of the last eighteen days.** 15 ever, none since September 6,
-  no follow-up roll ever, though "Start another with this group" has been live since 1.5.3. The
-  last four rolls had eight or nine members and five to seven reveal views each. Rolls work when
-  they happen and they do not happen.
-- **Newcomers arrive alone.** 10 of the last 22 accounts came through a campaign code with nobody
-  to follow. 14 of 50 weekly openers follow fewer than three people, and posts are followers-only,
-  so their feed is one or two people's days. The September 7 cohort fell from 58% to 26% by week
-  two; the August 10 cohort holds near half.
-- **First shot.** Median 130 minutes after account creation; 12 of 38 never took one. The
-  one-screen onboarding that replaced three cards has no after measurement yet.
-- **Invites.** About four redeemed a week, tracking new accounts exactly. Each person has three; one
-  comes back when the invitee takes a first photo. Founding 100 has 24 seats left, about six
-  weeks. Campaign codes (FLIMGO, BALI26, SEPT10) produced arrivals who followed nobody and never
-  shot; the one campaign that moved a number was a thank-you push, and it lasted one day.
-- **Notifications.** 12 active people were never asked; 11 of the 12 are camera-only and have
-  never touched a roll.
-- **Geography.** The app records no country. What is known: an Eastern-time app with a handful of
-  people abroad (one active account keeps UTC+8 hours; the promo cards were Italy, Bali, Dubai;
-  the Bali cohort never shot). Chapters now take the phone's time zone. Design the day boundary,
-  the develop clock and the weekly rhythm to read correctly in any zone, and never assume the
-  viewer and the photographer share one.
+- **79 accounts, 77 with a profile.** 56 have ever taken a shot, 52 have ever posted. In the last
+  seven days 52 opened the app and 41 did something (shot, posted or reacted); in the last 28, 67
+  opened and 56 did something. On a given day 23 to 31 open and 11 to 19 act. A third of the
+  roster opens on a given day; a fifth acts.
+- **What they run.** The app records its own version (50 of 67 reporting accounts on 1.5.3, five on
+  the 1.5.4 TestFlight) but not the OS or the phone. The only OS census is the crash and breadcrumb
+  sample, 28 people: 25 on iOS 26 (18 of them on 26.6), 2 on iOS 27, 1 on iOS 18. Two thirds of
+  that sample hold an iPhone 16 or 17; the rest run back to an iPhone 11. Read section 5 with this
+  in hand: iOS 27 is the platform's direction, not yet the population's.
+- **The graph runs through the owner.** He follows and is followed by all 76 others (the sign-up
+  auto-follow), so "follows nobody" is zero by construction. With him removed: median 9 following
+  and 8 followers among active accounts, p90 28; 91% of follows are mutual; 19 of 76 accounts
+  follow nobody else, 8 of them active this month. Reciprocal pairs (each answered the other within
+  seven days) went 53, 33, 39 over twelve days in the nightly count; 22 of 54 pairs run through the
+  owner.
+- **Posting is a reflex, not a ritual.** Of 543 personal posts in 28 days, the median went up 2.1
+  minutes after the shot; 56% within five minutes, 93% within a day, p90 17 hours. The sort deck is
+  the moment after the shutter, not a later review session. Of personal shots aged one to five
+  weeks, 42% were posted, 54% were kept and never posted, 4.6% are still unsorted (held by four
+  people). Roughly 18% of captures were deleted (a proxy from the capture counter; deleted rows
+  are gone). Most photographs live in the Darkroom unposted; design that archive, not only the
+  deck.
+- **The feed belongs to a few people.** 595 posts by 48 people in 28 days: mean 3.1 a week per
+  poster, median 1.25. The top five posters made half of all posts, the top ten two thirds, one
+  person 91. The per-author day unit exists for this reason; keep it, and draw the day of a person
+  who posted eight frames beside the day of a person who posted one, in the same feed.
+- **Reactions are the conversation.** 3.5 reactions per post; 0.11 comments per post; 8.6% of
+  posts have any comment; 14% carry a caption. 22 of 56 active people have ever commented. Nightly:
+  30 to 180 reactions a day, ten to one over comments; every post this month was answered, median
+  about 40 minutes; a reaction push brings 80 to 100% same-day opens.
+- **Rolls are an event, not a habit.** 15 ever, 4 in the last 28 days, none in 18 days, no
+  follow-up roll ever. When one happens it works: median 4 members and 35 frames, 9 of 15 had more
+  than one contributor, and 38 of 48 member slots watched the reveal across the ten rolls since
+  August 3 (18 people; too few to generalise). 35% of all shots in 28 days went into a roll, from
+  four rolls; roll posts drew 23 reactions and one comment. Section 11.
+- **Newcomers.** Sign-ups by week since August 3: 9, 21, 2, 1, 2, 19, 4, 3. 59 of 61 carry an
+  inviter; campaign codes admitted 12 (FLIMGO 9, BALI26 3), so personal invites brought at most 47
+  of 59, and a link cannot be told from a typed code. The September 7 cohort (19 people): 4 acted
+  on day 1, 5 on day 7, none on day 14. Still acting in the last week, by join month: 16 of 17 who
+  joined before August, 14 of 34 from August, 11 of 28 from September. Median first shot 130
+  minutes after sign-up (nightly read of September 8; 12 of 38 never shot); the one-screen
+  onboarding that replaced three cards has no after measurement.
+- **Invites.** About four redeemed a week, tracking new accounts exactly. Founding 100: the highest
+  sign-up ordinal is 77, 23 seats left, about six weeks. Earn-backs: 23 credited, 29 reversed,
+  across 11 inviters. Campaign codes produced arrivals who followed nobody and never shot; the one
+  thing that moved a number was a thank-you push, for one day.
+- **Notifications.** 40 accounts authorised, 2 denied, 37 never asked (a ceiling: 19 of those
+  joined before logging began). 42 hold a device token. Never-asked is the actionable bucket, and
+  it is computed from absence, not recorded.
+- **Time of day.** No time zone is stored per person or per photograph. By UTC hour the peak is
+  20:00 to 01:00 and the trough 06:00 to 12:00, which fits an Eastern-time base; assuming Eastern,
+  4.8% of shots fall between local midnight and 04:00, which is why the day boundary is 04:00.
+  Design the boundary, the develop clock, the Spotlight week and Sunday's close to read correctly in
+  any zone, and never assume the viewer and the photographer share one.
+- **Geography.** Unmeasurable. Sign-in is email only; no phone, locale or time zone is stored; the
+  website's country breakdown counts visitors, not users. The owner believes a cohort in Indonesia
+  is growing and is opening that App Store territory; the UTC hours show at most one to three
+  people shooting in Indonesian daytime. Section 14 asks v2 to specify the instrumentation that
+  ends this guess.
+- **Not instrumented, so do not design against it:** screens opened, session length, Chapters (no
+  view or recap event; nobody has chosen to show a Chapter stat publicly), feed depth (post_seen
+  exists since September 23 on five TestFlight phones, far too early to use).
 - **The goal for the next six months:** 100 people who open it on an ordinary Tuesday. The way
   there is the everyday loop (see a friend's day, answer it, shoot one of your own, get answered,
   come back) with three things added: a feed that has people in it on day one, a weekly rhythm the
   product itself supplies, and rolls that happen because the app noticed an occasion.
 
-## 5. The platform: iOS 27
+## 5. The platform: iOS 27 on the calendar, iOS 26 in people's hands
 
-iOS 27 shipped this month. Liquid Glass was reworked (lower default transparency, a user slider from
-clear to tinted, sharper icons) and the compatibility opt-out is ignored once an app builds with
-Xcode 27, so FLIM's system chrome is glass whether it chooses or not. Design for that, and for the
-Human Interface Guidelines' rule that glass belongs to the navigation layer floating above content
-and never to the content layer.
+iOS 27 shipped on September 14. Liquid Glass was reworked (more uniform refraction, better contrast,
+a Settings slider from clear to tinted, sharper icons) and the compatibility opt-out is ignored
+once an app builds with Xcode 27. Two facts sit against that, and the design must hold under both:
+
+- **FLIM builds with Xcode 26.3 today,** locally and on CI (the runner's latest stable), against
+  the iOS 26.2 SDK, with a deployment floor of iOS 18.0. Build 398 is an iOS 26 build. The Xcode
+  27 behaviour arrives when the toolchain moves, which the owner controls.
+- **The people are on iOS 26.** In the only census the app has (28 people, section 4), 25 run
+  iOS 26, 2 run 27, 1 runs 18. Design glass for iOS 26 first, confirm every glass element under
+  iOS 27's slider at both ends, and draw the iOS 18 variant (no glass; the app already falls back
+  through `FlimTheme`) for at least the tab bar, the camera and the feed.
+- **Widths.** Two thirds of the sample hold an iPhone 16 or 17 (402 and 430pt); the rest run from
+  an iPhone 11 to a 15 (390pt, a few at 375). Draw at 375, 390, 402 and 430.
+
+Design for the Human Interface Guidelines' rule that glass belongs to the navigation layer floating
+above content and never to the content layer:
 
 - **Glass on the navigation layer only:** the tab bar, toolbars, the capsule buttons that float
   over the viewfinder and the reveal, the sheet grabber and its chrome. Nowhere else.
@@ -213,12 +264,13 @@ and never to the content layer.
   changes the safe area; draw every scrolling screen with the bar in both states. A bottom
   accessory above the bar is available for one persistent element; decide whether FLIM uses it
   (the capture chip, the undo capsule, or nothing) and say why.
-- **The clarity slider** means your glass is seen at two extremes. Every glass element must read
-  at both; test the tab bar over a bright photograph at the clearest setting.
+- **The clarity slider** (iOS 27) means your glass is seen at two extremes. Every glass element
+  must read at both; test the tab bar over a bright photograph at the clearest setting.
 - **Concentric corners:** radii nest with the device's. Sheets, cards and the photograph's corner
   radius (12 today) are one family.
 - **SF Pro only,** every weight, width and optical size it has. Dynamic Type text styles for every
-  role. Numbers in tabular figures where they change (a clock, a count).
+  role. Numbers in tabular figures where they change (a clock, a count). The one exception to
+  scaling is the exported photograph's date stamp, which is part of the image, not the interface.
 - **The camera is not Apple's Camera.** iOS 27 moved Camera's mode settings beside the shutter and
   made its controls customisable; FLIM's camera stays simpler than that on purpose (one look, no
   modes), but its control positions should feel native to a person who just left Camera.app.
@@ -258,7 +310,10 @@ say so.
   invites end when it develops; the twelve-hour develop (the number comes from
   `Roll.developDelayPhrase`, never typed); the Darkroom's night and month structure; the 04:00 day
   boundary; Feed and Activity stay separate (decided: no merge); tab signals are dots, never
-  numbers; badges are discovered, never pushed.
+  numbers; badges are discovered, never pushed; the undo window is five seconds everywhere
+  (build 398 moved the Darkroom onto the shared undo capsule); account deletion is one server
+  call, so its failure means nothing was deleted, and the photograph files are erased from
+  storage within a few days, not at once.
 - Sign-in is email plus a six-digit emailed code, invite only. No phone numbers, no social
   sign-in, no guest.
 - No scores, streaks, ranks, leaderboards, public counts, "top", "trending", "most", progress
@@ -365,7 +420,7 @@ roll from the roll itself. The roll pill's picker.
 **Darkroom ★.** Unsorted shots waiting, visible in the rack, not only behind a banner. The sort
 deck ★: Keep private, Post to page, Delete, with undo, the audience sentence at Post, the durable
 Keep/Post label that never retires, and the frame's own verdict on the card (sharp, Missed, one of
-a burst of three). Compose (caption, tags, the sheet, "and put it on the sheet"). A sorted month:
+a burst of three). Compose (caption, tags, Spotlight: "and put it up for Spotlight"). A sorted month:
 nights, the month's closing row, zoom levels, kept and posted told apart at a glance. A shot
 opened: the pager, reactions and comments on a private shot from a roll, export with the
 seven-segment date, and the reason when export is not offered. Empty Darkroom, first ever and after
@@ -389,7 +444,7 @@ fewer than a handful), and the thin-feed state with one friend's Tuesday. The no
 Activity: every row kind (reaction, comment, thread reply, mention, tag, follow with Follow back,
 roll developed, circled), the unavailable case. Empty feed, first ever, caught up, and nobody has
 posted this week. The double-tap heart and what a second double-tap does. The 04:00 boundary said
-once where a person can find it. The sheet at the top (section 10).
+once where a person can find it. Spotlight at the top (section 10).
 
 **Pages ★ (your own).** Identity in one glance without a 300pt header; the newest posts before a
 Chapter exists; the Chapter shelf with this month's slot in it (in progress, not missing); the
@@ -399,12 +454,14 @@ Follow, the reason you might know them); follow in flight (the grid does not fla
 blocked. A Chapter ★: the finished month, the recap, playback, the closing card, export, and the
 "still computing" card that says it is provisional. Find people you know (search, suggestions, the
 rows). Badges: the two that lead, the picker, the locked catalogue that does not read as a
-checklist.
+checklist, and the Spotlight badge among them (section 10). The circled shelf on the page
+(section 10). Spotlight's own page and its entry (section 10), in every state of the week.
 
 **Settings and trust.** Settings (accent, notifications, camera roll autosave with the refusal
 inline, badges, stats visibility, feedback, blocked people, sign out, delete). Block and its undo;
 unblock and its failure. Report a photograph and a person. Delete account, with what happens to
-your photographs said plainly, hold to confirm, and the failure that names which step failed.
+your photographs said plainly (the account goes at once, the files within a few days), hold to
+confirm, and the one failure: nothing was deleted, try again.
 The invite sheet (personal code, the quota, the earn-back, share text). The share preview for an
 exported photograph, and the decision whether it carries a way in.
 
@@ -414,94 +471,134 @@ image. The version block.
 
 **The owner's surface.** See section 10, the review queue.
 
-## 10. The weekly feature: the Contact Sheet, circled
+## 10. The weekly feature: Spotlight
 
-**On the name.** The owner asked for this feature today using the word Spotlight: a person posts a
-photograph and can put it forward; the owner, personally, from the admin account, reviews the
-submissions; once a week a handful are shown. The owner's own September 19 and 20 briefs specify the
-same feature and say it must not be called Spotlight, Featured, Highlights, Best of or Picks,
-because other apps own those words and none of them are film; they name it **the Contact Sheet**,
-verb **circled**. This prompt uses those names. Decision 1 in section 15 puts the choice to the
-owner; one find-and-replace changes it. Design it so either name works.
+**On the name.** The owner's word is Spotlight, and it stands. The earlier briefs objected that
+Snapchat has a Spotlight (its public short-video tab) and Apple's search is Spotlight; the owner
+weighed that and kept the word, because it says what the feature is to a person who has never
+seen a contact sheet. Two names are out: Contact Sheet (the September 19 name; rejected) and
+Selects (Lapse's own word for the favourite photographs on a profile header). The film material
+lives in the mark, not the name: the place is Spotlight, and a chosen frame is **circled**, in
+grease pencil, by the owner. Use those two words and no others for it; never "featured", "picked",
+"winner" or "top".
 
-A contact sheet is the page of small positives a photographer prints from a roll to choose from;
-the chosen frames are circled on it in red grease pencil. That is the whole feature, in an object
-every film photographer knows and no app has used.
+**The precedent, stated so it is designed against and not rediscovered.** Lapse had this feature.
+It was called Featured: a person submitted a shot to the Lapse team, and if approved it appeared on
+a Featured page (users also called it Explore) with the best shots from everyone on the app. The
+owner used it. People said it encouraged taking artsier pictures, and Lapse removed it when it cut
+its social features back to the journal. So the category has had a human editor and lost one, and
+the audit's line that nobody in the category has an editor is wrong. What FLIM's version keeps
+from Lapse's: a person chooses to put a frame forward, a human decides, the result is shown to
+everyone. What it changes, and why it should not go the way Lapse's did: one frame per person per
+week, not an open submission box; a week with a Monday, not a rolling page; the uncircled frames
+stay visible in their place, not rejected into silence; no counts anywhere; and the editor is the
+one person the whole roster already follows, circling on his phone in ten minutes, not a team
+reviewing a queue. Design so the person who submitted and was not circled still feels they were
+seen, which is the failure Lapse's silence produced.
 
 **The mechanic.**
 
-- One sheet a week, shared by everyone on FLIM. Opens Monday at 04:00 in the app's day boundary,
-  closes Sunday night. State the week in the viewer's zone and name the zone once.
-- Each person may put **one frame** on the sheet per week, from anything they posted that week.
-  One, like 36 exposures: the scarcity is why nobody has to be told to post their best.
+- One Spotlight a week, shared by everyone on FLIM. It opens Monday at 04:00 in the app's day
+  boundary and closes Sunday night. State the week in the viewer's zone and name the zone once.
+- Each person may put **one frame** up per week, from anything they posted that week. One, like 36
+  exposures: the scarcity is why nobody has to be told to post their best.
 - Monday morning the owner circles a handful with the grease pencil. Circled stays circled forever.
-  The uncircled frames stay on the sheet, in their place, not demoted, not counted.
-- Nobody votes. No counts on the sheet, no ordering by response, no "most". Frames sit in the
-  order they went up. The circle is an editor's mark, not a score.
-- Past sheets stay, one per week, like a box of sheets: "Week of September 14".
-- Copy uses the object: "Put it on the sheet." "On this week's sheet." "The sheet closes tonight."
-  "Your frame was circled." "Circled, week of September 14."
+  The frames not circled stay in Spotlight where they were put, in their place, not demoted, not
+  counted.
+- Nobody votes. No counts, no ordering by response, no "most". Frames sit in the order they went
+  up. The circle is an editor's mark, not a score.
+- Past weeks stay, one per week, like a box of prints: "Spotlight, week of September 14".
+- Copy: "Put it up for Spotlight." "Up for Spotlight this week." "Spotlight closes tonight." "Your
+  frame was circled." "Circled, week of September 14."
 
 **What you decide and show.**
 
-- **Where it lives.** Not a fifth tab. The top of the Feed as a horizontal sheet the person can
-  scroll (the sheet is social, the feed is where people look), or the top of Rolls (quiet, and a
-  sheet is a roll everyone shares), or, if rolls fold into the feed, the sheet takes the place
-  Rolls had. Pick one, and say what it costs the everyday loop at 375pt with the tab bar drawn.
+- **Where it lives: its own page, reached from a small entry.** The owner has decided this much.
+  Spotlight is a page of its own, not a tab and not a row inside the feed, because it is a
+  once-a-week thing and must not spend everyday real estate. What you design is the entry: one
+  compact element, never more than one row at 375pt with the tab bar drawn, that says the week's
+  state in a glance and opens the page. Draw the entry in every state of the week: Monday morning
+  after circling (the circled frames, small), midweek (quiet, the count of frames up is not
+  shown, only that it is open), Sunday for a person who posted and put nothing up ("Spotlight
+  closes tonight"), and the very first week. Propose where the entry sits (the top of the Feed,
+  the Feed's toolbar, the top of Rolls, or the place Rolls had if rolls fold into the feed) and
+  say what each costs the everyday loop. The page itself is full-bleed: the week's frames and
+  nothing else above them but the week's name and the zone, with past weeks reachable from it.
 - **Putting a frame up.** From the frame itself (your own post, in the feed or on your page) and
-  from the sort deck at the moment of posting ("Post to page, and put it on the sheet"). Before
+  from the sort deck at the moment of posting ("Post to page, and put it up for Spotlight"). Before
   the tap lands it says, in words: everyone on FLIM will see it there, not only the people who
-  follow you, and anyone you tagged is told. The confirmation, the undo, withdraw until the sheet
+  follow you, and anyone you tagged is told. The confirmation, the undo, withdraw until the week
   closes, swap when a frame is already up this week (the old one comes down, stated).
-- **The sheet itself.** 3:4 positives on the dark ground with the rebate drawn as a hairline, one
-  row of frames per scroll line, your own frame marked as yours without a badge. Tapping a frame
-  opens the frame with its reactions and comments exactly as the feed does; the sheet has no viewer
-  of its own. The sheet at 0 (the first hour of a Monday, and the very first week), 3, 12 and 40
-  frames.
+- **Spotlight itself.** 3:4 positives on the dark ground with the rebate drawn as a hairline, one
+  row per scroll line, your own frame marked as yours without a badge. Tapping a frame opens the
+  frame with its reactions and comments exactly as the feed does; Spotlight has no viewer of its
+  own. Draw it at 0 (the first hour of a Monday, and the very first week), 3, 12 and 40 frames.
+  With 48 posters a month and one frame each per week, 12 to 30 is the realistic range.
 - **Monday morning.** The circled frames carry a hand-drawn red-orange grease-pencil circle over
   the frame's corner, slightly off-round, drawn once, never animated after the first reveal. The
-  person whose frame was circled gets one push ("Your frame was circled") that lands on the sheet,
-  scrolled to their frame. Nobody else is pushed about circling. The morning after: the sheet, the
+  person whose frame was circled gets one push ("Your frame was circled") that lands on Spotlight,
+  scrolled to their frame. Nobody else is pushed about circling. The morning after: Spotlight, the
   frame page of a circled frame (the circle visible there too, quietly), the person's own page (a
   circled frame in the grid carries the mark at 120pt thumbnails), and Activity's circled row.
-- **Sunday.** One reminder, only to people who posted that week and put nothing up. "The sheet
+- **The trophy.** A frame that was circled earns its photographer a mark that lasts, and the owner
+  wants it to feel like a trophy. FLIM already has the shape for that: the profile badges (a
+  catalogue of about twenty, earned quietly, discovered on the person's own page, never pushed,
+  the rarest shown first, a picker to lead with two). Add a **Spotlight badge** to that catalogue,
+  earned the first time one of the person's frames is circled, with the grease-pencil circle as
+  its glyph, in the same family as the other badges and no louder. The circled frame itself is
+  the durable trophy: it carries the circle in the grid at 120pt, on its frame page, and in every
+  past week's Spotlight, forever. Draw the badge on the person's page beside the existing ones,
+  in the picker, and the moment it is discovered (the person opens their page after the circle
+  push; no second push, no confetti, no modal). The badge is earned once and never changes: no
+  count, no tiers, no second form. A second circle sends the same push and marks the second frame,
+  and the badge stays as it was. The owner decided this.
+- **The shelf.** What grows is not the badge but a shelf on the person's own page: their circled
+  frames, each with its week ("Circled, week of September 14"), the way the Chapter shelf holds
+  finished months. It appears only once a person has been circled, so most pages pay nothing for
+  it; it never shows a number, and it cannot be compared across people at a glance the way a
+  count can. Draw it at one frame, three and eight, on the owner's page, on a friend's page and on
+  the page of someone you do not follow (the shelf follows the page's visibility rule: profile
+  visible, photographs not, so the shelf shows that it exists and not the frames). Say where it
+  sits against the Chapter shelf and the grid, and what it costs at 375pt.
+- **Sunday.** One reminder, only to people who posted that week and put nothing up. "Spotlight
   closes tonight."
-- **A new person's first week,** without a tour: the sheet explains itself by being there.
-- **Trust.** Deleting a post takes the frame and its circle off every sheet. Blocking hides both
-  ways. Reporting from the sheet works as it does from the feed. The privacy line the owner will
+- **A new person's first week,** without a tour: Spotlight explains itself by being there.
+- **Trust.** Deleting a post takes the frame and its circle out of every week. Blocking hides both
+  ways. Reporting from Spotlight works as it does from the feed. The privacy line the owner will
   paste into the policy.
-- **The nine states** of section 8 for the sheet: loading, the week rolling over while it is on
+- **The nine states** of section 8 for Spotlight: loading, the week rolling over while it is on
   screen, a frame whose post was deleted mid-week, a circled frame whose author was blocked,
-  offline (the sheet you loaded stays; putting up queues and says so), the race where two frames
+  offline (the week you loaded stays; putting up queues and says so), the race where two frames
   are put up from two phones.
 
 **The owner's review, which the earlier briefs left as "one owner-only action".** The owner is one
 person reviewing on a Monday morning. Design the review as a queue, not a dashboard:
 
-- **Where.** The web admin panel already has queue cards (invite requests, reported photographs,
-  reported people, feedback) with action buttons and a refetch after each action. The sheet review
-  is a fifth card in the same pattern: this week's frames, newest first, at 3:4 with the
+- **Where.** The web admin panel already has queue panels (invites waiting, reported photographs,
+  reported people, feedback) with action buttons and a refetch after each action. The review is a
+  fifth panel in the same pattern: this week's frames, newest first, at 3:4 with the
   photographer's handle and the day it went up, a Circle action per frame, an Uncircle within the
   hour, a count of circled so far, and Close the week. Design it at desktop width and at phone
   width (the owner does this from his phone). Also propose an in-app owner mode (the same queue
   behind the owner's own page, visible only to the owner account) and say which you recommend and
-  why; the owner decides (decision 7).
+  why; the owner decides (decision 6).
 - **The rhythm.** Sunday night the queue is complete. Monday morning the owner circles. Circling is
   immediate per frame; the push to each circled person goes when the owner taps Done for the
   week, so nobody is pushed twice and a change of mind costs nothing. If the owner has not closed
-  the week by Monday noon in the app's zone, nothing happens: no circles, no pushes, the sheet
+  the week by Monday noon in the app's zone, nothing happens: no circles, no pushes, Spotlight
   simply stays as it is, and the next week opens on schedule.
 - **States.** An empty week (nobody put anything up): what the owner sees and what the app shows
-  everyone (a sheet with no frames is still a sheet). One frame. Forty. A frame reported while on
-  the sheet. A frame whose author deleted their account between Sunday and Monday.
+  everyone (a Spotlight with no frames is still a Spotlight). One frame. Forty. A frame reported
+  while it is up. A frame whose author deleted their account between Sunday and Monday.
 - **What it must never become:** a leaderboard, a popularity contest, a reason to post for an
   audience you did not choose, a second feed that competes with the first for the fold, or a
   chore for the owner.
 
 **What exists:** posts, tags, reactions, comments, blocks, reports, the day boundary, pushes,
-campaigns, the admin panel with its queue cards. **What is new:** one table (post, week key, put
+campaigns, the admin panel with its queue panels. **What is new:** one table (post, week key, put
 up at, circled at, withdrawn at), one owner-only circle action and one close-the-week action, two
-push kinds, a week-key rule, one admin card. No new rendition. The owner's session builds it; you
+push kinds, a week-key rule, one admin panel, one badge in the existing catalogue, one shelf on
+the page, one route (the page) and one entry. No new rendition. The owner's session builds it; you
 say what the person sees and when.
 
 ## 11. The roll prompt
@@ -537,14 +634,16 @@ prototype, not asserted:
 4. A roll: the occasion prompt, create with the default name and the people it is with, invite one
    more by link and one by code, everyone shoots, waiting (the clock on the camera), the reveal for
    the creator and for a member, leave mid-reveal and come back, save one, start another.
-5. The sheet: post a frame, put it on the sheet from the deck, withdraw, put a different one up,
-   Sunday's reminder, Monday's circle, the push, the frame page, the grid mark, the archive a month
-   later.
+5. Spotlight: post a frame, put it up from the deck, withdraw, put a different one up, Sunday's
+   reminder, Monday's circle, the push landing on the page, the frame page, the grid mark, the
+   badge discovered on the person's own page, the shelf with one frame on it, the entry the rest
+   of the week, the week a month later, and the second circle a month on (the same push, the
+   second frame marked, the shelf at two, the badge unchanged).
 6. The owner's Monday: open the queue on a phone, circle four of thirty, uncircle one, close the
    week, and what each of the four sees.
 7. A Chapter: the month closes, the provisional card, the recap, playback, export with the date,
    the closing card.
-8. Offline: shoot three, sort them, post one, put one on the sheet, react to a friend's frame,
+8. Offline: shoot three, sort them, post one, put one up for Spotlight, react to a friend's frame,
    comment, lose connection halfway; everything queued, nothing lost, the truth stated on each
    item; reconnect; one item fails and says so.
 9. Dead data: open a push for a deleted post, a feed with a blocked author's comment, a chapter
@@ -565,7 +664,7 @@ You choose the direction in stage 2, but not from nothing:
   screen.
 - The photograph is the only saturated colour. Everything else is value, not hue.
 - Film as material: the rebate and perforation of a strip as structure (a day is a strip, a month
-  is a rack, a week is a sheet), the grease-pencil circle as the one hand-drawn mark, the
+  is a rack, a week is its Spotlight), the grease-pencil circle as the one hand-drawn mark, the
   fourteen-segment date as the one display face. Never a camera body, a dial, a lens flare, a
   light leak, a torn edge, a Polaroid frame.
 - Type: SF Pro, one family, many weights and optical sizes. Large light titles, small caps
@@ -594,45 +693,62 @@ Show the three directions as real screens, not mood boards. The owner judges on 
   each or the line that says it does not apply.
 - **Copy inventory:** every string, old beside new, with the board it is on. The owner vetoes line
   by line.
-- **Change map:** A presentation only; B client behaviour; C needs the server (the sheet's table
+- **Change map:** A presentation only; B client behaviour; C needs the server (the Spotlight table
   and actions, the roll prompt's occasion detection, the push kinds, the admin card); D unresolved,
   as questions.
 - **Rollout in batches** scoped by what can be reverted independently, each with the check that
   must pass before the next: look regression pins unchanged; contrast and targets audited on a
   device; captures per active day not falling; response within 24 hours of posting not falling;
-  sessions that reach a friend's photograph; rolls created not zero; the sheet's distinct people
+  sessions that reach a friend's photograph; rolls created not zero; Spotlight's distinct people
   per week and reactions on circled frames in the 48 hours after (never shown to anyone as a
   number).
-- **The five-person study,** on the released build: the seven existing tasks plus two for the
-  sheet and one for the roll prompt; record the participant's own word for every object before you
+- **The five-person study,** on the released build: the seven existing tasks plus two for
+  Spotlight and one for the roll prompt; record the participant's own word for every object before you
   supply it; what would count as a failure.
 - **Explicitly incomplete:** drawn but not wired; not drawn; not validated on a device.
 - **Where you were wrong during the work,** with the measurement that corrected it.
+- **Instrumentation v2 must specify,** because the rollout checks above cannot be measured today
+  and this brief's numbers came from proxies. Name the event, when it fires, and what it must not
+  carry: screens opened per day (the app records opens, not screens); feed depth (post_seen
+  exists, extend it to every build); the phone's time zone and iOS version at each open (the app
+  records neither, so geography is a guess and the OS census is a crash sample); Spotlight (put
+  up, withdrawn, circled, opened from the push); the roll prompt (shown, declined, accepted);
+  Chapters (opened, played, exported). Day-bucket counters, no per-tap streams, nothing that could
+  rank a person: the app's instrumentation is plain Postgres by design and stays that way.
 - No monetization appendix.
 
 ## 15. Decisions the owner has not yet made
 
-Ask these at the end of stage 1, in this form, and carry any unanswered one as a drawn pair:
+Decided already: the name is Spotlight, with circled as the mark; the badge is earned once and never
+changes, and the circled frames collect on a shelf on the person's page (section 10). Ask these at the end of
+stage 1, in this form, and carry any unanswered one as a drawn pair:
 
-1. **The weekly feature's name.** A: the Contact Sheet, circled (your September 19 decision; film
-   object, no other app has it). B: Spotlight (your word today; Instagram and TikTok have it). A is
-   recommended. One find-and-replace either way.
-2. **Rolls as a tab.** A: keep the tab, redesign the cards and add the prompt. B: fold rolls into
-   Camera and Feed, keep the reveal and the off-app surfaces, give the tab's place to the sheet.
-3. **Launch surface and tab order.** A: the study decides (say when it runs). B: the design
+1. **Rolls as a tab.** A: keep the tab, redesign the cards and add the prompt. B: fold rolls into
+   Camera and Feed, keep the reveal and the off-app surfaces, give the tab's place to Spotlight.
+2. **Launch surface and tab order.** A: the study decides (say when it runs). B: the design
    decides now, and the study, if it runs, checks it.
-4. **Comments.** A: a real labelled control beside the chips, at the cost of card height. B: leave
-   comments where they are and accept 3%.
-5. **Founding 100.** A: it ends and nothing replaces it. B: a next hundred with a different mark.
+3. **Comments.** A: a real labelled control beside the chips, at the cost of card height. B: leave
+   comments where they are and accept 8.6% of posts with any comment.
+4. **Founding 100.** A: it ends and nothing replaces it. B: a next hundred with a different mark.
    C: invites earn back on more than the first photo.
-6. **The export.** A: the date stamp only, as today. B: the date stamp and the handle. C: a way in
+5. **The export.** A: the date stamp only, as today. B: the date stamp and the handle. C: a way in
    (a code or a link) on the story crop only.
-7. **The owner's review.** A: a queue card in the web admin panel. B: an in-app owner mode. C: both,
+6. **The owner's review.** A: a queue panel in the web admin panel. B: an in-app owner mode. C: both,
    web first.
-8. **The undo window.** A: five seconds everywhere (the design). B: four in the Darkroom (what
-   shipped). One number.
-9. **The word for a shot.** Shot, frame, or something else. The grouped card that needs "12 of
+7. **The word for a shot.** Shot, frame, or something else. The grouped card that needs "12 of
    these" is the moment to decide.
+8. **iOS 18.** A: v2 draws the no-glass variant for every screen and it ships as a peer. B: iOS 18
+   gets the fallback the code already has, drawn for the three anchor screens only, and the floor
+   moves to iOS 26 at the next major release.
+9. **Language.** The app has no localisation at all, English literals throughout, and the owner
+    is opening the Indonesian App Store territory. A: English only, stated as a decision, and the
+    copy inventory is the only string table. B: v2's strings are written to be translated (no
+    concatenation, no gendered or idiomatic phrasing that only works in English), and Indonesian
+    is the first second language, with the date stamp and the day names drawn both ways.
+10. **Recording where people are.** A: store the phone's time zone and locale at each open
+    (privacy-light, day-bucketed, never the location), so the day boundary, the Spotlight week and
+    the territory question stop being guesses. B: keep recording nothing and design for any zone
+    blind.
 
 ## 16. Rules of conduct
 
