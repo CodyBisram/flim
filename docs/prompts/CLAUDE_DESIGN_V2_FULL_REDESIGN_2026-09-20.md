@@ -1,3 +1,7 @@
+> SUPERSEDED 2026-09-24 by `CLAUDE_DESIGN_V2_FULL_REDESIGN_2026-09-24.md`, which adds the
+> numbers, iOS 27, the nine resilience states, the owner's review queue and the open decisions.
+> Kept for the record.
+
 # FLIM v2, the full redesign. Prompt for Claude Design
 
 Paste everything below the line into a new Claude Design project. Attach, in this order:

@@ -1,3 +1,7 @@
+> SUPERSEDED 2026-09-20 by `CLAUDE_DESIGN_V2_FULL_REDESIGN_2026-09-20.md`, itself superseded
+> 2026-09-24 by `CLAUDE_DESIGN_V2_FULL_REDESIGN_2026-09-24.md`. Kept for the record; the Contact
+> Sheet mechanic first written here carries forward unchanged.
+
 # FLIM v2 brief, second attempt
 
 Paste everything below the line into a new Claude Design project. Attach, in this order:
