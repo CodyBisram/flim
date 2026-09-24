@@ -6,7 +6,7 @@ description: >
   work. It defines the exact Swift contract but normally does not edit Swift files.
   Escalate major security architecture or irreversible migration decisions to the lead
   session.
-model: sonnet
+model: opus
 tools: Read, Edit, Write, Grep, Glob, Bash
 ---
 

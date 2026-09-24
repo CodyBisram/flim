@@ -5,7 +5,7 @@ description: >
   for iOS code that is not owned by the film-look pipeline or Supabase backend. It may
   consume a schema contract from supabase-guardian, but owns the corresponding Swift
   model, service, and UI edits. Never commits or pushes.
-model: sonnet
+model: opus
 tools: Read, Edit, Write, Grep, Glob, Bash
 ---
 

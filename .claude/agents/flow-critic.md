@@ -6,7 +6,7 @@ description: >
   after changing onboarding, auth, invites, or any error path, and when a change adds a
   new screen a stranger will meet before they trust the app. Not for correctness, builds,
   or performance; other agents own those.
-model: sonnet
+model: opus
 tools: Read, Grep, Glob, Bash
 ---
 

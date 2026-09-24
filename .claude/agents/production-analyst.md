@@ -4,7 +4,7 @@ description: >
   Read-only analyst for FLIM production data: counts, cohorts, funnels, retention,
   reach, and campaign targeting. Use when a question is answered by querying the live
   database rather than reading code. SELECT only: no DDL, no DML, no deploys, no sends.
-model: sonnet
+model: opus
 tools: Read, Grep, Glob, Bash
 ---
 

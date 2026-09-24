@@ -5,7 +5,7 @@ description: >
   TestFlight status, signing, versioning, App Store readiness, and Vercel deployment.
   Use for release operations or readiness, not routine implementation verification.
   Does not edit app code.
-model: sonnet
+model: opus
 tools: Read, Grep, Glob, Bash
 ---
 

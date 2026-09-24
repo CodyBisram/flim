@@ -5,7 +5,7 @@ description: >
   screenshots, and runtime logs. The caller must request TARGETED, FEATURE, or RELEASE
   depth. Use after implementation and before pushes, but do not run a full release pass
   for every small change.
-model: sonnet
+model: opus
 tools: Read, Grep, Glob, Bash
 ---
 

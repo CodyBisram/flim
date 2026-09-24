@@ -6,7 +6,7 @@ description: >
   irreversible data changes, or hard-to-test behavior. Use before a push when the diff
   changes risky behavior, spans domains, fixes a crash or data-loss bug, or is broadly
   user-visible. Do not use for routine localized changes.
-model: sonnet
+model: opus
 tools: Read, Grep, Glob, Bash
 ---
 

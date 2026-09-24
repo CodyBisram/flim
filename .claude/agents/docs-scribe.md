@@ -5,7 +5,7 @@ description: >
   workflow, architecture fact, release step, public behavior, backlog item, or App Store
   copy. Do not invoke for ordinary bug fixes or internal refactors with no documentation
   impact. Writes only docs/*.md and README.md.
-model: sonnet
+model: opus
 tools: Read, Grep, Glob, Edit, Write
 ---
 
