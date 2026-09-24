@@ -94,6 +94,33 @@ final class CameraViewModel: NSObject {
     private var hasLoggedCameraReady = false
     private var hasLoggedShutterTapped = false
 
+    // MARK: - Interruption state
+
+    /// True while the viewfinder cannot show frames or take a shot: AVFoundation interrupted the
+    /// session (another app took the camera, system pressure, Split View), or a runtime error
+    /// stopped it and a restart has not brought it back yet. The view dims the viewfinder, says
+    /// why, and disables the shutter while this holds. Without it a stolen camera froze the last
+    /// frame and `capturePhoto()` returned silently on `guard session.isRunning`.
+    private(set) var isInterrupted = false
+    /// One line saying why the camera is unavailable. `nil` whenever `isInterrupted` is false.
+    private(set) var interruptionReason: String?
+    /// True when the unavailability came from a runtime error AVFoundation will not recover from
+    /// by itself, so the view offers a retry. An interruption ends on its own and needs none.
+    private(set) var canRetryCamera = false
+    /// In-flight guard for `retryCamera()` and the automatic restarts. Read by the view so a
+    /// retry in flight reads as one and cannot be tapped twice.
+    private(set) var isRestartingSession = false
+    /// What the Camera tab currently wants: set by `startRunning()` (tab appears) and cleared by
+    /// `stopRunning()` (tab disappears). The recovery paths below only restart the session while
+    /// this is true, so a phone call ending while someone is on the Feed never turns the camera
+    /// back on behind their back. Recovery never decides by itself when the camera should run.
+    private var wantsSessionRunning = false
+    /// The session notification observers, one Task per notification, each scoped to this
+    /// view model's own `session` object. Installed once from `configure()` and cancelled in
+    /// `deinit`. Lock-guarded and `nonisolated` so `deinit`, which is not main-actor isolated,
+    /// can reach it.
+    nonisolated private let sessionObserverTasks = OSAllocatedUnfairLock<[Task<Void, Never>]>(initialState: [])
+
     /// Which camera is active. Front has no hardware LED, but `isFlashSupported` below still
     /// shows the flash toggle for it: `output.supportedFlashModes` includes `.on` for the front
     /// camera on this hardware too, which is what lets "flash on" resolve to iOS's own front
@@ -146,6 +173,10 @@ final class CameraViewModel: NSObject {
         captureGenerationLock.withLock { $0.removeValue(forKey: id) }
     }
 
+    deinit {
+        sessionObserverTasks.withLock { $0.forEach { $0.cancel() } }
+    }
+
     // MARK: - Setup
 
     /// Requests camera access (if needed), then configures + starts the session. Sets
@@ -170,6 +201,9 @@ final class CameraViewModel: NSObject {
     }
 
     func configure() {
+        // Ahead of the input guard: idempotent on its own, and a configure that failed to add an
+        // input (and so runs again next time) must not have skipped the observers.
+        installSessionObservers()
         guard session.inputs.isEmpty else { return }
 
         session.beginConfiguration()
@@ -569,6 +603,7 @@ final class CameraViewModel: NSObject {
     }
 
     func startRunning() {
+        wantsSessionRunning = true
         guard !session.isRunning else { return }
         Task.detached(priority: .userInitiated) { [weak self] in
             self?.session.startRunning()
@@ -579,6 +614,8 @@ final class CameraViewModel: NSObject {
             // never actually started is one of the three explanations for that gap.
             guard let self, self.session.isRunning else { return }
             await MainActor.run {
+                // A tab visit that got frames back also clears a stale runtime-error state.
+                self.clearUnavailableIfRunning()
                 guard !self.hasLoggedCameraReady else { return }
                 self.hasLoggedCameraReady = true
                 Activation.log(.cameraReady)
@@ -587,6 +624,9 @@ final class CameraViewModel: NSObject {
     }
 
     func stopRunning() {
+        // Before the guard: an interrupted session reports `isRunning == false`, and leaving the
+        // tab mid-interruption must still stop the interruption-end path from restarting it.
+        wantsSessionRunning = false
         guard session.isRunning else { return }
         // No more metadata is coming, so the last frame's rectangles would otherwise still be on
         // screen when the viewfinder comes back, hanging over a scene that has since changed.
@@ -657,7 +697,7 @@ final class CameraViewModel: NSObject {
         // whenever `isFlashEnabled` is true (previously only ever true for a rear LED flash), so no
         // separate change was needed there to avoid a double flash on top of iOS's own.
         if isFront && flashMode == .on {
-            Self.shutterTappedAt = Date()
+            Self.shutterTappedAt.withLock { $0 = Date() }
             Self.log.notice("shutter tapped, front flash path")
         }
         rememberCaptureGeneration(generation, forSettingsID: settings.uniqueID)
@@ -689,10 +729,12 @@ final class CameraViewModel: NSObject {
     /// next attempt is measured rather than reasoned. Read with Console.app, subsystem
     /// com.flim.app, category camera.
     private static let log = Logger(subsystem: "com.flim.app", category: "camera")
-    nonisolated(unsafe) private static var shutterTappedAt: Date?
+    /// Written on the main actor at the tap, read on AVFoundation's delegate queue in
+    /// `didCapturePhotoFor`, so the lock is what makes the cross-thread read safe.
+    nonisolated private static let shutterTappedAt = OSAllocatedUnfairLock<Date?>(initialState: nil)
 
     nonisolated private static func sinceShutterMS() -> Int {
-        guard let start = shutterTappedAt else { return -1 }
+        guard let start = shutterTappedAt.withLock({ $0 }) else { return -1 }
         return Int(Date().timeIntervalSince(start) * 1000)
     }
 
@@ -715,6 +757,160 @@ final class CameraViewModel: NSObject {
             withAnimation(.easeOut(duration: 0.3)) { self.flashOpacity = 0 }
         }
 
+    }
+}
+
+// MARK: - Session interruption and runtime errors
+
+extension CameraViewModel {
+    /// Observes the session's interruption and runtime-error notifications, following Apple's
+    /// AVCam sample. Each observer is scoped to `session` (not any session in the process) and
+    /// runs on the main actor, since every handler writes tracked `@Observable` state. Idempotent:
+    /// `configure()` runs on every Camera tab visit, and a second set would double every restart.
+    ///
+    /// Additive only. It does not start or stop the session on its own schedule: the tab's
+    /// `onAppear`/`onDisappear` still own that, and a restart here only ever happens while
+    /// `wantsSessionRunning` says the tab is showing.
+    func installSessionObservers() {
+        let alreadyInstalled = sessionObserverTasks.withLock { !$0.isEmpty }
+        guard !alreadyInstalled else { return }
+        // Captured as a local so no Task below holds `self` strongly across its whole loop, which
+        // would keep the view model alive forever and make the `deinit` cancel unreachable.
+        let session = self.session
+        let center = NotificationCenter.default
+        let interrupted = Task { @MainActor [weak self] in
+            for await note in center.notifications(named: AVCaptureSession.wasInterruptedNotification, object: session) {
+                guard let self else { return }
+                self.sessionWasInterrupted(reasonCode: note.userInfo?[AVCaptureSessionInterruptionReasonKey] as? Int)
+            }
+        }
+        let ended = Task { @MainActor [weak self] in
+            for await _ in center.notifications(named: AVCaptureSession.interruptionEndedNotification, object: session) {
+                guard let self else { return }
+                self.sessionInterruptionEnded()
+            }
+        }
+        let runtimeError = Task { @MainActor [weak self] in
+            for await note in center.notifications(named: AVCaptureSession.runtimeErrorNotification, object: session) {
+                guard let self else { return }
+                let error = note.userInfo?[AVCaptureSessionErrorKey] as? NSError
+                self.sessionRuntimeError(domain: error?.domain, code: error?.code)
+            }
+        }
+        sessionObserverTasks.withLock { $0 = [interrupted, ended, runtimeError] }
+    }
+
+    /// Retry offered by the view after a runtime error the session did not recover from.
+    func retryCamera() {
+        guard canRetryCamera, wantsSessionRunning else { return }
+        restartSession(isUserRetry: true)
+    }
+
+    private func sessionWasInterrupted(reasonCode: Int?) {
+        let reason = reasonCode.flatMap { AVCaptureSession.InterruptionReason(rawValue: $0) }
+        Self.log.notice("session interrupted, reason=\(reasonCode ?? -1, privacy: .public)")
+        // Backgrounding interrupts the session too. Nobody can see the viewfinder then, and the
+        // interruption ends on the way back, so flagging it would only flash the unavailable
+        // state for a frame on every return to the app.
+        if reason == .videoDeviceNotAvailableInBackground { return }
+        faceRects = []
+        isInterrupted = true
+        canRetryCamera = false
+        interruptionReason = Self.interruptionMessage(for: reason)
+    }
+
+    private func sessionInterruptionEnded() {
+        Self.log.notice("session interruption ended, wantsRunning=\(self.wantsSessionRunning, privacy: .public)")
+        isInterrupted = false
+        interruptionReason = nil
+        canRetryCamera = false
+        if wantsSessionRunning {
+            restartSession()
+        } else {
+            // The tab was left mid-interruption. AVFoundation resumes an interrupted session by
+            // itself, which would run the camera behind whatever screen is showing now.
+            let session = self.session
+            Task.detached(priority: .userInitiated) {
+                if session.isRunning { session.stopRunning() }
+            }
+        }
+    }
+
+    private func sessionRuntimeError(domain: String?, code: Int?) {
+        Self.log.error("session runtime error, domain=\(domain ?? "nil", privacy: .public) code=\(code ?? 0, privacy: .public)")
+        guard wantsSessionRunning else { return }
+        faceRects = []
+        let mediaServicesReset = domain == AVFoundationErrorDomain
+            && code == AVError.Code.mediaServicesWereReset.rawValue
+        if mediaServicesReset {
+            // Apple's documented recovery: start the same session again. The configuration
+            // survives the reset, so nothing needs rebuilding.
+            restartSession()
+        } else {
+            markCameraFailed()
+        }
+    }
+
+    /// `afterRetry` changes the reason line so a "Try again" that failed does not look like one
+    /// that never ran.
+    private func markCameraFailed(afterRetry: Bool = false) {
+        isInterrupted = true
+        canRetryCamera = true
+        interruptionReason = afterRetry
+            ? "Still not working. Closing and reopening \(AppInfo.appName) usually brings it back."
+            : "The camera stopped unexpectedly."
+    }
+
+    /// Starts the session again off the main actor (`startRunning()` blocks), then reports back.
+    /// A restart that does not leave the session running shows the retry state rather than a
+    /// frozen viewfinder with a live-looking shutter.
+    private func restartSession(isUserRetry: Bool = false) {
+        guard !isRestartingSession else { return }
+        isRestartingSession = true
+        let session = self.session
+        Task.detached(priority: .userInitiated) { [weak self] in
+            if !session.isRunning { session.startRunning() }
+            let running = session.isRunning
+            let interrupted = session.isInterrupted
+            await self?.finishRestart(running: running, interrupted: interrupted, isUserRetry: isUserRetry)
+        }
+    }
+
+    /// The main-actor tail of `restartSession`.
+    private func finishRestart(running: Bool, interrupted: Bool, isUserRetry: Bool) {
+        isRestartingSession = false
+        if running, !wantsSessionRunning {
+            // The tab was left while the restart was in flight; honor that stop.
+            let session = self.session
+            Task.detached(priority: .userInitiated) { session.stopRunning() }
+        } else if running {
+            clearUnavailableIfRunning()
+        } else if wantsSessionRunning, !interrupted {
+            Haptics.error()
+            markCameraFailed(afterRetry: isUserRetry)
+        }
+    }
+
+    /// Clears the unavailable state once the session is genuinely running again and not
+    /// interrupted. Left alone during an interruption, whose own end notification clears it.
+    func clearUnavailableIfRunning() {
+        guard isInterrupted, session.isRunning, !session.isInterrupted else { return }
+        isInterrupted = false
+        canRetryCamera = false
+        interruptionReason = nil
+    }
+
+    private static func interruptionMessage(for reason: AVCaptureSession.InterruptionReason?) -> String {
+        switch reason {
+        case .videoDeviceInUseByAnotherClient, .audioDeviceInUseByAnotherClient:
+            return "Another app is using the camera. It comes back when that app lets go."
+        case .videoDeviceNotAvailableWithMultipleForegroundApps:
+            return "The camera can't run while another app shares the screen."
+        case .videoDeviceNotAvailableDueToSystemPressure:
+            return "The phone is too warm for the camera. It comes back once it cools."
+        default:
+            return "The camera comes back as soon as it's free."
+        }
     }
 }
 

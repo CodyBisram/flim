@@ -152,6 +152,16 @@ struct CameraView: View {
                     // above, and attached to the box for the same reason.
                     .overlay { faceIndicators }
                     .animation(.easeOut(duration: 0.18), value: camera.faceRects)
+                    // Camera taken away (another app, system pressure, a runtime error). A dim
+                    // layer plus one line over the box, never a second preview layer or a blur,
+                    // neither of which works on the live video layer on device.
+                    .overlay { cameraUnavailableOverlay }
+                    .animation(.easeOut(duration: 0.2), value: camera.isInterrupted)
+                    // The shutter, the usual way to cancel a self-timer, is disabled while the
+                    // camera is unavailable, so the countdown must not keep ticking under it.
+                    .onChange(of: camera.isInterrupted) { _, now in
+                        if now { countdown = nil }
+                    }
                     // Zoom floats on the feed, just above the box's rounded bottom edge.
                     .overlay(alignment: .bottom) {
                         zoomControl
@@ -403,10 +413,15 @@ struct CameraView: View {
 
     private func shutter() {
         if countdown != nil { countdown = nil; return }   // tapping again cancels the timer
+        // The volume rocker reaches here with the on-screen shutter disabled. Say no out loud
+        // rather than firing into a session that cannot take the shot.
+        guard !camera.isInterrupted else { Haptics.error(); return }
         if selfTimerSeconds > 0 { startCountdown() } else { capture() }
     }
 
     private func capture() {
+        // A self-timer can run out after the camera was taken away mid-countdown.
+        guard !camera.isInterrupted else { Haptics.error(); return }
         Haptics.shutter()
         // No app shutter sound, AVCapturePhotoOutput plays the system camera-shutter sound itself
         // at the actual capture (correctly timed, and after the flash fires). Playing our own too
@@ -618,7 +633,8 @@ struct CameraView: View {
     /// buttons keep the shutter company so the band reads as a control strip, not a void.
     private var bottomBar: some View {
         ZStack {
-            ShutterButton(isCapturing: camera.isCapturing) { shutter() }
+            ShutterButton(isCapturing: camera.isCapturing,
+                          unavailableReason: camera.isInterrupted ? (camera.interruptionReason ?? "Camera unavailable") : nil) { shutter() }
             HStack {
                 // Flip lives here rather than the top bar: it's the most-reached-for control
                 // after the shutter, and it balances the flash on the opposite side.
@@ -668,6 +684,57 @@ struct CameraView: View {
             GlassEffectContainer(spacing: 16) { content() }
         } else {
             content()
+        }
+    }
+
+    // MARK: - Camera unavailable
+
+    /// Shown over the viewfinder while `camera.isInterrupted`: the frozen last frame dimmed, one
+    /// line naming the state, one saying why, and a retry only when the session will not come
+    /// back by itself. Always mounted; empty when the camera is fine, so the box never re-lays out.
+    @ViewBuilder
+    private var cameraUnavailableOverlay: some View {
+        if camera.isInterrupted {
+            ZStack {
+                Color.black.opacity(0.6)
+                VStack(spacing: 8) {
+                    // Icon and copy read as one element; the retry stays its own button.
+                    VStack(spacing: 8) {
+                        Image(systemName: "video.slash.fill")
+                            .font(.system(size: 22, weight: .regular))
+                            .foregroundStyle(.white.opacity(0.85))
+                            .accessibilityHidden(true)
+                        Text("Camera unavailable")
+                            .flimType(.name)
+                            .foregroundStyle(.white)
+                        if let reason = camera.interruptionReason {
+                            Text(reason)
+                                .flimType(.meta)
+                                .foregroundStyle(.white.opacity(0.75))
+                                .multilineTextAlignment(.center)
+                                .padding(.horizontal, 32)
+                        }
+                    }
+                    .accessibilityElement(children: .combine)
+                    if camera.canRetryCamera {
+                        Button {
+                            Haptics.tap()
+                            camera.retryCamera()
+                        } label: {
+                            Text(camera.isRestartingSession ? "Starting\u{2026}" : "Try again")
+                                .flimType(.control)
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 20)
+                                .frame(minHeight: 44)
+                        }
+                        .disabled(camera.isRestartingSession)
+                        .contentShape(Capsule())
+                        .glassCapsule(interactive: true)
+                        .padding(.top, 6)
+                    }
+                }
+            }
+            .transition(.opacity)
         }
     }
 
@@ -810,6 +877,9 @@ struct CameraView: View {
 
 private struct ShutterButton: View {
     let isCapturing: Bool
+    /// Non-nil while the camera is unavailable: the button dims, stops responding, and reads the
+    /// reason to VoiceOver instead of looking live over a frozen viewfinder.
+    var unavailableReason: String? = nil
     let action: () -> Void
     @State private var pulse = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -837,8 +907,11 @@ private struct ShutterButton: View {
             .contentShape(Circle())
         }
         .animation(.spring(duration: 0.2, bounce: 0.4), value: isCapturing)
-        .disabled(isCapturing)
+        .disabled(isCapturing || unavailableReason != nil)
+        .opacity(unavailableReason == nil ? 1 : 0.35)
+        .animation(.easeOut(duration: 0.2), value: unavailableReason)
         .accessibilityLabel("Take photo")
+        .accessibilityHint(unavailableReason.map { "Camera unavailable. \($0)" } ?? "")
         .onAppear {
             guard !reduceMotion else { return }
             withAnimation(.easeOut(duration: 1.9).repeatForever(autoreverses: false)) {
