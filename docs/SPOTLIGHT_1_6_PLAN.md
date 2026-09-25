@@ -11,9 +11,13 @@ everyone" needs a deliberate, narrow server exception, not nothing.
 
 ## The idea
 
-Spotlight is a Monday, not a place. All week it is invisible. People put one frame a week
-forward from their own post's menu, and only the editor (the owner) sees what was put up. After
-the week closes, the editor chooses three to six and publishes. The chosen frames arrive in
+Copy rule, from the owner (2026-09-25): the people choosing are "the team at FLIM" in every
+user-facing string, and a Spotlight is always named by its week ("the week of September 28"),
+never by a weekday.
+
+Spotlight is the week's frames, not a place. All week it is invisible. People put one frame a week
+forward from their own post's menu, and only the team at FLIM (the owner, in practice) sees what
+was put up. After the week closes, the team chooses three to six and publishes. The chosen frames arrive in
 everyone's feed as one short strip, roughly a third of the height of a single post, at the
 moment of publishing. It scrolls past and ages out after seven days like everything else. The
 record lives with the people chosen: a gold badge, earned once, and a shelf on their page.
@@ -24,11 +28,12 @@ Nothing about Spotlight competes with the feed, because it is only ever one stri
 
 - **Putting one up.** One item in the own-post menu, on the feed card and on the post opened,
   shown only when the post can go up this week (the server says so; see Week). "Put it up for
-  Spotlight", subtitle "Only the editor sees it". The first time only, a sheet: "Only the editor,
-  the person who runs [app name], sees what you put up. After the week closes a few frames are
+  Spotlight", subtitle "Only the team at [app name] sees it". The first time only, a sheet: "Only
+  the team at [app name] sees what you put up. After the week closes a few frames are
   chosen, and those are shown to everyone on [app name]. One frame a week. You can take it down
-  until [the week's close, in your own time]." The undo capsule appears after the sheet closes,
-  never under it: "Up for Spotlight / Only the editor sees it". Once up, the item reads "Take it
+  until this week closes." (The close is the week's real end, shown in the phone's own time
+  wherever a time is shown.) The undo capsule appears after the sheet closes,
+  never under it: "Up for Spotlight / Only the team at [app name] sees it". Once up, the item reads "Take it
   down from Spotlight". Putting up a different frame the same week swaps it: "Swap it into
   Spotlight", subtitle "Takes down your frame from Tuesday" (the day comes from the server's
   answer, never from a loaded post). Nothing else anywhere shows that a frame is up.
@@ -36,7 +41,7 @@ Nothing about Spotlight competes with the feed, because it is only ever one stri
   tagged ("Frames with people tagged can't go up"), a frame shot by someone else and shared to
   your page, a post from an earlier week. Covered accounts see no item at all.
 - **Publish.** The strip in the feed: a band with a small light glyph in the avatar slot,
-  "Spotlight", "week of Sep 14", a "new" pill until seen, and a chevron; under it a horizontal
+  "Spotlight", "the week of September 14", a "new" pill until seen, and a chevron; under it a horizontal
   row of the chosen frames at 118pt, 3:4, the handle under each. Tapping a frame fetches the post
   and opens it as the push route does (a frame deleted or hidden since reads "That photo isn't
   there anymore."). Tapping the band opens a sheet of past weeks, paged, one row per week.
@@ -48,7 +53,7 @@ Nothing about Spotlight competes with the feed, because it is only ever one stri
 - **The rest of the week.** The strip stays at the place it arrived, without the pill, and ages
   out with the seven-day window. It never moves while someone is reading: its place is decided at
   a reload, the boundary reload or "New posts", never live.
-- **A week the editor does not publish.** Nothing appears. It stays in the editor's queue and can
+- **A week the team does not publish.** Nothing appears. It stays in the queue and can
   be published late; the strip is labelled with its own week.
 - **Empty feeds.** A person who follows nobody still sees the strip above the first-run
   screen. It is the one place a newcomer meets other people's photographs.
@@ -60,32 +65,33 @@ Nothing about Spotlight competes with the feed, because it is only ever one stri
   badge is (the avatar dot, no push). A SPOTLIGHT shelf on their page above Chapters.
 - **Taking it back after publish.** The photographer can take a published frame out ("Take it
   out of Spotlight", with a consequence line: it leaves the strip and your shelf, and the badge
-  stays). The editor can remove any frame. Deleting the post removes it everywhere.
-- **The editor.** A fifth queue in the web admin panel. It lists every closed, unpublished week
+  stays). The team can remove any frame. Deleting the post removes it everywhere.
+- **The team at FLIM (the owner's admin panel).** A fifth queue in the web admin panel. It lists every closed, unpublished week
   with its count, newest first; the frames at 3:4 with handle and day; Choose / Chosen (six at
-  most); flags on frames from the App Review account or from anyone in a block with the editor;
+  most); flags on frames from the App Review account or from anyone in a block with the owner;
   "Publish to everyone" behind a confirm(), refused with zero chosen, a no-op on a second press.
-  An ops push to the editor Monday 09:00 Eastern with the count waiting.
+  An ops push to the owner at 09:00 Eastern on the first morning after the week closes, with the
+  count waiting.
 
 ## Decisions
 
 | Decision | Answer | Why |
 |---|---|---|
 | Where Spotlight lives | One strip in the feed, placed at publish | The owner's rule: never as heavy as the feed |
-| Who sees submissions | Only the editor | Nothing public until chosen |
+| Who sees submissions | Only the team at FLIM | Nothing public until chosen |
 | How many chosen | Three to six (enforced: at most six) | An event, and still one strip |
-| When the editor can choose | Only after the week closes | Stops a published frame being swapped or withdrawn underneath it |
-| Late weeks | Any closed week can be published, labelled with its own week | A missed Monday never erases the week |
+| When the team can choose | Only after the week closes | Stops a published frame being swapped or withdrawn underneath it |
+| Late weeks | Any closed week can be published, labelled with its own week | A late choice never erases the week |
 | Public reach of a chosen frame | The photograph, its reactions, and reacting | "Shown to everyone" is the feature |
 | Comments on a chosen frame | Followers and tagged people only, as today | Comments were written for followers; strangers writing to people is the one new contact the feature would otherwise open |
 | Tagged frames | Cannot be put up; tags cannot be added to a frame that is up or chosen | A tagged friend never agreed to be shown to everyone |
 | Frames shot by someone else | Cannot be put up | Credit and consent belong to the photographer |
 | Page grid and Chapters for strangers | Unchanged, follower rule | The shelf is the public record, the rest of the page stays private |
-| After publish | The photographer can take a frame out; the editor can remove one; the badge stays | Publication is long-lived through the shelf, so there must be a way back |
+| After publish | The photographer can take a frame out; the team can remove one; the badge stays | Publication is long-lived through the shelf, so there must be a way back |
 | The mark on frames | None | The strip, the badge and the shelf carry it |
 | Badge | Gold, earned once, never changes, not shown in any locked catalogue | The existing ratchet and the "discovered, never pushed" rule |
 | Push route | `{t:"feed", week}` to every device | 1.5.x reads "feed" and ignores the rest; no per-device version lookup exists |
-| Editor deadline | None | A missed Monday must not erase the week |
+| Deadline for choosing | None | A late choice must not erase the week |
 
 Cut from the first pass, deliberately: the header switch, the Spotlight view, the public grid of
 submissions, the compose toggle, the "Up for Spotlight" pill, the Sunday reminder push, the
@@ -101,7 +107,7 @@ Server (from the SQL review):
    row read, the storage read of its bytes, and reactions. Comments, tags, page reads and the
    chapter functions keep the follower rule. The helper keeps EXECUTE for `authenticated`
    (revoking it on `is_blocked_either_way` once took production down).
-2. **The editor could not see put-up frames** unless following their authors. Covered by the
+2. **The owner could not see put-up frames** unless following their authors. Covered by the
    owner clause in the same helper; blocks still apply and are flagged in the queue.
 3. **RLS recursion and early leaks** if the entries table had client policies. Both tables: RLS
    on, no policies, `REVOKE ALL FROM PUBLIC, anon, authenticated` (TRUNCATE is not governed by
@@ -115,7 +121,7 @@ Server (from the SQL review):
 5. **Choose or publish on an open week.** Put-up and take-down accept only the current week;
    choose, unchoose and publish accept only closed weeks. At the boundary instant the row lock
    decides and the loser reports a named refusal.
-6. **Publish pressed twice; choose racing publish.** Every editor write upserts the week row,
+6. **Publish pressed twice; choose racing publish.** Every owner write upserts the week row,
    locks it `FOR UPDATE`, then checks. Publish is `UPDATE ... WHERE published_at IS NULL`; a
    second press returns `already_published`. The seventh choose returns `limit`.
 7. **Someone else's shot shared to your page.** Put-up requires the caller's own photo, not only
@@ -146,13 +152,13 @@ Server (from the SQL review):
     marked; a person with no device gets the Activity row; delivery is at-least-once through the
     existing ledger and lease.
 18. **Version-aware routing** was impossible per device. Route `{t:"feed", week}` for everyone.
-19. **The editor's Monday push across DST.** Cron `0 13,14 * * 1` calling a function that runs
+19. **The owner's morning push across DST.** Cron `0 13,14 * * 1` calling a function that runs
     only at 09:00 Eastern and only once per week, through `ops_alerts`.
 20. **Copied paths would go stale and confuse the storage sweeps.** No path columns; paths come
     through the posts join at read time.
 21. **Row caps.** History reads return one row per week with the frames as a jsonb array, paged
     by `p_before` and `p_limit` (12).
-22. **No way out after publish.** `removed_at`, an editor remove, and a photographer take-out.
+22. **No way out after publish.** `removed_at`, an owner remove, and a photographer take-out.
 23. **Captions and tags going public.** Tagged frames are refused; the caption stays the
     photographer's and editable, and shows to everyone on a chosen frame (stated in the
     first-time sheet's audience line).
@@ -205,8 +211,10 @@ Client (from the client review):
 42. **History paging.** Keyset on `week_key` with a limit; one batch of signed URLs per page.
 43. **Accessibility.** Frames fixed at 118pt (chrome); handles scale and truncate; the band is
     one button ("Spotlight, week of September 14, new"); each frame reads "Photo by @handle".
-44. **Copy that was untrue.** "The owner" becomes "the editor, the person who runs [app name]";
-    "until Monday" and "Sunday night" become the week's real close in the person's own time;
+44. **Copy that was untrue, and copy the owner asked to change.** The people choosing are "the
+    team at [app name]", never "the owner" or "the editor". Spotlight is framed as the week's, never
+    as Monday's: "the week of September 28" wherever a week is named; "until this week closes" and
+    any shown time are the week's real close in the person's own time;
     "this week's" leaves the push.
 
 ## The contract (what v2 inherits)
@@ -234,7 +242,7 @@ covered, created this week; one upsert; returns the entry and what it replaced).
 (the photographer, after publish; sets removed_at). `own_spotlight_entry()` (week_key,
 week_starts_at, week_closes_at, the live entry's post_id, photo_id, post_created_at, put_up_at;
 never chosen_at). `spotlight_published(p_before date DEFAULT NULL, p_limit int DEFAULT 12)` and
-`spotlight_frames(p_user_id, p_before, p_limit)` (one row per week, frames as jsonb). Editor only,
+`spotlight_frames(p_user_id, p_before, p_limit)` (one row per week, frames as jsonb). Owner only,
 is_owner() inside each body, week row locked FOR UPDATE: `list_spotlight_queue(p_week_key date
 DEFAULT NULL)`, `choose_spotlight_entry(p_post_id)` (six at most),
 `unchoose_spotlight_entry(p_post_id)`, `publish_spotlight_week(p_week_key)` (idempotent, refuses
@@ -246,7 +254,7 @@ Adding a tag to a post that is up or chosen is refused with `in_spotlight`.
 
 **Pushes.** `spotlight_chosen` polls chosen, unpushed entries in published weeks; the
 `push_deliveries` ledger keyed (spotlight_chosen, week_key, user_id); skips and marks hidden or
-removed frames; route `{t:"feed", week:"<week_key>"}`. The editor's Monday ops push through
+removed frames; route `{t:"feed", week:"<week_key>"}`. The owner's morning ops push through
 `ops_alerts`, cron `0 13,14 * * 1` gated to 09:00 Eastern.
 
 **Badge and counters.** `spotlight` added to the badge CHECK and to `_ratchet_badges`; the
@@ -269,7 +277,7 @@ in any locked list.
    menu states, the first-time sheet, the write queue and the undo; the Activity row, the badge,
    the shelf, the push route; the gated comments on strangers' chosen frames. New files need
    `xcodegen generate` and a check that the test count moved.
-3. **Release** (release-captain): 1.6.0 on TestFlight through one real week with the editor
+3. **Release** (release-captain): 1.6.0 on TestFlight through one real week with the owner
    publishing; then the App Store; then `latest_version` 1.6.0.
 
 ## What proves it
