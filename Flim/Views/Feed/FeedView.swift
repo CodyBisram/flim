@@ -1027,34 +1027,18 @@ struct FeedView: View {
 
     /// Places every strip week. A full snapshot re-places all of them; `growOnly` (paging, a
     /// straddle completion, a block, a delete) keeps every slot that still has its anchor and
-    /// only places the ones that were waiting on an unloaded page or lost their unit.
+    /// only places the ones that were waiting on an unloaded page or lost their unit, at their
+    /// own place, never lifted over the seam. See `SpotlightSlot.snapshot`.
     private func snapshotSpotlight(growOnly: Bool) {
-        let unitIds = units.map(\.id)
         let seam: SpotlightSeam
         switch caughtUp {
         case .pending: seam = .none
         case .top: seam = .top
         case .after(let id): seam = .after(id)
         }
-        var next = growOnly ? spotlightSlots : [:]
-        for week in feed.spotlightStripWeeks {
-            if growOnly, let existing = next[week.weekKey], slotIsAnchored(existing, unitIds: unitIds) { continue }
-            let placement = SpotlightPlacement.place(units: units, publishedAt: week.publishedAt,
-                                                     hasMoreFeed: feed.hasMoreFeed)
-            next[week.weekKey] = SpotlightSlot.slot(placement: placement, seam: seam, unitIds: unitIds,
-                                                   unseen: !seenSpotlight.contains(week.weekKey))
-        }
-        spotlightSlots = next
-    }
-
-    /// Whether a held slot still points at something that renders. `.hidden` is never kept by
-    /// a grow-only pass: it is the "waiting on an unloaded page" state that paging resolves.
-    private func slotIsAnchored(_ slot: SpotlightSlot, unitIds: [String]) -> Bool {
-        switch slot {
-        case .hidden: return false
-        case .top, .afterLast: return true
-        case .beforeUnit(let id), .aboveCaughtUpBlock(let id): return unitIds.contains(id)
-        }
+        spotlightSlots = SpotlightSlot.snapshot(
+            previous: spotlightSlots, weeks: feed.spotlightStripWeeks, units: units, seam: seam,
+            hasMoreFeed: feed.hasMoreFeed, seen: seenSpotlight, growOnly: growOnly)
     }
 
     private var spotlightSlotsHaveOrphans: Bool {

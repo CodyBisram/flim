@@ -95,7 +95,8 @@ struct SpotlightWeek: Decodable, Identifiable, Equatable {
 }
 
 /// The own-post menu's state, from `own_spotlight_entry()`: this week's bounds, whether the
-/// account may put anything up (false inside a covered window), and this week's entry if any.
+/// account may put anything up (false inside a covered window), this week's entry if any, and
+/// the entry still waiting in the most recent closed week the team has not published yet.
 /// Never carries `chosen_at`.
 struct OwnSpotlightEntry: Decodable, Equatable {
     let weekKey: String
@@ -106,6 +107,12 @@ struct OwnSpotlightEntry: Decodable, Equatable {
     var photoId: UUID?
     var postCreatedAt: Date?
     var putUpAt: Date?
+    /// The caller's entry in the most recent closed, unpublished week: it can still come down
+    /// until the team publishes that week. Optional on the wire (absent before the server
+    /// learns to send it), so an older server simply reads as nothing pending.
+    var pendingWeekKey: String? = nil
+    var pendingPostId: UUID? = nil
+    var pendingPhotoId: UUID? = nil
 
     enum CodingKeys: String, CodingKey {
         case weekKey = "week_key"
@@ -116,9 +123,13 @@ struct OwnSpotlightEntry: Decodable, Equatable {
         case photoId = "photo_id"
         case postCreatedAt = "post_created_at"
         case putUpAt = "put_up_at"
+        case pendingWeekKey = "pending_week_key"
+        case pendingPostId = "pending_post_id"
+        case pendingPhotoId = "pending_photo_id"
     }
 
-    /// The same bounds with no entry: what a take-down leaves behind.
+    /// The same bounds with no entry this week: what a take-down leaves behind. The closed
+    /// week's pending entry is untouched.
     var cleared: OwnSpotlightEntry {
         var next = self
         next.postId = nil
@@ -126,6 +137,25 @@ struct OwnSpotlightEntry: Decodable, Equatable {
         next.postCreatedAt = nil
         next.putUpAt = nil
         return next
+    }
+
+    /// The same, with the closed week's pending entry taken down instead.
+    var clearedPending: OwnSpotlightEntry {
+        var next = self
+        next.pendingWeekKey = nil
+        next.pendingPostId = nil
+        next.pendingPhotoId = nil
+        return next
+    }
+
+    /// Whether this post is the entry this week or the one still waiting on its week's publish.
+    func holds(postId: UUID) -> Bool { self.postId == postId || pendingPostId == postId }
+
+    /// The same, by photo id: a Darkroom delete knows nothing else.
+    func holds(photoIdIn ids: Set<UUID>) -> Bool {
+        if let photoId, ids.contains(photoId) { return true }
+        if let pendingPhotoId, ids.contains(pendingPhotoId) { return true }
+        return false
     }
 }
 
@@ -155,10 +185,13 @@ struct SpotlightPutUpResult: Decodable, Equatable {
 /// Words for a week, built from the `week_key` string. A Spotlight is always named by its week
 /// ("the week of September 14"), never by a weekday.
 ///
-/// The string is read as calendar components and formatted in the SAME calendar and zone it
-/// is placed in, so the day named is the day the string says in every zone on earth. Decoding
-/// "2026-09-14" as midnight UTC and formatting it locally is exactly how Los Angeles would
-/// read "September 13".
+/// The string is read as GREGORIAN calendar components and formatted in the same Gregorian
+/// calendar and zone it is placed in, so the day named is the day the string says in every
+/// zone on earth and under every calendar a phone can be set to. Decoding "2026-09-14" as
+/// midnight UTC and formatting it locally is exactly how Los Angeles would read "September
+/// 13"; building it in the phone's own calendar is how a Persian or Islamic calendar would
+/// read it as month 9 of that calendar. The `calendar` a caller passes contributes only its
+/// time zone.
 enum SpotlightWeekLabel {
     static func components(_ weekKey: String) -> DateComponents? {
         let parts = weekKey.split(separator: "-")
@@ -168,17 +201,20 @@ enum SpotlightWeekLabel {
         return DateComponents(year: year, month: month, day: day)
     }
 
+    /// A Gregorian calendar in `zone`, whatever calendar the phone is set to.
+    static func gregorian(in zone: TimeZone) -> Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = zone
+        return calendar
+    }
+
     private static func format(_ weekKey: String, _ template: String, calendar: Calendar) -> String? {
         guard var parts = components(weekKey) else { return nil }
-        // Noon in the calendar's own zone: the named day, whatever the zone's offset.
+        let gregorian = gregorian(in: calendar.timeZone)
+        // Noon in the zone: the named day, whatever the zone's offset.
         parts.hour = 12
-        guard let date = calendar.date(from: parts) else { return nil }
-        let formatter = DateFormatter()
-        formatter.calendar = calendar
-        formatter.timeZone = calendar.timeZone
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = template
-        return formatter.string(from: date)
+        guard let date = gregorian.date(from: parts) else { return nil }
+        return SpotlightDateFormatters.formatter(template, zone: gregorian.timeZone).string(from: date)
     }
 
     /// "September 14". Falls back to the raw key rather than inventing a date.
@@ -226,6 +262,9 @@ enum SpotlightMenuItem: Equatable {
     /// replaced frame was posted ("today", "yesterday", else the weekday), from the server's
     /// `post_created_at`, filed by the 04:00 day.
     case swap(fromDay: String)
+    /// Put up in a week that has closed but is not published yet: it can still come down
+    /// until the team publishes that week.
+    case takeDownPending(weekKey: String)
     case disabled(reason: String)
     /// Your own frame, chosen and published. Taking it out is final; the badge stays.
     case takeOut(weekKey: String)
@@ -243,6 +282,11 @@ enum SpotlightMenuItem: Equatable {
                         now: Date = .now, calendar: Calendar = .current) -> SpotlightMenuItem {
         guard let viewerId, post.isOwned(by: viewerId) else { return .hidden }
         if let chosenWeekKey { return .takeOut(weekKey: chosenWeekKey) }
+        // Consent holds until publish: the closed week's frame can come down whatever this
+        // week allows (a covered window included).
+        if let entry, entry.pendingPostId == post.id, let pendingWeek = entry.pendingWeekKey {
+            return .takeDownPending(weekKey: pendingWeek)
+        }
         guard let entry, entry.canPutUp else { return .hidden }
         // The bounds are the server's. An earlier week's post says why it cannot go up; one
         // past the close means the entry itself is stale, so nothing is offered until it is
@@ -277,27 +321,48 @@ enum SpotlightMenuItem: Equatable {
     /// boundary so a 01:00 post reads as the night before, the way the feed shows it.
     static func weekday(of date: Date, calendar: Calendar = .current) -> String {
         let day = FeedUnit.dayKey(for: date, calendar: calendar)
-        let formatter = DateFormatter()
-        formatter.calendar = calendar
-        formatter.timeZone = calendar.timeZone
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "EEEE"
-        return formatter.string(from: day.addingTimeInterval(12 * 3600))
+        return SpotlightDateFormatters.formatter("EEEE", zone: calendar.timeZone)
+            .string(from: day.addingTimeInterval(12 * 3600))
     }
 }
 
-/// The capsule a put-up stages: a plain put-up, or a swap that names the frame it replaced.
-enum SpotlightPutUpCapsule {
-    /// - Parameter previous: the entry before this put-up. A swap is another post already up
-    ///   with its posting time known.
-    static func text(previous: OwnSpotlightEntry, post: Post, now: Date = .now,
-                     calendar: Calendar = .current) -> (title: String, subtitle: String) {
-        if let replacedId = previous.postId, replacedId != post.id,
-           let replacedAt = previous.postCreatedAt {
-            let day = SpotlightMenuItem.dayWord(of: replacedAt, now: now, calendar: calendar)
-            return ("Swapped into Spotlight", "Your frame from \(day) came down")
+/// Spotlight's date formatters, built once per pattern and zone rather than once per label:
+/// Gregorian, `en_US_POSIX`, never mutated after they are cached, so a cached one is safe to
+/// format with from any thread.
+enum SpotlightDateFormatters {
+    private static let lock = NSLock()
+    private static var cache: [String: DateFormatter] = [:]
+
+    static func formatter(_ pattern: String, zone: TimeZone) -> DateFormatter {
+        let key = "\(pattern)|\(zone.identifier)"
+        lock.lock()
+        defer { lock.unlock() }
+        if let cached = cache[key] { return cached }
+        let formatter = DateFormatter()
+        formatter.calendar = SpotlightWeekLabel.gregorian(in: zone)
+        formatter.timeZone = zone
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = pattern
+        cache[key] = formatter
+        return formatter
+    }
+}
+
+/// What the capsule's slot says once a put-up has landed: a plain put-up, or a swap that names
+/// the frame it replaced. No Undo: a frame can be taken down from its menu any time until the
+/// week closes, so a few seconds of door would protect nothing.
+enum SpotlightPutUpNotice {
+    /// - Parameters:
+    ///   - replacedPostId: the frame the server says this put-up took down, if any.
+    ///   - replacedAt: when that frame was posted, from the server, else from the menu's entry.
+    static func text(postId: UUID, replacedPostId: UUID?, replacedAt: Date?, now: Date = .now,
+                     calendar: Calendar = .current) -> String {
+        guard let replacedPostId, replacedPostId != postId else {
+            return "Up for Spotlight. Only the team at \(AppInfo.appName) sees it."
         }
-        return ("Up for Spotlight", "Only the team at \(AppInfo.appName) sees it")
+        guard let replacedAt else { return "Swapped into Spotlight. Your earlier frame came down." }
+        let day = SpotlightMenuItem.dayWord(of: replacedAt, now: now, calendar: calendar)
+        return "Swapped into Spotlight. Your frame from \(day) came down."
     }
 }
 
@@ -307,6 +372,20 @@ enum SpotlightPutUpCapsule {
 enum SpotlightTagLock {
     static let upThisWeek = "Take it down from Spotlight to tag people"
     static let chosen = "Frames put up for Spotlight can't be tagged"
+
+    static func reason(postId: UUID, entry: OwnSpotlightEntry?, chosen: [UUID: String]) -> String? {
+        if chosen[postId] != nil { return Self.chosen }
+        if entry?.postId == postId { return upThisWeek }
+        return nil
+    }
+}
+
+/// Why "Edit caption" is off for one of your own posts: the server refuses a caption change on
+/// a frame that is up this week, or chosen (`in_spotlight`), because the team chose it with the
+/// caption it had. nil when editing is open.
+enum SpotlightCaptionLock {
+    static let upThisWeek = "Take it down from Spotlight to edit the caption"
+    static let chosen = "Frames put up for Spotlight can't be edited"
 
     static func reason(postId: UUID, entry: OwnSpotlightEntry?, chosen: [UUID: String]) -> String? {
         if chosen[postId] != nil { return Self.chosen }
@@ -326,6 +405,8 @@ enum SpotlightRefusal {
     static let takeOutNetwork = "Couldn't take it out. Check your connection and try again."
     static let openNetwork = "Couldn't open that photo. Check your connection and try again."
     static let taggedOnSpotlight = "Frames put up for Spotlight can't be tagged."
+    /// A caption save the server refused with `in_spotlight` (the menu did not know yet).
+    static let captionOnSpotlight = "Frames put up for Spotlight can't be edited."
     static let gone = "That photo isn't there anymore."
 
     enum Action { case putUp, takeDown, takeOut }
@@ -430,6 +511,38 @@ enum SpotlightSlot: Equatable {
         if position >= unitIds.count { return unitIds.isEmpty ? .top : .afterLast }
         return .beforeUnit(unitIds[position])
     }
+
+    /// Every strip week's slot, as the feed snapshots them. A full snapshot (a reload, the
+    /// 04:00 boundary, "New posts") places every week, and is the ONLY pass that may lift an
+    /// unseen strip over the seam. A grow-only pass (paging, a straddle completion, a delete or
+    /// a block taking an anchor away) keeps every slot that still has its anchor and places
+    /// the rest at their own place: a strip waiting on an unloaded page is older than every
+    /// unit loaded at the snapshot, so lifting it when its page lands would drop it in above
+    /// someone already reading.
+    static func snapshot(previous: [String: SpotlightSlot], weeks: [SpotlightWeek], units: [FeedUnit],
+                         seam: SpotlightSeam, hasMoreFeed: Bool, seen: Set<String>,
+                         growOnly: Bool) -> [String: SpotlightSlot] {
+        let unitIds = units.map(\.id)
+        var next = growOnly ? previous : [:]
+        for week in weeks {
+            if growOnly, let existing = next[week.weekKey], isAnchored(existing, unitIds: unitIds) { continue }
+            let placement = SpotlightPlacement.place(units: units, publishedAt: week.publishedAt,
+                                                     hasMoreFeed: hasMoreFeed)
+            next[week.weekKey] = slot(placement: placement, seam: seam, unitIds: unitIds,
+                                      unseen: !growOnly && !seen.contains(week.weekKey))
+        }
+        return next
+    }
+
+    /// Whether a held slot still points at something that renders. `.hidden` is never kept by
+    /// a grow-only pass: it is the "waiting on an unloaded page" state that paging resolves.
+    static func isAnchored(_ slot: SpotlightSlot, unitIds: [String]) -> Bool {
+        switch slot {
+        case .hidden: return false
+        case .top, .afterLast: return true
+        case .beforeUnit(let id), .aboveCaughtUpBlock(let id): return unitIds.contains(id)
+        }
+    }
 }
 
 // MARK: - Activity
@@ -449,79 +562,6 @@ enum SpotlightActivity {
     }
 }
 
-// MARK: - The write queue
-
-/// One Spotlight write at a time per account, and a revision that says which intent currently
-/// owns the screen: the reactions pattern (`FeedService.reactionQueues` / `reactionRevisions`)
-/// for a value that is one per account rather than one per post.
-///
-/// Put up, swap and take down on a slow connection must land in the order they were asked for,
-/// and a failure that comes back after a newer intent took over must not revert the screen to
-/// its own stale "before". Each intent `claim`s a revision when it changes the screen; a write
-/// only rolls back while its revision is still the current one.
-@MainActor
-final class RevisionedWriteQueue {
-    private(set) var revision = 0
-    /// The newest revision whose intent has resolved: its write landed or failed, or it was
-    /// undone before it ever ran. Anything claimed above this is still only on screen.
-    private(set) var settled = 0
-    private var tail: Task<Void, Never>?
-    private var inFlight: Set<UUID> = []
-
-    /// A new intent now owns the screen.
-    func claim() -> Int {
-        revision += 1
-        return revision
-    }
-
-    func isCurrent(_ claimed: Int) -> Bool { claimed == revision }
-
-    /// The intent claimed as `claimed` has resolved, one way or another.
-    func settle(_ claimed: Int) { settled = max(settled, claimed) }
-
-    /// Nothing queued, running, or waiting to be committed (an optimistic put-up sits in the
-    /// undo window before its write is even enqueued). A refresh must not write the server's
-    /// view over an optimistic one that has not landed yet.
-    var isQuiet: Bool { inFlight.isEmpty && settled >= revision }
-
-    /// Runs `write` after every write enqueued before it has finished, and returns when it has.
-    func enqueue(_ write: @escaping @MainActor () async -> Void) async {
-        let task = submit(write)
-        await task.value
-        if tail == task { tail = nil }
-    }
-
-    /// The same, without waiting: the write takes its place in line before this returns, so
-    /// the order two calls are made in is the order their writes run in.
-    @discardableResult
-    func submit(_ write: @escaping @MainActor () async -> Void) -> Task<Void, Never> {
-        let token = UUID()
-        inFlight.insert(token)
-        let previous = tail
-        let task = Task { @MainActor [weak self] in
-            await previous?.value
-            await write()
-            self?.inFlight.remove(token)
-        }
-        tail = task
-        return task
-    }
-
-    /// Every claimed intent has resolved. Unlike `isQuiet`, a write still running counts as
-    /// resolved once it has settled, so a write's own failure path can ask whether anything
-    /// newer is waiting behind it.
-    var isSettled: Bool { settled >= revision }
-
-    /// An account change: no write in flight may own the next account's screen, and the next
-    /// account does not wait behind the last one's requests.
-    func reset() {
-        revision += 1
-        settled = revision
-        tail = nil
-        inFlight = []
-    }
-}
-
 // MARK: - Per-account local marks
 
 /// Whether this account has seen the first-time sheet. Per account, injectable, like
@@ -534,6 +574,31 @@ enum SpotlightFirstTime {
     static func hasSeen(userId: UUID) -> Bool { store.bool(forKey: key(userId: userId)) }
 
     static func markSeen(userId: UUID) { store.set(true, forKey: key(userId: userId)) }
+}
+
+/// The one quiet line under the sort deck's "Posted to your page" banner that says a post can
+/// go up for Spotlight, once per account and only for a post that could: the account's own
+/// shot, nobody tagged, posted inside this week's bounds while the account may put anything up.
+/// Per account and injectable, like `SpotlightFirstTime`.
+enum SpotlightPostedHint {
+    static var store: UserDefaults = .standard
+    static let text = "You can put it up for Spotlight from its menu."
+
+    static func key(userId: UUID) -> String { "spotlightPostedHintShown.\(userId.uuidString)" }
+
+    static func hasShown(userId: UUID) -> Bool { store.bool(forKey: key(userId: userId)) }
+
+    static func markShown(userId: UUID) { store.set(true, forKey: key(userId: userId)) }
+
+    /// - Parameters:
+    ///   - photoOwnerId: who shot the posted photo (`photos.user_id`).
+    ///   - entry: this week's entry; nil while unknown, which says nothing rather than guess.
+    static func shouldShow(userId: UUID, photoOwnerId: UUID, isTagged: Bool,
+                           entry: OwnSpotlightEntry?, postedAt: Date) -> Bool {
+        guard !hasShown(userId: userId), photoOwnerId == userId, !isTagged,
+              let entry, entry.canPutUp else { return false }
+        return postedAt >= entry.weekStartsAt && postedAt < entry.weekClosesAt
+    }
 }
 
 /// Which published weeks this account has seen in the feed, for the strip's "new" pill.

@@ -3,7 +3,7 @@ import Foundation
 @testable import Flim
 
 /// Spotlight's pure rules: where the strip sits, which menu item a post gets, the push rider,
-/// the week's words in other zones, the write queue's revision rule, and the Activity count.
+/// the week's words in other zones and calendars, the notices, and the Activity count.
 /// Calendars and stores are pinned or injected, so nothing here depends on the machine.
 @MainActor
 struct SpotlightTests {
@@ -163,6 +163,62 @@ struct SpotlightTests {
         #expect(SpotlightSlot.slot(placement: .beforeUnit("gone"), seam: .none, unitIds: ["a"], unseen: false) == .hidden)
     }
 
+    // MARK: - Snapshot across a page load
+
+    private func items(_ times: [Date]) -> [FeedItem] {
+        times.map { time in
+            let author = profile()
+            return FeedItem(post: post(owner: author.id, createdAt: time), author: author)
+        }
+    }
+
+    @Test("an unseen strip older than every loaded unit, seam after a unit: a page load places it at its own place, never above the reader")
+    func snapshotGrowOnlyNeverLifts() {
+        let firstPage = items([date(9, 22, 12), date(9, 22, 10), date(9, 21, 20)])
+        let pageOne = FeedUnit.units(from: firstPage, calendar: newYork)
+        let seamUnit = pageOne[0].id
+        let old = week("2026-09-14", publishedAt: date(9, 20, 9), frames: [frame()])
+        // The reload: the strip's place is below a page not loaded yet.
+        let atReload = SpotlightSlot.snapshot(previous: [:], weeks: [old], units: pageOne, seam: .after(seamUnit),
+                                              hasMoreFeed: true, seen: [], growOnly: false)
+        #expect(atReload[old.weekKey] == .hidden)
+        // The next page lands with a unit older than the publish instant. The strip is still
+        // unseen, and its place is on the seen side of the seam, but lifting it now would drop
+        // it in above someone already reading.
+        let pageTwo = FeedUnit.units(from: firstPage + items([date(9, 19, 20)]), calendar: newYork)
+        let olderUnit = pageTwo[3].id
+        let afterPage = SpotlightSlot.snapshot(previous: atReload, weeks: [old], units: pageTwo, seam: .after(seamUnit),
+                                               hasMoreFeed: true, seen: [], growOnly: true)
+        #expect(afterPage[old.weekKey] == .beforeUnit(olderUnit))
+        // The window fully loaded with nothing older: below the last unit, still not lifted.
+        let lastPage = SpotlightSlot.snapshot(previous: atReload, weeks: [old], units: pageOne, seam: .after(seamUnit),
+                                              hasMoreFeed: false, seen: [], growOnly: true)
+        #expect(lastPage[old.weekKey] == .afterLast)
+    }
+
+    @Test("a full snapshot still lifts an unseen strip over the seam, and a grow-only pass keeps it there")
+    func snapshotFullLiftsAndHolds() {
+        let pageOne = FeedUnit.units(from: items([date(9, 22, 12), date(9, 22, 10), date(9, 21, 20)]), calendar: newYork)
+        let seamUnit = pageOne[0].id
+        let recent = week("2026-09-14", publishedAt: date(9, 21, 22), frames: [frame()])
+        let atReload = SpotlightSlot.snapshot(previous: [:], weeks: [recent], units: pageOne, seam: .after(seamUnit),
+                                              hasMoreFeed: true, seen: [], growOnly: false)
+        #expect(atReload[recent.weekKey] == .aboveCaughtUpBlock(afterUnit: seamUnit))
+        let held = SpotlightSlot.snapshot(previous: atReload, weeks: [recent], units: pageOne, seam: .after(seamUnit),
+                                          hasMoreFeed: true, seen: [recent.weekKey], growOnly: true)
+        #expect(held[recent.weekKey] == .aboveCaughtUpBlock(afterUnit: seamUnit))
+    }
+
+    @Test("a grow-only pass re-places a strip whose anchor unit left, at its own place")
+    func snapshotOrphanReplacedInPlace() {
+        let pageOne = FeedUnit.units(from: items([date(9, 22, 12), date(9, 22, 10), date(9, 21, 20)]), calendar: newYork)
+        let strip = week("2026-09-14", publishedAt: date(9, 22, 11), frames: [frame()])
+        let previous = [strip.weekKey: SpotlightSlot.aboveCaughtUpBlock(afterUnit: "gone")]
+        let next = SpotlightSlot.snapshot(previous: previous, weeks: [strip], units: pageOne, seam: .top,
+                                          hasMoreFeed: true, seen: [], growOnly: true)
+        #expect(next[strip.weekKey] == .beforeUnit(pageOne[1].id))
+    }
+
     // MARK: - Menu eligibility
 
     private let me = UUID()
@@ -244,19 +300,25 @@ struct SpotlightTests {
                                           chosenWeekKey: nil, isTagged: false, isPhotographer: true, calendar: newYork) == .hidden)
     }
 
-    @Test("the put-up capsule names a swapped-out frame by its day")
-    func putUpCapsule() {
-        let mine = post(owner: me, createdAt: date(9, 24, 12))
+    @Test("the put-up notice: a plain line, or a swap that names the frame's day")
+    func putUpNotice() {
+        let postId = UUID()
         let now = date(9, 24, 20)
-        let plain = SpotlightPutUpCapsule.text(previous: entry(), post: mine, now: now, calendar: newYork)
-        #expect(plain.title == "Up for Spotlight")
-        let swapped = SpotlightPutUpCapsule.text(previous: entry(postId: UUID(), postCreatedAt: date(9, 22, 14)),
-                                                 post: mine, now: now, calendar: newYork)
-        #expect(swapped.title == "Swapped into Spotlight")
-        #expect(swapped.subtitle == "Your frame from Tuesday came down")
-        let today = SpotlightPutUpCapsule.text(previous: entry(postId: UUID(), postCreatedAt: date(9, 24, 9)),
-                                               post: mine, now: now, calendar: newYork)
-        #expect(today.subtitle == "Your frame from today came down")
+        #expect(SpotlightPutUpNotice.text(postId: postId, replacedPostId: nil, replacedAt: nil, now: now, calendar: newYork)
+                == "Up for Spotlight. Only the team at \(AppInfo.appName) sees it.")
+        // The server naming the same post is a re-put-up, not a swap.
+        #expect(SpotlightPutUpNotice.text(postId: postId, replacedPostId: postId, replacedAt: date(9, 22, 14),
+                                          now: now, calendar: newYork)
+                == "Up for Spotlight. Only the team at \(AppInfo.appName) sees it.")
+        #expect(SpotlightPutUpNotice.text(postId: postId, replacedPostId: UUID(), replacedAt: date(9, 22, 14),
+                                          now: now, calendar: newYork)
+                == "Swapped into Spotlight. Your frame from Tuesday came down.")
+        #expect(SpotlightPutUpNotice.text(postId: postId, replacedPostId: UUID(), replacedAt: date(9, 24, 9),
+                                          now: now, calendar: newYork)
+                == "Swapped into Spotlight. Your frame from today came down.")
+        #expect(SpotlightPutUpNotice.text(postId: postId, replacedPostId: UUID(), replacedAt: date(9, 23, 15),
+                                          now: now, calendar: newYork)
+                == "Swapped into Spotlight. Your frame from yesterday came down.")
     }
 
     @Test("tagging is off while a frame is up this week or chosen, with the reason")
@@ -292,6 +354,67 @@ struct SpotlightTests {
                 == .takeOut(weekKey: "2026-08-31"))
     }
 
+    @Test("the closed, unpublished week's frame can come down until publish; the others still say why not")
+    func menuPendingTakeDown() {
+        let pending = post(owner: me, createdAt: date(9, 17, 12))
+        let other = post(owner: me, createdAt: date(9, 18, 12))
+        var withPending = entry()
+        withPending.pendingWeekKey = "2026-09-14"
+        withPending.pendingPostId = pending.id
+        withPending.pendingPhotoId = pending.photoId
+        func item(_ p: Post, _ e: OwnSpotlightEntry) -> SpotlightMenuItem {
+            SpotlightMenuItem.resolve(post: p, viewerId: me, entry: e, chosenWeekKey: nil,
+                                      isTagged: false, isPhotographer: true, calendar: newYork)
+        }
+        #expect(item(pending, withPending) == .takeDownPending(weekKey: "2026-09-14"))
+        #expect(item(other, withPending) == .disabled(reason: "Only this week's frames can go up"))
+        // Consent holds even while this week allows nothing new.
+        var covered = entry(canPutUp: false)
+        covered.pendingWeekKey = "2026-09-14"
+        covered.pendingPostId = pending.id
+        #expect(item(pending, covered) == .takeDownPending(weekKey: "2026-09-14"))
+        // Chosen and published wins: that is a take-out, not a take-down.
+        #expect(SpotlightMenuItem.resolve(post: pending, viewerId: me, entry: withPending, chosenWeekKey: "2026-09-14",
+                                          isTagged: false, isPhotographer: true, calendar: newYork)
+                == .takeOut(weekKey: "2026-09-14"))
+        // A take-down clears only the week it came down from.
+        #expect(withPending.clearedPending.pendingPostId == nil)
+        #expect(withPending.clearedPending.weekKey == withPending.weekKey)
+        #expect(withPending.cleared.pendingPostId == pending.id)
+        // Deletes match the pending frame by post id and by photo id.
+        #expect(withPending.holds(postId: pending.id))
+        #expect(withPending.holds(photoIdIn: [pending.photoId]))
+        #expect(!withPending.holds(photoIdIn: [other.photoId]))
+    }
+
+    @Test("the pending subtitle names the week, never a weekday")
+    func pendingSubtitleWords() {
+        #expect("Until the team publishes \(SpotlightWeekLabel.phrase("2026-09-14", calendar: newYork))"
+                == "Until the team publishes the week of September 14")
+    }
+
+    @Test("caption editing is off while a frame is up this week or chosen, with the reason")
+    func captionLock() {
+        let postId = UUID()
+        #expect(SpotlightCaptionLock.reason(postId: postId, entry: entry(), chosen: [:]) == nil)
+        #expect(SpotlightCaptionLock.reason(postId: postId, entry: entry(postId: postId), chosen: [:])
+                == "Take it down from Spotlight to edit the caption")
+        #expect(SpotlightCaptionLock.reason(postId: postId, entry: entry(), chosen: [postId: "2026-09-14"])
+                == "Frames put up for Spotlight can't be edited")
+        #expect(SpotlightCaptionLock.reason(postId: postId, entry: nil, chosen: [:]) == nil)
+        #expect(SpotlightRefusal.captionOnSpotlight == "Frames put up for Spotlight can't be edited.")
+    }
+
+    @Test("a refused caption save keeps the old caption on screen, like any failure")
+    func captionOutcomeMapping() {
+        #expect(CaptionSaveOutcome.saved.saved == true)
+        #expect(CaptionSaveOutcome.failed.saved == false)
+        #expect(CaptionSaveOutcome.refusedInSpotlight.saved == false)
+        #expect(CaptionSaveOutcome.cancelled.saved == nil)
+        #expect(resolvedCaption(afterSaving: CaptionSaveOutcome.refusedInSpotlight.saved,
+                                attempted: "new", previous: "old") == "old")
+    }
+
     // MARK: - Refusals
 
     @Test("each refusal speaks in words, and anything unnamed reads as the connection")
@@ -321,7 +444,11 @@ struct SpotlightTests {
                      SpotlightRefusal.takeDownNetwork, SpotlightRefusal.takeOutNetwork,
                      SpotlightRefusal.taggedOnSpotlight, SpotlightRefusal.gone, SpotlightRefusal.openNetwork,
                      SpotlightMenuItem.taggedReason, SpotlightMenuItem.notPhotographerReason,
-                     ProfileBadgeKind.spotlight.explanation, ProfileBadgeKind.spotlight.howToEarn]
+                     ProfileBadgeKind.spotlight.explanation, ProfileBadgeKind.spotlight.howToEarn,
+                     SpotlightCaptionLock.upThisWeek, SpotlightCaptionLock.chosen,
+                     SpotlightRefusal.captionOnSpotlight, SpotlightPostedHint.text,
+                     SpotlightPutUpNotice.text(postId: UUID(), replacedPostId: nil, replacedAt: nil),
+                     SpotlightPutUpNotice.text(postId: UUID(), replacedPostId: UUID(), replacedAt: nil)]
         for line in lines {
             #expect(!line.contains("\u{2014}"), "\(line)")
             #expect(!line.contains("!"), "\(line)")
@@ -381,128 +508,34 @@ struct SpotlightTests {
         #expect(SpotlightWeekLabel.components("2026-13-01") == nil)
     }
 
-    // MARK: - The write queue's revision rule
-
-    /// Main-actor state the queued closures write to (the closures are main-actor too).
-    @MainActor private final class Recorder {
-        var screen = "before"
-        var reverted = false
-        var order: [Int] = []
-    }
-
-    /// A door a queued write waits at until the test opens it: ordering by an explicit
-    /// signal, never by how long a sleep happened to take on a loaded runner.
-    @MainActor private final class Gate {
-        private var isOpen = false
-        private var waiters: [CheckedContinuation<Void, Never>] = []
-
-        func wait() async {
-            guard !isOpen else { return }
-            await withCheckedContinuation { waiters.append($0) }
-        }
-
-        func open() {
-            isOpen = true
-            let pending = waiters
-            waiters = []
-            for waiter in pending { waiter.resume() }
-        }
-    }
-
-    @Test("a failure that lands after a newer intent does not revert the screen")
-    func revisionRuleSkipsStaleRevert() async {
-        let queue = RevisionedWriteQueue()
-        let recorder = Recorder()
-        let failureLands = Gate()
-        let first = queue.claim()
-        recorder.screen = "A"
-        let firstWrite = queue.submit {
-            await failureLands.wait()
-            // The write failed; roll back only if this intent still owns the screen.
-            if queue.isCurrent(first) {
-                recorder.screen = "before"
-                recorder.reverted = true
+    @Test("the week's words are Gregorian whatever calendar the phone is set to")
+    func weekLabelsAcrossCalendars() {
+        let identifiers: [Calendar.Identifier] = [.persian, .islamic, .islamicUmmAlQura, .hebrew, .buddhist, .japanese]
+        for identifier in identifiers {
+            for zone in ["Asia/Tehran", "America/Los_Angeles", "Pacific/Kiritimati"] {
+                var cal = Calendar(identifier: identifier)
+                cal.timeZone = TimeZone(identifier: zone) ?? .gmt
+                #expect(SpotlightWeekLabel.phrase("2026-09-14", calendar: cal) == "the week of September 14", "\(identifier) \(zone)")
+                #expect(SpotlightWeekLabel.shortSentence("2026-09-14", calendar: cal) == "The week of Sep 14", "\(identifier) \(zone)")
+                #expect(SpotlightWeekLabel.rule("2026-09-14", calendar: cal) == "THE WEEK OF SEPTEMBER 14", "\(identifier) \(zone)")
             }
-            queue.settle(first)
         }
-        // The newer intent takes the screen while the first write is still on the wire.
-        let second = queue.claim()
-        recorder.screen = "B"
-        #expect(!queue.isQuiet)
-        failureLands.open()
-        await firstWrite.value
-        #expect(!recorder.reverted)
-        #expect(recorder.screen == "B")
-        #expect(!queue.isSettled)
-        await queue.enqueue { queue.settle(second) }
-        #expect(queue.isQuiet)
+        // The swap's weekday is the same day under a Persian or Islamic calendar.
+        for identifier in [Calendar.Identifier.persian, .islamic] {
+            var cal = Calendar(identifier: identifier)
+            cal.timeZone = newYork.timeZone
+            #expect(SpotlightMenuItem.weekday(of: date(9, 22, 14), calendar: cal) == "Tuesday", "\(identifier)")
+        }
     }
 
-    @Test("a late failure behind an intent that already resolved sees the queue settled")
-    func lateFailureAfterUndoIsSettled() async {
-        let queue = RevisionedWriteQueue()
-        let failureLands = Gate()
-        let first = queue.claim()
-        var settledAtFailure: Bool?
-        let firstWrite = queue.submit {
-            await failureLands.wait()
-            queue.settle(first)
-            if !queue.isCurrent(first) { settledAtFailure = queue.isSettled }
-        }
-        // A newer intent staged and undone inside its window: resolved without ever running.
-        let undone = queue.claim()
-        queue.settle(undone)
-        failureLands.open()
-        await firstWrite.value
-        #expect(settledAtFailure == true)
-    }
-
-    @Test("a failure that is still the current intent reverts")
-    func revisionRuleRevertsCurrent() async {
-        let queue = RevisionedWriteQueue()
-        let recorder = Recorder()
-        recorder.screen = "A"
-        let only = queue.claim()
-        await queue.enqueue {
-            if queue.isCurrent(only) { recorder.screen = "before" }
-            queue.settle(only)
-        }
-        #expect(recorder.screen == "before")
-        #expect(queue.isQuiet)
-    }
-
-    @Test("writes run one at a time, in the order they were asked for")
-    func queueSerializes() async {
-        let queue = RevisionedWriteQueue()
-        let recorder = Recorder()
-        let release = Gate()
-        // Both are in line before either runs; the first is held until the second is queued,
-        // so the second could only finish first if the queue let it jump.
-        let slow = queue.submit {
-            await release.wait()
-            recorder.order.append(1)
-        }
-        let fast = queue.submit { recorder.order.append(2) }
-        // Give a queue that failed to serialize every chance to run the second write early.
-        // The assertion never depends on these: a correct queue passes however they go.
-        for _ in 0..<10 { await Task.yield() }
-        #expect(recorder.order.isEmpty)
-        release.open()
-        await slow.value
-        await fast.value
-        #expect(recorder.order == [1, 2])
-    }
-
-    @Test("an optimistic intent not yet enqueued (the undo window) keeps the queue unquiet")
-    func claimedButUnsettledIsNotQuiet() {
-        let queue = RevisionedWriteQueue()
-        let staged = queue.claim()
-        #expect(!queue.isQuiet)
-        queue.settle(staged)
-        #expect(queue.isQuiet)
-        _ = queue.claim()
-        queue.reset()
-        #expect(queue.isQuiet)
+    @Test("formatters are built once per pattern and zone")
+    func formattersCached() {
+        let zone = TimeZone(identifier: "Asia/Makassar") ?? .gmt
+        let first = SpotlightDateFormatters.formatter("MMMM d", zone: zone)
+        let second = SpotlightDateFormatters.formatter("MMMM d", zone: zone)
+        #expect(first === second)
+        #expect(first !== SpotlightDateFormatters.formatter("MMM d", zone: zone))
+        #expect(first.calendar.identifier == .gregorian)
     }
 
     // MARK: - Activity count
@@ -565,6 +598,29 @@ struct SpotlightTests {
         #expect(weeks.first?.weekKey == "2026-09-14")
     }
 
+    @Test("the own entry decodes with and without the pending fields")
+    func ownEntryPendingDecoding() throws {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let before = """
+        [{"week_key":"2026-09-21","week_starts_at":"2026-09-21T08:00:00Z","week_closes_at":"2026-09-28T08:00:00Z",
+          "can_put_up":true,"post_id":null,"photo_id":null,"post_created_at":null,"put_up_at":null}]
+        """
+        let old = try decoder.decode([OwnSpotlightEntry].self, from: Data(before.utf8))
+        #expect(old.first?.pendingPostId == nil)
+        #expect(old.first?.pendingWeekKey == nil)
+        let postId = UUID(), photoId = UUID()
+        let after = """
+        [{"week_key":"2026-09-21","week_starts_at":"2026-09-21T08:00:00Z","week_closes_at":"2026-09-28T08:00:00Z",
+          "can_put_up":true,"post_id":null,"photo_id":null,"post_created_at":null,"put_up_at":null,
+          "pending_week_key":"2026-09-14","pending_post_id":"\(postId.uuidString)","pending_photo_id":"\(photoId.uuidString)"}]
+        """
+        let new = try decoder.decode([OwnSpotlightEntry].self, from: Data(after.utf8))
+        #expect(new.first?.pendingWeekKey == "2026-09-14")
+        #expect(new.first?.pendingPostId == postId)
+        #expect(new.first?.pendingPhotoId == photoId)
+    }
+
     // MARK: - Badge
 
     @Test("the Spotlight badge: gold, the flashlight, never in a locked list")
@@ -606,5 +662,36 @@ struct SpotlightTests {
         #expect(SpotlightSeenMark.seen(userId: a) == ["2026-09-14"])
         #expect(SpotlightSeenMark.seen(userId: b).isEmpty)
         #expect(SpotlightSeenMark.seen(userId: nil).isEmpty)
+    }
+
+    @Test("the posted line: once per account, only for a post that could go up")
+    func postedHint() {
+        let suite = "SpotlightTests.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suite) else {
+            Issue.record("no defaults suite")
+            return
+        }
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let previous = SpotlightPostedHint.store
+        SpotlightPostedHint.store = defaults
+        defer { SpotlightPostedHint.store = previous }
+        let a = UUID(), b = UUID()
+        let now = date(9, 23, 12)
+        func show(_ user: UUID, owner: UUID? = nil, tagged: Bool = false,
+                  entry e: OwnSpotlightEntry? = nil, at time: Date? = nil) -> Bool {
+            SpotlightPostedHint.shouldShow(userId: user, photoOwnerId: owner ?? user, isTagged: tagged,
+                                           entry: e ?? entry(), postedAt: time ?? now)
+        }
+        #expect(show(a))
+        #expect(!show(a, owner: UUID()))
+        #expect(!show(a, tagged: true))
+        #expect(!show(a, entry: entry(canPutUp: false)))
+        #expect(!show(a, at: date(9, 28, 5)))
+        #expect(!SpotlightPostedHint.shouldShow(userId: a, photoOwnerId: a, isTagged: false, entry: nil, postedAt: now))
+        // Another frame already up still leaves this one able to swap in.
+        #expect(show(a, entry: entry(postId: UUID(), postCreatedAt: date(9, 22, 12))))
+        SpotlightPostedHint.markShown(userId: a)
+        #expect(!show(a))
+        #expect(show(b))
     }
 }

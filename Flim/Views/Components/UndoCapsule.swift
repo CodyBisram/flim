@@ -19,12 +19,19 @@ struct UndoCapsuleHost: View {
                 capsule(for: staged)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             } else if let notice = center.failureNotice {
-                Label(notice, systemImage: "exclamationmark.triangle.fill")
-                    .flimFont(13, weight: .medium)
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 16).padding(.vertical, 12)
-                    .background(.ultraThinMaterial, in: Capsule())
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                Group {
+                    if center.noticeIsConfirmation {
+                        Text(notice)
+                    } else {
+                        Label(notice, systemImage: "exclamationmark.triangle.fill")
+                    }
+                }
+                .flimFont(13, weight: .medium)
+                .foregroundStyle(.white)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 16).padding(.vertical, 12)
+                .background(.ultraThinMaterial, in: Capsule())
+                .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
         .animation(.snappy(duration: 0.25), value: center.staged?.id)

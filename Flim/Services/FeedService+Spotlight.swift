@@ -60,6 +60,18 @@ extension FeedService {
         return await signedURLs(for: Array(paths))
     }
 
+    /// Signs every Spotlight frame in memory again (the strip, the sheet of past weeks, the
+    /// shelves), on returning to the foreground. The strip is read only at a reload, so without
+    /// this a frame not yet in the image cache kept its first URL past the hour it lives and
+    /// stayed a placeholder. An unexpired URL answers from `SignedURLStore` without a request.
+    func refreshSpotlightURLs() async {
+        let epoch = AccountEpoch.current
+        let weeks = spotlightStripWeeks + spotlightPastWeeks + spotlightShelves.values.flatMap { $0 }
+        let urls = await signSpotlightFrames(weeks)
+        guard AccountEpoch.isCurrent(epoch), !urls.isEmpty else { return }
+        spotlightURLs.merge(urls) { _, new in new }
+    }
+
     /// The server's refusal name for a Spotlight RPC error, nil for anything that is not a named
     /// refusal (offline, timeout, server error).
     nonisolated static func spotlightRefusal(_ error: Error) -> String? {
@@ -88,18 +100,18 @@ extension FeedService {
 
     // MARK: - Own entry and shelf
 
-    /// The menu's state. Refetched on every feed reload, on returning to the foreground, and
-    /// after any own-post delete. Never lands over an intent that has not resolved yet: a
-    /// staged put-up in its undo window, or a write still on the wire, owns the menu until it
-    /// settles.
+    /// The menu's state. Refetched on every feed reload, on returning to the foreground, after
+    /// any own-post delete, and after any failed Spotlight write. Never lands over a write
+    /// still on the wire, nor with a read that began before a write did: the write owns the
+    /// menu until it answers.
     func refreshOwnSpotlightEntry() async {
         spotlightEntryGeneration += 1
         let generation = spotlightEntryGeneration
         let epoch = AccountEpoch.current
-        let revision = spotlightWrites.revision
+        let writeGeneration = spotlightWriteGeneration
         guard let entry = await fetchOwnSpotlightEntry() else { return }
         guard AccountEpoch.isCurrent(epoch), generation == spotlightEntryGeneration,
-              spotlightWrites.isCurrent(revision), spotlightWrites.isQuiet else { return }
+              writeGeneration == spotlightWriteGeneration, !spotlightWriteInFlight else { return }
         ownSpotlightEntry = entry
     }
 
@@ -256,117 +268,99 @@ extension FeedService {
         SpotlightTagLock.reason(postId: postId, entry: ownSpotlightEntry, chosen: ownSpotlightChosen)
     }
 
+    /// Why "Edit caption" is off for one of your own posts, nil when it is open. See
+    /// `SpotlightCaptionLock`.
+    func spotlightCaptionLockReason(for postId: UUID) -> String? {
+        SpotlightCaptionLock.reason(postId: postId, entry: ownSpotlightEntry, chosen: ownSpotlightChosen)
+    }
+
     // MARK: - Writes
 
-    /// One put-up or take-down intent: which revision it claimed, what the menu showed before
-    /// it, and whose account it belongs to.
-    struct SpotlightWrite {
-        enum Kind { case putUp, takeDown }
-        let kind: Kind
-        let post: Post
-        let revision: Int
-        let previous: OwnSpotlightEntry
-        let epoch: Int
-    }
-
-    /// The optimistic half of a put-up (or swap): the menu reads "Take it down" at once. nil
-    /// when the entry is unknown, in which case nothing is changed or staged.
-    func beginSpotlightPutUp(_ post: Post) -> SpotlightWrite? {
-        guard let entry = ownSpotlightEntry else { return nil }
-        let write = SpotlightWrite(kind: .putUp, post: post, revision: spotlightWrites.claim(),
-                                   previous: entry, epoch: AccountEpoch.current)
-        var next = entry
-        next.postId = post.id
-        next.photoId = post.photoId
-        next.postCreatedAt = post.createdAt
-        next.putUpAt = .now
-        ownSpotlightEntry = next
-        return write
-    }
-
-    /// Undo inside the capsule's window: nothing remote happened, so only the screen goes back,
-    /// and only while no newer intent owns it.
-    func revertSpotlight(_ write: SpotlightWrite) {
-        guard AccountEpoch.isCurrent(write.epoch) else { return }
-        if spotlightWrites.isCurrent(write.revision) { ownSpotlightEntry = write.previous }
-        spotlightWrites.settle(write.revision)
-    }
-
-    /// The server half, serialized behind every earlier Spotlight write for this account. A
-    /// refusal or a dropped connection rolls the menu back only if this intent still owns it,
-    /// then says why in the capsule's place, with the error haptic, and resyncs from the server.
-    func commitSpotlight(_ write: SpotlightWrite) async {
-        await spotlightWrites.enqueue { [weak self] in
-            guard let self, AccountEpoch.isCurrent(write.epoch) else { return }
-            struct Params: Encodable { let p_post_id: UUID }
-            let params = Params(p_post_id: write.post.id)
-            do {
-                switch write.kind {
-                case .putUp:
-                    let result: SpotlightPutUpResult = try await supabase
-                        .rpc("put_up_for_spotlight", params: params).single().execute().value
-                    guard AccountEpoch.isCurrent(write.epoch) else { return }
-                    Usage.log(.spotlightPutUp)
-                    if self.spotlightWrites.isCurrent(write.revision) {
-                        self.ownSpotlightEntry = OwnSpotlightEntry(
-                            weekKey: result.weekKey, weekStartsAt: result.weekStartsAt,
-                            weekClosesAt: result.weekClosesAt, canPutUp: true,
-                            postId: result.postId, photoId: write.post.photoId,
-                            postCreatedAt: write.post.createdAt, putUpAt: result.putUpAt)
-                    }
-                    self.spotlightWrites.settle(write.revision)
-                case .takeDown:
-                    try await supabase.rpc("withdraw_from_spotlight", params: params).execute()
-                    guard AccountEpoch.isCurrent(write.epoch) else { return }
-                    Usage.log(.spotlightWithdraw)
-                    if self.spotlightWrites.isCurrent(write.revision), let entry = self.ownSpotlightEntry,
-                       entry.postId == nil || entry.postId == write.post.id {
-                        self.ownSpotlightEntry = entry.cleared
-                    }
-                    self.spotlightWrites.settle(write.revision)
-                }
-            } catch {
-                guard AccountEpoch.isCurrent(write.epoch) else { return }
-                self.spotlightWrites.settle(write.revision)
-                guard self.spotlightWrites.isCurrent(write.revision) else {
-                    // A late failure: a newer intent owns the menu, so nothing is reverted or
-                    // said. If that intent has resolved too (undone in its window, say) and
-                    // nothing waits behind this write, the menu may be showing a state no write
-                    // will ever confirm; read the server's so the menu converges on it.
-                    if self.spotlightWrites.isSettled {
-                        Task { [weak self] in await self?.refreshOwnSpotlightEntry() }
-                    }
-                    return
-                }
-                guard let message = SpotlightRefusal.message(
-                    refusal: Self.spotlightRefusal(error),
-                    action: write.kind == .putUp ? .putUp : .takeDown) else {
-                    // A take-down the server cannot find is already down: the cleared menu is
-                    // right, so no revert and no notice, only a fresh read.
-                    Task { [weak self] in await self?.refreshOwnSpotlightEntry() }
-                    return
-                }
-                self.ownSpotlightEntry = write.previous
-                Haptics.error()
-                UndoCenter.shared.showNotice(message)
-                // The server may know something the menu does not (the week closed, a tag was
-                // added from another phone): read it again once this write has settled.
-                Task { [weak self] in await self?.refreshOwnSpotlightEntry() }
-            }
+    /// "Put it up" or "Swap it in": the menu flips at once, the server answers, and only then
+    /// does the capsule's slot say it is up (or say why not, with the menu flipped back). No
+    /// undo window: taking a frame down is always one menu item away until the week closes.
+    /// One Spotlight write at a time for the account; the menu item is disabled meanwhile.
+    func putUpForSpotlight(_ post: Post) async {
+        guard !spotlightWriteInFlight, let previous = ownSpotlightEntry else {
+            Haptics.error()
+            return
+        }
+        let epoch = beginSpotlightWrite()
+        var optimistic = previous
+        optimistic.postId = post.id
+        optimistic.photoId = post.photoId
+        optimistic.postCreatedAt = post.createdAt
+        optimistic.putUpAt = .now
+        ownSpotlightEntry = optimistic
+        struct Params: Encodable { let p_post_id: UUID }
+        do {
+            let result: SpotlightPutUpResult = try await supabase
+                .rpc("put_up_for_spotlight", params: Params(p_post_id: post.id)).single().execute().value
+            guard AccountEpoch.isCurrent(epoch) else { return }
+            spotlightWriteInFlight = false
+            Usage.log(.spotlightPutUp)
+            ownSpotlightEntry = OwnSpotlightEntry(
+                weekKey: result.weekKey, weekStartsAt: result.weekStartsAt,
+                weekClosesAt: result.weekClosesAt, canPutUp: true,
+                postId: result.postId, photoId: post.photoId,
+                postCreatedAt: post.createdAt, putUpAt: result.putUpAt,
+                pendingWeekKey: previous.pendingWeekKey, pendingPostId: previous.pendingPostId,
+                pendingPhotoId: previous.pendingPhotoId)
+            Haptics.success()
+            // The server says what it swapped out; the menu's entry only fills in the day.
+            let replacedAt = result.replacedPostCreatedAt
+                ?? (result.replacedPostId == previous.postId ? previous.postCreatedAt : nil)
+            UndoCenter.shared.showConfirmation(SpotlightPutUpNotice.text(
+                postId: post.id, replacedPostId: result.replacedPostId, replacedAt: replacedAt))
+        } catch {
+            guard AccountEpoch.isCurrent(epoch) else { return }
+            spotlightWriteInFlight = false
+            ownSpotlightEntry = previous
+            Haptics.error()
+            UndoCenter.shared.showNotice(SpotlightRefusal.message(
+                refusal: Self.spotlightRefusal(error), action: .putUp) ?? SpotlightRefusal.putUpNetwork)
+            // The server may know something the menu does not (the week closed, a tag was
+            // added from another phone): read it again.
+            await refreshOwnSpotlightEntry()
         }
     }
 
-    /// "Take it down from Spotlight": no capsule, the menu flips at once and flips back if the
-    /// server refuses. Anything staged in the undo window (a put-up of this same frame, most
-    /// likely) commits first, so the take-down can never land before the put-up it undoes.
+    /// "Take it down from Spotlight", this week's frame or the one still waiting on its closed
+    /// week's publish: no capsule, the menu flips at once and flips back if the server refuses.
+    /// Nothing is flushed first: with no put-up ever held in an undo window, there is nothing
+    /// of Spotlight's staged for this to overtake, and flushing would commit someone else's
+    /// staged action (a post just deleted) out from under its Undo.
     func takeDownFromSpotlight(_ post: Post) async {
-        guard let entry = ownSpotlightEntry, entry.postId == post.id else { return }
-        let write = SpotlightWrite(kind: .takeDown, post: post, revision: spotlightWrites.claim(),
-                                   previous: entry, epoch: AccountEpoch.current)
-        ownSpotlightEntry = entry.cleared
-        await UndoCenter.shared.flushAndWait()
-        guard AccountEpoch.isCurrent(write.epoch) else { return }
-        await commitSpotlight(write)
+        guard !spotlightWriteInFlight, let previous = ownSpotlightEntry, previous.holds(postId: post.id) else { return }
+        let epoch = beginSpotlightWrite()
+        ownSpotlightEntry = previous.postId == post.id ? previous.cleared : previous.clearedPending
+        struct Params: Encodable { let p_post_id: UUID }
+        do {
+            try await supabase.rpc("withdraw_from_spotlight", params: Params(p_post_id: post.id)).execute()
+            guard AccountEpoch.isCurrent(epoch) else { return }
+            spotlightWriteInFlight = false
+            Usage.log(.spotlightWithdraw)
+        } catch {
+            guard AccountEpoch.isCurrent(epoch) else { return }
+            spotlightWriteInFlight = false
+            if let message = SpotlightRefusal.message(refusal: Self.spotlightRefusal(error), action: .takeDown) {
+                ownSpotlightEntry = previous
+                Haptics.error()
+                UndoCenter.shared.showNotice(message)
+            }
+            // A take-down the server cannot find is already down (no message, the cleared menu
+            // stands); either way, read the server's state again.
+            await refreshOwnSpotlightEntry()
+        }
+    }
+
+    /// Marks a put-up, swap or take-down as started: the in-flight guard, and a generation
+    /// that makes any menu read already on the wire land as stale. Returns the account epoch
+    /// the write belongs to.
+    private func beginSpotlightWrite() -> Int {
+        spotlightWriteInFlight = true
+        spotlightWriteGeneration += 1
+        return AccountEpoch.current
     }
 
     /// "Take it out of Spotlight", after publish: final, so it waits for the server before

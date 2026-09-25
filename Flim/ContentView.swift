@@ -251,6 +251,8 @@ struct ContentView: View {
                 // The Spotlight menu's state: the week may have turned over, or a frame gone up
                 // or down from another phone, while the app was away.
                 Task { await feed.refreshOwnSpotlight(userId: uid) }
+                // And the strip's frames: their signed URLs may have lapsed while away.
+                Task { await feed.refreshSpotlightURLs() }
             }
             // Save-on-develop, not save-on-capture: this is the one place that decides "the app
             // just came to the foreground", which is exactly when a photo shot earlier may have

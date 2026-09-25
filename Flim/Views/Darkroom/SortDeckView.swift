@@ -34,6 +34,9 @@ struct SortDeckView: View {
     @State private var postedNotice = false
     /// Which posted notice the running three-second timer belongs to; see `commit`.
     @State private var postedNoticeId: UUID?
+    /// The posted notice also says, once per account, that the post can go up for Spotlight
+    /// (see `SpotlightPostedHint`). Cleared with the notice.
+    @State private var postedSpotlightHint = false
     /// The compose sheet, opened from the pill under the top card or a tap on the card itself.
     /// The photo the compose sheet is open for; nil is no sheet. Presented by ITEM, not by a
     /// Bool beside an optional: `.sheet(isPresented:) { if let composePhoto { ... } }` built
@@ -158,19 +161,27 @@ struct SortDeckView: View {
     /// above.
     @ViewBuilder private var publishErrorBanner: some View {
         if postedNotice, publishError == nil {
-            HStack(spacing: 10) {
-                Label("Posted to your page. Your followers can see it.", systemImage: "checkmark.circle.fill")
-                    .flimType(.label)
-                    .foregroundStyle(FlimTheme.success)
-                Button("View") {
-                    guard let uid = auth.currentUser?.id else { return }
-                    closeDeck(then: .profile(userId: uid))
+            VStack(spacing: 2) {
+                HStack(spacing: 10) {
+                    Label("Posted to your page. Your followers can see it.", systemImage: "checkmark.circle.fill")
+                        .flimType(.label)
+                        .foregroundStyle(FlimTheme.success)
+                    Button("View") {
+                        guard let uid = auth.currentUser?.id else { return }
+                        closeDeck(then: .profile(userId: uid))
+                    }
+                    .flimFont(13, weight: .semibold, relativeTo: .subheadline)
+                    .foregroundStyle(accent)
                 }
-                .flimFont(13, weight: .semibold, relativeTo: .subheadline)
-                .foregroundStyle(accent)
+                if postedSpotlightHint {
+                    Text(SpotlightPostedHint.text)
+                        .flimType(.meta)
+                        .foregroundStyle(FlimTheme.textTertiary)
+                        .multilineTextAlignment(.center)
+                }
             }
             .padding(.horizontal, 24)
-            .padding(.bottom, 4)
+            .padding(.bottom, postedSpotlightHint ? 2 : 4)
             .transition(.opacity)
         }
         if let publishError {
@@ -467,13 +478,21 @@ struct SortDeckView: View {
             await photoService.markSorted(photoId: photo.id)
             do {
                 let tagsSaved = try await feed.createPost(photo: photo, caption: caption, userId: uid, tags: tags)
+                // The Spotlight line rides this notice once per account, only when the post
+                // just made could go up. Judged after the post landed, never before.
+                let hint = SpotlightPostedHint.shouldShow(
+                    userId: uid, photoOwnerId: photo.userId, isTagged: !tags.isEmpty,
+                    entry: feed.ownSpotlightEntry, postedAt: .now)
+                if hint { SpotlightPostedHint.markShown(userId: uid) }
                 // The timer belongs to THIS notice: a second post inside the three seconds
                 // starts its own, and the first one's expiry no longer hides it (audit A8).
                 let notice = UUID()
                 postedNoticeId = notice
+                postedSpotlightHint = hint
                 withAnimation { postedNotice = true }
                 Task {
-                    try? await Task.sleep(for: .seconds(3))
+                    // A beat longer when there is a second line to read.
+                    try? await Task.sleep(for: .seconds(hint ? 4.5 : 3))
                     if postedNoticeId == notice { withAnimation { postedNotice = false } }
                 }
                 if shouldWarnThatTagsDidNotSave(tagsSaved) {
@@ -516,6 +535,9 @@ struct SortDeckView: View {
         // `?? []` preserves this view's original behavior: a fresh deck has no earlier list to
         // keep, so a failure here still just shows the (now correctly typed) empty case.
         cards = await photoService.fetchUnsorted(userId: uid) ?? []
+        // The posted notice's Spotlight line needs this week's bounds, and a cold launch
+        // straight into the deck has not visited the Feed that reads them.
+        if feed.ownSpotlightEntry == nil { Task { await feed.refreshOwnSpotlightEntry() } }
 
         // Batched, not one at a time. `signedURLs` reuses persisted URLs and mints the misses in
         // parallel; signing them in a loop cost one sequential round trip PER PHOTO before the

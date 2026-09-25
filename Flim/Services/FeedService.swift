@@ -856,8 +856,13 @@ final class FeedService {
     var spotlightPhotographer: [UUID: Bool] = [:]
     /// Frames with a take-out in flight: the menu item's in-flight guard.
     var spotlightTakeOutsInFlight: Set<UUID> = []
-    /// Put up, swap and take down, one at a time, with the revision rule.
-    let spotlightWrites = RevisionedWriteQueue()
+    /// A put-up, swap or take-down is on the wire: the menu's in-flight guard, one Spotlight
+    /// write at a time for the account, and what keeps a menu refresh from landing over the
+    /// optimistic state before the write has answered.
+    var spotlightWriteInFlight = false
+    /// Bumped by every put-up, swap and take-down as it starts, so a menu read that began
+    /// before a write never lands after it with the older state.
+    var spotlightWriteGeneration = 0
     // One generation per cache, bumped by each load, so an older load landing late never
     // overwrites a newer one (alongside the account epoch on every write).
     var spotlightStripGeneration = 0
@@ -897,7 +902,8 @@ final class FeedService {
         spotlightURLs = [:]
         spotlightPhotographer = [:]
         spotlightTakeOutsInFlight = []
-        spotlightWrites.reset()
+        spotlightWriteInFlight = false
+        spotlightWriteGeneration += 1
         spotlightStripGeneration += 1
         spotlightEntryGeneration += 1
         spotlightPastGeneration += 1
@@ -1624,7 +1630,7 @@ final class FeedService {
         // must not keep a frame that is gone.
         if AccountEpoch.isCurrent(epoch) {
             pruneSpotlightFrames { $0.postId == id }
-            if ownSpotlightEntry?.postId == id { Task { await refreshOwnSpotlightEntry() } }
+            if ownSpotlightEntry?.holds(postId: id) == true { Task { await refreshOwnSpotlightEntry() } }
         }
         return true
     }
@@ -1649,7 +1655,7 @@ final class FeedService {
         // on a shelf without being in the loaded feed pages at all. Matched by photo id, the
         // only id a Darkroom delete has.
         pruneSpotlightFrames { ids.contains($0.photoId) }
-        if let photoId = ownSpotlightEntry?.photoId, ids.contains(photoId) {
+        if ownSpotlightEntry?.holds(photoIdIn: ids) == true {
             Task { await refreshOwnSpotlightEntry() }
         }
         let removedPostIds = feed.filter { ids.contains($0.post.photoId) }.map(\.post.id)
@@ -1683,23 +1689,27 @@ final class FeedService {
     /// save still showed the new text on screen, with the server quietly holding the old one,
     /// until the next reload (if ever) revealed the mismatch. The local update is now gated on
     /// the write actually succeeding, so a failed save cannot look like one that worked.
+    ///
+    /// Since Spotlight, a frame up this week or chosen refuses a caption change by name
+    /// (`in_spotlight`), reported as `.refusedInSpotlight` so the screen can say why.
     @discardableResult
-    func updatePostCaption(postId: UUID, caption: String?, userId: UUID) async -> Bool? {
+    func updatePostCaption(postId: UUID, caption: String?, userId: UUID) async -> CaptionSaveOutcome {
         struct U: Encodable { let caption: String? }
         do {
             try await supabase.from("posts").update(U(caption: caption))
                 .eq("id", value: postId.uuidString).eq("user_id", value: userId.uuidString).execute()
         } catch {
-            guard !UserFacingError.isCancellation(error) else { return nil }
+            guard !UserFacingError.isCancellation(error) else { return .cancelled }
+            if Self.spotlightRefusal(error) == "in_spotlight" { return .refusedInSpotlight }
             Self.log.error("updatePostCaption failed: \(String(describing: error), privacy: .public)")
-            return false
+            return .failed
         }
         if let i = feed.firstIndex(where: { $0.post.id == postId }) {
             var p = feed[i].post
             p.caption = caption
             feed[i] = FeedItem(post: p, author: feed[i].author)
         }
-        return true
+        return .saved
     }
 
     /// Whether the user has already shared this photo (to toggle the share affordance).
@@ -2765,6 +2775,25 @@ final class FeedService {
         await loadFeed(currentUserId: userId)
     }
     #endif
+}
+
+/// What `updatePostCaption` came to. `saved` maps onto the tri-state the pure rules below take:
+/// a refusal is a failure as far as the caption on screen goes (the server kept the old one).
+enum CaptionSaveOutcome: Equatable {
+    case saved
+    case failed
+    /// Cancelled rather than failed: nothing to tell anyone.
+    case cancelled
+    /// The frame is up for Spotlight this week, or chosen: the server refused the change.
+    case refusedInSpotlight
+
+    var saved: Bool? {
+        switch self {
+        case .saved: return true
+        case .failed, .refusedInSpotlight: return false
+        case .cancelled: return nil
+        }
+    }
 }
 
 /// What a post's caption should read after an edit attempt, given `updatePostCaption`'s

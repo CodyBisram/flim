@@ -437,6 +437,31 @@ struct MainTabView: View {
     }
     #endif
 
+    /// Opens the sheet of Spotlight weeks from a push, only when nothing is presented. A push
+    /// never dismisses what the person is doing (a half-typed caption, a comment draft, a
+    /// pager): with anything up, the Feed tab is selected underneath (the caller already did)
+    /// and the sheet stays closed, since the strip, the Activity row and the past-weeks sheet
+    /// all still reach the week. Setting the state under a presented sheet would leave it
+    /// armed, because SwiftUI refuses a second sheet and keeps the state set. Never over
+    /// onboarding either.
+    private func presentSpotlightSheet(focusWeek: String) {
+        guard hasOnboarded, Self.presentingRoot()?.presentedViewController == nil else {
+            spotlightSheet = nil
+            return
+        }
+        spotlightSheet = SpotlightSheetRoute(focusWeek: focusWeek)
+    }
+
+    /// The key window's root view controller: where every SwiftUI sheet in this tab host is
+    /// presented from.
+    private static func presentingRoot() -> UIViewController? {
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows)
+            .first(where: \.isKeyWindow)?
+            .rootViewController
+    }
+
     /// Executes a decoded notification tap. Called once from the live `.openPushDestination`
     /// broadcast, and once from `onAppear` for whatever a cold start (or a start with nobody yet
     /// signed in) left on disk.
@@ -484,7 +509,7 @@ struct MainTabView: View {
             selected = 3
             feedPath = NavigationPath()
             Usage.log(.spotlightWeeksOpen)
-            spotlightSheet = SpotlightSheetRoute(focusWeek: weekKey)
+            presentSpotlightSheet(focusWeek: weekKey)
             // The badge is earned inside publish; light the avatar dot now rather than at the
             // next reload.
             Task { await feed.refreshUnseenBadgeCount() }

@@ -626,10 +626,20 @@ struct FeedUnitCard: View {
     @ViewBuilder
     private var postActions: some View {
         if isOwn {
-            Button {
-                captionDraft = pendingCaptionRetry[post.id] ?? post.caption ?? ""
-                showEditCaption = true
-            } label: { Label("Edit caption", systemImage: "pencil") }
+            if let lock = feed.spotlightCaptionLockReason(for: post.id) {
+                // Up for Spotlight or chosen: the server refuses a caption change, so say why.
+                Button {} label: {
+                    Text("Edit caption")
+                    Text(lock)
+                    Image(systemName: "pencil")
+                }
+                .disabled(true)
+            } else {
+                Button {
+                    captionDraft = pendingCaptionRetry[post.id] ?? post.caption ?? ""
+                    showEditCaption = true
+                } label: { Label("Edit caption", systemImage: "pencil") }
+            }
             if let lock = feed.spotlightTagLockReason(for: post.id) {
                 // Up for Spotlight or chosen: the server refuses a tag, so say why up front.
                 Button {} label: {
@@ -666,14 +676,23 @@ struct FeedUnitCard: View {
             let trimmed = captionDraft.trimmingCharacters(in: .whitespacesAndNewlines)
             let newCaption = trimmed.isEmpty ? nil : trimmed
             Task {
-                let saved = await feed.updatePostCaption(postId: target.id, caption: newCaption, userId: uid)
-                if saved == true {
+                switch await feed.updatePostCaption(postId: target.id, caption: newCaption, userId: uid) {
+                case .saved:
                     pendingCaptionRetry[target.id] = nil
-                } else if saved == false {
+                case .refusedInSpotlight:
+                    // The menu did not know yet (put up from another phone): keep the draft,
+                    // and say why in the capsule's place, as a refused tag does.
+                    pendingCaptionRetry[target.id] = trimmed
+                    Haptics.error()
+                    UndoCenter.shared.showNotice(SpotlightRefusal.captionOnSpotlight)
+                    Task { await feed.refreshOwnSpotlight(userId: uid) }
+                case .failed:
                     pendingCaptionRetry[target.id] = trimmed
                     Haptics.error()
                     withAnimation { captionFailedToast = true }
                     try? await Task.sleep(for: .seconds(2)); withAnimation { captionFailedToast = false }
+                case .cancelled:
+                    break
                 }
             }
         }

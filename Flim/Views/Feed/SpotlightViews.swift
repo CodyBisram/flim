@@ -202,6 +202,7 @@ struct SpotlightWeeksSheet: View {
     @Environment(\.flimAccent) private var accent
     @Environment(FeedService.self) private var feed
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var loaded = false
     @State private var failed = false
@@ -292,7 +293,8 @@ struct SpotlightWeeksSheet: View {
                     }
                     guard weeks.contains(where: { $0.weekKey == focusWeek }) else { return }
                     try? await Task.sleep(for: .milliseconds(150))
-                    withAnimation(.snappy) { proxy.scrollTo(focusWeek, anchor: .top) }
+                    // Reduce Motion lands on the week without the scroll animating there.
+                    withAnimation(reduceMotion ? nil : .snappy) { proxy.scrollTo(focusWeek, anchor: .top) }
                 }
             }
             .overlay(alignment: .top) {
@@ -467,12 +469,12 @@ struct SpotlightShelfView: View {
 
 // MARK: - Putting one up
 
-/// The first-time explanation, once per account, before the first put-up. The undo capsule is
-/// staged only after this sheet has gone, never under it.
+/// The first-time explanation, once per account, before the first put-up. The put-up is sent
+/// only after this sheet has gone, so its notice never lands under it.
 struct SpotlightFirstTimeSheet: View {
     let onPutUp: () -> Void
     @Environment(\.dismiss) private var dismiss
-    /// In-flight guard: a second tap while the sheet is closing must not stage twice.
+    /// In-flight guard: a second tap while the sheet is closing must not send twice.
     @State private var confirmed = false
 
     var body: some View {
@@ -484,7 +486,7 @@ struct SpotlightFirstTimeSheet: View {
                     .foregroundStyle(FlimTheme.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            Text("Only the team at \(AppInfo.appName) sees what you put up. When the week closes, the team chooses a few, and those are shown to everyone on \(AppInfo.appName), with their caption.")
+            Text("Only the team at \(AppInfo.appName) sees what you put up. When the week closes, the team chooses a few, and those are shown to everyone on \(AppInfo.appName), with their caption. Anyone can react to a chosen frame; comments stay with the people who follow you.")
                 .flimType(.body)
                 .foregroundStyle(FlimTheme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -521,7 +523,7 @@ struct SpotlightFirstTimeSheet: View {
 }
 
 /// Hosts what the Spotlight menu item opens, for a view whose menu shows it: setting
-/// `firstTimePost` presents the first-time sheet, and confirming stages the put-up once the
+/// `firstTimePost` presents the first-time sheet, and confirming sends the put-up once the
 /// sheet has dismissed; setting `takeOutPost` asks before taking a chosen frame out, which is
 /// final. Both live on the host, never inside the menu, which cannot present anything.
 private struct SpotlightPutUpFlow: ViewModifier {
@@ -536,7 +538,7 @@ private struct SpotlightPutUpFlow: ViewModifier {
             .sheet(item: $firstTimePost, onDismiss: {
                 guard let post = confirmed else { return }
                 confirmed = nil
-                SpotlightFlow.stagePutUp(post, feed: feed)
+                SpotlightFlow.putUp(post, feed: feed)
             }) { post in
                 SpotlightFirstTimeSheet {
                     if let uid = auth.currentUser?.id { SpotlightFirstTime.markSeen(userId: uid) }
@@ -569,39 +571,27 @@ extension View {
 @MainActor
 enum SpotlightFlow {
     /// "Put it up" or "Swap it in": the first time for this account goes through the sheet;
-    /// every time after stages straight away.
+    /// every time after goes straight to the server.
     static func requestPutUp(_ post: Post, feed: FeedService, userId: UUID?,
                              presentFirstTime: (Post) -> Void) {
-        guard let userId else { return }
+        guard let userId, !feed.spotlightWriteInFlight else { return }
         if SpotlightFirstTime.hasSeen(userId: userId) {
-            stagePutUp(post, feed: feed)
+            putUp(post, feed: feed)
         } else {
             presentFirstTime(post)
         }
     }
 
-    /// The menu flips at once; the capsule holds the door; the server hears about it when the
-    /// window closes, through the account's write queue.
-    static func stagePutUp(_ post: Post, feed: FeedService) {
-        guard let write = feed.beginSpotlightPutUp(post) else {
-            Haptics.error()
-            return
-        }
+    /// The menu flips at once and the server is asked straight away; the capsule's slot says
+    /// it is up only once the server has said so (see `FeedService.putUpForSpotlight`).
+    static func putUp(_ post: Post, feed: FeedService) {
+        guard !feed.spotlightWriteInFlight else { return }
         Haptics.tap()
-        let capsule = SpotlightPutUpCapsule.text(previous: write.previous, post: post)
-        UndoCenter.shared.stage(
-            title: capsule.title,
-            subtitle: capsule.subtitle,
-            revert: { feed.revertSpotlight(write) },
-            commit: {
-                // Handles its own refusal (revert if still current, haptic, the reason in the
-                // capsule's place), so the center never shows a second, generic line.
-                await feed.commitSpotlight(write)
-                return true
-            })
+        Task { await feed.putUpForSpotlight(post) }
     }
 
     static func takeDown(_ post: Post, feed: FeedService) {
+        guard !feed.spotlightWriteInFlight else { return }
         Haptics.tap()
         Task { await feed.takeDownFromSpotlight(post) }
     }
@@ -633,18 +623,28 @@ struct SpotlightMenuSection: View {
                 Text("Only the team at \(AppInfo.appName) sees it")
                 Image(systemName: SpotlightGlyph.systemName)
             }
+            .disabled(feed.spotlightWriteInFlight)
         case .swap(let day):
             Button { putUp() } label: {
                 Text("Swap it into Spotlight")
                 Text("Takes down your frame from \(day)")
                 Image(systemName: SpotlightGlyph.systemName)
             }
+            .disabled(feed.spotlightWriteInFlight)
         case .takeDown:
             Button { SpotlightFlow.takeDown(post, feed: feed) } label: {
                 Text("Take it down from Spotlight")
                 Text("Up for this week")
                 Image(systemName: SpotlightGlyph.systemName)
             }
+            .disabled(feed.spotlightWriteInFlight)
+        case .takeDownPending(let weekKey):
+            Button { SpotlightFlow.takeDown(post, feed: feed) } label: {
+                Text("Take it down from Spotlight")
+                Text("Until the team publishes \(SpotlightWeekLabel.phrase(weekKey))")
+                Image(systemName: SpotlightGlyph.systemName)
+            }
+            .disabled(feed.spotlightWriteInFlight)
         case .disabled(let reason):
             Button {} label: {
                 Text("Put it up for Spotlight")
@@ -655,7 +655,7 @@ struct SpotlightMenuSection: View {
         case .takeOut:
             Button(role: .destructive) { confirmTakeOut(post) } label: {
                 Text("Take it out of Spotlight")
-                Text("It leaves Spotlight and your page for good. Your badge stays.")
+                Text("It leaves Spotlight and your page for good.")
                 Image(systemName: SpotlightGlyph.systemName)
             }
             .disabled(feed.spotlightTakeOutsInFlight.contains(post.id))

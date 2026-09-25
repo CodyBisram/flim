@@ -303,3 +303,22 @@ in any locked list.
   within five seconds; put up then swap on Network Link Conditioner; AX3 with VoiceOver.
 - **After release:** people putting a frame up per week, strip opens per active day, reactions on
   chosen frames in the 48 hours after publish, captures per active day not falling.
+
+## After the independent audit of 1.6.0 (2026-09-25)
+
+An outside audit found one admin blocker (the page's image policy blocked every signed thumbnail),
+three server issues and two client bugs; all were fixed, the server ones in
+`2026-09-25_spotlight_hardening.sql` because the first migration was already applied. Its design
+critique was weighed item by item:
+
+- **Taken.** A quiet one-time line after posting says a post can go up for Spotlight from its
+  menu (discoverability). The undo capsule on put-up is gone: a put-up can be taken down until the
+  week closes, so the window protected nothing, and removing it removed the write queue and the
+  bug it caused; writes are now direct behind an in-flight guard. The first-time sheet says
+  strangers can react and that comments stay with followers. A photographer can take a frame down
+  until the team publishes the week, not only until it closes. "Your badge stays" is said once.
+- **Kept.** Strip placement stays (the fix for the drop-in is the minimum, and the machinery is a
+  tested pure function). Removals stay one-way; both admin confirms now say so, and a misclick is
+  recoverable in SQL for a one-person admin. The badge stays gold: it is the trophy the owner
+  asked for. The two admin list functions stay separate (noted for v2), and the queue is bounded
+  by skipping and the 14-day stale rule.

@@ -233,7 +233,17 @@ struct PostDetailView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     if isOwn {
-                        Button { captionDraft = pendingCaptionRetry ?? post.caption ?? ""; showEditCaption = true } label: { Label("Edit caption", systemImage: "pencil") }
+                        if let lock = feed.spotlightCaptionLockReason(for: post.id) {
+                            // Up for Spotlight or chosen: the server refuses a caption change.
+                            Button {} label: {
+                                Text("Edit caption")
+                                Text(lock)
+                                Image(systemName: "pencil")
+                            }
+                            .disabled(true)
+                        } else {
+                            Button { captionDraft = pendingCaptionRetry ?? post.caption ?? ""; showEditCaption = true } label: { Label("Edit caption", systemImage: "pencil") }
+                        }
                         if let lock = feed.spotlightTagLockReason(for: post.id) {
                             // Up for Spotlight or chosen: the server refuses a tag, so say why.
                             Button {} label: {
@@ -310,13 +320,21 @@ struct PostDetailView: View {
                 // failure below must fall back to that, not revert an already-accepted edit.
                 let previousCaption = post.caption
                 Task {
-                    let saved = await feed.updatePostCaption(postId: post.id, caption: newCaption, userId: uid)
+                    let outcome = await feed.updatePostCaption(postId: post.id, caption: newCaption, userId: uid)
+                    let saved = outcome.saved
                     // Cancelled, not failed: something else superseded this save (the view going
                     // away, a second edit racing this one), so leave everything untouched rather
                     // than accuse the user of a failure that didn't happen.
                     guard saved != nil else { return }
                     captionOverride = resolvedCaption(afterSaving: saved, attempted: newCaption, previous: previousCaption)
-                    if saved == false {
+                    if outcome == .refusedInSpotlight {
+                        // Put up from another phone since the menu read its state: keep the
+                        // draft, and say why in the capsule's place, as a refused tag does.
+                        pendingCaptionRetry = trimmed
+                        Haptics.error()
+                        UndoCenter.shared.showNotice(SpotlightRefusal.captionOnSpotlight)
+                        Task { await feed.refreshOwnSpotlight(userId: uid) }
+                    } else if saved == false {
                         // Keep what was typed so reopening "Edit caption" starts from the
                         // attempted text, not the caption that failed to change.
                         pendingCaptionRetry = trimmed
