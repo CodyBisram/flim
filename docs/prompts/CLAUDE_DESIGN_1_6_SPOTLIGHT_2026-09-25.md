@@ -5,6 +5,11 @@ rejected the grease-pencil circle and the word circled. A chosen frame is now **
 and the mark is **the light**: the frame reads as lit. Section 4 defines the light and section 9
 puts its form to the owner as a drawn choice.
 
+Amended the same night: Spotlight is not a separate page. It lives inside the Feed tab as a second
+view the person switches to, behind a quiet switch in the Feed header. The feed stays the default
+and the dominant one; Spotlight shows the same frames all week and must never compete with the
+feed for attention. Sections 2 and 4 carry the change.
+
 This is not the v2 redesign. It adds one feature, Spotlight, to the app as it ships today
 (1.5.4, build 398), in the app's current look, as release 1.6. Nothing that exists is redesigned.
 What is designed is built so that v2 (`CLAUDE_DESIGN_V2_FULL_REDESIGN_2026-09-24.md`, section 10)
@@ -43,8 +48,8 @@ Two rules shape everything:
 
 - **Additive, not a redesign.** You may not move, restyle or rename anything that exists. The
   Feed header keeps its order, the feed unit keeps its band and menu, the page keeps its sections,
-  the tab bar keeps its four tabs. Spotlight arrives as: one line under the Feed title, one page,
-  one menu item, one toggle in the compose sheet, one pill on your own posted frames, one row kind
+  the tab bar keeps its four tabs. Spotlight arrives as: one quiet switch in the Feed header and
+  the view it switches to, one menu item, one toggle in the compose sheet, one pill on your own posted frames, one row kind
   in Activity, one badge, one shelf on the page, two pushes, one admin queue.
 - **Built for v2.** The model in section 3 is the one v2 will restyle. Do not design anything
   that only works because of how 1.6 looks. Every rule about weeks, eligibility, withdrawal,
@@ -53,11 +58,11 @@ Two rules shape everything:
 Work in four stages, one turn each:
 
 1. **Placement.** Grey wireframes of every touched surface with the Spotlight element in place,
-   at real geometry, at 402pt with the tab bar drawn: the entry line, the page, the menu item, the
-   compose toggle, the own-post pill, the Activity row, the shelf, the badge, the admin queue.
+   at real geometry, at 402pt with the tab bar drawn: the header switch in both positions, the
+   Spotlight view, the menu item, the compose toggle, the own-post pill, the Activity row, the shelf, the badge, the admin queue.
    Copy in place. Ends with the decisions in section 9.
-2. **Boards.** The same surfaces in the app's look, at 402pt, plus 375 and AX3 for the entry
-   line, the page and the shelf.
+2. **Boards.** The same surfaces in the app's look, at 402pt, plus 375 and AX3 for the header
+   switch, the Spotlight view and the shelf.
 3. **States.** Every state and edge case in section 5, each on its own board or explicitly marked
    not applicable with the reason.
 4. **Handoff.** Section 8.
@@ -175,8 +180,11 @@ The owner decided these; design inside them.
   went up. The light is an editor's mark, not a score. The number of frames up is never shown.
 - **Frames not chosen stay** where they were put, in their place, not demoted, not removed.
 - **Past weeks stay,** one per week.
-- **Spotlight is a page of its own**, reached from one 32pt line under the "Feed" title. Not a
-  tab, not a row in the feed, not a bottom accessory.
+- **Spotlight lives inside the Feed tab, as a second view.** The feed is what the tab opens on,
+  every time, and it is the prominent one. Spotlight is reached by a quiet switch in the Feed
+  header and shows the same frames all week; it must never compete with the feed for the fold,
+  never interleave with feed units, never be a tab, a row inside the feed, or a bottom accessory.
+  Leaving the tab and coming back lands on the feed, not on Spotlight.
 - **A frame in the Spotlight is public.** Everyone on FLIM sees it in Spotlight and on its photographer's
   page. The person is told this before they put a frame up.
 - **The trophy** is a badge, `spotlight`, earned the first time one of your frames is put in the Spotlight,
@@ -226,7 +234,7 @@ voice ("Spotlight", "One of your frames was in the Spotlight.", "Put a frame up 
 Monday morning, a few are lit.").
 
 **Activity:** one new row kind, "spotlight", reading "Your frame is in the Spotlight" with the week;
-it opens Spotlight scrolled to the frame. No row for putting up, withdrawing, or the Sunday
+it opens the Feed tab switched to Spotlight, scrolled to the frame. No row for putting up, withdrawing, or the Sunday
 reminder.
 
 **Instrumentation,** day-bucketed counters like the rest of the app, never per-tap streams:
@@ -234,49 +242,48 @@ spotlight page opened, frame put up, frame withdrawn, Spotlight push opened. Eve
 derivable from the table.
 
 **The version gate:** when 1.6 is live on the App Store, `latest_version` moves to 1.6.0 so
-1.5.x installs see the nudge. A 1.5.x client never sees Spotlight and never sees the entry line;
+1.5.x installs see the nudge. A 1.5.x client never sees Spotlight and never sees the switch;
 its posts can still be put up from a 1.6 device. State this on the handoff.
 
 ## 4. What you draw, surface by surface, in the current look
 
-**The entry line (Feed).** One 32pt line directly under the "Feed" header row, above the
-notification nudge, inside the list so it scrolls away. Left: "Spotlight" in the label role. Right,
-in meta: the week's state. Tapping anywhere on the line pushes the page. Its states across the
-week:
+**The switch (Feed header).** The "Feed" word in the header (17 light, `textSecondary`) becomes
+two words: "Feed" and "Spotlight", side by side with the header's own spacing, the active one in
+`textSecondary` exactly as "Feed" reads today, the inactive one in `textTertiary`. Tapping the
+inactive word switches the view; nothing else in the header changes (the bell, find friends and
+the avatar stay). No segmented control, no underline, no capsule, no accent: the header must look,
+at a glance, exactly as it does today with one quiet word added. The ledger ("N shots from M
+friends") belongs to the feed view and is hidden on Spotlight. The tab bar's Feed dot never lights
+for Spotlight. Returning to the tab, or launching the app, always shows the feed. Whether the
+"Spotlight" word carries a tiny signal on the Monday after Done, until the person has looked once
+that week, is decision 9; by default it does not.
 
-- Monday after Done: "Lit this morning", with three tiny 3:4 thumbnails of the lit frames on the
-  right (24pt tall), the first chosen first.
-- Monday before Done: "Last week's frames are being chosen" (quiet; no thumbnails).
-- Midweek: "Week of September 14" and, for a person whose frame is up, "Yours is up".
-- Sunday, for a person who posted this week and has nothing up: "Closes tonight" in the accent.
-- Sunday, otherwise: "Closes tonight" in secondary.
-- The very first week (nothing has ever been lit): "Week of September 14 · the first one".
-- Offline with a cached week: the same line, nothing different.
-- Never a count of frames, never a count of people.
+The word's states, said only by one optional meta word after it in the micro role: midweek
+nothing ("Spotlight"); Sunday, for a person who posted this week and has nothing up, "Spotlight ·
+closes tonight"; Monday before Done nothing; Monday after Done, the optional signal of decision 9.
+Never a count of frames, never a count of people.
 
-The line does not light the Feed tab dot and does not add to the ledger.
-
-**The page.** Title "Spotlight" in the pageTitle role. Under it, in meta: "Week of September 14"
-then "closes Sunday night" (or "lit Monday" once Done), then "Eastern time" once. Then the
-frames: 3:4, two columns with the grid's 3pt gap (two, not three, because these are the week's
-chosen frames and the Chapters cards are 118pt wide; say if you disagree and why), thumb
-rendition, the handle in micro under each, in put-up order. Your own frame carries a hairline
-accent rule under its handle, no badge, no "you". A frame in the Spotlight carries **the light**: it
-reads as lit, the way one print on a dark wall reads under a lamp. Draw it three ways in stage 1
-and the owner picks (section 9, D5): (a) a warm glow bleeding a few points past the frame's edges
-onto the ground, strongest at the top; (b) a one-point warm hairline around the frame with a
-soft outer glow; (c) a small beam glyph at the frame's upper-left corner, light falling in from
-above. Whichever wins: one fixed warm white-amber, never the phone's accent (which the person
-can change), propose the exact colour, and it must read on a dark frame, on a bright one, and
-with Reduce Transparency. It is never a ring, a circle, a star or a badge on the photograph.
-It appears once; the only animation is the light coming up over 350ms on the first view after
-the push, honouring Reduce Motion. Tapping a frame opens the post exactly as the feed
-does (PostDetailView), with its reactions and comments. Under this week: "Past weeks", a
-horizontal row in the Chapter shelf's geometry (118pt 3:4 cards, radius 14) showing each week's
-cover and "Week of September 7"; tapping one shows that week in the same page layout with
-"lit Monday" in the meta. Draw the page at 0 frames (Monday's first hour, and the first week
-ever), 3, 12 and 30. With about 48 people posting in a month, 12 to 30 frames is the realistic
-range.
+**The Spotlight view (inside the Feed tab).** Same header, the feed list replaced. First, one meta
+line: "Week of September 14 · closes Sunday night · Eastern time" (or "· lit Monday" once Done).
+Then the frames: 3:4, two columns with the grid's 3pt gap (two, not three, because these are the
+week's chosen frames and the Chapters cards are 118pt wide; say if you disagree and why), thumb
+rendition, the handle in micro under each, in put-up order, the same frames for the whole week.
+Your own frame carries a hairline accent rule under its handle, no badge, no "you". A frame in
+the Spotlight carries **the light**: it reads as lit, the way one print on a dark wall reads under
+a lamp. Draw it three ways in stage 1 and the owner picks (section 9, D5): (a) a warm glow
+bleeding a few points past the frame's edges onto the ground, strongest at the top; (b) a
+one-point warm hairline around the frame with a soft outer glow; (c) a small beam glyph at the
+frame's upper-left corner, light falling in from above. Whichever wins: one fixed warm
+white-amber, never the phone's accent (which the person can change), propose the exact colour,
+and it must read on a dark frame, on a bright one, and with Reduce Transparency. It is never a
+ring, a circle, a star or a badge on the photograph. It appears once; the only animation is the
+light coming up over 350ms on the first view after the push, honouring Reduce Motion. Tapping a
+frame opens the post exactly as the feed does (PostDetailView), with its reactions and comments.
+Under this week: "Past weeks", a horizontal row in the Chapter shelf's geometry (118pt 3:4 cards,
+radius 14) showing each week's cover and "Week of September 7"; tapping one shows that week in
+the same layout with "lit Monday" in the meta. Draw the view at 0 frames (Monday's first hour, and
+the first week ever), 3, 12 and 30. With about 48 people posting in a month, 12 to 30 frames is
+the realistic range. Draw the feed view beside it in every case so the two are seen as one tab.
 
 **Putting a frame up, from the frame.** In the own-post menu (feed card and post opened), a new
 item after "Tag people": "Put it up for Spotlight", or "Take it down from Spotlight" when it is
@@ -304,7 +311,7 @@ the post opened, the same pill under the author row. Never on other people's fra
 Darkroom.
 
 **The Spotlight push and where it lands.** "You're in the Spotlight" (title), body "One of your
-frames, week of September 14". Opening it lands on the Spotlight page scrolled to the frame, with
+frames, week of September 14". Opening it lands on the Feed tab switched to Spotlight, scrolled to the frame, with
 the light coming up once. If the app was already open, a toast in the top slot: checkmark, "You're in the
 Spotlight". The badge dot lights on the avatar the next time the feed reloads; do not add a second
 push or a modal.
@@ -312,7 +319,7 @@ push or a modal.
 **The frame afterwards.** In the feed unit and on the post opened, a frame in the Spotlight carries
 the light, quietly, forever, in a form that still reads at the card's size. In the person's page
 grid, the same at 120pt thumbnails (the light must survive a 3pt gap between lit and unlit
-cells; show it). In Activity, the spotlight row with the week, opening Spotlight at the frame.
+cells; show it). In Activity, the spotlight row with the week, opening the Spotlight view at the frame.
 
 **The shelf.** On the page, between the header and the Chapters shelf: an uppercase "SPOTLIGHT" rule
 header in the sectionRule role, then a horizontal row of 118pt 3:4 cards (radius 14) in the
@@ -350,9 +357,9 @@ mode is decision 4 in section 9.
 Every one of these gets a board, or a line under the nearest board saying it does not apply and
 why. "Applies" is decided by what the code can produce, not by what seems likely.
 
-**The nine states, for the entry line, the page, the shelf and the queue:**
+**The nine states, for the header switch, the Spotlight view, the shelf and the queue:**
 
-1. Loading, first time: a shimmer in the shape of the frames (the existing 3:4 shimmer), never a
+1. Loading, first time (switching to Spotlight): a shimmer in the shape of the frames (the existing 3:4 shimmer), never a
    spinner; after three seconds of nothing, "Still loading".
 2. Loading again: the loaded week stays; a pull to refresh; nothing flashes empty.
 3. Empty, first ever: the first week, no frames yet: "Nothing up yet. Put one of this week's
@@ -364,24 +371,24 @@ why. "Applies" is decided by what the code can produce, not by what seems likely
    from someone you blocked or who blocked you (invisible to you, the others unchanged); a hidden
    post (invisible while hidden); a frame whose thumb rendition is missing (falls back to the
    master, like the grid); a week whose cover frame was deleted (next frame becomes the cover).
-6. Error with the way back: the page fails to load ("Couldn't load Spotlight. Try again." in
+6. Error with the way back: the view fails to load ("Couldn't load Spotlight. Try again." in
    place, with the retry); put up fails; withdraw fails; the compose toggle was on and the post
    succeeded but the put-up failed ("Posted to your page. Couldn't put it up for Spotlight; try
    from the post's menu."); the owner's Spotlight fails ("Couldn't put it in the Spotlight. Try again."); Done fails
    halfway (the week is closed, some pushes went; the ledger prevents doubles; the owner sees
    "Closed. 2 of 3 pushes sent; retrying." and a retry).
-7. Offline: the loaded week stays readable; the entry line shows the cached state; put up and
+7. Offline: the loaded week stays readable and the switch still works; put up and
    withdraw queue like every other write and the frame's menu item says "Queued"; the queued
    put-up sends when the connection returns. If the week closed while it was queued, it fails
    honestly: "This week closed before it sent." and nothing goes into the new week.
 8. Stale, after a switch: signing out and in as another account on the same phone: no "Yours is
    up", no "Up for Spotlight" pill, no badge dot, no shelf from the other account is ever
-   visible. Draw the moment of the switch on the page.
+   visible, and the tab lands on the feed. Draw the moment of the account switch on the view.
 9. Racing: two phones on the same account put up different frames within seconds (last write
    wins; the earlier phone learns on its next refresh, its pill goes away, no error); a frame is
-   put up at 03:59 Monday (it belongs to the closing week); the week rolls over while the page is
+   put up at 03:59 Monday (it belongs to the closing week); the week rolls over while the view is
    on screen (the meta changes, the frames stay, a "New week" pill in the top slot like "New
-   posts"); the owner chooses while a person is looking at the page (the light appears on their
+   posts"); the owner chooses while a person is looking at the view (the light appears on their
    next refresh, not live); a person withdraws a frame at 03:58 Monday and it is already in the
    owner's queue (the queue refetches; if it was chosen before the withdrawal landed, the
    withdrawal is refused: "The week closed."); the Spotlight push arrives on a phone still on
@@ -392,8 +399,8 @@ why. "Applies" is decided by what the code can produce, not by what seems likely
 
 **Spotlight-specific:**
 
-- A person who follows nobody and is followed by nobody opens Spotlight: full page, same as
-  everyone. This is the one place a newcomer with no friends sees the whole app.
+- A person who follows nobody and is followed by nobody switches to Spotlight: the full view,
+  same as everyone. This is the one place a newcomer with no friends sees the whole app.
 - A person in the Spotlight a second time: the same push, the second frame lit, the shelf at two,
   the badge unchanged, no second badge announcement.
 - The owner's own frame: the owner may put a frame up; the queue shows it; the owner may put it
@@ -405,8 +412,8 @@ why. "Applies" is decided by what the code can produce, not by what seems likely
 - Reporting from Spotlight: the same "Report" as the feed; a hidden post disappears from the
   week while hidden and returns if unhidden.
 - Blocking from Spotlight: the same "Block @handle"; both ways, immediate on the next refresh.
-- The camera-only person who has never opened the Feed: the entry line is on the Feed, so they
-  never meet Spotlight until they do. Say so under the board; it is accepted.
+- The camera-only person who has never opened the Feed: the switch is in the Feed header, so
+  they never meet Spotlight until they do. Say so under the board; it is accepted.
 - An account created mid-week: may put up any frame it posts that week.
 - A roll photo posted to the page (8.7% of posts are roll frames): eligible like any post; the
   roll's own privacy ended when it developed.
@@ -414,14 +421,14 @@ why. "Applies" is decided by what the code can produce, not by what seems likely
   frames cannot be put up while covered; the menu item is absent, the compose toggle says "Not
   available this week", and nothing explains why. Covered lifts, and it works again.
 - The empty Monday: nobody put anything up. The owner's queue says "Nothing was put up this
-  week." with "Close the week" (no pushes). The page shows the week with no frames and "Nobody
+  week." with "Close the week" (no pushes). The view shows the week with no frames and "Nobody
   put a frame up this week." Past weeks are unaffected.
 - Reduce Motion: the light appears without coming up. VoiceOver: every frame reads "{handle}, in
-  the Spotlight" or "{handle}"; the entry line reads its state; the light has no label of its own
+  the Spotlight" or "{handle}"; the switch reads its state; the light has no label of its own
   beyond the frame's.
-- Dynamic Type AX3: the entry line wraps to two lines and keeps its 44pt target; the page meta
-  wraps; the handle under a frame truncates with an ellipsis before it wraps.
-- The accent as any of the six hues: the entry line's "Closes tonight", the "Up for Spotlight"
+- Dynamic Type AX3: the two header words wrap onto a second header line before they truncate,
+  each keeping a 44pt target; the view's meta wraps; the handle under a frame truncates with an ellipsis before it wraps.
+- The accent as any of the six hues: the "Up for Spotlight"
   pill and your own frame's rule must read in all six; the light is never the accent, it is
   always the one warm white-amber, so it stays the same colour on every phone.
 
@@ -432,10 +439,9 @@ screen; the vocabulary in section 2 is fixed.
 
 | Where | String |
 |---|---|
-| Entry line, left | Spotlight |
-| Entry line, states | Lit this morning · Last week's frames are being chosen · Week of September 14 · Yours is up · Closes tonight · Week of September 14 · the first one |
-| Page title | Spotlight |
-| Page meta | Week of September 14 · closes Sunday night · Eastern time / Week of September 14 · lit Monday |
+| Header switch | Feed · Spotlight (the inactive word in textTertiary) |
+| Switch meta | closes tonight |
+| View meta | Week of September 14 · closes Sunday night · Eastern time / Week of September 14 · lit Monday |
 | Past weeks header | Past weeks |
 | Own-post menu | Put it up for Spotlight / Take it down from Spotlight / Swap it into Spotlight / Queued |
 | Consequence sheet, put up | Put it up for Spotlight / Everyone on FLIM can see it there, not only the people who follow you. Anyone you tagged is told. You can take it down until Sunday night. / Put it up / Cancel |
@@ -470,36 +476,36 @@ where the sentence needs it and is written as the app's configured name.
 - No counts on anyone: not frames up, not people, not lights on a person. The owner's queue may
   count for the owner.
 - Only existing tokens, roles and components. The one new visual element is the light. If you believe a second is needed, name the gap and ask.
-- Nothing that exists moves. If the entry line pushes something below the fold at 375pt, show the
-  fold before and after and say what moved down.
+- Nothing that exists moves. The header gains one word and nothing else; if the second word forces
+  anything in the header to shrink or wrap at 375pt, show it and say what changed.
 - The accent is a variable that must work as any of six hues and is used for one action at a
   time. The light is never the accent.
 - Nothing fails silently. Every failure has its line, in place, with the way back.
 - Everything scales to AX3, every control is 44pt, every colour passes AA on the surface it sits
   on, measured on a photograph too.
 - No coach marks, tours or explainer cards. The consequence sheet the first two times is the only
-  teaching, and the page explains itself by being there.
+  teaching, and the view explains itself by being there.
 
 ## 8. The handoff
 
-- **Boards:** every surface in section 4 at 402pt in the app's look; the entry line, the page and
-  the shelf also at 375 and at AX3; every state in section 5 on a board or explicitly not
+- **Boards:** every surface in section 4 at 402pt in the app's look; the header switch, the
+  Spotlight view and the shelf also at 375 and at AX3; every state in section 5 on a board or explicitly not
   applicable; the admin queue at desktop and phone width.
 - **The copy inventory** (section 6), final, with the board each line is on.
-- **The change map:** A presentation only (nothing here is); B client behaviour (the entry line,
-  the page, the menu items, the compose toggle, the pill, the shelf, the Activity row, the badge
+- **The change map:** A presentation only (nothing here is); B client behaviour (the header switch,
+  the Spotlight view, the menu items, the compose toggle, the pill, the shelf, the Activity row, the badge
   glyph, the push routes, the version nudge); C server (section 3 verbatim: the two tables, the
   RPCs, the two pushes, the badge predicate, the version-aware push route, the counters); D
   unresolved, as questions.
 - **The build order the owner will follow,** each step shippable alone: (1) server tables, RPCs,
-  badge predicate, admin queue; (2) client read-only: entry line, page, shelf, the light on frames, the
+  badge predicate, admin queue; (2) client read-only: the switch, the view, shelf, the light on frames, the
   Activity row; (3) client writes: put up, withdraw, swap, compose toggle, the pill; (4) pushes
   and the Sunday reminder; (5) `latest_version` to 1.6.0. State what a person on step 2 sees
-  before step 3 exists (the page, no way to put anything up: the empty copy must not promise the
+  before step 3 exists (the view, no way to put anything up: the empty copy must not promise the
   menu item until it exists; give the step-2 empty line).
 - **What v2 changes and what it does not:** a two-column list. Does not: anything in sections 2
   and 3, the copy vocabulary, the push kinds, the badge, the shelf's existence. Changes: the
-  entry's look and place (v2 draws it in the redesigned Feed), the page's frame layout (rebate
+  switch's look (v2 draws it in the redesigned Feed header), the view's frame layout (rebate
   hairlines, one row per line), the light's rendering, the admin queue's chrome, the possible
   in-app owner mode.
 - **The rollout check,** measured for two weeks after 1.6 is live, never shown to anyone as a
@@ -527,10 +533,13 @@ Ask in this form, two or three answers each, one line back from the owner.
    queue stays open until the owner taps Done, whenever that is; the pushes go then.
 6. **The shelf on a page you do not follow.** A: shown, because Spotlight frames are public (as
    written). B: hidden with the grid.
-7. **Two columns or three on the page.** A: two. B: three, matching the grid.
+7. **Two columns or three in the Spotlight view.** A: two. B: three, matching the grid.
 8. **The light's form (D5).** A: the glow past the edges. B: the hairline with a soft glow. C: the
    beam glyph at the corner. Drawn all three on the same frame, at card size and at 120pt, on a
    dark frame and a bright one, before the owner picks.
+9. **A signal on the switch.** A: none, ever; the \"Spotlight\" word is the same every day (as
+   written). B: on the Monday after Done, a 4pt dot after the word until the person has looked once
+   that week, for everyone. C: the dot only for a person whose own frame was lit.
 
 ## 10. Rules of conduct
 
