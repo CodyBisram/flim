@@ -89,6 +89,19 @@ struct PersonalInviteLinkTests {
         #expect(AppInfo.personalInviteMessage(code: "XY7Z90").contains("XY7Z90"))
     }
 
+    @Test("the shared message says what the app is, before the link")
+    func sharedMessageExplainsTheApp() {
+        // It reaches people who have never heard of the app; a name alone told them nothing.
+        let message = AppInfo.personalInviteMessage(code: "XY7Z90")
+        let url = AppInfo.personalInviteURL(code: "XY7Z90").absoluteString
+        guard let what = message.range(of: "disposable camera"), let link = message.range(of: url) else {
+            Issue.record("message is missing the description or the link")
+            return
+        }
+        #expect(what.lowerBound < link.lowerBound)
+        #expect(!message.contains("\u{2014}"), "no em dashes in copy")
+    }
+
     // MARK: - Pending storage
 
     @Test("a six-character code is kept, and normalised")

@@ -106,7 +106,50 @@ const CAMPAIGNS: Record<string, () => Promise<Recipient[]>> = {
   "thank-you-preview": thankYouPreviewCohort,
   "thank-you": thankYouCohort,
   "thank-you-annie": thankYouAnnieCohort,
+  "founding-seats-preview": foundingSeatsPreviewCohort,
+  "founding-seats": foundingSeatsCohort,
 };
+
+/// Founding 100 is running out (2026-09-25: 24 seats, about four a week). The badge is the one
+/// scarcity FLIM has and nobody holding an invite has been told it ends. Sent to people who can
+/// act on it: reachable, at least one invite left, and at least one post (the same bar
+/// invites-left used, so the push reaches people who use the app, not everyone with a token).
+/// The seat count is read at send time and said as a number; with none left the cohort is
+/// empty and nothing sends. Lands on the invite sheet.
+async function foundingSeatsLeft(): Promise<number> {
+  const { count } = await supabase
+    .from("users").select("id", { count: "exact", head: true })
+    .not("signup_ordinal", "is", null).neq("username", "applereview");
+  return count === null ? 0 : Math.max(0, 100 - count);
+}
+function foundingSeatsTitle(left: number): string {
+  return left === 1 ? "One seat left in the first hundred." : `${left} seats left in the first hundred.`;
+}
+const FOUNDING_SEATS_BODY =
+  "Anyone you bring in while they last is one of the first hundred on FLIM, for good. Your invites are on your profile.";
+
+async function foundingSeatsCohort(): Promise<Recipient[]> {
+  const left = await foundingSeatsLeft();
+  if (left === 0) return [];
+  const out: Recipient[] = [];
+  for (const id of await reachableUsers()) {
+    const { data: u } = await supabase
+      .from("users").select("username, invite_uses_remaining").eq("id", id).maybeSingle();
+    const user = u as { username: string; invite_uses_remaining: number | null } | null;
+    if (!user || user.username === "cody" || user.username === "applereview") continue;
+    if (user.invite_uses_remaining === null || user.invite_uses_remaining <= 0) continue;
+    const { count: posts, error } = await supabase
+      .from("posts").select("id", { count: "exact", head: true }).eq("user_id", id);
+    if (error || !posts) continue;
+    out.push({ userId: id, title: foundingSeatsTitle(left), body: FOUNDING_SEATS_BODY, route: { t: "invite" } });
+  }
+  return out;
+}
+
+/// The owner alone, with the live count, to read on a lock screen before anyone else does.
+async function foundingSeatsPreviewCohort(): Promise<Recipient[]> {
+  return ownerOnly(foundingSeatsTitle(Math.max(1, await foundingSeatsLeft())), FOUNDING_SEATS_BODY);
+}
 
 /// One person, sent again at the owner's ask (2026-09-12). Its own campaign name, because the
 /// claim ledger rightly refuses to send "thank-you" to the same account twice.

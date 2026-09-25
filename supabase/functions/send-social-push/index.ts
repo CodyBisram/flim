@@ -155,7 +155,7 @@ async function importPrivateKey(pem: string): Promise<CryptoKey> {
 // builds parse only `t` and `id`, ignore fields they don't recognize, and keep landing on the
 // roll, so this is additive and backward compatible, not a breaking change.
 interface FlimRoute {
-  t: "reveal" | "post" | "profile" | "feed" | "join";
+  t: "reveal" | "post" | "profile" | "feed" | "join" | "invite";   // "invite": your own page with the invite sheet open (1.5.4+; older builds open the app)
   id?: string;
   photo?: string;
   comments?: true;
@@ -1329,6 +1329,29 @@ Deno.serve(async (req: Request) => {
     }
     if (settled(`followup:${inv.roll_id}:${inv.user_id}`)) await supabase.from("roll_follow_up_invites").update({ push_sent: true })
       .eq("roll_id", inv.roll_id).eq("user_id", inv.user_id);
+  }
+  // ---- An invite came back (2026-09-25). credit_invite_earnback returns one invite to whoever
+  //      brought someone in, on that person's first photo. It used to happen in silence: the
+  //      count on the invite sheet went up and nothing said so. Told once, to the inviter, with
+  //      the invitee as the actor (so a block either way keeps it quiet), landing on the invite
+  //      sheet. Only when the credit actually landed: an inviter with unlimited invites
+  //      (invite_uses_remaining NULL, the owner) got nothing back and hears nothing, and a
+  //      deleted inviter matches no row. The flag flips either way so a row never loops.
+  const { data: earnbacks } = await supabase
+    .from("invite_earnbacks")
+    .select("invitee_id, inviter_id")
+    .eq("push_sent", false);
+  for (const e of earnbacks ?? []) {
+    const key = `earnback:${e.invitee_id}`;
+    const { data: inviter } = await supabase
+      .from("users").select("invite_uses_remaining").eq("id", e.inviter_id).maybeSingle();
+    const credited = inviter && (inviter as { invite_uses_remaining: number | null }).invite_uses_remaining !== null;
+    if (credited) {
+      const name = await handle(e.invitee_id);
+      sent += await notify(e.inviter_id, e.invitee_id, `${name} took their first photo`,
+        "Your invite came back. You can bring in someone else.", { t: "invite" }, key);
+    }
+    if (settled(key)) await supabase.from("invite_earnbacks").update({ push_sent: true }).eq("invitee_id", e.invitee_id);
   }
   // ---- Spotlight: one push to each person whose frame was chosen, once its week is published.
   //      No actor. Routed to the Feed with the week as a rider ({t:"feed", week}): 1.6 opens that

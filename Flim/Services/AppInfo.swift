@@ -57,9 +57,14 @@ enum AppInfo {
     /// third-party attribution), so someone installing for the first time still needs the code in
     /// readable form. The "open this link again" line is the shortest honest instruction for the
     /// path that does work after installing.
+    ///
+    /// The second line says what the app is (2026-09-25). This message almost always reaches
+    /// someone who has never heard of \(appName), and "Join me on FLIM." alone gave them a name
+    /// and nothing else; the landing page it opens now names the sender, so the text does not.
     static func personalInviteMessage(code: String) -> String {
         """
         Join me on \(appName).
+        It's a disposable camera for a few close friends, and it's invite-only. This is mine.
 
         \(personalInviteURL(code: code).absoluteString)
 

@@ -49,7 +49,7 @@
 
   <main class="wrap invite">
     <div class="invite-head">
-      <h1>You&rsquo;re invited to FLIM</h1>
+      <h1 id="headline">You&rsquo;re invited to FLIM</h1>
       <p class="invite-lede">Here&rsquo;s your invite code. You&rsquo;ll enter it when you sign up.</p>
     </div>
 
@@ -66,6 +66,7 @@
 
     <div class="invite-notes">
       <p>FLIM is the disposable camera for your closest friends. It&rsquo;s invite-only, and this code is your way in.</p>
+      <p id="founding" hidden></p>
       <p>Keep this link handy. You&rsquo;ll need the code on the sign-up screen after you install.</p>
     </div>
   </main>
@@ -87,12 +88,47 @@
       if (valid) {
         document.getElementById("code").textContent = code.toUpperCase();
         open.href = "com.lapse.app://i/" + code.toUpperCase();
+        personalize(code.toUpperCase());
       } else {
         // No code means nothing to open. Hiding the whole action keeps the primary
         // button from sitting next to a control that would do nothing.
         open.style.display = "none";
       }
     })();
+
+    // Names the friend who sent the link, and says how many Founding 100 seats are left, from
+    // invite_landing (personal codes only, its own rate budget, never the sign-in one). Best
+    // effort: on any failure, a campaign or roll code, or a used-up code, the page stays exactly
+    // as it was. Everything is set with textContent, never as markup.
+    function personalize(code) {
+      if (!window.fetch) return;
+      fetch("https://wxvwamwrjlrvqmuaafjv.supabase.co/rest/v1/rpc/invite_landing", {
+        method: "POST",
+        headers: {
+          "apikey": "sb_publishable_ze8KEytcVzvKOijlUQ8Kfw_nb3kJ-V4",
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ p_code: code })
+      })
+        .then(function (r) { return r.ok ? r.json() : []; })
+        .then(function (rows) {
+          var row = rows && rows[0];
+          if (!row || !row.username) return;
+          var name = (row.display_name || "").trim() || ("@" + row.username);
+          var headline = name + " invited you to FLIM";
+          document.getElementById("headline").textContent = headline;
+          document.title = headline;
+          var left = row.founding_left;
+          if (typeof left === "number" && left > 0) {
+            var founding = document.getElementById("founding");
+            founding.textContent = left === 1
+              ? "One seat is left in the first hundred. Sign up with this code while it lasts and it is yours."
+              : left + " seats are left in the first hundred. Sign up with this code while they last and you are one of them.";
+            founding.hidden = false;
+          }
+        })
+        .catch(function () {});
+    }
   </script>
 </body>
 </html>
