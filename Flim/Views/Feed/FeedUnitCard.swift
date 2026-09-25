@@ -94,6 +94,10 @@ struct FeedUnitCard: View {
     @State private var showEditTags = false
     @State private var editingTags: [PendingTag] = []
     @State private var shareItem: ShareImage?
+    /// The post the Spotlight first-time sheet is about, while it is up.
+    @State private var spotlightFirstTimePost: Post?
+    /// The chosen frame the "Take it out" confirmation is about, while it is up.
+    @State private var spotlightTakeOutPost: Post?
 
     /// Whether this unit is genuinely on screen (not merely built by the LazyVStack).
     @State private var isVisible = false
@@ -185,6 +189,11 @@ struct FeedUnitCard: View {
         .task(id: unit.id) {
             if let path = unit.author.avatarPath { avatarURL = await feed.signedURL(for: path) }
             await resolveURLs(around: selection)
+            // Your own day: learn which frames you shot, so the Spotlight item can say "Only
+            // frames you shot can go up" before anyone taps it. One query, own photos only.
+            if let uid = auth.currentUser?.id, unit.author.id == uid {
+                await feed.ensureSpotlightPhotographer(photoIds: unit.items.map(\.post.photoId), userId: uid)
+            }
         }
         // Opening on a shot counts as reaching it: a group with two unseen shots reads
         // "1 new" the moment it appears. VISIBILITY, not `onAppear`: a LazyVStack builds
@@ -264,10 +273,18 @@ struct FeedUnitCard: View {
         .sheet(item: $shareItem) { SharePreviewSheet(photo: $0.image, caption: $0.caption) }
         .sheet(isPresented: $showEditTags) {
             TagPhotoSheet(url: urls[post.id], tags: $editingTags) {
-                Task { await feed.setTags(editingTags, on: post.id) }
+                let target = post.id
+                let tags = editingTags
+                Task {
+                    if await feed.setTags(tags, on: target) == .refusedInSpotlight {
+                        Haptics.error()
+                        UndoCenter.shared.showNotice(SpotlightRefusal.taggedOnSpotlight)
+                    }
+                }
             }
         }
         .sheet(isPresented: $showEditCaption) { editCaptionSheet }
+        .spotlightPutUpFlow(firstTimePost: $spotlightFirstTimePost, takeOutPost: $spotlightTakeOutPost)
         .overlay(alignment: .top) { toasts }
     }
 
@@ -613,9 +630,22 @@ struct FeedUnitCard: View {
                 captionDraft = pendingCaptionRetry[post.id] ?? post.caption ?? ""
                 showEditCaption = true
             } label: { Label("Edit caption", systemImage: "pencil") }
-            Button { beginEditingTags() } label: {
-                Label(tagCount == 0 ? "Tag people" : "Edit tags", systemImage: "person.crop.circle.badge.plus")
+            if let lock = feed.spotlightTagLockReason(for: post.id) {
+                // Up for Spotlight or chosen: the server refuses a tag, so say why up front.
+                Button {} label: {
+                    Text(tagCount == 0 ? "Tag people" : "Edit tags")
+                    Text(lock)
+                    Image(systemName: "person.crop.circle.badge.plus")
+                }
+                .disabled(true)
+            } else {
+                Button { beginEditingTags() } label: {
+                    Label(tagCount == 0 ? "Tag people" : "Edit tags", systemImage: "person.crop.circle.badge.plus")
+                }
             }
+            SpotlightMenuSection(post: post,
+                                 presentFirstTime: { spotlightFirstTimePost = $0 },
+                                 confirmTakeOut: { spotlightTakeOutPost = $0 })
             Button { saveToCameraRoll() } label: { Label("Save to Camera Roll", systemImage: "square.and.arrow.down") }
             Button(role: .destructive) { deleteCurrent() } label: { Label("Delete post", systemImage: "trash") }
         } else {

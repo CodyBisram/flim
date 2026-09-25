@@ -30,6 +30,9 @@ struct UserPageView: View {
     /// `FeedService.fetchOwnEffectiveDisplayedBadgeIds`.
     @State private var effectiveDisplayedBadgeIds: [String]?
     @State private var posts: [Post] = []
+    /// A post opened from this page's SPOTLIGHT shelf, with its week.
+    @State private var spotlightRoute: SpotlightPostRoute?
+    @State private var openingSpotlightFrame: UUID?
     /// Signed URLs for the grid's thumbnails, keyed by `displayPath` (matching `PostThumb`'s own
     /// cache key), minted in one batched call per page-load rather than one round trip per
     /// cell. `PostThumb` still falls back to its own per-cell mint for anything a batch missed
@@ -110,6 +113,23 @@ struct UserPageView: View {
     private var isBlocked: Bool { feed.isBlocked(userId) }
     private var followsMe: Bool { feed.followsMe(userId) }
 
+    /// This page's chosen frames, minus anything blocked since they were read.
+    private var spotlightWeeks: [SpotlightWeek] {
+        SpotlightWeek.visible(feed.spotlightShelves[userId] ?? [], blocked: feed.blockedIds)
+    }
+
+    /// The grid is a follower surface. Since Spotlight, a posts read about someone you do not
+    /// follow also returns their chosen frames (public by design), so the grid can no longer
+    /// be gated on "the read came back empty": for a page you do not follow it keeps only the
+    /// posts you are tagged in (still yours to see, as before) and otherwise shows the follow
+    /// prompt. The shelf above it is where a stranger sees the chosen frames.
+    private var gridPosts: [Post] {
+        guard !isSelf, !isFollowing else { return posts }
+        return posts.filter { taggedInPostIds.contains($0.id) }
+    }
+    /// Which of a not-followed page's posts the viewer is tagged in; read in `load()`.
+    @State private var taggedInPostIds: Set<UUID> = []
+
     /// Exactly what a stranger sees on this profile right now, at most four, oldest-fetched
     /// order preserved. `identity.badges` for a stranger's own row is already this list
     /// (`profile_badges`'s non-owner branch resolves it server-side), but for `isSelf` that same
@@ -164,6 +184,10 @@ struct UserPageView: View {
                         // at all for a blocked account (the dedicated blocked panel replaces the
                         // whole rest of the page) or for a profile with no months yet.
                         if !isBlocked {
+                            // Above Chapters, for everyone: the public record of being chosen.
+                            SpotlightShelfView(weeks: spotlightWeeks, openingId: openingSpotlightFrame) { frame, weekKey in
+                                openSpotlightFrame(frame, weekKey: weekKey)
+                            }
                             ChapterShelfView(chapters: chapters, coverURLs: chapterCoverURLs) { chapter in
                                 openChapter = chapter
                             }
@@ -175,12 +199,12 @@ struct UserPageView: View {
                             // retry instead of an empty grid under a blank header.
                             ErrorState(message: "Couldn't load this profile.") { await load() }
                                 .padding(.top, 30)
-                        } else if !loaded && posts.isEmpty {
+                        } else if !loaded && gridPosts.isEmpty {
                             // First visit this session, nothing seeded from `profilePostsCache`:
                             // a shimmer grid instead of the blank void under the header while
                             // the real fetch is still in flight.
                             skeletonGrid
-                        } else if posts.isEmpty && loaded {
+                        } else if gridPosts.isEmpty && loaded {
                             emptyState
                         } else {
                             ForEach(monthlySections, id: \.key) { section in
@@ -268,6 +292,13 @@ struct UserPageView: View {
         .task {
             await chapterService.fetchChapters(for: userId)
             await mintChapterCoverURLs()
+        }
+        // Its own task too, and failing soft to "no shelf" the same way.
+        .task {
+            await feed.loadSpotlightShelf(userId: userId, isSelf: isSelf)
+        }
+        .navigationDestination(item: $spotlightRoute) { route in
+            PostDetailView(item: route.item, spotlightWeekKey: route.weekKey)
         }
         .sheet(item: $followList) { list in
             FollowListView(userId: userId, mode: list)
@@ -492,7 +523,9 @@ struct UserPageView: View {
             }
 
             HStack(spacing: 26) {
-                stat(statsKnown ? "\(sharedCount)" : "–", "shared")
+                // A page you do not follow shows only the posts you are tagged in, so a count of
+                // those would read as how much this person has shared. Not known, not guessed.
+                stat(statsKnown && (isSelf || isFollowing) ? "\(sharedCount)" : "–", "shared")
                 Button { followList = .followers } label: { stat(statsKnown ? "\(followers)" : "–", "followers") }
                 Button { followList = .following } label: { stat(statsKnown ? "\(following)" : "–", "following") }
             }
@@ -777,7 +810,10 @@ struct UserPageView: View {
                 // until you follow, so say what following does rather than "No posts yet".
                 Image(systemName: "eye.slash")
                     .font(.system(size: 26, weight: .ultraLight)).foregroundStyle(FlimTheme.textTertiary)
-                Text("Follow \(profile?.handle ?? "them") to see their photos.")
+                // With a SPOTLIGHT shelf above, some of their photos are already on screen.
+                Text(spotlightWeeks.isEmpty
+                     ? "Follow \(profile?.handle ?? "them") to see their photos."
+                     : "Follow \(profile?.handle ?? "them") to see the rest of their photos.")
                     .flimFont(14, relativeTo: .subheadline).foregroundStyle(FlimTheme.textSecondary)
                     .multilineTextAlignment(.center)
                 FollowButton(userId: userId)
@@ -838,7 +874,7 @@ struct UserPageView: View {
 
     private var monthlySections: [(key: String, posts: [Post])] {
         let cal = Calendar.current
-        let groups = Dictionary(grouping: posts) { cal.dateComponents([.year, .month], from: $0.takenAt) }
+        let groups = Dictionary(grouping: gridPosts) { cal.dateComponents([.year, .month], from: $0.takenAt) }
         return groups.keys
             .sorted { ($0.year ?? 0, $0.month ?? 0) > ($1.year ?? 0, $1.month ?? 0) }
             .compactMap { comp in
@@ -904,17 +940,25 @@ struct UserPageView: View {
         // cached or empty, rather than collapsing it into "no posts yet". Mirrors loadFeed's
         // leave-in-place rule for a failed refresh.
         if let fetchedPosts = await ps {
+            // Not following: the only grid posts left are the ones you are tagged in, and
+            // those are known before the grid is shown so a chosen frame never flashes in it.
+            if !isSelf, !isFollowing, let uid = auth.currentUser?.id {
+                taggedInPostIds = await feed.postIdsTagging(uid, in: fetchedPosts.map(\.id))
+            }
             posts = fetchedPosts
             // Epoch-guarded because this cache is on the shared service and outlives this view:
             // a fetch that lands after an account switch must not seed the next account's pages.
             if AccountEpoch.isCurrent(epoch) { feed.profilePostsCache[userId] = fetchedPosts }
-            await mintThumbURLs(for: fetchedPosts)
+            await mintThumbURLs(for: gridPosts)
         }
         followers = await fr
         following = await fg
-        sharedCount = posts.count
+        sharedCount = gridPosts.count
         statsKnown = true
-        feed.profileStatsCache[userId] = (sharedCount, followers, following)
+        // Guarded like the posts cache: the shared count now depends on who is looking (a page
+        // you do not follow counts only the posts you are tagged in), so a load that lands after
+        // an account switch must not seed the next account's view of this page.
+        if AccountEpoch.isCurrent(epoch) { feed.profileStatsCache[userId] = (sharedCount, followers, following) }
         let badges = await bd
         let unseen = await ub
         let effectiveIds = await eb
@@ -953,7 +997,7 @@ struct UserPageView: View {
         // stored image): the cover renders at maxPixel 1000, so downloading the full file for it
         // is ~3x the bytes for no visible gain.
         if let cover = profile?.coverPath { coverURL = await feed.signedURL(for: cover); coverPath = cover }
-        else if let newest = posts.first?.cardPath { coverURL = await feed.signedURL(for: newest); coverPath = newest }
+        else if let newest = gridPosts.first?.cardPath { coverURL = await feed.signedURL(for: newest); coverPath = newest }
         else { coverURL = avatarURL; coverPath = profile?.avatarPath }
         loaded = true
     }
@@ -974,6 +1018,26 @@ struct UserPageView: View {
         guard !paths.isEmpty else { return }
         let resolved = await feed.signedURLs(for: Array(paths))
         for (path, url) in resolved { chapterCoverURLs[path] = url }
+    }
+
+    /// Fetches the post first, like a `.post` push, so a frame that went away says so.
+    private func openSpotlightFrame(_ frame: SpotlightFrame, weekKey: String) {
+        guard openingSpotlightFrame == nil else { return }
+        openingSpotlightFrame = frame.postId
+        Task {
+            let result = await feed.openSpotlightFrame(frame)
+            openingSpotlightFrame = nil
+            switch result {
+            case .item(let item):
+                spotlightRoute = SpotlightPostRoute(item: item, weekKey: weekKey)
+            case .gone:
+                Haptics.error()
+                UndoCenter.shared.showNotice(SpotlightRefusal.gone)
+            case .failed:
+                Haptics.error()
+                UndoCenter.shared.showNotice(SpotlightRefusal.openNetwork)
+            }
+        }
     }
 
     private func toggleFollow() {

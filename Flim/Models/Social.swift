@@ -210,10 +210,15 @@ struct ActivityItem: Identifiable {
         /// commented on but do not own, after your own first comment on that photo. Matches
         /// `send-social-push`'s roll-photo thread push ("{name} commented" / "N new comments").
         case rollPhotoThreadComment(String)
+        /// One of YOUR frames was chosen for Spotlight and published. The one actor-less kind:
+        /// the team chose it and no person is named, so `actor` is nil and the row shows the
+        /// Spotlight glyph in the avatar slot. Dated at the publish instant.
+        case spotlight(weekKey: String)
     }
     let id = UUID()
     let kind: Kind
-    let actor: UserProfile
+    /// Who did it. nil only for `.spotlight`, which has no actor.
+    let actor: UserProfile?
     let date: Date
     let postId: UUID?
     /// The post this activity is about (nil for `.follow` and for any roll-photo kind, which has

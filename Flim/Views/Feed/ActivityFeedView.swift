@@ -51,6 +51,8 @@ func activityActionText(_ kind: ActivityItem.Kind) -> String {
     // own photo getting commented on; matches send-social-push's "{name} also commented" title.
     case .threadComment(let body): return "also commented: “\(body)”"
     case .rollPhotoThreadComment(let body): return "also commented on a roll photo: “\(body)”"
+    // Actor-less: the row renders this as the whole sentence, with no handle in front.
+    case .spotlight: return "Your frame is in Spotlight"
     }
 }
 
@@ -108,7 +110,8 @@ func activityDestination(for item: ActivityItem) -> ActivityDestination {
     // `postId` set but the post/author never resolved: this row IS about a post, it just isn't
     // reachable any more. Only `.follow` (postId nil) should ever fall through to the profile.
     if item.postId != nil { return .unavailable }
-    return .profile(userId: item.actor.id)
+    guard let actor = item.actor else { return .unavailable }
+    return .profile(userId: actor.id)
 }
 
 struct ActivityFeedView: View {
@@ -219,6 +222,9 @@ struct ActivityFeedView: View {
             }
             .task { await load() }
         }
+        // A sheet paints over the tab host's capsule: without its own, a notice or an undo
+        // staged from a post opened here would never be seen.
+        .undoCapsuleHost(bottomPadding: 24)
         .flimSheetSurface()
     }
 
@@ -277,10 +283,46 @@ struct ActivityFeedView: View {
     /// Two tap regions per row: the avatar opens the actor's profile; everything else (the
     /// action sentence, date, and photo preview) opens the post it's about. `.follow` has no
     /// post, so both regions land on the same place there, there's nothing else to open.
+    @ViewBuilder
     private func row(_ item: ActivityItem) -> some View {
+        if let actor = item.actor {
+            actorRow(item, actor: actor)
+        } else {
+            actorlessRow(item)
+        }
+    }
+
+    /// A row nobody did: your frame in Spotlight. The glyph sits where an avatar would, the
+    /// sentence has no handle, and the meta names the week rather than a time.
+    private func actorlessRow(_ item: ActivityItem) -> some View {
         HStack(spacing: 12) {
-            Button { profileRoute = ProfileRoute(id: item.actor.id) } label: {
-                AvatarView(path: item.actor.avatarPath, name: item.actor.username, size: 40)
+            SpotlightGlyphBadge(size: 40)
+            Button { openDestination(item) } label: {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(activityActionText(item.kind))
+                        .flimFont(14, relativeTo: .subheadline)
+                        .foregroundStyle(.white)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                    if case .spotlight(let weekKey) = item.kind {
+                        Text(SpotlightWeekLabel.sentence(weekKey))
+                            .flimFont(11, relativeTo: .caption).foregroundStyle(FlimTheme.textTertiary)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            Button { openDestination(item) } label: { thumbnail(item) }
+                .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 18).padding(.vertical, 10)
+    }
+
+    private func actorRow(_ item: ActivityItem, actor: UserProfile) -> some View {
+        HStack(spacing: 12) {
+            Button { profileRoute = ProfileRoute(id: actor.id) } label: {
+                AvatarView(path: actor.avatarPath, name: actor.username, size: 40)
             }
             .buttonStyle(.plain)
 
@@ -294,9 +336,9 @@ struct ActivityFeedView: View {
                 // up. That tap target was also a duplicate, since the avatar beside it already
                 // opens the profile (see the note on `row`), and it was what cost the typography.
                 ActivityLine(
-                    handle: item.actor.handle,
+                    handle: actor.handle,
                     action: activityActionText(item.kind),
-                    onHandle: { profileRoute = ProfileRoute(id: item.actor.id) },
+                    onHandle: { profileRoute = ProfileRoute(id: actor.id) },
                     onBody: { openDestination(item) }
                 )
                 Button { openDestination(item) } label: {
@@ -308,7 +350,7 @@ struct ActivityFeedView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
 
             if case .follow = item.kind {
-                followBackControl(item)
+                followBackControl(actor)
             } else {
                 Button { openDestination(item) } label: { thumbnail(item) }
                     .buttonStyle(.plain)
@@ -373,9 +415,9 @@ struct ActivityFeedView: View {
     /// already follow them, nothing at all if you do. The old icon (a generic person+plus) showed
     /// unconditionally, implying "add this person" even on rows where you'd already followed back.
     @ViewBuilder
-    private func followBackControl(_ item: ActivityItem) -> some View {
-        if !feed.isFollowing(item.actor.id) {
-            FollowButton(userId: item.actor.id, onFailure: { showToast($0) })
+    private func followBackControl(_ actor: UserProfile) -> some View {
+        if !feed.isFollowing(actor.id) {
+            FollowButton(userId: actor.id, onFailure: { showToast($0) })
         }
     }
 
@@ -465,6 +507,8 @@ struct ActivityFeedView: View {
                 .overlay(Circle().stroke(FlimTheme.bg, lineWidth: 2))
         case .follow:
             EmptyView()   // .follow never reaches the post-thumbnail branch above
+        case .spotlight:
+            EmptyView()   // the glyph already sits in the avatar slot; the frame stands alone
         }
     }
 
@@ -534,6 +578,7 @@ private struct ActivityLine: View {
         case .follow: return "person.fill.badge.plus"
         case .tagged: return "tag.fill"
         case .mentioned: return "at"
+        case .spotlight: return SpotlightGlyph.systemName
         }
     }
 }

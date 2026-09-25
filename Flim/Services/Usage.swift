@@ -27,6 +27,12 @@ enum UsageEvent: String {
     case inviteSharedProfile = "invite_shared_profile"
     case inviteSharedFeed = "invite_shared_feed"
     case inviteSharedReveal = "invite_shared_reveal"
+    // Spotlight (1.6). Put-up and withdraw are logged when the server confirms them; the two
+    // opens are logged on the tap.
+    case spotlightPutUp = "spotlight_put_up"
+    case spotlightWithdraw = "spotlight_withdraw"
+    case spotlightStripOpen = "spotlight_strip_open"
+    case spotlightWeeksOpen = "spotlight_weeks_open"
 }
 
 /// Fire-and-forget frequency/retention instrumentation, mirroring `Activation.log(_:)` exactly

@@ -138,6 +138,10 @@ struct MainTabView: View {
     /// profile grid), so leaving this set after the first, intended focus would re-arm the
     /// keyboard on every later, unrelated visit to the same post.
     @State private var focusCommentsPostId: UUID?
+    /// The sheet of Spotlight weeks, opened over the Feed tab by the push that tells someone
+    /// their frame was chosen. Hosted here, not in FeedView, so a cold-launch tap opens it
+    /// whether or not the Feed tab has been built yet.
+    @State private var spotlightSheet: SpotlightSheetRoute?
     /// Was DEBUG-only (it only backed `-seedRoll`/`-openPhotoFullscreen`); now also needed
     /// unconditionally for the camera-roll auto-save sweep kicked off below.
     @Environment(PhotoService.self) private var photos
@@ -247,6 +251,9 @@ struct MainTabView: View {
         }
         .sheet(isPresented: Binding(get: { inviteCode != nil }, set: { if !$0 { inviteCode = nil } })) {
             JoinRollView(initialCode: inviteCode ?? "")
+        }
+        .sheet(item: $spotlightSheet) { route in
+            SpotlightWeeksSheet(focusWeek: route.focusWeek)
         }
         .onReceive(NotificationCenter.default.publisher(for: .openRollInvite)) { note in
             selected = 2   // Rolls tab
@@ -470,6 +477,17 @@ struct MainTabView: View {
             selected = 3
             feedPath = NavigationPath()
             scrollSignal[3, default: 0] += 1
+
+        case .spotlightWeek(let weekKey):
+            // Your frame is in Spotlight: the week's sheet, over the Feed tab at its root. The
+            // sheet reads the week from the server, so this works after the strip has aged out.
+            selected = 3
+            feedPath = NavigationPath()
+            Usage.log(.spotlightWeeksOpen)
+            spotlightSheet = SpotlightSheetRoute(focusWeek: weekKey)
+            // The badge is earned inside publish; light the avatar dot now rather than at the
+            // next reload.
+            Task { await feed.refreshUnseenBadgeCount() }
 
         case .rolls:
             selected = 2

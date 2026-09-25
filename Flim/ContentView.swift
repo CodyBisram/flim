@@ -39,6 +39,10 @@ struct ContentView: View {
                 // Same idea for the per-author feed: sign-in is OTP-only, so the redesign is
                 // unwatchable without this. Fixture units + cache-planted images, no network.
                 FeedPreviewDemoHost()
+            } else if ProcessInfo.processInfo.arguments.contains("-spotlightPreviewDemo") {
+                // The feed fixture plus Spotlight: the strip, the sheet of past weeks, the
+                // shelves and a stranger's view of a chosen frame. See SpotlightPreviewDemoHost.
+                SpotlightPreviewDemoHost()
             } else if ProcessInfo.processInfo.arguments.contains("-chaptersPreviewDemo") {
                 // Same idea again, for the Chapters shelf + recap: fixture months + cache-planted
                 // covers, no network, no account. See ChapterPreviewDemoHost.
@@ -244,6 +248,9 @@ struct ContentView: View {
             // The tab dots: a friend may have posted or a roll developed while the app was away.
             if let uid = auth.currentUser?.id {
                 Task { await tabSignals.refresh(feed: feed, rolls: rolls, userId: uid, lastActivitySeen: ActivitySeenMark.value(userId: uid)) }
+                // The Spotlight menu's state: the week may have turned over, or a frame gone up
+                // or down from another phone, while the app was away.
+                Task { await feed.refreshOwnSpotlight(userId: uid) }
             }
             // Save-on-develop, not save-on-capture: this is the one place that decides "the app
             // just came to the foreground", which is exactly when a photo shot earlier may have

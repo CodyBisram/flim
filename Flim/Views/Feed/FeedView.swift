@@ -112,6 +112,28 @@ struct FeedView: View {
     }
     @State private var caughtUp: CaughtUpSeam = .pending
 
+    // MARK: Spotlight strip
+    //
+    // The strip is NOT a unit and never enters `feed.feed` or `units`. Its place is decided by
+    // `SpotlightPlacement` / `SpotlightSlot` and SNAPSHOTTED here at the same moments as the
+    // ledger (a reload, the 04:00 boundary reload, "New posts"), never derived live: a strip
+    // that moved while someone read would be the seam crawling up the feed all over again.
+    // Paging only fills in a place that was waiting on an unloaded page, and a slot whose
+    // anchor unit left (a delete, a block) is re-placed rather than dropped.
+    @State private var spotlightSlots: [String: SpotlightSlot] = [:]
+    /// Weeks this account has seen in the feed (the "new" pill). Marked by scroll visibility.
+    @State private var seenSpotlight: Set<String> = []
+    @State private var spotlightSheet: SpotlightSheetRoute?
+    @State private var spotlightRoute: SpotlightPostRoute?
+    /// In-flight guard for a strip frame being fetched before it opens.
+    @State private var openingSpotlightFrame: UUID?
+
+    /// The strip's weeks this viewer may see: blocks filter frames, and a week with nothing
+    /// left is hidden.
+    private var visibleSpotlightWeeks: [SpotlightWeek] {
+        SpotlightWeek.visible(feed.spotlightStripWeeks, blocked: feed.blockedIds)
+    }
+
     // RETENTION CLEARING WAS REMOVED HERE (2026-08-28). The feed no longer takes anything away.
     //
     // The rule was: a unit whose every shot had been reached before the last 04:00 boundary left
@@ -242,13 +264,30 @@ struct FeedView: View {
                         ErrorState(message: error) { await reload() }
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else if followsNobody {
-                        firstRunState
+                        // A newcomer who follows nobody still meets Spotlight: it is the one
+                        // place other people's photographs reach them.
+                        if visibleSpotlightWeeks.isEmpty {
+                            firstRunState
+                        } else {
+                            // Padded, not stretched to the screen: the strip above must not push
+                            // "Find your friends" below the fold.
+                            ScrollView {
+                                VStack(spacing: 0) {
+                                    allSpotlightStrips
+                                    firstRunState
+                                        .padding(.top, 28)
+                                        .padding(.bottom, 40)
+                                }
+                            }
+                            .refreshable { await reload() }
+                        }
                     } else {
                         // Followed people, none of whom have ever posted: the caught-up
                         // block is the whole screen, since there is nothing older either.
                         ScrollView {
+                            allSpotlightStrips
                             caughtUpBlock
-                                .padding(.top, 120)
+                                .padding(.top, visibleSpotlightWeeks.isEmpty ? 120 : 24)
                         }
                         .refreshable { await reload() }
                     }
@@ -260,8 +299,9 @@ struct FeedView: View {
                     // first fully-caught-up morning rendered as a bare black page with a
                     // header. The block IS the screen here, same as the never-posted case.
                     ScrollView {
+                        allSpotlightStrips
                         caughtUpBlock
-                            .padding(.top, 120)
+                            .padding(.top, visibleSpotlightWeeks.isEmpty ? 120 : 24)
                     }
                     .refreshable { await reload() }
                 } else {
@@ -277,7 +317,11 @@ struct FeedView: View {
         // `cachedUnits`'s safety net for `feed.feed` changing outside this
         // view's own reload path; see that property's own doc for why `snapshotLedger` ALSO calls
         // `recomputeUnits()` explicitly rather than relying on this alone.
-        .onChange(of: feed.feed) { _, _ in recomputeUnits() }
+        .onChange(of: feed.feed) { _, _ in
+            recomputeUnits()
+            // A delete can take away the unit a strip was placed against; re-place only those.
+            if spotlightSlotsHaveOrphans { snapshotSpotlight(growOnly: true) }
+        }
         // Marks just landed on the server: read its count again, so the header is the
         // server's own answer within seconds of a swipe instead of an arithmetic the client
         // keeps running until the next reload.
@@ -313,6 +357,7 @@ struct FeedView: View {
             // The account's seen-marks must be here before the first ledger is counted; see
             // `FeedSeenStore.awaitPull`.
             if ledger == nil { await seenStore.awaitPull() }
+            seenSpotlight = SpotlightSeenMark.seen(userId: auth.currentUser?.id)
             if feed.feed.isEmpty {
                 await reload()
             } else {
@@ -368,6 +413,12 @@ struct FeedView: View {
         }
         .sheet(isPresented: $showDiscover) {
             DiscoverPeopleView()
+        }
+        .sheet(item: $spotlightSheet) { route in
+            SpotlightWeeksSheet(focusWeek: route.focusWeek)
+        }
+        .navigationDestination(item: $spotlightRoute) { route in
+            PostDetailView(item: route.item, spotlightWeekKey: route.weekKey)
         }
         .sheet(isPresented: $showActivity) {
             ActivityFeedView(seenBefore: activitySeenBefore) { queriedAt in
@@ -540,6 +591,10 @@ struct FeedView: View {
                         PeopleYouKnowRow { showDiscover = true }
                     }
 
+                    // A Spotlight strip placed above everything (an unseen one lifted over a
+                    // caught-up block at the top, or the only thing when no unit is older).
+                    spotlightStrips(in: .top, seamBefore: false)
+
                     // Nothing anywhere was unseen at load: the block sits at the top of the
                     // scroll with the days already seen below it.
                     if caughtUp == .top {
@@ -547,6 +602,10 @@ struct FeedView: View {
                     }
 
                     ForEach(Array(units.enumerated()), id: \.element.id) { index, unit in
+                        // The strip rides inside its neighbouring unit's row, never as a row
+                        // of its own in `units`.
+                        spotlightStrips(in: .beforeUnit(unit.id), seamBefore: false)
+
                         FeedUnitCard(
                             unit: unit,
                             width: containerWidth,
@@ -563,6 +622,10 @@ struct FeedView: View {
                         .id(unit.id)
                         .onAppear { unitAppeared(index: index) }
 
+                        // An unseen strip whose place fell on the seen side of the seam sits
+                        // just above the caught-up block instead: it is new.
+                        spotlightStrips(in: .aboveCaughtUpBlock(afterUnit: unit.id), seamBefore: true)
+
                         // The seam between new and old: the caught-up block below the last
                         // unit that held anything unseen AT LOAD, unless more pages could
                         // still bring new below it. Otherwise a hairline, ink not a card.
@@ -570,6 +633,10 @@ struct FeedView: View {
                             caughtUpBlock
                         } else if index < units.count - 1 {
                             seam
+                        }
+
+                        if index == units.count - 1 {
+                            spotlightStrips(in: .afterLast, seamBefore: true)
                         }
                     }
 
@@ -844,8 +911,13 @@ struct FeedView: View {
         // neither in the count nor subtracted from it.
         let countedAt = Date.now
         async let counted = feed.unseenCount()
+        // Beside the feed, not after it: the strip must be in hand before the first snapshot
+        // below places it, or it would pop in above a feed that was already drawn.
+        async let spotlightStrip: Void = feed.loadSpotlightStrip()
         await feed.loadFeed(currentUserId: uid)
         let unseen = await counted
+        await spotlightStrip
+        if AccountEpoch.isCurrent(epoch) { seenSpotlight = SpotlightSeenMark.seen(userId: uid) }
         // A stale reload (the account switched while `loadFeed` was in flight) must not write
         // any of these: not just the dot, which is the only one this used to guard, but the
         // ledger and its timestamp, and the two flags that say the load finished. Writing them
@@ -884,9 +956,12 @@ struct FeedView: View {
         async let unreadTask = feed.unreadActivityCount(
             userId: uid, since: Date(timeIntervalSince1970: lastActivitySeen))
         async let badgeTask: Void = feed.refreshUnseenBadgeCount()
+        // The own-post menu's Spotlight state: refetched on every reload.
+        async let spotlightOwnTask: Void = feed.refreshOwnSpotlight(userId: uid)
         if let resolved = await avatarTask { myAvatarURL = resolved }
         unreadActivity = await unreadTask
         _ = await badgeTask
+        _ = await spotlightOwnTask
         prefetchedThrough = 0
         await prefetchUnitHeroes()
     }
@@ -944,6 +1019,120 @@ struct FeedView: View {
         ledger = FeedUnit.ledgerTotal(ledgerContributions)
         ledgerSnapshotted = true
         snapshotSeam(growOnly: growOnly)
+        // After the seam: an unseen strip's slot depends on where the seam now sits.
+        snapshotSpotlight(growOnly: growOnly)
+    }
+
+    // MARK: - Spotlight strip
+
+    /// Places every strip week. A full snapshot re-places all of them; `growOnly` (paging, a
+    /// straddle completion, a block, a delete) keeps every slot that still has its anchor and
+    /// only places the ones that were waiting on an unloaded page or lost their unit.
+    private func snapshotSpotlight(growOnly: Bool) {
+        let unitIds = units.map(\.id)
+        let seam: SpotlightSeam
+        switch caughtUp {
+        case .pending: seam = .none
+        case .top: seam = .top
+        case .after(let id): seam = .after(id)
+        }
+        var next = growOnly ? spotlightSlots : [:]
+        for week in feed.spotlightStripWeeks {
+            if growOnly, let existing = next[week.weekKey], slotIsAnchored(existing, unitIds: unitIds) { continue }
+            let placement = SpotlightPlacement.place(units: units, publishedAt: week.publishedAt,
+                                                     hasMoreFeed: feed.hasMoreFeed)
+            next[week.weekKey] = SpotlightSlot.slot(placement: placement, seam: seam, unitIds: unitIds,
+                                                   unseen: !seenSpotlight.contains(week.weekKey))
+        }
+        spotlightSlots = next
+    }
+
+    /// Whether a held slot still points at something that renders. `.hidden` is never kept by
+    /// a grow-only pass: it is the "waiting on an unloaded page" state that paging resolves.
+    private func slotIsAnchored(_ slot: SpotlightSlot, unitIds: [String]) -> Bool {
+        switch slot {
+        case .hidden: return false
+        case .top, .afterLast: return true
+        case .beforeUnit(let id), .aboveCaughtUpBlock(let id): return unitIds.contains(id)
+        }
+    }
+
+    private var spotlightSlotsHaveOrphans: Bool {
+        let unitIds = units.map(\.id)
+        return spotlightSlots.values.contains { slot in
+            switch slot {
+            case .beforeUnit(let id), .aboveCaughtUpBlock(let id): return !unitIds.contains(id)
+            default: return false
+            }
+        }
+    }
+
+    /// The strips snapshotted into `slot`, each with a hairline on the side facing the unit
+    /// it sits against.
+    @ViewBuilder
+    private func spotlightStrips(in slot: SpotlightSlot, seamBefore: Bool) -> some View {
+        ForEach(visibleSpotlightWeeks.filter { spotlightSlots[$0.weekKey] == slot }) { week in
+            if seamBefore { seam }
+            spotlightStrip(week)
+            if !seamBefore { seam }
+        }
+    }
+
+    /// Every strip week at the top, for the screens with no units to place them against
+    /// (first run, nobody has posted).
+    private var allSpotlightStrips: some View {
+        ForEach(visibleSpotlightWeeks) { week in
+            spotlightStrip(week)
+            seam
+        }
+    }
+
+    private func spotlightStrip(_ week: SpotlightWeek) -> some View {
+        SpotlightStrip(
+            week: week,
+            isNew: !seenSpotlight.contains(week.weekKey),
+            openingId: openingSpotlightFrame,
+            onOpenWeeks: {
+                Usage.log(.spotlightWeeksOpen)
+                spotlightSheet = SpotlightSheetRoute(focusWeek: week.weekKey)
+            },
+            onOpenFrame: { openSpotlightFrame($0, weekKey: week.weekKey) }
+        )
+        // Seen by VISIBILITY, never `onAppear`: the LazyVStack builds rows ahead of the
+        // viewport, and a strip nobody scrolled to must keep its pill. Marking never moves it;
+        // its slot was snapshotted.
+        .onScrollVisibilityChange(threshold: 0.5) { visible in
+            guard visible else { return }
+            markSpotlightSeen(week.weekKey)
+        }
+    }
+
+    private func markSpotlightSeen(_ weekKey: String) {
+        guard !seenSpotlight.contains(weekKey) else { return }
+        seenSpotlight.insert(weekKey)
+        SpotlightSeenMark.mark(weekKey, userId: auth.currentUser?.id)
+    }
+
+    /// Fetches the post first, like a `.post` push, so a frame deleted or hidden since the
+    /// week was read says so instead of opening.
+    private func openSpotlightFrame(_ frame: SpotlightFrame, weekKey: String) {
+        guard openingSpotlightFrame == nil else { return }
+        Usage.log(.spotlightStripOpen)
+        openingSpotlightFrame = frame.postId
+        Task {
+            let result = await feed.openSpotlightFrame(frame)
+            openingSpotlightFrame = nil
+            switch result {
+            case .item(let item):
+                spotlightRoute = SpotlightPostRoute(item: item, weekKey: weekKey)
+            case .gone:
+                Haptics.error()
+                UndoCenter.shared.showNotice(SpotlightRefusal.gone)
+            case .failed:
+                Haptics.error()
+                UndoCenter.shared.showNotice(SpotlightRefusal.openNetwork)
+            }
+        }
     }
 
     private func showsCaughtUpBlock(after unit: FeedUnit, at index: Int) -> Bool {

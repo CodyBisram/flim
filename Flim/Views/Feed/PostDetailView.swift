@@ -38,6 +38,11 @@ struct PostDetailView: View {
     /// pass for THIS push and cancel the very focus it was meant to arm. See `MainTabView`'s
     /// `focusCommentsPostId` for why the flag must be cleared at all.
     var onCommentsFocusConsumed: (() -> Void)?
+    /// Set when this post was opened from a Spotlight surface (the strip, the sheet of past
+    /// weeks, a shelf): the week it was chosen for. For a viewer who neither follows the
+    /// photographer nor is tagged, the frame shows its photograph, caption and reactions, and
+    /// the thread stays with the photographer's followers.
+    var spotlightWeekKey: String? = nil
     @Environment(AuthService.self) private var auth
     @Environment(FeedService.self) private var feed
     @Environment(PhotoService.self) private var photoService
@@ -96,6 +101,23 @@ struct PostDetailView: View {
         return p
     }
     private var isOwn: Bool { post.isOwned(by: auth.currentUser?.id) }
+    /// The post the Spotlight first-time sheet is about, while it is up.
+    @State private var spotlightFirstTimePost: Post?
+    /// The chosen frame the "Take it out" confirmation is about, while it is up.
+    @State private var spotlightTakeOutPost: Post?
+
+    /// A chosen frame seen by someone outside its circle: no thread, no composer. The server
+    /// returns no comments to a stranger and refuses their insert; this keeps the screen from
+    /// offering what it cannot do.
+    private var isSpotlightStranger: Bool {
+        guard spotlightWeekKey != nil, !isOwn else { return false }
+        // Confirmed, not the optimistic flip: the server returns the thread and accepts a
+        // comment only once the follow row has landed, so a composer shown on the tap would
+        // post into a refusal.
+        if feed.confirmedFollowingIds.contains(post.userId) { return false }
+        if let uid = auth.currentUser?.id, feed.isTagged(uid, in: post.id) { return false }
+        return true
+    }
 
     var body: some View {
         ZStack {
@@ -150,7 +172,11 @@ struct PostDetailView: View {
 
                     Divider().overlay(Color.white.opacity(0.08))
 
-                    commentsSection
+                    if isSpotlightStranger, let spotlightWeekKey {
+                        spotlightStrangerNote(weekKey: spotlightWeekKey)
+                    } else {
+                        commentsSection
+                    }
                 }
                 .padding(16)
             }
@@ -208,10 +234,23 @@ struct PostDetailView: View {
                 Menu {
                     if isOwn {
                         Button { captionDraft = pendingCaptionRetry ?? post.caption ?? ""; showEditCaption = true } label: { Label("Edit caption", systemImage: "pencil") }
-                        Button { beginEditingTags() } label: {
-                            Label((feed.tagsByPost[post.id] ?? []).isEmpty ? "Tag people" : "Edit tags",
-                                  systemImage: "person.crop.circle.badge.plus")
+                        if let lock = feed.spotlightTagLockReason(for: post.id) {
+                            // Up for Spotlight or chosen: the server refuses a tag, so say why.
+                            Button {} label: {
+                                Text((feed.tagsByPost[post.id] ?? []).isEmpty ? "Tag people" : "Edit tags")
+                                Text(lock)
+                                Image(systemName: "person.crop.circle.badge.plus")
+                            }
+                            .disabled(true)
+                        } else {
+                            Button { beginEditingTags() } label: {
+                                Label((feed.tagsByPost[post.id] ?? []).isEmpty ? "Tag people" : "Edit tags",
+                                      systemImage: "person.crop.circle.badge.plus")
+                            }
                         }
+                        SpotlightMenuSection(post: post,
+                                             presentFirstTime: { spotlightFirstTimePost = $0 },
+                                             confirmTakeOut: { spotlightTakeOutPost = $0 })
                         Button { saveToCameraRoll() } label: { Label("Save to Camera Roll", systemImage: "square.and.arrow.down") }
                         Button(role: .destructive) { deletePost() } label: { Label("Delete post", systemImage: "trash") }
                     } else {
@@ -229,7 +268,10 @@ struct PostDetailView: View {
                 .accessibilityLabel("Post options")
             }
         }
-        .safeAreaInset(edge: .bottom) { commentInput }
+        .safeAreaInset(edge: .bottom) {
+            if !isSpotlightStranger { commentInput }
+        }
+        .spotlightPutUpFlow(firstTimePost: $spotlightFirstTimePost, takeOutPost: $spotlightTakeOutPost)
         .overlay(alignment: .top) {
             if captionFailedToast {
                 Label("Couldn't save caption. Try again.", systemImage: "exclamationmark.triangle.fill")
@@ -248,7 +290,14 @@ struct PostDetailView: View {
         .sheet(item: $shareItem) { SharePreviewSheet(photo: $0.image, caption: $0.caption) }
         .sheet(isPresented: $showEditTags) {
             TagPhotoSheet(url: url, tags: $editingTags) {
-                Task { await feed.setTags(editingTags, on: post.id) }
+                let target = post.id
+                let tags = editingTags
+                Task {
+                    if await feed.setTags(tags, on: target) == .refusedInSpotlight {
+                        Haptics.error()
+                        UndoCenter.shared.showNotice(SpotlightRefusal.taggedOnSpotlight)
+                    }
+                }
             }
         }
         .sheet(isPresented: $showEditCaption) {
@@ -293,6 +342,12 @@ struct PostDetailView: View {
         }
         .task(id: post.id) {
             await photoService.fetchSuggestedEmoji(photoIds: [post.photoId])
+        }
+        // A stranger who follows from the Spotlight note gets the thread once the follow has
+        // landed server-side (comments are readable by followers, so asking earlier returns none).
+        .onChange(of: feed.confirmedFollowingIds.contains(post.userId)) { _, following in
+            guard following, spotlightWeekKey != nil else { return }
+            Task { await reloadComments() }
         }
         // Someone else's reaction lands while you're looking at the photo, instead of only after
         // you leave and come back. Keyed on scenePhase as well as the post so a backgrounded app
@@ -529,7 +584,28 @@ struct PostDetailView: View {
         // may never have loaded. Epoch-guarded, and skips a post with a reaction write in flight.
         await feed.refreshReactions(postIds: [post.id])
         await feed.loadTags(for: post.id)
+        // Whether this viewer follows the photographer decides the thread on a Spotlight frame;
+        // a cold push can land here before the feed has loaded the follow graph.
+        if spotlightWeekKey != nil, feed.followingIds.isEmpty, let uid = auth.currentUser?.id {
+            await feed.loadFollowing(userId: uid)
+        }
+        if isOwn, let uid = auth.currentUser?.id {
+            await feed.ensureSpotlightPhotographer(photoIds: [post.photoId], userId: uid)
+        }
+        guard !isSpotlightStranger else { return }
         await reloadComments()
+    }
+
+    /// Where the thread would be, for a stranger on a chosen frame: why there is no thread,
+    /// and the follow control that would open it.
+    private func spotlightStrangerNote(weekKey: String) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("In Spotlight, \(SpotlightWeekLabel.phrase(weekKey)). Comments stay with the people who follow \(item.author.handle).")
+                .flimType(.body)
+                .foregroundStyle(FlimTheme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            FollowButton(userId: post.userId)
+        }
     }
 
     private func reloadComments() async {

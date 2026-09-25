@@ -14,7 +14,10 @@ import Foundation
 ///                                 build that predates them still opens the roll.
 ///     "post"     id = post id  -> that post, optionally with "comments": true
 ///     "profile"  id = user id  -> that user's page
-///     "feed"     no id         -> the feed tab
+///     "feed"     no id         -> the feed tab. Since 1.6 it may carry "week": "YYYY-MM-DD", the
+///                                 Spotlight push to someone whose frame was chosen; that opens
+///                                 the week's sheet over the Feed tab. 1.5.x reads "feed" and
+///                                 ignores the rider, which is why it is a rider and not a new "t".
 ///     "rolls"    no id         -> the Rolls tab. Builds older than this one treat "rolls" as an
 ///                                 unrecognized destination and simply open the app, so the server
 ///                                 is free to send it without a compatibility window.
@@ -57,6 +60,11 @@ enum PushDestination: Codable, Equatable {
     /// opening long before, or without ever, being posted.
     case photo(photoId: UUID)
     case feed
+    /// The Feed tab with the sheet of Spotlight weeks open on this week (`week_key`,
+    /// "YYYY-MM-DD"). Arrives as `t: "feed"` plus a `week` rider; a separate case rather than an
+    /// associated value on `.feed`, so a `.feed` already persisted by an older build still
+    /// decodes exactly as it was written.
+    case spotlightWeek(weekKey: String)
     /// The Rolls tab. Carries no id: it lands on the tab's own list, not any one roll.
     case rolls
     /// A follow-up roll invite: open the join sheet with this code filled in.
@@ -70,6 +78,10 @@ enum PushDestination: Codable, Equatable {
               let type = flim["t"] as? String else { return nil }
         switch type {
         case "feed":
+            // A malformed rider still opens the feed: the tap was meant for it either way.
+            if let week = flim["week"] as? String, SpotlightWeekLabel.components(week) != nil {
+                return .spotlightWeek(weekKey: week)
+            }
             return .feed
         case "rolls":
             return .rolls
@@ -157,6 +169,8 @@ enum PushDestination: Codable, Equatable {
             return ["t": "photo", "id": photoId.uuidString]
         case .feed:
             return ["t": "feed"]
+        case .spotlightWeek(let weekKey):
+            return ["t": "feed", "week": weekKey]
         case .rolls:
             return ["t": "rolls"]
         case .joinRoll(let code):

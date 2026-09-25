@@ -131,7 +131,10 @@ final class UndoCenter {
         if let failure = item.failureText { showNotice(failure) }
     }
 
-    private func showNotice(_ text: String) {
+    /// The in-place failure line, for a failure that is only known after the server answers
+    /// (a Spotlight refusal names its reason; a staged `failureText` cannot). Same slot, same
+    /// timing as a failed commit's notice.
+    func showNotice(_ text: String) {
         noticeTask?.cancel()
         withAnimation { failureNotice = text }
         noticeTask = Task { [weak self] in

@@ -542,7 +542,15 @@ struct PhotoPagerView: View {
                           },
                           tags: $editingTags, rollId: taggingPhoto?.rollId) {
                 if let postId = taggingPostId {
-                    Task { await feed.setTags(editingTags, on: postId) }
+                    let tags = editingTags
+                    Task {
+                        // A frame up for Spotlight (or chosen) cannot be tagged; say so in the
+                        // capsule's place rather than letting the tag silently not stick.
+                        if await feed.setTags(tags, on: postId) == .refusedInSpotlight {
+                            Haptics.error()
+                            UndoCenter.shared.showNotice(SpotlightRefusal.taggedOnSpotlight)
+                        }
+                    }
                 }
             }
         }

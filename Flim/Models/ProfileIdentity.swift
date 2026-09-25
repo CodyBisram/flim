@@ -94,6 +94,10 @@ enum ProfileBadgeKind: String, CaseIterable {
     case saidIt = "said_it"
     case tenFrames = "ten_frames"
     case goodCompany = "good_company"
+    /// One of your frames was chosen for Spotlight and published. Earned inside the publish
+    /// itself, never computed from use, and never listed as something to go and get: the team
+    /// chooses, so there is no instruction that would be honest (see `isEarnable`).
+    case spotlight = "spotlight"
 
     /// A per-badge delay, in seconds, before this pill's highlight sweep starts. Only the
     /// founding rung animates, so only those three values matter. They divide the full 9.15s
@@ -126,7 +130,8 @@ enum ProfileBadgeKind: String, CaseIterable {
     /// colour reasons can never silently change which badges are advertised as reachable.
     var isEarnable: Bool {
         switch self {
-        case .founder, .foundingCrew, .founding100: return false
+        // `spotlight` is chosen by the team, so it is not in any locked list either.
+        case .founder, .foundingCrew, .founding100, .spotlight: return false
         default: return true
         }
     }
@@ -140,7 +145,7 @@ enum ProfileBadgeKind: String, CaseIterable {
         case .founder, .foundingCrew, .founding100:
             return .founding
         // The hardest things in the catalogue. Each one is many of something.
-        case .fullSet, .frontRow, .packedHouse, .coverToCover, .openDoor, .oneYear:
+        case .fullSet, .frontRow, .packedHouse, .coverToCover, .openDoor, .oneYear, .spotlight:
             return .gold
         // Real effort, but a single determined stretch rather than a campaign.
         case .patron, .darkroom, .firstIn, .keptOne, .regular:
@@ -195,6 +200,7 @@ enum ProfileBadgeKind: String, CaseIterable {
         case .saidIt: return "\u{270D}\u{FE0F}"                // writing hand
         case .tenFrames: return "\u{1F51F}"                     // keycap ten
         case .goodCompany: return "\u{1FAC2}"                   // people hugging
+        case .spotlight: return "\u{1F526}"                     // flashlight
         }
     }
 
@@ -233,6 +239,7 @@ enum ProfileBadgeKind: String, CaseIterable {
         case .saidIt: return "Said It"
         case .tenFrames: return "Ten Frames"
         case .goodCompany: return "Good Company"
+        case .spotlight: return "Spotlight"
         }
     }
 
@@ -314,6 +321,8 @@ enum ProfileBadgeKind: String, CaseIterable {
             return "Ten frames shot."
         case .goodCompany:
             return "Ten people follow you."
+        case .spotlight:
+            return "One of your frames was in Spotlight."
         }
     }
 
@@ -390,6 +399,10 @@ enum ProfileBadgeKind: String, CaseIterable {
             return "Shoot ten frames."
         case .goodCompany:
             return "Get ten people to follow you."
+        case .spotlight:
+            // Never shown: `isEarnable` keeps it out of the locked catalogue. Written plainly in
+            // case a future surface reads it anyway: the team chooses, it cannot be farmed.
+            return "Chosen by the team at \(AppInfo.appName) for Spotlight, not something you can go and get."
         }
     }
 }

@@ -336,6 +336,9 @@ final class FeedService {
     }
 
     func fetchProfile(id: UUID) async -> UserProfile? {
+        #if DEBUG
+        if let demo = SpotlightPreviewDemo.data?.profiles[id] { return demo }
+        #endif
         let list: [UserProfile] = (try? await supabase
             .from("profiles").select().eq("id", value: id.uuidString).limit(1)
             .execute().value) ?? []
@@ -733,6 +736,7 @@ final class FeedService {
         guard AccountEpoch.isCurrent(epoch) else { return }
         feed.removeAll { $0.author.id == targetId }      // drop their posts from the current feed
         purgeCachedContent(from: targetId)               // and their reactions/comments/tags on everyone else's
+        pruneSpotlightFrames { $0.userId == targetId }   // and their frames from the strip, sheet and shelves
         // `block_severs_follows_trigger` deletes the target's follow of ME server-side too, so
         // drop it from the local set now rather than let it sit stale until the next
         // `loadFollowers` happens to run (it could otherwise keep showing a "Follows you" badge
@@ -820,6 +824,48 @@ final class FeedService {
     /// across days. Metadata structs only, image bytes live in `DiskImageCache`.
     var profilePostsCache: [UUID: [Post]] = [:]
 
+    // MARK: - Spotlight state
+    //
+    // Stored here because an extension cannot hold stored properties; every read and write
+    // lives in FeedService+Spotlight.swift. None of it ever enters `feed`: the strip is its own
+    // model, placed by `SpotlightPlacement`, rendered beside the units, never among them.
+
+    /// Published weeks recent enough for the feed's strip (inside the seven-day window). Loaded
+    /// only by an explicit reload, beside `loadFeed`; background refreshes never touch it, so
+    /// the strip cannot change under a reader.
+    var spotlightStripWeeks: [SpotlightWeek] = []
+    /// This week's bounds and entry, from `own_spotlight_entry()`. nil while unknown, which
+    /// hides the menu item rather than guessing.
+    var ownSpotlightEntry: OwnSpotlightEntry?
+    /// The signed-in account's own published frames, post id to week key: what turns the menu
+    /// item into "Take it out of Spotlight".
+    var ownSpotlightChosen: [UUID: String] = [:]
+    /// Each page's SPOTLIGHT shelf, per profile id.
+    var spotlightShelves: [UUID: [SpotlightWeek]] = [:]
+    /// The sheet of past weeks, paged by `week_key`.
+    var spotlightPastWeeks: [SpotlightWeek] = []
+    var spotlightPastWeeksHasMore = true
+    var spotlightPastWeeksLoading = false
+    /// The next-page load in flight, so a second caller waits for it instead of counting a page
+    /// that never came (see `loadSpotlightPastWeeks`).
+    var spotlightPastWeeksInFlight: Task<Bool, Never>?
+    /// Signed URLs for every Spotlight frame on screen, keyed by exactly the path signed (the
+    /// frame's `cardPath`), which is also the image cache key.
+    var spotlightURLs: [String: URL] = [:]
+    /// Photo id to "the signed-in account shot it", for the menu's "Only frames you shot" rule.
+    var spotlightPhotographer: [UUID: Bool] = [:]
+    /// Frames with a take-out in flight: the menu item's in-flight guard.
+    var spotlightTakeOutsInFlight: Set<UUID> = []
+    /// Put up, swap and take down, one at a time, with the revision rule.
+    let spotlightWrites = RevisionedWriteQueue()
+    // One generation per cache, bumped by each load, so an older load landing late never
+    // overwrites a newer one (alongside the account epoch on every write).
+    var spotlightStripGeneration = 0
+    var spotlightEntryGeneration = 0
+    var spotlightPastGeneration = 0
+    var spotlightPhotographerGeneration = 0
+    var spotlightShelfGenerations: [UUID: Int] = [:]
+
     func resetForAccountChange() {
         profileStatsCache = [:]
         profilePostsCache = [:]
@@ -840,6 +886,25 @@ final class FeedService {
         isLoadingMoreFeed = false
         isLoadingFeed = false
         unseenBadgeCount = 0
+        spotlightStripWeeks = []
+        ownSpotlightEntry = nil
+        ownSpotlightChosen = [:]
+        spotlightShelves = [:]
+        spotlightPastWeeks = []
+        spotlightPastWeeksHasMore = true
+        spotlightPastWeeksLoading = false
+        spotlightPastWeeksInFlight = nil
+        spotlightURLs = [:]
+        spotlightPhotographer = [:]
+        spotlightTakeOutsInFlight = []
+        spotlightWrites.reset()
+        spotlightStripGeneration += 1
+        spotlightEntryGeneration += 1
+        spotlightPastGeneration += 1
+        spotlightPhotographerGeneration += 1
+        // Bumped, never cleared: a cleared map would hand the next load for the same profile a
+        // generation an in-flight one already holds.
+        for key in spotlightShelfGenerations.keys { spotlightShelfGenerations[key, default: 0] += 1 }
     }
 
     // MARK: - Feed pagination (pure)
@@ -1189,10 +1254,21 @@ final class FeedService {
     /// a blanket rewrite would churn `created_at`, and re-inserting an unchanged tag would look
     /// like a brand new tag to anything watching the table (a re-notification for a tag the
     /// person already has).
-    func setTags(_ tags: [PendingTag], on postId: UUID) async {
+    /// What a tag edit came to. Only the Spotlight refusal is surfaced; every other failed row
+    /// is still dropped quietly, as before, and the reload at the end shows what the server kept.
+    enum TagEditOutcome: Equatable {
+        case saved
+        /// A tag insert on a frame that is up for Spotlight or chosen: the server refuses it
+        /// with `in_spotlight`, because a tagged friend never agreed to be shown to everyone.
+        case refusedInSpotlight
+    }
+
+    @discardableResult
+    func setTags(_ tags: [PendingTag], on postId: UUID) async -> TagEditOutcome {
         let existing = tagsByPost[postId] ?? []
         let existingIds = Set(existing.map(\.taggedUserId))
         let desiredIds = Set(tags.map(\.user.id))
+        var outcome = TagEditOutcome.saved
 
         for tag in existing where !desiredIds.contains(tag.taggedUserId) {
             _ = try? await supabase.from("post_tags").delete().eq("id", value: tag.id.uuidString).execute()
@@ -1201,9 +1277,15 @@ final class FeedService {
             let post_id: UUID; let tagged_user_id: UUID; let x: Double; let y: Double
         }
         for tag in tags where !existingIds.contains(tag.user.id) {
-            _ = try? await supabase.from("post_tags")
-                .insert(NewTag(post_id: postId, tagged_user_id: tag.user.id, x: tag.x, y: tag.y))
-                .execute()
+            do {
+                try await supabase.from("post_tags")
+                    .insert(NewTag(post_id: postId, tagged_user_id: tag.user.id, x: tag.x, y: tag.y))
+                    .execute()
+            } catch let error as PostgrestError where error.message == "in_spotlight" {
+                outcome = .refusedInSpotlight
+            } catch {
+                // Unchanged: other failed inserts were never surfaced here.
+            }
         }
         // A moved tag is a position change on a row that already exists. Inert as of the tag
         // editor becoming a plain picker: every tag is now written unplaced, at the centre, so
@@ -1217,6 +1299,7 @@ final class FeedService {
                 .eq("id", value: row.id.uuidString).execute()
         }
         await loadTags(for: postId)
+        return outcome
     }
 
     /// Withdraws the current user's own tag from someone else's photo.
@@ -1522,6 +1605,8 @@ final class FeedService {
     }
 
     func deletePost(id: UUID) async -> Bool? {
+        // Captured for the Spotlight writes below, which must not land in another account.
+        let epoch = AccountEpoch.current
         do {
             try await supabase.from("posts").delete().eq("id", value: id.uuidString).execute()
         } catch {
@@ -1535,6 +1620,12 @@ final class FeedService {
         reactionsByPost.removeValue(forKey: id)
         commentsByPost.removeValue(forKey: id)
         tagsByPost.removeValue(forKey: id)
+        // The row cascades server-side; the strip, the sheet, the shelves and the menu's entry
+        // must not keep a frame that is gone.
+        if AccountEpoch.isCurrent(epoch) {
+            pruneSpotlightFrames { $0.postId == id }
+            if ownSpotlightEntry?.postId == id { Task { await refreshOwnSpotlightEntry() } }
+        }
         return true
     }
 
@@ -1554,6 +1645,13 @@ final class FeedService {
     func dropPosts(forDeletedPhotoIds photoIds: some Sequence<UUID>) {
         let ids = Set(photoIds)
         guard !ids.isEmpty else { return }
+        // Before the feed early-return below: a deleted photo's post may be up for Spotlight or
+        // on a shelf without being in the loaded feed pages at all. Matched by photo id, the
+        // only id a Darkroom delete has.
+        pruneSpotlightFrames { ids.contains($0.photoId) }
+        if let photoId = ownSpotlightEntry?.photoId, ids.contains(photoId) {
+            Task { await refreshOwnSpotlightEntry() }
+        }
         let removedPostIds = feed.filter { ids.contains($0.post.photoId) }.map(\.post.id)
         guard !removedPostIds.isEmpty else {
             myPostedPhotoIds.subtract(ids)
@@ -1656,6 +1754,20 @@ final class FeedService {
                 .range(from: from, to: to)
                 .execute().value
         }
+    }
+
+    /// Which of `postIds` tag `userId`. A page you do not follow shows only these in its grid
+    /// (see `UserPageView.gridPosts`). Empty on failure, which shows the follow prompt rather
+    /// than someone's photographs.
+    func postIdsTagging(_ userId: UUID, in postIds: [UUID]) async -> Set<UUID> {
+        guard !postIds.isEmpty else { return [] }
+        struct Row: Decodable { let post_id: UUID }
+        let rows: [Row] = await QueryBatch.inChunks(postIds.map(\.uuidString)) { chunk in
+            (try? await supabase.from("post_tags").select("post_id")
+                .eq("tagged_user_id", value: userId.uuidString)
+                .in("post_id", values: chunk).execute().value) ?? []
+        }
+        return Set(rows.map(\.post_id))
     }
 
     /// Batch-fetches posts by id, mirrors `fetchProfiles(ids:)`. Used to attach a post (for a
@@ -2046,12 +2158,20 @@ final class FeedService {
             }.count
         }
 
+        // Your frames in Spotlight, the actor-less rows `activitySpotlight` lists, counted by the
+        // same rule so the bell and the tab dot agree with what Activity shows.
+        if let weeks = await fetchSpotlightWeeks(userId: userId, before: nil, limit: 12) {
+            total += SpotlightActivity.unreadCount(weeks: weeks, ownId: userId, since: since)
+        }
+
         return total
     }
 
     private struct ActivityRaw {
         let kind: ActivityItem.Kind
-        let actorId: UUID
+        /// nil only for an actor-less kind (`.spotlight`): the team chose the frame, and no
+        /// person is named for it.
+        let actorId: UUID?
         let date: Date
         let postId: UUID?
         /// Set only for a roll-photo-based raw (`.mentioned` from a photo_comments row,
@@ -2091,6 +2211,7 @@ final class FeedService {
         async let mentionRaws = activityMentions(userId: userId)
         async let postThreadRaws = activityPostThreadComments(userId: userId)
         async let rollThreadRaws = activityRollPhotoThreadComments(userId: userId)
+        async let spotlightRaws = activitySpotlight(userId: userId)
 
         await blockedDone
         var raws: [ActivityRaw]
@@ -2108,6 +2229,9 @@ final class FeedService {
             raws += try await mentionRaws
             raws += try await postThreadRaws
             raws += try await rollThreadRaws
+            // Not a throwing source: a Spotlight read that fails leaves the rest of Activity
+            // standing rather than turning the whole screen into an error.
+            raws += await spotlightRaws
             guard AccountEpoch.isCurrent(epoch) else { return [] }
             activityError = nil
         } catch {
@@ -2129,17 +2253,17 @@ final class FeedService {
         raws.removeAll { raw in
             switch raw.kind {
             case .threadComment, .rollPhotoThreadComment:
-                guard let commentId = raw.commentId else { return false }
+                guard let commentId = raw.commentId, let actorId = raw.actorId else { return false }
                 return !Self.shouldIncludeThreadComment(
-                    authorId: raw.actorId, viewerId: userId, commentId: commentId,
+                    authorId: actorId, viewerId: userId, commentId: commentId,
                     mentionedCommentIds: mentionedCommentIds)
             default:
                 return false
             }
         }
 
-        raws.removeAll { blockedIds.contains($0.actorId) }
-        let profiles = await fetchProfiles(ids: Array(Set(raws.map(\.actorId))))
+        raws.removeAll { raw in raw.actorId.map { blockedIds.contains($0) } ?? false }
+        let profiles = await fetchProfiles(ids: Array(Set(raws.compactMap(\.actorId))))
 
         // Batch-fetch the post each row is about (nil for .follow and for any roll-photo raw) and
         // its author, so a row can show a thumbnail and navigate straight to the post with no
@@ -2149,7 +2273,14 @@ final class FeedService {
 
         return raws
             .compactMap { raw -> ActivityItem? in
-                guard let actor = profiles[raw.actorId] else { return nil }
+                // A row with an actor needs that actor's profile; an actor-less row stands alone.
+                let actor: UserProfile?
+                if let actorId = raw.actorId {
+                    guard let found = profiles[actorId] else { return nil }
+                    actor = found
+                } else {
+                    actor = nil
+                }
                 let post = raw.postId.flatMap { posts[$0] }
                 return ActivityItem(kind: raw.kind, actor: actor, date: raw.date, postId: raw.postId,
                                      post: post, postAuthor: post.flatMap { postAuthors[$0.userId] },
@@ -2157,6 +2288,17 @@ final class FeedService {
                                      rollPhotoDisplayPath: raw.rollPhotoDisplayPath)
             }
             .sorted { $0.date > $1.date }
+    }
+
+    /// Your frames chosen for Spotlight: one actor-less row per published week, dated at the
+    /// publish instant. Sourced from `spotlight_frames(own id)`, the same read as your shelf, so
+    /// a frame you took out (or deleted) leaves Activity with it.
+    private func activitySpotlight(userId: UUID) async -> [ActivityRaw] {
+        guard let weeks = await fetchSpotlightWeeks(userId: userId, before: nil, limit: 12) else { return [] }
+        return SpotlightActivity.ownFrames(in: weeks, ownId: userId).map { row in
+            ActivityRaw(kind: .spotlight(weekKey: row.week.weekKey), actorId: nil,
+                        date: row.week.publishedAt, postId: row.frame.postId)
+        }
     }
 
     /// Reactions + comments on the caller's own posts. The two pulls both key off the same post
