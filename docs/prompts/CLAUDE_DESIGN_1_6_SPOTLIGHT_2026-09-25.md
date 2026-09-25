@@ -1,8 +1,9 @@
-# FLIM 1.6: Spotlight. Prompt for Claude Design (2026-09-24)
+# FLIM 1.6: Spotlight. Prompt for Claude Design (2026-09-25)
 
-> SUPERSEDED 2026-09-25 by `CLAUDE_DESIGN_1_6_SPOTLIGHT_2026-09-25.md`: the owner rejected the
-> grease-pencil circle and the word circled; a chosen frame is in the Spotlight and the mark is the
-> light. Kept for the record.
+Supersedes `CLAUDE_DESIGN_1_6_SPOTLIGHT_2026-09-24.md`. One change, carried everywhere: the owner
+rejected the grease-pencil circle and the word circled. A chosen frame is now **in the Spotlight**,
+and the mark is **the light**: the frame reads as lit. Section 4 defines the light and section 9
+puts its form to the owner as a drawn choice.
 
 This is not the v2 redesign. It adds one feature, Spotlight, to the app as it ships today
 (1.5.4, build 398), in the app's current look, as release 1.6. Nothing that exists is redesigned.
@@ -33,8 +34,7 @@ Paste everything below the line into a new Claude Design project. Attach, in thi
 ## 0. What this is
 
 You are designing Spotlight for FLIM 1.6: a weekly place where each person can put one of the
-frames they posted that week, and where the owner, on Monday morning, circles a handful with a
-grease pencil. It ships into the app as it is today, using only the app's existing tokens, type
+frames they posted that week, and where the owner, on Monday morning, spotlights a handful. It ships into the app as it is today, using only the app's existing tokens, type
 roles and components, so that a person updating from 1.5.4 sees the same app with one new thing
 in it. The owner will build it from your boards; the server side is specified in section 3 as a
 contract, and you design what the person sees and when.
@@ -48,7 +48,7 @@ Two rules shape everything:
   in Activity, one badge, one shelf on the page, two pushes, one admin queue.
 - **Built for v2.** The model in section 3 is the one v2 will restyle. Do not design anything
   that only works because of how 1.6 looks. Every rule about weeks, eligibility, withdrawal,
-  circling, visibility, deletion and blocking is fixed here and carried forward.
+  choosing, visibility, deletion and blocking is fixed here and carried forward.
 
 Work in four stages, one turn each:
 
@@ -167,23 +167,23 @@ The owner decided these; design inside them.
 - **Put it up** from the frame's own menu (feed card or post opened), or from the compose sheet
   at the moment of posting. Withdraw any time before the week closes. Putting up a second frame
   swaps: the first comes down, and the app says so before it happens.
-- **Monday morning the owner circles a handful.** Circling is immediate per frame and can be
-  undone until the owner taps Done for the week; Done sends the pushes. Circled stays circled
-  forever. If the owner has not tapped Done by Monday noon, nothing happens: no circles, no
+- **Monday morning the owner spotlights a handful.** Choosing is immediate per frame and can be
+  undone until the owner taps Done for the week; Done sends the pushes. Once in the Spotlight,
+  always in the Spotlight. If the owner has not tapped Done by Monday noon, nothing happens: no frames lit, no
   pushes, the week stays as it is, and the new week has opened on schedule.
 - **Nobody votes. No counts, no ordering by response, no "most".** Frames sit in the order they
-  went up. The circle is an editor's mark, not a score. The number of frames up is never shown.
-- **Uncircled frames stay** where they were put, in their place, not demoted, not removed.
+  went up. The light is an editor's mark, not a score. The number of frames up is never shown.
+- **Frames not chosen stay** where they were put, in their place, not demoted, not removed.
 - **Past weeks stay,** one per week.
 - **Spotlight is a page of its own**, reached from one 32pt line under the "Feed" title. Not a
   tab, not a row in the feed, not a bottom accessory.
-- **A circled frame is public.** Everyone on FLIM sees it in Spotlight and on its photographer's
+- **A frame in the Spotlight is public.** Everyone on FLIM sees it in Spotlight and on its photographer's
   page. The person is told this before they put a frame up.
-- **The trophy** is a badge, `spotlight`, earned the first time one of your frames is circled,
-  never changing after (no count, no tiers), plus the frame itself carrying the circle wherever
-  it appears, plus a **shelf** on your page collecting your circled frames with their weeks.
-- **The words:** Spotlight (the place), circled (the mark). Never "featured", "picked", "winner",
-  "top", "selected", "submit", "entry", "contest".
+- **The trophy** is a badge, `spotlight`, earned the first time one of your frames is put in the Spotlight,
+  never changing after (no count, no tiers), plus the frame itself carrying the light wherever
+  it appears, plus a **shelf** on your page collecting your Spotlight frames with their weeks.
+- **The words:** Spotlight (the place), in the Spotlight (the state), the light (the mark). Never
+  "featured", "picked", "winner", "top", "selected", "circled", "submit", "entry", "contest".
 
 ## 3. The model that survives v2 (the contract)
 
@@ -191,46 +191,46 @@ Design against this; the owner builds it. v2 changes none of it.
 
 **One table, `spotlight_entries`:** id; post_id (one post can only ever be in one week); user_id;
 week_key (the date of the week's Monday, e.g. 2026-09-14); put_up_at; withdrawn_at (null while
-up); circled_at (null unless circled); circle_push_sent. Invariants: at most one row per user per
+up); chosen_at (null unless it was put in the Spotlight); chosen_push_sent. Invariants: at most one row per user per
 week with withdrawn_at null; a row for a post whose feed day is outside week_key is refused;
-withdrawal after the week closed is refused; circling before the week closed is refused;
-uncircling after Done is refused. Deleting the post deletes the row (cascade), which takes the
-frame and its circle out of every week. Deleting the account cascades likewise. Blocking hides
+withdrawal after the week closed is refused; choosing before the week closed is refused;
+removing after Done is refused. Deleting the post deletes the row (cascade), which takes the
+frame and its light out of every week. Deleting the account cascades likewise. Blocking hides
 both ways at read time, as posts already do. A hidden post (reported and hidden) is invisible in
 Spotlight while hidden. A covered account's post cannot be put up while covered.
 
-**One week table, `spotlight_weeks`:** week_key; closed_at (set by Done); circled_count is never
+**One week table, `spotlight_weeks`:** week_key; closed_at (set by Done); the count chosen is never
 stored or exposed.
 
 **Reads:** `spotlight_week(p_week_key)` returns the entries of a week in put_up order with the
 post's paths and handle, minus blocked and hidden; `spotlight_weeks()` lists week keys with a
-cover (the first circled frame, else the first frame). `own_spotlight_entry(p_week_key)` returns
-the caller's row for the week. `circled_frames(p_user_id)` returns a person's circled entries for
+cover (the first frame in the Spotlight, else the first frame). `own_spotlight_entry(p_week_key)` returns
+the caller's row for the week. `spotlight_frames(p_user_id)` returns a person's entries that were put in the Spotlight, for
 the shelf.
 
 **Writes:** `put_up_for_spotlight(p_post_id)` (swaps if one is up; refuses outside the week);
-`withdraw_from_spotlight(p_post_id)`; owner-only `circle_spotlight_entry(p_entry_id)`,
-`uncircle_spotlight_entry(p_entry_id)`, `close_spotlight_week(p_week_key)` (Done).
+`withdraw_from_spotlight(p_post_id)`; owner-only `choose_spotlight_entry(p_entry_id)`,
+`unchoose_spotlight_entry(p_entry_id)`, `close_spotlight_week(p_week_key)` (Done).
 
-**Pushes, two kinds,** through the existing social push and its ledger: `spotlight_circled` ("Your
-frame was circled", route: spotlight, week, post), sent on Done to each circled person, once; and
+**Pushes, two kinds,** through the existing social push and its ledger: `spotlight_chosen` ("You're in
+the Spotlight", route: spotlight, week, post), sent on Done to each person whose frame was chosen, once; and
 `spotlight_closes_tonight` ("Spotlight closes tonight", route: spotlight), sent Sunday evening
 only to people who posted that week and have nothing up. Nobody is pushed about anyone else's
-circle. A route the client does not know opens nothing, so the circled push goes as a spotlight
+frame. A route the client does not know opens nothing, so the Spotlight push goes as a spotlight
 route to 1.6 clients and as a post route to older ones (the server knows each account's version).
 
-**The badge:** `spotlight`, predicate "has at least one circled entry", ratcheted like every
+**The badge:** `spotlight`, predicate "has at least one entry with chosen_at set", ratcheted like every
 other badge, announced like every other badge (the avatar dot and the "New badge to see" pill), no
 push. Tier: gold. Glyph, label, explanation and how-to-earn are yours to write in the catalogue's
-voice ("Spotlight", "One of your frames was circled.", "Put a frame up for Spotlight. Monday
-morning, a few are circled.").
+voice ("Spotlight", "One of your frames was in the Spotlight.", "Put a frame up for Spotlight.
+Monday morning, a few are lit.").
 
-**Activity:** one new row kind, "circled", reading "Your frame was circled" with the week; it
-opens Spotlight scrolled to the frame. No row for putting up, withdrawing, or the Sunday
+**Activity:** one new row kind, "spotlight", reading "Your frame is in the Spotlight" with the week;
+it opens Spotlight scrolled to the frame. No row for putting up, withdrawing, or the Sunday
 reminder.
 
 **Instrumentation,** day-bucketed counters like the rest of the app, never per-tap streams:
-spotlight page opened, frame put up, frame withdrawn, circled push opened. Everything else is
+spotlight page opened, frame put up, frame withdrawn, Spotlight push opened. Everything else is
 derivable from the table.
 
 **The version gate:** when 1.6 is live on the App Store, `latest_version` moves to 1.6.0 so
@@ -244,33 +244,37 @@ notification nudge, inside the list so it scrolls away. Left: "Spotlight" in the
 in meta: the week's state. Tapping anywhere on the line pushes the page. Its states across the
 week:
 
-- Monday after Done: "Circled this morning", with three tiny 3:4 thumbnails of circled frames on
-  the right (24pt tall), the first circled first.
-- Monday before Done (04:00 to noon): "Last week's frames are being circled" (quiet; no
-  thumbnails).
+- Monday after Done: "Lit this morning", with three tiny 3:4 thumbnails of the lit frames on the
+  right (24pt tall), the first chosen first.
+- Monday before Done: "Last week's frames are being chosen" (quiet; no thumbnails).
 - Midweek: "Week of September 14" and, for a person whose frame is up, "Yours is up".
 - Sunday, for a person who posted this week and has nothing up: "Closes tonight" in the accent.
 - Sunday, otherwise: "Closes tonight" in secondary.
-- The very first week (nothing has ever been circled): "Week of September 14 · the first one".
+- The very first week (nothing has ever been lit): "Week of September 14 · the first one".
 - Offline with a cached week: the same line, nothing different.
 - Never a count of frames, never a count of people.
 
 The line does not light the Feed tab dot and does not add to the ledger.
 
 **The page.** Title "Spotlight" in the pageTitle role. Under it, in meta: "Week of September 14"
-then "closes Sunday night" (or "circled Monday" once Done), then "Eastern time" once. Then the
+then "closes Sunday night" (or "lit Monday" once Done), then "Eastern time" once. Then the
 frames: 3:4, two columns with the grid's 3pt gap (two, not three, because these are the week's
 chosen frames and the Chapters cards are 118pt wide; say if you disagree and why), thumb
 rendition, the handle in micro under each, in put-up order. Your own frame carries a hairline
-accent rule under its handle, no badge, no "you". A circled frame carries the grease-pencil
-circle: a hand-drawn, slightly off-round, red-orange (`destructive` at 85% is the closest existing
-token; propose the exact colour, it must read on a dark frame and on a bright one) ring over the
-frame's upper-left corner, drawn once, not animated except on the first reveal after the push
-(a 350ms draw-on, honouring Reduce Motion). Tapping a frame opens the post exactly as the feed
+accent rule under its handle, no badge, no "you". A frame in the Spotlight carries **the light**: it
+reads as lit, the way one print on a dark wall reads under a lamp. Draw it three ways in stage 1
+and the owner picks (section 9, D5): (a) a warm glow bleeding a few points past the frame's edges
+onto the ground, strongest at the top; (b) a one-point warm hairline around the frame with a
+soft outer glow; (c) a small beam glyph at the frame's upper-left corner, light falling in from
+above. Whichever wins: one fixed warm white-amber, never the phone's accent (which the person
+can change), propose the exact colour, and it must read on a dark frame, on a bright one, and
+with Reduce Transparency. It is never a ring, a circle, a star or a badge on the photograph.
+It appears once; the only animation is the light coming up over 350ms on the first view after
+the push, honouring Reduce Motion. Tapping a frame opens the post exactly as the feed
 does (PostDetailView), with its reactions and comments. Under this week: "Past weeks", a
 horizontal row in the Chapter shelf's geometry (118pt 3:4 cards, radius 14) showing each week's
 cover and "Week of September 7"; tapping one shows that week in the same page layout with
-"circled Monday" in the meta. Draw the page at 0 frames (Monday's first hour, and the first week
+"lit Monday" in the meta. Draw the page at 0 frames (Monday's first hour, and the first week
 ever), 3, 12 and 30. With about 48 people posting in a month, 12 to 30 frames is the realistic
 range.
 
@@ -299,22 +303,22 @@ the "N new" pill's position: a hairline accent-outlined pill "Up for Spotlight" 
 the post opened, the same pill under the author row. Never on other people's frames. Nothing on the
 Darkroom.
 
-**The circle push and where it lands.** "Your frame was circled" (title), body "Spotlight, week of
-September 14". Opening it lands on the Spotlight page scrolled to the frame, with the circle
-drawing on once. If the app was already open, a toast in the top slot: checkmark, "Your frame was
-circled". The badge dot lights on the avatar the next time the feed reloads; do not add a second
+**The Spotlight push and where it lands.** "You're in the Spotlight" (title), body "One of your
+frames, week of September 14". Opening it lands on the Spotlight page scrolled to the frame, with
+the light coming up once. If the app was already open, a toast in the top slot: checkmark, "You're in the
+Spotlight". The badge dot lights on the avatar the next time the feed reloads; do not add a second
 push or a modal.
 
-**The frame after circling.** In the feed unit and on the post opened, a circled frame carries a
-small version of the circle at the frame's upper-left corner (28pt), quietly, forever. In the
-person's page grid, the same mark at the cell's corner at 120pt thumbnails. In Activity, the
-"circled" row with the week, opening Spotlight at the frame.
+**The frame afterwards.** In the feed unit and on the post opened, a frame in the Spotlight carries
+the light, quietly, forever, in a form that still reads at the card's size. In the person's page
+grid, the same at 120pt thumbnails (the light must survive a 3pt gap between lit and unlit
+cells; show it). In Activity, the spotlight row with the week, opening Spotlight at the frame.
 
-**The shelf.** On the page, between the header and the Chapters shelf: an uppercase "CIRCLED" rule
+**The shelf.** On the page, between the header and the Chapters shelf: an uppercase "SPOTLIGHT" rule
 header in the sectionRule role, then a horizontal row of 118pt 3:4 cards (radius 14) in the
-Chapter shelf's geometry, newest first, each with the circle mark and "Week of Sep 14" in meta. It
-renders only when the person has at least one circled frame. It shows on every page, own or
-another person's, because circled frames are public. Draw it at one card, three and eight, and on
+Chapter shelf's geometry, newest first, each carrying the light and "Week of Sep 14" in meta. It
+renders only when the person has at least one frame in the Spotlight. It shows on every page,
+own or another person's, because those frames are public. Draw it at one card, three and eight, and on
 a page whose grid you cannot see (a person you do not follow): the shelf shows, the grid does
 not, and the shelf says nothing about the grid.
 
@@ -322,9 +326,9 @@ not, and the shelf says nothing about the grid.
 avatar as one of the two, in the Badges sheet, and the "New badge to see" pill on your own page
 the morning after. Write its label, explanation and how-to-earn.
 
-**Activity.** The "circled" row: your own avatar is wrong here (nobody did it to you); use the
-badge's glyph in the avatar slot, "Your frame was circled", meta "Spotlight, week of September
-14". Under "New" like any row.
+**Activity.** The "spotlight" row: your own avatar is wrong here (nobody did it to you); use the
+badge's glyph in the avatar slot, "Your frame is in the Spotlight", meta "Spotlight, week of
+September 14". Under "New" like any row.
 
 **The Sunday push.** "Spotlight closes tonight" (title), body "You posted this week. Put one up?"
 Route: Spotlight. Only to people who posted that week and have nothing up. Never to anyone else,
@@ -332,10 +336,10 @@ never twice.
 
 **The owner's queue (web admin).** A fifth queue, "Spotlight", in the nav with a count of frames
 awaiting review (the owner's count, never a person's). Header: "Week of September 14 · closes
-Monday noon" and a "Done for the week" button, disabled until at least one frame is circled or the
+Monday noon" and a "Done for the week" button, disabled until at least one frame is chosen or the
 owner confirms an empty week. Cards, newest first: the frame at 3:4 (thumb), the handle, "put up
-Tuesday", a "Circle" button; circled cards show the circle over the frame and an "Uncircle"
-button; the header shows "3 circled" (the owner's own count, fine here). Done confirms: "Send 3
+Tuesday", a "Spotlight" button; chosen cards show the light over the frame and a "Remove"
+button; the header shows "3 in the Spotlight" (the owner's own count, fine here). Done confirms: "Send 3
 pushes and close the week?" Draw it at desktop width and at phone width (the owner does this on
 his phone). Also draw, as a proposal only, an in-app owner mode: the same queue as a sheet behind
 the owner's own page, visible to the owner account only; 1.6 ships the web queue and the in-app
@@ -356,14 +360,14 @@ why. "Applies" is decided by what the code can produce, not by what seems likely
 4. Empty, later: Monday's first hour of a new week: "A new week. Frames go up from their menu."
    and last week reachable under it. These two empties are different sentences.
 5. Partial or dead data: a frame whose post was deleted mid-week (it is gone, the others close
-   the gap, no hole); a circled frame whose author deleted their account (gone, same); a frame
+   the gap, no hole); a lit frame whose author deleted their account (gone, same); a frame
    from someone you blocked or who blocked you (invisible to you, the others unchanged); a hidden
    post (invisible while hidden); a frame whose thumb rendition is missing (falls back to the
    master, like the grid); a week whose cover frame was deleted (next frame becomes the cover).
 6. Error with the way back: the page fails to load ("Couldn't load Spotlight. Try again." in
    place, with the retry); put up fails; withdraw fails; the compose toggle was on and the post
    succeeded but the put-up failed ("Posted to your page. Couldn't put it up for Spotlight; try
-   from the post's menu."); the owner's Circle fails ("Couldn't circle. Try again."); Done fails
+   from the post's menu."); the owner's Spotlight fails ("Couldn't put it in the Spotlight. Try again."); Done fails
    halfway (the week is closed, some pushes went; the ledger prevents doubles; the owner sees
    "Closed. 2 of 3 pushes sent; retrying." and a retry).
 7. Offline: the loaded week stays readable; the entry line shows the cached state; put up and
@@ -377,12 +381,12 @@ why. "Applies" is decided by what the code can produce, not by what seems likely
    wins; the earlier phone learns on its next refresh, its pill goes away, no error); a frame is
    put up at 03:59 Monday (it belongs to the closing week); the week rolls over while the page is
    on screen (the meta changes, the frames stay, a "New week" pill in the top slot like "New
-   posts"); the owner circles while a person is looking at the page (the circle appears on their
+   posts"); the owner chooses while a person is looking at the page (the light appears on their
    next refresh, not live); a person withdraws a frame at 03:58 Monday and it is already in the
-   owner's queue (the queue refetches; if it was circled before the withdrawal landed, the
-   withdrawal is refused: "The week closed."); the circled push arrives on a phone still on
-   1.5.4 (it opens the post, not Spotlight); the person deletes the post after it was circled
-   (the frame, the circle, the shelf card and the Activity row all go; the badge stays, because
+   owner's queue (the queue refetches; if it was chosen before the withdrawal landed, the
+   withdrawal is refused: "The week closed."); the Spotlight push arrives on a phone still on
+   1.5.4 (it opens the post, not Spotlight); the person deletes the post after it was put in the Spotlight
+   (the frame, its light, the shelf card and the Activity row all go; the badge stays, because
    badges are never lost); a reaction is tapped on a Spotlight frame by someone who does not
    follow the photographer (allowed; it is public); a comment likewise (decision 3).
 
@@ -390,10 +394,10 @@ why. "Applies" is decided by what the code can produce, not by what seems likely
 
 - A person who follows nobody and is followed by nobody opens Spotlight: full page, same as
   everyone. This is the one place a newcomer with no friends sees the whole app.
-- A person circled a second time: the same push, the second frame marked, the shelf at two, the
-  badge unchanged, no second badge announcement.
-- The owner's own frame: the owner may put a frame up; the queue shows it; the owner may circle
-  it (nothing in the model forbids it); the in-app rule is his own and the design says nothing.
+- A person in the Spotlight a second time: the same push, the second frame lit, the shelf at two,
+  the badge unchanged, no second badge announcement.
+- The owner's own frame: the owner may put a frame up; the queue shows it; the owner may put it
+  in the Spotlight (nothing in the model forbids it); the in-app rule is his own and the design says nothing.
 - A person puts up a frame, then edits its caption or tags: nothing changes in Spotlight; the
   frame there reflects the edit on the next load.
 - A person puts up a frame that tags someone: the tagged person is told in Activity as today
@@ -412,14 +416,14 @@ why. "Applies" is decided by what the code can produce, not by what seems likely
 - The empty Monday: nobody put anything up. The owner's queue says "Nothing was put up this
   week." with "Close the week" (no pushes). The page shows the week with no frames and "Nobody
   put a frame up this week." Past weeks are unaffected.
-- Reduce Motion: the circle appears without the draw-on. VoiceOver: every frame reads "{handle},
-  circled" or "{handle}"; the entry line reads its state; the circle mark has no label of its own
+- Reduce Motion: the light appears without coming up. VoiceOver: every frame reads "{handle}, in
+  the Spotlight" or "{handle}"; the entry line reads its state; the light has no label of its own
   beyond the frame's.
 - Dynamic Type AX3: the entry line wraps to two lines and keeps its 44pt target; the page meta
   wraps; the handle under a frame truncates with an ellipsis before it wraps.
 - The accent as any of the six hues: the entry line's "Closes tonight", the "Up for Spotlight"
-  pill and your own frame's rule must read in all six; the circle is never the accent, it is
-  always the red-orange, so it stays the same colour on every phone.
+  pill and your own frame's rule must read in all six; the light is never the accent, it is
+  always the one warm white-amber, so it stays the same colour on every phone.
 
 ## 6. Copy inventory
 
@@ -429,9 +433,9 @@ screen; the vocabulary in section 2 is fixed.
 | Where | String |
 |---|---|
 | Entry line, left | Spotlight |
-| Entry line, states | Circled this morning · Last week's frames are being circled · Week of September 14 · Yours is up · Closes tonight · Week of September 14 · the first one |
+| Entry line, states | Lit this morning · Last week's frames are being chosen · Week of September 14 · Yours is up · Closes tonight · Week of September 14 · the first one |
 | Page title | Spotlight |
-| Page meta | Week of September 14 · closes Sunday night · Eastern time / Week of September 14 · circled Monday |
+| Page meta | Week of September 14 · closes Sunday night · Eastern time / Week of September 14 · lit Monday |
 | Past weeks header | Past weeks |
 | Own-post menu | Put it up for Spotlight / Take it down from Spotlight / Swap it into Spotlight / Queued |
 | Consequence sheet, put up | Put it up for Spotlight / Everyone on FLIM can see it there, not only the people who follow you. Anyone you tagged is told. You can take it down until Sunday night. / Put it up / Cancel |
@@ -445,32 +449,31 @@ screen; the vocabulary in section 2 is fixed.
 | Empty, new week | A new week. Frames go up from their menu. |
 | Empty, closed week | Nobody put a frame up this week. |
 | New week pill | New week |
-| Circle push | Your frame was circled / Spotlight, week of September 14 |
-| In-app toast | Your frame was circled |
+| Spotlight push | You're in the Spotlight / One of your frames, week of September 14 |
+| In-app toast | You're in the Spotlight |
 | Sunday push | Spotlight closes tonight / You posted this week. Put one up? |
-| Activity row | Your frame was circled / Spotlight, week of September 14 |
-| Shelf header | CIRCLED |
+| Activity row | Your frame is in the Spotlight / Spotlight, week of September 14 |
+| Shelf header | SPOTLIGHT |
 | Shelf card meta | Week of Sep 14 |
-| Badge | Spotlight / One of your frames was circled. / Put a frame up for Spotlight. Monday morning, a few are circled. |
-| Admin queue | Spotlight / Week of September 14 · closes Monday noon / Circle / Uncircle / 3 circled / Done for the week / Send 3 pushes and close the week? / Nothing was put up this week. / Close the week / Closed. 2 of 3 pushes sent; retrying. |
+| Badge | Spotlight / One of your frames was in the Spotlight. / Put a frame up for Spotlight. Monday morning, a few are lit. |
+| Admin queue | Spotlight / Week of September 14 · closes Monday noon / Spotlight / Remove / 3 in the Spotlight / Done for the week / Send 3 pushes and close the week? / Nothing was put up this week. / Close the week / Closed. 2 of 3 pushes sent; retrying. |
 
 No exclamation marks. No em dashes anywhere, in copy or in your notes. FLIM's name appears only
 where the sentence needs it and is written as the app's configured name.
 
 ## 7. Rules
 
-- The photograph is 3:4, never cropped, never inset for a control. The circle sits over the frame's
-  corner and covers less than a tenth of it.
+- The photograph is 3:4, never cropped, never inset for a control. The light sits at the frame's edge and never covers
+  the photograph.
 - Reactions stay one tap on the visible chip. Nothing is added between a person and the chip on a
   Spotlight frame.
-- No counts on anyone: not frames up, not people, not circles on a person. The owner's queue may
+- No counts on anyone: not frames up, not people, not lights on a person. The owner's queue may
   count for the owner.
-- Only existing tokens, roles and components. The one new visual element is the grease-pencil
-  circle. If you believe a second is needed, name the gap and ask.
+- Only existing tokens, roles and components. The one new visual element is the light. If you believe a second is needed, name the gap and ask.
 - Nothing that exists moves. If the entry line pushes something below the fold at 375pt, show the
   fold before and after and say what moved down.
 - The accent is a variable that must work as any of six hues and is used for one action at a
-  time. The circle is never the accent.
+  time. The light is never the accent.
 - Nothing fails silently. Every failure has its line, in place, with the way back.
 - Everything scales to AX3, every control is 44pt, every colour passes AA on the surface it sits
   on, measured on a photograph too.
@@ -489,7 +492,7 @@ where the sentence needs it and is written as the app's configured name.
   RPCs, the two pushes, the badge predicate, the version-aware push route, the counters); D
   unresolved, as questions.
 - **The build order the owner will follow,** each step shippable alone: (1) server tables, RPCs,
-  badge predicate, admin queue; (2) client read-only: entry line, page, shelf, circle marks, the
+  badge predicate, admin queue; (2) client read-only: entry line, page, shelf, the light on frames, the
   Activity row; (3) client writes: put up, withdraw, swap, compose toggle, the pill; (4) pushes
   and the Sunday reminder; (5) `latest_version` to 1.6.0. State what a person on step 2 sees
   before step 3 exists (the page, no way to put anything up: the empty copy must not promise the
@@ -497,10 +500,10 @@ where the sentence needs it and is written as the app's configured name.
 - **What v2 changes and what it does not:** a two-column list. Does not: anything in sections 2
   and 3, the copy vocabulary, the push kinds, the badge, the shelf's existence. Changes: the
   entry's look and place (v2 draws it in the redesigned Feed), the page's frame layout (rebate
-  hairlines, one row per line), the circle's rendering, the admin queue's chrome, the possible
+  hairlines, one row per line), the light's rendering, the admin queue's chrome, the possible
   in-app owner mode.
 - **The rollout check,** measured for two weeks after 1.6 is live, never shown to anyone as a
-  number: distinct people who put a frame up per week; reactions on circled frames in the 48
+  number: distinct people who put a frame up per week; reactions on Spotlight frames in the 48
   hours after Done, against the same frames' reactions before; captures per active day and
   response within 24 hours of posting, not falling; Sunday push opens. What would count as a
   failure, in one line each.
@@ -512,7 +515,7 @@ where the sentence needs it and is written as the app's configured name.
 Ask in this form, two or three answers each, one line back from the owner.
 
 1. **The first week.** A: Spotlight opens to everyone with 1.6 on the first Monday after release.
-   B: one week on TestFlight only, gated the way Film Lab is, so the owner circles a small week
+   B: one week on TestFlight only, gated the way Film Lab is, so the owner lights a small week
    first.
 2. **The consequence sheet.** A: shown the first two times, then never. B: shown every time, since
    it names a real audience change. C: shown the first time only.
@@ -522,9 +525,12 @@ Ask in this form, two or three answers each, one line back from the owner.
 4. **The in-app owner mode.** A: web queue only in 1.6, in-app in v2. B: both in 1.6.
 5. **The Monday noon cut-off.** A: as written; nothing happens if the owner misses noon. B: the
    queue stays open until the owner taps Done, whenever that is; the pushes go then.
-6. **The shelf on a page you do not follow.** A: shown, because circled frames are public (as
+6. **The shelf on a page you do not follow.** A: shown, because Spotlight frames are public (as
    written). B: hidden with the grid.
 7. **Two columns or three on the page.** A: two. B: three, matching the grid.
+8. **The light's form (D5).** A: the glow past the edges. B: the hairline with a soft glow. C: the
+   beam glyph at the corner. Drawn all three on the same frame, at card size and at 120pt, on a
+   dark frame and a bright one, before the owner picks.
 
 ## 10. Rules of conduct
 
