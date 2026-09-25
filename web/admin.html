@@ -379,6 +379,7 @@
       margin: 22px 0 10px;
     }
     .spot__week .sect { margin: 0; }
+    .spot__week-acts { display: flex; gap: 8px; flex: 0 0 auto; }
     .spot__views { display: flex; gap: 8px; margin: 0 0 6px; }
     .spot__views .btn[aria-pressed="true"] { background: var(--text); border-color: var(--text); color: var(--surface); }
 
@@ -743,6 +744,9 @@
       covered: "That frame is in a covered window, so it cannot be chosen.",
       tagged: "That frame has people tagged, so it cannot be chosen.",
       not_photographer: "That frame was shot by someone else.",
+      blocked: "You and this person have a block between you, so it cannot be chosen.",
+      week_skipped: "That week was skipped. Nothing from it can be published.",
+      week_stale: "That week closed more than two weeks ago, so it can no longer be published.",
       not_found: "That frame is not in Spotlight anymore."
     };
     function refusal(err) {
@@ -779,6 +783,25 @@
         var r = refusal(err);
         /* A second press, or a second tab, lands here. It changed nothing, so it
            is said plainly rather than in the error colour. */
+        msg = r.text;
+        tone = r.name === "already_published" ? undefined : "bad";
+      }
+      await load();
+      say($("panel-status"), msg, tone);
+    }
+
+    /* Skipping is final: the week's choices stay on the server but nothing from it can be
+       published, and it leaves the waiting list. */
+    async function skipWeek(btn, week) {
+      if (!confirm("Skip " + weekLabel(week) + "? Nothing from it is published, and it leaves this list."
+                   + " This cannot be undone.")) return;
+      btn.disabled = true;
+      var msg, tone;
+      try {
+        await rpc("close_spotlight_week", { p_week_key: week });
+        msg = "Skipped " + weekLabel(week) + ".";
+      } catch (err) {
+        var r = refusal(err);
         msg = r.text;
         tone = r.name === "already_published" ? undefined : "bad";
       }
@@ -955,7 +978,12 @@
         var publish = el("button", "btn btn--go", "Publish to everyone");
         publish.disabled = chosen.length === 0;
         publish.addEventListener("click", function () { publishWeek(publish, wk, chosen.length); });
-        head.appendChild(publish);
+        var skip = el("button", "btn", "Skip this week");
+        skip.addEventListener("click", function () { skipWeek(skip, wk); });
+        var headActs = el("div", "spot__week-acts");
+        headActs.appendChild(skip);
+        headActs.appendChild(publish);
+        head.appendChild(headActs);
         host.appendChild(head);
 
         list.forEach(function (r) {
@@ -980,10 +1008,12 @@
           c.appendChild(main);
 
           var acts = el("div", "card__actions");
-          var blocked = r.removed_at || r.hidden || r.covered || r.tagged;
+          /* What choose refuses. A frame already chosen can always be unchosen, so a
+             flag that appears after the choice never strands it. */
+          var blocked = r.hidden || r.covered || r.tagged || r.blocked_with_owner;
           var toggle = el("button", r.chosen_at ? "btn btn--go" : "btn", r.chosen_at ? "Chosen" : "Choose");
           toggle.title = r.chosen_at ? "Chosen. Press to unchoose." : "Choose this frame";
-          toggle.disabled = !!blocked || (!r.chosen_at && chosen.length >= 6);
+          toggle.disabled = !!r.removed_at || (!r.chosen_at && (!!blocked || chosen.length >= 6));
           toggle.addEventListener("click", function () {
             spotAct(c, r.chosen_at ? "unchoose_spotlight_entry" : "choose_spotlight_entry", { p_post_id: r.post_id });
           });
@@ -991,7 +1021,8 @@
           if (!r.removed_at) {
             var remove = el("button", "btn", "Remove");
             remove.addEventListener("click", function () {
-              if (!confirm("Remove @" + (r.username || "unknown") + "'s frame from " + weekLabel(wk) + "?")) return;
+              if (!confirm("Remove @" + (r.username || "unknown") + "'s frame from " + weekLabel(wk)
+                           + "? It cannot be chosen again. This cannot be undone.")) return;
               spotAct(c, "remove_spotlight_entry", { p_post_id: r.post_id });
             });
             acts.appendChild(remove);
