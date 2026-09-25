@@ -53,6 +53,24 @@ const APNS_HOST = (Deno.env.get("APNS_ENVIRONMENT") ?? "sandbox") === "productio
   ? "https://api.push.apple.com"
   : "https://api.sandbox.push.apple.com";
 
+// The app's name as it appears in push copy. One place, because the name has changed before
+// (Lapse, then FLIM) and may again; a rename is this line plus a deploy.
+const APP_NAME = "FLIM";
+
+// "The week of September 21" from a Spotlight week_key ("2026-09-21"). Read from the key's own
+// digits, never through Date: a bare date parses as midnight UTC, and any formatting in a zone
+// west of UTC would name the Sunday before.
+const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August",
+  "September", "October", "November", "December"];
+function spotlightWeekLabel(weekKey: string): string | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(weekKey);
+  if (!m) return null;
+  const month = MONTH_NAMES[Number(m[2]) - 1];
+  const day = Number(m[3]);
+  if (!month || day < 1 || day > 31) return null;
+  return `The week of ${month} ${day}`;
+}
+
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
@@ -1351,8 +1369,9 @@ Deno.serve(async (req: Request) => {
       new Date(post.created_at).getTime() >= w.start && new Date(post.created_at).getTime() < w.end);
     const key = `spotlight_chosen:${weekKey}`;
     if (post && !post.hidden && e.removed_at === null && !covered) {
-      sent += await notify(e.user_id, null, "Your frame is in Spotlight", "Everyone on FLIM can see it now.",
-        { t: "feed", week: weekKey }, key);
+      const label = spotlightWeekLabel(weekKey);
+      const spotBody = (label ? `${label}. ` : "") + `Everyone on ${APP_NAME} can see it now.`;
+      sent += await notify(e.user_id, null, "Your frame is in Spotlight", spotBody, { t: "feed", week: weekKey }, key);
       if (!settled(key)) continue;
     }
     await supabase.from("spotlight_entries").update({ push_sent: true }).eq("id", e.id);
@@ -1366,7 +1385,7 @@ Deno.serve(async (req: Request) => {
   for (const a of opsAlerts ?? []) {
     let ok = 0;
     for (const token of ownerPushTokens) {
-      if (await sendPush(token, `FLIM ops: ${a.source}`, a.detail.slice(0, 180))) ok++;
+      if (await sendPush(token, `${APP_NAME} ops: ${a.source}`, a.detail.slice(0, 180))) ok++;
     }
     sent += ok;
     // Recorded is not delivered: the row stays unsent until a push actually went out, so a

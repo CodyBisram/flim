@@ -84,7 +84,7 @@ Nothing about Spotlight competes with the feed, because it is only ever one stri
 | Late weeks | Any closed week can be published, labelled with its own week | A late choice never erases the week |
 | Public reach of a chosen frame | The photograph, its reactions, and reacting | "Shown to everyone" is the feature |
 | Comments on a chosen frame | Followers and tagged people only, as today | Comments were written for followers; strangers writing to people is the one new contact the feature would otherwise open |
-| Tagged frames | Cannot be put up; tags cannot be added to a frame that is up or chosen | A tagged friend never agreed to be shown to everyone |
+| Tagged frames | Cannot be put up; tags cannot be added while a frame is up in the current week or chosen (a closed week's unchosen frame can be tagged again, and choose refuses tagged frames under a row lock) | A tagged friend never agreed to be shown to everyone |
 | Frames shot by someone else | Cannot be put up | Credit and consent belong to the photographer |
 | Page grid and Chapters for strangers | Unchanged, follower rule | The shelf is the public record, the rest of the page stays private |
 | After publish | The photographer can take a frame out; the team can remove one; the badge stays | Publication is long-lived through the shelf, so there must be a way back |

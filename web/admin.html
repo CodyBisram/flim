@@ -379,6 +379,8 @@
       margin: 22px 0 10px;
     }
     .spot__week .sect { margin: 0; }
+    .spot__views { display: flex; gap: 8px; margin: 0 0 6px; }
+    .spot__views .btn[aria-pressed="true"] { background: var(--text); border-color: var(--text); color: var(--surface); }
 
     @media (max-width: 720px) {
       body { flex-direction: column; }
@@ -465,7 +467,11 @@
     var token = null;
     try { token = sessionStorage.getItem(TOKEN_KEY); } catch (e) {}
 
-    var data = { invites: [], photos: [], users: [], feedback: [], spotlight: [] };
+    var data = { invites: [], photos: [], users: [], feedback: [], spotlight: [], spotlightPublished: [] };
+    /* The Spotlight panel has two views: "waiting" (closed weeks not yet
+       published, the queue) and "published" (the last eight weeks that went
+       out, so any frame can still be removed). */
+    var spotView = "waiting";
     /* Signed URLs for Spotlight frames, by storage path, so switching panels does
        not sign the same frame again. The owner can sign a frame that is only put
        up (not yet public) because the storage read policy has an owner clause for
@@ -487,6 +493,7 @@
       users: "Reported people",
       feedback: "Feedback",
       spotlight: "Spotlight",
+      spotlightPublished: "Spotlight (published)",
       overview: "Overview",
       traffic: "Traffic",
       pulse: "Pulse",
@@ -645,7 +652,7 @@
       var host = $("list");
       host.textContent = "";
       if (ANALYTICS.indexOf(panel) !== -1) { renderStats(host); return; }
-      if (panel === "spotlight") { renderSpotlight(host, data.spotlight); return; }
+      if (panel === "spotlight") { renderSpotlight(host); return; }
       var rows = data[panel];
       $("page-sub").textContent = rows.length
         ? plural(rows.length, panel === "invites" ? "person waiting"
@@ -815,25 +822,26 @@
         return img;
       }
       return el("div", "spot__missing",
-        url === null ? (r.blocked_with_owner ? "Cannot load: block with you"
-                        : r.hidden ? "Cannot load: hidden" : "Cannot load")
+        url === null ? (r.removed_at ? "Removed, no longer shown"
+                        : r.blocked_with_owner ? "Cannot load: block with you"
+                        : r.hidden ? "Cannot load: hidden"
+                        : r.covered ? "Cannot load: covered" : "Cannot load")
                      : "Loading");
     }
 
-    function renderSpotlight(host, rows) {
+    function groupByWeek(rows) {
       var weeks = [];
       var byWeek = {};
       rows.forEach(function (r) {
         if (!byWeek[r.week_key]) { byWeek[r.week_key] = []; weeks.push(r.week_key); }
         byWeek[r.week_key].push(r);
       });
-      $("page-sub").textContent = weeks.length ? plural(weeks.length, "closed week") + " waiting" : "";
-      if (!weeks.length) {
-        host.appendChild(el("div", "empty", "No closed week is waiting. Frames put up this week show here after it closes, Monday 04:00 Eastern."));
-        return;
-      }
+      return { weeks: weeks, byWeek: byWeek };
+    }
 
-      /* URLs are signed for an hour; start again well before that. */
+    /* Signs whatever the open view shows and has not been signed yet, then
+       draws again. URLs are signed for an hour; start again well before that. */
+    function signVisible(rows) {
       if (Date.now() - signedAt > 50 * 60 * 1000) { signed = {}; signedAt = Date.now(); }
       var unsigned = rows.filter(function (r) { return !(framePath(r) in signed); });
       if (unsigned.length) {
@@ -841,6 +849,96 @@
           if (panel === "spotlight") render();
         }).catch(function () {});
       }
+    }
+
+    function renderSpotlight(host) {
+      var views = el("div", "spot__views");
+      [["waiting", "Waiting"], ["published", "Published"]].forEach(function (v) {
+        var b = el("button", "btn", v[1]);
+        b.setAttribute("aria-pressed", String(spotView === v[0]));
+        b.addEventListener("click", function () {
+          if (spotView === v[0]) return;
+          spotView = v[0];
+          say($("panel-status"), "");
+          render();
+        });
+        views.appendChild(b);
+      });
+      host.appendChild(views);
+      if (spotView === "published") renderSpotlightPublished(host, data.spotlightPublished);
+      else renderSpotlightWaiting(host, data.spotlight);
+    }
+
+    /* What went out, newest week first, each week in strip order. Any frame
+       still showing can be removed; a removed one stays listed, flagged. */
+    function renderSpotlightPublished(host, rows) {
+      var g = groupByWeek(rows);
+      $("page-sub").textContent = g.weeks.length
+        ? (g.weeks.length === 1 ? "The last published week" : "The last " + g.weeks.length + " published weeks")
+        : "";
+      if (!g.weeks.length) {
+        host.appendChild(el("div", "empty", "Nothing has been published yet."));
+        return;
+      }
+      signVisible(rows);
+
+      g.weeks.forEach(function (wk) {
+        var list = g.byWeek[wk];
+        var showing = list.filter(function (r) { return !r.removed_at; });
+
+        var head = el("div", "spot__week");
+        var h = el("div", "sect", weekLabel(wk).replace(/^the w/, "W"));
+        h.appendChild(el("span", "sect__note",
+          "published " + dayLabel(list[0].published_at) + ", " + plural(showing.length, "frame") + " showing"
+          + (list.length > showing.length ? ", " + (list.length - showing.length) + " removed" : "")));
+        head.appendChild(h);
+        host.appendChild(head);
+
+        list.forEach(function (r) {
+          var c = el("div", "card" + (r.removed_at ? " card--removed" : " card--chosen"));
+          c.appendChild(frameNode(r));
+
+          var main = el("div", "card__main");
+          var t = el("div", "card__title", "@" + (r.username || "unknown"));
+          if (r.removed_at) t.appendChild(el("span", "pill pill--bad", "removed"));
+          if (r.hidden) t.appendChild(el("span", "pill pill--bad", "hidden"));
+          if (r.covered) t.appendChild(el("span", "pill pill--bad", "covered"));
+          if (r.tagged) t.appendChild(el("span", "pill pill--bad", "tagged"));
+          if (r.hidden_from_discovery) t.appendChild(el("span", "pill pill--bad", "hidden from discovery (App Review?)"));
+          if (r.blocked_with_owner) t.appendChild(el("span", "pill pill--bad", "block with you"));
+          main.appendChild(t);
+          main.appendChild(el("div", "card__meta", r.removed_at
+            ? "Removed " + dayLabel(r.removed_at) + ", posted " + dayLabel(r.post_created_at)
+            : "Posted " + dayLabel(r.post_created_at)));
+          if (r.caption) main.appendChild(el("div", "card__note", r.caption));
+          c.appendChild(main);
+
+          var acts = el("div", "card__actions");
+          if (!r.removed_at) {
+            var remove = el("button", "btn", "Remove");
+            remove.addEventListener("click", function () {
+              if (!confirm("Remove @" + (r.username || "unknown") + "'s frame from " + weekLabel(wk)
+                           + "? It leaves Spotlight for everyone. Their badge stays. This cannot be undone.")) return;
+              spotAct(c, "remove_spotlight_entry", { p_post_id: r.post_id });
+            });
+            acts.appendChild(remove);
+          }
+          c.appendChild(acts);
+          host.appendChild(c);
+        });
+      });
+    }
+
+    function renderSpotlightWaiting(host, rows) {
+      var g = groupByWeek(rows);
+      var weeks = g.weeks;
+      var byWeek = g.byWeek;
+      $("page-sub").textContent = weeks.length ? plural(weeks.length, "closed week") + " waiting" : "";
+      if (!weeks.length) {
+        host.appendChild(el("div", "empty", "No closed week is waiting. Frames put up this week show here after it closes, at 04:00 Eastern when the next week starts."));
+        return;
+      }
+      signVisible(rows);
 
       /* Newest week first: the server already orders it that way, and a week is
          only listed while it is closed and unpublished. */
@@ -1400,15 +1498,15 @@
       }
     }
 
-    /* allSettled, not all. These are five independent queues, and with Promise.all
+    /* allSettled, not all. These are independent queues, and with Promise.all
        a single failing one takes the whole dashboard down with it: a function not
        yet deployed, or one renamed on the server, would leave the owner staring at
-       a blank page with four perfectly healthy queues behind it. Each queue now
+       a blank page with every other healthy queue behind it. Each queue now
        fails on its own and says so. */
     async function load() {
       var names = ["list_invite_requests", "list_photo_reports", "list_user_reports", "list_feedback",
-                   "list_spotlight_queue"];
-      var keys = ["invites", "photos", "users", "feedback", "spotlight"];
+                   "list_spotlight_queue", "list_spotlight_published_admin"];
+      var keys = ["invites", "photos", "users", "feedback", "spotlight", "spotlightPublished"];
       /* Analytics ride the same allSettled pass. They are separate RPCs so one
          heavy or not-yet-deployed query cannot take the queues down with it,
          which is the whole reason this was allSettled to begin with. */

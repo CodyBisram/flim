@@ -221,9 +221,15 @@ REVOKE ALL ON FUNCTION public.pin_post_paths() FROM PUBLIC, anon, authenticated;
 
 -- ---------------------------------------------------------------------------
 -- 6. No tags on a frame that is up or chosen. A tagged friend never agreed to be shown to
---    everyone. "Up" is any unremoved entry in a week not yet published (it can still be chosen);
---    "chosen" is any unremoved chosen entry. The post row lock (FOR SHARE here, FOR NO KEY UPDATE
---    in put_up_for_spotlight) serialises a tag racing a put-up, so one of them always sees the
+--    everyone. "Up" is an unremoved entry in the CURRENT week (the photographer can still take it
+--    down); "chosen" is any unremoved chosen entry, published or not. An unchosen entry in a
+--    closed week does not block: it was not picked, and the photographer can no longer withdraw
+--    it, so refusing there would lock the frame out of tags for good. That is safe because
+--    choose_spotlight_entry refuses a tagged frame, so a frame tagged after its week closed can
+--    never be chosen, and so never published.
+--    The post row lock serialises both races: FOR SHARE here against FOR NO KEY UPDATE in
+--    put_up_for_spotlight (tag vs put-up) and in choose_spotlight_entry (tag vs choose). Each
+--    side reads the other's state in a statement after its lock, so one of them always sees the
 --    other.
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.refuse_tag_in_spotlight()
@@ -239,8 +245,7 @@ BEGIN
         WHERE e.post_id = NEW.post_id
           AND e.removed_at IS NULL
           AND (e.chosen_at IS NOT NULL
-               OR NOT EXISTS (SELECT 1 FROM public.spotlight_weeks w
-                              WHERE w.week_key = e.week_key AND w.published_at IS NOT NULL))
+               OR e.week_key = public.spotlight_week_key(now()))
     ) THEN
         RAISE EXCEPTION 'in_spotlight' USING ERRCODE = 'P0001';
     END IF;
@@ -627,6 +632,82 @@ $$;
 REVOKE ALL ON FUNCTION public.list_spotlight_queue(DATE) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.list_spotlight_queue(DATE) TO authenticated;
 
+-- What went out: the chosen frames of the most recent published weeks (8 by default, clamped to
+-- 1..52), newest week first and each week in strip order, so the admin panel can remove any frame
+-- after publish. Removed frames stay listed with removed_at set, so a week reads true. Same row
+-- shape as list_spotlight_queue. A separate function rather than a flag on the queue, so the
+-- queue's signature and its no-argument meaning stay exactly what they were. Owner-gated inside,
+-- like every owner function here: a non-owner gets no rows.
+CREATE OR REPLACE FUNCTION public.list_spotlight_published_admin(p_limit INT DEFAULT 8)
+RETURNS TABLE (
+    week_key              DATE,
+    published_at          TIMESTAMPTZ,
+    week_starts_at        TIMESTAMPTZ,
+    post_id               UUID,
+    user_id               UUID,
+    username              TEXT,
+    caption               TEXT,
+    thumb_path            TEXT,
+    feed_path             TEXT,
+    storage_path          TEXT,
+    post_created_at       TIMESTAMPTZ,
+    put_up_at             TIMESTAMPTZ,
+    chosen_at             TIMESTAMPTZ,
+    removed_at            TIMESTAMPTZ,
+    hidden                BOOLEAN,
+    covered               BOOLEAN,
+    tagged                BOOLEAN,
+    hidden_from_discovery BOOLEAN,
+    blocked_with_owner    BOOLEAN
+)
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+#variable_conflict use_column
+BEGIN
+    IF NOT public.is_owner() THEN
+        RETURN;
+    END IF;
+    RETURN QUERY
+    WITH wk AS (
+        SELECT w.week_key, w.published_at
+        FROM public.spotlight_weeks w
+        WHERE w.published_at IS NOT NULL
+        ORDER BY w.week_key DESC
+        LIMIT LEAST(GREATEST(COALESCE(p_limit, 8), 1), 52)
+    )
+    SELECT e.week_key,
+           wk.published_at,
+           public._spotlight_week_start(e.week_key),
+           e.post_id,
+           e.user_id,
+           u.username,
+           po.caption,
+           po.thumb_path,
+           po.feed_path,
+           po.storage_path,
+           po.created_at,
+           e.put_up_at,
+           e.chosen_at,
+           e.removed_at,
+           (po.hidden OR COALESCE(ph.hidden, FALSE)),
+           public.post_is_covered(po.user_id, po.created_at),
+           EXISTS (SELECT 1 FROM public.post_tags t WHERE t.post_id = e.post_id),
+           u.hidden_from_discovery,
+           public.is_blocked_either_way(auth.uid(), e.user_id)
+    FROM wk
+    JOIN public.spotlight_entries e ON e.week_key = wk.week_key AND e.chosen_at IS NOT NULL
+    JOIN public.posts po ON po.id = e.post_id
+    JOIN public.users u ON u.id = e.user_id
+    LEFT JOIN public.photos ph ON ph.id = po.photo_id
+    ORDER BY e.week_key DESC, e.chosen_at ASC, e.post_id ASC;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.list_spotlight_published_admin(INT) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.list_spotlight_published_admin(INT) TO authenticated;
+
 -- Choose a frame (six at most per week). Idempotent on a frame already chosen.
 CREATE OR REPLACE FUNCTION public.choose_spotlight_entry(p_post_id UUID)
 RETURNS TABLE (week_key DATE, chosen_count INT)
@@ -650,6 +731,10 @@ BEGIN
     IF public._spotlight_lock_week(v_week) IS NOT NULL THEN
         RAISE EXCEPTION 'already_published' USING ERRCODE = 'P0001';
     END IF;
+    -- The post row, before the tag check below: a tag insert in flight holds FOR SHARE on it
+    -- (refuse_tag_in_spotlight), so this waits for that tag to commit and the check then sees it;
+    -- a tag arriving after this lock waits for the choose to commit and is refused in_spotlight.
+    PERFORM 1 FROM public.posts po WHERE po.id = p_post_id FOR NO KEY UPDATE;
 
     SELECT e.id, e.user_id, e.chosen_at, e.removed_at, po.hidden, po.created_at, po.photo_id,
            po.user_id AS author_id
