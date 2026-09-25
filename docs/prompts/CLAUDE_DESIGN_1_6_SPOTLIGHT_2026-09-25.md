@@ -1,5 +1,7 @@
 # FLIM 1.6: Spotlight. Prompt for Claude Design (2026-09-25)
 
+> SUPERSEDED 2026-09-25 by the second pass in `docs/SPOTLIGHT_1_6_PLAN.md`: Spotlight is a weekly strip in the feed, not a view beside it. Kept for the record.
+
 Supersedes `CLAUDE_DESIGN_1_6_SPOTLIGHT_2026-09-24.md`. One change, carried everywhere: the owner
 rejected the grease-pencil circle and the word circled. A chosen frame is now **in the Spotlight**,
 and the mark is **the light**: the frame reads as lit. Section 4 defines the light and section 9
