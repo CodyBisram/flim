@@ -32,6 +32,10 @@ final class UndoCenter {
         /// Shown as the in-place notice if `commit` comes back false.
         let failureText: String?
         let deadline: Date
+        /// `AccountEpoch.current` at staging time. A commit can outlive its account (an expired
+        /// session reaches `ContentView`'s flush only after the epoch moved), and its revert and
+        /// failure notice belong to that account alone; see `perform`.
+        let epoch: Int
         /// Restores the optimistic UI change. Runs on Undo and on a failed commit. Must be
         /// safe to call after the staging view is gone; capture services, not view state.
         let revert: () -> Void
@@ -58,6 +62,7 @@ final class UndoCenter {
         flush()
         let item = Staged(title: title, subtitle: subtitle, failureText: failureText,
                           deadline: .now.addingTimeInterval(Self.window),
+                          epoch: AccountEpoch.current,
                           revert: revert, commit: commit)
         staged = item
         expiryTask = Task { [weak self] in
@@ -88,7 +93,8 @@ final class UndoCenter {
     /// returns. Sign-out and account deletion call it FIRST, while the session that owns the
     /// pending action still exists. `ContentView`'s account-change flush fires after the
     /// session is already gone and the epoch has moved, so from there a server write can only
-    /// fail; it still runs, as the backstop for anything staged in between.
+    /// fail; it still runs, as the backstop for anything staged in between, and its failure is
+    /// dropped rather than reverted into the next account (see `perform`).
     ///
     /// Also waits for a commit already in flight: a window that closed on its own a moment
     /// earlier has nothing staged but may still be talking to the server.
@@ -114,6 +120,12 @@ final class UndoCenter {
 
     private func perform(_ item: Staged) async {
         guard await item.commit() == false else { return }
+        // The commit always runs (it can still land if the session is valid), but a failure
+        // reported after the account changed is not the new account's to see. Reverting would
+        // write the departed account's data into caches that were just reset for the next one
+        // (a deleted post reappearing in the new feed, which then skips its own reload because
+        // the feed is non-empty), and the notice and error haptic would speak to the wrong person.
+        guard AccountEpoch.isCurrent(item.epoch) else { return }
         item.revert()
         Haptics.error()
         if let failure = item.failureText { showNotice(failure) }

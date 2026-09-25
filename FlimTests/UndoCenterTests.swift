@@ -117,6 +117,46 @@ struct UndoCenterTests {
         #expect(UndoCenter.shared.failureNotice == nil)
     }
 
+    // MARK: - Account change (docs/SPOTLIGHT_1_6_PLAN.md, item 31)
+
+    /// Models an expired or revoked session: the SDK signs out without awaiting
+    /// `flushAndWait()`, so the epoch moves first and `ContentView`'s account-change `flush()`
+    /// commits afterwards, when the write can only fail. Reverting then would restore the
+    /// departed account's posts into the next account's freshly reset feed.
+    @Test("a commit that fails after the account changed neither reverts nor shows a notice")
+    func failedCommitAfterAccountChangeIsDropped() async {
+        await clearAnyLeftoverStagedItem()
+        let recorder = Recorder()
+        UndoCenter.shared.stage(
+            title: "Post removed",
+            failureText: "Couldn't remove that post",
+            revert: { recorder.reverts += 1 },
+            commit: { recorder.commits += 1; return false })
+        AccountEpoch.bump()   // the session is gone before the window closes
+        UndoCenter.shared.flush()
+        // Awaits the commit `flush()` just sent off, through its epoch check.
+        await UndoCenter.shared.flushAndWait()
+        #expect(recorder.commits == 1, "the commit still runs; it may land if the session is valid")
+        #expect(recorder.reverts == 0, "the departed account's revert must not reach the next account")
+        #expect(UndoCenter.shared.failureNotice == nil, "the failure notice is not the next account's")
+    }
+
+    @Test("a commit that fails with the account unchanged still reverts and shows the notice")
+    func failedCommitWithSameAccountStillReverts() async {
+        await clearAnyLeftoverStagedItem()
+        let recorder = Recorder()
+        UndoCenter.shared.stage(
+            title: "Post removed",
+            failureText: "Couldn't remove that post",
+            revert: { recorder.reverts += 1 },
+            commit: { recorder.commits += 1; return false })
+        UndoCenter.shared.flush()
+        await UndoCenter.shared.flushAndWait()
+        #expect(recorder.commits == 1)
+        #expect(recorder.reverts == 1)
+        #expect(UndoCenter.shared.failureNotice == "Couldn't remove that post")
+    }
+
     // MARK: - One capsule at a time
 
     @Test("staging a second action commits the first one, never drops it")
