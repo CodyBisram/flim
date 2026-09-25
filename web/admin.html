@@ -343,6 +343,43 @@
 
     .hide { display: none !important; }
 
+    /* ---- Spotlight --------------------------------------------------------
+       The one queue that is judged by eye, so the frame leads each card, at the
+       app's own 3:4. */
+    .spot__img {
+      width: 120px;
+      aspect-ratio: 3 / 4;
+      object-fit: cover;
+      border-radius: 6px;
+      background: var(--border-soft);
+      border: 1px solid var(--border);
+      flex: 0 0 auto;
+    }
+    .spot__missing {
+      width: 120px;
+      aspect-ratio: 3 / 4;
+      border-radius: 6px;
+      border: 1px dashed var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 8px;
+      font-size: 11px;
+      color: var(--faint);
+      flex: 0 0 auto;
+    }
+    .card--chosen { border-color: #f59e0b; box-shadow: 0 0 0 1px #f59e0b inset; }
+    .card--removed { opacity: 0.55; }
+    .spot__week {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin: 22px 0 10px;
+    }
+    .spot__week .sect { margin: 0; }
+
     @media (max-width: 720px) {
       body { flex-direction: column; }
       .side {
@@ -387,6 +424,7 @@
       <li><button class="navitem" data-panel="photos">Reported photos <span class="navitem__count" id="c-photos">0</span></button></li>
       <li><button class="navitem" data-panel="users">Reported people <span class="navitem__count" id="c-users">0</span></button></li>
       <li><button class="navitem" data-panel="feedback">Feedback <span class="navitem__count" id="c-feedback">0</span></button></li>
+      <li><button class="navitem" data-panel="spotlight">Spotlight <span class="navitem__count" id="c-spotlight">0</span></button></li>
       <li class="side__label">Analytics</li>
       <li><button class="navitem" data-panel="overview" aria-current="true">Overview</button></li>
       <li><button class="navitem" data-panel="traffic">Traffic</button></li>
@@ -427,7 +465,14 @@
     var token = null;
     try { token = sessionStorage.getItem(TOKEN_KEY); } catch (e) {}
 
-    var data = { invites: [], photos: [], users: [], feedback: [] };
+    var data = { invites: [], photos: [], users: [], feedback: [], spotlight: [] };
+    /* Signed URLs for Spotlight frames, by storage path, so switching panels does
+       not sign the same frame again. The owner can sign a frame that is only put
+       up (not yet public) because the storage read policy has an owner clause for
+       Spotlight entries; a frame hidden or in a block with the owner cannot be
+       signed, and the card says so instead of showing a broken image. */
+    var signed = {};
+    var signedAt = 0;
     /* Analytics live beside the queues rather than in them: a queue is a list of
        rows to act on, and every one of these is a different shape. Null until
        loaded, so a panel can tell "still fetching" from "the answer is nothing". */
@@ -441,6 +486,7 @@
       photos: "Reported photos",
       users: "Reported people",
       feedback: "Feedback",
+      spotlight: "Spotlight",
       overview: "Overview",
       traffic: "Traffic",
       pulse: "Pulse",
@@ -599,6 +645,7 @@
       var host = $("list");
       host.textContent = "";
       if (ANALYTICS.indexOf(panel) !== -1) { renderStats(host); return; }
+      if (panel === "spotlight") { renderSpotlight(host, data.spotlight); return; }
       var rows = data[panel];
       $("page-sub").textContent = rows.length
         ? plural(rows.length, panel === "invites" ? "person waiting"
@@ -660,6 +707,200 @@
           c = card(ft, ago(r.created_at), r.message, [dismissF]);
         }
         host.appendChild(c);
+      });
+    }
+
+    // ---- Spotlight ----------------------------------------------------------
+
+    var MONTHS = ["January", "February", "March", "April", "May", "June", "July",
+                  "August", "September", "October", "November", "December"];
+    /* From the key string itself ("2026-09-21"), never through Date: parsing a
+       bare date as midnight UTC reads as the day before anywhere west of it. */
+    function weekLabel(key) {
+      var p = String(key).split("-");
+      return "the week of " + MONTHS[Number(p[1]) - 1] + " " + Number(p[2]);
+    }
+    function dayLabel(iso) {
+      return new Date(iso).toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
+    }
+    function framePath(r) { return r.feed_path || r.thumb_path || r.storage_path; }
+
+    /* The server's refusals, in words. Anything else falls through as the raw
+       message, which is what every other queue does. */
+    var SPOT_REFUSALS = {
+      limit: "Six are already chosen for this week. Unchoose one first.",
+      already_published: "Already published. Nothing changed.",
+      none_chosen: "Choose at least one frame before publishing.",
+      week_open: "That week has not closed yet.",
+      hidden: "That frame is hidden, so it cannot be chosen.",
+      covered: "That frame is in a covered window, so it cannot be chosen.",
+      tagged: "That frame has people tagged, so it cannot be chosen.",
+      not_photographer: "That frame was shot by someone else.",
+      not_found: "That frame is not in Spotlight anymore."
+    };
+    function refusal(err) {
+      var raw = String(err && err.message || err);
+      var name = raw;
+      try { name = JSON.parse(raw).message || raw; } catch (e) {}
+      return { name: name, text: SPOT_REFUSALS[name] || ("That did not go through: " + raw.slice(0, 140)) };
+    }
+
+    /* The message is set AFTER the refetch: load() clears the status line. */
+    async function spotAct(cardEl, name, body) {
+      Array.prototype.forEach.call(cardEl.querySelectorAll("button"), function (b) { b.disabled = true; });
+      var msg = "";
+      try {
+        await rpc(name, body);
+      } catch (err) {
+        msg = refusal(err).text;
+      }
+      await load();
+      if (msg) say($("panel-status"), msg, "bad");
+    }
+
+    async function publishWeek(btn, week, chosenCount) {
+      if (!confirm("Publish " + plural(chosenCount, "frame") + " for " + weekLabel(week)
+                   + " to everyone on FLIM? Each person chosen gets a push. This cannot be undone,"
+                   + " though any frame can be removed afterwards.")) return;
+      btn.disabled = true;
+      var msg, tone;
+      try {
+        var out = await rpc("publish_spotlight_week", { p_week_key: week });
+        var n = out && out[0] ? out[0].frames : chosenCount;
+        msg = "Published " + plural(n, "frame") + " for " + weekLabel(week) + ".";
+      } catch (err) {
+        var r = refusal(err);
+        /* A second press, or a second tab, lands here. It changed nothing, so it
+           is said plainly rather than in the error colour. */
+        msg = r.text;
+        tone = r.name === "already_published" ? undefined : "bad";
+      }
+      await load();
+      say($("panel-status"), msg, tone);
+    }
+
+    /* One batch per render for every frame not yet signed. Storage answers per
+       path; a path it refuses stays unsigned and its card says why. */
+    async function signFrames(paths) {
+      var need = paths.filter(function (p) { return p && !(p in signed); });
+      if (!need.length) return;
+      var res = await fetch(URL_BASE + "/storage/v1/object/sign/photos", {
+        method: "POST",
+        headers: {
+          "apikey": ANON_KEY,
+          "Authorization": "Bearer " + token,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ expiresIn: 3600, paths: need }),
+      });
+      /* Every path asked about gets an answer, even a failed call, so a render
+         after this can never ask again and loop. */
+      need.forEach(function (p) { signed[p] = null; });
+      if (!res.ok) return;
+      var out = await res.json();
+      (out || []).forEach(function (o) {
+        if (o && o.path) signed[o.path] = o.signedURL ? URL_BASE + "/storage/v1" + o.signedURL : null;
+      });
+    }
+
+    function frameNode(r) {
+      var path = framePath(r);
+      var url = signed[path];
+      if (url) {
+        var img = document.createElement("img");
+        img.className = "spot__img";
+        img.loading = "lazy";
+        img.alt = "Frame by @" + (r.username || "unknown");
+        img.src = url;
+        return img;
+      }
+      return el("div", "spot__missing",
+        url === null ? (r.blocked_with_owner ? "Cannot load: block with you"
+                        : r.hidden ? "Cannot load: hidden" : "Cannot load")
+                     : "Loading");
+    }
+
+    function renderSpotlight(host, rows) {
+      var weeks = [];
+      var byWeek = {};
+      rows.forEach(function (r) {
+        if (!byWeek[r.week_key]) { byWeek[r.week_key] = []; weeks.push(r.week_key); }
+        byWeek[r.week_key].push(r);
+      });
+      $("page-sub").textContent = weeks.length ? plural(weeks.length, "closed week") + " waiting" : "";
+      if (!weeks.length) {
+        host.appendChild(el("div", "empty", "No closed week is waiting. Frames put up this week show here after it closes, Monday 04:00 Eastern."));
+        return;
+      }
+
+      /* URLs are signed for an hour; start again well before that. */
+      if (Date.now() - signedAt > 50 * 60 * 1000) { signed = {}; signedAt = Date.now(); }
+      var unsigned = rows.filter(function (r) { return !(framePath(r) in signed); });
+      if (unsigned.length) {
+        signFrames(unsigned.map(framePath)).then(function () {
+          if (panel === "spotlight") render();
+        }).catch(function () {});
+      }
+
+      /* Newest week first: the server already orders it that way, and a week is
+         only listed while it is closed and unpublished. */
+      weeks.forEach(function (wk) {
+        var list = byWeek[wk];
+        var live = list.filter(function (r) { return !r.removed_at; });
+        var chosen = live.filter(function (r) { return r.chosen_at; });
+
+        var head = el("div", "spot__week");
+        var h = el("div", "sect", weekLabel(wk).replace(/^the w/, "W"));
+        h.appendChild(el("span", "sect__note",
+          plural(live.length, "frame") + " put up, " + chosen.length + " of 6 chosen"));
+        head.appendChild(h);
+        var publish = el("button", "btn btn--go", "Publish to everyone");
+        publish.disabled = chosen.length === 0;
+        publish.addEventListener("click", function () { publishWeek(publish, wk, chosen.length); });
+        head.appendChild(publish);
+        host.appendChild(head);
+
+        list.forEach(function (r) {
+          var c = el("div", "card" + (r.chosen_at && !r.removed_at ? " card--chosen" : "")
+                                   + (r.removed_at ? " card--removed" : ""));
+          c.appendChild(frameNode(r));
+
+          var main = el("div", "card__main");
+          var t = el("div", "card__title", "@" + (r.username || "unknown"));
+          if (r.removed_at) t.appendChild(el("span", "pill", "removed"));
+          if (r.chosen_at && !r.removed_at) t.appendChild(el("span", "pill", "chosen"));
+          if (r.hidden) t.appendChild(el("span", "pill pill--bad", "hidden"));
+          if (r.covered) t.appendChild(el("span", "pill pill--bad", "covered"));
+          if (r.tagged) t.appendChild(el("span", "pill pill--bad", "tagged"));
+          if (r.hidden_from_discovery) t.appendChild(el("span", "pill pill--bad", "hidden from discovery (App Review?)"));
+          if (r.blocked_with_owner) t.appendChild(el("span", "pill pill--bad", "block with you"));
+          main.appendChild(t);
+          main.appendChild(el("div", "card__meta", "Put up " + dayLabel(r.put_up_at)
+            + ", posted " + dayLabel(r.post_created_at)));
+          /* The caption goes public with the frame, so it is part of the choice. */
+          if (r.caption) main.appendChild(el("div", "card__note", r.caption));
+          c.appendChild(main);
+
+          var acts = el("div", "card__actions");
+          var blocked = r.removed_at || r.hidden || r.covered || r.tagged;
+          var toggle = el("button", r.chosen_at ? "btn btn--go" : "btn", r.chosen_at ? "Chosen" : "Choose");
+          toggle.title = r.chosen_at ? "Chosen. Press to unchoose." : "Choose this frame";
+          toggle.disabled = !!blocked || (!r.chosen_at && chosen.length >= 6);
+          toggle.addEventListener("click", function () {
+            spotAct(c, r.chosen_at ? "unchoose_spotlight_entry" : "choose_spotlight_entry", { p_post_id: r.post_id });
+          });
+          acts.appendChild(toggle);
+          if (!r.removed_at) {
+            var remove = el("button", "btn", "Remove");
+            remove.addEventListener("click", function () {
+              if (!confirm("Remove @" + (r.username || "unknown") + "'s frame from " + weekLabel(wk) + "?")) return;
+              spotAct(c, "remove_spotlight_entry", { p_post_id: r.post_id });
+            });
+            acts.appendChild(remove);
+          }
+          c.appendChild(acts);
+          host.appendChild(c);
+        });
       });
     }
 
@@ -1132,8 +1373,12 @@
 
     function counts() {
       [["invites", "c-invites"], ["photos", "c-photos"],
-       ["users", "c-users"], ["feedback", "c-feedback"]].forEach(function (p) {
-        var n = data[p[0]].length;
+       ["users", "c-users"], ["feedback", "c-feedback"], ["spotlight", "c-spotlight"]].forEach(function (p) {
+        /* Spotlight counts frames still in play, not rows: a removed frame stays
+           listed so the week reads true, but it is not waiting on anyone. */
+        var n = p[0] === "spotlight"
+          ? data.spotlight.filter(function (r) { return !r.removed_at; }).length
+          : data[p[0]].length;
         var node = $(p[1]);
         node.textContent = n;
         node.setAttribute("data-any", String(n > 0));
@@ -1155,14 +1400,15 @@
       }
     }
 
-    /* allSettled, not all. These are four independent queues, and with Promise.all
+    /* allSettled, not all. These are five independent queues, and with Promise.all
        a single failing one takes the whole dashboard down with it: a function not
        yet deployed, or one renamed on the server, would leave the owner staring at
-       a blank page with three perfectly healthy queues behind it. Each queue now
+       a blank page with four perfectly healthy queues behind it. Each queue now
        fails on its own and says so. */
     async function load() {
-      var names = ["list_invite_requests", "list_photo_reports", "list_user_reports", "list_feedback"];
-      var keys = ["invites", "photos", "users", "feedback"];
+      var names = ["list_invite_requests", "list_photo_reports", "list_user_reports", "list_feedback",
+                   "list_spotlight_queue"];
+      var keys = ["invites", "photos", "users", "feedback", "spotlight"];
       /* Analytics ride the same allSettled pass. They are separate RPCs so one
          heavy or not-yet-deployed query cannot take the queues down with it,
          which is the whole reason this was allSettled to begin with. */

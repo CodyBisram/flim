@@ -142,6 +142,7 @@ interface FlimRoute {
   photo?: string;
   comments?: true;
   code?: string;   // "join": the roll's invite code; the app opens the join sheet with it filled in
+  week?: string;   // "feed": a Spotlight week_key ("2026-09-21"); 1.6 opens that week's sheet over the Feed, older builds just open the Feed
 }
 
 // Prunes a device token APNs has told us is genuinely dead, so it stops being retried on
@@ -282,7 +283,8 @@ async function postVisibleTo(viewerId: string, postId: string, authorId: string)
 
 /// Sends one notification from `fromId` to `toId`, unless either has blocked the other, or they
 /// are the same person. The single door every user-to-user push goes through, so a new
-/// notification type can't forget the check.
+/// notification type can't forget the check. `fromId` is null only for a push with no actor
+/// (Spotlight: nobody is reaching anybody), which has no block or self check to make.
 // Sources whose delivery to at least one recipient failed this run and is still worth
 // retrying: the block that owns the source must NOT mark it push_sent, so the next run tries
 // again. `notify` fills this; `settled()` reads it. See push_deliveries.
@@ -304,7 +306,7 @@ function settled(sourceKey: string): boolean {
 // try every device once.
 async function notify(
   toId: string | undefined,
-  fromId: string,
+  fromId: string | null,
   title: string,
   body?: string,
   flim?: FlimRoute,
@@ -312,7 +314,7 @@ async function notify(
 ): Promise<number> {
   if (!toId || toId === fromId) return 0;
   if (outOfTime()) { if (sourceKey) pendingRetry.add(sourceKey); return 0; }   // leave it for the next run
-  if (await blockedEitherWay(toId, fromId)) return 0;
+  if (fromId !== null && await blockedEitherWay(toId, fromId)) return 0;
   let prior = { attempts: 0, delivered: false };
   if (sourceKey) {
     const [kind, ...rest] = sourceKey.split(":");
@@ -1310,6 +1312,52 @@ Deno.serve(async (req: Request) => {
     if (settled(`followup:${inv.roll_id}:${inv.user_id}`)) await supabase.from("roll_follow_up_invites").update({ push_sent: true })
       .eq("roll_id", inv.roll_id).eq("user_id", inv.user_id);
   }
+  // ---- Spotlight: one push to each person whose frame was chosen, once its week is published.
+  //      No actor. Routed to the Feed with the week as a rider ({t:"feed", week}): 1.6 opens that
+  //      week's sheet, 1.5.x reads "feed" and ignores the rest. Keyed in push_deliveries on
+  //      (spotlight_chosen, week_key, user_id), so a rerun never sends twice. A frame hidden,
+  //      taken out, removed or covered by now is marked without a push, because the push would
+  //      say something untrue. Chosen rows of a week not yet published are left unmarked and
+  //      looked at again; there are at most six a week. A person with no device is terminal in
+  //      the ledger and still gets the Activity row, which the app builds from spotlight_frames.
+  const { data: chosenRows, error: chosenErr } = await supabase
+    .from("spotlight_entries")
+    .select("id, user_id, week_key, removed_at, posts(user_id, hidden, created_at)")
+    .eq("push_sent", false)
+    .not("chosen_at", "is", null)
+    .order("week_key", { ascending: true })
+    .limit(500);
+  if (chosenErr) console.warn(JSON.stringify({ at: "spotlight_poll_failed", error: chosenErr.message }));
+  const chosenWeeks = [...new Set((chosenRows ?? []).map((r) => r.week_key as string))];
+  const publishedWeeks = new Set<string>();
+  if (chosenWeeks.length > 0) {
+    const { data: weeks, error: weeksErr } = await supabase
+      .from("spotlight_weeks")
+      .select("week_key")
+      .in("week_key", chosenWeeks)
+      .not("published_at", "is", null);
+    if (weeksErr) console.warn(JSON.stringify({ at: "spotlight_weeks_failed", error: weeksErr.message }));
+    for (const w of weeks ?? []) publishedWeeks.add(w.week_key as string);
+  }
+  for (const e of chosenRows ?? []) {
+    const weekKey = e.week_key as string;
+    if (!publishedWeeks.has(weekKey)) continue;   // not out yet
+    // Fails closed: without the covered-window table nobody is told, and nothing is marked.
+    if (!coveredCtx.loaded) break;
+    // posts is many-to-one (spotlight_entries.post_id), so PostgREST embeds one object or null.
+    const post = e.posts as unknown as { user_id: string; hidden: boolean; created_at: string } | null;
+    const w = post ? coveredCtx.windowByAuthor.get(post.user_id) : undefined;
+    const covered = !!(post && w && w.active &&
+      new Date(post.created_at).getTime() >= w.start && new Date(post.created_at).getTime() < w.end);
+    const key = `spotlight_chosen:${weekKey}`;
+    if (post && !post.hidden && e.removed_at === null && !covered) {
+      sent += await notify(e.user_id, null, "Your frame is in Spotlight", "Everyone on FLIM can see it now.",
+        { t: "feed", week: weekKey }, key);
+      if (!settled(key)) continue;
+    }
+    await supabase.from("spotlight_entries").update({ push_sent: true }).eq("id", e.id);
+  }
+
   const ownerPushTokens = await ownerTokens();
 
   // Operational alerts (a scheduled function that stopped doing its job): one push each to
