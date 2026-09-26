@@ -136,6 +136,45 @@ without either word appearing here.
 Two rules if this is edited again: never repeat a word across name, subtitle and keywords, and do
 not add plurals of words already present. Apple handles both.
 
+## What's New (version 1.6.0), draft 2026-09-26
+
+1.5.4 never went to the App Store, so this covers everything a person can see since 378: the 1.5.4
+draft below, folded in and updated, plus Spotlight and the invite loop. Submit build 405.
+
+> **PASTE ONLY THE INDENTED BLOCK BELOW.** Everything under "Ship notes" is internal.
+
+    Spotlight. Once a week you can put up one frame you shot that week: open its menu and choose Put it up for Spotlight. Only the team at FLIM sees it. When the week closes, the team chooses a few and publishes them as one short strip in the feed. If yours is chosen, you get a notification, a Spotlight badge, and the frame on your page for everyone to see. You can take a frame down until the week closes, and take a chosen one out whenever you like.
+
+    Your invites come back. When a friend you invited takes their first photo, FLIM tells you, and that invite is yours to give again. The link you send names you, so they know who it's from.
+
+    Your feed remembers what you've seen, on any phone. The count at the top is what's left from the last seven days. It counts down as you read, goes away when you're caught up, and tapping it takes you to the first shot you haven't seen. A dot on the Feed tab means something new, and a dot on Rolls means a roll of yours has developed.
+
+    A quiet feed shows you three people you know, and why: they follow you, they're in your rolls, or you came in the same door. Follow them from right there. Joining with a code from a post or a link opens Find friends first.
+
+    A comment in Activity opens the photograph it's about, ready for your reply, and a push about your invites opens your invites.
+
+    Sorting says what it does. Keep private, Post to page and Delete each say where the shot goes, and the share sheet says who your post reaches.
+
+    The camera tells you where a shot is: saved on this phone, uploading, waiting for a connection, or in the Darkroom. If a call or another app takes the camera, it says so and why. It asks for permission the first time you open it, and if you've turned it off, it shows you where the switch is.
+
+    Report and block where it happens: press and hold a comment, or use the menu in a roll's viewer.
+
+    Fixes. Shots taken offline before this update still upload after it. The white specks in dark parts of feed photos are gone. Chapters follow your time zone. Shoot into this roll always points the camera at that roll, and a roll notification opens the roll every time. Switching accounts on one phone carries nothing from one account to the other.
+
+### Ship notes (internal, do NOT paste)
+
+**Promotional text for the 1.6 window** (170 char max, editable anytime without review):
+> Spotlight is here. Put up one frame a week, and the team at FLIM chooses a few to show everyone.
+
+**Privacy label.** Crash Data and Product Interaction, both linked to the user, matching
+Flim/PrivacyInfo.xcprivacy since e4d2831 (crash reports carry the signed-in user's id).
+
+**Before the first Spotlight publish.** 1.6 live on the App Store, then
+`app_release_gate.latest_version` set to 1.6.0 so 1.5.3 gets the nudge. 1.5.3 cannot show the
+strip, and its profile grid shows a published frame to strangers without the comment gate.
+
+**Description delta.** Optional: one sentence on Spotlight. Screenshots unchanged.
+
 ## What's New (version 1.5.4), draft 2026-09-17
 
 Twenty-two commits since 378; the copy below covers the seven a person can see.
