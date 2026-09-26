@@ -4369,7 +4369,10 @@ ALTER TABLE public.user_reports  ADD COLUMN IF NOT EXISTS handled BOOLEAN NOT NU
 CREATE INDEX IF NOT EXISTS photo_reports_unhandled_idx ON public.photo_reports (handled) WHERE handled = FALSE;
 CREATE INDEX IF NOT EXISTS user_reports_unhandled_idx  ON public.user_reports  (handled) WHERE handled = FALSE;
 
-CREATE OR REPLACE FUNCTION public.list_photo_reports()
+-- Reported photos carry their paths, caption and reporters since
+-- supabase/migrations/2026-09-26_admin_report_detail.sql; the shape grew, so DROP first.
+DROP FUNCTION IF EXISTS public.list_photo_reports();
+CREATE FUNCTION public.list_photo_reports()
 RETURNS TABLE (
     report_id         UUID,
     photo_id          UUID,
@@ -4377,14 +4380,20 @@ RETURNS TABLE (
     report_count      BIGINT,
     created_at        TIMESTAMPTZ,
     reported_username TEXT,
-    hidden            BOOLEAN
+    hidden            BOOLEAN,
+    storage_path      TEXT,
+    thumb_path        TEXT,
+    feed_path         TEXT,
+    caption           TEXT,
+    posted            BOOLEAN,
+    reporters         JSONB
 )
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public
 AS $$
 BEGIN
-    IF NOT public.is_owner() THEN
+    IF public.is_owner() IS NOT TRUE THEN
         RETURN;
     END IF;
 
@@ -4404,6 +4413,18 @@ BEGIN
         FROM public.photo_reports pr
         WHERE NOT pr.handled
         ORDER BY pr.photo_id, pr.created_at DESC
+    ),
+    who AS (
+        SELECT pr.photo_id,
+               jsonb_agg(jsonb_build_object(
+                   'username',   ru.username,
+                   'reason',     pr.reason,
+                   'created_at', pr.created_at
+               ) ORDER BY pr.created_at ASC) AS reporters
+        FROM public.photo_reports pr
+        LEFT JOIN public.users ru ON ru.id = pr.reporter_id
+        WHERE NOT pr.handled
+        GROUP BY pr.photo_id
     )
     SELECT
         latest.id,
@@ -4412,9 +4433,17 @@ BEGIN
         counts.report_count,
         counts.first_reported_at,
         u.username,
-        ph.hidden
+        ph.hidden,
+        ph.storage_path,
+        ph.thumb_path,
+        ph.feed_path,
+        (SELECT po.caption FROM public.posts po
+          WHERE po.photo_id = ph.id ORDER BY po.created_at DESC LIMIT 1),
+        EXISTS (SELECT 1 FROM public.posts po WHERE po.photo_id = ph.id),
+        who.reporters
     FROM latest
     JOIN counts             ON counts.photo_id = latest.photo_id
+    JOIN who                ON who.photo_id = latest.photo_id
     JOIN public.photos ph   ON ph.id = latest.photo_id
     JOIN public.users  u    ON u.id = ph.user_id
     ORDER BY counts.first_reported_at ASC;
@@ -4532,6 +4561,37 @@ $$;
 REVOKE ALL ON FUNCTION public.list_photo_reports() FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.list_photo_reports() FROM anon;
 GRANT EXECUTE ON FUNCTION public.list_photo_reports() TO authenticated;
+
+-- The owner reads a photo's objects while it has an open report (2026-09-26_admin_report_detail.sql).
+-- SECURITY DEFINER because the check reads photo_reports and photos, whose row policies would
+-- hide other people's reports and hidden photos from the owner's own session. It answers FALSE
+-- for anyone but the owner (and for no user at all), so the grant to authenticated reveals nothing.
+CREATE OR REPLACE FUNCTION public._owner_reviews_reported_object(p_name TEXT)
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+    SELECT public.is_owner() IS TRUE
+       AND EXISTS (
+           SELECT 1
+           FROM public.photos p
+           JOIN public.photo_reports pr ON pr.photo_id = p.id AND NOT pr.handled
+           WHERE p_name IN (p.storage_path, p.thumb_path, p.feed_path)
+       );
+$$;
+REVOKE ALL ON FUNCTION public._owner_reviews_reported_object(TEXT) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public._owner_reviews_reported_object(TEXT) TO authenticated;
+
+DROP POLICY IF EXISTS "photos: owner reads reported" ON storage.objects;
+CREATE POLICY "photos: owner reads reported"
+    ON storage.objects FOR SELECT
+    TO authenticated
+    USING (
+        bucket_id = 'photos'
+        AND public._owner_reviews_reported_object(name)
+    );
 
 REVOKE ALL ON FUNCTION public.list_user_reports() FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.list_user_reports() FROM anon;
