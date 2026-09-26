@@ -169,6 +169,10 @@ private struct OTPField: View {
     @Binding var code: String
     let length: Int
     @FocusState private var isFocused: Bool
+    /// The boxes' height: fixed, so a box never stretches into the free space around it (a
+    /// `minHeight` on a RoundedRectangle, which has no height of its own, took all of it: 1.6
+    /// TestFlight, 2026-09-26), and scaled with Dynamic Type so a large digit still fits.
+    @ScaledMetric(relativeTo: .title3) private var boxHeight: CGFloat = 52
 
     private var sanitizedCode: Binding<String> {
         Binding(
@@ -197,7 +201,8 @@ private struct OTPField: View {
                 .focused($isFocused)
                 .foregroundStyle(.clear)
                 .tint(.clear)
-                .frame(maxWidth: .infinity, minHeight: 52)
+                .frame(maxWidth: .infinity)
+                .frame(height: boxHeight)
                 .contentShape(Rectangle())
         }
         .onAppear { isFocused = true }
@@ -224,7 +229,7 @@ private struct OTPField: View {
                     .flimFont(20, weight: .light, design: .monospaced, relativeTo: .title3)
                     .foregroundStyle(.white)
             )
-            .frame(minHeight: 52)
+            .frame(height: boxHeight)
             .animation(.easeInOut(duration: 0.1), value: isActive)
     }
 }
