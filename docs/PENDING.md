@@ -2057,6 +2057,14 @@ The bump this section used to ask for has already happened. Status: `done`.
   whether that actually reads sharp is the part tests cannot answer.
 - `skipDeadFrame`'s correction (build 319) needs a real mid-reveal image failure on a frame BEHIND
   the reader to confirm the pager no longer retargets. Tests cover the arithmetic, not the wiring.
+- Offline notification taps (e940b6b, 2026-09-26): airplane mode, tap a post push, the Feed shows
+  with no "isn't here anymore"; airplane off, the post opens once. Same for a roll push and a
+  widget photo. A tap held over thirty minutes is dropped. Hold a tap, switch account: nothing routes.
+- Feed marks only on its own tab (e940b6b): launch on Camera, switch to Feed; unseen cards mark only
+  after switching. Undo races: block from a profile, push into a photo inside the undo window, the
+  photo stays; hide all badges, then pick one inside the window, the pick survives.
+- Outreach (0a4d626): put `FLIM_OUTREACH_POSTAL=<address>` in `~/.config/flim-hooks.env` on the Pi
+  before any run; without it the job stops at preflight. Owner step 5 in docs/ROUTINES.md.
 - Feed "new" per card (2026-09-26): the header has no count; scroll past a multi-shot day and its
   "N new" is gone when you scroll back (it stays lit while the card is on screen); a friend's new
   shot on a day already seen brings that day to the top reading "1 new"; the tab dot clears after
