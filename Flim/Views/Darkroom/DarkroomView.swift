@@ -49,6 +49,7 @@ struct DarkroomView: View {
 
     @Namespace private var photoNS
     @State private var vm = DarkroomViewModel()
+    @State private var pagerDeleteEpochs = PagerDeleteEpochs()
     @State private var selectedPhoto: Photo?
     @State private var selectedURL: URL?
     @State private var isSelecting = false
@@ -1109,6 +1110,36 @@ Text("Darkroom")
             })
     }
 
+    /// A delete staged from the photo pager, mirrored onto the grid the way `commitDeleteBatch`
+    /// hides its own: gone for the undo window, back on Undo or a failed commit, and removed for
+    /// good once the server confirms. Same account rule as the batch: a revert that lands after
+    /// the account changed never writes this photo into the next account's grid.
+    private func handlePagerDelete(_ photo: Photo, _ phase: PhotoPagerView.DeletePhase) {
+        let model = vm
+        let pagerDeleteEpochs = pagerDeleteEpochs
+        switch phase {
+        case .staged:
+            pagerDeleteEpochs.byPhoto[photo.id] = AccountEpoch.current
+            model.photos.removeAll { $0.id == photo.id }
+            model.pendingHiddenIds.insert(photo.id)
+        case .reverted:
+            model.pendingHiddenIds.remove(photo.id)
+            let epoch = pagerDeleteEpochs.byPhoto.removeValue(forKey: photo.id)
+            guard let epoch, AccountEpoch.isCurrent(epoch) else { return }
+            Self.restore([photo], into: model)
+        case .committed:
+            pagerDeleteEpochs.byPhoto.removeValue(forKey: photo.id)
+            model.pendingHiddenIds.remove(photo.id)
+            model.photos.removeAll { $0.id == photo.id }
+        }
+    }
+
+    /// The account epoch each pager-staged delete was staged under, read by its revert. A class
+    /// held in `@State` so a revert that fires after this screen is gone still reads it.
+    private final class PagerDeleteEpochs {
+        var byPhoto: [UUID: Int] = [:]
+    }
+
     /// The ids a staged delete's commit confirmed, shared with its revert.
     private final class ConfirmedIds {
         var ids: Set<UUID> = []
@@ -1356,7 +1387,8 @@ Text("Darkroom")
                            signedURLs: vm.signedURLCache,
                            showsNightRack: true,
                            rollName: { rollName(for: $0) },
-                           onDelete: { Task { await reload() } })
+                           onDelete: { Task { await reload() } },
+                           onDeletePhase: { handlePagerDelete($0, $1) })
                 .navigationTransition(.zoom(sourceID: photo.id, in: photoNS))
         } else {
             PhotoPagerView(photos: [photo],
@@ -1364,7 +1396,8 @@ Text("Darkroom")
                            signedURLs: vm.signedURLCache,
                            showsNightRack: true,
                            rollName: { rollName(for: $0) },
-                           onDelete: { Task { await reload() } })
+                           onDelete: { Task { await reload() } },
+                           onDeletePhase: { handlePagerDelete($0, $1) })
         }
     }
 

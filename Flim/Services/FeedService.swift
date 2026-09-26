@@ -97,11 +97,15 @@ final class FeedService {
         confirmedFollowingIds = following
     }
 
+    /// Paged by `.range`, so every page is ordered on the row's unique key within this filter:
+    /// with no order, Postgres may hand back rows in a different order per request, and pages
+    /// past the first 1000 skip some rows and repeat others.
     private func fetchFollowingIds(userId: UUID) async -> Set<UUID> {
         struct Row: Decodable { let following_id: UUID }
         let rows: [Row] = await QueryBatch.allPages { from, to in
             (try? await supabase.from("follows").select("following_id")
                 .eq("follower_id", value: userId.uuidString)
+                .order("following_id", ascending: true)
                 .range(from: from, to: to).execute().value) ?? []
         }
         return Set(rows.map(\.following_id))
@@ -118,11 +122,13 @@ final class FeedService {
         followerIds = followers
     }
 
+    /// Ordered on the unique key for the same reason as `fetchFollowingIds`.
     private func fetchFollowerIds(userId: UUID) async -> Set<UUID> {
         struct Row: Decodable { let follower_id: UUID }
         let rows: [Row] = await QueryBatch.allPages { from, to in
             (try? await supabase.from("follows").select("follower_id")
                 .eq("following_id", value: userId.uuidString)
+                .order("follower_id", ascending: true)
                 .range(from: from, to: to).execute().value) ?? []
         }
         return Set(rows.map(\.follower_id))
@@ -280,11 +286,17 @@ final class FeedService {
 
     /// Follows tables stay fully readable server-side (so counts aren't affected by blocks), but
     /// the *rendered lists* filter blocked users out client-side, defense-in-depth over RLS.
+    ///
+    /// Both lists page by `.range`, so each page is ordered deterministically: oldest follow
+    /// first, then the unique key within this filter as the tiebreaker, so pages past the
+    /// first 1000 neither skip nor repeat anyone.
     func fetchFollowers(of userId: UUID) async -> [UserProfile] {
         struct Row: Decodable { let follower_id: UUID }
         let rows: [Row] = await QueryBatch.allPages { from, to in
             (try? await supabase.from("follows").select("follower_id")
                 .eq("following_id", value: userId.uuidString)
+                .order("created_at", ascending: true)
+                .order("follower_id", ascending: true)
                 .range(from: from, to: to).execute().value) ?? []
         }
         return await orderedProfiles(rows.map(\.follower_id).filter { !blockedIds.contains($0) })
@@ -295,6 +307,8 @@ final class FeedService {
         let rows: [Row] = await QueryBatch.allPages { from, to in
             (try? await supabase.from("follows").select("following_id")
                 .eq("follower_id", value: userId.uuidString)
+                .order("created_at", ascending: true)
+                .order("following_id", ascending: true)
                 .range(from: from, to: to).execute().value) ?? []
         }
         return await orderedProfiles(rows.map(\.following_id).filter { !blockedIds.contains($0) })
@@ -1585,6 +1599,18 @@ final class FeedService {
         return true
     }
 
+    /// Reinserts items an undo-first action removed optimistically (an undone post delete or
+    /// block; see `UndoCenter`), restoring the feed's own `created_at DESC, id DESC` order so
+    /// the units regroup exactly as before. Deduped against the live feed: a refresh landing
+    /// inside the undo window may already have brought a row back.
+    func restore(_ items: [FeedItem]) {
+        let existing = Set(feed.map(\.post.id))
+        feed.append(contentsOf: items.filter { !existing.contains($0.post.id) })
+        feed.sort {
+            ($0.post.createdAt, $0.post.id.uuidString) > ($1.post.createdAt, $1.post.id.uuidString)
+        }
+    }
+
     /// Deletes a post (owner only, enforced by the "posts: delete own" policy).
     ///
     /// Returns `true` once the delete has actually landed, `false` on a genuine failure the
@@ -1598,18 +1624,6 @@ final class FeedService {
     /// someone their photo was taken down while it stayed live and visible to everyone else,
     /// with nothing left on screen to prompt a retry.
     @discardableResult
-    /// Reinserts items an undo-first action removed optimistically (an undone post delete or
-    /// block; see `UndoCenter`), restoring the feed's own `created_at DESC, id DESC` order so
-    /// the units regroup exactly as before. Deduped against the live feed: a refresh landing
-    /// inside the undo window may already have brought a row back.
-    func restore(_ items: [FeedItem]) {
-        let existing = Set(feed.map(\.post.id))
-        feed.append(contentsOf: items.filter { !existing.contains($0.post.id) })
-        feed.sort {
-            ($0.post.createdAt, $0.post.id.uuidString) > ($1.post.createdAt, $1.post.id.uuidString)
-        }
-    }
-
     func deletePost(id: UUID) async -> Bool? {
         // Captured for the Spotlight writes below, which must not land in another account.
         let epoch = AccountEpoch.current
@@ -1761,6 +1775,9 @@ final class FeedService {
                 .eq("user_id", value: userId.uuidString)
                 .eq("hidden", value: false)
                 .order("taken_at", ascending: false)
+                // taken_at is not unique; the id tiebreaker keeps `.range` pages from
+                // skipping or repeating rows that share it.
+                .order("id", ascending: false)
                 .range(from: from, to: to)
                 .execute().value
         }
@@ -2039,6 +2056,7 @@ final class FeedService {
         let ownComments: [OwnComment] = await QueryBatch.allPages { from, to in
             (try? await supabase.from("post_comments").select("id")
                 .eq("user_id", value: userId.uuidString)
+                .order("id", ascending: true)
                 .range(from: from, to: to).execute().value) ?? []
         }
         let ownCommentIds = ownComments.map(\.id.uuidString)
@@ -2450,6 +2468,7 @@ final class FeedService {
             try await supabase.from("post_comments")
                 .select("id")
                 .eq("user_id", value: userId.uuidString)
+                .order("id", ascending: true)
                 .range(from: from, to: to)
                 .execute().value
         }

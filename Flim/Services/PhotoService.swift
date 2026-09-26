@@ -204,16 +204,27 @@ final class PhotoService {
         // the classifier when the frame is unavailable): the cropped q0.95 JPEG when the crop
         // actually trimmed something, otherwise the camera's own untouched bytes. It no longer
         // goes to disk; the queue has the raw bytes already.
-        let prepared: Task<PreparedCapture, Never> = Task.detached(priority: .userInitiated) {
-            let target = previewAspect.flatMap {
-                CapturedPhotoCropper.isPlausibleTargetAspect($0) ? $0 : nil
-            }
-            guard let frame = CapturedPhotoCropper.prepare(from: rawData, targetAspectRatio: target)
-            else { return PreparedCapture(frame: nil, bytes: rawData) }
-            guard frame.didCrop,
-                  let jpeg = CapturedPhotoCropper.jpegData(from: frame)
-            else { return PreparedCapture(frame: frame, bytes: rawData) }
-            return PreparedCapture(frame: frame, bytes: jpeg)
+        //
+        // The decode does NOT start here. It starts inside the pipeline task below, once this
+        // shot's turn has come (2026-09-26): a decoded full-resolution frame is roughly 48 MB, and
+        // starting it at enqueue meant every shot waiting in line held one. A burst, or a launch
+        // replaying every shot a crash left on disk (`restorePendingCaptures` enqueues them all
+        // at once), multiplied that by the length of the queue and could run the app out of
+        // memory, which on replay is a crash loop. Only the compressed bytes wait in line now.
+        // The shutter is still free: this function only enqueues, and the decode still runs off
+        // the main actor in its own detached task.
+        let prepare: @Sendable () async -> PreparedCapture = {
+            await Task.detached(priority: .userInitiated) { () -> PreparedCapture in
+                let target = previewAspect.flatMap {
+                    CapturedPhotoCropper.isPlausibleTargetAspect($0) ? $0 : nil
+                }
+                guard let frame = CapturedPhotoCropper.prepare(from: rawData, targetAspectRatio: target)
+                else { return PreparedCapture(frame: nil, bytes: rawData) }
+                guard frame.didCrop,
+                      let jpeg = CapturedPhotoCropper.jpegData(from: frame)
+                else { return PreparedCapture(frame: frame, bytes: rawData) }
+                return PreparedCapture(frame: frame, bytes: jpeg)
+            }.value
         }
         Task { [weak self] in
             // Say so if the phone could not keep the shot: it is only in memory until it uploads.
@@ -241,7 +252,8 @@ final class PhotoService {
             // causes with three different fixes, and guessing between them is how you optimise
             // the wrong one. `waited` is time spent queued behind earlier shots in a burst,
             // `filtered` is the Core Image graph at full sensor resolution, `uploaded` is the
-            // three storage writes plus the row insert. Read with:
+            // three storage writes plus the row insert. `filtered` includes this shot's decode
+            // and crop, which run here, at its turn, rather than while it waited. Read with:
             //   log stream --predicate 'subsystem == "com.flim.app"' --info
             let startedAt = ContinuousClock.now
             // A processing failure falls back to the untouched capture bytes, which are always
@@ -250,7 +262,7 @@ final class PhotoService {
             // pixels the master was encoded from (see `gradeForCapture`), so `captureAndUpload`
             // can thread them straight into the thumb/feed renditions instead of re-decoding the
             // master JPEG a second time.
-            let capture = await prepared.value
+            let capture = await prepare()
             let (processed, graded) = await Self.gradeForCapture(frame: capture.frame,
                                                                  bytes: capture.bytes, stock: stock)
             // Classify NOW, off the same pixels, and let go of them. The suggestion cannot be
@@ -1687,8 +1699,9 @@ final class PhotoService {
         return await !deletePhotosConfirmed(toDelete, epoch: epoch).isEmpty
     }
 
-    /// `deletePhotos`, returning exactly the ids the server confirmed deleted (empty on any
-    /// failure). Only these are removed locally and have their Storage objects removed.
+    /// `deletePhotos`, returning exactly the ids the server confirmed deleted (empty when nothing
+    /// was; a subset when a later chunk of a large batch failed after earlier chunks landed).
+    /// Only these are removed locally and have their Storage objects removed.
     ///
     /// Known limit, kept on purpose: a retry of a batch whose rows were already deleted by an
     /// earlier attempt gets zero rows back and reports failure, even though the end state holds.
@@ -1703,18 +1716,30 @@ final class PhotoService {
         // bytes were already gone. Now the row is the record of intent: once it is gone the
         // photo is gone from every read, and the objects are removed best-effort. A failure
         // there leaves orphaned bytes, which `sweep-orphaned-storage` exists to reconcile.
+        //
+        // Chunked by hand rather than through `QueryBatch.inChunks`, which throws away every
+        // chunk's result when a later one fails. A batch past `inListLimit` whose second chunk
+        // failed used to report nothing deleted although the first chunk's rows were gone, and
+        // the caller's revert then put those already-deleted photos back on screen. Now the rows
+        // earlier chunks confirmed are kept, handled below like any partial delete, and returned.
         struct DeletedRow: Decodable { let id: UUID }
-        let deleted: [DeletedRow]
-        do {
-            deleted = try await QueryBatch.inChunks(ids) { chunk in
-                try await supabase.from("photos").delete().in("id", values: chunk)
+        var deleted: [DeletedRow] = []
+        var chunkFailed = false
+        for chunk in ids.chunked(into: QueryBatch.inListLimit) {
+            do {
+                let rows: [DeletedRow] = try await supabase.from("photos").delete().in("id", values: chunk)
                     .select("id").execute().value
+                deleted.append(contentsOf: rows)
+            } catch {
+                chunkFailed = true
+                if AccountEpoch.isCurrent(epoch) {
+                    await reportDeleteFailure(error, context: "batch row delete")
+                }
+                break
             }
-        } catch {
-            guard AccountEpoch.isCurrent(epoch) else { return [] }
-            await reportDeleteFailure(error, context: "batch row delete")
-            return []
         }
+        // Nothing landed before the failure: same as a whole-batch failure always was.
+        if chunkFailed && deleted.isEmpty { return [] }
         let confirmed = Set(deleted.map(\.id))
         guard !confirmed.isEmpty else {
             Self.errorLog.error("batch row delete removed zero of \(ids.count, privacy: .public) rows")

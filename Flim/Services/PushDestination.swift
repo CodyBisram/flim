@@ -212,4 +212,32 @@ enum PendingPushDestination {
     /// live broadcast. Without this a destination already routed once would route again on the
     /// next cold launch.
     static func clear() { _ = take() }
+
+    /// Drops a held destination that only means something to the account the push was sent to,
+    /// keeping one that just names a tab. Called whenever the app is showing the signed-out
+    /// screen: a follow-up roll push tapped there used to survive on disk and open the join sheet,
+    /// prefilled with the previous account's roll code, for whoever signed in next. The payload
+    /// names no recipient, so "nobody is signed in right now" is the only signal available.
+    /// An entry that no longer decodes is dropped too; nothing could route it anyway.
+    static func dropAccountScoped() {
+        guard let data = store.data(forKey: key) else { return }
+        if let held = try? JSONDecoder().decode(PushDestination.self, from: data), !held.isAccountScoped {
+            return
+        }
+        store.removeObject(forKey: key)
+    }
+}
+
+extension PushDestination {
+    /// Whether this destination points at one account's content (a roll it belongs to, a post or
+    /// photo it can see, a roll code it was invited with) rather than just a tab every account has.
+    /// Exhaustive on purpose: a new case must decide which side it is on.
+    var isAccountScoped: Bool {
+        switch self {
+        case .reveal, .post, .profile, .photo, .joinRoll:
+            return true
+        case .camera, .darkroom, .sortDeck, .feed, .spotlightWeek, .rolls, .invite:
+            return false
+        }
+    }
 }

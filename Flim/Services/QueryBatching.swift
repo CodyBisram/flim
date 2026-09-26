@@ -34,7 +34,10 @@ enum QueryBatch {
     }
 
     /// Reads every row of a query that would otherwise stop at PostgREST's 1000-row cap.
-    /// `page` receives the inclusive row range to apply with `.range(from:to:)`.
+    /// `page` receives the inclusive row range to apply with `.range(from:to:)`, and must also
+    /// `.order` on a key unique within its filter: an unordered or tie-prone read may return
+    /// rows in a different order per request, so pages past the first skip some and repeat
+    /// others.
     static func allPages<T>(size: Int = pageSize,
                             _ page: (_ from: Int, _ to: Int) async throws -> [T]) async rethrows -> [T] {
         var out: [T] = []

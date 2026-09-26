@@ -61,6 +61,45 @@ struct CaptureQueueStoreTests {
         #expect(ids.contains(good.id), "bytes on disk are never pruned by age")
         #expect(!FileManager.default.fileExists(atPath: stray.path), "bytes with no entry go")
     }
+
+    /// 1.5.3 kept each queued shot as `<id>.jpg` plus an `<id>.json` sidecar and no manifest.
+    /// The first 1.6 launch must replay those shots, not prune their bytes as entry-less.
+    @Test func legacySidecarShotsSurvivePruneAndReplay() async throws {
+        let store = freshStore(); let user = UUID(); let roll = UUID()
+        let dir = store.root.appendingPathComponent(user.uuidString.lowercased(), isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let later = UUID(); let earlier = UUID(); let bytesLost = UUID()
+        // Exactly the 1.5.3 sidecar shape: six keys, no `stage`, no `previewAspect`, and the
+        // default JSONEncoder date encoding (seconds since the reference date).
+        func sidecar(_ id: UUID, rollId: UUID?, capturedAt: Double) -> Data {
+            var object: [String: Any] = ["id": id.uuidString, "userId": user.uuidString,
+                                         "capturedAt": capturedAt, "stockId": "flim"]
+            if let rollId { object["rollId"] = rollId.uuidString }
+            return (try? JSONSerialization.data(withJSONObject: object)) ?? Data()
+        }
+        try sidecar(later, rollId: roll, capturedAt: 800_000_200).write(to: dir.appendingPathComponent("\(later).json"))
+        try Data([1, 2]).write(to: dir.appendingPathComponent("\(later).jpg"))
+        try sidecar(earlier, rollId: nil, capturedAt: 800_000_100).write(to: dir.appendingPathComponent("\(earlier).json"))
+        try Data([3]).write(to: dir.appendingPathComponent("\(earlier).jpg"))
+        try sidecar(bytesLost, rollId: nil, capturedAt: 800_000_000).write(to: dir.appendingPathComponent("\(bytesLost).json"))
+
+        await store.prune(userId: user)
+
+        let entries = await store.entries(userId: user)
+        #expect(entries.map(\.meta.id) == [earlier, later], "adopted oldest shutter first")
+        #expect(entries.allSatisfy { $0.hasRaw && $0.meta.stage == .saved && $0.meta.previewAspect == nil })
+        #expect(entries.last?.meta.rollId == roll)
+        #expect(entries.first?.meta.capturedAt == Date(timeIntervalSinceReferenceDate: 800_000_100))
+        #expect(await store.raw(for: later, userId: user) == Data([1, 2]))
+        let plan = CaptureRecovery.plan(entries: entries, processedIds: [])
+        #expect(plan.replayRaw == [earlier, later])
+        let remaining = try FileManager.default.contentsOfDirectory(atPath: dir.path)
+        #expect(!remaining.contains { $0.hasSuffix(".json") && $0 != "manifest.json" }, "every sidecar is consumed")
+
+        // Removing one adopted shot keeps the other and its folder.
+        await store.remove(id: earlier, userId: user)
+        #expect(await store.load(userId: user).map(\.meta.id) == [later])
+    }
 }
 
 /// Every crash point leaves an on-disk state; the plan must recover each shot exactly once.

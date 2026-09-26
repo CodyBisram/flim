@@ -216,3 +216,32 @@ struct RollRevealCardCopyTests {
         #expect(line == "Tap to reveal")
     }
 }
+
+/// The commit gate a widget refresh checks immediately before it writes. A refresh already
+/// composing when sign-out's `clear()` ran used to write the departed account's tiles back.
+@MainActor
+struct WidgetSyncCommitGateTests {
+
+    @Test("a refresh captured now may commit while nothing has changed")
+    func currentMayCommit() {
+        let epoch = AccountEpoch.current
+        let generation = WidgetSync.generation
+        #expect(WidgetSync.mayCommit(epoch: epoch, generation: generation))
+    }
+
+    @Test("clear() invalidates a refresh that started before it, even with no container")
+    func clearInvalidates() {
+        let epoch = AccountEpoch.current
+        let generation = WidgetSync.generation
+        WidgetSync.clear()
+        #expect(!WidgetSync.mayCommit(epoch: epoch, generation: generation))
+    }
+
+    @Test("an account change invalidates a refresh that started before it")
+    func accountChangeInvalidates() {
+        let epoch = AccountEpoch.current
+        let generation = WidgetSync.generation
+        AccountEpoch.bump()
+        #expect(!WidgetSync.mayCommit(epoch: epoch, generation: generation))
+    }
+}

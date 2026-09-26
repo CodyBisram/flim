@@ -199,6 +199,16 @@ struct PhotoPagerView: View {
     /// the chapter player (2026-09-10): presenting the export sheet from inside two stacked
     /// full-screen covers was one layer too many on iOS 26.6, so the chapter now plays inline.
     var onClose: (() -> Void)? = nil
+    /// Where a personal delete staged from this pager stands, so the screen underneath can hide
+    /// the photo for the undo window the way its own deletes do (`DarkroomView.commitDeleteBatch`
+    /// and `pendingHiddenIds`). Without it the capsule said "Photo deleted" while the frame sat
+    /// in the grid for the whole window, and deleting it again from there flushed the first
+    /// delete and then failed on a photo that was already gone.
+    enum DeletePhase { case staged, reverted, committed }
+    /// `.staged` the moment the capsule appears (hide it), `.reverted` on Undo or a failed
+    /// commit (show it again), `.committed` once the server confirmed (lift the hide; `onDelete`
+    /// runs right after). No-op for every caller that does not pass one.
+    var onDeletePhase: (Photo, DeletePhase) -> Void = { _, _ in }
     /// Opens the comment sheet for the photo at `startIndex` the moment this pager appears, for a
     /// comment/mention push that means to land inside a thread, not just on the photo. An init
     /// parameter rather than reaching into `showComments`/`commentsPhoto` from outside: those are
@@ -387,7 +397,8 @@ struct PhotoPagerView: View {
          memberNames: [UUID: String] = [:], rollName: @escaping (UUID?) -> String? = { _ in nil },
          onDelete: @escaping () -> Void = {}, onBlock: @escaping () -> Void = {},
          openCommentsOnAppear: Bool = false,
-         showsDelete: Bool = true, posts: [UUID: Post] = [:], onClose: (() -> Void)? = nil) {
+         showsDelete: Bool = true, posts: [UUID: Post] = [:], onClose: (() -> Void)? = nil,
+         onDeletePhase: @escaping (Photo, DeletePhase) -> Void = { _, _ in }) {
         self.photos = photos
         self.startIndex = startIndex
         self.signedURLs = signedURLs
@@ -404,6 +415,7 @@ struct PhotoPagerView: View {
         self.showsDelete = showsDelete
         self.posts = posts
         self.onClose = onClose
+        self.onDeletePhase = onDeletePhase
         _selection = State(initialValue: min(max(startIndex, 0), max(0, photos.count - 1)))
     }
 
@@ -1764,14 +1776,21 @@ struct PhotoPagerView: View {
         let service = photoService
         let feedService = feed
         let afterDelete = onDelete
+        let phase = onDeletePhase
         dismiss()
+        // Hidden underneath for the whole window, like the grid's own deletes, so the capsule's
+        // "Photo deleted" is true of what is on screen and the frame cannot be deleted twice.
+        phase(photo, .staged)
         UndoCenter.shared.stage(
             title: "Photo deleted",
             failureText: "Couldn't delete that. Check your connection.",
+            // Undo and a failed commit alike: nothing was deleted, so the frame comes back.
+            revert: { phase(photo, .reverted) },
             commit: {
                 // `deletePhoto` only reports success once the photo is actually gone (it
                 // deliberately leaves the row in place if the Storage removal failed).
                 guard await service.deletePhoto(photo) else { return false }
+                phase(photo, .committed)
                 // Confirmed gone server-side (posts.photo_id cascades), so drop any post of
                 // it from the already-loaded feed too.
                 feedService.dropPost(forDeletedPhotoId: photo.id)

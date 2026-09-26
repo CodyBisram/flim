@@ -305,7 +305,7 @@ extension FeedService {
                 postId: result.postId, photoId: post.photoId,
                 postCreatedAt: post.createdAt, putUpAt: result.putUpAt,
                 pendingWeekKey: previous.pendingWeekKey, pendingPostId: previous.pendingPostId,
-                pendingPhotoId: previous.pendingPhotoId)
+                pendingPhotoId: previous.pendingPhotoId, pendingEntries: previous.pendingEntries)
             Haptics.success()
             // The server says what it swapped out; the menu's entry only fills in the day.
             let replacedAt = result.replacedPostCreatedAt
@@ -325,15 +325,15 @@ extension FeedService {
         }
     }
 
-    /// "Take it down from Spotlight", this week's frame or the one still waiting on its closed
-    /// week's publish: no capsule, the menu flips at once and flips back if the server refuses.
+    /// "Take it down from Spotlight", this week's frame or one still waiting on its closed
+    /// week's publish (any waiting week, not only the newest): no capsule, the menu flips at once and flips back if the server refuses.
     /// Nothing is flushed first: with no put-up ever held in an undo window, there is nothing
     /// of Spotlight's staged for this to overtake, and flushing would commit someone else's
     /// staged action (a post just deleted) out from under its Undo.
     func takeDownFromSpotlight(_ post: Post) async {
         guard !spotlightWriteInFlight, let previous = ownSpotlightEntry, previous.holds(postId: post.id) else { return }
         let epoch = beginSpotlightWrite()
-        ownSpotlightEntry = previous.postId == post.id ? previous.cleared : previous.clearedPending
+        ownSpotlightEntry = previous.postId == post.id ? previous.cleared : previous.clearingPending(postId: post.id)
         struct Params: Encodable { let p_post_id: UUID }
         do {
             try await supabase.rpc("withdraw_from_spotlight", params: Params(p_post_id: post.id)).execute()

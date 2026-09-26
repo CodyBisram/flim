@@ -26,14 +26,31 @@ enum WidgetSync {
     static func refresh() {
         guard WidgetStore.container != nil else { return }
         pending?.cancel()
+        // Captured here, on the main actor, so a refresh that is still composing when the account
+        // changes or `clear()` runs can recognise itself as stale before it writes.
+        let epoch = AccountEpoch.current
+        let captured = generation
         pending = Task.detached(priority: .utility) {
             try? await Task.sleep(for: .milliseconds(700))
             guard !Task.isCancelled else { return }
-            await run()
+            await run(epoch: epoch, generation: captured)
         }
     }
 
     @MainActor private static var pending: Task<Void, Never>?
+
+    /// Bumped by every `clear()`. Cancelling `pending` alone was not enough: a refresh already
+    /// past its sleep keeps composing, and cancellation is only a flag it has to look at. Without
+    /// this, one that finished after sign-out wrote the departed account's count, roll and memory
+    /// frames straight back over the cleared tiles.
+    @MainActor private(set) static var generation = 0
+
+    /// Whether a refresh started under `epoch` and `generation` may still write. Evaluated on the
+    /// main actor, in the same hop as the write it protects, so `clear()` cannot slip between.
+    @MainActor
+    static func mayCommit(epoch: Int, generation captured: Int) -> Bool {
+        AccountEpoch.isCurrent(epoch) && captured == generation
+    }
 
     /// Wipes the departing account's tiles: without this, sign-out and delete-account left the
     /// previous account's snapshot and cached JPEGs sitting in the App Group, so the home-screen
@@ -42,8 +59,11 @@ enum WidgetSync {
     /// the app answering "nothing to show", not the container having never been reached.
     @MainActor
     static func clear() {
-        guard WidgetStore.container != nil else { return }
+        // Before the container guard so the invalidation holds even when the write cannot happen.
+        generation += 1
         pending?.cancel()
+        pending = nil
+        guard WidgetStore.container != nil else { return }
         let cleared = WidgetSnapshot(unsortedCount: 0, developingRoll: nil, readyToReveal: false,
                                      memories: [], accent: FlimAccentPalette.fallback, writtenAt: .now)
         WidgetStore.write(cleared)
@@ -56,7 +76,7 @@ enum WidgetSync {
     /// this file at all, out of it.
     private static let widgetKinds = ["Darkroom", "Memory", "Shutter"]
 
-    private static func run() async {
+    private static func run(epoch: Int, generation captured: Int) async {
         guard let snapshot = await compose() else { return }
         let existing = WidgetStore.read()
         // Unchanged: skip the write AND the reload. WidgetKit budgets refreshes, so spending one
@@ -69,9 +89,17 @@ enum WidgetSync {
         for name in snapshot.imageNames where WidgetStore.image(named: name) == nil {
             if let bytes = await thumbnailData(for: name) { images[name] = bytes }
         }
-        WidgetStore.write(snapshot, images: images)
-        WidgetStore.prune(keeping: snapshot.imageNames)
-        for kind in widgetKinds { WidgetCenter.shared.reloadTimelines(ofKind: kind) }
+        // Checked and written in one main-actor hop, with no `await` between: `clear()` runs on
+        // the main actor too, so it lands either wholly before this (and the check fails) or
+        // wholly after (and overwrites it).
+        guard !Task.isCancelled else { return }
+        let fetched = images
+        await MainActor.run {
+            guard !Task.isCancelled, mayCommit(epoch: epoch, generation: captured) else { return }
+            WidgetStore.write(snapshot, images: fetched)
+            WidgetStore.prune(keeping: snapshot.imageNames)
+            for kind in widgetKinds { WidgetCenter.shared.reloadTimelines(ofKind: kind) }
+        }
     }
 
     private static func compose() async -> WidgetSnapshot? {

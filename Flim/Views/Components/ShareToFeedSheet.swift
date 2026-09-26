@@ -214,7 +214,10 @@ struct ShareToFeedSheet: View {
                 // a tagged name is already in the sentence by the time you read it.
                 AudienceLine(audience: ShareAudience(
                     followerCount: followerCount,
-                    taggedNames: tags.map { $0.user.displayName?.isEmpty == false ? $0.user.displayName! : ($0.user.username.map { "@" + $0 } ?? "them") }))
+                    taggedNames: tags.map { tag -> String in
+                        if let name = tag.user.displayName, !name.isEmpty { return name }
+                        return tag.user.username.map { "@" + $0 } ?? "them"
+                    }))
             }
             .padding(.horizontal, 20)
             .padding(.top, 14)

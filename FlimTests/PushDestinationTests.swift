@@ -247,6 +247,44 @@ struct PendingPushDestinationTests {
             #expect(PendingPushDestination.take() == destination, "\(destination)")
         }
     }
+
+    /// A follow-up roll push tapped on the signed-out screen used to open the join sheet, with
+    /// the previous account's roll code, for whoever signed in next.
+    @Test("the signed-out screen drops a destination that names one account's content")
+    func signedOutDropsAccountScoped() {
+        isolate()
+        let scoped: [PushDestination] = [
+            .joinRoll(code: "ABC123"),
+            .reveal(rollId: UUID()),
+            .post(postId: UUID(), comments: true),
+            .profile(userId: UUID()),
+            .photo(photoId: UUID())
+        ]
+        for destination in scoped {
+            PendingPushDestination.store(destination)
+            PendingPushDestination.dropAccountScoped()
+            #expect(PendingPushDestination.take() == nil, "\(destination)")
+        }
+    }
+
+    @Test("the signed-out screen keeps a destination that only names a tab")
+    func signedOutKeepsTabDestinations() {
+        isolate()
+        let tabs: [PushDestination] = [.camera, .darkroom, .sortDeck, .feed, .rolls, .invite,
+                                       .spotlightWeek(weekKey: "2026-09-21")]
+        for destination in tabs {
+            PendingPushDestination.store(destination)
+            PendingPushDestination.dropAccountScoped()
+            #expect(PendingPushDestination.take() == destination, "\(destination)")
+        }
+    }
+
+    @Test("dropping with nothing held is a no-op")
+    func dropWithNothingHeld() {
+        isolate()
+        PendingPushDestination.dropAccountScoped()
+        #expect(PendingPushDestination.take() == nil)
+    }
 }
 
 /// The widget link vocabulary.

@@ -68,6 +68,14 @@ struct ContentView: View {
                     EmailAuthView()
                 }
                 .transition(.opacity)
+                // Nobody is signed in, so a held push destination naming one account's roll,
+                // post or photo would otherwise be routed for whoever signs in next. Dropped on
+                // arrival here (a tap stored before this screen existed) and on every tap made
+                // while it is showing; the delegate stores before it broadcasts.
+                .onAppear { PendingPushDestination.dropAccountScoped() }
+                .onReceive(NotificationCenter.default.publisher(for: .openPushDestination)) { _ in
+                    PendingPushDestination.dropAccountScoped()
+                }
             } else if auth.isResolvingProfile {
                 // Signed in, still fetching the profile, hold on the splash so existing
                 // users never see a flash of the username screen.
@@ -129,6 +137,7 @@ struct ContentView: View {
             feed.resetForAccountChange()
             rolls.resetForAccountChange()
             chapters.resetForAccountChange()
+            tabSignals.resetForAccountChange()
             // Restored synchronously, right here, rather than waiting for RollsView's own
             // `fetchRolls` call: this runs before MainTabView (and so RollsView) ever mounts for
             // the new account, so the Rolls tab's very first render already has cover paths to
@@ -148,6 +157,8 @@ struct ContentView: View {
             if previousId != nil {
                 Task { await NotificationService.cancelAllRollDevelopNotifications() }
                 RollLiveActivity.endAll()
+                // Anything still held was tapped for the departing account.
+                PendingPushDestination.clear()
             }
             // Captures that never reached the server are kept on disk per account, so this is
             // where they come back: on launch, and on signing back in. Without it the files
@@ -182,7 +193,10 @@ struct ContentView: View {
             feed.resetForAccountChange()
             rolls.resetForAccountChange()
             chapters.resetForAccountChange()
+            tabSignals.resetForAccountChange()
             FeedSeenStore.shared.activeUserId = nil
+            // A notification tapped for the departing account must not route for the next one.
+            PendingPushDestination.clear()
             Activation.activeUserId = nil
             Task { await NotificationService.cancelAllRollDevelopNotifications() }
             RollLiveActivity.endAll()

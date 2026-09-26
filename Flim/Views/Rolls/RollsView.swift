@@ -587,7 +587,7 @@ struct RollsView: View {
             if let error = inviteErrors[roll.id] {
                 Text(error)
                     .flimFont(12, relativeTo: .caption)
-                    .foregroundStyle(Color(red: 0.95, green: 0.45, blue: 0.4))
+                    .foregroundStyle(FlimTheme.error)
             }
             HStack(spacing: 10) {
                 Button {

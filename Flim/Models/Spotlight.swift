@@ -94,10 +94,31 @@ struct SpotlightWeek: Decodable, Identifiable, Equatable {
     }
 }
 
+/// One of the caller's entries in a closed week the team has not published yet: it can still
+/// come down until that week is published. An element of `own_spotlight_entry().pending_entries`.
+struct PendingSpotlightEntry: Decodable, Equatable {
+    /// "YYYY-MM-DD", the server's string, like every other `week_key`.
+    let weekKey: String
+    let postId: UUID
+    let photoId: UUID
+
+    enum CodingKeys: String, CodingKey {
+        case weekKey = "week_key"
+        case postId = "post_id"
+        case photoId = "photo_id"
+    }
+}
+
 /// The own-post menu's state, from `own_spotlight_entry()`: this week's bounds, whether the
 /// account may put anything up (false inside a covered window), this week's entry if any, and
-/// the entry still waiting in the most recent closed week the team has not published yet.
+/// every entry still waiting in a closed week the team has not published yet.
 /// Never carries `chosen_at`.
+///
+/// Three wire shapes decode here, because shipped builds and servers overlap: the base shape
+/// (no pending columns at all), the single pending entry (`pending_week_key`, `pending_post_id`,
+/// `pending_photo_id`, the most recent waiting week only), and the hardened shape that adds
+/// `pending_entries`, every waiting week newest first. Read the waiting entries through
+/// `pending`, never the single fields.
 struct OwnSpotlightEntry: Decodable, Equatable {
     let weekKey: String
     let weekStartsAt: Date
@@ -107,12 +128,14 @@ struct OwnSpotlightEntry: Decodable, Equatable {
     var photoId: UUID?
     var postCreatedAt: Date?
     var putUpAt: Date?
-    /// The caller's entry in the most recent closed, unpublished week: it can still come down
-    /// until the team publishes that week. Optional on the wire (absent before the server
-    /// learns to send it), so an older server simply reads as nothing pending.
+    /// The caller's entry in the most recent closed, unpublished week. Optional on the wire
+    /// (absent before the server learns to send it), so an older server simply reads as
+    /// nothing pending. Superseded by `pendingEntries` when the server sends that.
     var pendingWeekKey: String? = nil
     var pendingPostId: UUID? = nil
     var pendingPhotoId: UUID? = nil
+    /// Every waiting entry, newest week first; nil when the server does not send the column.
+    var pendingEntries: [PendingSpotlightEntry]? = nil
 
     enum CodingKeys: String, CodingKey {
         case weekKey = "week_key"
@@ -126,10 +149,24 @@ struct OwnSpotlightEntry: Decodable, Equatable {
         case pendingWeekKey = "pending_week_key"
         case pendingPostId = "pending_post_id"
         case pendingPhotoId = "pending_photo_id"
+        case pendingEntries = "pending_entries"
+    }
+
+    /// Every entry that can still come down before its week is published, newest week first:
+    /// `pending_entries` when the server sends it, else the single pending entry, else none.
+    var pending: [PendingSpotlightEntry] {
+        if let pendingEntries { return pendingEntries }
+        guard let pendingWeekKey, let pendingPostId, let pendingPhotoId else { return [] }
+        return [PendingSpotlightEntry(weekKey: pendingWeekKey, postId: pendingPostId, photoId: pendingPhotoId)]
+    }
+
+    /// The waiting entry for this post, if it is one.
+    func pendingEntry(for postId: UUID) -> PendingSpotlightEntry? {
+        pending.first { $0.postId == postId }
     }
 
     /// The same bounds with no entry this week: what a take-down leaves behind. The closed
-    /// week's pending entry is untouched.
+    /// weeks' pending entries are untouched.
     var cleared: OwnSpotlightEntry {
         var next = self
         next.postId = nil
@@ -139,23 +176,46 @@ struct OwnSpotlightEntry: Decodable, Equatable {
         return next
     }
 
-    /// The same, with the closed week's pending entry taken down instead.
-    var clearedPending: OwnSpotlightEntry {
+    /// The same, with only this post's waiting entry taken down; every other waiting week
+    /// stands.
+    func clearingPending(postId: UUID) -> OwnSpotlightEntry {
         var next = self
-        next.pendingWeekKey = nil
-        next.pendingPostId = nil
-        next.pendingPhotoId = nil
+        if pendingPostId == postId {
+            next.pendingWeekKey = nil
+            next.pendingPostId = nil
+            next.pendingPhotoId = nil
+        }
+        next.pendingEntries = pendingEntries?.filter { $0.postId != postId }
         return next
     }
 
-    /// Whether this post is the entry this week or the one still waiting on its week's publish.
-    func holds(postId: UUID) -> Bool { self.postId == postId || pendingPostId == postId }
+    /// Whether this post is the entry this week or one still waiting on its week's publish.
+    func holds(postId: UUID) -> Bool { self.postId == postId || pendingEntry(for: postId) != nil }
 
     /// The same, by photo id: a Darkroom delete knows nothing else.
     func holds(photoIdIn ids: Set<UUID>) -> Bool {
         if let photoId, ids.contains(photoId) { return true }
-        if let pendingPhotoId, ids.contains(pendingPhotoId) { return true }
-        return false
+        return pending.contains { ids.contains($0.photoId) }
+    }
+}
+
+extension OwnSpotlightEntry {
+    /// Decodes every shape above. A malformed `pending_entries` reads as absent, falling back
+    /// to the single pending entry, rather than failing the whole row and hiding the menu.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        weekKey = try container.decode(String.self, forKey: .weekKey)
+        weekStartsAt = try container.decode(Date.self, forKey: .weekStartsAt)
+        weekClosesAt = try container.decode(Date.self, forKey: .weekClosesAt)
+        canPutUp = try container.decode(Bool.self, forKey: .canPutUp)
+        postId = try container.decodeIfPresent(UUID.self, forKey: .postId)
+        photoId = try container.decodeIfPresent(UUID.self, forKey: .photoId)
+        postCreatedAt = try container.decodeIfPresent(Date.self, forKey: .postCreatedAt)
+        putUpAt = try container.decodeIfPresent(Date.self, forKey: .putUpAt)
+        pendingWeekKey = try container.decodeIfPresent(String.self, forKey: .pendingWeekKey)
+        pendingPostId = try container.decodeIfPresent(UUID.self, forKey: .pendingPostId)
+        pendingPhotoId = try container.decodeIfPresent(UUID.self, forKey: .pendingPhotoId)
+        pendingEntries = (try? container.decodeIfPresent([PendingSpotlightEntry].self, forKey: .pendingEntries))
     }
 }
 
@@ -282,10 +342,10 @@ enum SpotlightMenuItem: Equatable {
                         now: Date = .now, calendar: Calendar = .current) -> SpotlightMenuItem {
         guard let viewerId, post.isOwned(by: viewerId) else { return .hidden }
         if let chosenWeekKey { return .takeOut(weekKey: chosenWeekKey) }
-        // Consent holds until publish: the closed week's frame can come down whatever this
-        // week allows (a covered window included).
-        if let entry, entry.pendingPostId == post.id, let pendingWeek = entry.pendingWeekKey {
-            return .takeDownPending(weekKey: pendingWeek)
+        // Consent holds until publish: a closed week's frame, any waiting week's, can come
+        // down whatever this week allows (a covered window included).
+        if let pending = entry?.pendingEntry(for: post.id) {
+            return .takeDownPending(weekKey: pending.weekKey)
         }
         guard let entry, entry.canPutUp else { return .hidden }
         // The bounds are the server's. An earlier week's post says why it cannot go up; one

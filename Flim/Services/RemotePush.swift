@@ -331,8 +331,11 @@ final class FlimAppDelegate: NSObject, UIApplicationDelegate, UNUserNotification
             completionHandler()
             return
         }
-        // Written down AND broadcast: a cold launch, or a launch with nobody signed in yet, has
-        // no `MainTabView` alive to catch the broadcast. See `PendingPushDestination`.
+        // Written down AND broadcast: a cold launch has no `MainTabView` alive to catch the
+        // broadcast. See `PendingPushDestination`. Stored before posting, and that order matters:
+        // when the signed-out screen is showing, its listener drops an account-scoped
+        // destination on this broadcast (`PendingPushDestination.dropAccountScoped()`), so a tap
+        // meant for the previous account never routes for whoever signs in next.
         PendingPushDestination.store(destination)
         NotificationCenter.default.post(name: .openPushDestination, object: destination)
         completionHandler()

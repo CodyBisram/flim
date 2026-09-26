@@ -103,6 +103,61 @@ actor CaptureQueueStore {
         directory(for: userId).appendingPathComponent("\(id).jpg")
     }
 
+    /// A 1.5.3 sidecar: `<id>.json` next to `<id>.jpg`, one per shot, before the manifest
+    /// existed. Decoded with its own type rather than `PendingCapture` because the synthesized
+    /// decoder there requires `stage`, which no 1.5.3 file has; the default value on the property
+    /// is not consulted by synthesized `Codable`. Optional fields decode absent keys as nil.
+    private struct LegacySidecar: Decodable {
+        let id: UUID
+        let userId: UUID
+        let rollId: UUID?
+        let capturedAt: Date
+        let stockId: String
+        let knownRevealAt: Date?
+    }
+
+    /// Moves every 1.5.3 sidecar whose bytes are on disk into the manifest as a `.saved` entry,
+    /// then deletes the sidecar. Without this, `prune` sees the bytes with no manifest entry and
+    /// deletes a shot the user took but never got to upload. A sidecar with no bytes is a shot
+    /// that never reached disk (1.5.3 wrote the bytes first), and a sidecar that cannot be read
+    /// cannot be replayed (1.5.3 itself skipped it); both are deleted. The manifest is written
+    /// before any sidecar is deleted, so a failed write leaves every legacy file where it was and
+    /// `prune` keeps bytes that still have a sidecar. The adopted entries carry no
+    /// `previewAspect`: 1.5.3 stored the already-cropped bytes, so a replay must not crop again.
+    private func adoptLegacySidecars(_ userId: UUID) {
+        let dir = directory(for: userId)
+        guard let names = try? FileManager.default.contentsOfDirectory(atPath: dir.path) else { return }
+        let sidecars = names.filter { $0.hasSuffix(".json") && $0 != "manifest.json" }
+        guard !sidecars.isEmpty else { return }
+        var adopted: [PendingCapture] = []
+        var adoptedSidecars: [URL] = []
+        var unusable: [URL] = []
+        for name in sidecars {
+            let url = dir.appendingPathComponent(name)
+            guard let data = try? Data(contentsOf: url),
+                  let legacy = try? JSONDecoder().decode(LegacySidecar.self, from: data),
+                  legacy.userId == userId,
+                  UUID(uuidString: String(name.dropLast(5))) == legacy.id,
+                  FileManager.default.fileExists(atPath: bytesURL(legacy.id, userId: userId).path)
+            else { unusable.append(url); continue }
+            adopted.append(PendingCapture(id: legacy.id, userId: legacy.userId, rollId: legacy.rollId,
+                                          capturedAt: legacy.capturedAt, stockId: legacy.stockId,
+                                          knownRevealAt: legacy.knownRevealAt, previewAspect: nil,
+                                          stage: .saved))
+            adoptedSidecars.append(url)
+        }
+        if !adopted.isEmpty {
+            let written = update(userId) { list in
+                let known = Set(list.map(\.id))
+                list.append(contentsOf: adopted.filter { !known.contains($0.id) })
+                list.sort { $0.capturedAt < $1.capturedAt }
+            }
+            guard written else { return }
+            for url in adoptedSidecars { try? FileManager.default.removeItem(at: url) }
+        }
+        for url in unusable { try? FileManager.default.removeItem(at: url) }
+    }
+
     private func readManifest(_ userId: UUID) -> [PendingCapture] {
         guard let data = try? Data(contentsOf: manifestURL(for: userId)),
               let list = try? JSONDecoder().decode([PendingCapture].self, from: data) else { return [] }
@@ -171,6 +226,9 @@ actor CaptureQueueStore {
     func count(userId: UUID) -> Int { entries(userId: userId).filter(\.hasRaw).count }
 
     func remove(id: UUID, userId: UUID) {
+        // Adopt first: removing the last manifest entry deletes the whole folder, and a 1.5.3
+        // shot still waiting in it as a sidecar would go with it.
+        adoptLegacySidecars(userId)
         _ = update(userId) { list in list.removeAll { $0.id == id } }
         try? FileManager.default.removeItem(at: bytesURL(id, userId: userId))
         let dir = directory(for: userId)
@@ -179,8 +237,11 @@ actor CaptureQueueStore {
 
     /// Entries whose bytes never arrived and are older than `olderThan` (a crash between the
     /// manifest write and the bytes write) are dropped: nothing of that shot reached disk. Bytes
-    /// with no entry (pre-manifest leftovers, or a crash after `remove` deleted the entry) go too.
+    /// with no entry (a crash after `remove` deleted the entry) go too. 1.5.3 shots, which have a
+    /// sidecar instead of an entry, are adopted into the manifest first and are never pruned as
+    /// entry-less bytes (`adoptLegacySidecars`).
     func prune(userId: UUID, olderThan: TimeInterval = 120, now: Date = .now) {
+        adoptLegacySidecars(userId)
         let dir = directory(for: userId)
         let list = readManifest(userId)
         let stale = list.filter { entry in
@@ -190,9 +251,13 @@ actor CaptureQueueStore {
         if !stale.isEmpty { _ = update(userId) { $0.removeAll { stale.contains($0.id) } } }
         let ids = Set(list.map { $0.id.uuidString })
         guard let names = try? FileManager.default.contentsOfDirectory(atPath: dir.path) else { return }
+        // A sidecar still present means adoption could not write the manifest; its bytes stay.
+        let sidecarBases = Set(names.filter { $0.hasSuffix(".json") && $0 != "manifest.json" }.map { String($0.dropLast(5)) })
         for name in names where name.hasSuffix(".jpg") {
             let base = String(name.dropLast(4))
-            if !ids.contains(base) { try? FileManager.default.removeItem(at: dir.appendingPathComponent(name)) }
+            if !ids.contains(base) && !sidecarBases.contains(base) {
+                try? FileManager.default.removeItem(at: dir.appendingPathComponent(name))
+            }
         }
     }
 }

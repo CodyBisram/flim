@@ -378,8 +378,10 @@ struct SpotlightTests {
                                           isTagged: false, isPhotographer: true, calendar: newYork)
                 == .takeOut(weekKey: "2026-09-14"))
         // A take-down clears only the week it came down from.
-        #expect(withPending.clearedPending.pendingPostId == nil)
-        #expect(withPending.clearedPending.weekKey == withPending.weekKey)
+        #expect(withPending.clearingPending(postId: pending.id).pendingPostId == nil)
+        #expect(withPending.clearingPending(postId: pending.id).pending.isEmpty)
+        #expect(withPending.clearingPending(postId: pending.id).weekKey == withPending.weekKey)
+        #expect(withPending.clearingPending(postId: other.id).pendingPostId == pending.id)
         #expect(withPending.cleared.pendingPostId == pending.id)
         // Deletes match the pending frame by post id and by photo id.
         #expect(withPending.holds(postId: pending.id))
@@ -619,6 +621,91 @@ struct SpotlightTests {
         #expect(new.first?.pendingWeekKey == "2026-09-14")
         #expect(new.first?.pendingPostId == postId)
         #expect(new.first?.pendingPhotoId == photoId)
+        #expect(new.first?.pending == [PendingSpotlightEntry(weekKey: "2026-09-14", postId: postId, photoId: photoId)])
+    }
+
+    @Test("the base shape, with no pending columns at all, reads as nothing waiting")
+    func ownEntryBaseShapeDecoding() throws {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let postId = UUID(), photoId = UUID()
+        let base = """
+        [{"week_key":"2026-09-21","week_starts_at":"2026-09-21T08:00:00Z","week_closes_at":"2026-09-28T08:00:00Z",
+          "can_put_up":true,"post_id":"\(postId.uuidString)","photo_id":"\(photoId.uuidString)",
+          "post_created_at":"2026-09-22T12:00:00Z","put_up_at":"2026-09-22T12:05:00Z"}]
+        """
+        let rows = try decoder.decode([OwnSpotlightEntry].self, from: Data(base.utf8))
+        #expect(rows.first?.postId == postId)
+        #expect(rows.first?.pendingEntries == nil)
+        #expect(rows.first?.pending.isEmpty == true)
+        #expect(rows.first?.holds(postId: postId) == true)
+    }
+
+    @Test("the hardened shape carries every waiting week, and pending_entries wins over the single fields")
+    func ownEntryHardenedShapeDecoding() throws {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let newerPost = UUID(), newerPhoto = UUID(), olderPost = UUID(), olderPhoto = UUID()
+        let hardened = """
+        [{"week_key":"2026-09-21","week_starts_at":"2026-09-21T08:00:00Z","week_closes_at":"2026-09-28T08:00:00Z",
+          "can_put_up":true,"post_id":null,"photo_id":null,"post_created_at":null,"put_up_at":null,
+          "pending_week_key":"2026-09-14","pending_post_id":"\(newerPost.uuidString)",
+          "pending_photo_id":"\(newerPhoto.uuidString)",
+          "pending_entries":[
+            {"week_key":"2026-09-14","post_id":"\(newerPost.uuidString)","photo_id":"\(newerPhoto.uuidString)"},
+            {"week_key":"2026-09-07","post_id":"\(olderPost.uuidString)","photo_id":"\(olderPhoto.uuidString)"}]}]
+        """
+        let rows = try decoder.decode([OwnSpotlightEntry].self, from: Data(hardened.utf8))
+        let entry = try #require(rows.first)
+        #expect(entry.pending.map(\.weekKey) == ["2026-09-14", "2026-09-07"])
+        #expect(entry.pendingEntry(for: olderPost)?.photoId == olderPhoto)
+        #expect(entry.holds(postId: olderPost))
+        #expect(entry.holds(photoIdIn: [olderPhoto]))
+        // Taking the older week down leaves the newer one waiting, and vice versa.
+        #expect(entry.clearingPending(postId: olderPost).pending.map(\.postId) == [newerPost])
+        let newerDown = entry.clearingPending(postId: newerPost)
+        #expect(newerDown.pending.map(\.postId) == [olderPost])
+        #expect(newerDown.pendingPostId == nil)
+
+        // An empty list is authoritative: nothing waiting, whatever else is on the row.
+        let none = """
+        [{"week_key":"2026-09-21","week_starts_at":"2026-09-21T08:00:00Z","week_closes_at":"2026-09-28T08:00:00Z",
+          "can_put_up":true,"post_id":null,"photo_id":null,"post_created_at":null,"put_up_at":null,
+          "pending_week_key":null,"pending_post_id":null,"pending_photo_id":null,"pending_entries":[]}]
+        """
+        let empty = try decoder.decode([OwnSpotlightEntry].self, from: Data(none.utf8))
+        #expect(empty.first?.pendingEntries == [])
+        #expect(empty.first?.pending.isEmpty == true)
+    }
+
+    @Test("an older waiting week's frame offers take-down too, not only the newest")
+    func menuTakeDownOlderPendingWeek() {
+        let newer = post(owner: me, createdAt: date(9, 17, 12))
+        let older = post(owner: me, createdAt: date(9, 9, 12))
+        let unrelated = post(owner: me, createdAt: date(9, 10, 12))
+        var withTwo = entry()
+        withTwo.pendingWeekKey = "2026-09-14"
+        withTwo.pendingPostId = newer.id
+        withTwo.pendingPhotoId = newer.photoId
+        withTwo.pendingEntries = [
+            PendingSpotlightEntry(weekKey: "2026-09-14", postId: newer.id, photoId: newer.photoId),
+            PendingSpotlightEntry(weekKey: "2026-09-07", postId: older.id, photoId: older.photoId),
+        ]
+        func item(_ p: Post, _ e: OwnSpotlightEntry) -> SpotlightMenuItem {
+            SpotlightMenuItem.resolve(post: p, viewerId: me, entry: e, chosenWeekKey: nil,
+                                      isTagged: false, isPhotographer: true, calendar: newYork)
+        }
+        #expect(item(newer, withTwo) == .takeDownPending(weekKey: "2026-09-14"))
+        #expect(item(older, withTwo) == .takeDownPending(weekKey: "2026-09-07"))
+        #expect(item(unrelated, withTwo) == .disabled(reason: "Only this week's frames can go up"))
+        // Still offered inside a covered window.
+        var covered = entry(canPutUp: false)
+        covered.pendingEntries = withTwo.pendingEntries
+        #expect(item(older, covered) == .takeDownPending(weekKey: "2026-09-07"))
+        // Once the older week comes down, only the newer one is offered.
+        let afterTakeDown = withTwo.clearingPending(postId: older.id)
+        #expect(item(older, afterTakeDown) == .disabled(reason: "Only this week's frames can go up"))
+        #expect(item(newer, afterTakeDown) == .takeDownPending(weekKey: "2026-09-14"))
     }
 
     // MARK: - Badge

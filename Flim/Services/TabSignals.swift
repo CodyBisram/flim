@@ -26,6 +26,13 @@ final class TabSignals {
         rolls.contains { $0.isDeveloped(now: now) && !revealSeen($0.id) }
     }
 
+    /// Drops the departing account's dots. Called on every account change: without it, one
+    /// account's dots stayed lit under the next until that account's first refresh landed.
+    func resetForAccountChange() {
+        feedHasUnread = false
+        rollsHaveUnwatched = false
+    }
+
     func refresh(feed: FeedService, rolls: RollService, userId: UUID, lastActivitySeen: Double) async {
         // Two round trips sit between the read and the write below; a sign-out or an
         // account switch mid-flight must not let a stale answer light the NEW account's dots.
