@@ -764,7 +764,7 @@ async function push(token: string, title: string, body: string, route: unknown):
       "apns-push-type": "alert",
       "apns-priority": "5",
     },
-    body: JSON.stringify({ aps: { alert: { title, body }, sound: "default" }, flim: route }),
+    body: JSON.stringify({ aps: { alert: { title, body }, sound: "flim_social.caf" }, flim: route }),
   });
   if (!res.ok) {
     const reason = await res.text();

@@ -183,7 +183,7 @@ async function sendPush(
   flim?: FlimRoute,
 ): Promise<boolean> {
   const jwt = await apnsAuthToken();
-  const payload: Record<string, unknown> = { aps: { alert: { title, body }, sound: "default" } };
+  const payload: Record<string, unknown> = { aps: { alert: { title, body }, sound: "flim_developed.caf" } };
   if (flim) payload.flim = flim;
   const res = await fetch(`${APNS_HOST}/3/device/${deviceToken}`, {
     method: "POST",

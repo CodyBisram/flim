@@ -203,11 +203,17 @@ async function deleteDeadToken(deviceToken: string, status: number, body: string
   }
 }
 
+// FLIM's own notification sounds, bundled in the app (Flim/Resources). A build without the file
+// plays the iOS default instead, so naming them is safe for every installed version.
+const SOUND_SOCIAL = "flim_social.caf";
+const SOUND_SPOTLIGHT = "flim_spotlight.caf";
+
 async function sendPush(
   deviceToken: string,
   title: string,
   body?: string,
   flim?: FlimRoute,
+  sound = "default",
 ): Promise<boolean> {
   const jwt = await apnsAuthToken();
   // `body` is omitted from `alert` entirely when absent/empty, never sent as `body: ""`. APNs's
@@ -218,7 +224,7 @@ async function sendPush(
   // title.
   const alert: Record<string, string> = { title };
   if (body) alert.body = body;
-  const payload: Record<string, unknown> = { aps: { alert, sound: "default" } };
+  const payload: Record<string, unknown> = { aps: { alert, sound } };
   if (flim) payload.flim = flim;
   const res = await fetch(`${APNS_HOST}/3/device/${deviceToken}`, {
     method: "POST",
@@ -336,6 +342,7 @@ async function notify(
   body?: string,
   flim?: FlimRoute,
   sourceKey?: string,
+  sound: string = SOUND_SOCIAL,
 ): Promise<number> {
   if (!toId || toId === fromId) return 0;
   if (outOfTime()) { if (sourceKey) pendingRetry.add(sourceKey); return 0; }   // leave it for the next run
@@ -351,7 +358,7 @@ async function notify(
   const tokens = await tokensFor(toId);
   let sent = 0;
   for (const token of tokens) {
-    if (await sendPush(token, title, body, flim)) sent++;
+    if (await sendPush(token, title, body, flim, sound)) sent++;
   }
   if (sourceKey) {
     const [kind, ...rest] = sourceKey.split(":");
@@ -1438,7 +1445,7 @@ Deno.serve(async (req: Request) => {
     if (post && !post.hidden && !photoHidden && e.removed_at === null && !covered) {
       const label = spotlightWeekLabel(weekKey);
       const spotBody = (label ? `${label}. ` : "") + `Everyone on ${APP_NAME} can see it now.`;
-      sent += await notify(e.user_id, null, "Your frame is in Spotlight", spotBody, { t: "feed", week: weekKey }, key);
+      sent += await notify(e.user_id, null, "Your frame is in Spotlight", spotBody, { t: "feed", week: weekKey }, key, SOUND_SPOTLIGHT);
       if (!settled(key)) continue;
     }
     await supabase.from("spotlight_entries").update({ push_sent: true }).eq("id", e.id);

@@ -178,7 +178,9 @@ final class NotificationService {
         content.body = photoCount > 0
             ? "Your \(photoCount) shot\(photoCount == 1 ? "" : "s"), and everyone else's, are ready."
             : "Everyone's photos from the roll are ready to see."
-        content.sound = .default
+        // The same sound the server's develop push and the reveal itself play, so this reads as
+        // one moment wherever it reaches you. Bundled in Flim/Resources.
+        content.sound = UNNotificationSound(named: UNNotificationSoundName(SoundFX.developedFile))
         content.interruptionLevel = .timeSensitive
         // Same `flim` payload a push would carry, so tapping this (the highest-value notification
         // in the app) opens the reveal instead of falling back to the Darkroom. See

@@ -348,7 +348,7 @@ async function sendPush(deviceToken: string, title: string, body: string): Promi
       // device's own schedule is both better for battery and less likely to arrive mid-sentence.
       "apns-priority": "5",
     },
-    body: JSON.stringify({ aps: { alert: { title, body }, sound: "default" }, flim: FEED_ROUTE }),
+    body: JSON.stringify({ aps: { alert: { title, body }, sound: "flim_social.caf" }, flim: FEED_ROUTE }),
   });
   const reason = res.ok ? undefined : await res.text();
   console.log(JSON.stringify({
