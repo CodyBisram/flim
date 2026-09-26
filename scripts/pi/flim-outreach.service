@@ -1,0 +1,10 @@
+[Unit]
+Description=FLIM weekly creator outreach (research, gate, one email per person)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Runs the repo's own copy, so a change pushed to main is what the next Monday runs.
+ExecStart=/bin/bash %h/work/flim/scripts/pi/outreach-weekly.sh
+TimeoutStartSec=3h

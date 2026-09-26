@@ -17,6 +17,7 @@ there is exactly one reviewer. The five "check on PR #N" reminders are disabled 
 | 02:07 daily | Nightly review (the prompt below); on a night with no commits it deep-audits one module in rotation instead | Raspberry Pi | `docs/reviews/<date>.md` for new findings, `docs/reviews/OPEN.md` re-verified, committed to main |
 | 00:20 daily | Nightly numbers + rendition repair | GitHub Actions `nightly-numbers.yml` (GitHub's cron is best-effort; it has run up to five hours late) | one line appended to `docs/NUMBERS.md`; an `ops_alerts` row (so a push to the owner) when something is broken; then `scripts/repair_renditions.py` rebuilds any thumb or feed card a capture lost |
 | Mon 07:30 | Product memo | Raspberry Pi | `docs/memos/<date>.md`, committed to main. A "What the database says" section reads `public.memo_snapshot()` through the read-only role (below) |
+| Mon 08:00 | Creator outreach (below): five to ten people who published an email address, each note through the send gate twice, one email per passing person from the owner's Gmail with its own one-use invite code | Raspberry Pi (`flim-outreach.timer`) | `social/outreach/<date>.md` committed to main with every entry's Status; one push, "Outreach: N sent, M held, K earlier codes used." Added 2026-09-26, not installed until the owner steps below are done |
 | Sun 06:00 | Ledger burn (the prompt below): up to five small open ledger rows a person can hit, fixed one commit each on `burn/<date>`, one pull request | Raspberry Pi | PR "Ledger burn, week of <Mon DD>"; CI verifies, the owner merges; `OPEN.md` is left for the nightly review to update once the merge lands. Never main. Added 2026-09-21 |
 | every 30 min | TestFlight build checklist: a green `ios-testflight` run on main plus ninety minutes is a processed build (the App Store Connect key on the Pi is Sales and Reports only, so `/v1/builds` is closed to it); the build number is read from the run's log | Raspberry Pi | one push per build, never repeated, with the "On device:" list from the newest done block in `docs/PENDING.md` that names the build's train, or "nothing owed on device for this build". Added 2026-09-21 |
 | Mon 09:07 | R2 tripwire | GitHub Actions `r2-tripwire.yml` | silent while quiet, fails (email) when a migration trigger fires |
@@ -97,6 +98,83 @@ into a push to the owner within two minutes. A quiet day raises nothing. To run 
 ```
 FLIM_SERVICE_KEY=... bash scripts/nightly_numbers.sh
 ```
+
+## Weekly outreach (Monday 08:00, `flim-outreach.timer`)
+
+Decided by the owner 2026-09-25: every Monday the Pi researches five to ten new people, writes
+each a personal note, and sends it from the owner's Gmail with a one-use invite code, as long as
+the note passes the send gate. Email only, never a DM or a contact form. Unlike the retired social
+drafts, this ends in sent mail, so nothing waits on a person; the flip side is that a bad email
+goes out unread, and the gate is the whole safety. The gate is written out, for a person to read,
+in `.claude/skills/creator-shortlist/SKILL.md` ("THE SEND GATE").
+
+`scripts/pi/outreach-weekly.sh` runs the repo's own copy (so a change pushed to main is what the
+next Monday runs) in five steps, each with only the tools it needs:
+
+1. **Preflight.** The database: `SET ROLE flim_outreach` and `outreach_codes_status()`, plus a
+   check that the role can execute `mint_outreach_code`. Gmail: headless Claude with only
+   ToolSearch loads the two Gmail tools and calls neither. Either failing stops the run before
+   any research, code or email, with a push saying why.
+2. **Research.** Headless Claude with Read, Glob, Grep, Write, Edit, WebSearch and WebFetch, and
+   every MCP tool denied, follows the skill and writes `social/outreach/<date>.md` plus a plan of
+   the notes and its own gate verdicts. If it touches any other file, the run stops.
+3. **Gate, again.** `scripts/pi/outreach_gate.py` re-checks every rule a program can check (dashes,
+   exclamation marks, emoji, sentence and word counts, the banned phrases, claims, first person and
+   contractions, the address not in any earlier file, the links present in the batch file) and
+   re-reads the page cited as publishing each address; the address has to be on it. Anything that
+   fails is held. Ten sends a week at most.
+4. **Send.** One code per passing person, minted in shell through `mint_outreach_code(name)` (the
+   name goes in as a psql variable), then headless Claude with only ToolSearch,
+   `mcp__claude_ai_Gmail__create_draft` and `mcp__claude_ai_Gmail__send_message` gets the exact
+   emails in its prompt: a draft each, then that draft sent by its id. A failed draft or send stops
+   the step; a send is never retried. A marker written before this step means a second real run
+   on the same date refuses to start, so nobody is emailed twice.
+5. **Record.** Each entry's Status becomes "contacted <date> by email" or "held: <reason>"
+   ("unconfirmed" if the send step's reply was unreadable: check Gmail Sent). The file is checked
+   for every outreach code and for any invite link, and is not committed if one is there. Then one
+   commit, "Outreach for <Mon DD>: N sent, M held.", pushed to main, and one push to the owner:
+   "Outreach: N sent, M held, K earlier codes used." K counts earlier outreach codes redeemed at
+   least once.
+
+Every headless run uses `--permission-mode dontAsk` (anything not allowed is refused, never
+asked), `--tools` to hide every other built-in tool, and `--setting-sources project` so no user
+settings file on the Pi can widen that. It runs on the Pi's claude.ai login, not the setup token:
+a `claude setup-token` token cannot load claude.ai connectors, so the script removes
+`CLAUDE_CODE_OAUTH_TOKEN` from its own environment. The owner push goes through ntfy, the same path
+`flim-job.sh` uses; `raise_ops_alert` is service-role only and the Pi holds no service key.
+
+The codes: `public.mint_outreach_code(p_name)` (migration `2026-09-26_outreach_codes.sql`) inserts
+one `invite_campaigns` row, six characters from ABCDEFGHJKLMNPQRSTUVWXYZ23456789, checked against
+personal, campaign and roll codes, attributed to the owner, live 30 days, one use, note
+`outreach <date>: <name>`. The same name on the same day gets its unused code back, and an eleventh
+code in one day is refused. The repo is public: no code is ever written into it, and the name to
+code mapping lives only in that note. `flim_outreach` is a NOLOGIN role holding the two functions;
+the Pi's `flim_reader` login can use it only by `SET ROLE`, so the memo and the receiver, which
+connect as the same login, still cannot mint.
+
+**Owner steps, in order:**
+
+1. Push the commit that carries `scripts/pi/`, the migration and the skill (the Pi runs what is on
+   main), then on the Pi: `git -C ~/work/flim pull -q`.
+2. Apply `supabase/migrations/2026-09-26_outreach_codes.sql` in the SQL editor.
+3. In the SQL editor, the one grant: `GRANT flim_outreach TO flim_reader WITH INHERIT FALSE, SET TRUE;`
+   This needs `flim_reader`'s password set (`docs/sql/flim_reader_role.sql`) and the pooler URI on
+   the Pi as `FLIM_DB_URL` in `~/.config/flim-hooks.env` (`services/deploy-flim-hooks.sh` in the Pi
+   folder). Check with `ssh pi 'grep -c ^FLIM_DB_URL= ~/.config/flim-hooks.env'`, which should say 1.
+4. Connect Gmail once in the Pi's Claude: `ssh pi -t 'cd ~/work/flim && env -u CLAUDE_CODE_OAUTH_TOKEN claude'`,
+   run `/login` and sign in with the claude.ai account whose Gmail connector is connected at
+   claude.ai/customize/connectors, then `/mcp`: "claude.ai Gmail" should be listed as connected.
+   `/exit`. The other jobs keep using the setup token.
+5. Dry run first: `ssh pi 'bash ~/work/flim/scripts/pi/outreach-weekly.sh --dry-run'` (20 to 60
+   minutes). It researches, gates and makes Gmail drafts whose subject starts "DRY RUN, not sent";
+   it mints no code, sends nothing and commits nothing. Read the push, the batch at
+   `~/work/flim-ops/logs/outreach-<date>-dry.md`, and the drafts; then delete the drafts.
+6. Install the timer on the Pi:
+   `cp ~/work/flim/scripts/pi/flim-outreach.service ~/work/flim/scripts/pi/flim-outreach.timer ~/.config/systemd/user/ && systemctl --user daemon-reload && systemctl --user enable --now flim-outreach.timer && systemctl --user list-timers --no-pager | grep outreach`
+
+To stop it: `systemctl --user disable --now flim-outreach.timer`. The log for a run is
+`~/work/flim-ops/logs/outreach-<date>.log`; the Monday memo at 07:30 holds the clone first, and
+this job waits up to fifteen minutes for it.
 
 ## Routine prompts
 
