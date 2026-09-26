@@ -160,4 +160,47 @@ struct NewAccountIntroTests {
         #expect(RollDevelopAskSheet.timeLabel(for: developsAt, calendar: cal, locale: locale, now: now) == "1:30 AM")
         #expect(RollDevelopAskSheet.whenLabel(for: developsAt, calendar: cal, locale: locale, now: now) == "at 1:30 AM")
     }
+
+    @Test("the Spotlight announcement shows once per account, to old accounts too, and waits for the first-visit line")
+    func announcementShowsOnce() {
+        let defaults = UserDefaults(suiteName: "NewAccountIntroTests.announce.\(UUID().uuidString)")!
+        defer { defaults.removePersistentDomain(forName: defaults.description) }
+        let previous = NewAccountIntro.store
+        NewAccountIntro.store = defaults
+        defer { NewAccountIntro.store = previous }
+
+        let me = UUID()
+        let line = NewAccountIntro.Announcement.spotlight.line
+        func show(_ uid: UUID?, firstVisit: Bool = false, used: Bool = false) -> String? {
+            NewAccountIntro.announcementToShow(.spotlight, userId: uid, firstVisitLineShowing: firstVisit, alreadyUsed: used)
+        }
+        // Any signed-in account, whatever its age; nobody signed in gets nothing.
+        #expect(show(me) == line)
+        #expect(show(nil) == nil)
+        // A brand-new account's feed line goes first; this one waits for a later visit.
+        #expect(show(me, firstVisit: true) == nil)
+        // Someone who already put a frame up needs no introduction.
+        #expect(show(me, used: true) == nil)
+        // Seen: gone for good, on this account only.
+        NewAccountIntro.markSeen(.spotlight, userId: me)
+        #expect(show(me) == nil)
+        #expect(show(UUID()) == line)
+        // Shown this launch: it stays up after being marked seen, until the feature is used.
+        NewAccountIntro.shownThisLaunch.insert(NewAccountIntro.shownKey(.spotlight, userId: me))
+        defer { NewAccountIntro.shownThisLaunch.remove(NewAccountIntro.shownKey(.spotlight, userId: me)) }
+        #expect(show(me) == line)
+        #expect(show(me, used: true) == nil)
+        // It does not share a key with the feed's first-visit line.
+        #expect(NewAccountIntro.shownKey(.spotlight, userId: me) != NewAccountIntro.shownKey(.feed, userId: me))
+    }
+
+    @Test("the Spotlight announcement names the team, the week and the menu, and has no banned punctuation")
+    func announcementWords() {
+        let line = NewAccountIntro.Announcement.spotlight.line
+        #expect(line.contains("the team at \(AppInfo.appName)"))
+        #expect(line.contains("week"))
+        #expect(line.contains("menu"))
+        #expect(!line.contains("\u{2014}") && !line.contains("!"))
+        #expect(!line.contains("Monday"))
+    }
 }

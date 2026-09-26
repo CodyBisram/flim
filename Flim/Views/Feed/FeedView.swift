@@ -560,6 +560,13 @@ struct FeedView: View {
         return "\(shots) from \(friends)"
     }
 
+    /// The account has put a frame up this week, has one waiting on a closed week, or has been
+    /// chosen before: it knows Spotlight, and the 1.6.0 announcement is not for it.
+    private var spotlightAlreadyUsed: Bool {
+        if let entry = feed.ownSpotlightEntry, entry.postId != nil || !entry.pending.isEmpty { return true }
+        return !feed.ownSpotlightChosen.isEmpty
+    }
+
     // MARK: - The feed
 
     private var feedList: some View {
@@ -577,6 +584,14 @@ struct FeedView: View {
                     FirstVisitLine(surface: .feed,
                                    text: NewAccountIntro.inviter(for: auth.currentUser?.id ?? UUID())?.isCampaign == true
                                        ? NewAccountIntro.campaignFeedLine : nil)
+                    // What's new, once per account, for members who were here before it:
+                    // Spotlight in 1.6.0. Waits out the first-visit line above, and skips anyone
+                    // who has already put a frame up or been chosen.
+                    AnnouncementLine(
+                        announcement: .spotlight,
+                        firstVisitLineShowing: NewAccountIntro.lineToShow(
+                            .feed, userId: auth.currentUser?.id, createdAt: auth.currentUser?.createdAt) != nil,
+                        alreadyUsed: spotlightAlreadyUsed)
                     // A thin feed (under three follows) gets three people it knows, with the
                     // reason, at the top; it goes away by itself once the feed has people in it.
                     if !followsNobody {
@@ -639,6 +654,11 @@ struct FeedView: View {
                 .padding(.bottom, 24)
             }
             .refreshable { await reload() }
+            // Someone who uses Spotlight before reading the 1.6.0 line never needs it, even if
+            // they later take the frame down.
+            .onChange(of: spotlightAlreadyUsed) { _, used in
+                if used, let uid = auth.currentUser?.id { NewAccountIntro.markSeen(.spotlight, userId: uid) }
+            }
             // Swiping the feed puts the keyboard away (the comments sheet's composer can
             // leave one up); interactively, so it tracks the drag.
             .scrollDismissesKeyboard(.interactively)

@@ -70,6 +70,57 @@ enum NewAccountIntro {
         return text ?? surface.line
     }
 
+    // MARK: - What's new, once, for everyone
+
+    /// A feature introduced to the accounts that were here before it shipped, not only new
+    /// ones: one sentence at the top of the feed, once per account, in the same quiet chrome as
+    /// the first-visit lines (1.6.0, for Spotlight). Not gated on `isNewAccount`. It waits while
+    /// the feed's own first-visit line is up, so a brand-new account meets one sentence at a
+    /// time and gets this one on a later visit, and it never shows to an account that has
+    /// already used the feature.
+    enum Announcement: String, CaseIterable {
+        case spotlight
+
+        /// The lead, drawn in the accent.
+        var headline: String {
+            switch self {
+            case .spotlight: "Spotlight is new."
+            }
+        }
+
+        /// The rest of the sentence: what it is and where it lives.
+        var detail: String {
+            switch self {
+            case .spotlight: "Each week, put up one of that week's posts from its menu, and the team at \(AppInfo.appName) chooses a few to show everyone."
+            }
+        }
+
+        var line: String { "\(headline) \(detail)" }
+    }
+
+    static func shownKey(_ announcement: Announcement, userId: UUID) -> String {
+        "announce.\(announcement.rawValue).\(userId.uuidString)"
+    }
+
+    static func hasSeen(_ announcement: Announcement, userId: UUID) -> Bool {
+        store.bool(forKey: shownKey(announcement, userId: userId))
+    }
+
+    static func markSeen(_ announcement: Announcement, userId: UUID) {
+        store.set(true, forKey: shownKey(announcement, userId: userId))
+    }
+
+    /// The announcement to show right now, or nil. Shown once it has been shown this launch
+    /// (marked seen mid-visit, like the first-visit lines, so scrolling away and back never
+    /// makes it vanish), unless the account has used the feature since.
+    static func announcementToShow(_ announcement: Announcement, userId: UUID?,
+                                   firstVisitLineShowing: Bool, alreadyUsed: Bool) -> String? {
+        guard let userId, !alreadyUsed else { return nil }
+        if shownThisLaunch.contains(shownKey(announcement, userId: userId)) { return announcement.line }
+        guard !hasSeen(announcement, userId: userId), !firstVisitLineShowing else { return nil }
+        return announcement.line
+    }
+
     // MARK: - Who brought you
 
     struct Inviter: Equatable {
