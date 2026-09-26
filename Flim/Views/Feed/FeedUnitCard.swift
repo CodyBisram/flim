@@ -225,8 +225,14 @@ struct FeedUnitCard: View {
             }
             // A shot arriving on a card already on screen is seen like the rest of it, and
             // lights as new for this look, so the pill reads "1 new" while you are there.
-            if isVisible, markingEnabled {
-                arrivedThisLook.formUnion(Set(newIds).subtracting(oldIds).filter { !seenStore.isSeen($0) })
+            // Recorded even while marking waits on the feed's snapshot (a reload holds it shut),
+            // so the catch-up that follows can still open on the arrival.
+            if isVisible {
+                // `newThisLook` too: when the gate reopens in the same update, the card may
+                // have marked the arrival a moment before this handler ran.
+                arrivedThisLook.formUnion(Set(newIds).subtracting(oldIds).filter {
+                    !seenStore.isSeen($0) || newThisLook.contains($0)
+                })
             }
             maybeMarkReached()
             // The neighbours may be new even when the selection is not: an insertion right
