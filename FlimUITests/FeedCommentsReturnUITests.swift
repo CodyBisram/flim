@@ -19,7 +19,9 @@ final class FeedCommentsReturnUITests: XCTestCase {
         let moved = pager.label
         XCTAssertNotEqual(before, moved, "a swipe should change the frame label")
 
-        let comment = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Comment'")).firstMatch
+        // The card's own comments line since v2 (the feed pager has no comment button): "View all
+        // N comments" on a frame with a thread, "Add a comment" on one without.
+        let comment = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'View all' OR label == 'Add a comment'")).firstMatch
         XCTAssertTrue(comment.waitForExistence(timeout: 5), "no Comment control:\n\(app.debugDescription)")
         comment.tap()
         let sheet = app.buttons["Close"].firstMatch.exists ? app.buttons["Close"].firstMatch : app.buttons["Done"].firstMatch

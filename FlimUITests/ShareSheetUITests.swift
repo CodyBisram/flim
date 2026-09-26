@@ -1,7 +1,8 @@
 import XCTest
 
 /// Drives the chapter demo host (no account, no network) into the viewer, taps Share, and checks
-/// that the export sheet is still up two seconds later. Written 2026-09-10 to reproduce the
+/// that the export sheet is still up two seconds later. The viewer's button is "Share" since the
+/// 2026-09-22 top bar ("Share photo" is now the sheet's own action for a plain export). Written 2026-09-10 to reproduce the
 /// owner's report that the sheet flashes and bounces back to the viewer on their own chapter.
 final class ShareSheetUITests: XCTestCase {
     func testExportSheetStaysUpFromAChapterPhoto() {
@@ -9,7 +10,7 @@ final class ShareSheetUITests: XCTestCase {
         app.launchArguments = ["-chaptersPreviewDemo", "-openChapterRecap", "-autoPlayChapter"]
         app.launch()
 
-        let share = app.buttons["Share photo"]
+        let share = app.buttons["Share"]
         XCTAssertTrue(share.waitForExistence(timeout: 15), "viewer share button never appeared:\n\(app.debugDescription)")
         sleep(1)
         share.tap()
@@ -47,12 +48,12 @@ final class ChapterPlayerCloseUITests: XCTestCase {
         app.launchArguments = ["-chaptersPreviewDemo", "-openChapterRecap", "-autoPlayChapter"]
         app.launch()
         let close = app.buttons["Close"].firstMatch
-        XCTAssertTrue(app.buttons["Share photo"].waitForExistence(timeout: 15), "viewer never appeared")
+        XCTAssertTrue(app.buttons["Share"].waitForExistence(timeout: 15), "viewer never appeared")
         close.tap()
         // The demo month has stats, so the closing card follows; its play control reopens.
         let playAgain = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] 'again' OR label CONTAINS[c] 'play'")).firstMatch
         XCTAssertTrue(playAgain.waitForExistence(timeout: 5), "closing card did not appear:\n\(app.debugDescription)")
         playAgain.tap()
-        XCTAssertTrue(app.buttons["Share photo"].waitForExistence(timeout: 5), "player did not reopen from the closing card")
+        XCTAssertTrue(app.buttons["Share"].waitForExistence(timeout: 5), "player did not reopen from the closing card")
     }
 }
