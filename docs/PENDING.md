@@ -2152,8 +2152,10 @@ Done on the branch:
   posts" was wrong. Nothing on this branch needs the database.
 
 Not done, or open:
-- The update nudge (`latest_version = '1.6.0'`) was handed to the owner as SQL on the clipboard.
-  Confirm with `select * from app_release_gate;`.
+- The update nudge waits until 1.6.0 is visible on the App Store (it was not on 2026-09-26; the
+  gate still reads 1.5.3). Arming it earlier sends 1.5.x users to a store page with no update.
+  Then: `update app_release_gate set latest_version = '1.6.0';` and confirm with
+  `select * from app_release_gate;`. Leave minimum_version alone.
 - Review findings left for device testing: (1) a post that arrived while the app was away is not
   loaded, so a mark in the feed can clear a dot the server lit for it; (2) a pull-to-refresh on a
   slow network can mark a visible card's new shots before the caught-up line is placed, putting
