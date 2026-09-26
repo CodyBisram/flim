@@ -372,6 +372,7 @@ struct SpotlightTests {
         var covered = entry(canPutUp: false)
         covered.pendingWeekKey = "2026-09-14"
         covered.pendingPostId = pending.id
+        covered.pendingPhotoId = pending.photoId
         #expect(item(pending, covered) == .takeDownPending(weekKey: "2026-09-14"))
         // Chosen and published wins: that is a take-out, not a take-down.
         #expect(SpotlightMenuItem.resolve(post: pending, viewerId: me, entry: withPending, chosenWeekKey: "2026-09-14",
