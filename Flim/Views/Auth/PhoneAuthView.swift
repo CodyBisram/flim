@@ -62,7 +62,7 @@ struct EmailAuthView: View {
                         .tracking(2)
                         .foregroundStyle(FlimTheme.textTertiary)
 
-                    TextField("", text: $email, prompt: Text("you@example.com").foregroundStyle(FlimTheme.placeholder))
+                    TextField("", text: $email, prompt: Text(verbatim: "you@example.com").foregroundStyle(FlimTheme.placeholder))
                         .keyboardType(.emailAddress)
                         .textContentType(.emailAddress)
                         .autocorrectionDisabled()
