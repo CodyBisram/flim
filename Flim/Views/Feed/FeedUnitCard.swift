@@ -111,6 +111,11 @@ struct FeedUnitCard: View {
     /// began are not in here: a pull-to-refresh must not send someone who swiped through them
     /// back to the first.
     @State private var arrivedThisLook: Set<UUID> = []
+    /// The photograph the pager is on, by id. The items remap follows it rather than reading
+    /// `oldIds[selection]`: a catch-up that moved `selection` in the same update as a new shot
+    /// arrived left that index pointing into the NEW ids, and the remap then moved the pager
+    /// one frame past the shot it had just opened on. Nil until the first swipe or catch-up.
+    @State private var shownPostId: UUID?
 
     init(unit: FeedUnit, width: CGFloat, opening: Int, seenStore: FeedSeenStore,
          markingEnabled: Bool, catchUpGeneration: Int, onAuthorBlocked: @escaping () -> Void) {
@@ -209,8 +214,7 @@ struct FeedUnitCard: View {
         // captures at the front). The pager should keep showing the same PHOTOGRAPH, not the
         // same index, so the selection is remapped to follow the post it was on.
         .onChange(of: unit.items.map(\.post.id)) { oldIds, newIds in
-            if selection < oldIds.count {
-                let viewing = oldIds[selection]
+            if let viewing = shownPostId ?? (selection < oldIds.count ? oldIds[selection] : nil) {
                 if let kept = newIds.firstIndex(of: viewing) {
                     selection = kept
                 } else if selection >= newIds.count {
@@ -237,6 +241,7 @@ struct FeedUnitCard: View {
         .onChange(of: catchUpGeneration) { openOnFirstUnseen() }
         // Swiping marks nothing: the card was marked whole when it came on screen.
         .onChange(of: selection) {
+            shownPostId = current.post.id
             captionExpanded = false
             // Radius 2 HERE and only here: a selection change is a real swipe, the intent
             // signal that pays for staying two photographs ahead of the finger.
@@ -594,6 +599,7 @@ struct FeedUnitCard: View {
         if let opening = unit.items.firstIndex(where: {
             arrivedThisLook.contains($0.post.id) || !seenStore.isSeen($0.post.id)
         }), opening != selection {
+            shownPostId = unit.items[opening].post.id
             withAnimation(.snappy(duration: 0.25)) { selection = opening }
         }
         arrivedThisLook = []   // consumed: the next catch-up must not pull back to it

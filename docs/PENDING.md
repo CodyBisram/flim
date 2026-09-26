@@ -2157,8 +2157,9 @@ Not done, or open:
 - Review findings left for device testing: (1) a post that arrived while the app was away is not
   loaded, so a mark in the feed can clear a dot the server lit for it; (2) a pull-to-refresh on a
   slow network can mark a visible card's new shots before the caught-up line is placed, putting
-  the line above a card still reading "N new"; (3) if a catch-up and a new shot land in the same
-  update, the pager can open one frame past the new shot.
+  the line above a card still reading "N new". A third (the pager opening one frame past a new
+  shot when a catch-up and the shot land together) is fixed on the branch: the card follows the
+  shown photograph by id.
 - Untouched from the earlier list: the outreach opt-out and postal-address lines, and the push
   dropped after an offline cold launch.
 - Post-release check, 2026-09-26 (read only): 0 crash_diagnostics rows from 1.6.0 builds 406 and
