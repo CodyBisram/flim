@@ -1,4 +1,4 @@
--- The admin's reported-photos card shows the photo and who reported it (2026-09-26). NOT YET APPLIED.
+-- The admin's reported-photos card shows the photo and who reported it (2026-09-26). APPLIED to production 2026-09-26, verified as the owner.
 --
 -- Before this the card had the photographer's username, the latest reason and a time, and nothing
 -- else: list_photo_reports() returned no path to draw and no reporter, and storage would not have
