@@ -145,6 +145,11 @@ final class FeedSeenStore {
     /// subtract it from a server count that could not have excluded it.
     func isPendingSync(_ id: UUID) -> Bool { activeUserId != nil && pendingSync[id] != nil }
 
+    /// Every mark still waiting to be pushed, read by the feed at the instant it asks the
+    /// server for a count: those marks are in that count however the push races the answer,
+    /// so they stay subtracted until a newer count replaces it. See `FeedUnit.remainingLedger`.
+    var pendingIds: Set<UUID> { activeUserId != nil ? Set(pendingSync.keys) : [] }
+
     /// Bumped each time a flush lands marks on the server. The feed header re-reads the
     /// server's count on it, so the number is the server's truth again within seconds of a
     /// swipe rather than an arithmetic the client keeps running until the next reload.
@@ -279,7 +284,8 @@ final class FeedSeenStore {
             from += 1000
         }
         guard user == activeUserId else { return }
-        if !marks.isEmpty { seedBacklog(marks) }
+        // Not `seedBacklog`: these came FROM the server, so there is nothing to push back.
+        insertBacklog(marks, for: user)
         // The other direction, once: marks this device made before the mirror existed (or
         // while it was offline) that the account does not have. Queued and flushed in batches,
         // so a device with years of marks catches the server up over a few requests.
@@ -296,16 +302,40 @@ final class FeedSeenStore {
     /// age out at the next boundary the way a genuinely-old seen unit would, instead of lingering a
     /// full extra day as "seen just now". The cap and the write happen ONCE for the whole batch,
     /// not per mark; ids already carrying a mark are left untouched.
-    func seedBacklog(_ marks: [(id: UUID, seenAt: Date)]) {
-        guard let activeUserId, !marks.isEmpty else { return }
+    ///
+    /// Every mark it adds is also queued for the account's copy, like any other mark. Before
+    /// 2026-09-26 it was not, so the server kept counting the seeded posts as unseen for the
+    /// whole session and the header's number stood that much too high.
+    ///
+    /// Returns the ids it queued: they are dated at post time, BEFORE the feed's last count was
+    /// asked, so the feed must add them to that count's pending set by hand or they stop being
+    /// subtracted the moment their push lands. See `FeedUnit.remainingLedger`.
+    @discardableResult
+    func seedBacklog(_ marks: [(id: UUID, seenAt: Date)]) -> Set<UUID> {
+        guard let activeUserId else { return [] }
+        let added = insertBacklog(marks, for: activeUserId)
+        guard !added.isEmpty else { return [] }
+        for (id, date) in added { pendingSync[id] = date }
+        scheduleFlush()
+        return Set(added.keys)
+    }
+
+    /// The local half of a seed, shared with `pullFromServer`: records each mark not already
+    /// held, applies the cap, writes once. Answers with the marks it added that the cap kept.
+    @discardableResult
+    private func insertBacklog(_ marks: [(id: UUID, seenAt: Date)], for userId: UUID) -> [UUID: Date] {
+        guard !marks.isEmpty else { return [:] }
+        var added: [UUID: Date] = [:]
         for (id, date) in marks where seenAt[id] == nil {
             seenAt[id] = date
+            added[id] = date
         }
         if seenAt.count > Self.cap {
             let evictable = seenAt.sorted { $0.value < $1.value }.prefix(seenAt.count - Self.cap)
             for (id, _) in evictable { seenAt.removeValue(forKey: id) }
         }
-        persist(for: activeUserId)
+        persist(for: userId)
+        return added.filter { seenAt[$0.key] != nil }
     }
 
     private static func datesKey(for userId: UUID) -> String { datesKeyPrefix + userId.uuidString }

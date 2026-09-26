@@ -178,6 +178,42 @@ final class FeedSeenStoreTests: XCTestCase {
         XCTAssertEqual(store.flushGeneration, 1)
     }
 
+    /// Seeded backlog marks used to stay on the device for the whole session: only the pull's
+    /// one-time backfill at activation pushed local-only marks, and the seed runs after it. The
+    /// server kept counting those posts as unseen and the feed header stood that much too high.
+    func testSeededMarksAreQueuedAndPushedLikeAnyOtherMark() async {
+        actor Spy {
+            private(set) var pushed = Set<UUID>()
+            func record(_ ids: Set<UUID>) { pushed.formUnion(ids) }
+        }
+        let spy = Spy()
+        let store = FeedSeenStore(defaults: defaults, pushRows: { _, marks in
+            await spy.record(Set(marks.keys))
+            return Set(marks.keys)
+        })
+        store.activeUserId = UUID()
+        let alreadySeen = UUID(), seeded = UUID()
+        store.markSeen(alreadySeen)
+        await store.flushPending()
+
+        let queued = store.seedBacklog([(id: seeded, seenAt: Date(timeIntervalSince1970: 1_755_000_000)),
+                                        (id: alreadySeen, seenAt: Date(timeIntervalSince1970: 1))])
+        XCTAssertEqual(queued, [seeded], "an id that already held a mark is neither re-seeded nor re-queued")
+        XCTAssertTrue(store.isPendingSync(seeded))
+        XCTAssertTrue(store.pendingIds.contains(seeded), "the feed snapshots this set when it asks for a count")
+
+        await store.flushPending()
+        XCTAssertFalse(store.isPendingSync(seeded))
+        let pushed = await spy.pushed
+        XCTAssertTrue(pushed.contains(seeded))
+    }
+
+    func testPendingIdsIsEmptyWithoutAnAccount() {
+        let store = FeedSeenStore(defaults: defaults)
+        XCTAssertTrue(store.pendingIds.isEmpty)
+        XCTAssertTrue(store.seedBacklog([(id: UUID(), seenAt: Date.now)]).isEmpty)
+    }
+
     /// `markSeen` used to re-serialize the WHOLE seen-set into `UserDefaults` on every call.
     /// Swiping through a ten-shot day cost ten writes; now a burst coalesces into one, and only
     /// fires (or is forced, as here) once.

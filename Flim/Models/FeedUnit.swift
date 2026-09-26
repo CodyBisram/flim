@@ -184,95 +184,73 @@ struct FeedUnit: Identifiable, Equatable {
         items.reduce(0) { $0 + (isSeen($1.post.id) ? 0 : 1) }
     }
 
-    /// One unit's share of the header ledger: its full shot count ("what arrived") and its
-    /// author, keyed by unit id so `FeedView`'s grow-only refreshes can merge per unit. The
-    /// totals used to be merged as a component-wise max of two `(shots, friends)` tuples,
-    /// which paired a shot count from one snapshot with a friend count from another — a
-    /// combination that was never true of any moment.
-    struct LedgerContribution: Equatable {
-        let shots: Int
-        let author: UUID
+    // MARK: - The header count
+    //
+    // "N shots from N friends" is what is LEFT to see: posts by people you follow, newer than
+    // `retentionWindow`, that you have not reached, and how many people posted them. Both
+    // functions below answer that one question and both return `nil` rather than a zero, so
+    // the header can never read "0 shots from 0 friends". Your own posts never count: you are
+    // not your own friend, and a post you made stays honestly unseen for you (nothing marks
+    // it on your behalf), so the exclusion alone keeps it out. Rendering, pills and
+    // `caughtUpIndex` keep treating your units like any other.
+
+    /// Whether `feed_unseen_count()`, asked at `countedAt`, could have included this post: it
+    /// counts `created_at > NOW() - 7 days`, and nothing posted after it was asked. The loaded
+    /// feed's window was fixed when it was fetched, hours ago perhaps, so a loaded post can
+    /// have aged out of the server's count while still sitting unseen on screen; a mark on it
+    /// must not come off a number that no longer holds it.
+    static func wasCounted(_ item: FeedItem, countedAt: Date) -> Bool {
+        item.post.createdAt > countedAt.addingTimeInterval(-retentionWindow)
+            && item.post.createdAt <= countedAt
     }
 
-    /// The header ledger's makeup: every unit holding at least one unseen shot, each
-    /// contributing its WHOLE shot count. The ledger counts what ARRIVED, not what is left,
-    /// so it never ticks down as you read; it simply goes when the last mark clears.
-    /// Counting units-with-unseen rather than the whole rendered list is what keeps an
-    /// archive feed from counting the size of someone's scroll a year in.
-    ///
-    /// `excludingAuthor`, when given, drops that author's own units before any of the above:
-    /// you are not your own friend, so "N shots from N friends" must never count posts you
-    /// made yourself. This and `FeedView.anythingUnseen` (which decides when the ledger
-    /// SHOWS, and must agree or a stale count stays lit on the strength of posts the ledger
-    /// refuses to count) are the only seen-state derivations that exclude them: rendering,
-    /// pills, `caughtUpIndex`, and retention all keep treating a unit as a unit regardless of
-    /// who posted it, and a post you just created stays honestly unseen for you like any
-    /// other post (nothing marks it seen on your own behalf); the exclusion alone is what
-    /// keeps it, or any other post of yours, out of the count.
-    static func ledgerContributions(units: [FeedUnit], isSeen: (UUID) -> Bool,
-                                    excludingAuthor currentUserId: UUID? = nil) -> [String: LedgerContribution] {
-        let eligible = currentUserId.map { uid in units.filter { $0.author.id != uid } } ?? units
-        let arrived = eligible.filter { $0.unseenCount(isSeen: isSeen) > 0 }
-        return Dictionary(uniqueKeysWithValues: arrived.map {
-            ($0.id, LedgerContribution(shots: $0.items.count, author: $0.author.id))
-        })
-    }
-
-    /// The line the header actually renders, `nil` when nothing contributed (the ledger is
-    /// never a zero).
-    static func ledgerTotal(_ contributions: [String: LedgerContribution]) -> (shots: Int, friends: Int)? {
-        guard !contributions.isEmpty else { return nil }
-        return (contributions.values.reduce(0) { $0 + $1.shots },
-                Set(contributions.values.map(\.author)).count)
-    }
-
-    static func ledger(units: [FeedUnit], isSeen: (UUID) -> Bool,
-                        excludingAuthor currentUserId: UUID? = nil) -> (shots: Int, friends: Int)? {
-        ledgerTotal(ledgerContributions(units: units, isSeen: isSeen, excludingAuthor: currentUserId))
-    }
-
-    /// The grow-only ratchet, per unit: everything already counted stays counted (reading a
-    /// unit mid-session must not pull the number down), fresh units join, and a unit present
-    /// in both keeps the larger shot count (a straddle completion can grow a counted day).
-    static func mergedLedgerContributions(
-        counted: [String: LedgerContribution],
-        fresh: [String: LedgerContribution]
-    ) -> [String: LedgerContribution] {
-        counted.merging(fresh) { old, new in
-            LedgerContribution(shots: max(old.shots, new.shots), author: new.author)
-        }
-    }
-
-    /// What the header shows while you read: the server's whole-window count minus every
-    /// loaded frame (not your own) the server cannot know is seen, which is a mark made
-    /// since the count was taken OR a mark still waiting to be pushed. Friends: the server's
-    /// count minus the loaded authors whose days are all read now, never below the authors
-    /// still holding something unseen, never below one while shots remain.
+    /// The server's count, carried forward: `serverShots` minus every loaded frame (not your
+    /// own) the server counted but cannot yet know is seen. That is a mark made at or after
+    /// `countedAt`, a mark that was still waiting to be pushed when the count was asked
+    /// (`pendingAtCount`), or one still waiting now. Friends: the server's count minus the
+    /// loaded authors whose in-window frames are all read now, never below the authors still
+    /// holding an unseen in-window frame, never below one while shots remain.
     ///
     /// `countedAt` must be the instant the count was ASKED for, not when its answer arrived:
-    /// a swipe during the round trip is a mark the server did not see (FeedView, 2026-09-23,
-    /// where the timestamp was taken after the page load and every mark made in that window
-    /// was neither in the server's count nor subtracted from it).
+    /// a swipe during the round trip is a mark the server did not see (2026-09-23, when the
+    /// stamp was taken after the page load and every mark made in between was neither in the
+    /// count nor subtracted from it). `pendingAtCount` is what stops the number bouncing when
+    /// a push lands: the push clears "pending now" at once, but the server's count is only
+    /// re-read a round trip later, and until then a mark older than `countedAt` that the count
+    /// still includes would otherwise stop being subtracted (2026-09-26, "up by the batch,
+    /// then down" every four seconds).
     static func remainingLedger(serverShots: Int, serverFriends: Int, countedAt: Date,
+                                pendingAtCount: Set<UUID>, now: Date,
                                 units: [FeedUnit], currentUserId: UUID?,
-                                seenDate: (UUID) -> Date?, isPendingSync: (UUID) -> Bool) -> (shots: Int, friends: Int) {
-        let others = units.filter { $0.author.id != currentUserId }
-        let loadedIds = others.flatMap(\.items).map(\.post.id)
-        // Resolved into sets up front: the two closures are non-escaping parameters, and
-        // the per-unit derivations below need plain predicates they can hold.
-        let seenIds = Set(loadedIds.filter { seenDate($0) != nil })
-        let unknownToServer = Set(loadedIds.filter { id in
-            guard let date = seenDate(id) else { return false }
-            return date >= countedAt || isPendingSync(id)
-        })
-        let shots = max(0, serverShots - unknownToServer.count)
-        let isSeen: (UUID) -> Bool = { seenIds.contains($0) }
-        let finishedAuthors = Set(others.filter { unit in
-            unit.items.contains { unknownToServer.contains($0.post.id) } && unit.unseenCount(isSeen: isSeen) == 0
+                                seenDate: (UUID) -> Date?, isPendingSync: (UUID) -> Bool) -> (shots: Int, friends: Int)? {
+        let items = units.filter { $0.author.id != currentUserId }.flatMap(\.items)
+        let unknownToServer = Set(items.filter { item in
+            guard wasCounted(item, countedAt: countedAt), let date = seenDate(item.post.id) else { return false }
+            return date >= countedAt || pendingAtCount.contains(item.post.id) || isPendingSync(item.post.id)
+        }.map(\.post.id))
+        let shots = serverShots - unknownToServer.count
+        guard shots > 0 else { return nil }
+        let stillOpenAuthors = Set(items.filter {
+            $0.post.createdAt > now.addingTimeInterval(-retentionWindow) && seenDate($0.post.id) == nil
         }.map(\.author.id))
-        let stillOpenAuthors = Set(others.filter { $0.unseenCount(isSeen: isSeen) > 0 }.map(\.author.id))
-        let friends = shots == 0 ? 0 : max(stillOpenAuthors.count, serverFriends - finishedAuthors.count, 1)
-        return (shots, friends)
+        // Per author, not per unit: an author with one day read and another still open is
+        // not finished.
+        let finishedAuthors = Set(items.filter { unknownToServer.contains($0.post.id) }.map(\.author.id))
+            .subtracting(stillOpenAuthors)
+        return (shots, max(stillOpenAuthors.count, serverFriends - finishedAuthors.count, 1))
+    }
+
+    /// The same question answered from the loaded pages alone, for when the server's count
+    /// could not be read: unseen frames (not your own) newer than `retentionWindow` before
+    /// `now`, and the distinct authors holding them. It undercounts whatever the pages have
+    /// not reached, which is why the server's count wins whenever there is one.
+    static func loadedRemaining(units: [FeedUnit], currentUserId: UUID?, now: Date,
+                                isSeen: (UUID) -> Bool) -> (shots: Int, friends: Int)? {
+        let unseen = units.filter { $0.author.id != currentUserId }.flatMap(\.items).filter {
+            $0.post.createdAt > now.addingTimeInterval(-retentionWindow) && !isSeen($0.post.id)
+        }
+        guard !unseen.isEmpty else { return nil }
+        return (unseen.count, Set(unseen.map(\.author.id)).count)
     }
 
     /// The caught-up block's position: after the last unit that still holds anything unseen,
