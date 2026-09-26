@@ -139,7 +139,9 @@ not add plurals of words already present. Apple handles both.
 ## What's New (version 1.6.0), draft 2026-09-26
 
 1.5.4 never went to the App Store, so this covers everything a person can see since 378: the 1.5.4
-draft below, folded in and updated, plus Spotlight and the invite loop. Submit build 405.
+draft below, folded in and updated, plus Spotlight and the invite loop. Submit build 406 (5ea15fb:
+the one-time "Spotlight is new" line in the feed, and new accounts' first-visit lines, which had
+never appeared, now do).
 
 > **PASTE ONLY THE INDENTED BLOCK BELOW.** Everything under "Ship notes" is internal.
 
