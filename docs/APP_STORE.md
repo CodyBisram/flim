@@ -145,7 +145,7 @@ days old, and the sign-in code boxes and delete-account hold button back to thei
 
 > **PASTE ONLY THE INDENTED BLOCK BELOW.** Everything under "Ship notes" is internal.
 
-    Spotlight. Once a week you can put up one frame you shot that week: open its menu and choose Put it up for Spotlight. Only the team at FLIM sees it. When the week closes, the team chooses a few and publishes them as one short strip in the feed. If yours is chosen, you get a notification, a Spotlight badge, and the frame on your page for everyone to see. You can take a frame down until the week closes, and take a chosen one out whenever you like.
+    Spotlight. Each week, put up one frame you shot that week: open the post's menu and choose Put it up for Spotlight. Only the team at FLIM sees what you put up. When the week closes, the team chooses a few and shows them to everyone as a short strip in the feed. If yours is chosen, you get a notification, a Spotlight badge, and the frame on your page for everyone to see. You can take a frame down until the week closes, and take a chosen one out whenever you like.
 
     Your invites come back. When a friend you invited takes their first photo, FLIM tells you, and that invite is yours to give again. The link you send names you, so they know who it's from.
 
@@ -166,7 +166,7 @@ days old, and the sign-in code boxes and delete-account hold button back to thei
 ### Ship notes (internal, do NOT paste)
 
 **Promotional text for the 1.6 window** (170 char max, editable anytime without review):
-> Spotlight is here. Put up one frame a week, and the team at FLIM chooses a few to show everyone.
+> Spotlight is here. Each week, put up your best frame, and the team at FLIM chooses a few to show everyone.
 
 **Privacy label.** Crash Data and Product Interaction, both linked to the user, matching
 Flim/PrivacyInfo.xcprivacy since e4d2831 (crash reports carry the signed-in user's id).
