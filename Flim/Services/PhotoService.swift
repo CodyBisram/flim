@@ -174,6 +174,27 @@ final class PhotoService {
                         photoId: UUID = UUID(),
                         alreadyQueued: Bool = false,
                         onFinish: @escaping (Photo) async -> Void) {
+        enqueueCapture(loadRaw: { rawData }, stock: stock, userId: userId, rollId: rollId,
+                       knownRevealAt: knownRevealAt, previewAspect: previewAspect,
+                       capturedAt: capturedAt, photoId: photoId, alreadyQueued: alreadyQueued,
+                       onFinish: onFinish)
+    }
+
+    /// The same, with the shot's bytes read by `loadRaw` rather than held (2026-09-26). The
+    /// camera passes the bytes it already has; a crash replay (`restorePendingCaptures`) passes
+    /// a read from the queue on disk, called only at the shot's turn. Before this, a replay read
+    /// every waiting shot's file up front and each queued task held its copy until its turn, so
+    /// forty frames shot offline meant forty compressed captures in memory at launch. `nil` means
+    /// the bytes are gone from disk; the shot is skipped and its entry is left for the next
+    /// launch's recovery plan to settle.
+    func enqueueCapture(loadRaw: @escaping @Sendable () async -> Data?,
+                        stock: FilmStock, userId: UUID, rollId: UUID?,
+                        knownRevealAt: Date? = nil,
+                        previewAspect: CGFloat? = nil,
+                        capturedAt: Date = .now,
+                        photoId: UUID = UUID(),
+                        alreadyQueued: Bool = false,
+                        onFinish: @escaping (Photo) async -> Void) {
         // To disk first (1.5.3): the raw bytes and the facts needed to redo this shot, written
         // before it waits its turn behind earlier shots. A kill while it is in line no longer
         // loses it; `restorePendingCaptures` replays it on the next launch with this capture
@@ -187,6 +208,7 @@ final class PhotoService {
         // capture, never a cropped copy: the crop is recomputed on replay from `previewAspect`.
         let saved: Task<Bool, Never> = Task.detached(priority: .userInitiated) {
             if alreadyQueued { return true }
+            guard let rawData = await loadRaw() else { return false }
             return await queueStore.save(meta, raw: rawData)
         }
 
@@ -213,8 +235,9 @@ final class PhotoService {
         // memory, which on replay is a crash loop. Only the compressed bytes wait in line now.
         // The shutter is still free: this function only enqueues, and the decode still runs off
         // the main actor in its own detached task.
-        let prepare: @Sendable () async -> PreparedCapture = {
-            await Task.detached(priority: .userInitiated) { () -> PreparedCapture in
+        let prepare: @Sendable () async -> PreparedCapture? = {
+            guard let rawData = await loadRaw() else { return nil }
+            return await Task.detached(priority: .userInitiated) { () -> PreparedCapture in
                 let target = previewAspect.flatMap {
                     CapturedPhotoCropper.isPlausibleTargetAspect($0) ? $0 : nil
                 }
@@ -262,7 +285,12 @@ final class PhotoService {
             // pixels the master was encoded from (see `gradeForCapture`), so `captureAndUpload`
             // can thread them straight into the thumb/feed renditions instead of re-decoding the
             // master JPEG a second time.
-            let capture = await prepare()
+            guard let capture = await prepare() else {
+                Self.captureLog.error("a queued shot's bytes were gone at its turn; left for the next launch's recovery")
+                pendingCaptureCount = max(0, pendingCaptureCount - 1)
+                if pendingCaptureCount == 0 { localSaveFailed = false }
+                return
+            }
             let (processed, graded) = await Self.gradeForCapture(frame: capture.frame,
                                                                  bytes: capture.bytes, stock: stock)
             // Classify NOW, off the same pixels, and let go of them. The suggestion cannot be
@@ -958,10 +986,12 @@ final class PhotoService {
             Self.captureLog.info("replaying \(plan.replayRaw.count, privacy: .public) capture(s) saved on this phone")
         }
         for id in plan.replayRaw {
-            guard let entry = entries.first(where: { $0.meta.id == id }),
-                  let raw = await queue.raw(for: id, userId: userId) else { continue }
+            guard let entry = entries.first(where: { $0.meta.id == id }), entry.hasRaw else { continue }
             guard AccountEpoch.isCurrent(epoch) else { return [] }
-            enqueueCapture(rawData: raw, stock: FilmStock.stock(id: entry.meta.stockId),
+            // The bytes are read at the shot's turn, not here: only one replayed capture is in
+            // memory at a time, however many a crash left on disk.
+            enqueueCapture(loadRaw: { await queue.raw(for: id, userId: userId) },
+                           stock: FilmStock.stock(id: entry.meta.stockId),
                            userId: userId, rollId: entry.meta.rollId,
                            knownRevealAt: entry.meta.knownRevealAt,
                            previewAspect: entry.meta.previewAspect,

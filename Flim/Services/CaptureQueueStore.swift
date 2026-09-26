@@ -232,7 +232,14 @@ actor CaptureQueueStore {
         _ = update(userId) { list in list.removeAll { $0.id == id } }
         try? FileManager.default.removeItem(at: bytesURL(id, userId: userId))
         let dir = directory(for: userId)
-        if readManifest(userId).isEmpty { try? FileManager.default.removeItem(at: manifestURL(for: userId)); try? FileManager.default.removeItem(at: dir) }
+        guard readManifest(userId).isEmpty else { return }
+        try? FileManager.default.removeItem(at: manifestURL(for: userId))
+        // Only an EMPTY folder goes. An empty manifest does not prove there is nothing left: if
+        // adoption above could not write the manifest, a 1.5.3 shot is still here as a sidecar and
+        // its bytes, and deleting the folder would take them with it. Whatever remains is the next
+        // launch's `prune` and adoption to settle.
+        let rest = (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []
+        if rest.isEmpty { try? FileManager.default.removeItem(at: dir) }
     }
 
     /// Entries whose bytes never arrived and are older than `olderThan` (a crash between the

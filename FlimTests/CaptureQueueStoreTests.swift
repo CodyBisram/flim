@@ -100,6 +100,24 @@ struct CaptureQueueStoreTests {
         await store.remove(id: earlier, userId: user)
         #expect(await store.load(userId: user).map(\.meta.id) == [later])
     }
+
+    /// Removing the last entry deletes the folder only when nothing else is in it. A file the
+    /// manifest does not know about (a 1.5.3 shot whose adoption could not be written) survives.
+    @Test func removingTheLastEntryKeepsAFolderThatStillHoldsFiles() async throws {
+        let store = freshStore(); let user = UUID()
+        let dir = store.root.appendingPathComponent(user.uuidString.lowercased(), isDirectory: true)
+        let m = meta(user, at: .now)
+        await store.save(m, raw: Data([1]))
+        let unknown = dir.appendingPathComponent("\(UUID()).jpg"); try Data([2]).write(to: unknown)
+        await store.remove(id: m.id, userId: user)
+        #expect(FileManager.default.fileExists(atPath: unknown.path), "bytes the manifest does not list are not deleted with the folder")
+
+        let other = UUID(); let n = meta(other, at: .now)
+        let otherDir = store.root.appendingPathComponent(other.uuidString.lowercased(), isDirectory: true)
+        await store.save(n, raw: Data([3]))
+        await store.remove(id: n.id, userId: other)
+        #expect(!FileManager.default.fileExists(atPath: otherDir.path), "a folder with nothing left in it goes")
+    }
 }
 
 /// Every crash point leaves an on-disk state; the plan must recover each shot exactly once.
