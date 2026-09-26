@@ -82,6 +82,8 @@ type Recipient = { userId: string; title: string; body: string; route: unknown }
 
 /// The campaigns this function knows how to send, by name. A campaign has to be listed here to be
 /// sendable, so a typo in the query string cannot invent one and bypass the claim ledger.
+const APP_NAME = "FLIM";
+
 const CAMPAIGNS: Record<string, () => Promise<Recipient[]>> = {
   "first-shot": firstShotCohort,
   "still-no-shot": stillNoShotCohort,
@@ -108,6 +110,8 @@ const CAMPAIGNS: Record<string, () => Promise<Recipient[]>> = {
   "thank-you-annie": thankYouAnnieCohort,
   "founding-seats-preview": foundingSeatsPreviewCohort,
   "founding-seats": foundingSeatsCohort,
+  "founding-seats-inviters-preview": foundingSeatsInvitersPreviewCohort,
+  "founding-seats-inviters": foundingSeatsInvitersCohort,
 };
 
 /// Founding 100 is running out (2026-09-25: 24 seats, about four a week). The badge is the one
@@ -144,6 +148,60 @@ async function foundingSeatsCohort(): Promise<Recipient[]> {
     out.push({ userId: id, title: foundingSeatsTitle(left), body: FOUNDING_SEATS_BODY, route: { t: "invite" } });
   }
   return out;
+}
+
+/// The people whose invite was redeemed in the last two weeks (2026-09-25, sent the same evening
+/// as founding-seats, which pre-claimed these same people so nobody hears twice). It names the
+/// friend who joined, says they took a founding seat, and gives the live count: the earn-back and
+/// the scarcity in one push, to the people most likely to invite again. "Redeemed" is the moment
+/// redeem_invite admitted the email (allowed_emails.added_at); the joined friend is named only
+/// once an account exists for that email. The owner and the review account are excluded.
+async function foundingSeatsInviterRows(): Promise<Recipient[]> {
+  const left = await foundingSeatsLeft();
+  const since = new Date(Date.now() - 14 * 24 * 3600 * 1000).toISOString();
+  const { data: rows, error } = await supabase
+    .from("allowed_emails").select("email, note, added_at")
+    .like("note", "invited_by:%").gte("added_at", since);
+  if (error || !rows) return [];
+  const joinedBy = new Map<string, string[]>();
+  for (const r of rows as { email: string; note: string }[]) {
+    const inviter = /^invited_by:([0-9a-f-]{36})/.exec(r.note)?.[1];
+    if (!inviter) continue;
+    const { data: u } = await supabase
+      .from("users").select("username").ilike("email", r.email).maybeSingle();
+    const name = (u as { username: string } | null)?.username;
+    if (!name) continue;
+    joinedBy.set(inviter, [...(joinedBy.get(inviter) ?? []), name]);
+  }
+  const reachable = new Set(await reachableUsers());
+  const out: Recipient[] = [];
+  for (const [inviterId, names] of joinedBy) {
+    if (!reachable.has(inviterId)) continue;
+    const { data: iu } = await supabase
+      .from("users").select("username, invite_uses_remaining").eq("id", inviterId).maybeSingle();
+    const inviter = iu as { username: string; invite_uses_remaining: number | null } | null;
+    if (!inviter || inviter.username === "cody" || inviter.username === "applereview") continue;
+    const title = names.length === 1
+      ? `@${names[0]} joined with your invite.`
+      : `@${names[0]} and ${names.length - 1 === 1 ? "one other" : `${names.length - 1} others`} joined with your invites.`;
+    const they = names.length === 1 ? "They're" : "They're each";
+    const seats = left === 1 ? "One seat is left" : `${left} seats are left`;
+    const canInvite = inviter.invite_uses_remaining !== null && inviter.invite_uses_remaining > 0;
+    const body = left > 0
+      ? `${they} one of the first hundred on ${APP_NAME}. ${seats}${canInvite ? ", and your invites are on your profile." : "."}`
+      : `${they} one of the first hundred on ${APP_NAME}.`;
+    out.push({ userId: inviterId, title, body, route: { t: "invite" } });
+  }
+  return out;
+}
+async function foundingSeatsInvitersCohort(): Promise<Recipient[]> {
+  return foundingSeatsInviterRows();
+}
+/// The owner alone, with the first real recipient's exact wording.
+async function foundingSeatsInvitersPreviewCohort(): Promise<Recipient[]> {
+  const sample = (await foundingSeatsInviterRows())[0];
+  if (!sample) return [];
+  return ownerOnly(sample.title, sample.body);
 }
 
 /// The owner alone, with the live count, to read on a lock screen before anyone else does.
