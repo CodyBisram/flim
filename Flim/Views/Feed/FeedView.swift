@@ -243,6 +243,12 @@ struct FeedView: View {
     var body: some View {
         ZStack {
             FlimTheme.bg.ignoresSafeArea()
+                // On the always-mounted background, and `initial`, so it also runs when the
+                // entry arrives before the feed's list mounts: someone who uses Spotlight before
+                // reading the 1.6.0 line never needs it, even after taking the frame down.
+                .onChange(of: spotlightAlreadyUsed, initial: true) { _, used in
+                    if used, let uid = auth.currentUser?.id { NewAccountIntro.markSeen(.spotlight, userId: uid) }
+                }
 
             VStack(spacing: 0) {
                 header
@@ -560,11 +566,15 @@ struct FeedView: View {
         return "\(shots) from \(friends)"
     }
 
-    /// The account has put a frame up this week, has one waiting on a closed week, or has been
-    /// chosen before: it knows Spotlight, and the 1.6.0 announcement is not for it.
+    /// The account has put a frame up this week or has one waiting on a closed week: it knows
+    /// Spotlight, and the 1.6.0 announcement is not for it. Only from an entry loaded for the
+    /// account signed in now (`ownSpotlightEntryIsCurrent`), never the previous account's.
+    /// `ownSpotlightChosen` is left out on purpose: it loads only with the own profile's shelf,
+    /// carries no account stamp, and nobody chosen can have missed the line (no week had been
+    /// published when 1.6.0 shipped).
     private var spotlightAlreadyUsed: Bool {
-        if let entry = feed.ownSpotlightEntry, entry.postId != nil || !entry.pending.isEmpty { return true }
-        return !feed.ownSpotlightChosen.isEmpty
+        guard feed.ownSpotlightEntryIsCurrent, let entry = feed.ownSpotlightEntry else { return false }
+        return entry.postId != nil || !entry.pending.isEmpty
     }
 
     // MARK: - The feed
@@ -589,6 +599,7 @@ struct FeedView: View {
                     // who has already put a frame up or been chosen.
                     AnnouncementLine(
                         announcement: .spotlight,
+                        usageKnown: feed.ownSpotlightEntryIsCurrent,
                         firstVisitLineShowing: NewAccountIntro.lineToShow(
                             .feed, userId: auth.currentUser?.id, createdAt: auth.currentUser?.createdAt) != nil,
                         alreadyUsed: spotlightAlreadyUsed)
@@ -654,11 +665,6 @@ struct FeedView: View {
                 .padding(.bottom, 24)
             }
             .refreshable { await reload() }
-            // Someone who uses Spotlight before reading the 1.6.0 line never needs it, even if
-            // they later take the frame down.
-            .onChange(of: spotlightAlreadyUsed) { _, used in
-                if used, let uid = auth.currentUser?.id { NewAccountIntro.markSeen(.spotlight, userId: uid) }
-            }
             // Swiping the feed puts the keyboard away (the comments sheet's composer can
             // leave one up); interactively, so it tracks the drag.
             .scrollDismissesKeyboard(.interactively)
@@ -927,9 +933,13 @@ struct FeedView: View {
         // Beside the feed, not after it: the strip must be in hand before the first snapshot
         // below places it, or it would pop in above a feed that was already drawn.
         async let spotlightStrip: Void = feed.loadSpotlightStrip()
+        // Same reason for the account's own entry: it decides whether "Spotlight is new." shows
+        // (1.6.0), and fetched after the feed it popped the line in over drawn cards.
+        async let ownSpotlightEntry: Void = feed.refreshOwnSpotlightEntry()
         await feed.loadFeed(currentUserId: uid)
         let unseen = await counted
         await spotlightStrip
+        await ownSpotlightEntry
         if AccountEpoch.isCurrent(epoch) { seenSpotlight = SpotlightSeenMark.seen(userId: uid) }
         // A stale reload (the account switched while `loadFeed` was in flight) must not write
         // any of these: not just the dot, which is the only one this used to guard, but the

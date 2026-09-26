@@ -850,7 +850,19 @@ final class FeedService {
     var spotlightStripWeeks: [SpotlightWeek] = []
     /// This week's bounds and entry, from `own_spotlight_entry()`. nil while unknown, which
     /// hides the menu item rather than guessing.
-    var ownSpotlightEntry: OwnSpotlightEntry?
+    var ownSpotlightEntry: OwnSpotlightEntry? {
+        didSet { ownSpotlightEntryEpoch = AccountEpoch.current }
+    }
+    /// The account epoch `ownSpotlightEntry` was last written under. The epoch moves the moment
+    /// the session changes, before the reset and before the new account's first frame is
+    /// drawn, so a reader that must not act on the previous account's entry (the 1.6.0
+    /// announcement, which flashed on an account switch) compares this with
+    /// `AccountEpoch.current` (`ownSpotlightEntryIsCurrent`).
+    private(set) var ownSpotlightEntryEpoch = -1
+    /// An entry is loaded, and it belongs to the account signed in now.
+    var ownSpotlightEntryIsCurrent: Bool {
+        ownSpotlightEntry != nil && ownSpotlightEntryEpoch == AccountEpoch.current
+    }
     /// The signed-in account's own published frames, post id to week key: what turns the menu
     /// item into "Take it out of Spotlight".
     var ownSpotlightChosen: [UUID: String] = [:]

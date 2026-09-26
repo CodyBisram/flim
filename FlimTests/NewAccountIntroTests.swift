@@ -7,16 +7,24 @@ struct NewAccountIntroTests {
 
     @Test("only accounts created on or after the cutoff are new")
     func newAccountGate() {
-        #expect(NewAccountIntro.isNewAccount(createdAt: cutoff, cutoff: cutoff))
-        #expect(NewAccountIntro.isNewAccount(createdAt: cutoff.addingTimeInterval(86_400), cutoff: cutoff))
-        #expect(!NewAccountIntro.isNewAccount(createdAt: cutoff.addingTimeInterval(-1), cutoff: cutoff))
-        #expect(!NewAccountIntro.isNewAccount(createdAt: nil, cutoff: cutoff))
+        let soon = cutoff.addingTimeInterval(86_400 * 2)
+        #expect(NewAccountIntro.isNewAccount(createdAt: cutoff, cutoff: cutoff, now: soon))
+        #expect(NewAccountIntro.isNewAccount(createdAt: cutoff.addingTimeInterval(86_400), cutoff: cutoff, now: soon))
+        #expect(!NewAccountIntro.isNewAccount(createdAt: cutoff.addingTimeInterval(-1), cutoff: cutoff, now: soon))
+        #expect(!NewAccountIntro.isNewAccount(createdAt: nil, cutoff: cutoff, now: soon))
+        // New for three days, then not: accounts from before 1.6.0 made the lines work are not
+        // greeted as brand new on their first 1.6.0 launch.
+        let later = cutoff.addingTimeInterval(86_400 * 18)
+        #expect(NewAccountIntro.isNewAccount(createdAt: later.addingTimeInterval(-(3 * 86_400 - 60)), cutoff: cutoff, now: later))
+        #expect(!NewAccountIntro.isNewAccount(createdAt: later.addingTimeInterval(-3 * 86_400), cutoff: cutoff, now: later))
+        #expect(!NewAccountIntro.isNewAccount(createdAt: cutoff.addingTimeInterval(86_400), cutoff: cutoff, now: later))
     }
 
     @Test("a line shows once per account per surface, then never")
     func lineShowsOnce() {
-        let defaults = UserDefaults(suiteName: "NewAccountIntroTests.\(UUID().uuidString)")!
-        defer { defaults.removePersistentDomain(forName: defaults.description) }
+        let suite = "NewAccountIntroTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
         let previous = NewAccountIntro.store
         NewAccountIntro.store = defaults
         defer { NewAccountIntro.store = previous }
@@ -163,17 +171,22 @@ struct NewAccountIntroTests {
 
     @Test("the Spotlight announcement shows once per account, to old accounts too, and waits for the first-visit line")
     func announcementShowsOnce() {
-        let defaults = UserDefaults(suiteName: "NewAccountIntroTests.announce.\(UUID().uuidString)")!
-        defer { defaults.removePersistentDomain(forName: defaults.description) }
+        let suite = "NewAccountIntroTests.announce.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
         let previous = NewAccountIntro.store
         NewAccountIntro.store = defaults
         defer { NewAccountIntro.store = previous }
 
         let me = UUID()
         let line = NewAccountIntro.Announcement.spotlight.line
-        func show(_ uid: UUID?, firstVisit: Bool = false, used: Bool = false) -> String? {
-            NewAccountIntro.announcementToShow(.spotlight, userId: uid, firstVisitLineShowing: firstVisit, alreadyUsed: used)
+        func show(_ uid: UUID?, known: Bool = true, firstVisit: Bool = false, used: Bool = false) -> String? {
+            NewAccountIntro.announcementToShow(.spotlight, userId: uid, usageKnown: known,
+                                               firstVisitLineShowing: firstVisit, alreadyUsed: used)
         }
+        // Nothing until whether the account used Spotlight is known: "unknown" is not "never",
+        // and reading it that way flashed the line on launch and on an account switch.
+        #expect(show(me, known: false) == nil)
         // Any signed-in account, whatever its age; nobody signed in gets nothing.
         #expect(show(me) == line)
         #expect(show(nil) == nil)
@@ -190,6 +203,7 @@ struct NewAccountIntroTests {
         defer { NewAccountIntro.shownThisLaunch.remove(NewAccountIntro.shownKey(.spotlight, userId: me)) }
         #expect(show(me) == line)
         #expect(show(me, used: true) == nil)
+        #expect(show(me, known: false) == nil)
         // It does not share a key with the feed's first-visit line.
         #expect(NewAccountIntro.shownKey(.spotlight, userId: me) != NewAccountIntro.shownKey(.feed, userId: me))
     }

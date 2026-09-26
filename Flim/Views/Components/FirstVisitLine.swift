@@ -54,6 +54,8 @@ struct FirstVisitLine: View {
 /// used the feature already (a hidden view cannot watch for that itself).
 struct AnnouncementLine: View {
     let announcement: NewAccountIntro.Announcement
+    /// Whether the account has used the feature is known, for the account signed in now.
+    var usageKnown: Bool
     /// The surface's own first-visit line is up; wait for a later visit.
     var firstVisitLineShowing: Bool
     /// The account has used the feature; it needs no introduction.
@@ -64,7 +66,7 @@ struct AnnouncementLine: View {
     var body: some View {
         Group {
             if let uid = auth.currentUser?.id,
-               NewAccountIntro.announcementToShow(announcement, userId: uid,
+               NewAccountIntro.announcementToShow(announcement, userId: uid, usageKnown: usageKnown,
                                                   firstVisitLineShowing: firstVisitLineShowing,
                                                   alreadyUsed: alreadyUsed) != nil {
                 (Text(announcement.headline).foregroundStyle(accent)

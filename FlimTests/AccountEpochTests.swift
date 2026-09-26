@@ -205,4 +205,20 @@ struct AccountEpochTests {
 
         #expect(queue.isEmpty, "a restore for the departed account must not reach the new account's queue")
     }
+
+    @Test("the feed's own Spotlight entry counts only for the account it was loaded under")
+    func spotlightEntryStampedWithEpoch() {
+        let feed = FeedService()
+        #expect(!feed.ownSpotlightEntryIsCurrent, "nothing loaded is not current")
+        feed.ownSpotlightEntry = OwnSpotlightEntry(
+            weekKey: "2026-09-21", weekStartsAt: .now, weekClosesAt: .now.addingTimeInterval(86_400),
+            canPutUp: true, postId: nil, photoId: nil, postCreatedAt: nil, putUpAt: nil)
+        #expect(feed.ownSpotlightEntryIsCurrent)
+        // An account switch: the previous account's entry is still in hand for a moment, and
+        // must not read as the new account's (the 1.6.0 announcement flashed on exactly this).
+        AccountEpoch.bump()
+        #expect(!feed.ownSpotlightEntryIsCurrent)
+        feed.ownSpotlightEntry = nil
+        #expect(!feed.ownSpotlightEntryIsCurrent)
+    }
 }

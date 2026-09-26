@@ -16,9 +16,15 @@ enum NewAccountIntro {
     /// Accounts created from this instant on are "new". The date the first-run redesign shipped.
     static let cutoff: Date = ISO8601DateFormatter().date(from: "2026-09-08T00:00:00Z")!
 
-    static func isNewAccount(createdAt: Date?, cutoff: Date = cutoff) -> Bool {
+    /// How long an account counts as new. Bounded since 2026-09-26: the lines never actually
+    /// rendered before 1.6.0 (see `FirstVisitLine`), so no account had marked any seen, and an
+    /// unbounded "created after the cutoff" would have greeted every account from the last few
+    /// weeks as brand new on its first 1.6.0 launch.
+    static let newAccountWindow: TimeInterval = 3 * 86_400
+
+    static func isNewAccount(createdAt: Date?, cutoff: Date = cutoff, now: Date = .now) -> Bool {
         guard let createdAt else { return false }
-        return createdAt >= cutoff
+        return createdAt >= cutoff && now.timeIntervalSince(createdAt) < newAccountWindow
     }
 
     enum Surface: String, CaseIterable {
@@ -112,10 +118,13 @@ enum NewAccountIntro {
 
     /// The announcement to show right now, or nil. Shown once it has been shown this launch
     /// (marked seen mid-visit, like the first-visit lines, so scrolling away and back never
-    /// makes it vanish), unless the account has used the feature since.
-    static func announcementToShow(_ announcement: Announcement, userId: UUID?,
+    /// makes it vanish), unless the account has used the feature since. Nothing until
+    /// `usageKnown`: whether the account has used the feature arrives by network, and "not
+    /// known yet" read as "never used" flashed the line on every launch and account switch for
+    /// people who had (TestFlight 406, 2026-09-26).
+    static func announcementToShow(_ announcement: Announcement, userId: UUID?, usageKnown: Bool,
                                    firstVisitLineShowing: Bool, alreadyUsed: Bool) -> String? {
-        guard let userId, !alreadyUsed else { return nil }
+        guard let userId, usageKnown, !alreadyUsed else { return nil }
         if shownThisLaunch.contains(shownKey(announcement, userId: userId)) { return announcement.line }
         guard !hasSeen(announcement, userId: userId), !firstVisitLineShowing else { return nil }
         return announcement.line

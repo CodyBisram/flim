@@ -239,13 +239,15 @@ struct RollsView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(spacing: 0) {
-                    // One sentence, once, for a brand-new account: see NewAccountIntro.
+                    // The top anchor first, so re-tapping the tab scrolls back over the nudge and
+                    // the first-visit line too (the line renders since 2026-09-26).
+                    Color.clear.frame(height: 0).id("rollsTop")
                     // The same standing nudge the feed shows. A person who lives on Camera and
                     // Rolls never saw it, and a roll with no push token cannot tell them it
                     // developed (engineering audit, 2026-09-19). It gates and hides itself.
                     NotificationNudgeBanner()
+                    // One sentence, once, for a brand-new account: see NewAccountIntro.
                     FirstVisitLine(surface: .rolls)
-                    Color.clear.frame(height: 0).id("rollsTop")
 
                     // Follow-up invites ("Start another with this group"), above everything: a
                     // friend started a roll and is waiting to see who is in. Join is one tap,
