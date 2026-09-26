@@ -198,7 +198,7 @@ struct MainTabView: View {
                 // notification did. The Rolls tab never had the bug because RollsView declares
                 // its own destination inside itself.
                 NavigationStack(path: $feedPath) {
-                    FeedView(scrollToTop: scrollSignal[3, default: 0])
+                    FeedView(scrollToTop: scrollSignal[3, default: 0], isFrontmost: selected == 3)
                         .navigationDestination(for: ProfileRoute.self) { UserPageView(userId: $0.id, openInvite: $0.openInvite) }
                         .navigationDestination(for: FeedItem.self) { item in
                             let decision = focusCommentsDecision(currentFocusPostId: focusCommentsPostId, pushedPostId: item.id)

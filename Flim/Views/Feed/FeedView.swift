@@ -12,6 +12,12 @@ import UIKit
 struct FeedView: View {
     @Environment(\.flimAccent) private var accent
     var scrollToTop: Int = 0
+    /// Whether the Feed tab is the one showing. The tab stays mounted behind the others, and a
+    /// card that was on screen when you left still reads as visible, so without this a reload
+    /// run from another tab (the 04:00 one on foreground) could mark the new top day seen before
+    /// you ever came back to look at it. Marking waits for the tab; returning opens the gate and
+    /// the cards on screen mark then.
+    var isFrontmost: Bool = true
     @Environment(AuthService.self) private var auth
     @Environment(FeedService.self) private var feed
     @Environment(TabSignals.self) private var signals
@@ -392,6 +398,10 @@ struct FeedView: View {
             // would reshape it under the reader), but "New posts" can say so, and the tab dot
             // stays lit for it.
             Task { await checkNewPosts() }
+            // The bell's count, and the activity half of the tab dot, were only as fresh as the
+            // last reload: a comment made while the app was away showed on neither, and the next
+            // seen-mark recomputed the dot from the stale zero and cleared it.
+            Task { await refreshUnreadActivity() }
             Task {
                 await feed.refreshReactions(
                     postIds: LiveRefresh.postsToRefresh(feed.feed).map(\.post.id))
@@ -586,7 +596,7 @@ struct FeedView: View {
                             width: containerWidth,
                             opening: unit.openingIndex(isSeen: { seenStore.isSeen($0) }),
                             seenStore: seenStore,
-                            markingEnabled: ledgerSnapshotted && reloadsInFlight == 0,
+                            markingEnabled: ledgerSnapshotted && reloadsInFlight == 0 && isFrontmost,
                             catchUpGeneration: catchUpGeneration,
                             // growOnly: blocking an author must not re-place the seam or the
                             // strips, the same ratchet paging already obeys.
@@ -1095,6 +1105,17 @@ struct FeedView: View {
     private func advancePrefetch(reaching index: Int) {
         guard index >= prefetchedThrough - 2, prefetchedThrough < units.count else { return }
         Task { await prefetchUnitHeroes(from: prefetchedThrough) }
+    }
+
+    private func refreshUnreadActivity() async {
+        guard let uid = auth.currentUser?.id else { return }
+        let epoch = AccountEpoch.current
+        let count = await feed.unreadActivityCount(userId: uid, since: Date(timeIntervalSince1970: lastActivitySeen))
+        guard AccountEpoch.isCurrent(epoch) else { return }
+        // Only ever raised here. A failed count reads as 0 (offline on return), and the count
+        // only really falls when Activity is opened, which zeroes it itself.
+        unreadActivity = max(unreadActivity, count)
+        if didLoad, loadedEpoch == epoch { updateFeedDot() }
     }
 
     private func checkNewPosts() async {
