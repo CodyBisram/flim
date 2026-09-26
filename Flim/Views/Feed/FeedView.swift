@@ -393,15 +393,15 @@ struct FeedView: View {
                 }
                 return
             }
+            // The bell's count, and the activity half of the tab dot, were only as fresh as the
+            // last reload: a comment made while the app was away showed on neither, and the next
+            // seen-mark recomputed the dot from the stale zero and cleared it.
+            if didLoad { Task { await refreshUnreadActivity() } }
             guard !feed.feed.isEmpty else { return }
             // A friend may have posted while the app was away. The feed is not reloaded (that
             // would reshape it under the reader), but "New posts" can say so, and the tab dot
             // stays lit for it.
             Task { await checkNewPosts() }
-            // The bell's count, and the activity half of the tab dot, were only as fresh as the
-            // last reload: a comment made while the app was away showed on neither, and the next
-            // seen-mark recomputed the dot from the stale zero and cleared it.
-            Task { await refreshUnreadActivity() }
             Task {
                 await feed.refreshReactions(
                     postIds: LiveRefresh.postsToRefresh(feed.feed).map(\.post.id))
@@ -1110,8 +1110,11 @@ struct FeedView: View {
     private func refreshUnreadActivity() async {
         guard let uid = auth.currentUser?.id else { return }
         let epoch = AccountEpoch.current
-        let count = await feed.unreadActivityCount(userId: uid, since: Date(timeIntervalSince1970: lastActivitySeen))
-        guard AccountEpoch.isCurrent(epoch) else { return }
+        let seenMark = lastActivitySeen
+        let count = await feed.unreadActivityCount(userId: uid, since: Date(timeIntervalSince1970: seenMark))
+        // Activity opened during the round trip zeroed the count and moved the mark; this answer
+        // predates that and would light the bell again for what was just read.
+        guard AccountEpoch.isCurrent(epoch), lastActivitySeen == seenMark else { return }
         // Only ever raised here. A failed count reads as 0 (offline on return), and the count
         // only really falls when Activity is opened, which zeroes it itself.
         unreadActivity = max(unreadActivity, count)

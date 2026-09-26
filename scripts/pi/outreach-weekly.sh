@@ -44,6 +44,7 @@ main() {
   DB_URL=$(sed -n 's/^FLIM_DB_URL=//p' ~/.config/flim-hooks.env 2>/dev/null | head -1)
   # The postal address every email must carry (CAN-SPAM). Kept on the Pi, never in the public repo.
   POSTAL=$(sed -n 's/^FLIM_OUTREACH_POSTAL=//p' ~/.config/flim-hooks.env 2>/dev/null | head -1)
+  POSTAL=${POSTAL#[\"\']}; POSTAL=${POSTAL%[\"\']}   # a quoted value must not put the quotes in every email
   # Codes live in these files for the length of one run and are deleted on the way out.
   trap 'rm -f "$RUN/send.json" "$RUN/codes.json" "$RUN/status.tsv" "$RUN/part-b.txt"' EXIT
 

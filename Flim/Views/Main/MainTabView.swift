@@ -547,7 +547,7 @@ struct MainTabView: View {
                 let outcome = PushLookupOutcome.decide(found: roll != nil, error: lookupError,
                                                        accountIsCurrent: AccountEpoch.isCurrent(epoch),
                                                        isLatestTap: PendingPushDestination.isLatestRoute(serial))
-                if outcome == .hold { PendingPushDestination.store(destination) }
+                if outcome == .hold { PendingPushDestination.hold(destination) }
                 // Not a member (any more), or the roll is gone: RollsView is still showing a real,
                 // current list, so this is a graceful no-op rather than a dead end.
                 guard outcome == .open, let roll else { return }
@@ -607,7 +607,7 @@ struct MainTabView: View {
                     NotificationCenter.default.post(name: .feedNotice, object: "That post isn't here anymore.")
                 case .hold:
                     // No signal, which the offline banner already says. The post may be fine.
-                    PendingPushDestination.store(destination)
+                    PendingPushDestination.hold(destination)
                 case .drop:
                     break
                 }

@@ -194,6 +194,12 @@ enum PushDestination: Codable, Equatable {
 /// change and signed-out screen that clear a fresh tap clear a held one too.
 enum PendingPushDestination {
     private static let key = "pendingPushDestination"
+    /// When the entry under `key` was put back for want of a connection. Absent for a fresh tap.
+    private static let heldAtKey = "pendingPushDestinationHeldAt"
+    /// How long a held tap stays worth opening. Each retry switches tabs before its lookup, so a
+    /// tap held through a long outage would otherwise yank the person to Feed or Rolls on every
+    /// foreground, and a tap made offline yesterday would take over today's first open.
+    static let heldTapLifetime: TimeInterval = 30 * 60
 
     /// Injectable for the same reason as `PendingInvite.store`: `UserDefaults.standard` is a
     /// search list, and a planted value is readable but not removable.
@@ -202,14 +208,26 @@ enum PendingPushDestination {
     static func store(_ destination: PushDestination) {
         guard let data = try? JSONEncoder().encode(destination) else { return }
         store.set(data, forKey: key)
+        store.removeObject(forKey: heldAtKey)
+    }
+
+    /// Puts a tap back because its lookup could not reach the server (`PushLookupOutcome.hold`),
+    /// stamped so it lapses after `heldTapLifetime`.
+    static func hold(_ destination: PushDestination, now: Date = .now) {
+        store(destination)
+        store.set(now.timeIntervalSince1970, forKey: heldAtKey)
     }
 
     /// Reads and clears in one step, so a destination is acted on once, never replayed on a later
     /// launch after it has already been handled (or after an account that couldn't see its
-    /// content already tried and came up empty, see `MainTabView.route(to:)`).
-    static func take() -> PushDestination? {
+    /// content already tried and came up empty, see `MainTabView.route(to:)`). A held tap older
+    /// than `heldTapLifetime` is dropped here rather than routed.
+    static func take(now: Date = .now) -> PushDestination? {
+        let heldAt = store.object(forKey: heldAtKey) as? Double
+        store.removeObject(forKey: heldAtKey)
         guard let data = store.data(forKey: key) else { return nil }
         store.removeObject(forKey: key)
+        if let heldAt, now.timeIntervalSince1970 - heldAt > heldTapLifetime { return nil }
         return try? JSONDecoder().decode(PushDestination.self, from: data)
     }
 
@@ -245,6 +263,7 @@ enum PendingPushDestination {
             return
         }
         store.removeObject(forKey: key)
+        store.removeObject(forKey: heldAtKey)
     }
 }
 
@@ -285,12 +304,14 @@ enum PushLookupOutcome: Equatable {
 
     /// `found` wins over `error`: a roll found in the list restored from disk still opens when the
     /// refresh behind it failed, since the roll's own screen loads and shows its own error state.
-    /// The account check comes first, so a tap is never held across an account change.
+    /// The account check comes first, so a tap is never held across an account change. A tap a
+    /// newer one has overtaken does nothing at all, found or not: a held tap replayed on the
+    /// foreground could otherwise open on top of the notification the person just tapped.
     static func decide(found: Bool, error: Error?, accountIsCurrent: Bool, isLatestTap: Bool) -> PushLookupOutcome {
-        guard accountIsCurrent else { return .drop }
+        guard accountIsCurrent, isLatestTap else { return .drop }
         if found { return .open }
         guard let error else { return .notFound }
-        guard NetworkFailure.isUnreachable(error), isLatestTap else { return .drop }
+        guard NetworkFailure.isUnreachable(error) else { return .drop }
         return .hold
     }
 }

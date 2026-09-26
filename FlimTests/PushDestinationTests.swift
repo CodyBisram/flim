@@ -201,6 +201,24 @@ struct PendingPushDestinationTests {
         PendingPushDestination.store = UserDefaults(suiteName: "PendingPushDestinationTests-\(UUID().uuidString)") ?? .standard
     }
 
+    @Test("a held tap lapses after its lifetime; a fresh tap never does")
+    func heldTapLapses() {
+        isolate()
+        let destination = PushDestination.post(postId: UUID(), comments: false)
+        let heldAt = Date(timeIntervalSince1970: 1_790_000_000)
+        PendingPushDestination.hold(destination, now: heldAt)
+        #expect(PendingPushDestination.take(now: heldAt.addingTimeInterval(PendingPushDestination.heldTapLifetime + 1)) == nil)
+        #expect(PendingPushDestination.take() == nil, "a lapsed tap is gone, not kept for later")
+
+        PendingPushDestination.hold(destination, now: heldAt)
+        #expect(PendingPushDestination.take(now: heldAt.addingTimeInterval(60)) == destination)
+
+        // A fresh tap stored over a held one carries no stamp, so it never lapses.
+        PendingPushDestination.hold(destination, now: heldAt)
+        PendingPushDestination.store(.feed)
+        #expect(PendingPushDestination.take(now: heldAt.addingTimeInterval(86_400)) == .feed)
+    }
+
     @Test("a destination survives to be collected later")
     func heldUntilCollected() {
         isolate()
@@ -379,13 +397,13 @@ struct PushLookupOutcomeTests {
         #expect(PushLookupOutcome.decide(found: false, error: offline, accountIsCurrent: false, isLatestTap: true) == .drop)
     }
 
-    /// A newer tap only stops the write-back; what the older lookup found (or didn't) still acts,
-    /// exactly as it did before taps could be held.
-    @Test("a newer tap stops an older one being held, and nothing else")
-    func supersededOnlyStopsTheHold() {
+    /// A held tap replayed on the foreground can be overtaken by the notification the person just
+    /// tapped; whatever the older lookup came to, it must not open on top of the newer one.
+    @Test("a tap a newer one overtook does nothing, found or not")
+    func supersededDrops() {
         #expect(PushLookupOutcome.decide(found: false, error: offline, accountIsCurrent: true, isLatestTap: false) == .drop)
-        #expect(PushLookupOutcome.decide(found: true, error: nil, accountIsCurrent: true, isLatestTap: false) == .open)
-        #expect(PushLookupOutcome.decide(found: false, error: nil, accountIsCurrent: true, isLatestTap: false) == .notFound)
+        #expect(PushLookupOutcome.decide(found: true, error: nil, accountIsCurrent: true, isLatestTap: false) == .drop)
+        #expect(PushLookupOutcome.decide(found: false, error: nil, accountIsCurrent: true, isLatestTap: false) == .drop)
     }
 
     /// URLSession errors can surface as a bridged `NSError`; the domain and code are what count.

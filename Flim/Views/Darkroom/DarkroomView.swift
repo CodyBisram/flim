@@ -1436,7 +1436,7 @@ Text("Darkroom")
                                             accountIsCurrent: AccountEpoch.isCurrent(epoch),
                                             isLatestTap: PendingPushDestination.isLatestRoute(serial)) {
             case .open: selectedPhoto = photo
-            case .hold: PendingPushDestination.store(.photo(photoId: id))
+            case .hold: PendingPushDestination.hold(.photo(photoId: id))
             case .notFound, .drop: break
             }
         }
