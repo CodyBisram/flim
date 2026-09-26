@@ -473,6 +473,11 @@
        published, the queue) and "published" (the last eight weeks that went
        out, so any frame can still be removed). */
     var spotView = "waiting";
+    /* The week still open, shown read-only above the waiting weeks so frames put
+       up today are visible before the week closes. Null until loaded; { error }
+       when either call failed; else { key, closesAt, rows }. Kept out of `data`
+       so the sidebar count stays the waiting queue only. */
+    var spotOpen = null;
     /* Signed URLs for Spotlight frames, by storage path, so switching panels does
        not sign the same frame again. The owner can sign a frame that is only put
        up (not yet public) because the storage read policy has an owner clause for
@@ -952,16 +957,100 @@
       });
     }
 
+    /* One Spotlight card as the Waiting view draws it: the frame, the handle, the
+       flags, the day put up. `acts` is false for the open week, where nothing can
+       be chosen or removed from here (choose is refused on an open week anyway). */
+    function waitingCard(r, wk, chosenCount, acts) {
+      var c = el("div", "card" + (r.chosen_at && !r.removed_at ? " card--chosen" : "")
+                               + (r.removed_at ? " card--removed" : ""));
+      c.appendChild(frameNode(r));
+
+      var main = el("div", "card__main");
+      var t = el("div", "card__title", "@" + (r.username || "unknown"));
+      if (r.removed_at) t.appendChild(el("span", "pill", "removed"));
+      if (r.chosen_at && !r.removed_at) t.appendChild(el("span", "pill", "chosen"));
+      if (r.hidden) t.appendChild(el("span", "pill pill--bad", "hidden"));
+      if (r.covered) t.appendChild(el("span", "pill pill--bad", "covered"));
+      if (r.tagged) t.appendChild(el("span", "pill pill--bad", "tagged"));
+      if (r.hidden_from_discovery) t.appendChild(el("span", "pill pill--bad", "hidden from discovery (App Review?)"));
+      if (r.blocked_with_owner) t.appendChild(el("span", "pill pill--bad", "block with you"));
+      main.appendChild(t);
+      main.appendChild(el("div", "card__meta", "Put up " + dayLabel(r.put_up_at)
+        + ", posted " + dayLabel(r.post_created_at)));
+      /* The caption goes public with the frame, so it is part of the choice. */
+      if (r.caption) main.appendChild(el("div", "card__note", r.caption));
+      c.appendChild(main);
+      if (!acts) return c;
+
+      var box = el("div", "card__actions");
+      /* What choose refuses. A frame already chosen can always be unchosen, so a
+         flag that appears after the choice never strands it. */
+      var blocked = r.hidden || r.covered || r.tagged || r.blocked_with_owner;
+      var toggle = el("button", r.chosen_at ? "btn btn--go" : "btn", r.chosen_at ? "Chosen" : "Choose");
+      toggle.title = r.chosen_at ? "Chosen. Press to unchoose." : "Choose this frame";
+      toggle.disabled = !!r.removed_at || (!r.chosen_at && (!!blocked || chosenCount >= 6));
+      toggle.addEventListener("click", function () {
+        spotAct(c, r.chosen_at ? "unchoose_spotlight_entry" : "choose_spotlight_entry", { p_post_id: r.post_id });
+      });
+      box.appendChild(toggle);
+      if (!r.removed_at) {
+        var remove = el("button", "btn", "Remove");
+        remove.addEventListener("click", function () {
+          if (!confirm("Remove @" + (r.username || "unknown") + "'s frame from " + weekLabel(wk)
+                       + "? It cannot be chosen again. This cannot be undone.")) return;
+          spotAct(c, "remove_spotlight_entry", { p_post_id: r.post_id });
+        });
+        box.appendChild(remove);
+      }
+      c.appendChild(box);
+      return c;
+    }
+
+    /* "Monday 4:00 AM" in the owner's own time zone. en-US so it is always the
+       12-hour h:mm AM/PM shape; newer ICU puts a narrow no-break space before
+       AM/PM, which is made a plain space. */
+    function closesLabel(iso) {
+      var d = new Date(iso);
+      return d.toLocaleDateString("en-US", { weekday: "long" }) + " "
+        + d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })
+            .replace(/[  ]/g, " ");
+    }
+
+    /* The open week, read-only: no Choose, Remove, Skip or Publish. */
+    function renderSpotlightOpen(host) {
+      if (!spotOpen) return;
+      if (spotOpen.error) {
+        host.appendChild(el("div", "card__meta", "Couldn't load this week."));
+        return;
+      }
+      var head = el("div", "spot__week");
+      var h = el("div");
+      h.appendChild(el("div", "sect", "This week, " + weekLabel(spotOpen.key)
+        + (spotOpen.closesAt ? ", open until " + closesLabel(spotOpen.closesAt) : "")));
+      h.appendChild(el("div", "card__meta", "You can choose from these once the week closes. They move to Waiting then."));
+      head.appendChild(h);
+      host.appendChild(head);
+      if (!spotOpen.rows.length) {
+        host.appendChild(el("div", "empty", "Nothing put up this week yet."));
+        return;
+      }
+      spotOpen.rows.forEach(function (r) {
+        host.appendChild(waitingCard(r, spotOpen.key, 0, false));
+      });
+    }
+
     function renderSpotlightWaiting(host, rows) {
       var g = groupByWeek(rows);
       var weeks = g.weeks;
       var byWeek = g.byWeek;
       $("page-sub").textContent = weeks.length ? plural(weeks.length, "closed week") + " waiting" : "";
+      /* One signing batch for both sections. */
+      signVisible((spotOpen && spotOpen.rows ? spotOpen.rows : []).concat(rows));
+      renderSpotlightOpen(host);
       if (!weeks.length) {
-        host.appendChild(el("div", "empty", "No closed week is waiting. Frames put up this week show here after it closes, at 04:00 Eastern when the next week starts."));
+        host.appendChild(el("div", "empty", "No closed week is waiting yet."));
         return;
       }
-      signVisible(rows);
 
       /* Newest week first: the server already orders it that way, and a week is
          only listed while it is closed and unpublished. */
@@ -987,48 +1076,7 @@
         host.appendChild(head);
 
         list.forEach(function (r) {
-          var c = el("div", "card" + (r.chosen_at && !r.removed_at ? " card--chosen" : "")
-                                   + (r.removed_at ? " card--removed" : ""));
-          c.appendChild(frameNode(r));
-
-          var main = el("div", "card__main");
-          var t = el("div", "card__title", "@" + (r.username || "unknown"));
-          if (r.removed_at) t.appendChild(el("span", "pill", "removed"));
-          if (r.chosen_at && !r.removed_at) t.appendChild(el("span", "pill", "chosen"));
-          if (r.hidden) t.appendChild(el("span", "pill pill--bad", "hidden"));
-          if (r.covered) t.appendChild(el("span", "pill pill--bad", "covered"));
-          if (r.tagged) t.appendChild(el("span", "pill pill--bad", "tagged"));
-          if (r.hidden_from_discovery) t.appendChild(el("span", "pill pill--bad", "hidden from discovery (App Review?)"));
-          if (r.blocked_with_owner) t.appendChild(el("span", "pill pill--bad", "block with you"));
-          main.appendChild(t);
-          main.appendChild(el("div", "card__meta", "Put up " + dayLabel(r.put_up_at)
-            + ", posted " + dayLabel(r.post_created_at)));
-          /* The caption goes public with the frame, so it is part of the choice. */
-          if (r.caption) main.appendChild(el("div", "card__note", r.caption));
-          c.appendChild(main);
-
-          var acts = el("div", "card__actions");
-          /* What choose refuses. A frame already chosen can always be unchosen, so a
-             flag that appears after the choice never strands it. */
-          var blocked = r.hidden || r.covered || r.tagged || r.blocked_with_owner;
-          var toggle = el("button", r.chosen_at ? "btn btn--go" : "btn", r.chosen_at ? "Chosen" : "Choose");
-          toggle.title = r.chosen_at ? "Chosen. Press to unchoose." : "Choose this frame";
-          toggle.disabled = !!r.removed_at || (!r.chosen_at && (!!blocked || chosen.length >= 6));
-          toggle.addEventListener("click", function () {
-            spotAct(c, r.chosen_at ? "unchoose_spotlight_entry" : "choose_spotlight_entry", { p_post_id: r.post_id });
-          });
-          acts.appendChild(toggle);
-          if (!r.removed_at) {
-            var remove = el("button", "btn", "Remove");
-            remove.addEventListener("click", function () {
-              if (!confirm("Remove @" + (r.username || "unknown") + "'s frame from " + weekLabel(wk)
-                           + "? It cannot be chosen again. This cannot be undone.")) return;
-              spotAct(c, "remove_spotlight_entry", { p_post_id: r.post_id });
-            });
-            acts.appendChild(remove);
-          }
-          c.appendChild(acts);
-          host.appendChild(c);
+          host.appendChild(waitingCard(r, wk, chosen.length, true));
         });
       });
     }
@@ -1529,6 +1577,18 @@
       }
     }
 
+    /* The current open week: its key from own_spotlight_entry (one row for any
+       signed-in caller), then that week's entries from the owner's queue. Its
+       own failure is quiet; it never marks the rest of the panel broken. */
+    async function openWeek() {
+      var own = await rpc("own_spotlight_entry");
+      var row = Array.isArray(own) ? own[0] : own;
+      if (!row || !row.week_key) throw new Error("no open week");
+      var key = String(row.week_key).slice(0, 10);
+      var rows = await rpc("list_spotlight_queue", { p_week_key: key });
+      return { key: key, closesAt: row.week_closes_at || null, rows: rows || [] };
+    }
+
     /* allSettled, not all. These are independent queues, and with Promise.all
        a single failing one takes the whole dashboard down with it: a function not
        yet deployed, or one renamed on the server, would leave the owner staring at
@@ -1550,10 +1610,15 @@
       var statKeys = ["overview", "pulse", "funnel", "reach", "stuck", "retention", "storage", "campaigns",
                       "versions", "traffic"];
 
+      /* The open week rides last and is popped off before anything else reads
+         `settled`, so the queue and stat slices below keep their alignment. */
       var settled = await Promise.allSettled(
         names.map(function (n) { return rpc(n); })
           .concat(statNames.map(function (n) { return rpc(n); }))
-          .concat([traffic()]));
+          .concat([traffic()])
+          .concat([openWeek()]));
+      var openResult = settled.pop();
+      spotOpen = openResult.status === "fulfilled" ? openResult.value : { error: true };
 
       var broken = [];
       settled.slice(0, names.length).forEach(function (result, i) {
