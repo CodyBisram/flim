@@ -167,9 +167,17 @@ async function foundingSeatsInviterRows(): Promise<Recipient[]> {
   for (const r of rows as { email: string; note: string }[]) {
     const inviter = /^invited_by:([0-9a-f-]{36})/.exec(r.note)?.[1];
     if (!inviter) continue;
-    const { data: u } = await supabase
-      .from("users").select("username").ilike("email", r.email).maybeSingle();
-    const name = (u as { username: string } | null)?.username;
+    // Exact, case-insensitive: allowed_emails holds the lower-cased email, users.email may not be
+    // (every SQL join here is lower(u.email) = ae.email). ILIKE with its wildcards escaped
+    // (\ first, then % and _) narrows the read; the exact comparison below is what decides, so a
+    // character PostgREST itself treats as a wildcard (*) can only widen the read, never match
+    // the wrong person.
+    const want = r.email.trim().toLowerCase();
+    const pattern = want.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
+    const { data: us } = await supabase
+      .from("users").select("username, email").ilike("email", pattern).limit(10);
+    const name = ((us ?? []) as { username: string; email: string | null }[])
+      .find((x) => (x.email ?? "").trim().toLowerCase() === want)?.username;
     if (!name) continue;
     joinedBy.set(inviter, [...(joinedBy.get(inviter) ?? []), name]);
   }

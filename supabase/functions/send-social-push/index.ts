@@ -287,14 +287,21 @@ async function blockedEitherWay(a: string, b: string): Promise<boolean> {
 /// into a post the recipient cannot open is the same leak the covered-post rule closes, just
 /// through the follow graph instead of the cover list. Same predicate RLS uses (`post_visible_to`,
 /// SECURITY DEFINER, callable by the service role), asked fresh per recipient and cached for the
-/// run. Fails closed: if the RPC errors, nobody is told.
+/// run. Fails closed: if the RPC errors, nobody is told this run. An error is not an answer, so it
+/// is never cached, and `sourceKey` (when given) goes into the retry set so the caller leaves the
+/// source unsent and the next run asks again instead of losing the push for good.
 const visibleCache = new Map<string, boolean>();
-async function postVisibleTo(viewerId: string, postId: string, authorId: string): Promise<boolean> {
+async function postVisibleTo(viewerId: string, postId: string, authorId: string, sourceKey?: string): Promise<boolean> {
   const key = `${viewerId}|${postId}`;
   const hit = visibleCache.get(key);
   if (hit !== undefined) return hit;
   const { data, error } = await supabase.rpc("post_visible_to", { p_viewer: viewerId, p_post_id: postId, p_author: authorId });
-  const visible = !error && data === true;
+  if (error) {
+    console.warn(JSON.stringify({ at: "post_visible_to_failed", error: error.message }));
+    if (sourceKey) pendingRetry.add(sourceKey);
+    return false;
+  }
+  const visible = data === true;
   visibleCache.set(key, visible);
   return visible;
 }
@@ -783,7 +790,7 @@ Deno.serve(async (req: Request) => {
       // And the follower rule: a mention can name someone who does not follow the author and
       // was not tagged, and the push would hand them the comment text plus a link to a post
       // RLS will refuse. Being mentioned is not an audience exception; being tagged is.
-      if (ownerId && !(await postVisibleTo(uid, c.post_id, ownerId))) continue;
+      if (ownerId && !(await postVisibleTo(uid, c.post_id, ownerId, `comment:${c.id}`))) continue;
       notified.add(uid);
       mentionPushes++;
       sent += await notify(uid, c.user_id, `${name} mentioned you`, preview, route, `comment:${c.id}`);
@@ -812,7 +819,7 @@ Deno.serve(async (req: Request) => {
       }
       // A participant who has since unfollowed the author can no longer open the thread, so
       // they are not told it continued.
-      if (ownerId && !(await postVisibleTo(uid, c.post_id, ownerId))) continue;
+      if (ownerId && !(await postVisibleTo(uid, c.post_id, ownerId, `comment:${c.id}`))) continue;
       notified.add(uid);
       sent += await notify(uid, c.user_id, `${name} also commented`, preview, route, `comment:${c.id}`);
     }
@@ -1231,12 +1238,19 @@ Deno.serve(async (req: Request) => {
       // The comment's author must still be able to open the post it is on: they may have
       // unfollowed its owner since (nightly review, 2026-09-16). Same gate as the mention and
       // thread pushes. The post's owner is read once here; a missing post skips the push and
-      // the rows are marked so they are not retried forever.
+      // the rows are marked so they are not retried forever. A failed read or RPC is not a
+      // missing post: the rows stay unsent and the next run looks again.
+      const likeKey = `comment_like:${g.ids[0]}`;
       let canOpen = true;
       if (g.postId) {
-        const { data: post } = await supabase.from("posts").select("user_id").eq("id", g.postId).maybeSingle();
+        const { data: post, error: postErr } = await supabase.from("posts").select("user_id").eq("id", g.postId).maybeSingle();
+        if (postErr) {
+          console.warn(JSON.stringify({ at: "comment_like_post_read_failed", error: postErr.message }));
+          continue;
+        }
         const ownerId = (post as { user_id?: string } | null)?.user_id;
-        canOpen = !!ownerId && await postVisibleTo(g.authorId, g.postId, ownerId);
+        canOpen = !!ownerId && await postVisibleTo(g.authorId, g.postId, ownerId, likeKey);
+        if (!settled(likeKey)) continue;
       }
       if (!canOpen) {
         await supabase.from("comment_likes").update({ push_sent: true }).in("id", g.ids);
@@ -1358,12 +1372,20 @@ Deno.serve(async (req: Request) => {
   //      week's sheet, 1.5.x reads "feed" and ignores the rest. Keyed in push_deliveries on
   //      (spotlight_chosen, week_key, user_id), so a rerun never sends twice. A frame hidden,
   //      taken out, removed or covered by now is marked without a push, because the push would
-  //      say something untrue. Chosen rows of a week not yet published are left unmarked and
-  //      looked at again; there are at most six a week. A person with no device is terminal in
-  //      the ledger and still gets the Activity row, which the app builds from spotlight_frames.
+  //      say something untrue; so is one whose photo is hidden while its post row is not, the rule
+  //      publish and the public reads use. Chosen rows of a week not yet published are left
+  //      unmarked and looked at again; there are at most six a week. Chosen rows of a week that
+  //      can never publish (skipped by the owner, or stale: more than 14 days past its close) are
+  //      marked without a push, or they would be read again on every run forever. spotlight_entries
+  //      has no foreign key to spotlight_weeks, so the week's state cannot be embedded in the read
+  //      and is settled here instead. A person with no device is terminal in the ledger and still
+  //      gets the Activity row, which the app builds from spotlight_frames.
+  //      Reads spotlight_weeks.skipped_at: 2026-09-25_spotlight_hardening.sql must be applied
+  //      before this is deployed (without the column the weeks read fails and nothing is sent or
+  //      marked until it is).
   const { data: chosenRows, error: chosenErr } = await supabase
     .from("spotlight_entries")
-    .select("id, user_id, week_key, removed_at, posts(user_id, hidden, created_at)")
+    .select("id, user_id, week_key, removed_at, posts(user_id, hidden, created_at, photos(hidden))")
     .eq("push_sent", false)
     .not("chosen_at", "is", null)
     .order("week_key", { ascending: true })
@@ -1371,27 +1393,49 @@ Deno.serve(async (req: Request) => {
   if (chosenErr) console.warn(JSON.stringify({ at: "spotlight_poll_failed", error: chosenErr.message }));
   const chosenWeeks = [...new Set((chosenRows ?? []).map((r) => r.week_key as string))];
   const publishedWeeks = new Set<string>();
+  const skippedWeeks = new Set<string>();
+  let weeksLoaded = false;
   if (chosenWeeks.length > 0) {
     const { data: weeks, error: weeksErr } = await supabase
       .from("spotlight_weeks")
-      .select("week_key")
-      .in("week_key", chosenWeeks)
-      .not("published_at", "is", null);
+      .select("week_key, published_at, skipped_at")
+      .in("week_key", chosenWeeks);
     if (weeksErr) console.warn(JSON.stringify({ at: "spotlight_weeks_failed", error: weeksErr.message }));
-    for (const w of weeks ?? []) publishedWeeks.add(w.week_key as string);
+    else weeksLoaded = true;
+    for (const w of weeks ?? []) {
+      if (w.published_at !== null) publishedWeeks.add(w.week_key as string);
+      else if (w.skipped_at !== null) skippedWeeks.add(w.week_key as string);
+    }
   }
+  // Stale, conservatively: _spotlight_week_stale is "now > week_key + 7 days at 04:00 Eastern,
+  // plus 14 days", which is always before 00:00 UTC on week_key + 22 days. Waiting for that UTC
+  // midnight can only mark a row later than the SQL would call it stale, never earlier.
+  const weekCannotPublish = (weekKey: string): boolean =>
+    skippedWeeks.has(weekKey) ||
+    Date.now() >= Date.parse(`${weekKey}T00:00:00Z`) + 22 * 86_400_000;
   for (const e of chosenRows ?? []) {
     const weekKey = e.week_key as string;
-    if (!publishedWeeks.has(weekKey)) continue;   // not out yet
+    if (!publishedWeeks.has(weekKey)) {
+      // Not out yet, or never will be. Only a successful weeks read may decide "never": a
+      // failed read leaves every row for the next run.
+      if (weeksLoaded && weekCannotPublish(weekKey)) {
+        await supabase.from("spotlight_entries").update({ push_sent: true }).eq("id", e.id);
+      }
+      continue;
+    }
     // Fails closed: without the covered-window table nobody is told, and nothing is marked.
     if (!coveredCtx.loaded) break;
-    // posts is many-to-one (spotlight_entries.post_id), so PostgREST embeds one object or null.
-    const post = e.posts as unknown as { user_id: string; hidden: boolean; created_at: string } | null;
+    // posts is many-to-one (spotlight_entries.post_id), and photos many-to-one from posts
+    // (posts.photo_id), so PostgREST embeds one object or null at each level.
+    const post = e.posts as unknown as {
+      user_id: string; hidden: boolean; created_at: string; photos: { hidden: boolean } | null;
+    } | null;
+    const photoHidden = post?.photos?.hidden === true;
     const w = post ? coveredCtx.windowByAuthor.get(post.user_id) : undefined;
     const covered = !!(post && w && w.active &&
       new Date(post.created_at).getTime() >= w.start && new Date(post.created_at).getTime() < w.end);
     const key = `spotlight_chosen:${weekKey}`;
-    if (post && !post.hidden && e.removed_at === null && !covered) {
+    if (post && !post.hidden && !photoHidden && e.removed_at === null && !covered) {
       const label = spotlightWeekLabel(weekKey);
       const spotBody = (label ? `${label}. ` : "") + `Everyone on ${APP_NAME} can see it now.`;
       sent += await notify(e.user_id, null, "Your frame is in Spotlight", spotBody, { t: "feed", week: weekKey }, key);

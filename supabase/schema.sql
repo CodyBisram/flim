@@ -1278,9 +1278,14 @@ ALTER TABLE public.posts ADD COLUMN IF NOT EXISTS feed_path TEXT;
 -- Marked once the push scanner has processed this post (tag + caption-mention notifications).
 ALTER TABLE public.posts ADD COLUMN IF NOT EXISTS push_sent BOOLEAN DEFAULT FALSE;
 
+-- Transitional, author-only. Production's reads were first USING (true); this name is dropped
+-- for good further down ("posts: readable by followers", folded in from
+-- 2026-09-13_followers_only_reads.sql), so the final state is unaffected. It is narrow here so a
+-- run of this file that stops partway (or a re-run against production) never leaves every post
+-- readable by every signed-in user in between.
 DROP POLICY IF EXISTS "posts: readable by authenticated" ON public.posts;
 CREATE POLICY "posts: readable by authenticated"
-    ON public.posts FOR SELECT TO authenticated USING (true);
+    ON public.posts FOR SELECT TO authenticated USING (auth.uid() = user_id);
 
 -- A post must be attributed to the caller (unchanged) AND reference a photo the caller can
 -- actually see: their own, or any photo in a roll they're a member of, sharing a roll-mate's
@@ -2054,10 +2059,12 @@ CREATE INDEX IF NOT EXISTS blocks_blocked_idx ON public.blocks (blocked_id, bloc
 -- --- READ policies: drop the blocked party's content from every shared surface ---
 
 -- Feed posts: hide posts authored by anyone in a block relationship with the viewer, and
--- anything auto-hidden by moderation (see "Auto-moderation, enforced at RLS" above, this is
--- the definition of this policy name that actually survives a full run of this file). Also
+-- anything auto-hidden by moderation (see "Auto-moderation, enforced at RLS" above). Also
 -- adds public.covered_post_visible (see "Covered posts" above): a covered post is readable
--- only by its author, the other covered authors, or the owner.
+-- only by its author, the other covered authors, or the owner. This name no longer survives a
+-- full run: 2026-09-13_followers_only_reads.sql (folded in below) drops it for "posts: readable
+-- by followers". Until then it is kept author-only (auth.uid() = user_id), for the same
+-- stopped-partway reason as its first definition above; the final state is unaffected.
 DROP POLICY IF EXISTS "posts: readable by authenticated" ON public.posts;
 CREATE POLICY "posts: readable by authenticated"
     ON public.posts FOR SELECT TO authenticated
@@ -2065,6 +2072,7 @@ CREATE POLICY "posts: readable by authenticated"
         NOT hidden
         AND NOT public.is_blocked_either_way(auth.uid(), user_id)
         AND public.covered_post_visible(auth.uid(), user_id, created_at)
+        AND auth.uid() = user_id
     );
 
 -- Post comments: hide comments authored by a blocked party (even on posts you can see).
@@ -9202,7 +9210,10 @@ CREATE INDEX IF NOT EXISTS users_cover_path_idx    ON public.users (cover_path);
 ALTER TABLE public.roll_reveal_views ADD COLUMN IF NOT EXISTS completed_at timestamptz;
 
 -- Every historical open is treated as watched, because replaying every reveal for everyone would be worse.
-UPDATE public.roll_reveal_views SET completed_at = viewed_at WHERE completed_at IS NULL;
+-- Only opens from before the feature shipped (2026-09-22 00:00 UTC): a re-run of this file must not
+-- mark a later open-and-bail as completed, which is the exact distinction completed_at exists for.
+UPDATE public.roll_reveal_views SET completed_at = viewed_at
+WHERE completed_at IS NULL AND viewed_at < TIMESTAMPTZ '2026-09-22 00:00:00+00';
 
 -- A member's own row used to be readable only through "read for member rolls"
 -- (is_roll_member(roll_id)), which stops being true the moment they leave the roll
@@ -12437,10 +12448,11 @@ END $$;
 --   2. Captions lock the way tags do. A caption can no longer change while a frame is up this
 --      week, or chosen in a week that is published or still pending, because the posts policy
 --      serves the caption to everyone once the week is published.
---   3. Strangers cannot hide a published frame by reporting it. On a photo that has been in
---      Spotlight, the automatic hide counts only reporters in its pre-Spotlight audience
---      (followers, tagged people, the author, members of its roll). Every report still inserts
---      and still reaches the owner's reported-photos queue.
+--   3. Strangers cannot hide a published frame by reporting it. Once a week holding the photo
+--      is published, the automatic hide counts only reporters who were in its audience before
+--      that publish (the author, follows and tags made before it, roll members who joined before
+--      it); a follow made afterwards does not count. Every report still inserts and still
+--      reaches the owner's reported-photos queue.
 --   4. Choose refuses a frame in a block with the owner (blocked). Publish counts, and badges,
 --      only frames that are not hidden (post or photo) and not covered; so does the ratchet's
 --      spotlight predicate, which every profile read runs, so a later ratchet cannot award it,
@@ -12450,8 +12462,10 @@ END $$;
 --      lock makes withdraw and publish serialise. own_spotlight_entry() names that entry.
 --
 -- Pinned contracts: the caption refusal is P0001 'in_spotlight'. own_spotlight_entry() gains
--- pending_week_key TEXT, pending_post_id UUID, pending_photo_id UUID, all NULL when nothing is
--- pending; its existing columns are unchanged.
+-- pending_week_key TEXT, pending_post_id UUID, pending_photo_id UUID (the newest pending entry),
+-- all NULL when nothing is pending, then pending_entries JSONB: every pending entry, newest week
+-- first, as [{"week_key":"YYYY-MM-DD","post_id":uuid,"photo_id":uuid}], '[]' when none, never
+-- NULL. Its existing columns are unchanged.
 --
 -- Safe to re-run: IF NOT EXISTS, CREATE OR REPLACE, DROP ... IF EXISTS before every recreate.
 -- Nothing here deletes or rewrites existing rows.
@@ -12617,12 +12631,21 @@ CREATE TRIGGER refuse_caption_in_spotlight_trigger
     EXECUTE FUNCTION public.refuse_caption_in_spotlight();
 
 -- ---------------------------------------------------------------------------
--- 3. The automatic hide. Unchanged for any photo that has never been in Spotlight. For one that
---    has, a reporter counts only when they were in its audience before Spotlight: someone
---    post_visible_to lets see one of its posts (the author, followers, tagged people), or a member
---    of the roll it was shot in. A stranger's report still inserts, still lands in
---    list_photo_reports and still reaches the owner's push; it just cannot hide the frame for
---    everyone. Evaluated at the moment of each report, like the count it replaces.
+-- 3. The automatic hide. Unchanged for any photo that has never been in Spotlight.
+--    A photo with an entry but no published week yet has never been shown to strangers, so a
+--    reporter counts when they can see it now: post_visible_to on one of its posts (the author,
+--    followers, tagged people), or a member of the roll it was shot in.
+--    Once a week holding an entry for the photo is published, following is instant and needs no
+--    approval, so "can see it now" would let any two accounts follow and report to hide a frame
+--    for everyone. From then on a reporter counts only if they were in its audience BEFORE the
+--    earliest such publish (v_pub): the photographer or a post's author, a follow of that
+--    author made before v_pub on a post made before v_pub, a tag made before v_pub, or a roll
+--    membership joined before v_pub. A NULL timestamp never counts. Any entry for the photo in a
+--    published week sets v_pub, chosen or not, removed or not: the earlier cut-off only ever
+--    counts fewer reporters.
+--    A report that does not count still inserts, still lands in list_photo_reports and still
+--    reaches the owner's push; it just cannot hide the frame for everyone. Evaluated at the
+--    moment of each report, like the count it replaces.
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.auto_hide_reported()
 RETURNS TRIGGER
@@ -12632,20 +12655,49 @@ SET search_path = public
 AS $$
 DECLARE
     v_spotlight BOOLEAN;
+    v_pub       TIMESTAMPTZ;
 BEGIN
     v_spotlight := EXISTS (SELECT 1 FROM public.spotlight_entries e
                            JOIN public.posts po ON po.id = e.post_id
                            WHERE po.photo_id = NEW.photo_id);
+    IF v_spotlight THEN
+        SELECT MIN(w.published_at) INTO v_pub
+        FROM public.spotlight_entries e
+        JOIN public.posts po ON po.id = e.post_id
+        JOIN public.spotlight_weeks w ON w.week_key = e.week_key
+        WHERE po.photo_id = NEW.photo_id
+          AND w.published_at IS NOT NULL;
+    END IF;
     IF (SELECT COUNT(DISTINCT r.reporter_id)
         FROM public.photo_reports r
         WHERE r.photo_id = NEW.photo_id
           AND (NOT v_spotlight
-               OR EXISTS (SELECT 1 FROM public.posts po
-                          WHERE po.photo_id = NEW.photo_id
-                            AND public.post_visible_to(r.reporter_id, po.id, po.user_id))
-               OR EXISTS (SELECT 1 FROM public.photos ph
-                          JOIN public.roll_members rm ON rm.roll_id = ph.roll_id AND rm.user_id = r.reporter_id
-                          WHERE ph.id = NEW.photo_id))) >= 2 THEN
+               OR (v_pub IS NULL
+                   AND (EXISTS (SELECT 1 FROM public.posts po
+                                WHERE po.photo_id = NEW.photo_id
+                                  AND public.post_visible_to(r.reporter_id, po.id, po.user_id))
+                        OR EXISTS (SELECT 1 FROM public.photos ph
+                                   JOIN public.roll_members rm ON rm.roll_id = ph.roll_id AND rm.user_id = r.reporter_id
+                                   WHERE ph.id = NEW.photo_id)))
+               OR (v_pub IS NOT NULL
+                   AND (EXISTS (SELECT 1 FROM public.photos ph
+                                WHERE ph.id = NEW.photo_id AND ph.user_id = r.reporter_id)
+                        OR EXISTS (SELECT 1 FROM public.posts po
+                                   WHERE po.photo_id = NEW.photo_id
+                                     AND po.created_at < v_pub
+                                     AND (po.user_id = r.reporter_id
+                                          OR EXISTS (SELECT 1 FROM public.follows f
+                                                     WHERE f.follower_id = r.reporter_id
+                                                       AND f.following_id = po.user_id
+                                                       AND f.created_at < v_pub)
+                                          OR EXISTS (SELECT 1 FROM public.post_tags t
+                                                     WHERE t.post_id = po.id
+                                                       AND t.tagged_user_id = r.reporter_id
+                                                       AND t.created_at < v_pub)))
+                        OR EXISTS (SELECT 1 FROM public.photos ph
+                                   JOIN public.roll_members rm ON rm.roll_id = ph.roll_id AND rm.user_id = r.reporter_id
+                                   WHERE ph.id = NEW.photo_id
+                                     AND rm.joined_at < v_pub))))) >= 2 THEN
         UPDATE public.photos SET hidden = TRUE WHERE id = NEW.photo_id;
         UPDATE public.posts  SET hidden = TRUE WHERE photo_id = NEW.photo_id;
     END IF;
@@ -12716,8 +12768,10 @@ REVOKE ALL ON FUNCTION public.withdraw_from_spotlight(UUID) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.withdraw_from_spotlight(UUID) TO authenticated;
 
 -- The menu's state. Unchanged columns first, then the caller's entry in their most recent pending
--- week (closed, unpublished, unskipped, not stale, not removed by the owner): the one withdraw can
--- still take down. NULL in all three when there is none. The return shape grows, so DROP first.
+-- week (closed, unpublished, unskipped, not stale, not removed by the owner): the newest one
+-- withdraw can still take down, NULL in all three when there is none. Last, pending_entries: every
+-- such entry (one per week at most, by the (user_id, week_key) key), newest week first, '[]' when
+-- none, because withdraw accepts any of them. The return shape grows, so DROP first.
 DROP FUNCTION IF EXISTS public.own_spotlight_entry();
 CREATE FUNCTION public.own_spotlight_entry()
 RETURNS TABLE (
@@ -12731,7 +12785,8 @@ RETURNS TABLE (
     put_up_at        TIMESTAMPTZ,
     pending_week_key TEXT,
     pending_post_id  UUID,
-    pending_photo_id UUID
+    pending_photo_id UUID,
+    pending_entries  JSONB
 )
 LANGUAGE sql
 STABLE
@@ -12739,15 +12794,27 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
     WITH wk AS (SELECT public.spotlight_week_key(now()) AS k),
-    pend AS (
+    pend_all AS (
         SELECT pe.week_key, pe.post_id, pp.photo_id
         FROM public.spotlight_entries pe
         JOIN public.posts pp ON pp.id = pe.post_id
         WHERE pe.user_id = auth.uid()
           AND pe.removed_at IS NULL
           AND public._spotlight_week_pending(pe.week_key)
-        ORDER BY pe.week_key DESC
+    ),
+    pend AS (
+        SELECT pa.week_key, pa.post_id, pa.photo_id
+        FROM pend_all pa
+        ORDER BY pa.week_key DESC, pa.post_id DESC
         LIMIT 1
+    ),
+    pend_list AS (
+        SELECT COALESCE(jsonb_agg(jsonb_build_object(
+                   'week_key', to_char(pa.week_key, 'YYYY-MM-DD'),
+                   'post_id',  pa.post_id,
+                   'photo_id', pa.photo_id
+               ) ORDER BY pa.week_key DESC, pa.post_id DESC), '[]'::jsonb) AS entries
+        FROM pend_all pa
     )
     SELECT wk.k,
            public._spotlight_week_start(wk.k),
@@ -12759,11 +12826,13 @@ AS $$
            e.put_up_at,
            to_char(pend.week_key, 'YYYY-MM-DD'),
            pend.post_id,
-           pend.photo_id
+           pend.photo_id,
+           pend_list.entries
     FROM wk
     LEFT JOIN public.spotlight_entries e ON e.user_id = auth.uid() AND e.week_key = wk.k
     LEFT JOIN public.posts po ON po.id = e.post_id
     LEFT JOIN pend ON TRUE
+    CROSS JOIN pend_list
     WHERE auth.uid() IS NOT NULL;
 $$;
 REVOKE ALL ON FUNCTION public.own_spotlight_entry() FROM PUBLIC, anon;

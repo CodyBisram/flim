@@ -12,7 +12,10 @@
 ALTER TABLE public.roll_reveal_views ADD COLUMN IF NOT EXISTS completed_at timestamptz;
 
 -- Every historical open is treated as watched, because replaying every reveal for everyone would be worse.
-UPDATE public.roll_reveal_views SET completed_at = viewed_at WHERE completed_at IS NULL;
+-- Only opens from before the feature shipped (2026-09-22 00:00 UTC): a re-run of this file must not
+-- mark a later open-and-bail as completed, which is the exact distinction completed_at exists for.
+UPDATE public.roll_reveal_views SET completed_at = viewed_at
+WHERE completed_at IS NULL AND viewed_at < TIMESTAMPTZ '2026-09-22 00:00:00+00';
 
 -- A member's own row used to be readable only through "read for member rolls"
 -- (is_roll_member(roll_id)), which stops being true the moment they leave the
