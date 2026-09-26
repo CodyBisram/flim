@@ -2156,12 +2156,10 @@ Not done, or open:
   gate still reads 1.5.3). Arming it earlier sends 1.5.x users to a store page with no update.
   Then: `update app_release_gate set latest_version = '1.6.0';` and confirm with
   `select * from app_release_gate;`. Leave minimum_version alone.
-- Review findings left for device testing: (1) a post that arrived while the app was away is not
-  loaded, so a mark in the feed can clear a dot the server lit for it; (2) a pull-to-refresh on a
-  slow network can mark a visible card's new shots before the caught-up line is placed, putting
-  the line above a card still reading "N new". A third (the pager opening one frame past a new
-  shot when a catch-up and the shot land together) is fixed on the branch: the card follows the
-  shown photograph by id.
+- Review findings, all fixed on the branch: a newer post from someone else ("New posts") keeps the
+  tab dot lit while loaded cards are marked (your own new post never lights it); no card marks
+  during a reload until its caught-up line is placed; the pager opens on a shot that arrives with
+  a pull-to-refresh. Each still wants one on-device look.
 - Untouched from the earlier list: the outreach opt-out and postal-address lines, and the push
   dropped after an offline cold launch.
 - Post-release check, 2026-09-26 (read only): 0 crash_diagnostics rows from 1.6.0 builds 406 and

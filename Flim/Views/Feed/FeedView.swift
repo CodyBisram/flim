@@ -33,6 +33,14 @@ struct FeedView: View {
     @State private var showActivity = false
     @State private var myAvatarURL: URL?
     @State private var hasNewPosts = false
+    /// The part of `hasNewPosts` the tab dot may use: a newer post by someone else, not
+    /// already loaded and not already seen. Your own post also brings up "New posts" (page one
+    /// does not hold it until a reload) but must never light your own dot.
+    @State private var newPostsFromOthers = false
+    /// Reloads between their start and their own snapshot. Marking waits while any is running,
+    /// so a card on screen cannot mark its new shots before the reload places the caught-up
+    /// line. Separate from `ledgerSnapshotted`, which still means "the first snapshot ran".
+    @State private var reloadsInFlight = 0
     @State private var didLoad = false
     /// The account generation the loaded feed belongs to, so a mark made under the next
     /// account never recomputes the dot from the previous account's units.
@@ -201,9 +209,12 @@ struct FeedView: View {
         FeedUnit.hasUnseen(units: units, currentUserId: auth.currentUser?.id, isSeen: { seenStore.isSeen($0) })
     }
 
-    /// Re-lights or clears the Feed tab's dot from what is loaded here and in Activity.
+    /// Re-lights or clears the Feed tab's dot from what is loaded here and in Activity. A post
+    /// newer than page one ("New posts") counts too: it is not loaded, so no card can say so,
+    /// and marking the loaded ones must not clear a dot that post lit.
     private func updateFeedDot() {
-        signals.feedHasUnread = TabSignals.feedDot(unseen: anythingUnseen, unreadActivity: unreadActivity)
+        signals.feedHasUnread = TabSignals.feedDot(unseen: anythingUnseen || newPostsFromOthers,
+                                                   unreadActivity: unreadActivity)
     }
     /// First run: nobody followed and nothing to show. Not "caught up", which describes a
     /// feed that ran out rather than one that has not started.
@@ -377,6 +388,10 @@ struct FeedView: View {
                 return
             }
             guard !feed.feed.isEmpty else { return }
+            // A friend may have posted while the app was away. The feed is not reloaded (that
+            // would reshape it under the reader), but "New posts" can say so, and the tab dot
+            // stays lit for it.
+            Task { await checkNewPosts() }
             Task {
                 await feed.refreshReactions(
                     postIds: LiveRefresh.postsToRefresh(feed.feed).map(\.post.id))
@@ -571,7 +586,7 @@ struct FeedView: View {
                             width: containerWidth,
                             opening: unit.openingIndex(isSeen: { seenStore.isSeen($0) }),
                             seenStore: seenStore,
-                            markingEnabled: ledgerSnapshotted,
+                            markingEnabled: ledgerSnapshotted && reloadsInFlight == 0,
                             catchUpGeneration: catchUpGeneration,
                             // growOnly: blocking an author must not re-place the seam or the
                             // strips, the same ratchet paging already obeys.
@@ -625,6 +640,7 @@ struct FeedView: View {
                 if hasNewPosts {
                     Button {
                         hasNewPosts = false
+                        newPostsFromOthers = false
                         Haptics.tap()
                         Task {
                             await reload()
@@ -815,6 +831,11 @@ struct FeedView: View {
 
     private func reload() async {
         guard let uid = auth.currentUser?.id else { didLoad = true; return }
+        // No card marks itself until this load's caught-up line is placed. The page can render
+        // while the Spotlight reads below are still in flight, and a card on screen marking its
+        // new shots in that gap would put the line above a card still reading "N new". Every
+        // path below reaches the decrement just before this reload's own snapshot.
+        reloadsInFlight += 1
         // Captured before the first await: several round trips sit between here and the dot
         // write below, and an account switch mid-flight must not let a stale answer light the
         // NEW account's tab dot; same pattern as `OptimisticToggle`.
@@ -843,11 +864,13 @@ struct FeedView: View {
             didLoad = true
             loadedEpoch = epoch
             hasNewPosts = false
+            newPostsFromOthers = false
         }
         // Snapshotted from page one, BEFORE the straddle completion's extra round trips: the
         // units render the moment the page lands, and the caught-up block waiting on the
         // completion appeared a beat after them, popping in at the top of an already-drawn
         // feed. The completion below then re-snapshots grow-only, the same way paging does.
+        reloadsInFlight -= 1
         snapshotLedger()
         // After the snapshot, so the re-opened frames' seen-marks land under an already
         // placed seam, the same order every other mark obeys.
@@ -1076,9 +1099,18 @@ struct FeedView: View {
 
     private func checkNewPosts() async {
         guard let uid = auth.currentUser?.id else { return }
+        let epoch = AccountEpoch.current
         let fresh = await feed.peekFeed(currentUserId: uid)
+        guard AccountEpoch.isCurrent(epoch) else { return }
         if let newTop = fresh.first?.id, newTop != feed.feed.first?.id {
             withAnimation { hasNewPosts = true }
+            let loaded = Set(feed.feed.map(\.post.id))
+            let loadedTop = feed.feed.first?.post.createdAt ?? .distantPast
+            newPostsFromOthers = fresh.contains {
+                $0.post.userId != uid && !loaded.contains($0.post.id)
+                    && $0.post.createdAt > loadedTop && !seenStore.isSeen($0.post.id)
+            }
+            if didLoad, loadedEpoch == epoch { updateFeedDot() }
         }
     }
 }
