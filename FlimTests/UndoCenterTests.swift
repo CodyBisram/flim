@@ -3,9 +3,8 @@ import Foundation
 @testable import Flim
 
 /// `UndoCenter`: stage, undo, commit (via flush and via natural expiry), revert on a failed
-/// write, and the "one capsule at a time" rule, plus two documented failures from the
-/// 2026-09-21 audit (`docs/reviews/OPEN.md`, rows dated 2026-08-27) pinned as known issues so a
-/// later fix flips them green instead of needing to be rediscovered.
+/// write, and the "one capsule at a time" rule, plus the two stale-write races from the
+/// 2026-09-21 audit (`docs/reviews/OPEN.md`, rows dated 2026-08-27), pinned as fixed.
 ///
 /// `.serialized`: `UndoCenter.shared` is a process-wide singleton with no reset hook besides
 /// `undo()`/`flush()`, so two of these tests running concurrently would stage over each other.
@@ -187,76 +186,132 @@ struct UndoCenterTests {
         #expect(UndoCenter.shared.staged == nil)
     }
 
-    // MARK: - Documented failures (docs/reviews/OPEN.md, 2026-08-27)
+    // MARK: - Stale staged writes (docs/reviews/OPEN.md, 2026-08-27)
 
-    /// Models `BadgePickerSheet.save()`: the "clear all badges" path stages through `UndoCenter`
-    /// (confirmations redesign rule 1), but the ordinary non-empty save path calls `commit()`
-    /// directly and never touches `UndoCenter`, so it neither flushes nor cancels whatever is
-    /// already staged. A stale staged clear survives the fresh save and overwrites it once its own
-    /// window closes.
-    ///
-    /// `withKnownIssue` pins the CURRENT (broken) behavior without asserting it is correct: this
-    /// passes today because the wrong outcome is expected. Once the direct-save path flushes (or
-    /// cancels) whatever is staged first, this assertion starts passing for real and Swift Testing
-    /// flags the known issue as unexpectedly resolved, which is the cue to delete the wrapper.
-    @Test("a stale staged clear-all overwrites a fresh direct save (BadgePickerSheet)")
-    func staleStagedClearOverwritesAFreshSave() async {
+    /// Models `BadgePickerSheet`: the "clear all badges" path stages under
+    /// `BadgePickerSheet.clearUndoKey`, and the ordinary save path (`commit()`) writes directly,
+    /// calling `supersede(key:)` first. Before that call existed, a stale staged clear survived
+    /// the fresh save and overwrote it once its own window closed.
+    @Test("a fresh direct save supersedes a staged clear-all instead of being overwritten (BadgePickerSheet)")
+    func directSaveSupersedesAStagedClear() async {
         await clearAnyLeftoverStagedItem()
         var badges = ["founding-100", "night-owl"]
+        let recorder = Recorder()
 
         // "Custom" with nothing checked, saved: staged behind the capsule, exactly like
         // `BadgePickerSheet.save()`'s `wouldClearProfile` branch.
-        UndoCenter.shared.stage(title: "Badges hidden", commit: { badges = []; return true })
+        UndoCenter.shared.stage(
+            title: "Badges hidden",
+            key: BadgePickerSheet.clearUndoKey,
+            revert: { recorder.reverts += 1 },
+            commit: { recorder.commits += 1; badges = []; return true })
 
-        // Inside the window, the sheet is reopened and real badges are picked.
-        // `BadgePickerSheet.commit()` writes this directly and never calls `UndoCenter`, so the
-        // staged clear above is left running untouched.
+        // Inside the window, the sheet is reopened and real badges are picked; `commit()`
+        // supersedes the staged clear, then writes.
+        await UndoCenter.shared.supersede(key: BadgePickerSheet.clearUndoKey)
         badges = ["vintage"]
+        #expect(UndoCenter.shared.staged == nil, "the superseded capsule is gone")
 
-        // The staged clear's window closes (modeled as a flush; a real 5-second wait ends the
-        // same way).
+        // Where the staged clear's window would have closed.
         UndoCenter.shared.flush()
-        await waitUntil { badges == [] }
-
-        withKnownIssue("""
-            BadgePickerSheet.commit() bypasses UndoCenter (docs/reviews/OPEN.md, 2026-08-27): a \
-            stale staged clear-badges action outlives a fresh direct save and overwrites it.
-            """) {
-            #expect(badges == ["vintage"], "the person's real save should be what survives")
-        }
+        await UndoCenter.shared.flushAndWait()
+        #expect(badges == ["vintage"], "the person's real save is what survives")
+        #expect(recorder.commits == 0, "the superseded clear never reaches the server")
+        #expect(recorder.reverts == 0, "the newer save set the state itself; nothing to restore")
     }
 
-    /// Models `UserPageView.blockAccount()`: `dismiss` is captured once at stage time and invoked
-    /// from inside the deferred commit closure. `dismiss` always pops whatever is CURRENTLY on top
-    /// of the navigation stack, not "the page that was showing when block was tapped", so a person
-    /// who navigates further before the window closes has the wrong screen popped out from under
-    /// them when the block commits.
-    @Test("a deferred dismiss pops whatever was navigated to since, not the blocked page (UserPageView)")
-    func deferredDismissPopsTheWrongScreen() async {
+    /// The window closed a moment before the direct save, so the clear is already talking to the
+    /// server and cannot be recalled. `supersede` waits for it, so the newer write lands last.
+    @Test("supersede waits for an in-flight commit of the same key, so the direct save lands last")
+    func supersedeWaitsForAnInFlightCommit() async {
+        await clearAnyLeftoverStagedItem()
+        var writes: [[String]] = []
+        UndoCenter.shared.stage(
+            title: "Badges hidden",
+            key: BadgePickerSheet.clearUndoKey,
+            commit: {
+                try? await Task.sleep(for: .milliseconds(100))
+                writes.append([])
+                return true
+            })
+        UndoCenter.shared.flush()   // the window closes; the clear is now in flight
+
+        await UndoCenter.shared.supersede(key: BadgePickerSheet.clearUndoKey)
+        writes.append(["vintage"])
+        #expect(writes == [[], ["vintage"]], "the direct save must be the last write")
+    }
+
+    @Test("supersede leaves an action staged under another key, or none, untouched")
+    func supersedeIgnoresOtherKeys() async {
+        await clearAnyLeftoverStagedItem()
+        let keyed = Recorder()
+        UndoCenter.shared.stage(title: "Other setting", key: "some-other-setting",
+                                commit: { keyed.commits += 1; return true })
+        await UndoCenter.shared.supersede(key: BadgePickerSheet.clearUndoKey)
+        #expect(UndoCenter.shared.staged?.title == "Other setting")
+
+        let unkeyed = Recorder()
+        UndoCenter.shared.stage(title: "Blocked them", commit: { unkeyed.commits += 1; return true })
+        await UndoCenter.shared.supersede(key: BadgePickerSheet.clearUndoKey)
+        #expect(UndoCenter.shared.staged?.title == "Blocked them")
+
+        await UndoCenter.shared.flushAndWait()
+        #expect(keyed.commits == 1, "staging the second action committed the first as usual")
+        #expect(unkeyed.commits == 1)
+    }
+
+    /// Models `UserPageView.blockAccount()`: `dismiss` is captured at stage time and invoked from
+    /// the deferred commit, and `dismiss` pops whatever is on top of the stack by then. The page
+    /// reports its appear and disappear to a `StagedPageExit`, and the commit only leaves while
+    /// the page is still frontmost, so a photo pushed on top of the blocked profile inside the
+    /// window is never the page that gets popped.
+    @Test("a deferred dismiss does not pop a page navigated to since the block (UserPageView)")
+    func deferredDismissLeavesAPagePushedSince() async {
         await clearAnyLeftoverStagedItem()
         var stack = ["Feed", "UserPage"]
         let leave: () -> Void = { if !stack.isEmpty { stack.removeLast() } }
+        let exit = StagedPageExit()
 
         UndoCenter.shared.stage(
             title: "Blocked them",
             commit: {
-                leave()
+                exit.leaveIfFrontmost { leave() }
                 return true
             })
 
         // Before the window closes, the person taps into something from the profile (a photo, a
-        // roll) and the nav stack grows past `UserPage`.
+        // roll): the nav stack grows past `UserPage`, which disappears under it.
         stack.append("PhotoViewer")
+        exit.pageDisappeared()
 
         UndoCenter.shared.flush()
-        await waitUntil { stack.count <= 2 }
+        await UndoCenter.shared.flushAndWait()
+        #expect(stack == ["Feed", "UserPage", "PhotoViewer"],
+                "the photo stays; backing out lands on the profile, now showing its blocked panel")
+    }
 
-        withKnownIssue("""
-            UserPageView.blockAccount() captures `dismiss` at stage time and calls it from the \
-            deferred commit closure (docs/reviews/OPEN.md, 2026-08-27): it pops whatever is on top \
-            when the commit runs, not the blocked profile page itself.
-            """) {
-            #expect(stack == ["Feed", "PhotoViewer"], "the blocked profile page should be the one popped")
-        }
+    @Test("a deferred dismiss still closes the blocked page when it is frontmost (UserPageView)")
+    func deferredDismissClosesTheFrontmostPage() async {
+        await clearAnyLeftoverStagedItem()
+        var stack = ["Feed", "UserPage"]
+        let leave: () -> Void = { if !stack.isEmpty { stack.removeLast() } }
+        let exit = StagedPageExit()
+
+        UndoCenter.shared.stage(
+            title: "Blocked them",
+            commit: {
+                exit.leaveIfFrontmost { leave() }
+                return true
+            })
+
+        // A round trip inside the window: into a photo and back to the profile.
+        stack.append("PhotoViewer")
+        exit.pageDisappeared()
+        stack.removeLast()
+        exit.pageAppeared()
+
+        UndoCenter.shared.flush()
+        await UndoCenter.shared.flushAndWait()
+        #expect(stack == ["Feed"], "the blocked page closes once the block lands, as before")
     }
 }

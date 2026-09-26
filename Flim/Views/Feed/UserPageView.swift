@@ -103,6 +103,9 @@ struct UserPageView: View {
     /// "Invite" rather than risking a number that is wrong in the pessimistic direction.
     @State private var inviteQuota: AuthService.InviteQuota = .unknown
     @State private var showAvatarViewer = false
+    /// Tracks whether this page is still frontmost, so a block's deferred commit closes this page
+    /// and never whatever was pushed on top of it during the undo window; see `blockAccount()`.
+    @State private var pageExit = StagedPageExit()
     @Environment(\.dismiss) private var dismiss
 
     private var isSelf: Bool { userId == auth.currentUser?.id }
@@ -250,6 +253,8 @@ struct UserPageView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbarColorScheme(.dark, for: .navigationBar)
         .toolbarBackground(.hidden, for: .navigationBar)   // let the cover show under the back/gear
+        .onAppear { pageExit.pageAppeared() }
+        .onDisappear { pageExit.pageDisappeared() }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 if isSelf {
@@ -371,7 +376,12 @@ struct UserPageView: View {
         let feedService = feed
         // The page stays put during the window (undo would have nothing to come back to
         // otherwise); it only closes once the block has actually landed, same rule as before.
+        // By then the person may have pushed a photo on top, switched tabs, or backed out, and
+        // `dismiss` would pop whatever is on top at that moment, so it runs only while this
+        // page is still frontmost. Otherwise the page is left in place, where it already shows
+        // the blocked panel.
         let leave = dismiss
+        let exit = pageExit
         UndoCenter.shared.stage(
             title: "Blocked \(handle), and unfollowed them",
             subtitle: "Reversible in Blocked accounts",
@@ -380,7 +390,7 @@ struct UserPageView: View {
                 await feedService.block(targetId, from: uid)
                 guard feedService.isBlocked(targetId) else { return false }
                 feedService.feed.removeAll { $0.author.id == targetId }
-                leave()
+                exit.leaveIfFrontmost { leave() }
                 return true
             })
     }

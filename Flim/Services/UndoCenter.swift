@@ -18,6 +18,11 @@ import Observation
 /// same closure Undo uses, restoring whatever the optimistic step hid) and shows the staged
 /// `failureText` as a transient notice where the capsule was: rule 4, failures land in place,
 /// never as a modal.
+///
+/// A staged write can also go stale without anyone touching the capsule: the same setting gets
+/// saved again, directly, inside the window. Committing the older write afterwards would
+/// silently overwrite the newer one, so an action that has a direct-save twin stages under a
+/// `key`, and the direct path calls `supersede(key:)` before it writes.
 @MainActor
 @Observable
 final class UndoCenter {
@@ -36,6 +41,9 @@ final class UndoCenter {
         /// session reaches `ContentView`'s flush only after the epoch moved), and its revert and
         /// failure notice belong to that account alone; see `perform`.
         let epoch: Int
+        /// Names what this action writes, when something else can write the same thing
+        /// directly; see `supersede(key:)`. `nil` for actions nothing else competes with.
+        let key: String?
         /// Restores the optimistic UI change. Runs on Undo and on a failed commit. Must be
         /// safe to call after the staging view is gone; capture services, not view state.
         let revert: () -> Void
@@ -58,14 +66,16 @@ final class UndoCenter {
     private var noticeTask: Task<Void, Never>?
     /// Commits `expire` sent off and that have not finished yet, keyed by the staged id.
     /// `flushAndWait` awaits them, so a window that closed just before sign-out cannot race it.
-    private var inFlightCommits: [UUID: Task<Void, Never>] = [:]
+    /// `supersede(key:)` awaits the ones carrying its key, so a direct save never races an
+    /// older write of the same thing to the server.
+    private var inFlightCommits: [UUID: (key: String?, task: Task<Void, Never>)] = [:]
 
-    func stage(title: String, subtitle: String? = nil, failureText: String? = nil,
+    func stage(title: String, subtitle: String? = nil, failureText: String? = nil, key: String? = nil,
                revert: @escaping () -> Void = {}, commit: @escaping () async -> Bool) {
         flush()
         let item = Staged(title: title, subtitle: subtitle, failureText: failureText,
                           deadline: .now.addingTimeInterval(Self.window),
-                          epoch: AccountEpoch.current,
+                          epoch: AccountEpoch.current, key: key,
                           revert: revert, commit: commit)
         staged = item
         expiryTask = Task { [weak self] in
@@ -108,17 +118,35 @@ final class UndoCenter {
             staged = nil
             await perform(item)
         }
-        for task in Array(inFlightCommits.values) { await task.value }
+        for entry in Array(inFlightCommits.values) { await entry.task.value }
+    }
+
+    /// A newer direct write of `key` is about to happen: whatever is staged under that key is
+    /// out of date. It is dropped without committing (its write would land on top of the newer
+    /// one and undo it) and without reverting (the newer write sets the state itself). A commit
+    /// of that key already in flight cannot be recalled, so this waits for it to finish instead,
+    /// which puts the newer write last on the server too. Anything staged under another key, or
+    /// none, is left alone.
+    func supersede(key: String) async {
+        if let item = staged, item.key == key {
+            expiryTask?.cancel()
+            expiryTask = nil
+            staged = nil
+        }
+        for entry in Array(inFlightCommits.values) where entry.key == key {
+            await entry.task.value
+        }
     }
 
     private func expire(_ item: Staged) {
         staged = nil
         // Main-actor Task: it cannot start before this function returns, so the entry below is
         // always in place before the Task's own cleanup removes it.
-        inFlightCommits[item.id] = Task { [weak self] in
+        let task = Task { [weak self] in
             await self?.perform(item)
             self?.inFlightCommits[item.id] = nil
         }
+        inFlightCommits[item.id] = (key: item.key, task: task)
     }
 
     private func perform(_ item: Staged) async {
@@ -156,5 +184,26 @@ final class UndoCenter {
             guard !Task.isCancelled else { return }
             withAnimation { self?.failureNotice = nil }
         }
+    }
+}
+
+/// Whether a page is still the one on screen, for a staged commit that closes it. A commit runs
+/// seconds after staging, and a `DismissAction` captured at staging pops whatever sits on top of
+/// the stack by then: a person who tapped from a just-blocked profile into one of its photos lost
+/// the photo instead of the profile. The page reports its own appear and disappear here (a push
+/// on top of it, a tab switch, or backing out all count as leaving), and the commit closes it
+/// only while it is still frontmost. Otherwise the commit leaves navigation alone: the stack's
+/// mix of item, value and link pushes offers no way to remove one page from the middle, and the
+/// page itself already shows the committed state when the person comes back to it.
+@MainActor
+final class StagedPageExit {
+    private(set) var isFrontmost = true
+
+    func pageAppeared() { isFrontmost = true }
+    func pageDisappeared() { isFrontmost = false }
+
+    func leaveIfFrontmost(_ leave: () -> Void) {
+        guard isFrontmost else { return }
+        leave()
     }
 }

@@ -55,6 +55,9 @@ struct BadgePickerSheet: View {
     /// pills and the vanished "new badges" pill landed a beat after the profile was already back
     /// on screen, a visible pop and reflow right where the eye was resting.
     var onSaved: (() -> Void)? = nil
+    /// The `UndoCenter` key the staged "hide every badge" save carries, so a direct save made
+    /// inside its window can supersede it; see `BadgePickerContent.commit()`.
+    static let clearUndoKey = "profile-displayed-badges"
     @Environment(AuthService.self) private var auth
     @Environment(FeedService.self) private var feed
     @Environment(\.dismiss) private var dismiss
@@ -661,6 +664,7 @@ private struct BadgePickerContent: View {
                 title: "Badges hidden",
                 subtitle: "Your earned badges are kept",
                 failureText: "Couldn't save that. Your badges are unchanged.",
+                key: BadgePickerSheet.clearUndoKey,
                 commit: { (try? await apply([])) != nil })
             return
         }
@@ -671,6 +675,10 @@ private struct BadgePickerContent: View {
         isSaving = true
         saveError = nil
         let payload: [String]? = mode == .automatic ? nil : order
+        // A "hide every badge" save staged a moment ago is still waiting out its window, and
+        // this save never passes through the capsule. Left alone, that older clear commits when
+        // its window closes and wipes the selection being written here, so it goes first.
+        await UndoCenter.shared.supersede(key: BadgePickerSheet.clearUndoKey)
         do {
             try await onSave(payload)
             Haptics.success()
