@@ -5,10 +5,10 @@ import UIKit
 /// on the ground with hairline seams, replacing the one-card-per-post list that let a
 /// 14-shot day fill every follower's catch-up before anyone else appeared.
 ///
-/// What arrived sits in the header BESIDE the screen's name, as a notification rather than a
-/// title: it states what arrived, never ticks down as you read, and goes when the last mark
-/// clears. The caught-up block marks the end of what is NEW, not the end of the scroll: on
-/// this archive feed the days already seen continue below it.
+/// The header carries no count (2026-09-26). The feed is newest first, so everything new sits
+/// together at the top, each day's pill says what is new in it, and the caught-up block marks
+/// the end of what is NEW, not the end of the scroll: on this archive feed the days already
+/// seen continue below it.
 struct FeedView: View {
     @Environment(\.flimAccent) private var accent
     var scrollToTop: Int = 0
@@ -34,6 +34,9 @@ struct FeedView: View {
     @State private var myAvatarURL: URL?
     @State private var hasNewPosts = false
     @State private var didLoad = false
+    /// The account generation the loaded feed belongs to, so a mark made under the next
+    /// account never recomputes the dot from the previous account's units.
+    @State private var loadedEpoch: Int?
     /// A pull-to-refresh that genuinely failed while the feed already had content on screen;
     /// see `reload()`. A failure that touches nothing on screen still needs to say something.
     @State private var refreshFailedToast = false
@@ -66,27 +69,10 @@ struct FeedView: View {
     /// the way the very first load does. Ordinary foregrounding and pull-to-refresh are
     /// unaffected, neither one bumps this.
     @State private var boundaryReloadGeneration = 0
-    /// Bumped by a tap on the ledger; the list scrolls to the first unit with an unseen frame.
-    @State private var jumpToUnseenSignal = 0
-    /// The unit that tap scrolled to, and a generation the card watches: the target opens on
-    /// its first unseen frame and marks it, so a tap always shows a new photograph and the
-    /// number moves. See `FeedUnitCard.isJumpTarget`.
-    @State private var jumpTargetId: String?
-    @State private var jumpGeneration = 0
-    /// The whole window's count from the server (`feed_unseen_count`), read at every explicit
-    /// load and again whenever marks land there. When it is known, the header's number comes
-    /// from it alone (`remainingLedger`); the loaded pages stand in only when the read failed.
-    /// Without it the header counted only the pages loaded so far and grew as you scrolled
-    /// ("5 shots from 1 friend", then 18).
-    @State private var serverLedger: (shots: Int, friends: Int)?
-    /// When `serverLedger` was ASKED for, so marks made after it can be subtracted from it.
-    @State private var serverLedgerAt: Date?
-    /// The marks still waiting to be pushed when `serverLedger` was asked for (plus any the
-    /// backlog seed queued after it). The count includes them, so they stay subtracted after
-    /// their push lands and until a newer count arrives. See `FeedUnit.remainingLedger`.
-    @State private var serverLedgerPending: Set<UUID> = []
     /// Gates the cards' seen-marking until the first snapshot exists, so snapshot-then-mark
-    /// is an ordering guarantee rather than a race against the first visibility event.
+    /// is an ordering guarantee rather than a race against the first visibility event: the
+    /// caught-up block must be placed from what was unseen at load, before the first card
+    /// on screen marks itself.
     @State private var ledgerSnapshotted = false
     /// Bumped by every EXPLICIT catch-up (initial load, pull-to-refresh, the New-posts
     /// button, and a 04:00 boundary crossed while backgrounded), telling living unit cards to
@@ -145,7 +131,7 @@ struct FeedView: View {
     // day that is one-tenth read is neither.
     //
     // The seam already says "you are caught up" without deleting anything, so seen state now
-    // drives only the pill, the ledger, the seam, and where a unit opens. The consequence of any
+    // drives only the pill, the tab dot, the seam, and where a unit opens. The consequence of any
     // future seen-state bug is a wrong pill rather than a feed that empties or never ends.
     // Scrolling stays bounded by `FeedUnit.retentionWindow`, server-side, which is what actually
     // bounded it all along.
@@ -204,36 +190,21 @@ struct FeedView: View {
             let backlog = feed.feed
                 .filter { $0.post.createdAt < cutoff }
                 .map { (id: $0.post.id, seenAt: $0.post.createdAt) }
-            // Dated at post time, before the count already in hand was asked for: they must
-            // join that count's pending set, or they stop being subtracted when they land.
-            serverLedgerPending.formUnion(seenStore.seedBacklog(backlog))
+            seenStore.seedBacklog(backlog)
         }
         UserDefaults.standard.set(true, forKey: key)
     }
 
-    /// What is LEFT to see, live, `nil` at zero. It ticks down as you read (owner, 2026-09-19:
-    /// a number that held at "16" while you read was stale). When the server's count is known
-    /// it is the ONLY source, carried forward by the marks it has not heard about; the loaded
-    /// units never light the line on their own, because a loaded post can have aged out of
-    /// the server's seven days and would otherwise hold up "0 shots from 0 friends". Only when
-    /// the server could not answer do the loaded pages count, the same way. See `FeedUnit`'s
-    /// "The header count".
-    private var remainingLedger: (shots: Int, friends: Int)? {
-        let now = Date.now
-        guard let serverLedger, let countedAt = serverLedgerAt else {
-            return FeedUnit.loadedRemaining(units: units, currentUserId: auth.currentUser?.id, now: now,
-                                            isSeen: { seenStore.isSeen($0) })
-        }
-        return FeedUnit.remainingLedger(
-            serverShots: serverLedger.shots, serverFriends: serverLedger.friends, countedAt: countedAt,
-            pendingAtCount: serverLedgerPending, now: now,
-            units: units, currentUserId: auth.currentUser?.id,
-            seenDate: { seenStore.seenDate($0) }, isPendingSync: { seenStore.isPendingSync($0) })
+    /// Whether a friend's shot on the loaded pages is still unseen: the feed's half of the tab
+    /// dot. Page one is the newest posts, so nothing unseen there is a fair "nothing new".
+    private var anythingUnseen: Bool {
+        FeedUnit.hasUnseen(units: units, currentUserId: auth.currentUser?.id, isSeen: { seenStore.isSeen($0) })
     }
 
-    /// Whether the header line shows. The same answer as `remainingLedger`, never a second
-    /// opinion: a separate "any loaded unit unseen?" test once kept the line lit at zero.
-    private var anythingUnseen: Bool { remainingLedger != nil }
+    /// Re-lights or clears the Feed tab's dot from what is loaded here and in Activity.
+    private func updateFeedDot() {
+        signals.feedHasUnread = TabSignals.feedDot(unseen: anythingUnseen, unreadActivity: unreadActivity)
+    }
     /// First run: nobody followed and nothing to show. Not "caught up", which describes a
     /// feed that ran out rather than one that has not started.
     private var followsNobody: Bool {
@@ -320,10 +291,11 @@ struct FeedView: View {
             // A delete can take away the unit a strip was placed against; re-place only those.
             if spotlightSlotsHaveOrphans { snapshotSpotlight(growOnly: true) }
         }
-        // Marks just landed on the server: read its count again, so the header is the
-        // server's own answer within seconds of a swipe instead of an arithmetic the client
-        // keeps running until the next reload.
-        .onChange(of: seenStore.flushGeneration) { Task { await recountUnseen() } }
+        // A card marked itself seen: the dot clears once nothing loaded is new. Only after the
+        // first load, so a launch never clears a dot the server lit before the feed arrived.
+        .onChange(of: seenStore.marksVersion) {
+            if didLoad, AccountEpoch.current == loadedEpoch { updateFeedDot() }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .feedNotice)) { note in
             guard let text = note.object as? String else { return }
             withAnimation { feedNotice = text }
@@ -360,6 +332,7 @@ struct FeedView: View {
                 await reload()
             } else {
                 didLoad = true
+                loadedEpoch = AccountEpoch.current
                 if !ledgerSnapshotted { snapshotLedger() }
                 await checkNewPosts()
             }
@@ -377,7 +350,7 @@ struct FeedView: View {
         //
         // A 04:00 boundary crossed while backgrounded is an EXPLICIT catch-up moment, same as
         // launch or pull-to-refresh: the person was almost certainly asleep, not mid-scroll, so
-        // the ledger, seam and cleared set are allowed to recompute. An ordinary foregrounding
+        // the seam and the Spotlight strips are allowed to recompute. An ordinary foregrounding
         // that never crosses a boundary must never reshape the feed, so it keeps doing only the
         // reactions refresh this onChange already did.
         .onChange(of: scenePhase) { previous, phase in
@@ -424,45 +397,21 @@ struct FeedView: View {
                 // own (later) query time, and an earlier one can't undo it.
                 lastActivitySeen = max(lastActivitySeen, queriedAt.timeIntervalSince1970)
                 unreadActivity = 0
-                signals.feedHasUnread = TabSignals.feedDot(unseenShots: remainingLedger?.shots, unreadActivity: 0)
+                updateFeedDot()
             }
         }
     }
 
     // MARK: - Header
 
-    /// "N shots from N friends" beside the title is what you have not seen yet: posts from
-    /// people you follow in the last seven days that you have not reached, never your own, and
-    /// how many people posted them. The number is the server's count minus the reads it has not
-    /// heard about yet (the loaded pages only if the server could not answer). It ticks down as
-    /// you read and the line disappears at zero; it never says "0 shots". Tapping it jumps there.
+    /// The screen's name and its three buttons. No count: the new days are the ones at the
+    /// top, and each says how many of its shots are new.
     private var header: some View {
         HStack(spacing: 10) {
             Text("Feed")
                 .flimFont(17, weight: .light, relativeTo: .body)
                 .tracking(0.5)
                 .foregroundStyle(FlimTheme.textSecondary)
-            if let ledger = remainingLedger, ledger.shots > 0 {
-                Text("·")
-                    .flimFont(12.5, relativeTo: .footnote)
-                    .foregroundStyle(FlimTheme.textTertiary)
-                // Tapping the count goes to the first day that still holds something unseen,
-                // which opens on its first unseen frame (owner's ask, 2026-09-16).
-                Button {
-                    Haptics.tap()
-                    jumpToUnseenSignal += 1
-                } label: {
-                    Text(ledgerLabel(ledger))
-                        .flimFont(12.5, relativeTo: .footnote)
-                        .foregroundStyle(accent)
-                        .shadow(color: accent.opacity(0.55), radius: 6)
-                        .lineLimit(1)
-                }
-                .buttonStyle(.plain)
-                .expandTapTarget(top: 12, bottom: 12)
-                .accessibilityLabel("\(ledgerLabel(ledger)). Go to the first one")
-                .transition(.opacity)
-            }
             Spacer(minLength: 8)
 
             #if DEBUG
@@ -554,16 +503,9 @@ struct FeedView: View {
                 )
             }
         }
-        .animation(.easeOut(duration: 0.4), value: anythingUnseen)
         .padding(.horizontal, 16)
         .padding(.top, 2)
         .padding(.bottom, 6)
-    }
-
-    private func ledgerLabel(_ ledger: (shots: Int, friends: Int)) -> String {
-        let shots = "\(ledger.shots) shot\(ledger.shots == 1 ? "" : "s")"
-        let friends = "\(ledger.friends) friend\(ledger.friends == 1 ? "" : "s")"
-        return "\(shots) from \(friends)"
     }
 
     /// The account has put a frame up this week or has one waiting on a closed week: it knows
@@ -631,8 +573,6 @@ struct FeedView: View {
                             seenStore: seenStore,
                             markingEnabled: ledgerSnapshotted,
                             catchUpGeneration: catchUpGeneration,
-                            jumpGeneration: jumpGeneration,
-                            isJumpTarget: jumpTargetId == unit.id,
                             // growOnly: blocking an author must not re-place the seam or the
                             // strips, the same ratchet paging already obeys.
                             onAuthorBlocked: { snapshotLedger(growOnly: true) }
@@ -673,34 +613,6 @@ struct FeedView: View {
             .task { proxy.scrollTo("top", anchor: .top) }
             .onChange(of: scrollToTop) {
                 withAnimation(.snappy) { proxy.scrollTo("top", anchor: .top) }
-            }
-            .onChange(of: jumpToUnseenSignal) {
-                // The first unit, in feed order, that still holds an unseen frame; that unit
-                // opens on its first unseen frame by itself (`openingIndex`). If every loaded
-                // day is read, the unseen one is further down than the pages fetched so far:
-                // page forward until it appears, bounded, so the tap always lands somewhere.
-                Task { @MainActor in
-                    let uid = auth.currentUser?.id
-                    let store = seenStore
-                    let firstUnseen: () -> FeedUnit? = {
-                        units.first { $0.author.id != uid && $0.unseenCount(isSeen: { store.isSeen($0) }) > 0 }
-                    }
-                    // Bounded by the seven-day window itself (`hasMoreFeed` ends there); the
-                    // page cap is a guard, not the limit. Six pages stopped short of a day
-                    // that sat a hundred posts down, which made the tap do nothing at all.
-                    var pages = 0
-                    while firstUnseen() == nil, feed.hasMoreFeed, pages < 40, let uid {
-                        await feed.loadMoreFeed(currentUserId: uid)
-                        recomputeUnits()
-                        pages += 1
-                    }
-                    guard let target = firstUnseen() else { return }
-                    withAnimation(.snappy) { proxy.scrollTo(target.id, anchor: .top) }
-                    // The card opens on its first unseen frame and marks it; the scroll alone
-                    // left an already-mounted card on whatever frame it was showing.
-                    jumpTargetId = target.id
-                    jumpGeneration += 1
-                }
             }
             // The boundary-triggered reload replaced page one while the reader's scroll offset
             // was still wherever it was left; land back at the top exactly like the initial
@@ -810,16 +722,7 @@ struct FeedView: View {
         .padding(.horizontal, 40)
     }
 
-    /// "All seen" is a live claim, never the snapshot's: the block's position is pinned at
-    /// load, but a reader can scroll to it with frames still unreached inside a group above
-    /// (their pills say so), and the copy must not contradict the ledger still lit in the
-    /// header.
-    private var caughtLine: String {
-        let closer = "Nothing new until someone shoots something."
-        // Live, like the header: what is still unread above this seam, or that it is all seen.
-        guard let remaining = remainingLedger, remaining.shots > 0 else { return closer }
-        return "\(ledgerLabel(remaining)) still above.\n\(closer)"
-    }
+    private var caughtLine: String { "Nothing new until someone shoots something." }
 
     // MARK: - First run, loading
 
@@ -920,16 +823,9 @@ struct FeedView: View {
         // on a genuine failure, so `feed.feed` staying non-empty can't by itself say whether
         // this refresh worked.
         let hadContent = !feed.feed.isEmpty
-        // The account's copy of the seen-marks must be complete before the server counts, or
-        // a swipe made ten seconds ago reads as unseen in the number.
+        // The account's copy of the seen-marks goes up first, so the tab dot's server check
+        // on the next foreground agrees with what this phone has already read.
         await seenStore.flushPending()
-        // Stamped when the count is ASKED for: a mark made during the round trips below is
-        // one the server did not see, and `remainingLedger` subtracts marks from this
-        // instant on. Stamping after the page load left every mark made in that window
-        // neither in the count nor subtracted from it.
-        let countedAt = Date.now
-        let pendingAtCount = seenStore.pendingIds
-        async let counted = feed.unseenCount()
         // Beside the feed, not after it: the strip must be in hand before the first snapshot
         // below places it, or it would pop in above a feed that was already drawn.
         async let spotlightStrip: Void = feed.loadSpotlightStrip()
@@ -937,21 +833,15 @@ struct FeedView: View {
         // (1.6.0), and fetched after the feed it popped the line in over drawn cards.
         async let ownSpotlightEntry: Void = feed.refreshOwnSpotlightEntry()
         await feed.loadFeed(currentUserId: uid)
-        let unseen = await counted
         await spotlightStrip
         await ownSpotlightEntry
         if AccountEpoch.isCurrent(epoch) { seenSpotlight = SpotlightSeenMark.seen(userId: uid) }
         // A stale reload (the account switched while `loadFeed` was in flight) must not write
-        // any of these: not just the dot, which is the only one this used to guard, but the
-        // ledger and its timestamp, and the two flags that say the load finished. Writing them
-        // from the DEPARTED account's answer would show that account's unseen count and unread
-        // state under the new one's feed for a moment, and the reload for the new account that
+        // the two flags that say the load finished: the reload for the new account that
         // follows would find `didLoad` already true and never restart its own loading state.
         if AccountEpoch.isCurrent(epoch) {
-            if acceptServerCount(unseen, countedAt: countedAt, pendingAtCount: pendingAtCount) {
-                signals.feedHasUnread = TabSignals.feedDot(unseenShots: unseen?.shots, unreadActivity: unreadActivity)
-            }
             didLoad = true
+            loadedEpoch = epoch
             hasNewPosts = false
         }
         // Snapshotted from page one, BEFORE the straddle completion's extra round trips: the
@@ -983,34 +873,12 @@ struct FeedView: View {
         async let spotlightOwnTask: Void = feed.refreshOwnSpotlight(userId: uid)
         if let resolved = await avatarTask { myAvatarURL = resolved }
         unreadActivity = await unreadTask
+        // After the snapshot and the unread count, from this account's own answers only.
+        if AccountEpoch.isCurrent(epoch) { updateFeedDot() }
         _ = await badgeTask
         _ = await spotlightOwnTask
         prefetchedThrough = 0
         await prefetchUnitHeroes()
-    }
-
-    /// The server's count again, after marks landed there. Same stamp discipline as `reload`,
-    /// same account guard; a failed read keeps the arithmetic running on the old count.
-    private func recountUnseen() async {
-        guard didLoad, auth.currentUser != nil else { return }
-        let epoch = AccountEpoch.current
-        let countedAt = Date.now
-        let pendingAtCount = seenStore.pendingIds
-        guard let unseen = await feed.unseenCount(), AccountEpoch.isCurrent(epoch),
-              acceptServerCount(unseen, countedAt: countedAt, pendingAtCount: pendingAtCount) else { return }
-        signals.feedHasUnread = TabSignals.feedDot(unseenShots: unseen.shots, unreadActivity: unreadActivity)
-    }
-
-    /// Takes a count unless one ASKED for later has already landed: recounts overlap (each
-    /// landed push starts one), their answers can arrive out of order, and an older answer
-    /// would put back reads the newer one had already taken off. Returns whether it took it.
-    private func acceptServerCount(_ unseen: (shots: Int, friends: Int)?, countedAt: Date,
-                                   pendingAtCount: Set<UUID>) -> Bool {
-        if let current = serverLedgerAt, current > countedAt { return false }
-        serverLedger = unseen
-        serverLedgerAt = countedAt
-        serverLedgerPending = pendingAtCount
-        return true
     }
 
     /// `nil` when there's no avatar path to resolve at all (skip the assignment in `reload()`
@@ -1024,8 +892,8 @@ struct FeedView: View {
     }
 
     /// The load-time snapshot: runs the backlog seed, rebuilds the units, and places the
-    /// caught-up seam and the Spotlight strips. The header count is NOT snapshotted here; it is
-    /// derived live (`remainingLedger`). The name is older than that change.
+    /// caught-up seam and the Spotlight strips. The name is older than the header count's
+    /// removal (2026-09-26); what it snapshots now is the seam and the strips.
     ///
     /// `growOnly` is the paging case: an older page can bring an unseen day below the seam, but
     /// reading in the meantime must not pull the seam or a strip back up the feed.

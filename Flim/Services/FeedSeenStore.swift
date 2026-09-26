@@ -12,9 +12,12 @@ import Observation
 /// activates (`pullFromServer`), which seeds whatever this device did not have. The local
 /// store stays the source of truth on this device; the server copy is a backup of it.
 ///
-/// "Reaching" a shot means the pager landed on it, whether by swiping the photograph, tapping
-/// its strip frame, or a unit opening on it, so a group with two unseen shots reads "1 new"
-/// the moment it appears.
+/// Seen is PER CARD, not per photograph (2026-09-26): once a day's card is on screen, every
+/// shot in it is marked, because the whole strip of thumbnails was in view. Before this a
+/// shot counted only when the pager landed on it, so a seven-shot day took seven swipes to
+/// clear and its "7 new" never went away for someone who scrolled past it. A card's pill now
+/// means "posted since you last looked at this day": a friend adding three shots later brings
+/// the day back to the top reading "3 new".
 ///
 /// The timestamp exists for retention: a fully-seen unit leaves the feed at the first 04:00
 /// boundary after its last shot was reached (`FeedUnit.hasCleared`). The mark keeps its
@@ -50,7 +53,10 @@ final class FeedSeenStore {
     /// again rather than silently skipping one.
     private static let cap = 6000
 
-    private(set) var seenAt: [UUID: Date] = [:]
+    private(set) var seenAt: [UUID: Date] = [:] { didSet { marksVersion += 1 } }
+    /// Bumped on every change to `seenAt`, so the feed can watch for new marks without
+    /// comparing a dictionary of thousands on every update (its count stops moving at the cap).
+    private(set) var marksVersion = 0
     /// Marks made on this device that the account's server copy does not have yet. Cleared as
     /// batches land; a failed batch stays here and rides the next flush.
     private var pendingSync: [UUID: Date] = [:]
@@ -61,9 +67,12 @@ final class FeedSeenStore {
     /// Per account, so a switch never flushes one person's marks under another's session.
     private var syncedUserId: UUID?
     /// The account-copy pull in flight for the active account, so the feed can wait for it
-    /// before it snapshots its ledger: a "16 shots from 8 friends" computed a moment before the
-    /// server's marks land would be exactly the number this mirror exists to prevent.
+    /// before it places the caught-up line and lights pills: a feed opened a moment before the
+    /// server's marks land would show days already read on another phone as new.
     private var pullTask: Task<Void, Never>?
+    /// The account whose pull has landed. A pull that failed (offline at launch) used to give
+    /// up for the whole session; `retryPullIfNeeded` runs it again on the next foreground.
+    private var pulledUserId: UUID?
     /// A coalesced disk write not yet applied; see `schedulePersist`. Non-nil means `seenAt`
     /// has marks the on-disk copy doesn't yet.
     private var persistTask: Task<Void, Never>?
@@ -105,6 +114,7 @@ final class FeedSeenStore {
             migrateLegacyMarksIfNeeded(into: activeUserId)
             seenAt = loadMarks(for: activeUserId)
             pendingSync = [:]
+            pulledUserId = nil   // a pull that landed for this account earlier must not excuse a failed one now
             syncedUserId = activeUserId
             pullTask = Task { await pullFromServer(for: activeUserId) }
         }
@@ -122,7 +132,7 @@ final class FeedSeenStore {
     /// so one mark for a post deleted since failed the whole 500-row batch with a foreign-key
     /// error, every flush, until the poison mark aged out a day later (and took every other
     /// mark older than a day in that batch with it, permanently, so the server never learned
-    /// they were read and the header counted them again). The function inserts only the ids
+    /// they were read and counted them as new again). The function inserts only the ids
     /// that still exist and answers with them; a mark for a post that is gone has nothing to
     /// land on and is settled here, not retried. Every id sent is settled when the call
     /// succeeds; a failed call settles nothing and the next flush tries the batch again.
@@ -141,38 +151,34 @@ final class FeedSeenStore {
 
     func isSeen(_ id: UUID) -> Bool { activeUserId != nil && seenAt[id] != nil }
 
-    /// Whether the account's server copy is still missing this mark, so the feed header can
-    /// subtract it from a server count that could not have excluded it.
+    /// Whether the account's server copy is still missing this mark.
     func isPendingSync(_ id: UUID) -> Bool { activeUserId != nil && pendingSync[id] != nil }
-
-    /// Every mark still waiting to be pushed, read by the feed at the instant it asks the
-    /// server for a count: those marks are in that count however the push races the answer,
-    /// so they stay subtracted until a newer count replaces it. See `FeedUnit.remainingLedger`.
-    var pendingIds: Set<UUID> { activeUserId != nil ? Set(pendingSync.keys) : [] }
-
-    /// Bumped each time a flush lands marks on the server. The feed header re-reads the
-    /// server's count on it, so the number is the server's truth again within seconds of a
-    /// swipe rather than an arithmetic the client keeps running until the next reload.
-    private(set) var flushGeneration = 0
 
     func seenDate(_ id: UUID) -> Date? { activeUserId != nil ? seenAt[id] : nil }
 
-    func markSeen(_ id: UUID) {
+    func markSeen(_ id: UUID) { markSeen([id]) }
+
+    /// Marks a whole card's shots at once: one cap pass, one scheduled disk write, one
+    /// scheduled push for the batch.
+    func markSeen(_ ids: [UUID]) {
         // No signed-in account: nothing to attribute the mark to. Silent no-op, same shape as
         // every other guard in this type.
         guard let activeUserId else { return }
         // First-seen wins; see the type comment on why re-views never refresh the date.
-        guard seenAt[id] == nil else { return }
+        let fresh = ids.filter { seenAt[$0] == nil }
+        guard !fresh.isEmpty else { return }
         let now = Date.now
-        seenAt[id] = now
+        for id in fresh { seenAt[id] = now }
         if seenAt.count > Self.cap {
             let evictable = seenAt.sorted { $0.value < $1.value }.prefix(seenAt.count - Self.cap)
             for (id, _) in evictable { seenAt.removeValue(forKey: id) }
         }
         // `seenAt` (in memory) is authoritative for every read in the meantime; only the disk
-        // copy is debounced, so a swipe through a whole day costs one write, not one per frame.
+        // copy is debounced, so scrolling through a run of days costs one write, not one per card.
         schedulePersist(for: activeUserId)
-        pendingSync[id] = now
+        // Only what the cap kept: an evicted mark is unseen again here, and pushing it would
+        // make the account's copy disagree with this device.
+        for id in fresh where seenAt[id] != nil { pendingSync[id] = now }
         scheduleFlush()
     }
 
@@ -210,7 +216,20 @@ final class FeedSeenStore {
     /// by the request's own timeout; a failed pull returns at once.
     func awaitPull() async { await pullTask?.value }
 
-    /// A short debounce, so a swipe through a day sends one batch rather than one row per frame.
+    /// Runs the pull again when the one started at activation never landed. Called when the app
+    /// returns to the foreground; a no-op once a pull has succeeded or while one is running.
+    /// Chained behind any pull still running, so two never overlap.
+    func retryPullIfNeeded() {
+        guard let user = activeUserId, pulledUserId != user else { return }
+        let previous = pullTask
+        pullTask = Task {
+            await previous?.value
+            guard user == activeUserId, pulledUserId != user else { return }
+            await pullFromServer(for: user)
+        }
+    }
+
+    /// A short debounce, so scrolling through several days sends one batch rather than one per card.
     private func scheduleFlush() {
         guard flushTask == nil else { return }
         flushTask = Task { [weak self] in
@@ -242,7 +261,6 @@ final class FeedSeenStore {
             let landed = await pushRows(user, batch)
             guard user == activeUserId else { return }
             for id in landed { pendingSync.removeValue(forKey: id) }
-            if !landed.isEmpty { flushGeneration += 1 }
             if landed.count < batch.count { return }
         }
     }
@@ -284,6 +302,7 @@ final class FeedSeenStore {
             from += 1000
         }
         guard user == activeUserId else { return }
+        pulledUserId = user
         // Not `seedBacklog`: these came FROM the server, so there is nothing to push back.
         insertBacklog(marks, for: user)
         // The other direction, once: marks this device made before the mirror existed (or
@@ -305,11 +324,7 @@ final class FeedSeenStore {
     ///
     /// Every mark it adds is also queued for the account's copy, like any other mark. Before
     /// 2026-09-26 it was not, so the server kept counting the seeded posts as unseen for the
-    /// whole session and the header's number stood that much too high.
-    ///
-    /// Returns the ids it queued: they are dated at post time, BEFORE the feed's last count was
-    /// asked, so the feed must add them to that count's pending set by hand or they stop being
-    /// subtracted the moment their push lands. See `FeedUnit.remainingLedger`.
+    /// whole session. Returns the ids it queued.
     @discardableResult
     func seedBacklog(_ marks: [(id: UUID, seenAt: Date)]) -> Set<UUID> {
         guard let activeUserId else { return [] }

@@ -300,11 +300,9 @@ final class ActivityDestinationTests: XCTestCase {
 
 final class TabSignalsTests: XCTestCase {
     func testFeedDotLightsForUnseenPostsOrUnreadActivity() {
-        XCTAssertTrue(TabSignals.feedDot(unseenShots: 3, unreadActivity: 0))
-        XCTAssertTrue(TabSignals.feedDot(unseenShots: 0, unreadActivity: 1))
-        XCTAssertTrue(TabSignals.feedDot(unseenShots: nil, unreadActivity: 2))
-        XCTAssertFalse(TabSignals.feedDot(unseenShots: 0, unreadActivity: 0))
-        XCTAssertFalse(TabSignals.feedDot(unseenShots: nil, unreadActivity: 0))
+        XCTAssertTrue(TabSignals.feedDot(unseen: true, unreadActivity: 0))
+        XCTAssertTrue(TabSignals.feedDot(unseen: false, unreadActivity: 1))
+        XCTAssertFalse(TabSignals.feedDot(unseen: false, unreadActivity: 0))
     }
 
     func testRollsDotLightsForADevelopedRollNotYetWatched() {

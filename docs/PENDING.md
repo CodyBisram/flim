@@ -2057,6 +2057,10 @@ The bump this section used to ask for has already happened. Status: `done`.
   whether that actually reads sharp is the part tests cannot answer.
 - `skipDeadFrame`'s correction (build 319) needs a real mid-reveal image failure on a frame BEHIND
   the reader to confirm the pager no longer retargets. Tests cover the arithmetic, not the wiring.
+- Feed "new" per card (2026-09-26): the header has no count; scroll past a multi-shot day and its
+  "N new" is gone when you scroll back (it stays lit while the card is on screen); a friend's new
+  shot on a day already seen brings that day to the top reading "1 new"; the tab dot clears after
+  the new cards and comes back when someone posts.
 
 ## 1.5, wanted but unbuilt
 
@@ -2127,3 +2131,39 @@ Re-proposing one of these without new information wastes a cycle. Reasons live i
 - Inline-editable roll title: shipped, then reverted at the owner's request. Do not re-propose.
 - The account-delete page's "save all N photos first" offer: needs a full-library export path
   that does not exist.
+
+## 1.6.1, in progress (2026-09-26)
+
+Branch `feed-seen-rework`, off main at ee7032c, pushed, NOT merged. MARKETING_VERSION is 1.6.1 in
+both targets.
+
+Done on the branch:
+- The feed's "new" is per card: a day's card on screen marks every shot in it. Its pill and lit
+  strip frames hold while the card stays on screen and clear once it leaves. Swiping marks nothing.
+- The header's "N shots from N friends", its tap-to-jump and all the server-count arithmetic are
+  gone (owner's choice, 2026-09-26, over rebuilding it from a `feed_unseen_ids()` RPC). The
+  caught-up line always reads "Nothing new until someone shoots something."
+- The Feed tab dot: inside the feed it follows the loaded cards (`FeedUnit.hasUnseen`). At launch
+  and on foreground it is still the server's `feed_unseen_count` as a yes/no, and it now flushes
+  pending marks before asking.
+- A seen-marks pull that failed at launch retries on the next foreground.
+- No migration. `feed_unseen_count` is SECURITY INVOKER, and the posts SELECT policy already
+  excludes hidden posts and blocks in both directions, so the audit's "counts hidden and blocked
+  posts" was wrong. Nothing on this branch needs the database.
+
+Not done, or open:
+- The update nudge (`latest_version = '1.6.0'`) was handed to the owner as SQL on the clipboard.
+  Confirm with `select * from app_release_gate;`.
+- Review findings left for device testing: (1) a post that arrived while the app was away is not
+  loaded, so a mark in the feed can clear a dot the server lit for it; (2) a pull-to-refresh on a
+  slow network can mark a visible card's new shots before the caught-up line is placed, putting
+  the line above a card still reading "N new"; (3) if a catch-up and a new shot land in the same
+  update, the pager can open one frame past the new shot.
+- Untouched from the earlier list: the outreach opt-out and postal-address lines, and the push
+  dropped after an offline cold launch.
+- Post-release check, 2026-09-26 (read only): 0 crash_diagnostics rows from 1.6.0 builds 406 and
+  407, but only 3 accounts run 1.6.0 (build 407) and crashes upload on a later launch, so check
+  again in a few days. 0 Spotlight pushes stuck (no week published yet, so the push path has
+  never run for real; check right after the first publish). 1 Spotlight frame put up, this week,
+  none chosen.
+- Device checks: see "Feed \"new\" per card" under Waiting on device.

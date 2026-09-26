@@ -259,6 +259,9 @@ struct ContentView: View {
                 return
             }
             Task { await refreshVersionGate() }
+            // A seen-marks pull that failed at launch (offline) tries again here rather than
+            // leaving this phone without the account's reads for the whole session.
+            FeedSeenStore.shared.retryPullIfNeeded()
             // The tab dots: a friend may have posted or a roll developed while the app was away.
             if let uid = auth.currentUser?.id {
                 Task { await tabSignals.refresh(feed: feed, rolls: rolls, userId: uid, lastActivitySeen: ActivitySeenMark.value(userId: uid)) }
