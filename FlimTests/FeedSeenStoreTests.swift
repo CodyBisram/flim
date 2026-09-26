@@ -152,9 +152,8 @@ final class FeedSeenStoreTests: XCTestCase {
     }
 
     /// A batch the server refused used to shed every mark older than a day, for good; the
-    /// server never learned those days were read and the header counted them again. Now a
-    /// failed push settles nothing, a landed one settles everything it sent, and the feed
-    /// hears about the landing.
+    /// server never learned those days were read and counted them as new again. Now a
+    /// failed push settles nothing, and a landed one settles everything it sent.
     func testAFailedPushKeepsEveryMarkPendingAndALandedOneSettlesThem() async {
         actor Gate { var accept = false; func open() { accept = true } }
         let gate = Gate()
@@ -169,13 +168,11 @@ final class FeedSeenStoreTests: XCTestCase {
         await store.flushPending()   // refused
         XCTAssertTrue(store.isPendingSync(old))
         XCTAssertTrue(store.isPendingSync(fresh))
-        XCTAssertEqual(store.flushGeneration, 0)
 
         await gate.open()
         await store.flushPending()   // lands
         XCTAssertFalse(store.isPendingSync(old))
         XCTAssertFalse(store.isPendingSync(fresh))
-        XCTAssertEqual(store.flushGeneration, 1)
     }
 
     /// Seeded backlog marks used to stay on the device for the whole session: only the pull's
@@ -200,7 +197,6 @@ final class FeedSeenStoreTests: XCTestCase {
                                         (id: alreadySeen, seenAt: Date(timeIntervalSince1970: 1))])
         XCTAssertEqual(queued, [seeded], "an id that already held a mark is neither re-seeded nor re-queued")
         XCTAssertTrue(store.isPendingSync(seeded))
-        XCTAssertTrue(store.pendingIds.contains(seeded), "the feed snapshots this set when it asks for a count")
 
         await store.flushPending()
         XCTAssertFalse(store.isPendingSync(seeded))
@@ -208,9 +204,8 @@ final class FeedSeenStoreTests: XCTestCase {
         XCTAssertTrue(pushed.contains(seeded))
     }
 
-    func testPendingIdsIsEmptyWithoutAnAccount() {
+    func testSeedingWithoutAnAccountQueuesNothing() {
         let store = FeedSeenStore(defaults: defaults)
-        XCTAssertTrue(store.pendingIds.isEmpty)
         XCTAssertTrue(store.seedBacklog([(id: UUID(), seenAt: Date.now)]).isEmpty)
     }
 
@@ -231,5 +226,67 @@ final class FeedSeenStoreTests: XCTestCase {
         for _ in 0..<3 { store.markSeen(UUID()) }
         store.flushPersistNow()
         XCTAssertEqual(store.diskWriteCount, 2)
+    }
+
+    // MARK: - A whole card at once (2026-09-26)
+
+    func testABatchMarkKeepsEachShotsFirstSeenDate() async throws {
+        let store = FeedSeenStore(defaults: defaults)
+        store.activeUserId = UUID()
+        let earlier = UUID(), later = UUID()
+        store.markSeen([earlier])
+        let firstDate = try XCTUnwrap(store.seenDate(earlier))
+        try await Task.sleep(for: .milliseconds(20))
+
+        store.markSeen([earlier, later])
+        XCTAssertEqual(store.seenDate(earlier), firstDate, "looking at the day again must not re-date a shot")
+        XCTAssertNotNil(store.seenDate(later))
+        XCTAssertGreaterThan(try XCTUnwrap(store.seenDate(later)), firstDate)
+    }
+
+    func testABatchMarkCostsOneDiskWrite() {
+        let store = FeedSeenStore(defaults: defaults)
+        store.activeUserId = UUID()
+        store.markSeen((0..<14).map { _ in UUID() })
+        XCTAssertEqual(store.diskWriteCount, 0)
+        store.flushPersistNow()
+        XCTAssertEqual(store.diskWriteCount, 1, "a fourteen-shot day is one write")
+    }
+
+    func testABatchMarkQueuesEveryShotForTheAccount() async {
+        actor Spy {
+            private(set) var pushed = Set<UUID>()
+            private(set) var calls = 0
+            func record(_ ids: Set<UUID>) { pushed.formUnion(ids); calls += 1 }
+        }
+        let spy = Spy()
+        let store = FeedSeenStore(defaults: defaults, pushRows: { _, marks in
+            await spy.record(Set(marks.keys))
+            return Set(marks.keys)
+        })
+        store.activeUserId = UUID()
+        let ids = (0..<7).map { _ in UUID() }
+        store.markSeen(ids)
+        for id in ids { XCTAssertTrue(store.isPendingSync(id)) }
+
+        await store.flushPending()
+        let pushed = await spy.pushed
+        let calls = await spy.calls
+        XCTAssertEqual(pushed, Set(ids))
+        XCTAssertEqual(calls, 1, "one card, one push")
+        for id in ids { XCTAssertFalse(store.isPendingSync(id)) }
+    }
+
+    func testABatchMarkWhileSignedOutIsDropped() {
+        let store = FeedSeenStore(defaults: defaults)
+        let ids = [UUID(), UUID()]
+        store.markSeen(ids)
+        for id in ids {
+            XCTAssertFalse(store.isSeen(id))
+            XCTAssertFalse(store.isPendingSync(id))
+        }
+        XCTAssertEqual(store.diskWriteCount, 0)
+        store.activeUserId = UUID()
+        for id in ids { XCTAssertFalse(store.isSeen(id), "a dropped mark must not surface after sign-in") }
     }
 }

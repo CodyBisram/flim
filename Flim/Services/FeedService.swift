@@ -225,9 +225,9 @@ final class FeedService {
         static func showsFollowsYouBadge(followsMe: Bool) -> Bool { followsMe }
     }
 
-    /// The feed header's count, for the whole seven-day window rather than the pages loaded so
-    /// far: unseen posts by people you follow, and how many people. nil when the server could
-    /// not answer, so the caller can fall back to counting what it has.
+    /// Unseen posts by people you follow across the whole seven-day window, and how many
+    /// people. Read as a yes/no for the Feed tab's dot at launch and on every foreground,
+    /// before the feed itself may have loaded. nil when the server could not answer.
     func unseenCount() async -> (shots: Int, friends: Int)? {
         struct Row: Decodable { let shots: Int; let friends: Int }
         guard let row: Row = try? await supabase.rpc("feed_unseen_count").single().execute().value else { return nil }
@@ -1585,9 +1585,9 @@ final class FeedService {
         // paired with the ledger's own-author exclusion. But a seen mark is what retention
         // clears on, so a post made before 4am vanished from its AUTHOR's own feed at the
         // boundary without ever being consciously seen there, while staying visible to
-        // everyone else, which reads as "my post is gone". The ledger exclusion alone keeps
-        // you out of your own "N shots from N friends" count; the post stays honestly unseen
-        // in your own feed until you actually meet it there.
+        // everyone else, which reads as "my post is gone". The own-author exclusion keeps it
+        // off your own tab dot; the post stays honestly unseen in your own feed until you
+        // actually meet it there.
         Activation.log(.postShared)
         Usage.log(.postShared)
         // The tile's headline state is "your last frame and what happened to it", and this is the

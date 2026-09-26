@@ -23,10 +23,10 @@ struct FeedUnitCard: View {
     /// (width - 32, at 3:4) before any image arrives.
     let width: CGFloat
     let seenStore: FeedSeenStore
-    /// Marking is gated until the feed's ledger snapshot exists. Visibility events can fire
-    /// before the owning view's `.task` runs, and a first-visible unit marking its opening
-    /// frame ahead of the snapshot would drain itself out of the ledger it should be counted
-    /// in. Deterministic order, not a race: snapshot first, then marks.
+    /// Marking is gated until the feed's load snapshot exists. Visibility events can fire
+    /// before the owning view's `.task` runs, and a first-visible unit marking itself ahead
+    /// of the snapshot would place the caught-up block above a day that was new at load.
+    /// Deterministic order, not a race: snapshot first, then marks.
     let markingEnabled: Bool
     /// Bumped by explicit catch-ups (see FeedView): a unit already alive on screen re-opens
     /// on its first unseen shot, matching what a fresh launch would show. `@State` survives
@@ -101,27 +101,19 @@ struct FeedUnitCard: View {
 
     /// Whether this unit is genuinely on screen (not merely built by the LazyVStack).
     @State private var isVisible = false
-    /// Consumed by the very next `.onChange(of: selection)`, set just before a
-    /// `catchUpGeneration` reposition assigns `selection` programmatically. See that
-    /// `.onChange` and the one on `selection` for why this exists: `catchUpGeneration` fires
-    /// on every MOUNTED card, including ones the LazyVStack built ahead of the viewport, so
-    /// treating a programmatic reposition as a reach would mark shots nobody has scrolled to
-    /// yet as seen.
-    @State private var repositioningProgrammatically = false
-
-    /// Bumped by a tap on the header's count, with `isJumpTarget` naming the one unit the
-    /// tap scrolled to: that card opens on its first unseen frame and marks it reached, since
-    /// the reader asked to be taken there and the scroll guarantees they are looking at it.
-    /// The scroll alone left a card already on screen parked on the frame it was on, which
-    /// was usually one already read: "it took me to new photos but the number never moved".
-    let jumpGeneration: Int
-    let isJumpTarget: Bool
+    /// The shots that were unseen when this look at the card began. The whole card is marked
+    /// the moment it is on screen, so without this the pill and the strip's lit frames would
+    /// go dark while you are reading them. They stay lit until the card leaves the screen;
+    /// scroll back and the day reads as seen.
+    @State private var newThisLook: Set<UUID> = []
+    /// The part of `newThisLook` that arrived with a refresh while the card was on screen, so a
+    /// catch-up can still open on it after it was marked. Shots that were new when the look
+    /// began are not in here: a pull-to-refresh must not send someone who swiped through them
+    /// back to the first.
+    @State private var arrivedThisLook: Set<UUID> = []
 
     init(unit: FeedUnit, width: CGFloat, opening: Int, seenStore: FeedSeenStore,
-         markingEnabled: Bool, catchUpGeneration: Int, jumpGeneration: Int = 0,
-         isJumpTarget: Bool = false, onAuthorBlocked: @escaping () -> Void) {
-        self.jumpGeneration = jumpGeneration
-        self.isJumpTarget = isJumpTarget
+         markingEnabled: Bool, catchUpGeneration: Int, onAuthorBlocked: @escaping () -> Void) {
         self.unit = unit
         self.width = width
         self.seenStore = seenStore
@@ -153,7 +145,13 @@ struct FeedUnitCard: View {
         Array(comments.prefix(post.caption?.isEmpty == false ? 1 : 2))
     }
     private var unseenRemaining: Int {
-        unit.unseenCount(isSeen: { seenStore.isSeen($0) })
+        unit.unseenCount(isSeen: isSeenOutsideThisLook)
+    }
+
+    /// Seen, for what this card draws: a shot marked during the current look still reads as new
+    /// until the card leaves the screen. See `newThisLook`.
+    private func isSeenOutsideThisLook(_ id: UUID) -> Bool {
+        !newThisLook.contains(id) && seenStore.isSeen(id)
     }
 
     var body: some View {
@@ -162,7 +160,7 @@ struct FeedUnitCard: View {
             if unit.items.count > 1 {
                 FilmStrip(
                     unit: unit, selection: $selection, accent: accent,
-                    isSeen: { seenStore.isSeen($0) }, failedFrames: failedFrames,
+                    isSeen: isSeenOutsideThisLook, failedFrames: failedFrames,
                     resolveURLs: { await feed.signedURLs(for: $0) },
                     openOverflow: { showContactSheet = true }
                 )
@@ -195,13 +193,13 @@ struct FeedUnitCard: View {
                 await feed.ensureSpotlightPhotographer(photoIds: unit.items.map(\.post.photoId), userId: uid)
             }
         }
-        // Opening on a shot counts as reaching it: a group with two unseen shots reads
-        // "1 new" the moment it appears. VISIBILITY, not `onAppear`: a LazyVStack builds
-        // views ahead of the viewport and `onAppear` fires at build time, which marked
-        // below-the-fold units seen before the reader ever scrolled to them and quietly
-        // drained both their pills and the header ledger.
+        // A card on screen is a card seen, every shot in it: the strip shows them all. By
+        // VISIBILITY, not `onAppear`: a LazyVStack builds views ahead of the viewport and
+        // `onAppear` fires at build time, which marked below-the-fold units seen before the
+        // reader ever scrolled to them.
         .onScrollVisibilityChange(threshold: 0.4) { visible in
             isVisible = visible
+            if !visible { newThisLook = []; arrivedThisLook = [] }
             maybeMarkReached()
         }
         // Re-checked when the gate opens, because a unit already on screen had its
@@ -209,21 +207,24 @@ struct FeedUnitCard: View {
         .onChange(of: markingEnabled) { maybeMarkReached() }
         // Membership can change under a living card (a straddle completion inserts earlier
         // captures at the front). The pager should keep showing the same PHOTOGRAPH, not the
-        // same index, so the selection is remapped to follow the post it was on. Through
-        // `reposition`, never a bare assignment: this fires on every mounted card, including
-        // ones the LazyVStack built below the fold, and a bare assignment reads as a swipe
-        // to the `selection` onChange, which marked shots seen that nobody had scrolled to.
+        // same index, so the selection is remapped to follow the post it was on.
         .onChange(of: unit.items.map(\.post.id)) { oldIds, newIds in
             if selection < oldIds.count {
                 let viewing = oldIds[selection]
                 if let kept = newIds.firstIndex(of: viewing) {
-                    reposition(to: kept)
+                    selection = kept
                 } else if selection >= newIds.count {
-                    reposition(to: max(0, newIds.count - 1))
+                    selection = max(0, newIds.count - 1)
                 }
             } else {
-                reposition(to: min(selection, max(0, newIds.count - 1)))
+                selection = min(selection, max(0, newIds.count - 1))
             }
+            // A shot arriving on a card already on screen is seen like the rest of it, and
+            // lights as new for this look, so the pill reads "1 new" while you are there.
+            if isVisible, markingEnabled {
+                arrivedThisLook.formUnion(Set(newIds).subtracting(oldIds).filter { !seenStore.isSeen($0) })
+            }
+            maybeMarkReached()
             // The neighbours may be new even when the selection is not: an insertion right
             // after the shown frame leaves `selection` unchanged, so the selection onChange
             // never runs and the new page would sit without a URL until swiped to. Radius 1,
@@ -233,23 +234,9 @@ struct FeedUnitCard: View {
         // An explicit catch-up re-opens a LIVING unit the way a fresh launch would open it:
         // on its first unseen shot. Never fired by background refreshes, so the pager is
         // yanked only when the reader just asked to be taken to the new.
-        .onChange(of: catchUpGeneration) { openOnFirstUnseen(markIfVisible: true) }
-        .onChange(of: jumpGeneration) {
-            guard isJumpTarget else { return }
-            openOnFirstUnseen(markIfVisible: true)
-        }
+        .onChange(of: catchUpGeneration) { openOnFirstUnseen() }
+        // Swiping marks nothing: the card was marked whole when it came on screen.
         .onChange(of: selection) {
-            // ONLY visibility (`maybeMarkReached`) or an explicit user gesture on a visible
-            // card marks seen, never a programmatic reposition: a `catchUpGeneration` bump
-            // reopens every MOUNTED card, including ones below the fold the LazyVStack built
-            // ahead of the viewport, and marking those seen would clear units nobody actually
-            // reached.
-            if repositioningProgrammatically {
-                repositioningProgrammatically = false
-            } else {
-                // A swipe or a strip tap is an explicit reach; it cannot happen off screen.
-                seenStore.markSeen(current.post.id)
-            }
             captionExpanded = false
             // Radius 2 HERE and only here: a selection change is a real swipe, the intent
             // signal that pays for staying two photographs ahead of the finger.
@@ -588,37 +575,29 @@ struct FeedUnitCard: View {
         withAnimation(.snappy(duration: 0.22)) { captionExpanded.toggle() }
     }
 
+    /// Marks every shot in the card, once it is on screen and the feed has placed its
+    /// caught-up line (`markingEnabled`). What was still unseen joins `newThisLook` first, so
+    /// the pill and the strip keep saying which shots are new while you look.
     private func maybeMarkReached() {
         guard isVisible, markingEnabled else { return }
-        seenStore.markSeen(current.post.id)
+        let ids = unit.items.map(\.post.id)
+        newThisLook.formUnion(ids.filter { !seenStore.isSeen($0) })
+        seenStore.markSeen(ids)
     }
 
-    /// Re-opens a living card on its first unseen frame, the way a fresh launch would open
-    /// it, and marks that frame reached when the card is on screen. The mark is the part
-    /// that was missing: a programmatic reposition deliberately does not mark through the
-    /// `selection` onChange (below-the-fold cards reposition too), so a VISIBLE card landed
-    /// on a new frame the reader then looked at, and nothing ever recorded it. The next swipe
-    /// marked the frame after it, and the one they had just seen stayed "new" in the header
-    /// for good (the owner's lele day, 2026-09-23: frames one and three marked, two never).
-    private func openOnFirstUnseen(markIfVisible: Bool) {
-        let opening = unit.openingIndex(isSeen: { seenStore.isSeen($0) })
-        if opening != selection {
-            repositioningProgrammatically = true
+    /// Re-opens a living card on its first unseen frame, the way a fresh launch would open it,
+    /// then marks the card if it is on screen. A card with nothing new stays where it is: the
+    /// frame someone is on is theirs. A shot that arrived with the reload counts as unseen here
+    /// even if the card already marked it (`arrivedThisLook`), since the two can run either way
+    /// round.
+    private func openOnFirstUnseen() {
+        if let opening = unit.items.firstIndex(where: {
+            arrivedThisLook.contains($0.post.id) || !seenStore.isSeen($0.post.id)
+        }), opening != selection {
             withAnimation(.snappy(duration: 0.25)) { selection = opening }
         }
-        if markIfVisible, isVisible, markingEnabled {
-            seenStore.markSeen(unit.items[min(opening, unit.items.count - 1)].post.id)
-        }
-    }
-
-    /// The one door for every programmatic `selection` write. Arms the flag only when the
-    /// value will actually change, because the flag is consumed by the very next `selection`
-    /// onChange: armed for a write that never fires, it would swallow the mark for the next
-    /// GENUINE swipe instead.
-    private func reposition(to index: Int) {
-        guard index != selection else { return }
-        repositioningProgrammatically = true
-        selection = index
+        arrivedThisLook = []   // consumed: the next catch-up must not pull back to it
+        maybeMarkReached()
     }
 
     // MARK: - Actions (per frame, never per group)
@@ -786,8 +765,8 @@ struct FeedUnitCard: View {
         let feedService = feed
         let removed = feedService.feed.filter { $0.author.id == authorId }
         withAnimation { feedService.feed.removeAll { $0.author.id == authorId } }
-        // The ledger and the caught-up seam both hold state keyed on unit ids; without this,
-        // either could keep referencing a unit that just stopped rendering. Captured for the
+        // The caught-up seam and the Spotlight strips hold state keyed on unit ids; without
+        // this, either could keep referencing a unit that just stopped rendering. Captured for the
         // revert too: an undo brings those units back and the seam must follow.
         let resnapshot = onAuthorBlocked
         resnapshot()
