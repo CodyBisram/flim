@@ -139,7 +139,9 @@ The written rules:
    branch or in a plan. (the two names are checked; the rest is judgment)
 10. No link, no greeting and no sign-off inside the note; the job adds the invite line
     "Here's yours if you want it: https://flim-app.com/i/<CODE> (code <CODE>)." and
-    "Cody, who makes FLIM". (checked)
+    "Cody, who makes FLIM", then the footer every email carries: "If you'd rather not hear from
+    me again, reply and say so. Either way, this is the only email I'll send you." and the
+    postal address. No opt-out or address inside the note either. (checked)
 11. Only to an address the person published on a page they run, recorded in the Contact line
     with that page linked, and not already in any earlier outreach file. (checked, including a
     fresh read of the page)

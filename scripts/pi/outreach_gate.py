@@ -24,6 +24,9 @@ from pathlib import Path
 SUBJECT = "An invite to FLIM"
 SIGN_OFF = "Cody, who makes FLIM"
 INVITE_LINE = "Here's yours if you want it: https://flim-app.com/i/{code} (code {code})."
+# The two lines US law (CAN-SPAM) asks of every commercial email: a way to say no, and a postal
+# address. True as written: nobody already in an outreach file is ever emailed again.
+OPT_OUT_LINE = "If you'd rather not hear from me again, reply and say so. Either way, this is the only email I'll send you."
 MAX_SENDS = 10
 MAX_WORDS = 89  # "under 90 words"
 
@@ -131,6 +134,8 @@ def check_note(e):
         reasons.append("a link inside the note (the job adds the invite line itself)")
     if SIGN_OFF.lower() in note.lower() or re.search(r"\bCody\b", note):
         reasons.append("a sign-off inside the note (the job adds it)")
+    if re.search(r"unsubscribe|not hear from|opt out|opt-out", note, re.IGNORECASE):
+        reasons.append("an opt-out inside the note (the job adds it)")
     if re.match(r"(hi|hello|hey|dear)\b", note, re.I):
         reasons.append("a greeting inside the note (the job adds 'Hi <first name>,')")
     words = len(note.split())
@@ -212,6 +217,11 @@ def cmd_gate(a):
 
 
 def cmd_assemble(a):
+    # The address comes from the Pi's own settings, never the repo (it is public). No address,
+    # no emails: the weekly script stops before minting, and this refuses as a second guard.
+    postal = " ".join((a.postal or "").split())
+    if len(postal) < 10:
+        sys.exit("assemble: no postal address (FLIM_OUTREACH_POSTAL on the Pi); nothing assembled")
     gate = json.loads(Path(a.gate).read_text(encoding="utf-8"))
     codes = json.loads(Path(a.codes).read_text(encoding="utf-8")) if a.codes else {}
     send = []
@@ -221,7 +231,8 @@ def cmd_assemble(a):
         code = "XXXXXX" if a.dry else codes.get(str(g["n"]))
         if not code or not re.fullmatch(r"[A-Z0-9]{6}", code):
             continue
-        body = "\n\n".join([f"Hi {g['first_name']},", g["note"], INVITE_LINE.format(code=code), SIGN_OFF])
+        body = "\n\n".join([f"Hi {g['first_name']},", g["note"], INVITE_LINE.format(code=code), SIGN_OFF,
+                             OPT_OUT_LINE + "\n" + postal])
         subject = ("DRY RUN, not sent: " + SUBJECT) if a.dry else SUBJECT
         send.append({"n": g["n"], "to": g["email"], "subject": subject, "body": body})
     Path(a.out).write_text(json.dumps(send, indent=1), encoding="utf-8")
@@ -301,6 +312,7 @@ def main():
     g.add_argument("--out", required=True); g.add_argument("--no-fetch", action="store_true")
     s = sub.add_parser("assemble"); s.add_argument("--gate", required=True); s.add_argument("--codes")
     s.add_argument("--out", required=True); s.add_argument("--dry", action="store_true")
+    s.add_argument("--postal", required=True)
     f = sub.add_parser("finalize"); f.add_argument("--gate", required=True); f.add_argument("--result")
     f.add_argument("--file", required=True); f.add_argument("--date", required=True); f.add_argument("--dry", action="store_true")
     f.add_argument("--sendstep", action="store_true", help="the send step ran, so a missing result means unconfirmed")

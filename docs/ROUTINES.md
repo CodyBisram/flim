@@ -126,7 +126,7 @@ next Monday runs) in five steps, each with only the tools it needs:
 4. **Send.** One code per passing person, minted in shell through `mint_outreach_code(name)` (the
    name goes in as a psql variable), then headless Claude with only ToolSearch,
    `mcp__claude_ai_Gmail__create_draft` and `mcp__claude_ai_Gmail__send_message` gets the exact
-   emails in its prompt: a draft each, then that draft sent by its id. A failed draft or send stops
+   emails in its prompt (each ends with the opt-out line and the postal address, which the law asks for): a draft each, then that draft sent by its id. A failed draft or send stops
    the step; a send is never retried. A marker written before this step means a second real run
    on the same date refuses to start, so nobody is emailed twice.
 5. **Record.** Each entry's Status becomes "contacted <date> by email" or "held: <reason>"
@@ -165,11 +165,15 @@ connect as the same login, still cannot mint.
    run `/login` and sign in with the claude.ai account whose Gmail connector is connected at
    claude.ai/customize/connectors, then `/mcp`: "claude.ai Gmail" should be listed as connected.
    `/exit`. The other jobs keep using the setup token.
-5. Dry run first: `ssh pi 'bash ~/work/flim/scripts/pi/outreach-weekly.sh --dry-run'` (20 to 60
+5. Put the postal address every email has to carry (US law) on the Pi, one line, never in the
+   repo (it is public): `ssh pi` then add `FLIM_OUTREACH_POSTAL=<street or PO box, city, state, zip>`
+   to `~/.config/flim-hooks.env`. Check with `ssh pi 'grep -c ^FLIM_OUTREACH_POSTAL= ~/.config/flim-hooks.env'`,
+   which should say 1. Without it the job stops at preflight and sends nothing.
+6. Dry run first: `ssh pi 'bash ~/work/flim/scripts/pi/outreach-weekly.sh --dry-run'` (20 to 60
    minutes). It researches, gates and makes Gmail drafts whose subject starts "DRY RUN, not sent";
    it mints no code, sends nothing and commits nothing. Read the push, the batch at
    `~/work/flim-ops/logs/outreach-<date>-dry.md`, and the drafts; then delete the drafts.
-6. Install the timer on the Pi:
+7. Install the timer on the Pi:
    `cp ~/work/flim/scripts/pi/flim-outreach.service ~/work/flim/scripts/pi/flim-outreach.timer ~/.config/systemd/user/ && systemctl --user daemon-reload && systemctl --user enable --now flim-outreach.timer && systemctl --user list-timers --no-pager | grep outreach`
 
 To stop it: `systemctl --user disable --now flim-outreach.timer`. The log for a run is

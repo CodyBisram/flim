@@ -42,6 +42,8 @@ main() {
   # shellcheck disable=SC1090
   [ -f ~/.config/watchdog.env ] && . ~/.config/watchdog.env      # NTFY_URL, NTFY_TOPIC, NTFY_TOKEN
   DB_URL=$(sed -n 's/^FLIM_DB_URL=//p' ~/.config/flim-hooks.env 2>/dev/null | head -1)
+  # The postal address every email must carry (CAN-SPAM). Kept on the Pi, never in the public repo.
+  POSTAL=$(sed -n 's/^FLIM_OUTREACH_POSTAL=//p' ~/.config/flim-hooks.env 2>/dev/null | head -1)
   # Codes live in these files for the length of one run and are deleted on the way out.
   trap 'rm -f "$RUN/send.json" "$RUN/codes.json" "$RUN/status.tsv" "$RUN/part-b.txt"' EXIT
 
@@ -64,6 +66,7 @@ main() {
 
   # ---- 1. Preflight --------------------------------------------------------------------------
   [ -n "$DB_URL" ] || { stop "no FLIM_DB_URL in ~/.config/flim-hooks.env"; return 1; }
+  [ -n "$POSTAL" ] || { stop "no FLIM_OUTREACH_POSTAL in ~/.config/flim-hooks.env; every email needs a postal address"; return 1; }
   db_status > "$RUN/status.tsv" 2>> "$LOG" \
     || { stop "database unreachable, or flim_outreach not granted to the Pi's role (see the log)"; return 1; }
   CAN_MINT=$(printf 'SET ROLE flim_outreach;\nSELECT has_function_privilege(%s, %s);\n' \
@@ -101,11 +104,13 @@ main() {
   if [ "$PASSING" -gt 0 ]; then
     if [ $DRY = 0 ]; then
       mint_all || { stop "minting failed; nothing was sent (see $LOG)"; return 1; }
-      python3 "$HERE/outreach_gate.py" assemble --gate "$RUN/gate.json" --codes "$RUN/codes.json" --out "$RUN/send.json" >> "$LOG"
+      python3 "$HERE/outreach_gate.py" assemble --gate "$RUN/gate.json" --codes "$RUN/codes.json" --postal "$POSTAL" --out "$RUN/send.json" >> "$LOG" \
+        || { stop "assembling the emails failed; nothing was sent (see $LOG)"; return 1; }
       ALLOW="ToolSearch,mcp__claude_ai_Gmail__create_draft,mcp__claude_ai_Gmail__send_message"
       touch "$RUN/SEND_STARTED"
     else
-      python3 "$HERE/outreach_gate.py" assemble --gate "$RUN/gate.json" --dry --out "$RUN/send.json" >> "$LOG"
+      python3 "$HERE/outreach_gate.py" assemble --gate "$RUN/gate.json" --dry --postal "$POSTAL" --out "$RUN/send.json" >> "$LOG" \
+        || { stop "assembling the drafts failed (see $LOG)"; return 1; }
       ALLOW="ToolSearch,mcp__claude_ai_Gmail__create_draft"
     fi
     part B | python3 -c '
