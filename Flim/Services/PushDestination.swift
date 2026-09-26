@@ -187,6 +187,11 @@ enum PushDestination: Codable, Equatable {
 /// signed in (an expired session, or a device shared between accounts), and in both cases a bare
 /// `NotificationCenter` post finds no listener and is simply lost, the exact bug this whole file
 /// exists to fix. Written to disk as well as broadcast, mirroring `PendingRollInvite`.
+///
+/// Also where a tap waits when its content could not be fetched because the phone could not reach
+/// the server (`PushLookupOutcome.hold`). Holding it here rather than in a view's state means every
+/// rule above applies to it unchanged: it survives a relaunch, it routes once, and the account
+/// change and signed-out screen that clear a fresh tap clear a held one too.
 enum PendingPushDestination {
     private static let key = "pendingPushDestination"
 
@@ -212,6 +217,21 @@ enum PendingPushDestination {
     /// live broadcast. Without this a destination already routed once would route again on the
     /// next cold launch.
     static func clear() { _ = take() }
+
+    /// Bumped by every tap as `MainTabView.route(to:)` starts on it, the way `AccountEpoch` is
+    /// bumped by every account change. A lookup that could not reach the server holds its tap
+    /// only while no newer one has started routing (see `PushLookupOutcome.decide`): a slow
+    /// failure writing an older tap back to disk would otherwise route it again on reconnect,
+    /// over the one the person tapped after it.
+    private(set) static var routeSerial = 0
+
+    /// Marks a tap as the newest one routing, returning its serial to check against later.
+    static func beginRoute() -> Int {
+        routeSerial += 1
+        return routeSerial
+    }
+
+    static func isLatestRoute(_ serial: Int) -> Bool { serial == routeSerial }
 
     /// Drops a held destination that only means something to the account the push was sent to,
     /// keeping one that just names a tab. Called whenever the app is showing the signed-out
@@ -239,5 +259,60 @@ extension PushDestination {
         case .camera, .darkroom, .sortDeck, .feed, .spotlightWeek, .rolls, .invite:
             return false
         }
+    }
+}
+
+/// What looking up a tapped destination's content came to, and so what `route(to:)` does next.
+///
+/// A lookup that failed and a lookup that came back empty used to be the same `nil`, so a tap made
+/// with no signal said "That post isn't here anymore." about a post that was fine, or did nothing
+/// at all for a roll, and either way the tap was gone. Only one of them is an answer: an empty
+/// result is the server saying this session cannot see it, while a request that never reached the
+/// server says nothing about the content.
+enum PushLookupOutcome: Equatable {
+    /// The content is in hand: open it.
+    case open
+    /// The server answered and has nothing this session can see: deleted, hidden, blocked, or a
+    /// roll this account is not in. The one outcome that may say so.
+    case notFound
+    /// The server was never reached. The tap goes back into `PendingPushDestination`, where the
+    /// connection returning, the next foreground, or the next launch routes it again.
+    case hold
+    /// Nothing further: the account changed while the lookup was out, a newer tap started
+    /// routing, or the server answered with an error that says nothing about the content (one
+    /// that would fail the same way on every retry, so holding it would only replay a dead end).
+    case drop
+
+    /// `found` wins over `error`: a roll found in the list restored from disk still opens when the
+    /// refresh behind it failed, since the roll's own screen loads and shows its own error state.
+    /// The account check comes first, so a tap is never held across an account change.
+    static func decide(found: Bool, error: Error?, accountIsCurrent: Bool, isLatestTap: Bool) -> PushLookupOutcome {
+        guard accountIsCurrent else { return .drop }
+        if found { return .open }
+        guard let error else { return .notFound }
+        guard NetworkFailure.isUnreachable(error), isLatestTap else { return .drop }
+        return .hold
+    }
+}
+
+/// Whether a thrown request error means the server was never reached, as opposed to the server
+/// answering with something unwelcome. Only the first is worth trying again once the phone is
+/// back online.
+///
+/// The codes are the connectivity ones: no route, a dropped or timed-out connection, a host that
+/// could not be found or connected to, a TLS handshake a captive portal broke. Everything else is
+/// an answer: a `PostgrestError`, a decode failure, a malformed response. So is cancellation, which
+/// means the work was superseded rather than failed (see `UserFacingError.isCancellation`).
+enum NetworkFailure {
+    private static let unreachableCodes: Set<URLError.Code> = [
+        .notConnectedToInternet, .networkConnectionLost, .timedOut,
+        .cannotFindHost, .cannotConnectToHost, .dnsLookupFailed,
+        .internationalRoamingOff, .dataNotAllowed, .callIsActive,
+        .cannotLoadFromNetwork, .secureConnectionFailed,
+    ]
+
+    static func isUnreachable(_ error: Error) -> Bool {
+        guard let urlError = error as? URLError else { return false }
+        return unreachableCodes.contains(urlError.code)
     }
 }

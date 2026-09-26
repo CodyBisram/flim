@@ -277,6 +277,11 @@ struct MainTabView: View {
             // cold launch.
             PendingPushDestination.clear()
         }
+        // A tap whose content could not be fetched for want of a connection waits in
+        // `PendingPushDestination` (see `PushLookupOutcome.hold`); this gives it its second
+        // chances. While this view is alive, anything on disk is such a tap: a live one is
+        // cleared the moment it is routed, just above.
+        .modifier(HeldTapRetry(retry: routeHeldDestination))
         // Show the soft primer once, after onboarding, with context, instead of a cold
         // system prompt on first launch (which gets denied far more often).
         .onChange(of: hasOnboarded) { _, done in if done { maybeShowNotifPrimer() } }
@@ -463,8 +468,8 @@ struct MainTabView: View {
     }
 
     /// Executes a decoded notification tap. Called once from the live `.openPushDestination`
-    /// broadcast, and once from `onAppear` for whatever a cold start (or a start with nobody yet
-    /// signed in) left on disk.
+    /// broadcast, once from `onAppear` for whatever a cold start (or a start with nobody yet
+    /// signed in) left on disk, and from `routeHeldDestination` for a tap held for a connection.
     ///
     /// Every fetch below is scoped to the account signed in RIGHT NOW, and the id from the payload
     /// is used only to look up content, never to decide whose it is. The payload has no way to say
@@ -476,7 +481,15 @@ struct MainTabView: View {
     /// content is gone entirely: deleted, hidden, moderated, or a roll left) the fetch comes back
     /// empty and this does nothing further, leaving whichever tab it already switched to as a
     /// real, populated screen rather than a blank one.
+    ///
+    /// "Comes back empty" means the server answered. A lookup that could not reach it at all says
+    /// nothing about the content, so that tap is held and routed again rather than dropped or
+    /// reported missing; see `PushLookupOutcome` for the whole decision and `routeHeldDestination`
+    /// for when it comes back. Only the lookups made here and in the Darkroom's `.photo` open can
+    /// lose a tap that way: every other case lands on a screen that loads, and shows its own error
+    /// state, by itself.
     private func route(to destination: PushDestination) {
+        let serial = PendingPushDestination.beginRoute()
         switch destination {
         case .camera:
             selected = 0
@@ -527,11 +540,17 @@ struct MainTabView: View {
             Task {
                 guard let uid = auth.currentUser?.id else { return }
                 let epoch = AccountEpoch.current
-                try? await rolls.fetchRolls(for: uid)
-                guard AccountEpoch.isCurrent(epoch) else { return }
+                var lookupError: Error?
+                do { try await rolls.fetchRolls(for: uid) } catch { lookupError = error }
+                // Looked for even when the refresh failed: the list restored from disk may hold it.
+                let roll = rolls.rolls.first(where: { $0.id == rollId })
+                let outcome = PushLookupOutcome.decide(found: roll != nil, error: lookupError,
+                                                       accountIsCurrent: AccountEpoch.isCurrent(epoch),
+                                                       isLatestTap: PendingPushDestination.isLatestRoute(serial))
+                if outcome == .hold { PendingPushDestination.store(destination) }
                 // Not a member (any more), or the roll is gone: RollsView is still showing a real,
                 // current list, so this is a graceful no-op rather than a dead end.
-                guard let roll = rolls.rolls.first(where: { $0.id == rollId }) else { return }
+                guard outcome == .open, let roll else { return }
                 // A second push for a roll already in the stack must not append a duplicate
                 // `RollDetailView`: every instance shares `$pendingRollPhoto`, and a buried
                 // instance's own `onChange` can win the race to consume it, leaving the visible,
@@ -565,22 +584,33 @@ struct MainTabView: View {
             selected = 3
             Task {
                 let epoch = AccountEpoch.current
-                let post = await feed.fetchPosts(ids: [postId])[postId]
-                guard AccountEpoch.isCurrent(epoch) else { return }
-                // Deleted, moderated, or by someone blocked either way: the feed tab is already
-                // showing, so say why nothing opened rather than leaving the tap silent.
-                guard let post else {
-                    NotificationCenter.default.post(name: .feedNotice, object: "That post isn't here anymore.")
-                    return
+                var item: FeedItem?
+                var lookupError: Error?
+                do {
+                    if let post = try await feed.lookUpPost(id: postId),
+                       let author = try await feed.lookUpProfile(id: post.userId) {
+                        item = FeedItem(post: post, author: author)
+                    }
+                } catch {
+                    lookupError = error
                 }
-                let author = await feed.fetchProfile(id: post.userId)
-                guard AccountEpoch.isCurrent(epoch) else { return }
-                guard let author else {
+                switch PushLookupOutcome.decide(found: item != nil, error: lookupError,
+                                                accountIsCurrent: AccountEpoch.isCurrent(epoch),
+                                                isLatestTap: PendingPushDestination.isLatestRoute(serial)) {
+                case .open:
+                    guard let item else { return }
+                    focusCommentsPostId = comments ? postId : nil
+                    feedPath.append(item)
+                case .notFound:
+                    // Deleted, moderated, or by someone blocked either way: the feed tab is already
+                    // showing, so say why nothing opened rather than leaving the tap silent.
                     NotificationCenter.default.post(name: .feedNotice, object: "That post isn't here anymore.")
-                    return
+                case .hold:
+                    // No signal, which the offline banner already says. The post may be fine.
+                    PendingPushDestination.store(destination)
+                case .drop:
+                    break
                 }
-                focusCommentsPostId = comments ? postId : nil
-                feedPath.append(FeedItem(post: post, author: author))
             }
 
         case .profile(let userId):
@@ -593,6 +623,16 @@ struct MainTabView: View {
             selected = 3
             feedPath.append(ProfileRoute(id: uid, openInvite: true))
         }
+    }
+
+    /// Routes a tap that was held because its lookup could not reach the server. Read-and-clear,
+    /// so the reconnect and the foreground landing together route it once, and a lookup that fails
+    /// the same way again simply holds it again. An account change clears it before either can
+    /// run (ContentView's `PendingPushDestination.clear()`), and a lookup that straddles one never
+    /// writes it back (`PushLookupOutcome.decide`).
+    private func routeHeldDestination() {
+        guard let held = PendingPushDestination.take() else { return }
+        route(to: held)
     }
 
     private func maybeShowNotifPrimer() {
@@ -631,5 +671,39 @@ struct MainTabView: View {
             }
             showNotifPrimer = true
         }
+    }
+}
+
+/// When a tap held for a connection (`PushLookupOutcome.hold`) gets tried again: the connection
+/// coming back, and the app coming to the foreground while it has one. Its own modifier so
+/// `MainTabView.body` stays small enough to type-check.
+private struct HeldTapRetry: ViewModifier {
+    let retry: () -> Void
+    @Environment(NetworkMonitor.self) private var network
+    @Environment(\.scenePhase) private var scenePhase
+    /// Debounces the reconnect retry, the same way ContentView debounces its upload retry: a
+    /// flapping connection routes a held tap once, not once per flap.
+    @State private var reconnectTask: Task<Void, Never>?
+
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: network.isConnected) { wasConnected, isConnected in
+                guard !wasConnected, isConnected else { return }
+                reconnectTask?.cancel()
+                reconnectTask = Task {
+                    try? await Task.sleep(for: .seconds(2))
+                    // In the background it waits for the foreground below instead: routing
+                    // switches tabs, and nobody is there to see it. Read live, not from the
+                    // phase this closure captured two seconds ago.
+                    guard !Task.isCancelled, UIApplication.shared.applicationState == .active else { return }
+                    retry()
+                }
+            }
+            // Offline, the reconnect above is the one that will get there; retrying now would
+            // only fail the same way and switch tabs for nothing.
+            .onChange(of: scenePhase) { _, phase in
+                guard phase == .active, network.isConnected else { return }
+                retry()
+            }
     }
 }

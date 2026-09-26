@@ -2636,13 +2636,20 @@ final class PhotoService {
 /// does not exist or is not visible to this session.
 extension PhotoService {
     func fetchPhoto(id: UUID) async -> Photo? {
-        let rows: [Photo] = (try? await supabase
+        (try? await lookUpPhoto(id: id)) ?? nil
+    }
+
+    /// `fetchPhoto(id:)` for a widget tap, which has to tell "not there" from "couldn't ask": nil
+    /// is the server answering with nothing this session can see, a throw is the request failing.
+    /// See `PushLookupOutcome`.
+    func lookUpPhoto(id: UUID) async throws -> Photo? {
+        let rows: [Photo] = try await supabase
             .from("photos")
             .select()
             .eq("id", value: id.uuidString)
             .limit(1)
             .execute()
-            .value) ?? []
+            .value
         return rows.first
     }
 }

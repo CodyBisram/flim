@@ -350,12 +350,19 @@ final class FeedService {
     }
 
     func fetchProfile(id: UUID) async -> UserProfile? {
+        (try? await lookUpProfile(id: id)) ?? nil
+    }
+
+    /// `fetchProfile(id:)` for a caller that has to tell "not there" from "couldn't ask": nil is
+    /// the server answering with nothing this session can see, a throw is the request failing.
+    /// See `PushLookupOutcome`.
+    func lookUpProfile(id: UUID) async throws -> UserProfile? {
         #if DEBUG
         if let demo = SpotlightPreviewDemo.data?.profiles[id] { return demo }
         #endif
-        let list: [UserProfile] = (try? await supabase
+        let list: [UserProfile] = try await supabase
             .from("profiles").select().eq("id", value: id.uuidString).limit(1)
-            .execute().value) ?? []
+            .execute().value
         return list.first
     }
 
@@ -1818,6 +1825,15 @@ final class FeedService {
                 .in("id", values: chunk).execute().value) ?? []
         }
         return Dictionary(list.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+    }
+
+    /// One post by id, for a notification tap. Unlike `fetchPosts(ids:)`, which folds a failed
+    /// request into an empty result, this throws it: nil is the server answering with nothing this
+    /// session can see, a throw is the request failing. See `PushLookupOutcome`.
+    func lookUpPost(id: UUID) async throws -> Post? {
+        let list: [Post] = try await supabase.from("posts").select()
+            .eq("id", value: id.uuidString).limit(1).execute().value
+        return list.first
     }
 
     // MARK: - Reactions

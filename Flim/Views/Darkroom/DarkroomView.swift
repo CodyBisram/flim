@@ -1413,6 +1413,10 @@ Text("Darkroom")
     /// present one. A frame that is gone (deleted, moderated, or belonging to an account no
     /// longer signed in) comes back nil and leaves a real, populated Darkroom on screen, which is
     /// the graceful no-op every other deep link here takes.
+    ///
+    /// A fetch that could not reach the server is not that: the tap goes back into
+    /// `PendingPushDestination` and `MainTabView` routes it here again once the connection
+    /// returns. See `PushLookupOutcome`.
     private func openRequestedPhoto() {
         guard let id = openPhotoId.wrappedValue else { return }
         openPhotoId.wrappedValue = nil
@@ -1423,10 +1427,18 @@ Text("Darkroom")
         // Epoch captured before the fetch: a deep link resolved across an account switch must
         // not open the departing account's photo over the next account's Darkroom.
         let epoch = AccountEpoch.current
+        let serial = PendingPushDestination.routeSerial
         Task {
-            guard let photo = await photoService.fetchPhoto(id: id),
-                  AccountEpoch.isCurrent(epoch) else { return }
-            selectedPhoto = photo
+            var photo: Photo?
+            var lookupError: Error?
+            do { photo = try await photoService.lookUpPhoto(id: id) } catch { lookupError = error }
+            switch PushLookupOutcome.decide(found: photo != nil, error: lookupError,
+                                            accountIsCurrent: AccountEpoch.isCurrent(epoch),
+                                            isLatestTap: PendingPushDestination.isLatestRoute(serial)) {
+            case .open: selectedPhoto = photo
+            case .hold: PendingPushDestination.store(.photo(photoId: id))
+            case .notFound, .drop: break
+            }
         }
     }
 

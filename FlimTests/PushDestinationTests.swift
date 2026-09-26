@@ -285,6 +285,116 @@ struct PendingPushDestinationTests {
         PendingPushDestination.dropAccountScoped()
         #expect(PendingPushDestination.take() == nil)
     }
+
+    // MARK: - A tap held for a connection
+
+    /// The reconnect and the foreground can land together; read-and-clear is what keeps the held
+    /// tap from routing twice.
+    @Test("a tap held for a connection is routed once when it comes back")
+    func heldTapRoutesOnce() {
+        isolate()
+        let destination = PushDestination.post(postId: UUID(), comments: true)
+        let outcome = PushLookupOutcome.decide(found: false, error: URLError(.notConnectedToInternet),
+                                               accountIsCurrent: true, isLatestTap: true)
+        #expect(outcome == .hold)
+        PendingPushDestination.store(destination)
+        #expect(PendingPushDestination.take() == destination)
+        #expect(PendingPushDestination.take() == nil)
+    }
+
+    @Test("a held tap does not outlive an account change")
+    func heldTapClearedOnAccountChange() {
+        isolate()
+        PendingPushDestination.store(.reveal(rollId: UUID(), photoId: UUID(), comments: true))
+        PendingPushDestination.clear()   // what ContentView does on every account change
+        #expect(PendingPushDestination.take() == nil)
+    }
+
+    @Test("the signed-out screen drops a held tap the same as a fresh one")
+    func heldTapDroppedWhenSignedOut() {
+        isolate()
+        PendingPushDestination.store(.photo(photoId: UUID()))
+        PendingPushDestination.dropAccountScoped()
+        #expect(PendingPushDestination.take() == nil)
+    }
+
+    /// One test, not several: the serial is process-wide, and parallel tests bumping it would
+    /// race each other's expectations.
+    @Test("a newer tap supersedes an older one still being looked up")
+    func routeSerialSupersedes() {
+        let older = PendingPushDestination.beginRoute()
+        #expect(PendingPushDestination.isLatestRoute(older))
+        let newer = PendingPushDestination.beginRoute()
+        #expect(!PendingPushDestination.isLatestRoute(older))
+        #expect(PendingPushDestination.isLatestRoute(newer))
+    }
+}
+
+/// `PushLookupOutcome.decide` is the line between "the server said it isn't there" and "the
+/// server was never asked". Getting it wrong either way is a lost tap: offline taps reported a
+/// post that was fine as gone, and a roll tap with no signal did nothing at all.
+struct PushLookupOutcomeTests {
+
+    private let offline = URLError(.notConnectedToInternet)
+
+    @Test("content in hand opens")
+    func foundOpens() {
+        #expect(PushLookupOutcome.decide(found: true, error: nil, accountIsCurrent: true, isLatestTap: true) == .open)
+    }
+
+    /// A roll found in the list restored from disk while the refresh behind it failed.
+    @Test("content found despite a failed refresh still opens")
+    func foundWinsOverError() {
+        #expect(PushLookupOutcome.decide(found: true, error: offline, accountIsCurrent: true, isLatestTap: true) == .open)
+    }
+
+    @Test("the server answering with nothing is the only not-found")
+    func emptyAnswerIsNotFound() {
+        #expect(PushLookupOutcome.decide(found: false, error: nil, accountIsCurrent: true, isLatestTap: true) == .notFound)
+    }
+
+    @Test("a request that never reached the server holds the tap")
+    func unreachableHolds() {
+        for code: URLError.Code in [.notConnectedToInternet, .networkConnectionLost, .timedOut,
+                                    .cannotFindHost, .cannotConnectToHost, .dnsLookupFailed] {
+            #expect(PushLookupOutcome.decide(found: false, error: URLError(code), accountIsCurrent: true, isLatestTap: true) == .hold, "\(code)")
+        }
+    }
+
+    /// Never "isn't here anymore" for these: nothing says the content is gone. Never held either,
+    /// since they would fail the same way on every retry.
+    @Test("an error that is an answer, not a missing connection, drops quietly")
+    func otherErrorsDrop() {
+        struct ServerSaidNo: Error {}
+        let answers: [Error] = [ServerSaidNo(), URLError(.badServerResponse), URLError(.cancelled), CancellationError()]
+        for error in answers {
+            #expect(PushLookupOutcome.decide(found: false, error: error, accountIsCurrent: true, isLatestTap: true) == .drop, "\(error)")
+        }
+    }
+
+    @Test("an account change while the lookup was out drops it, whatever came back")
+    func accountChangeDrops() {
+        #expect(PushLookupOutcome.decide(found: true, error: nil, accountIsCurrent: false, isLatestTap: true) == .drop)
+        #expect(PushLookupOutcome.decide(found: false, error: nil, accountIsCurrent: false, isLatestTap: true) == .drop)
+        #expect(PushLookupOutcome.decide(found: false, error: offline, accountIsCurrent: false, isLatestTap: true) == .drop)
+    }
+
+    /// A newer tap only stops the write-back; what the older lookup found (or didn't) still acts,
+    /// exactly as it did before taps could be held.
+    @Test("a newer tap stops an older one being held, and nothing else")
+    func supersededOnlyStopsTheHold() {
+        #expect(PushLookupOutcome.decide(found: false, error: offline, accountIsCurrent: true, isLatestTap: false) == .drop)
+        #expect(PushLookupOutcome.decide(found: true, error: nil, accountIsCurrent: true, isLatestTap: false) == .open)
+        #expect(PushLookupOutcome.decide(found: false, error: nil, accountIsCurrent: true, isLatestTap: false) == .notFound)
+    }
+
+    /// URLSession errors can surface as a bridged `NSError`; the domain and code are what count.
+    @Test("an NSError in the URL domain classifies like its URLError")
+    func bridgedNSErrorClassifies() {
+        let bridged = NSError(domain: NSURLErrorDomain, code: NSURLErrorNotConnectedToInternet)
+        #expect(NetworkFailure.isUnreachable(bridged))
+        #expect(!NetworkFailure.isUnreachable(NSError(domain: "PostgrestError", code: 404)))
+    }
 }
 
 /// The widget link vocabulary.
