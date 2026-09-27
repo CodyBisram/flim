@@ -1,5 +1,5 @@
 -- Spotlight: a frame goes up only if it was SHOT this week (2026-09-26, the owner's rule).
--- NOT APPLIED: the owner applies it before 1.6.0 is released.
+-- APPLIED to production 2026-09-26 by the owner; verified the live function carries not_this_week.
 --
 -- put_up_for_spotlight already required the post to be made this week. A frame shot months ago
 -- and posted today passed that, while the app says "one frame you shot that week". This adds one
