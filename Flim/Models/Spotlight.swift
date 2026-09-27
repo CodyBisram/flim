@@ -660,6 +660,8 @@ enum SpotlightFirstTime {
 enum SpotlightPostedAsk {
     static let prompt = "Put this one up for Spotlight?"
     static let button = "Put it up"
+    /// Skips the ask; on the deck's last card it also closes the deck.
+    static let decline = "Not now"
 
     /// - Parameters:
     ///   - photoOwnerId: who shot the posted photo (`photos.user_id`).

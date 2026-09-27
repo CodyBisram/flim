@@ -500,7 +500,7 @@ struct SpotlightTests {
                      ProfileBadgeKind.spotlight.explanation, ProfileBadgeKind.spotlight.howToEarn,
                      SpotlightCaptionLock.upThisWeek, SpotlightCaptionLock.chosen,
                      SpotlightRefusal.captionOnSpotlight, SpotlightRefusal.notThisWeekPutUp,
-                     SpotlightPostedAsk.prompt, SpotlightPostedAsk.button,
+                     SpotlightPostedAsk.prompt, SpotlightPostedAsk.button, SpotlightPostedAsk.decline, SpotlightPostedAsk.decline,
                      SpotlightPutUpNotice.text(postId: UUID(), replacedPostId: nil, replacedAt: nil),
                      SpotlightPutUpNotice.text(postId: UUID(), replacedPostId: UUID(), replacedAt: nil)]
         for line in lines {

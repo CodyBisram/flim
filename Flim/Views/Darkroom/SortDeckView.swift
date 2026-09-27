@@ -220,10 +220,17 @@ struct SortDeckView: View {
                     .flimType(.label)
                     .foregroundStyle(FlimTheme.textSecondary)
                     .multilineTextAlignment(.center)
-                Button(SpotlightPostedAsk.button) { putUpAsked(askPhoto) }
-                    .flimFont(13, weight: .semibold, relativeTo: .subheadline)
-                    .foregroundStyle(accent)
-                    .disabled(feed.spotlightWriteInFlight)
+                // Both answers, side by side: on the last card the deck has nothing else on screen,
+                // and the close button in the corner is not an obvious "no".
+                HStack(spacing: 28) {
+                    Button(SpotlightPostedAsk.decline) { withAnimation { self.askPhoto = nil } }
+                        .flimFont(13, weight: .semibold, relativeTo: .subheadline)
+                        .foregroundStyle(FlimTheme.textSecondary)
+                    Button(SpotlightPostedAsk.button) { putUpAsked(askPhoto) }
+                        .flimFont(13, weight: .semibold, relativeTo: .subheadline)
+                        .foregroundStyle(accent)
+                        .disabled(feed.spotlightWriteInFlight)
+                }
             }
             .padding(.horizontal, 24)
             .padding(.top, 6)
