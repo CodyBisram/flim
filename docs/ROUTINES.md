@@ -166,7 +166,8 @@ connect as the same login, still cannot mint.
    on, then App passwords; name it "FLIM outreach"). On the Pi, add two lines to
    `~/.config/flim-hooks.env`: `FLIM_GMAIL_ADDRESS=<the Gmail address>` and
    `FLIM_GMAIL_APP_PASSWORD=<the 16 characters>`, never in the repo. Check the login without
-   sending anything: `ssh pi 'cd ~/work/flim && set -a && . ~/.config/flim-hooks.env && python3 scripts/pi/outreach_send.py --check'`,
+   sending anything (read the way the job reads them, since the file is not a shell script):
+   `ssh pi 'cd ~/work/flim && E=~/.config/flim-hooks.env && FLIM_GMAIL_ADDRESS=$(sed -n "s/^FLIM_GMAIL_ADDRESS=//p" $E) FLIM_GMAIL_APP_PASSWORD=$(sed -n "s/^FLIM_GMAIL_APP_PASSWORD=//p" $E) python3 scripts/pi/outreach_send.py --check'`,
    which should print GMAIL_OK. Revoke the app password in the same place to stop all sending.
 5. Put the postal address every email has to carry (US law) on the Pi, one line, never in the
    repo (it is public): `ssh pi` then add `FLIM_OUTREACH_POSTAL=<street or PO box, city, state, zip>`
