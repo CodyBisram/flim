@@ -139,8 +139,8 @@ not add plurals of words already present. Apple handles both.
 ## What's New (version 1.6.0), draft 2026-09-26, revised for the resubmission
 
 Revised the same night: the 1.6.0 submission is being swapped for a new build (the per-card
-feed, the notification sounds, offline notification taps, the Spotlight ask in the sort deck and
-the shot-this-week rule). The build number goes here once it exists.
+feed, the notification sounds, offline notification taps, long press to put a frame up for Spotlight from the feed, your page, the
+Darkroom and rolls, and the shot-this-week rule). The build number goes here once it exists.
 
 1.5.4 never went to the App Store, so this covers everything a person can see since 378: the 1.5.4
 draft below, folded in and updated, plus Spotlight and the invite loop. Submit build 407 (fa71b86: the one-time "Spotlight is new." line
@@ -149,7 +149,7 @@ days old, and the sign-in code boxes and delete-account hold button back to thei
 
 > **PASTE ONLY THE INDENTED BLOCK BELOW.** Everything under "Ship notes" is internal.
 
-    Spotlight. Each week, put up one frame you shot that week: when you post one, FLIM asks, or open the post's menu and choose Put it up for Spotlight. Only the team at FLIM sees what you put up. When the week closes, the team chooses a few and shows them to everyone as a short strip in the feed. If yours is chosen, you get a notification, a Spotlight badge, and the frame on your page for everyone to see. You can take a frame down until the week closes, and take a chosen one out whenever you like.
+    Spotlight. Each week, put up one frame you shot that week: press and hold it in your feed, on your page or in your Darkroom, and choose Put it up for Spotlight. Only the team at FLIM sees what you put up. When the week closes, the team chooses a few and shows them to everyone as a short strip in the feed. If yours is chosen, you get a notification, a Spotlight badge, and the frame on your page for everyone to see. You can take a frame down until the week closes, and take a chosen one out whenever you like.
 
     Your invites come back. When a friend you invited takes their first photo, FLIM tells you, and that invite is yours to give again. The link you send names you, so they know who it's from.
 

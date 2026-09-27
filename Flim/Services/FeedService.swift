@@ -26,6 +26,17 @@ final class FeedService {
     /// per-photo `hasPosted` round trip. Mirrors `followingIds`/`followerIds`: loaded once,
     /// updated optimistically by `createPost`/`deletePost`'s callers.
     var myPostedPhotoIds: Set<UUID> = []
+    /// The signed-in user's own posts by photo id, for the Spotlight item on surfaces that hold
+    /// a photo rather than a post: the Darkroom's grid and viewer, a roll's grid and viewer.
+    /// Filled by `loadOwnPosts(forPhotoIds:userId:refresh:)` for the photos a surface has
+    /// loaded; `createPost` adds, the deletes remove. No entry is no post, or not asked yet.
+    var ownPostsByPhotoId: [UUID: Post] = [:]
+    /// Photo ids already asked about, post or not, so a surface asks once per photo.
+    var ownPostsAsked: Set<UUID> = []
+    /// Photo ids with a lookup on the wire, so two surfaces (the grid and its viewer) never
+    /// ask about the same photo at once.
+    var ownPostsInFlight: Set<UUID> = []
+    var ownPostsGeneration = 0
     var isLoadingFeed = false
     /// Set when a feed page fails to load, so an unreachable server reads as "couldn't load,
     /// retry" rather than as an empty feed. Cleared on the next successful page.
@@ -873,15 +884,6 @@ final class FeedService {
     /// The signed-in account's own published frames, post id to week key: what turns the menu
     /// item into "Take it out of Spotlight".
     var ownSpotlightChosen: [UUID: String] = [:]
-    /// The thumbnail of the frame up this week, for the sort deck's swap: the capsule ends on
-    /// it and the last card's sheet shows it beside the new one. The path is the cache key.
-    /// nil while nothing is up, or before `refreshOwnSpotlightThumb` has read it.
-    var ownSpotlightThumbPath: String?
-    var ownSpotlightThumbURL: URL?
-    /// The photo the thumbnail above belongs to. Read through `ownSpotlightThumb`, which shows
-    /// it only while that photo is still the one up.
-    var ownSpotlightThumbPhotoId: UUID?
-    var spotlightThumbGeneration = 0
     /// Each page's SPOTLIGHT shelf, per profile id.
     var spotlightShelves: [UUID: [SpotlightWeek]] = [:]
     /// The sheet of past weeks, paged by `week_key`.
@@ -921,6 +923,10 @@ final class FeedService {
         confirmedFollowingIds = []
         followerIds = []
         myPostedPhotoIds = []
+        ownPostsByPhotoId = [:]
+        ownPostsAsked = []
+        ownPostsInFlight = []
+        ownPostsGeneration += 1
         blockedIds = []
         reactionsByPost = [:]
         commentsByPost = [:]
@@ -943,10 +949,6 @@ final class FeedService {
         spotlightPastWeeksInFlight = nil
         spotlightURLs = [:]
         spotlightPhotographer = [:]
-        ownSpotlightThumbPath = nil
-        ownSpotlightThumbURL = nil
-        ownSpotlightThumbPhotoId = nil
-        spotlightThumbGeneration += 1
         spotlightTakeOutsInFlight = []
         spotlightWriteInFlight = false
         spotlightWriteGeneration += 1
@@ -1285,6 +1287,23 @@ final class FeedService {
         feed.append(contentsOf: completions.filter { !currentIds.contains($0.post.id) })
     }
 
+    /// Loads tags for a few posts outside a feed page (the Spotlight item's inputs, see
+    /// `loadSpotlightMenuInputs`). Merged, so a failed read changes nothing.
+    func loadTags(for postIds: [UUID]) async {
+        guard !postIds.isEmpty else { return }
+        let epoch = AccountEpoch.current
+        var map: [UUID: [PostTag]] = [:]
+        var profs: [UUID: UserProfile] = [:]
+        for chunk in postIds.chunked(into: QueryBatch.inListLimit) {
+            let (m, p) = await batchTags(postIds: chunk)
+            map.merge(m) { _, new in new }
+            profs.merge(p) { _, new in new }
+        }
+        guard AccountEpoch.isCurrent(epoch) else { return }
+        tagsByPost.merge(map) { _, new in new }
+        tagProfiles.merge(profs) { _, new in new }
+    }
+
     /// Loads tags for a single post (e.g. a detail view opened outside the feed) into the caches.
     func loadTags(for postId: UUID) async {
         // Reached by simply opening a post, not by a user action on it, so it is a passive read
@@ -1567,8 +1586,8 @@ final class FeedService {
 
     /// Creates the post, then attaches `tags` if any were given.
     ///
-    /// Returns the post as the server wrote it (the sort deck asks to put it up for Spotlight,
-    /// which needs its id and times) and whether the tags saved.
+    /// Returns the post as the server wrote it and whether the tags saved. The post also goes
+    /// into `ownPostsByPhotoId`, so the Darkroom's Spotlight item knows it without a lookup.
     ///
     /// `tagsSaved` is `true` once they're confirmed attached (or there were none to attach at
     /// all), `false` on a genuine tag-insert failure the caller should surface (with a retry via
@@ -1584,6 +1603,7 @@ final class FeedService {
     /// `deletePost`'s tri-state treatment of their own writes.
     @discardableResult
     func createPost(photo: Photo, caption: String?, userId: UUID, tags: [PendingTag] = []) async throws -> CreatedPost {
+        let epoch = AccountEpoch.current
         struct Insert: Encodable {
             let user_id: UUID
             let photo_id: UUID
@@ -1603,6 +1623,13 @@ final class FeedService {
             taken_at: photo.takenAt,
             caption: (trimmed?.isEmpty ?? true) ? nil : trimmed
         )).select().single().execute().value
+        if AccountEpoch.isCurrent(epoch) {
+            ownPostsByPhotoId[photo.id] = created
+            ownPostsAsked.insert(photo.id)
+        }
+        // The Spotlight item reads the post's tags, known only once they are attached below.
+        // Fire-and-forget at the exit, like the badges.
+        defer { Task { await loadSpotlightMenuInputs(for: [created], userId: userId) } }
         // Deliberately NOT marked seen at creation. It was, briefly (2026-08-24): "born seen"
         // paired with the ledger's own-author exclusion. But a seen mark is what retention
         // clears on, so a post made before 4am vanished from its AUTHOR's own feed at the
@@ -1669,6 +1696,7 @@ final class FeedService {
             return false
         }
         feed.removeAll { $0.post.id == id }
+        if AccountEpoch.isCurrent(epoch) { ownPostsByPhotoId = ownPostsByPhotoId.filter { $0.value.id != id } }
         // Same per-post caches `dropPosts(forDeletedPhotoIds:)` clears, so nothing stays keyed
         // to a post id no card displays anymore.
         reactionsByPost.removeValue(forKey: id)
@@ -1703,6 +1731,7 @@ final class FeedService {
         // on a shelf without being in the loaded feed pages at all. Matched by photo id, the
         // only id a Darkroom delete has.
         pruneSpotlightFrames { ids.contains($0.photoId) }
+        for id in ids { ownPostsByPhotoId.removeValue(forKey: id) }
         if ownSpotlightEntry?.holds(photoIdIn: ids) == true {
             Task { await refreshOwnSpotlightEntry() }
         }
@@ -1783,6 +1812,41 @@ final class FeedService {
             .eq("photo_id", value: photoId.uuidString)
             .limit(1).execute().value) ?? []
         return rows.first?.id
+    }
+
+    /// Asks which of these photos have a post on the signed-in user's page, for
+    /// `ownPostsByPhotoId`: one query per 200 photos, own rows only, hidden posts left out since
+    /// they are not on the page. Only photos not asked about yet, unless `refresh` (a surface's
+    /// own reload, which is how a post made or deleted on another phone shows up). A failed
+    /// read changes nothing and leaves the photos unasked for the next caller. Then loads what
+    /// the Spotlight item reads for the posts found.
+    func loadOwnPosts(forPhotoIds photoIds: [UUID], userId: UUID, refresh: Bool = false) async {
+        let ask = OwnPostLookup.toAsk(photoIds, asked: refresh ? [] : ownPostsAsked, inFlight: ownPostsInFlight)
+        guard !ask.isEmpty else { return }
+        let generation = ownPostsGeneration
+        let epoch = AccountEpoch.current
+        ownPostsInFlight.formUnion(ask)
+        let rows: [Post]? = try? await QueryBatch.inChunks(ask.map(\.uuidString)) { chunk in
+            try await supabase.from("posts").select()
+                .eq("user_id", value: userId.uuidString)
+                .eq("hidden", value: false)
+                .in("photo_id", values: chunk)
+                .execute().value
+        }
+        guard AccountEpoch.isCurrent(epoch), generation == ownPostsGeneration else { return }
+        ownPostsInFlight.subtract(ask)
+        guard let rows else { return }
+        // The Spotlight item's inputs (tags above all) load BEFORE the posts are published: a
+        // post the menus can see with its tags not yet known would read as untagged, and offer
+        // "Put it up" on a frame the server then refuses as tagged.
+        let answered = OwnPostLookup.merged([:], answer: rows, asked: ask, userId: userId)
+        await loadSpotlightMenuInputs(for: ask.compactMap { answered[$0] }, userId: userId)
+        guard AccountEpoch.isCurrent(epoch), generation == ownPostsGeneration else { return }
+        let merged = OwnPostLookup.merged(ownPostsByPhotoId, answer: rows, asked: ask, userId: userId)
+        // Only a real change is written: every mounted Darkroom frame reads this dictionary for
+        // its menu, and an identical answer on each appear would redraw all of them.
+        if merged != ownPostsByPhotoId { ownPostsByPhotoId = merged }
+        ownPostsAsked.formUnion(ask)
     }
 
     /// Which of these photos have been shared to ANYONE's page, not just the caller's own, so a
@@ -2889,6 +2953,31 @@ func shouldWarnThatTagsDidNotSave(_ tagsSaved: Bool?) -> Bool { tagsSaved == fal
 struct CreatedPost {
     let post: Post
     let tagsSaved: Bool?
+}
+
+/// The pure half of `FeedService.loadOwnPosts`: which photos to ask about, and what the
+/// answer does to `ownPostsByPhotoId`.
+enum OwnPostLookup {
+    /// The photos still to ask about, in order and without repeats: none already asked, none
+    /// with a lookup on the wire.
+    static func toAsk(_ photoIds: [UUID], asked: Set<UUID>, inFlight: Set<UUID>) -> [UUID] {
+        var seen = asked.union(inFlight)
+        return photoIds.filter { seen.insert($0).inserted }
+    }
+
+    /// Every photo asked about takes the viewer's own post the answer holds for it, or loses
+    /// the one it had (deleted on another phone). Photos not asked about keep theirs, and a
+    /// row that is not the viewer's changes nothing. Two posts of one photo keep the newest.
+    static func merged(_ cache: [UUID: Post], answer: [Post], asked: [UUID], userId: UUID) -> [UUID: Post] {
+        let askedIds = Set(asked)
+        var out = cache
+        for id in askedIds { out.removeValue(forKey: id) }
+        for post in answer where post.userId == userId && askedIds.contains(post.photoId) {
+            if let held = out[post.photoId], held.createdAt >= post.createdAt { continue }
+            out[post.photoId] = post
+        }
+        return out
+    }
 }
 
 /// The Activity "New" watermark, per account. It lived under one global key, so a second

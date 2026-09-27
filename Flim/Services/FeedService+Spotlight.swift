@@ -253,52 +253,20 @@ extension FeedService {
         for id in unknown { spotlightPhotographer[id] = mine.contains(id) }
     }
 
-    /// Reads and signs the thumbnail of this week's own entry (see `ownSpotlightThumbURL`).
-    /// Only the caller's own photo row, the same query shape as `ensureSpotlightPhotographer`.
-    /// Run when the deck opens and whenever the entry's photo changes; nothing up clears it. A
-    /// failed read keeps the thumbnail only when it is the same photo's.
-    func refreshOwnSpotlightThumb(userId: UUID) async {
-        spotlightThumbGeneration += 1
-        let generation = spotlightThumbGeneration
-        guard let photoId = ownSpotlightEntry?.photoId else {
-            clearOwnSpotlightThumb()
-            return
+    /// What the Spotlight item reads for these own posts, on a surface that shows many of them
+    /// (a profile's grid, the Darkroom): this week's entry, read first when it is missing or
+    /// past its close, then the tags and the photographer for the posts that need them (see
+    /// `SpotlightMenuItem.postsNeedingInputs`), so the item resolves instead of guessing.
+    func loadSpotlightMenuInputs(for posts: [Post], userId: UUID) async {
+        guard !posts.isEmpty else { return }
+        if !ownSpotlightEntryIsCurrent || ownSpotlightEntry.map({ Date.now >= $0.weekClosesAt }) ?? true {
+            await refreshOwnSpotlightEntry()
         }
-        // Another photo's thumbnail never stands in for this one, not even while it is read.
-        if ownSpotlightThumbPhotoId != photoId { clearOwnSpotlightThumb() }
-        let epoch = AccountEpoch.current
-        struct Row: Decodable { let thumb_path: String? }
-        let rows: [Row]? = try? await supabase.from("photos").select("thumb_path")
-            .eq("id", value: photoId.uuidString)
-            .eq("user_id", value: userId.uuidString)
-            .limit(1)
-            .execute().value
-        guard AccountEpoch.isCurrent(epoch), generation == spotlightThumbGeneration else { return }
-        guard let rows else { return }
-        guard let path = rows.first?.thumb_path else {
-            clearOwnSpotlightThumb()
-            return
-        }
-        let urls = await signedURLs(for: [path])
-        guard AccountEpoch.isCurrent(epoch), generation == spotlightThumbGeneration else { return }
-        ownSpotlightThumbPhotoId = photoId
-        ownSpotlightThumbPath = path
-        ownSpotlightThumbURL = urls[path]
-    }
-
-    /// The thumbnail of the frame up now, or nothing while the one held belongs to another
-    /// photo (the entry moved and the read has not landed).
-    var ownSpotlightThumb: (url: URL?, path: String?) {
-        guard let photoId = ownSpotlightEntry?.photoId, ownSpotlightThumbPhotoId == photoId else {
-            return (nil, nil)
-        }
-        return (ownSpotlightThumbURL, ownSpotlightThumbPath)
-    }
-
-    private func clearOwnSpotlightThumb() {
-        ownSpotlightThumbPhotoId = nil
-        ownSpotlightThumbPath = nil
-        ownSpotlightThumbURL = nil
+        let needed = SpotlightMenuItem.postsNeedingInputs(posts, entry: ownSpotlightEntry)
+        guard !needed.isEmpty else { return }
+        async let tags: Void = loadTags(for: needed.map(\.id))
+        async let photographer: Void = ensureSpotlightPhotographer(photoIds: needed.map(\.photoId), userId: userId)
+        _ = await (tags, photographer)
     }
 
     /// The Spotlight item for one post's own-post menu.
@@ -329,9 +297,7 @@ extension FeedService {
     /// undo window: taking a frame down is always one menu item away until the week closes.
     /// One Spotlight write at a time for the account; the menu item is disabled meanwhile.
     ///
-    /// Returns nil once the server has it up, else the line that says why not, so a caller
-    /// that cannot see the capsule's slot (the sort deck, a full-screen cover over it) can say
-    /// it in its own place.
+    /// Returns nil once the server has it up, else the line that says why not.
     @discardableResult
     func putUpForSpotlight(_ post: Post) async -> String? {
         guard !spotlightWriteInFlight, let previous = ownSpotlightEntry else {
@@ -375,7 +341,9 @@ extension FeedService {
                 ?? SpotlightRefusal.putUpNetwork
             UndoCenter.shared.showNotice(message)
             // The server may know something the menu does not (the week closed, a tag was
-            // added from another phone): read it again.
+            // added from another phone): read it again. A tagged refusal reads the post's tags
+            // too, so the item turns disabled instead of offering the same refusal again.
+            if Self.spotlightRefusal(error) == "tagged" { await loadTags(for: post.id) }
             await refreshOwnSpotlightEntry()
             return message
         }

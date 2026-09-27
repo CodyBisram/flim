@@ -234,6 +234,10 @@ struct RollDetailView: View {
     @State private var toastIsError = false
     @State private var showLeaveRoll = false
     @State private var shareItem: ShareImage?
+    /// The long-press Spotlight item on your own frames: its first-time sheet and take-out ask,
+    /// presented from here, never from inside the menu (see `SpotlightPutUpFlow`).
+    @State private var spotlightFirstTimePost: Post?
+    @State private var spotlightTakeOutPost: Post?
     @State private var isMuted = false
     @State private var showReveal = false
     /// Flips true once a developed roll's pagination has been fully drained (see `onAppear`).
@@ -541,6 +545,12 @@ struct RollDetailView: View {
         // computed property directly, so it can't recompute a second time locating `startIndex:`.
         .onChange(of: vm.developedPhotos.map(\.id)) { _, _ in
             pagerPhotosChronologicalCache = pagerPhotosChronological
+            // Which of your own frames here are on your page, for the long-press Spotlight
+            // item. Only frames not asked about yet (see `FeedService.loadOwnPosts`).
+            if let uid = auth.currentUser?.id {
+                let mine = vm.developedPhotos.filter { $0.userId == uid && $0.isReady }.map(\.id)
+                Task { await feed.loadOwnPosts(forPhotoIds: mine, userId: uid) }
+            }
         }
         .onChange(of: rollSnapshot?.map(\.id)) { _, _ in
             pagerPhotosChronologicalCache = pagerPhotosChronological
@@ -799,6 +809,7 @@ struct RollDetailView: View {
             CreateRollView(followUpOf: roll)
         }
         .sheet(item: $shareItem) { SharePreviewSheet(photo: $0.image, caption: $0.caption) }
+        .spotlightPutUpFlow(firstTimePost: $spotlightFirstTimePost, takeOutPost: $spotlightTakeOutPost)
         .sheet(isPresented: $showShareAll) {
             ActivityView(items: shareImages)
         }
@@ -1031,6 +1042,12 @@ struct RollDetailView: View {
             // same consequence sheet the pager uses; the grid must not be a quieter door to
             // the same shared delete.
             if photo.userId == auth.currentUser?.id {
+                // Your own frame, on your page: the same Spotlight item its post's menu carries.
+                if let post = feed.ownPostsByPhotoId[photo.id] {
+                    SpotlightMenuSection(post: post,
+                                         presentFirstTime: { spotlightFirstTimePost = $0 },
+                                         confirmTakeOut: { spotlightTakeOutPost = $0 })
+                }
                 Button(role: .destructive) { requestGridDelete(photo) } label: {
                     Label("Delete photo", systemImage: "trash")
                 }

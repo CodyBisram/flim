@@ -33,6 +33,10 @@ struct UserPageView: View {
     /// A post opened from this page's SPOTLIGHT shelf, with its week.
     @State private var spotlightRoute: SpotlightPostRoute?
     @State private var openingSpotlightFrame: UUID?
+    /// Your own grid's long-press Spotlight item: its first-time sheet and take-out ask,
+    /// presented from here since the menu cannot present anything (see `SpotlightPutUpFlow`).
+    @State private var spotlightFirstTimePost: Post?
+    @State private var spotlightTakeOutPost: Post?
     /// Signed URLs for the grid's thumbnails, keyed by `displayPath` (matching `PostThumb`'s own
     /// cache key), minted in one batched call per page-load rather than one round trip per
     /// cell. `PostThumb` still falls back to its own per-cell mint for anything a batch missed
@@ -305,6 +309,7 @@ struct UserPageView: View {
         .navigationDestination(item: $spotlightRoute) { route in
             PostDetailView(item: route.item, spotlightWeekKey: route.weekKey)
         }
+        .spotlightPutUpFlow(firstTimePost: $spotlightFirstTimePost, takeOutPost: $spotlightTakeOutPost)
         .sheet(item: $followList) { list in
             FollowListView(userId: userId, mode: list)
         }
@@ -790,6 +795,9 @@ struct UserPageView: View {
                             PostThumb(path: post.displayPath, resolvedURL: postThumbURLs[post.displayPath])
                         }
                         .buttonStyle(.plain)
+                        .modifier(OwnPostSpotlightMenu(post: post, isSelf: isSelf,
+                                                       presentFirstTime: { spotlightFirstTimePost = $0 },
+                                                       confirmTakeOut: { spotlightTakeOutPost = $0 }))
                     }
                 }
             }
@@ -960,6 +968,10 @@ struct UserPageView: View {
             // a fetch that lands after an account switch must not seed the next account's pages.
             if AccountEpoch.isCurrent(epoch) { feed.profilePostsCache[userId] = fetchedPosts }
             await mintThumbURLs(for: gridPosts)
+            // Your own page: what the long-press Spotlight item reads for this week's frames.
+            if isSelf, let uid = auth.currentUser?.id {
+                Task { await feed.loadSpotlightMenuInputs(for: fetchedPosts, userId: uid) }
+            }
         }
         followers = await fr
         following = await fg
@@ -1421,4 +1433,39 @@ enum BadgeSwapMetrics {
     static let minimumScale: CGFloat = 0.85
     /// The handle row's own horizontal padding in `pageHeader`.
     static let horizontalPadding: CGFloat = 28
+}
+
+/// Your own grid's long press: the Spotlight item for that post, the same one its own menu
+/// carries. Nothing on anyone else's page, and no menu at all while the item is hidden (the
+/// week's entry not read yet), since an empty context menu still lifts the tile.
+private struct OwnPostSpotlightMenu: ViewModifier {
+    let post: Post
+    let isSelf: Bool
+    let presentFirstTime: (Post) -> Void
+    let confirmTakeOut: (Post) -> Void
+    @Environment(FeedService.self) private var feed
+    @Environment(AuthService.self) private var auth
+
+    /// No menu at all for a past week's post: its only item would be "Put it up" disabled with
+    /// "Only frames shot this week can go up", a long press that lifts a tile to say no. A
+    /// chosen frame, or one waiting on its week's publish, still gets its menu.
+    private var showsMenu: Bool {
+        guard isSelf else { return false }
+        switch feed.spotlightMenuItem(for: post, viewerId: auth.currentUser?.id) {
+        case .hidden: return false
+        case .disabled(let reason): return reason != SpotlightMenuItem.notThisWeekReason
+        default: return true
+        }
+    }
+
+    func body(content: Content) -> some View {
+        if showsMenu {
+            content.contextMenu {
+                SpotlightMenuSection(post: post, presentFirstTime: presentFirstTime,
+                                     confirmTakeOut: confirmTakeOut)
+            }
+        } else {
+            content
+        }
+    }
 }

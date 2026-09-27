@@ -149,6 +149,10 @@ struct DarkroomView: View {
     /// scrolling. See `updateMonthAnchorFromScroll`'s own doc.
     @State private var mountedNightDayKeys: Set<Date> = []
     @State private var shareItem: ShareImage?
+    /// The Spotlight item's first-time sheet and take-out ask, presented from here rather than
+    /// from inside the long-press menu, which cannot present anything (see `SpotlightPutUpFlow`).
+    @State private var spotlightFirstTimePost: Post?
+    @State private var spotlightTakeOutPost: Post?
     /// The scroll content's measured width, so the contact sheet's strip capacity is derived
     /// from the real available width rather than a hard-coded frame count. 393 is the design's
     /// own reference width, a reasonable first-paint guess before the geometry read lands.
@@ -516,7 +520,12 @@ Text("Darkroom")
         // (`load`, `loadAnchored`, `loadMore`, `markReadyPhotos`'s poll, an optimistic delete, an
         // undo's restore); `anchor` covers every jump (`selectMonth`, the scroll-driven crumb
         // tracker, a cold-launch resolution).
-        .onChange(of: vm.photos) { _, _ in recomputeDayUnits() }
+        .onChange(of: vm.photos) { _, _ in
+            recomputeDayUnits()
+            // A page, a jump or a poll brought frames the Spotlight item has not asked about.
+            // Only those are asked (see `FeedService.loadOwnPosts`); `reload()` re-asks the rest.
+            Task { await loadOwnPosts(refresh: false) }
+        }
         .onChange(of: anchor) { _, _ in recomputeDayUnits() }
         // The 60s develop poll only needs to run while this screen is on it, and an in-flight
         // anchored jump has no reason to keep running once nobody's watching for it to land. A
@@ -539,6 +548,7 @@ Text("Darkroom")
         }
         .onChange(of: openPhotoId.wrappedValue) { _, _ in openRequestedPhoto() }
         .sheet(item: $shareItem) { SharePreviewSheet(photo: $0.image, caption: $0.caption) }
+        .spotlightPutUpFlow(firstTimePost: $spotlightFirstTimePost, takeOutPost: $spotlightTakeOutPost)
     }
 
     // MARK: - Rung content (PR 3 of the zoom redesign, revision 2)
@@ -975,8 +985,22 @@ Text("Darkroom")
                 }
             }
         } label: { Label("Set as profile photo", systemImage: "person.crop.circle") }
+        // A frame on your page can go up for Spotlight from here too, the same item the post's
+        // own menu carries, disabled with its reason when this one cannot.
+        if let post = feed.ownPostsByPhotoId[photo.id] {
+            SpotlightMenuSection(post: post,
+                                 presentFirstTime: { spotlightFirstTimePost = $0 },
+                                 confirmTakeOut: { spotlightTakeOutPost = $0 })
+        }
         Divider()
         Button(role: .destructive) { requestDelete([photo]) } label: { Label("Delete", systemImage: "trash") }
+    }
+
+    /// Asks which loaded frames have a post on your page, for the long-press Spotlight item.
+    /// Developed frames only: nothing else can have been posted.
+    private func loadOwnPosts(refresh: Bool) async {
+        guard let uid = auth.currentUser?.id else { return }
+        await feed.loadOwnPosts(forPhotoIds: vm.photos.filter(\.isReady).map(\.id), userId: uid, refresh: refresh)
     }
 
     /// A still-developing shot has no viewable image yet, so its menu is select + delete only.
@@ -1698,7 +1722,10 @@ Text("Darkroom")
         async let rollsTask: Void = loadRollsIfNeeded(userId: userId)
         async let unsortedTask: Void = loadUnsortedAndPreviews(userId: userId, epoch: epoch)
         async let postedTask: Void = feed.loadMyPostedPhotoIds(userId: userId)
-        _ = await (rollsTask, unsortedTask, postedTask)
+        // Re-asked on every reload, so a post made or deleted on another phone reaches the
+        // long-press Spotlight item. Guarded inside, like the badge query.
+        async let ownPostsTask: Void = loadOwnPosts(refresh: true)
+        _ = await (rollsTask, unsortedTask, postedTask, ownPostsTask)
         // The trailing chain: a reveal check and a widget-tap deep link, neither of which belongs
         // to whoever is signed in now if the epoch has moved on.
         guard AccountEpoch.isCurrent(epoch) else { return }

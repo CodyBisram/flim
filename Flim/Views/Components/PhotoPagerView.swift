@@ -297,6 +297,10 @@ struct PhotoPagerView: View {
     /// two flows must never share one variable, same reasoning as `taggingPhoto` vs.
     /// `composerPhoto` above.
     @State private var shareSheetPhoto: Photo?
+    /// The header menu's Spotlight item: its first-time sheet and take-out ask, presented from
+    /// the pager, never from inside the menu (see `SpotlightPutUpFlow`).
+    @State private var spotlightFirstTimePost: Post?
+    @State private var spotlightTakeOutPost: Post?
     @State private var showTagSheet = false
     /// Night-rack mode's OTHER tag sheet: editing an ALREADY-shared photo's tags (the promoted
     /// "Tag" action), as distinct from `showTagSheet` above, which is the share composer's own
@@ -621,6 +625,13 @@ struct PhotoPagerView: View {
             // but a roll's pager (RollDetailView, MainTabView) opens straight into this view
             // with nothing preloaded, so it still needs to ask once.
             if let uid = auth.currentUser?.id { await feed.loadMyPostedPhotoIds(userId: uid) }
+            // And which of these frames have a post on your page, for the header menu's
+            // Spotlight item. Only frames not asked about yet: the Darkroom's grid has usually
+            // asked already, a roll's has not.
+            if let uid = auth.currentUser?.id {
+                let unknown = photos.filter { $0.isReady && posts[$0.id] == nil }.map(\.id)
+                await feed.loadOwnPosts(forPhotoIds: unknown, userId: uid)
+            }
         }
         .task {
             await resolveAround(selection)
@@ -654,6 +665,7 @@ struct PhotoPagerView: View {
         .sheet(item: $shareItem) { item in
             SharePreviewSheet(photo: item.image, caption: item.caption)
         }
+        .spotlightPutUpFlow(firstTimePost: $spotlightFirstTimePost, takeOutPost: $spotlightTakeOutPost)
         .sheet(item: $shareSheetPhoto) { photo in
             // Falls back to the rack's own thumbnail resolution too, matching `rackSection`'s own
             // `signedURLs[photo.id] ?? rackThumbURLs[photo.id]`: a night reached via the jump
@@ -673,6 +685,22 @@ struct PhotoPagerView: View {
     }
 
     // MARK: - Stable chrome
+
+    /// The Spotlight item for a frame on your page, in the header's menu: the same item the
+    /// post's own menu carries, disabled with its reason when this frame cannot go up. Your own
+    /// post only, the one `FeedService` looked up for the photo. Nothing for a frame with no
+    /// post, and nothing in the chapter recap.
+    @ViewBuilder
+    private func spotlightSection(for photo: Photo) -> some View {
+        // Not in the chapter recap (the only caller that hands this pager its posts): a chapter
+        // is a finished month, so the item could only ever be disabled there.
+        if posts.isEmpty, let post = feed.ownPostsByPhotoId[photo.id],
+           post.isOwned(by: auth.currentUser?.id) {
+            SpotlightMenuSection(post: post,
+                                 presentFirstTime: { spotlightFirstTimePost = $0 },
+                                 confirmTakeOut: { spotlightTakeOutPost = $0 })
+        }
+    }
 
     @ViewBuilder
     private var header: some View {
@@ -748,6 +776,7 @@ struct PhotoPagerView: View {
                                 }
                             }
                         } label: { Label("Set as profile photo", systemImage: "person.crop.circle") }
+                        spotlightSection(for: photo)
                         Button(role: .destructive) {
                             requestDelete(photo)
                         } label: { Label("Delete photo", systemImage: "trash") }
@@ -846,6 +875,7 @@ struct PhotoPagerView: View {
                                     }
                                 }
                             } label: { Label("Set as profile photo", systemImage: "person.crop.circle") }
+                            spotlightSection(for: photo)
                         }
                         Button(role: .destructive) {
                             requestDelete(photo)
@@ -934,6 +964,7 @@ struct PhotoPagerView: View {
                                     }
                                 }
                             } label: { Label("Set as profile photo", systemImage: "person.crop.circle") }
+                            spotlightSection(for: photo)
                             if showsDelete {
                                 Button(role: .destructive) {
                                     requestDelete(photo)

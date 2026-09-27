@@ -500,16 +500,6 @@ struct SpotlightTests {
                      ProfileBadgeKind.spotlight.explanation, ProfileBadgeKind.spotlight.howToEarn,
                      SpotlightCaptionLock.upThisWeek, SpotlightCaptionLock.chosen,
                      SpotlightRefusal.captionOnSpotlight, SpotlightRefusal.notThisWeekPutUp,
-                     SpotlightPostedAsk.composeShort, SpotlightPostedAsk.putUpCapsule,
-                     SpotlightPostedAsk.swapCapsule(day: "Tuesday"), SpotlightPostedAsk.working,
-                     SpotlightPostedAsk.takeDown, SpotlightPostedAsk.takenDown, SpotlightPostedAsk.developedLate,
-                     SpotlightPostedAsk.taggedLine, SpotlightPostedAsk.announcement, SpotlightPostedAsk.putUpLabel,
-                     SpotlightPostedAsk.swapLabel(day: "Tuesday"), SpotlightPostedAsk.takeDownLabel,
-                     SpotlightPostedAsk.lastTitle, SpotlightPostedAsk.lastBody, SpotlightPostedAsk.button,
-                     SpotlightPostedAsk.decline, SpotlightPostedAsk.upNow(day: "Tuesday"), SpotlightPostedAsk.justPosted,
-                     SpotlightPostedAsk.swapTitle, SpotlightPostedAsk.swapBody(day: "Tuesday", weekKey: "2026-09-28"),
-                     SpotlightPostedAsk.swapButton, SpotlightPostedAsk.upStatus, SpotlightPostedAsk.upBody,
-                     SpotlightPostedAsk.done,
                      SpotlightPutUpNotice.text(postId: UUID(), replacedPostId: nil, replacedAt: nil),
                      SpotlightPutUpNotice.text(postId: UUID(), replacedPostId: UUID(), replacedAt: nil)]
         for line in lines {
@@ -813,84 +803,6 @@ struct SpotlightTests {
         #expect(SpotlightSeenMark.seen(userId: nil).isEmpty)
     }
 
-    // MARK: - The sort deck's offer
-
-    /// Wednesday noon in the fixture week, and a helper over `offer` with everything that can
-    /// go up by default.
-    private func deckOffer(owner: UUID? = nil, tagged: Bool = false, entry e: OwnSpotlightEntry?? = .none,
-                           takenAt: Date? = nil, postedAt: Date? = nil, now: Date? = nil) -> SpotlightPostedAsk.Kind? {
-        let wednesday = date(9, 23, 12)
-        return SpotlightPostedAsk.offer(userId: me, photoOwnerId: owner ?? me, isTagged: tagged,
-                                        entry: e ?? entry(), takenAt: takenAt ?? wednesday,
-                                        postedAt: postedAt ?? wednesday, now: now ?? wednesday,
-                                        calendar: newYork)
-    }
-
-    @Test("the deck offers a put-up for every frame that can go up, while nothing is up")
-    func deckOfferPutUp() {
-        #expect(deckOffer() == .putUp)
-        // Not once per account: the next frame is offered too.
-        #expect(deckOffer() == .putUp)
-        // Shot the moment the week began.
-        #expect(deckOffer(takenAt: date(9, 21, 4)) == .putUp)
-    }
-
-    @Test("with a frame up, the deck offers the swap and names that frame's day")
-    func deckOfferSwap() {
-        // Now is Wednesday noon, so Monday is the day named by its weekday.
-        let up = entry(postId: UUID(), postCreatedAt: date(9, 21, 14))
-        #expect(deckOffer(entry: up) == .swap(fromDay: "Monday"))
-        // Today and yesterday are said as such.
-        #expect(deckOffer(entry: entry(postId: UUID(), postCreatedAt: date(9, 23, 9))) == .swap(fromDay: "today"))
-        #expect(deckOffer(entry: entry(postId: UUID(), postCreatedAt: date(9, 22, 20))) == .swap(fromDay: "yesterday"))
-    }
-
-    @Test("a frame up with no posting time offers nothing, never a plain put-up")
-    func deckOfferNilPostCreatedAt() {
-        #expect(deckOffer(entry: entry(postId: UUID(), postCreatedAt: nil)) == nil)
-    }
-
-    @Test("silence for a frame that cannot go up")
-    func deckOfferSilence() {
-        // People tagged.
-        #expect(deckOffer(tagged: true) == nil)
-        // Someone else's shot.
-        #expect(deckOffer(owner: UUID()) == nil)
-        // Shot before the week began, or stamped past its close.
-        #expect(deckOffer(takenAt: date(9, 21, 3, 59)) == nil)
-        #expect(deckOffer(takenAt: date(9, 19, 18)) == nil)
-        #expect(deckOffer(takenAt: date(9, 28, 4)) == nil)
-        // Posted outside the bounds.
-        #expect(deckOffer(postedAt: date(9, 21, 3)) == nil)
-        // A covered window.
-        #expect(deckOffer(entry: entry(canPutUp: false)) == nil)
-        // The entry not known yet.
-        #expect(deckOffer(entry: .some(nil)) == nil)
-    }
-
-    @Test("nothing is offered once now reaches the week's close, the close itself included")
-    func deckOfferAfterClose() {
-        #expect(deckOffer(now: date(9, 28, 3, 59)) == .putUp)
-        #expect(deckOffer(now: date(9, 28, 4)) == nil)
-        #expect(deckOffer(now: date(9, 28, 9)) == nil)
-        #expect(deckOffer(entry: entry(postId: UUID(), postCreatedAt: date(9, 22, 14)), now: date(9, 28, 4)) == nil)
-    }
-
-    @Test("developed after its week closed: shot before this week began, developed inside it")
-    func developedAfterClose() {
-        let e = entry()
-        // Sunday 23:40, developed Monday after the 04:00 start.
-        #expect(SpotlightPostedAsk.developedAfterClose(takenAt: date(9, 20, 23, 40), developsAt: date(9, 21, 9), entry: e))
-        // Developed at the start itself.
-        #expect(SpotlightPostedAsk.developedAfterClose(takenAt: date(9, 20, 23, 40), developsAt: date(9, 21, 4), entry: e))
-        // Developed before the week began: an older frame, nothing to say.
-        #expect(!SpotlightPostedAsk.developedAfterClose(takenAt: date(9, 20, 23, 40), developsAt: date(9, 21, 3, 59), entry: e))
-        // Shot inside this week: it can go up, so this never applies.
-        #expect(!SpotlightPostedAsk.developedAfterClose(takenAt: date(9, 21, 4), developsAt: date(9, 21, 9), entry: e))
-        // The entry not known yet.
-        #expect(!SpotlightPostedAsk.developedAfterClose(takenAt: date(9, 20, 23, 40), developsAt: date(9, 21, 9), entry: nil))
-    }
-
     @Test("the day word files through 04:00 on both sides, with a pinned calendar")
     func dayWordAcrossFour() {
         // Now is Wednesday 03:30, which still files under Tuesday.
@@ -905,17 +817,48 @@ struct SpotlightTests {
         #expect(SpotlightMenuItem.dayWord(of: date(9, 23, 4), now: later, calendar: newYork) == "today")
     }
 
-    @Test("the deck's words name the day and the week the way the menu does")
-    func deckCopy() {
-        #expect(SpotlightPostedAsk.swapCapsule(day: "Tuesday") == "Swap in for Tuesday's")
-        #expect(SpotlightPostedAsk.swapCapsule(day: "today") == "Swap in for today's")
-        #expect(SpotlightPostedAsk.upNow(day: "Tuesday") == "Up now, from Tuesday")
-        #expect(SpotlightPostedAsk.swapBody(day: "Tuesday", weekKey: "2026-09-28", calendar: newYork)
-                == "Your frame from Tuesday is up for the week of September 28. If this one goes up, Tuesday's comes down.")
-        #expect(SpotlightPostedAsk.swapLabel(day: "Tuesday")
-                == "Put the frame you just posted up for Spotlight instead of your frame from Tuesday. Your frame from Tuesday comes down.")
-        #expect(SpotlightPostedAsk.putUpLabel.contains(AppInfo.appName))
-        #expect(SpotlightPostedAsk.lastBody.contains(AppInfo.appName))
-        #expect(SpotlightPostedAsk.upBody.contains(AppInfo.appName))
+    // MARK: - Long press on a frame
+
+    @Test("only posts posted and shot this week need their tags and photographer read")
+    func postsNeedingInputs() {
+        let shotAndPosted = post(owner: me, createdAt: date(9, 23, 12), takenAt: date(9, 22, 20))
+        let shotEarlier = post(owner: me, createdAt: date(9, 23, 12), takenAt: date(9, 19, 18))
+        let postedEarlier = post(owner: me, createdAt: date(9, 20, 12), takenAt: date(9, 20, 11))
+        let atStart = post(owner: me, createdAt: date(9, 21, 4), takenAt: date(9, 21, 4))
+        let atClose = post(owner: me, createdAt: date(9, 28, 4), takenAt: date(9, 27, 20))
+        let all = [shotAndPosted, shotEarlier, postedEarlier, atStart, atClose]
+        #expect(SpotlightMenuItem.postsNeedingInputs(all, entry: entry()).map(\.id) == [shotAndPosted.id, atStart.id])
+        // Unknown entry: nothing is read, the item stays hidden until it is.
+        #expect(SpotlightMenuItem.postsNeedingInputs(all, entry: nil).isEmpty)
+    }
+
+    @Test("a surface asks about each photo once, never twice at the same time")
+    func ownPostLookupToAsk() {
+        let a = UUID(), b = UUID(), c = UUID(), d = UUID()
+        #expect(OwnPostLookup.toAsk([a, b, a, c, d], asked: [b], inFlight: [d]) == [a, c])
+        #expect(OwnPostLookup.toAsk([a, b], asked: [a, b], inFlight: []).isEmpty)
+        #expect(OwnPostLookup.toAsk([], asked: [], inFlight: []).isEmpty)
+    }
+
+    @Test("the answer sets or clears each photo asked about, and nothing else")
+    func ownPostLookupMerged() {
+        let asked1 = UUID(), asked2 = UUID(), untouched = UUID()
+        let held = post(owner: me, createdAt: date(9, 20, 12), photoId: asked2)
+        let kept = post(owner: me, createdAt: date(9, 19, 12), photoId: untouched)
+        let cache = [asked2: held, untouched: kept]
+        let fresh = post(owner: me, createdAt: date(9, 23, 12), photoId: asked1)
+        let older = post(owner: me, createdAt: date(9, 22, 12), photoId: asked1)
+        let someoneElses = post(owner: UUID(), createdAt: date(9, 23, 12), photoId: asked2)
+        let notAsked = post(owner: me, createdAt: date(9, 23, 12), photoId: UUID())
+        let out = OwnPostLookup.merged(cache, answer: [older, fresh, someoneElses, notAsked],
+                                       asked: [asked1, asked2], userId: me)
+        // Two posts of one photo keep the newest.
+        #expect(out[asked1]?.id == fresh.id)
+        // Asked and not in the answer (deleted elsewhere), and another person's row ignored.
+        #expect(out[asked2] == nil)
+        // Not asked: kept as it was, and an unasked photo in the answer is not added.
+        #expect(out[untouched]?.id == kept.id)
+        #expect(out[notAsked.photoId] == nil)
+        #expect(out.count == 2)
     }
 }
