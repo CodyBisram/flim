@@ -768,7 +768,7 @@ These are 6.9" device captures (1320x2868 pixels) ready for App Store Connect.
 
 > **FLIM is invite-only.** To demo the app:
 >
-> **Sign-in:** Enter `review@flim-app.com` on the first screen. A password prompt appears
+> **Sign-in:** Enter `review@flim-app.com` on the first screen and tap **Send Code**. A password prompt appears
 > (this account signs in by password rather than the emailed code the app normally uses).
 > Password: **_______________** ← paste before submitting.
 >
