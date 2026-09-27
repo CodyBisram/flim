@@ -272,10 +272,10 @@ def cmd_finalize(a):
             held += 1
         elif a.dry:
             if r.get("draft") == "ok":
-                status = f"dry run {a.date}: passed the gate, Gmail draft made, not sent"
+                status = f"dry run {a.date}: passed the gate, test copy sent to the owner, not to them"
                 sent += 1
             else:
-                status = "held: dry run, the Gmail draft was not made (" + (r.get("error") or "no result") + ")"
+                status = "held: dry run, the test copy did not send (" + (r.get("error") or "no result") + ")"
                 held += 1
         elif a.sendstep and not have_result:
             status = f"unconfirmed: the send step on {a.date} gave no readable result; check Gmail Sent before contacting"
@@ -284,7 +284,7 @@ def cmd_finalize(a):
             status = f"contacted {a.date} by email"
             sent += 1
         elif r.get("draft") == "ok":
-            status = "held: a Gmail draft exists but the send failed (" + (r.get("error") or "no result") + "); not retried"
+            status = "held: the send failed (" + (r.get("error") or "no result") + "); not retried, it may have gone, check Gmail Sent"
             held += 1
         else:
             status = "held: not sent (" + (r.get("error") or "the send step did not reach this entry") + ")"

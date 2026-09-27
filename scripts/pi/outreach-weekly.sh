@@ -2,20 +2,21 @@
 # Weekly creator outreach, Mondays 08:00 New York, on the Pi (flim-outreach.timer).
 #
 #   outreach-weekly.sh             research, gate, mint one code per person, draft, send, commit, push
-#   outreach-weekly.sh --dry-run   research, gate, Gmail drafts marked DRY RUN; no code minted,
-#                                  nothing sent, nothing committed or pushed
+#   outreach-weekly.sh --dry-run   research, gate, every email sent to the owner only, subject
+#                                  starting DRY RUN; no code minted, nothing committed or pushed
 #
 # Five steps, each with only what it needs (docs/ROUTINES.md, "Weekly outreach"):
-#   1. Preflight: the database (SET ROLE flim_outreach, outreach_codes_status) and Gmail
-#      (headless Claude, ToolSearch only, loads the two Gmail tools and calls neither). Either
-#      failing stops the run before any research, any code or any email.
+#   1. Preflight: the database (SET ROLE flim_outreach, outreach_codes_status) and Gmail (an
+#      SMTP login with the app password, nothing sent). Either failing stops the run before any
+#      research, any code or any email.
 #   2. Research: headless Claude with Read, Glob, Grep, Write, Edit, WebSearch, WebFetch and no
 #      MCP tool at all follows the creator-shortlist skill and writes social/outreach/<date>.md
 #      plus a plan of the emails it passed through the written gate.
 #   3. Gate: scripts/pi/outreach_gate.py re-checks every rule a program can check, including
 #      re-reading the page that publishes each address. Anything that fails is held.
-#   4. Send: codes minted here, in shell, one per passing entry; then headless Claude with
-#      ToolSearch, create_draft and send_message only, and the exact emails in its prompt.
+#   4. Send: codes minted here, in shell, one per passing entry; then outreach_send.py hands the
+#      exact emails to Gmail's SMTP server. Not the Gmail connector: it rewrote every link into an
+#      expiring google.com redirect (the first batch, 2026-09-25).
 #   5. Status lines written, the file checked for codes, committed and pushed, one ntfy push.
 #
 # Claude runs on the Pi's claude.ai login (~/.claude/.credentials.json from /login), NOT the
@@ -45,8 +46,14 @@ main() {
   # The postal address every email must carry (CAN-SPAM). Kept on the Pi, never in the public repo.
   POSTAL=$(sed -n 's/^FLIM_OUTREACH_POSTAL=//p' ~/.config/flim-hooks.env 2>/dev/null | head -1)
   POSTAL=${POSTAL#[\"\']}; POSTAL=${POSTAL%[\"\']}   # a quoted value must not put the quotes in every email
+  # The Gmail account the emails go out from, and an app password for it (Google Account,
+  # Security, App passwords). Handed to outreach_send.py through its environment only.
+  GMAIL_ADDRESS=$(sed -n 's/^FLIM_GMAIL_ADDRESS=//p' ~/.config/flim-hooks.env 2>/dev/null | head -1)
+  GMAIL_ADDRESS=${GMAIL_ADDRESS#[\"\']}; GMAIL_ADDRESS=${GMAIL_ADDRESS%[\"\']}
+  GMAIL_APP_PASSWORD=$(sed -n 's/^FLIM_GMAIL_APP_PASSWORD=//p' ~/.config/flim-hooks.env 2>/dev/null | head -1)
+  GMAIL_APP_PASSWORD=${GMAIL_APP_PASSWORD#[\"\']}; GMAIL_APP_PASSWORD=${GMAIL_APP_PASSWORD%[\"\']}
   # Codes live in these files for the length of one run and are deleted on the way out.
-  trap 'rm -f "$RUN/send.json" "$RUN/codes.json" "$RUN/status.tsv" "$RUN/part-b.txt"' EXIT
+  trap 'rm -f "$RUN/send.json" "$RUN/codes.json" "$RUN/status.tsv"' EXIT
 
   exec 9>"$OPS/.lock-outreach"; flock -n 9 || return 0
   exec 8>"$OPS/.lock-repo"; flock -w 900 8 || { stop "another job held ~/work/flim for 15 minutes"; return 1; }
@@ -75,13 +82,12 @@ main() {
   [ "$CAN_MINT" = t ] || { stop "flim_outreach cannot execute mint_outreach_code"; return 1; }
   EARLIER_USED=$(awk -F'\t' -v today="outreach $DATE:" '$2 > 0 && index($3, today) != 1' "$RUN/status.tsv" | wc -l | tr -d ' ')
 
-  PRE=$(printf '%s\n' 'Call ToolSearch exactly once with the query "select:mcp__claude_ai_Gmail__create_draft,mcp__claude_ai_Gmail__send_message". Call no other tool. Reply with one line: GMAIL_OK if both tool schemas came back, otherwise GMAIL_MISSING and what you saw.' \
-    | claude_run "$RUN" 300 --model sonnet --tools ToolSearch --allowedTools "ToolSearch" 2>> "$LOG")
+  { [ -n "$GMAIL_ADDRESS" ] && [ -n "$GMAIL_APP_PASSWORD" ]; } \
+    || { stop "no FLIM_GMAIL_ADDRESS or FLIM_GMAIL_APP_PASSWORD in ~/.config/flim-hooks.env"; return 1; }
+  PRE=$(gmail_send --check 2>> "$LOG")
   echo "preflight: $PRE" >> "$LOG"
-  case "$PRE" in
-    *GMAIL_OK*) ;;
-    *) stop "Gmail tools not reachable from headless Claude. On the Pi: claude /login with the claude.ai account (not the setup token), then /mcp should list claude.ai Gmail as connected"; return 1 ;;
-  esac
+  [ "$PRE" = GMAIL_OK ] \
+    || { stop "Gmail SMTP login failed (see the log): check FLIM_GMAIL_ADDRESS and the app password"; return 1; }
 
   # ---- 2. Research ---------------------------------------------------------------------------
   part A | sed -e "s|__DATE__|$DATE|g" -e "s|__MODE__|$MODE|g" > "$RUN/part-a.txt"
@@ -107,38 +113,16 @@ main() {
       mint_all || { stop "minting failed; nothing was sent (see $LOG)"; return 1; }
       python3 "$HERE/outreach_gate.py" assemble --gate "$RUN/gate.json" --codes "$RUN/codes.json" --postal "$POSTAL" --out "$RUN/send.json" >> "$LOG" \
         || { stop "assembling the emails failed; nothing was sent (see $LOG)"; return 1; }
-      ALLOW="ToolSearch,mcp__claude_ai_Gmail__create_draft,mcp__claude_ai_Gmail__send_message"
       touch "$RUN/SEND_STARTED"
     else
       python3 "$HERE/outreach_gate.py" assemble --gate "$RUN/gate.json" --dry --postal "$POSTAL" --out "$RUN/send.json" >> "$LOG" \
         || { stop "assembling the drafts failed (see $LOG)"; return 1; }
-      ALLOW="ToolSearch,mcp__claude_ai_Gmail__create_draft"
     fi
-    part B | python3 -c '
-import sys
-tpl = sys.stdin.read()
-send = open(sys.argv[1]).read().strip()
-print(tpl.replace("__DATE__", sys.argv[2]).replace("__MODE__", sys.argv[3]).replace("__SENDLIST__", send))
-' "$RUN/send.json" "$DATE" "$MODE" > "$RUN/part-b.txt"
     SENDSTEP="--sendstep"
-    claude_run "$RUN" 1800 --model sonnet --tools ToolSearch --allowedTools "$ALLOW" \
-      < "$RUN/part-b.txt" > "$RUN/part-b.out" 2>> "$LOG"
-    # The reply's last JSON line is the result. Unreadable means unconfirmed, never "held".
-    python3 - "$RUN/part-b.out" "$RUN/result.json" <<'PY' >> "$LOG" 2>&1 || true
-import json, sys
-lines = [l.strip() for l in open(sys.argv[1], encoding="utf-8", errors="replace") if l.strip().startswith("{")]
-for l in reversed(lines):
-    try:
-        d = json.loads(l)
-    except ValueError:
-        continue
-    if isinstance(d.get("results"), list):
-        json.dump(d, open(sys.argv[2], "w"))
-        print("send step result read")
-        break
-else:
-    print("send step result NOT readable")
-PY
+    # Straight to Gmail's SMTP server, not the Gmail connector: the connector rewrote every link
+    # into an expiring google.com redirect. A dry run sends each email to the owner instead.
+    # result.json is written as it goes; a missing one means the step died before any send.
+    gmail_send --send "$RUN/send.json" --out "$RUN/result.json" $([ $DRY = 1 ] && echo --dry) >> "$LOG" 2>&1 || true
   fi
 
   # ---- 5. Status, leak check, commit, push, alert --------------------------------------------
@@ -146,12 +130,12 @@ PY
     --file "$FILE" --date "$DATE" $SENDSTEP $([ $DRY = 1 ] && echo --dry) 2>> "$LOG")
   SENT=${COUNTS% *}; HELD=${COUNTS#* }
   [ -n "$SENT" ] || { SENT="?"; HELD="?"; }
-  UNREAD=""; [ -n "$SENDSTEP" ] && [ ! -f "$RUN/result.json" ] && UNREAD=" The send step's result was unreadable: check Gmail Sent."
+  UNREAD=""; [ -n "$SENDSTEP" ] && [ ! -f "$RUN/result.json" ] && UNREAD=" The send step left no result: check Gmail Sent."
 
   if [ $DRY = 1 ]; then
     cp "$FILE" "$OPS/logs/outreach-$DATE-dry.md"
     git reset -q --hard origin/main && git clean -qfd
-    alert "FLIM outreach dry run" "Outreach dry run: $SENT drafted in Gmail (subject starts DRY RUN, delete them), $HELD held, nothing sent, no codes minted, $EARLIER_USED earlier codes used. File: $OPS/logs/outreach-$DATE-dry.md" "information_source"
+    alert "FLIM outreach dry run" "Outreach dry run: $SENT test copies sent to you (subject starts DRY RUN), $HELD held, nothing sent to anyone else, no codes minted, $EARLIER_USED earlier codes used. File: $OPS/logs/outreach-$DATE-dry.md" "information_source"
     return 0
   fi
 
@@ -180,6 +164,12 @@ claude_run() {
   local dir=$1 secs=$2; shift 2
   (cd "$dir" && env -u CLAUDE_CODE_OAUTH_TOKEN -u GH_TOKEN -u ANTHROPIC_API_KEY \
     timeout "$secs" claude -p --output-format text --permission-mode dontAsk --setting-sources project "$@")
+}
+
+# The Gmail credentials reach the sender through its environment only, never its arguments.
+gmail_send() {
+  FLIM_GMAIL_ADDRESS="$GMAIL_ADDRESS" FLIM_GMAIL_APP_PASSWORD="$GMAIL_APP_PASSWORD" \
+    python3 "$HERE/outreach_send.py" "$@"
 }
 
 db() { psql "$DB_URL" -X -q -At -F $'\t' -v ON_ERROR_STOP=1 "$@"; }

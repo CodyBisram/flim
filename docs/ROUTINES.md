@@ -112,8 +112,8 @@ in `.claude/skills/creator-shortlist/SKILL.md` ("THE SEND GATE").
 next Monday runs) in five steps, each with only the tools it needs:
 
 1. **Preflight.** The database: `SET ROLE flim_outreach` and `outreach_codes_status()`, plus a
-   check that the role can execute `mint_outreach_code`. Gmail: headless Claude with only
-   ToolSearch loads the two Gmail tools and calls neither. Either failing stops the run before
+   check that the role can execute `mint_outreach_code`. Gmail: an SMTP login with the app
+   password (`outreach_send.py --check`), nothing sent. Either failing stops the run before
    any research, code or email, with a push saying why.
 2. **Research.** Headless Claude with Read, Glob, Grep, Write, Edit, WebSearch and WebFetch, and
    every MCP tool denied, follows the skill and writes `social/outreach/<date>.md` plus a plan of
@@ -124,13 +124,14 @@ next Monday runs) in five steps, each with only the tools it needs:
    re-reads the page cited as publishing each address; the address has to be on it. Anything that
    fails is held. Ten sends a week at most.
 4. **Send.** One code per passing person, minted in shell through `mint_outreach_code(name)` (the
-   name goes in as a psql variable), then headless Claude with only ToolSearch,
-   `mcp__claude_ai_Gmail__create_draft` and `mcp__claude_ai_Gmail__send_message` gets the exact
-   emails in its prompt (each ends with the opt-out line and the postal address, which the law asks for): a draft each, then that draft sent by its id. A failed draft or send stops
-   the step; a send is never retried. A marker written before this step means a second real run
+   name goes in as a psql variable), then `scripts/pi/outreach_send.py` hands the exact emails
+   (each ends with the opt-out line and the postal address, which the law asks for) to Gmail's
+   SMTP server, plain text, from the owner's address. Not the Gmail connector: it rewrote every
+   link into an expiring google.com redirect, which broke the first batch's invite links
+   (2026-09-26). A failed send stops the step; a send is never retried. A marker written before this step means a second real run
    on the same date refuses to start, so nobody is emailed twice.
 5. **Record.** Each entry's Status becomes "contacted <date> by email" or "held: <reason>"
-   ("unconfirmed" if the send step's reply was unreadable: check Gmail Sent). The file is checked
+   ("unconfirmed" if the send step left no result: check Gmail Sent). The file is checked
    for every outreach code and for any invite link, and is not committed if one is there. Then one
    commit, "Outreach for <Mon DD>: N sent, M held.", pushed to main, and one push to the owner:
    "Outreach: N sent, M held, K earlier codes used." K counts earlier outreach codes redeemed at
@@ -161,18 +162,21 @@ connect as the same login, still cannot mint.
    This needs `flim_reader`'s password set (`docs/sql/flim_reader_role.sql`) and the pooler URI on
    the Pi as `FLIM_DB_URL` in `~/.config/flim-hooks.env` (`services/deploy-flim-hooks.sh` in the Pi
    folder). Check with `ssh pi 'grep -c ^FLIM_DB_URL= ~/.config/flim-hooks.env'`, which should say 1.
-4. Connect Gmail once in the Pi's Claude: `ssh pi -t 'cd ~/work/flim && env -u CLAUDE_CODE_OAUTH_TOKEN claude'`,
-   run `/login` and sign in with the claude.ai account whose Gmail connector is connected at
-   claude.ai/customize/connectors, then `/mcp`: "claude.ai Gmail" should be listed as connected.
-   `/exit`. The other jobs keep using the setup token.
+4. A Gmail app password for the sending address (Google Account, Security, 2-Step Verification
+   on, then App passwords; name it "FLIM outreach"). On the Pi, add two lines to
+   `~/.config/flim-hooks.env`: `FLIM_GMAIL_ADDRESS=<the Gmail address>` and
+   `FLIM_GMAIL_APP_PASSWORD=<the 16 characters>`, never in the repo. Check the login without
+   sending anything: `ssh pi 'cd ~/work/flim && set -a && . ~/.config/flim-hooks.env && python3 scripts/pi/outreach_send.py --check'`,
+   which should print GMAIL_OK. Revoke the app password in the same place to stop all sending.
 5. Put the postal address every email has to carry (US law) on the Pi, one line, never in the
    repo (it is public): `ssh pi` then add `FLIM_OUTREACH_POSTAL=<street or PO box, city, state, zip>`
    to `~/.config/flim-hooks.env`. Check with `ssh pi 'grep -c ^FLIM_OUTREACH_POSTAL= ~/.config/flim-hooks.env'`,
    which should say 1. Without it the job stops at preflight and sends nothing.
 6. Dry run first: `ssh pi 'bash ~/work/flim/scripts/pi/outreach-weekly.sh --dry-run'` (20 to 60
-   minutes). It researches, gates and makes Gmail drafts whose subject starts "DRY RUN, not sent";
-   it mints no code, sends nothing and commits nothing. Read the push, the batch at
-   `~/work/flim-ops/logs/outreach-<date>-dry.md`, and the drafts; then delete the drafts.
+   minutes). It researches, gates and sends every email to the owner's own address only, subject
+   starting "DRY RUN, not sent"; it mints no code (the link says XXXXXX) and commits nothing. Read
+   the push, the batch at `~/work/flim-ops/logs/outreach-<date>-dry.md`, and the test emails:
+   the link in each must read `https://flim-app.com/i/XXXXXX`, nothing wrapped around it.
 7. Install the timer on the Pi:
    `cp ~/work/flim/scripts/pi/flim-outreach.service ~/work/flim/scripts/pi/flim-outreach.timer ~/.config/systemd/user/ && systemctl --user daemon-reload && systemctl --user enable --now flim-outreach.timer && systemctl --user list-timers --no-pager | grep outreach`
 
