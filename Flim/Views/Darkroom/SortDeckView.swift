@@ -8,16 +8,43 @@ struct SortDeckView: View {
     @Environment(PhotoService.self) private var photoService
     @Environment(FeedService.self) private var feed
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var typeSize
     /// Called when the deck is emptied so the Darkroom can refresh.
     var onFinish: () -> Void = {}
 
     @State private var cards: [Photo] = []
-    @State private var urls: [UUID: URL] = [:]
+    /// The session's live state: the cards' signed URLs and the frames this sort posted. An
+    /// observable model rather than `@State` values, so the session sheet reads it in its own
+    /// body; see `SortDeckSession`.
+    @State private var session = SortDeckSession()
     /// True from an action's tap until its card has left the deck; see `performSwipe`.
     @State private var isTransitioning = false
     @State private var drag: CGSize = .zero
     @State private var loaded = false
     @State private var closing = false
+    /// The last card left on its own and the session is being finished; see `finishSession`.
+    @State private var finishing = false
+    /// The held swipe `finishSession` took, on the wire. `closeDeck` waits for it before it
+    /// dismisses, as it waits for a held swipe of its own, so the Darkroom refresh behind the
+    /// deck still sees the committed state.
+    @State private var finishCommit: Task<Void, Never>?
+    /// This week's Spotlight entry, read when the deck opens if it was unknown or past its
+    /// close. The session's end waits for this one read rather than guessing.
+    @State private var entryRead: Task<Void, Never>?
+    /// The Spotlight session sheet; nil is no sheet. Presented by ITEM, for the same reason as
+    /// `composePhoto` below.
+    @State private var sessionOffer: SpotlightSessionOffer?
+    /// An offer made while the compose sheet was still going (the last card posted from it):
+    /// presenting a second sheet during the first one's exit can be dropped by SwiftUI, leaving
+    /// an offer set and no sheet, so it waits for the compose sheet's onDismiss.
+    @State private var deferredOffer: SpotlightSessionOffer?
+    /// Set as the compose sheet posts, cleared in its onDismiss: it is on its way out.
+    @State private var composeClosing = false
+    /// The offer the sheet actually appeared with, kept past its dismissal (which clears
+    /// `sessionOffer`) so the close can record what it showed. nil until it has appeared.
+    @State private var shownOffer: SpotlightSessionOffer?
+    /// A put-up from the session sheet landed; read as the sheet closes, for the ledger.
+    @State private var sessionPutUp = false
     // The last swipe, held un-committed so it can be undone (even a delete).
     @State private var lastPhoto: Photo?
     @State private var lastAction: SortAction?
@@ -92,8 +119,10 @@ struct SortDeckView: View {
             VStack(spacing: 0) {
                 header
                 if cards.isEmpty && loaded {
-                    // Nothing left to sort, return to the previous screen (no "all sorted" wall).
-                    Color.clear.onAppear { closeDeck() }
+                    // Nothing left to sort, return to the previous screen (no "all sorted" wall),
+                    // by way of the Spotlight session sheet when this sort posted a frame that
+                    // can go up. See `finishSession`.
+                    Color.clear.onAppear { finishSession() }
                 } else {
                     GeometryReader { geo in
                         ZStack {
@@ -121,15 +150,38 @@ struct SortDeckView: View {
                 Task { await commit(p, a, caption: caption, tags: tags) }
             }
         }
-        .sheet(item: $composePhoto) { composePhoto in
-            SortDeckComposeSheet(photo: composePhoto, url: urls[composePhoto.id],
+        .sheet(item: $composePhoto, onDismiss: {
+            composeClosing = false
+            // The last card, posted from here: its session sheet waited for this one to go.
+            guard let offer = deferredOffer else { return }
+            deferredOffer = nil
+            guard !closing else { return }
+            if session.offered(offer).isEmpty { closeDeck() } else { sessionOffer = offer }
+        }) { composePhoto in
+            SortDeckComposeSheet(photo: composePhoto, url: session.urls[composePhoto.id],
                                   caption: $composeCaption, tags: $composeTags) {
+                composeClosing = true
                 // Same publish path as swipe-right/the Post button, just carrying what was
                 // typed into the sheet: `performSwipe` already commits the PREVIOUS held
                 // action, flies this card off, and holds this one for undo exactly as it does
                 // for the fast path.
                 performSwipe(.publish, caption: composeCaption, tags: composeTags)
             }
+        }
+        .sheet(item: $sessionOffer, onDismiss: { sessionSheetClosed() }) { offer in
+            SpotlightSessionSheet(
+                offer: offer,
+                session: session,
+                accessibilitySize: typeSize.isAccessibilitySize,
+                onPutUp: { await putUpFromSession($0, offer: offer) })
+            .onAppear { sessionSheetAppeared(offer) }
+        }
+        // The session sheet's "Up now" row shows the frame up this week: read on open, and
+        // again whenever the frame up changes (a put-up from here, or from another phone).
+        // Nothing up clears it without a request.
+        .task(id: feed.ownSpotlightEntry?.photoId) {
+            guard let uid = auth.currentUser?.id else { return }
+            await feed.refreshOwnSpotlightThumb(userId: uid)
         }
     }
 
@@ -245,7 +297,7 @@ struct SortDeckView: View {
                 // 1400 rather than the old 2048: that larger budget existed to cover the extra
                 // magnification scaledToFill applied. Fitting a 3:4 photo into a 3:4 card is 1:1,
                 // so it matches the full-screen viewer's own budget (`PhotoPagerView`).
-                CachedImage(url: urls[photo.id], maxPixel: 1400, cacheKey: photo.viewPath) { $0.resizable().scaledToFit() }
+                CachedImage(url: session.urls[photo.id], maxPixel: 1400, cacheKey: photo.viewPath) { $0.resizable().scaledToFit() }
                     placeholder: { ShimmerPlaceholder(cornerRadius: 22) }
             }
             // No decorative GrainOverlay here, unlike the feed and the grid. Those screens are
@@ -396,6 +448,10 @@ struct SortDeckView: View {
         lastCaption = caption
         lastTags = tags
         sortsCompleted += 1
+        if action == .publish {
+            // Pending until its commit answers; Undo takes it back out (it never committed).
+            session.published(photo, isTagged: !tags.isEmpty)
+        }
 
         // Advance the deck after the card flies off.
         Task {
@@ -421,6 +477,7 @@ struct SortDeckView: View {
         lastPhoto = nil; lastAction = nil; lastCaption = nil; lastTags = []
         Task {
             if let p, let a { await commit(p, a, caption: caption, tags: tags) }
+            await finishCommit?.value
             dismiss()
             // A new account's first sort ends in the Darkroom, once (owner's call 2026-09-09):
             // the frame they just kept is the reason the Darkroom exists, and landing back on
@@ -442,12 +499,157 @@ struct SortDeckView: View {
         }
     }
 
+    // MARK: - The Spotlight session sheet
+
+    /// This week's entry, when it belongs to this account and its week has not closed; nil
+    /// means unknown, and nothing is offered on an unknown week.
+    private var currentSpotlightEntry: OwnSpotlightEntry? {
+        guard feed.ownSpotlightEntryIsCurrent, let entry = feed.ownSpotlightEntry,
+              Date.now < entry.weekClosesAt else { return nil }
+        return entry
+    }
+
+    /// How long the end of a sort waits for an unknown week before closing with no sheet.
+    private static let entryWait: Duration = .milliseconds(1500)
+
+    /// The last card left on its own. With nothing from this sort that could go up, this is
+    /// `closeDeck()`, exactly as before. Otherwise the held swipe is committed now (Undo ends
+    /// here, which is where the deck used to close) and the session sheet is offered over the
+    /// emptied deck, without waiting for that commit: its frame shows as still posting. The
+    /// header's X and the posted notice's View never come through here, so they never show it.
+    private func finishSession() {
+        guard !finishing, !closing else { return }
+        finishing = true
+        // Nothing untagged of your own posted: no entry could make an offer, so nothing waits.
+        guard let uid = auth.currentUser?.id, session.hasCandidate(viewerId: uid) else {
+            closeDeck()
+            return
+        }
+        if let entry = currentSpotlightEntry {
+            guard let offer = makeSessionOffer(entry: entry, userId: uid) else {
+                closeDeck()
+                return
+            }
+            commitHeldForFinish()
+            present(offer, userId: uid)
+            return
+        }
+        // The week is not known yet: wait for the one read the deck started (or start it), but
+        // not past `entryWait`, since the emptied deck is blank meanwhile; then offer, or close
+        // with no sheet if it is still unknown. A read that lands later still updates the menus.
+        commitHeldForFinish()
+        let read = entryRead ?? Task { await feed.refreshOwnSpotlightEntry() }
+        Task {
+            _ = await SortDeckSession.finished(read, within: Self.entryWait)
+            guard !closing else { return }
+            guard let entry = currentSpotlightEntry, let offer = makeSessionOffer(entry: entry, userId: uid) else {
+                closeDeck()
+                return
+            }
+            present(offer, userId: uid)
+        }
+    }
+
+    private func makeSessionOffer(entry: OwnSpotlightEntry, userId: UUID) -> SpotlightSessionOffer? {
+        session.offer(entry: entry, viewerId: userId, ledger: SpotlightSessionLedger.load(userId: userId))
+    }
+
+    /// Takes the held swipe and starts its commit, for `closeDeck` to wait on later.
+    private func commitHeldForFinish() {
+        guard let p = lastPhoto, let a = lastAction else { return }
+        let caption = lastCaption, tags = lastTags
+        lastPhoto = nil; lastAction = nil; lastCaption = nil; lastTags = []
+        finishCommit = Task { await commit(p, a, caption: caption, tags: tags) }
+    }
+
+    /// Presents the sheet, or holds it for the compose sheet's onDismiss while that sheet is
+    /// still up or on its way out. Nothing is written to the ledger until it appears.
+    private func present(_ offer: SpotlightSessionOffer, userId: UUID) {
+        var offer = offer
+        offer.firstTime = !SpotlightFirstTime.hasSeen(userId: userId)
+        sessionPutUp = false
+        session.kindOverride = nil
+        session.emptiedByFailures = false
+        if composePhoto != nil || composeClosing {
+            deferredOffer = offer
+        } else {
+            sessionOffer = offer
+        }
+    }
+
+    /// The sheet is on screen: only now is a swap ask spent for the week.
+    private func sessionSheetAppeared(_ offer: SpotlightSessionOffer) {
+        guard shownOffer?.id != offer.id else { return }
+        shownOffer = offer
+        guard offer.isSwap, let uid = auth.currentUser?.id else { return }
+        var ledger = SpotlightSessionLedger.load(userId: uid)
+        ledger.recordSwapShown(weekKey: offer.weekKey)
+        SpotlightSessionLedger.save(ledger, userId: uid)
+    }
+
+    /// The sheet's put-up. The first time for this account, the sheet's own copy was the
+    /// explanation, so the tap marks it seen before sending.
+    ///
+    /// The button said put up or swap against the entry as it was when the sheet opened. If
+    /// the frame up has changed since (another phone), the tap would do something else than
+    /// it said, so nothing is sent: the entry is read again and the sheet's title, Up now row
+    /// and button move to what a tap does now, for a fresh tap.
+    private func putUpFromSession(_ post: Post, offer: SpotlightSessionOffer) async -> SpotlightPutUpOutcome {
+        let shownSwap = { if case .swap = session.kind(offer) { return true } else { return false } }()
+        if currentSpotlightEntry.map({ ($0.postId != nil) != shownSwap }) ?? true {
+            await feed.refreshOwnSpotlightEntry()
+            guard let fresh = currentSpotlightEntry else {
+                Haptics.error()
+                return .refused(message: SpotlightRefusal.putUpNetwork, refusal: nil)
+            }
+            // An account that can no longer put up (a covered window began) is not a connection
+            // problem: end the sheet the way the server's own "covered" refusal would.
+            guard fresh.canPutUp else {
+                Haptics.error()
+                return .refused(message: SpotlightRefusal.message(refusal: "covered", action: .putUp)
+                                    ?? SpotlightRefusal.cantGoUp, refusal: "covered")
+            }
+            guard let kind = SpotlightSessionOffer.kind(for: fresh) else {
+                Haptics.error()
+                return .refused(message: SpotlightRefusal.putUpNetwork, refusal: nil)
+            }
+            let freshSwap = { if case .swap = kind { return true } else { return false } }()
+            if freshSwap != shownSwap {
+                Haptics.warning()
+                session.kindOverride = kind
+                return .frameUpChanged
+            }
+        }
+        if offer.firstTime, let uid = auth.currentUser?.id { SpotlightFirstTime.markSeen(userId: uid) }
+        let outcome = await feed.putUpForSpotlightOutcome(post)
+        if case .up = outcome { sessionPutUp = true }
+        return outcome
+    }
+
+    /// Done, Not now, a pull down, and a sheet emptied by failed posts all end here: the
+    /// ledger records what was shown (a decline only when the person said no), and the deck
+    /// closes exactly as it would have when the last card left.
+    private func sessionSheetClosed() {
+        if let uid = auth.currentUser?.id, let offer = shownOffer {
+            var ledger = SpotlightSessionLedger.load(userId: uid)
+            // A frame still posting when the sheet closed has no post to name; it is new, so no
+            // later sheet can meet it again anyway.
+            let shown = session.offered(offer).compactMap { $0.post?.id }
+            ledger.recordClosed(weekKey: offer.weekKey, shownPostIds: shown,
+                                declined: !sessionPutUp && !session.emptiedByFailures)
+            SpotlightSessionLedger.save(ledger, userId: uid)
+        }
+        shownOffer = nil
+        closeDeck()
+    }
+
     private func undo() {
         // Not while the swiped card is still flying off: the advance that follows would remove
         // the card Undo just put back, by id, and on the last card close the deck with the frame
         // unsorted. The card settles in 280 ms.
         guard !isTransitioning, let photo = lastPhoto else { return }
         Haptics.select()
+        if lastAction == .publish { session.undone(photoId: photo.id) }
         lastPhoto = nil
         lastAction = nil
         lastCaption = nil
@@ -469,7 +671,9 @@ struct SortDeckView: View {
         case .publish:
             await photoService.markSorted(photoId: photo.id)
             do {
-                let tagsSaved = try await feed.createPost(photo: photo, caption: caption, userId: uid, tags: tags).tagsSaved
+                let created = try await feed.createPost(photo: photo, caption: caption, userId: uid, tags: tags)
+                let tagsSaved = created.tagsSaved
+                session.landed(photoId: photo.id, post: created.post)
                 // The timer belongs to THIS notice: a second post inside the three seconds
                 // starts its own, and the first one's expiry no longer hides it (audit A8).
                 let notice = UUID()
@@ -492,6 +696,14 @@ struct SortDeckView: View {
                 // the one action in the deck that makes a photo public; it has to speak up.
                 Haptics.error()
                 publishError = "Couldn't post that one. It's in your Darkroom, post it from there."
+                session.failed(photoId: photo.id)
+                // The session sheet never shows a frame that did not post; with nothing left to
+                // offer, it goes (not a decline), and its dismissal closes the deck. A sheet
+                // still deferred behind the compose sheet is checked in that sheet's onDismiss.
+                if let offer = sessionOffer, session.offered(offer).isEmpty {
+                    session.emptiedByFailures = true
+                    sessionOffer = nil
+                }
             }
         case .trash:
             // No `feed.dropPost` needed here: `cards` only ever holds unsorted photos
@@ -516,6 +728,13 @@ struct SortDeckView: View {
 
     private func load() async {
         guard let uid = auth.currentUser?.id else { loaded = true; return }
+        // The session sheet needs this week's bounds and whether a frame is up. A cold launch
+        // straight into the deck has not visited the Feed that reads them, and one read before
+        // the week turned would ask about the wrong week, so it is read beside the cards when
+        // unknown or past its close, the same condition `loadSpotlightMenuInputs` uses.
+        if currentSpotlightEntry == nil {
+            entryRead = Task { await feed.refreshOwnSpotlightEntry() }
+        }
         // `?? []` preserves this view's original behavior: a fresh deck has no earlier list to
         // keep, so a failure here still just shows the (now correctly typed) empty case.
         cards = await photoService.fetchUnsorted(userId: uid) ?? []
@@ -534,13 +753,13 @@ struct SortDeckView: View {
         // rendition has not landed yet (1 of 10 unsorted in production today).
         let head = Array(cards.prefix(5))
         let headURLs = await photoService.signedURLs(for: head.map(\.viewPath))
-        for photo in head { urls[photo.id] = headURLs[photo.viewPath] }
+        for photo in head { session.urls[photo.id] = headURLs[photo.viewPath] }
         loaded = true
 
         // The rest can arrive after the deck is interactive.
         let tail = Array(cards.dropFirst(5))
         guard !tail.isEmpty else { return }
         let tailURLs = await photoService.signedURLs(for: tail.map(\.viewPath))
-        for photo in tail { urls[photo.id] = tailURLs[photo.viewPath] }
+        for photo in tail { session.urls[photo.id] = tailURLs[photo.viewPath] }
     }
 }

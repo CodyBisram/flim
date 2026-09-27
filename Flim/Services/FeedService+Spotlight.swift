@@ -269,6 +269,55 @@ extension FeedService {
         _ = await (tags, photographer)
     }
 
+    /// Reads and signs the thumbnail of this week's own entry (see `ownSpotlightThumbURL`), for
+    /// the session sheet's "Up now" row. Only the caller's own photo row, the same query shape
+    /// as `ensureSpotlightPhotographer`. Run when the deck opens and whenever the entry's photo
+    /// changes; nothing up clears it without a request. A failed read keeps the thumbnail only
+    /// when it is the same photo's.
+    func refreshOwnSpotlightThumb(userId: UUID) async {
+        spotlightThumbGeneration += 1
+        let generation = spotlightThumbGeneration
+        guard let photoId = ownSpotlightEntry?.photoId else {
+            clearOwnSpotlightThumb()
+            return
+        }
+        // Another photo's thumbnail never stands in for this one, not even while it is read.
+        if ownSpotlightThumbPhotoId != photoId { clearOwnSpotlightThumb() }
+        let epoch = AccountEpoch.current
+        struct Row: Decodable { let thumb_path: String? }
+        let rows: [Row]? = try? await supabase.from("photos").select("thumb_path")
+            .eq("id", value: photoId.uuidString)
+            .eq("user_id", value: userId.uuidString)
+            .limit(1)
+            .execute().value
+        guard AccountEpoch.isCurrent(epoch), generation == spotlightThumbGeneration else { return }
+        guard let rows else { return }
+        guard let path = rows.first?.thumb_path else {
+            clearOwnSpotlightThumb()
+            return
+        }
+        let urls = await signedURLs(for: [path])
+        guard AccountEpoch.isCurrent(epoch), generation == spotlightThumbGeneration else { return }
+        ownSpotlightThumbPhotoId = photoId
+        ownSpotlightThumbPath = path
+        ownSpotlightThumbURL = urls[path]
+    }
+
+    /// The thumbnail of the frame up now, or nothing while the one held belongs to another
+    /// photo (the entry moved and the read has not landed).
+    var ownSpotlightThumb: (url: URL?, path: String?) {
+        guard let photoId = ownSpotlightEntry?.photoId, ownSpotlightThumbPhotoId == photoId else {
+            return (nil, nil)
+        }
+        return (ownSpotlightThumbURL, ownSpotlightThumbPath)
+    }
+
+    private func clearOwnSpotlightThumb() {
+        ownSpotlightThumbPhotoId = nil
+        ownSpotlightThumbPath = nil
+        ownSpotlightThumbURL = nil
+    }
+
     /// The Spotlight item for one post's own-post menu.
     func spotlightMenuItem(for post: Post, viewerId: UUID?) -> SpotlightMenuItem {
         SpotlightMenuItem.resolve(
@@ -300,9 +349,38 @@ extension FeedService {
     /// Returns nil once the server has it up, else the line that says why not.
     @discardableResult
     func putUpForSpotlight(_ post: Post) async -> String? {
+        let outcome = await performPutUp(post) { outcome in
+            switch outcome {
+            case .up(let notice): UndoCenter.shared.showConfirmation(notice)
+            case .refused(let message, _): UndoCenter.shared.showNotice(message)
+            case .frameUpChanged: break
+            }
+        }
+        switch outcome {
+        case .up: return nil
+        case .refused(let message, _): return message
+        // Never produced here: only the session sheet's host re-checks the frame up.
+        case .frameUpChanged: return SpotlightRefusal.putUpNetwork
+        }
+    }
+
+    /// The same put-up, for a caller that says the answer in its own place (the sort deck's
+    /// session sheet): every side effect is the same (the optimistic entry, the haptics, the
+    /// usage log, the reads after a refusal), but nothing reaches the capsule, which would
+    /// otherwise land behind the sheet or after the deck closed.
+    func putUpForSpotlightOutcome(_ post: Post) async -> SpotlightPutUpOutcome {
+        await performPutUp(post) { _ in }
+    }
+
+    /// The one put-up. `announce` runs exactly where the capsule used to be told, before the
+    /// reads that follow a refusal, so the menu's notice is not held back by a round trip. It
+    /// is not called for a put-up that never started, nor for one whose account has gone.
+    private func performPutUp(_ post: Post,
+                              announce: (SpotlightPutUpOutcome) -> Void) async -> SpotlightPutUpOutcome {
+        let network = SpotlightPutUpOutcome.refused(message: SpotlightRefusal.putUpNetwork, refusal: nil)
         guard !spotlightWriteInFlight, let previous = ownSpotlightEntry else {
             Haptics.error()
-            return SpotlightRefusal.putUpNetwork
+            return network
         }
         let epoch = beginSpotlightWrite()
         var optimistic = previous
@@ -315,7 +393,7 @@ extension FeedService {
         do {
             let result: SpotlightPutUpResult = try await supabase
                 .rpc("put_up_for_spotlight", params: Params(p_post_id: post.id)).single().execute().value
-            guard AccountEpoch.isCurrent(epoch) else { return SpotlightRefusal.putUpNetwork }
+            guard AccountEpoch.isCurrent(epoch) else { return network }
             spotlightWriteInFlight = false
             Usage.log(.spotlightPutUp)
             ownSpotlightEntry = OwnSpotlightEntry(
@@ -329,23 +407,26 @@ extension FeedService {
             // The server says what it swapped out; the menu's entry only fills in the day.
             let replacedAt = result.replacedPostCreatedAt
                 ?? (result.replacedPostId == previous.postId ? previous.postCreatedAt : nil)
-            UndoCenter.shared.showConfirmation(SpotlightPutUpNotice.text(
+            let outcome = SpotlightPutUpOutcome.up(notice: SpotlightPutUpNotice.text(
                 postId: post.id, replacedPostId: result.replacedPostId, replacedAt: replacedAt))
-            return nil
+            announce(outcome)
+            return outcome
         } catch {
-            guard AccountEpoch.isCurrent(epoch) else { return SpotlightRefusal.putUpNetwork }
+            guard AccountEpoch.isCurrent(epoch) else { return network }
             spotlightWriteInFlight = false
             ownSpotlightEntry = previous
             Haptics.error()
-            let message = SpotlightRefusal.message(refusal: Self.spotlightRefusal(error), action: .putUp)
+            let refusal = Self.spotlightRefusal(error)
+            let message = SpotlightRefusal.message(refusal: refusal, action: .putUp)
                 ?? SpotlightRefusal.putUpNetwork
-            UndoCenter.shared.showNotice(message)
+            let outcome = SpotlightPutUpOutcome.refused(message: message, refusal: refusal)
+            announce(outcome)
             // The server may know something the menu does not (the week closed, a tag was
             // added from another phone): read it again. A tagged refusal reads the post's tags
             // too, so the item turns disabled instead of offering the same refusal again.
-            if Self.spotlightRefusal(error) == "tagged" { await loadTags(for: post.id) }
+            if refusal == "tagged" { await loadTags(for: post.id) }
             await refreshOwnSpotlightEntry()
-            return message
+            return outcome
         }
     }
 

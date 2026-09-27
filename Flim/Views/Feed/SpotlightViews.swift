@@ -486,12 +486,12 @@ struct SpotlightFirstTimeSheet: View {
                     .foregroundStyle(FlimTheme.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            Text("Only the team at \(AppInfo.appName) sees what you put up. When the week closes, the team chooses a few, and those are shown to everyone on \(AppInfo.appName), with their caption. Anyone can react to a chosen frame; comments stay with the people who follow you.")
+            Text(SpotlightFirstTimeCopy.explanation)
                 .flimType(.body)
                 .foregroundStyle(FlimTheme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 16)
-            Text("One frame a week. You can take it down until this week closes.")
+            Text(SpotlightFirstTimeCopy.oneAWeek)
                 .flimType(.body)
                 .foregroundStyle(FlimTheme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -519,6 +519,430 @@ struct SpotlightFirstTimeSheet: View {
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
         .flimSheetSurface()
+    }
+}
+
+/// The sort deck's Spotlight sheet: presented once, over the emptied deck, when a sort ends by
+/// itself and posted frames that can go up. The frames sit side by side; the person chooses
+/// one and puts it up (or swaps it in), or says Not now. Nothing closes on its own: Done, Not
+/// now or a pull down end it, and the deck closes behind it (see `SortDeckView.finishSession`).
+///
+/// Selection is light and dimming only. Nothing is ever drawn on a photograph: no ring, no
+/// check, no badge. The one overlay is the posting spinner on a frame whose post has not
+/// landed yet, which is not a choice.
+struct SpotlightSessionSheet: View {
+    let offer: SpotlightSessionOffer
+    /// The deck's live session, read here in the sheet's own body (never handed in as values
+    /// from the deck's closure) so posts landing and failing after presentation reach it. See
+    /// `SortDeckSession`.
+    let session: SortDeckSession
+    /// Sends the put-up for this post and says how it ended. Never announces in the capsule.
+    let onPutUp: (Post) async -> SpotlightPutUpOutcome
+
+    enum Phase: Equatable {
+        case choosing
+        case sending
+        case done(String)
+        /// Nothing here can go up any more (the week closed, the account is covered): every
+        /// frame dims and only Done is left.
+        case refused(String)
+    }
+
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var typeSize
+    /// Read here for the Up now row's thumbnail, which can land after the sheet opens.
+    @Environment(FeedService.self) private var feed
+
+    @State private var phase: Phase = .choosing
+    /// Never preselected, except the one frame of a one-frame sheet.
+    @State private var selection: UUID?
+    /// The last refusal that left the sheet choosing (a tag, the connection), shown above the
+    /// button until the next choice.
+    @State private var errorLine: String?
+    /// Frames the server refused by name; they dim and cannot be chosen again. Tagged ones say
+    /// so under the frame.
+    @State private var refusedTagged: Set<UUID> = []
+    @State private var refusedOther: Set<UUID> = []
+    @State private var detent: PresentationDetent
+    @State private var fit = ScrollFit()
+    @State private var width: CGFloat = 0
+
+    /// What the scroll view needs against what it shows: the fitted detent is the first, and
+    /// the footer's hairline appears when the first outgrows the second.
+    private struct ScrollFit: Equatable {
+        var needed: CGFloat = 0
+        var visible: CGFloat = 0
+    }
+
+    init(offer: SpotlightSessionOffer, session: SortDeckSession, accessibilitySize: Bool,
+         onPutUp: @escaping (Post) async -> SpotlightPutUpOutcome) {
+        self.offer = offer
+        self.session = session
+        self.onPutUp = onPutUp
+        // The opening state only; the body reads the session live from here on.
+        let frames = session.offered(offer)
+        _selection = State(initialValue: frames.count == 1 ? frames.first?.id : nil)
+        let opensLarge = frames.count >= 7 || offer.firstTime || accessibilitySize
+        _detent = State(initialValue: opensLarge ? .large : .height(Self.estimatedHeight(count: frames.count)))
+    }
+
+    /// A first guess at the fitted height, so the sheet rises close to its size; the measured
+    /// height replaces it on the first layout.
+    private static func estimatedHeight(count: Int) -> CGFloat {
+        let chrome: CGFloat = 360
+        if count <= 1 { return chrome + 200 / FlimTheme.frameAspect }
+        let rows = CGFloat((count + 2) / 3)
+        return chrome + rows * 150
+    }
+
+    private var fittedDetent: PresentationDetent {
+        .height(fit.needed > 0 ? fit.needed : Self.estimatedHeight(count: frames.count))
+    }
+
+    /// The offered frames as they stand now: posts filled in as they land, failures gone.
+    private var frames: [SpotlightSessionFrame] { session.offered(offer) }
+    private var failedCount: Int { session.failedCount(offer) }
+    private var kind: SpotlightSessionOffer.Kind { session.kind(offer) }
+    private var isSwap: Bool { if case .swap = kind { return true } else { return false } }
+    private var count: Int { frames.count }
+    private var isSending: Bool { phase == .sending }
+
+    /// The chosen frame, while it is still on the sheet and still choosable.
+    private var chosen: SpotlightSessionFrame? {
+        guard let selection, !isRefused(selection) else { return nil }
+        return frames.first { $0.id == selection }
+    }
+
+    private func isRefused(_ id: UUID) -> Bool { refusedTagged.contains(id) || refusedOther.contains(id) }
+
+    var body: some View {
+        ScrollView {
+            content
+                .padding(.horizontal, 22)
+                .padding(.top, 26)
+                .padding(.bottom, 16)
+                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
+        }
+        .scrollBounceBehavior(.basedOnSize)
+        .onScrollGeometryChange(for: ScrollFit.self) { geometry in
+            ScrollFit(needed: geometry.contentSize.height + geometry.contentInsets.top + geometry.contentInsets.bottom,
+                      visible: geometry.containerSize.height)
+        } action: { _, new in
+            fit = new
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) { footer }
+        // The fitted height moves when a status line comes or goes; a sheet resting on it
+        // follows, one resting at .large stays.
+        .onChange(of: fit.needed) { _, _ in
+            if detent != .large { detent = fittedDetent }
+        }
+        .presentationDetents([fittedDetent, .large], selection: $detent)
+        .presentationDragIndicator(.visible)
+        .interactiveDismissDisabled(isSending)
+        .flimSheetSurface()
+    }
+
+    // MARK: Content
+
+    private var content: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 11) {
+                SpotlightGlyphBadge()
+                Text(SpotlightSessionCopy.title(kind: kind, count: count))
+                    .flimFont(23, weight: .light, relativeTo: .title2)
+                    .foregroundStyle(FlimTheme.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(.isHeader)
+
+            if offer.firstTime {
+                paragraph(SpotlightFirstTimeCopy.explanation).padding(.top, 16)
+                paragraph(SpotlightFirstTimeCopy.oneAWeek).padding(.top, 10)
+            } else {
+                paragraph(SpotlightSessionCopy.subtitle(count: count)).padding(.top, 12)
+            }
+
+            if case .swap(let day) = kind, !isDone {
+                upNowRow(day: day).padding(.top, 18)
+            }
+
+            grid.padding(.top, 18)
+
+            if failedCount > 0 {
+                quietLine(SpotlightSessionCopy.failed(count: failedCount)).padding(.top, 14)
+            }
+            if offer.shotBeforeThisWeek > 0, let previous = offer.previousWeekKey {
+                quietLine(SpotlightSessionCopy.shotBefore(previousWeekKey: previous))
+                    .padding(.top, failedCount > 0 ? 6 : 14)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var isDone: Bool { if case .done = phase { return true } else { return false } }
+
+    private func paragraph(_ text: String) -> some View {
+        Text(text)
+            .flimType(.body)
+            .foregroundStyle(FlimTheme.textSecondary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func quietLine(_ text: String) -> some View {
+        Text(text)
+            .flimType(.meta)
+            .foregroundStyle(FlimTheme.textTertiary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    /// The frame up now, always from an earlier sort: a row, never a tile, because it is not
+    /// a choice here.
+    private func upNowRow(day: String) -> some View {
+        HStack(spacing: 12) {
+            Color.clear
+                .frame(width: 36, height: 48)
+                .overlay {
+                    if let upThumbURL = feed.ownSpotlightThumb.url {
+                        CachedImage(url: upThumbURL, maxPixel: 112, cacheKey: feed.ownSpotlightThumb.path) {
+                            $0.resizable().scaledToFill()
+                        } placeholder: {
+                            Color.white.opacity(0.06)
+                        }
+                    } else {
+                        Color.white.opacity(0.06)
+                    }
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(SpotlightSessionCopy.upNow(fromDay: day))
+                    .flimType(.label)
+                    .foregroundStyle(FlimTheme.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(SpotlightSessionCopy.upNowSub(count: count))
+                    .flimType(.meta)
+                    .foregroundStyle(FlimTheme.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    // MARK: Frames
+
+    @ViewBuilder private var grid: some View {
+        if count == 1, let only = frames.first {
+            cell(only)
+                .frame(width: 200)
+                .frame(maxWidth: .infinity)
+        } else {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: count >= 7 ? 4 : 3),
+                      alignment: .leading, spacing: 8) {
+                ForEach(frames) { cell($0) }
+            }
+        }
+    }
+
+    private func isDimmed(_ frame: SpotlightSessionFrame) -> Bool {
+        if case .refused = phase { return true }
+        if isRefused(frame.id) { return true }
+        if let lit = chosen?.id ?? (isDone ? selection : nil) { return lit != frame.id }
+        return false
+    }
+
+    private func isSelectable(_ frame: SpotlightSessionFrame) -> Bool {
+        phase == .choosing && frame.post != nil && !isRefused(frame.id)
+    }
+
+    private func cell(_ frame: SpotlightSessionFrame) -> some View {
+        let isChosen = chosen?.id == frame.id || (isDone && selection == frame.id)
+        let dimmed = isDimmed(frame)
+        return VStack(spacing: 5) {
+            Button { toggle(frame) } label: {
+                photo(frame)
+                    .overlay { SpotlightOpeningIndicator(isOpening: frame.post == nil) }
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .contentShape(RoundedRectangle(cornerRadius: 12))
+            }
+            .buttonStyle(.plain)
+            .disabled(!isSelectable(frame))
+            .opacity(dimmed ? 0.6 : 1)
+            .scaleEffect(dimmed && !reduceMotion ? 0.96 : 1)
+            .shadow(color: .black.opacity(isChosen ? 0.5 : 0), radius: 12, y: 6)
+            .animation(.easeOut(duration: 0.15), value: dimmed)
+            .animation(.easeOut(duration: 0.15), value: isChosen)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(accessibilityLabel(frame))
+            .accessibilityAddTraits(isChosen ? [.isButton, .isSelected] : .isButton)
+            .contextMenu {
+                Button {
+                    toggle(frame, choosing: true)
+                } label: {
+                    Text(SpotlightSessionCopy.chooseThisOne)
+                }
+                .disabled(!isSelectable(frame))
+            } preview: {
+                photo(frame, maxPixel: 1400)
+                    .frame(width: max(width, 200))
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+            }
+            if refusedTagged.contains(frame.id) {
+                Text(SpotlightSessionCopy.tagged)
+                    .flimType(.label)
+                    .foregroundStyle(FlimTheme.textTertiary)
+                    .lineLimit(1)
+            }
+        }
+    }
+
+    /// The frame at 3:4, whole, fixed chrome that does not scale with type.
+    private func photo(_ frame: SpotlightSessionFrame, maxPixel: CGFloat = 480) -> some View {
+        Color.clear
+            .aspectRatio(FlimTheme.frameAspect, contentMode: .fit)
+            .overlay {
+                CachedImage(url: session.urls[frame.photo.id], maxPixel: maxPixel, cacheKey: frame.photo.viewPath) {
+                    $0.resizable().scaledToFill()
+                } placeholder: {
+                    Color.white.opacity(0.06)
+                }
+            }
+    }
+
+    private func accessibilityLabel(_ frame: SpotlightSessionFrame) -> String {
+        let label = SpotlightSessionCopy.frameLabel(takenAt: frame.photo.takenAt)
+        if frame.post == nil { return "\(label), still posting" }
+        if refusedTagged.contains(frame.id) { return "\(label), \(SpotlightSessionCopy.tagged)" }
+        return label
+    }
+
+    /// A tap chooses; a tap on the chosen frame clears it. The context menu only chooses.
+    private func toggle(_ frame: SpotlightSessionFrame, choosing: Bool = false) {
+        guard isSelectable(frame) else { return }
+        Haptics.select()
+        errorLine = nil
+        selection = (selection == frame.id && !choosing) ? nil : frame.id
+    }
+
+    // MARK: Footer
+
+    /// Pinned under the scrolling content, with a hairline once the content runs under it (and
+    /// always at the sizes where it is sure to).
+    private var footer: some View {
+        VStack(spacing: 0) {
+            if fit.needed > fit.visible + 1 || typeSize.isAccessibilitySize || offer.firstTime {
+                Rectangle()
+                    .fill(Color.white.opacity(0.10))
+                    .frame(height: 1)
+            }
+            VStack(spacing: 0) {
+                statusLine
+                primaryButton
+                    .padding(.top, 10)
+                if phase == .choosing || isSending {
+                    Button {
+                        dismiss()
+                    } label: {
+                        Text(SpotlightSessionCopy.notNow)
+                            .flimFont(16, relativeTo: .body)
+                            .foregroundStyle(FlimTheme.textSecondary)
+                            .frame(maxWidth: .infinity)
+                            .frame(minHeight: 52)
+                    }
+                    .disabled(isSending)
+                    .opacity(isSending ? 0.35 : 1)
+                    .padding(.top, 4)
+                }
+            }
+            .padding(.horizontal, 22)
+            .padding(.top, 6)
+            .padding(.bottom, 10)
+        }
+        .background(FlimTheme.sheetSurface)
+    }
+
+    @ViewBuilder private var statusLine: some View {
+        switch phase {
+        case .done(let notice):
+            status(notice, systemImage: "checkmark.circle.fill", color: FlimTheme.success)
+        case .refused(let message):
+            status(message, systemImage: "exclamationmark.triangle.fill", color: FlimTheme.error)
+        case .choosing, .sending:
+            if let errorLine {
+                status(errorLine, systemImage: "exclamationmark.triangle.fill", color: FlimTheme.error)
+            }
+        }
+    }
+
+    private func status(_ text: String, systemImage: String, color: Color) -> some View {
+        Label(text, systemImage: systemImage)
+            .flimType(.label)
+            .foregroundStyle(color)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, 6)
+            .transition(.opacity)
+    }
+
+    private var sendTitle: String {
+        isSwap ? SpotlightSessionCopy.swapIn : SpotlightSessionCopy.putUp
+    }
+
+    @ViewBuilder private var primaryButton: some View {
+        switch phase {
+        case .choosing:
+            if let chosen {
+                PrimaryButton(title: sendTitle, disabled: chosen.post == nil) { await send(chosen) }
+            } else {
+                PrimaryButton(title: SpotlightSessionCopy.chooseFrame, disabled: true) {}
+            }
+        case .sending:
+            PrimaryButton(title: sendTitle, isLoading: true) {}
+        case .done, .refused:
+            PrimaryButton(title: SpotlightSessionCopy.done) { dismiss() }
+        }
+    }
+
+    /// One put-up at a time: the phase is the in-flight guard, and the frames, Not now and a
+    /// pull down all hold still until the server answers.
+    private func send(_ frame: SpotlightSessionFrame) async {
+        guard phase == .choosing, let post = frame.post else { return }
+        Haptics.tap()
+        errorLine = nil
+        withAnimation(.easeOut(duration: 0.15)) { phase = .sending }
+        let outcome = await onPutUp(post)
+        withAnimation(.easeOut(duration: 0.15)) {
+            switch outcome {
+            case .up(let notice):
+                selection = frame.id
+                phase = .done(notice)
+            case .frameUpChanged:
+                // The title, the Up now row and the button now say what a tap would do; the
+                // choice stands for that fresh tap.
+                phase = .choosing
+            case .refused(let message, let refusal):
+                switch refusal {
+                case "tagged":
+                    refusedTagged.insert(frame.id)
+                    selection = nil
+                    errorLine = message
+                    phase = .choosing
+                case "not_this_week", "not_photographer", "hidden", "not_found":
+                    // This frame, not the others: it dims and the rest stay choosable.
+                    refusedOther.insert(frame.id)
+                    selection = nil
+                    errorLine = message
+                    phase = .choosing
+                case "week_closed", "covered", "not_signed_in":
+                    phase = .refused(message)
+                default:
+                    // The connection: the choice stands, ready to try again.
+                    errorLine = message
+                    phase = .choosing
+                }
+            }
+        }
     }
 }
 

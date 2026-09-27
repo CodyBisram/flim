@@ -1,5 +1,6 @@
 import Testing
 import Foundation
+import Observation
 @testable import Flim
 
 /// Spotlight's pure rules: where the strip sits, which menu item a post gets, the push rider,
@@ -860,5 +861,370 @@ struct SpotlightTests {
         #expect(out[untouched]?.id == kept.id)
         #expect(out[notAsked.photoId] == nil)
         #expect(out.count == 2)
+    }
+
+    // MARK: - The sort session's sheet
+
+    private func photo(owner: UUID, takenAt: Date, id: UUID = UUID()) -> Photo {
+        Photo(id: id, userId: owner, rollId: nil, storagePath: "p/\(id).jpg", thumbPath: nil, feedPath: nil,
+              takenAt: takenAt, developsAt: takenAt, isDeveloped: true, caption: nil, isSorted: true)
+    }
+
+    /// A frame from this sort, shot at `takenAt`; posted a little after unless `pending`.
+    private func sessionFrame(owner: UUID? = nil, takenAt: Date? = nil, tagged: Bool = false,
+                              pending: Bool = false, failed: Bool = false) -> SpotlightSessionFrame {
+        let shot = takenAt ?? date(9, 23, 12)
+        let pic = photo(owner: owner ?? me, takenAt: shot)
+        let posted = pending ? nil : post(owner: me, createdAt: date(9, 26, 11), takenAt: shot, photoId: pic.id)
+        return SpotlightSessionFrame(photo: pic, post: posted, isTagged: tagged, failed: failed)
+    }
+
+    /// Saturday noon, inside the fixture week.
+    private var sessionNow: Date { date(9, 26, 12) }
+
+    private func offer(_ frames: [SpotlightSessionFrame], entry e: OwnSpotlightEntry? = nil,
+                       ledger: SpotlightSessionLedger = SpotlightSessionLedger(),
+                       useEntry: Bool = true) -> SpotlightSessionOffer? {
+        SpotlightSessionOffer.make(frames: frames, entry: useEntry ? (e ?? entry()) : nil, viewerId: me,
+                                   ledger: ledger, now: sessionNow, calendar: newYork)
+    }
+
+    @Test("a sort that posted nothing offers nothing")
+    func sessionNoPosts() {
+        #expect(offer([]) == nil)
+    }
+
+    @Test("nothing offered when every frame is tagged, from last week, or someone else's")
+    func sessionNothingEligible() {
+        #expect(offer([sessionFrame(tagged: true), sessionFrame(tagged: true)]) == nil)
+        #expect(offer([sessionFrame(takenAt: date(9, 19, 18)), sessionFrame(takenAt: date(9, 20, 9))]) == nil)
+        #expect(offer([sessionFrame(owner: UUID()), sessionFrame(owner: UUID())]) == nil)
+        #expect(offer([sessionFrame(tagged: true), sessionFrame(takenAt: date(9, 19, 18)),
+                       sessionFrame(owner: UUID())]) == nil)
+    }
+
+    @Test("one frame that can go up is offered as a put-up")
+    func sessionOneFrame() throws {
+        let only = sessionFrame()
+        let result = try #require(offer([only]))
+        #expect(result.kind == .putUp)
+        #expect(result.photoIds == [only.id])
+        #expect(result.weekKey == "2026-09-21")
+        #expect(result.shotBeforeThisWeek == 0)
+    }
+
+    @Test("twelve frames are all offered, in swipe order")
+    func sessionTwelveFrames() throws {
+        let frames = (0..<12).map { sessionFrame(takenAt: date(9, 22 + $0 % 4, 9, $0)) }
+        let result = try #require(offer(frames))
+        #expect(result.photoIds == frames.map(\.id))
+    }
+
+    @Test("with a frame up, the offer is a swap that names its day")
+    func sessionSwap() throws {
+        let up = entry(postId: UUID(), postCreatedAt: date(9, 22, 14))
+        let result = try #require(offer([sessionFrame(), sessionFrame()], entry: up))
+        #expect(result.kind == .swap(fromDay: "Tuesday"))
+        #expect(result.isSwap)
+        // A frame up with no posting time offers nothing rather than a silent swap.
+        #expect(offer([sessionFrame()], entry: entry(postId: UUID(), postCreatedAt: nil)) == nil)
+    }
+
+    @Test("an unknown week or a covered account offers nothing")
+    func sessionNoEntryOrCovered() {
+        #expect(offer([sessionFrame()], useEntry: false) == nil)
+        #expect(offer([sessionFrame()], entry: entry(canPutUp: false)) == nil)
+    }
+
+    @Test("with nothing up, two declines this week keep it quiet")
+    func sessionDeclines() {
+        var ledger = SpotlightSessionLedger()
+        ledger.recordClosed(weekKey: "2026-09-21", shownPostIds: [], declined: true)
+        #expect(offer([sessionFrame()], ledger: ledger) != nil)
+        ledger.recordClosed(weekKey: "2026-09-21", shownPostIds: [], declined: true)
+        #expect(ledger.declines == 2)
+        #expect(offer([sessionFrame()], ledger: ledger) == nil)
+        // A put-up is not a decline, nor a sheet emptied by failed posts.
+        var up = SpotlightSessionLedger()
+        up.recordClosed(weekKey: "2026-09-21", shownPostIds: [], declined: false)
+        up.recordClosed(weekKey: "2026-09-21", shownPostIds: [], declined: false)
+        #expect(up.declines == 0)
+    }
+
+    @Test("after a put-up, one swap ask this week, then quiet")
+    func sessionOneSwapAsk() {
+        var ledger = SpotlightSessionLedger()
+        ledger.recordClosed(weekKey: "2026-09-21", shownPostIds: [], declined: false)
+        let up = entry(postId: UUID(), postCreatedAt: date(9, 23, 14))
+        let first = offer([sessionFrame()], entry: up, ledger: ledger)
+        #expect(first?.isSwap == true)
+        ledger.recordSwapShown(weekKey: "2026-09-21")
+        #expect(offer([sessionFrame()], entry: up, ledger: ledger) == nil)
+        // The swap ask does not quiet a week with nothing up.
+        #expect(offer([sessionFrame()], ledger: ledger) != nil)
+    }
+
+    @Test("posts already offered this week are skipped")
+    func sessionOfferedSkipped() throws {
+        let seen = sessionFrame()
+        let fresh = sessionFrame()
+        var ledger = SpotlightSessionLedger()
+        ledger.recordClosed(weekKey: "2026-09-21", shownPostIds: [try #require(seen.post?.id)], declined: true)
+        #expect(offer([seen, fresh], ledger: ledger)?.photoIds == [fresh.id])
+        #expect(offer([seen], ledger: ledger) == nil)
+    }
+
+    @Test("a new week starts the ledger over")
+    func sessionLedgerResets() {
+        var ledger = SpotlightSessionLedger()
+        ledger.recordClosed(weekKey: "2026-09-14", shownPostIds: [UUID()], declined: true)
+        ledger.recordClosed(weekKey: "2026-09-14", shownPostIds: [], declined: true)
+        ledger.recordSwapShown(weekKey: "2026-09-14")
+        #expect(offer([sessionFrame()], ledger: ledger) != nil)
+        #expect(offer([sessionFrame()], entry: entry(postId: UUID(), postCreatedAt: date(9, 22, 14)),
+                      ledger: ledger) != nil)
+        let next = ledger.forWeek("2026-09-21")
+        #expect(next.declines == 0 && !next.swapOffered && next.offeredPostIds.isEmpty)
+        #expect(ledger.forWeek("2026-09-14") == ledger)
+    }
+
+    @Test("a frame whose post failed is never offered")
+    func sessionFailedDropped() {
+        let failed = sessionFrame(pending: true, failed: true)
+        let ok = sessionFrame()
+        #expect(offer([failed, ok])?.photoIds == [ok.id])
+        #expect(offer([failed]) == nil)
+    }
+
+    @Test("a frame still posting is offered from the photo's own facts")
+    func sessionPendingFromPhoto() throws {
+        let pending = sessionFrame(pending: true)
+        #expect(try #require(offer([pending])).photoIds == [pending.id])
+        #expect(offer([sessionFrame(tagged: true, pending: true)]) == nil)
+        #expect(offer([sessionFrame(takenAt: date(9, 19, 18), pending: true)]) == nil)
+        #expect(offer([sessionFrame(owner: UUID(), pending: true)]) == nil)
+        let up = entry(postId: UUID(), postCreatedAt: date(9, 22, 14))
+        #expect(offer([sessionFrame(pending: true)], entry: up)?.kind == .swap(fromDay: "Tuesday"))
+        // Past the week's close the entry is stale: nothing, posted or pending.
+        #expect(SpotlightSessionOffer.make(frames: [pending], entry: entry(), viewerId: me,
+                                           ledger: SpotlightSessionLedger(), now: date(9, 28, 5),
+                                           calendar: newYork) == nil)
+    }
+
+    @Test("frames left out only for being shot before this week are counted for the line")
+    func sessionShotBeforeCount() throws {
+        let frames = [
+            sessionFrame(),
+            sessionFrame(takenAt: date(9, 19, 18)),
+            sessionFrame(takenAt: date(9, 20, 9), pending: true),
+            // Tagged, someone else's, or failed: kept out for another reason, not counted.
+            sessionFrame(takenAt: date(9, 19, 18), tagged: true),
+            sessionFrame(owner: UUID(), takenAt: date(9, 19, 18)),
+            sessionFrame(takenAt: date(9, 19, 18), failed: true),
+            // Stamped past the close (a clock ahead) is not "before this week".
+            sessionFrame(takenAt: date(9, 28, 5)),
+        ]
+        let result = try #require(offer(frames))
+        #expect(result.shotBeforeThisWeek == 2)
+        #expect(result.previousWeekKey == "2026-09-14")
+        #expect(SpotlightSessionCopy.shotBefore(previousWeekKey: "2026-09-14", calendar: newYork)
+                == "Frames shot in the week of September 14 can't go up now.")
+    }
+
+    @Test("the previous week's key steps back seven days across a month and a year")
+    func previousWeekKeys() {
+        #expect(SpotlightWeekLabel.previousWeekKey("2026-09-21") == "2026-09-14")
+        #expect(SpotlightWeekLabel.previousWeekKey("2026-10-05") == "2026-09-28")
+        #expect(SpotlightWeekLabel.previousWeekKey("2027-01-04") == "2026-12-28")
+        #expect(SpotlightWeekLabel.previousWeekKey("soon") == nil)
+    }
+
+    @Test("the ledger is stored per account")
+    func sessionLedgerStore() {
+        let suite = "SpotlightTests.ledger.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suite) else {
+            Issue.record("no defaults suite")
+            return
+        }
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let previous = SpotlightSessionLedger.store
+        SpotlightSessionLedger.store = defaults
+        defer { SpotlightSessionLedger.store = previous }
+        let a = UUID(), b = UUID(), postId = UUID()
+        var ledger = SpotlightSessionLedger.load(userId: a)
+        ledger.recordClosed(weekKey: "2026-09-21", shownPostIds: [postId], declined: true)
+        SpotlightSessionLedger.save(ledger, userId: a)
+        #expect(SpotlightSessionLedger.load(userId: a) == ledger)
+        #expect(SpotlightSessionLedger.load(userId: a).offeredPostIds == [postId])
+        #expect(SpotlightSessionLedger.load(userId: b) == SpotlightSessionLedger())
+    }
+
+    @Test("the session sheet's copy: the titles and lines as written, no em or en dashes")
+    func sessionCopy() {
+        #expect(SpotlightSessionCopy.title(kind: .putUp, count: 1) == "Put it up for Spotlight?")
+        #expect(SpotlightSessionCopy.title(kind: .putUp, count: 3) == "Put one up for Spotlight?")
+        #expect(SpotlightSessionCopy.title(kind: .swap(fromDay: "today"), count: 1) == "Swap it in for Spotlight?")
+        #expect(SpotlightSessionCopy.title(kind: .swap(fromDay: "today"), count: 2) == "Swap one in for Spotlight?")
+        #expect(SpotlightSessionCopy.subtitle(count: 1) == "Only the team at \(AppInfo.appName) sees what you put up.")
+        #expect(SpotlightSessionCopy.subtitle(count: 2)
+                == "Choose one from this sort. Only the team at \(AppInfo.appName) sees what you put up.")
+        #expect(SpotlightSessionCopy.upNow(fromDay: "Tuesday") == "Up now: your frame from Tuesday")
+        #expect(SpotlightSessionCopy.upNowSub(count: 1) == "Swapping this one in takes it down.")
+        #expect(SpotlightSessionCopy.upNowSub(count: 4) == "Swapping one in takes it down.")
+        #expect(SpotlightSessionCopy.failed(count: 1)
+                == "One frame didn't post, so it isn't here. It's in your Darkroom.")
+        #expect(SpotlightSessionCopy.failed(count: 2)
+                == "Some frames didn't post, so they aren't here. They're in your Darkroom.")
+        let lines = [
+            SpotlightSessionCopy.title(kind: .putUp, count: 1), SpotlightSessionCopy.title(kind: .putUp, count: 2),
+            SpotlightSessionCopy.title(kind: .swap(fromDay: "x"), count: 1),
+            SpotlightSessionCopy.title(kind: .swap(fromDay: "x"), count: 2),
+            SpotlightSessionCopy.subtitle(count: 1), SpotlightSessionCopy.subtitle(count: 2),
+            SpotlightSessionCopy.chooseFrame, SpotlightSessionCopy.putUp, SpotlightSessionCopy.swapIn,
+            SpotlightSessionCopy.notNow, SpotlightSessionCopy.done, SpotlightSessionCopy.chooseThisOne,
+            SpotlightSessionCopy.tagged, SpotlightSessionCopy.upNow(fromDay: "today"),
+            SpotlightSessionCopy.upNowSub(count: 1), SpotlightSessionCopy.upNowSub(count: 2),
+            SpotlightSessionCopy.failed(count: 1), SpotlightSessionCopy.failed(count: 2),
+            SpotlightSessionCopy.shotBefore(previousWeekKey: "2026-09-14"),
+            SpotlightFirstTimeCopy.explanation, SpotlightFirstTimeCopy.oneAWeek,
+        ]
+        for line in lines {
+            #expect(!line.contains("\u{2014}"), "\(line)")
+            #expect(!line.contains("\u{2013}"), "\(line)")
+        }
+    }
+
+    @Test("a frame's spoken name gives its day and time")
+    func sessionFrameLabel() {
+        let label = SpotlightSessionCopy.frameLabel(takenAt: date(9, 26, 9), now: sessionNow, calendar: newYork)
+        #expect(label.hasPrefix("Photo you shot today at "))
+        #expect(SpotlightSessionCopy.frameLabel(takenAt: date(9, 22, 14), now: sessionNow, calendar: newYork)
+                .hasPrefix("Photo you shot Tuesday at "))
+    }
+
+    // MARK: - The deck's live session
+
+    /// The offer's frames, read under observation tracking: whether a change fires is what
+    /// decides if a presented sheet reading them in its own body ever sees it.
+    private func observes(_ session: SortDeckSession, _ read: @escaping () -> Void,
+                          after change: () -> Void) -> Bool {
+        final class Flag { var fired = false }
+        let flag = Flag()
+        withObservationTracking { read() } onChange: { flag.fired = true }
+        change()
+        return flag.fired
+    }
+
+    @Test("a post landing after the offer reaches the sheet's reading, and makes the frame choosable")
+    func sessionPostLands() throws {
+        let session = SortDeckSession()
+        let pic = photo(owner: me, takenAt: date(9, 23, 12))
+        session.published(pic, isTagged: false)
+        let made = try #require(session.offer(entry: entry(), viewerId: me, ledger: SpotlightSessionLedger(),
+                                              now: sessionNow, calendar: newYork))
+        #expect(session.offered(made).first?.post == nil)
+        let landed = post(owner: me, createdAt: date(9, 26, 11), takenAt: pic.takenAt, photoId: pic.id)
+        #expect(observes(session, { _ = session.offered(made) }, after: {
+            session.landed(photoId: pic.id, post: landed)
+        }))
+        #expect(session.offered(made).first?.post?.id == landed.id)
+    }
+
+    @Test("a post failing after the offer drops out of the sheet's reading and counts for the line")
+    func sessionPostFails() throws {
+        let session = SortDeckSession()
+        let kept = photo(owner: me, takenAt: date(9, 23, 12))
+        let lost = photo(owner: me, takenAt: date(9, 24, 12))
+        session.published(kept, isTagged: false)
+        session.published(lost, isTagged: false)
+        let made = try #require(session.offer(entry: entry(), viewerId: me, ledger: SpotlightSessionLedger(),
+                                              now: sessionNow, calendar: newYork))
+        #expect(session.offered(made).count == 2)
+        #expect(observes(session, { _ = session.offered(made); _ = session.failedCount(made) }, after: {
+            session.failed(photoId: lost.id)
+        }))
+        #expect(session.offered(made).map(\.id) == [kept.id])
+        #expect(session.failedCount(made) == 1)
+        session.failed(photoId: kept.id)
+        #expect(session.offered(made).isEmpty)
+    }
+
+    @Test("the failed line counts only frames that would have been offered")
+    func sessionFailedCountOfferableOnly() throws {
+        let session = SortDeckSession()
+        let fine = photo(owner: me, takenAt: date(9, 23, 12))
+        session.published(fine, isTagged: false)
+        let made = try #require(session.offer(entry: entry(), viewerId: me, ledger: SpotlightSessionLedger(),
+                                              now: sessionNow, calendar: newYork))
+        let tagged = photo(owner: me, takenAt: date(9, 23, 13))
+        let lastWeek = photo(owner: me, takenAt: date(9, 19, 18))
+        let theirs = photo(owner: UUID(), takenAt: date(9, 23, 14))
+        let mine = photo(owner: me, takenAt: date(9, 24, 9))
+        session.published(tagged, isTagged: true)
+        session.published(lastWeek, isTagged: false)
+        session.published(theirs, isTagged: false)
+        session.published(mine, isTagged: false)
+        for pic in [tagged, lastWeek, theirs, mine] { session.failed(photoId: pic.id) }
+        #expect(session.failedCount(made) == 1)
+    }
+
+    @Test("with no untagged frame of your own, there is nothing to wait for")
+    func sessionHasCandidate() {
+        let session = SortDeckSession()
+        #expect(!session.hasCandidate(viewerId: me))
+        let tagged = photo(owner: me, takenAt: date(9, 23, 12))
+        session.published(tagged, isTagged: true)
+        session.published(photo(owner: UUID(), takenAt: date(9, 23, 12)), isTagged: false)
+        #expect(!session.hasCandidate(viewerId: me))
+        let mine = photo(owner: me, takenAt: date(9, 19, 12))
+        session.published(mine, isTagged: false)
+        // Shot last week still counts here: the week is what the wait is for.
+        #expect(session.hasCandidate(viewerId: me))
+        session.failed(photoId: mine.id)
+        #expect(!session.hasCandidate(viewerId: me))
+    }
+
+    @Test("undo takes back only a frame still waiting to post")
+    func sessionUndo() {
+        let session = SortDeckSession()
+        let pic = photo(owner: me, takenAt: date(9, 23, 12))
+        session.published(pic, isTagged: false)
+        session.undone(photoId: pic.id)
+        #expect(session.frames.isEmpty)
+        session.published(pic, isTagged: false)
+        session.landed(photoId: pic.id, post: post(owner: me, createdAt: date(9, 26, 11), photoId: pic.id))
+        session.undone(photoId: pic.id)
+        #expect(session.frames.count == 1)
+    }
+
+    @Test("the kind a tap would have now: put up, swap with the day, or nothing")
+    func sessionKindForEntry() {
+        #expect(SpotlightSessionOffer.kind(for: entry(), now: sessionNow, calendar: newYork) == .putUp)
+        #expect(SpotlightSessionOffer.kind(for: entry(postId: UUID(), postCreatedAt: date(9, 22, 14)),
+                                           now: sessionNow, calendar: newYork) == .swap(fromDay: "Tuesday"))
+        #expect(SpotlightSessionOffer.kind(for: entry(postId: UUID(), postCreatedAt: nil),
+                                           now: sessionNow, calendar: newYork) == nil)
+        #expect(SpotlightSessionOffer.kind(for: entry(canPutUp: false), now: sessionNow, calendar: newYork) == nil)
+        let session = SortDeckSession()
+        session.published(photo(owner: me, takenAt: date(9, 23, 12)), isTagged: false)
+        guard let made = session.offer(entry: entry(), viewerId: me, ledger: SpotlightSessionLedger(),
+                                       now: sessionNow, calendar: newYork) else {
+            Issue.record("no offer")
+            return
+        }
+        #expect(session.kind(made) == .putUp)
+        session.kindOverride = .swap(fromDay: "Tuesday")
+        #expect(session.kind(made) == .swap(fromDay: "Tuesday"))
+    }
+
+    @Test("the wait for the week is bounded, and a quick read is not cut short")
+    func sessionBoundedWait() async {
+        let quick = Task<Void, Never> {}
+        #expect(await SortDeckSession.finished(quick, within: .seconds(5)))
+        let slow = Task<Void, Never> { try? await Task.sleep(for: .seconds(5)) }
+        let start = ContinuousClock.now
+        #expect(await SortDeckSession.finished(slow, within: .milliseconds(50)) == false)
+        #expect(ContinuousClock.now - start < .seconds(2))
+        slow.cancel()
     }
 }

@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 
 // Spotlight (1.6): the week's frames, not a place. People put one frame a week up from their
 // own post's menu, only the team sees what was put up, and the few chosen arrive in everyone's
@@ -310,6 +311,20 @@ enum SpotlightWeekLabel {
     static func rule(_ weekKey: String, calendar: Calendar = .current) -> String {
         sentence(weekKey, calendar: calendar).uppercased()
     }
+
+    /// The key of the week before `weekKey`, seven calendar days back on the string's own
+    /// Gregorian date (never an instant, so no zone or DST can move it). This names a week for
+    /// words only; it is never sent to the server. nil for an unreadable key.
+    static func previousWeekKey(_ weekKey: String) -> String? {
+        guard var parts = components(weekKey) else { return nil }
+        let gregorian = gregorian(in: .gmt)
+        parts.hour = 12
+        guard let date = gregorian.date(from: parts),
+              let previous = gregorian.date(byAdding: .day, value: -7, to: date) else { return nil }
+        let back = gregorian.dateComponents([.year, .month, .day], from: previous)
+        guard let year = back.year, let month = back.month, let day = back.day else { return nil }
+        return String(format: "%04d-%02d-%02d", year, month, day)
+    }
 }
 
 // MARK: - The own-post menu
@@ -517,6 +532,325 @@ enum SpotlightRefusal {
             case .takeOut: return takeOutNetwork
             }
         }
+    }
+}
+
+/// How a put-up ended, for a caller that says it in its own place instead of the capsule's
+/// slot (the sort deck's session sheet). `refusal` is the server's name when it refused by
+/// name, nil for anything else, which reads as the connection.
+enum SpotlightPutUpOutcome: Equatable {
+    case up(notice: String)
+    case refused(message: String, refusal: String?)
+    /// Nothing was sent: the frame up this week changed since the session sheet was offered
+    /// (a put-up or a take-down from another phone), so what the button said is no longer
+    /// what the tap would do. The sheet now shows the current state and waits for a fresh tap.
+    /// Only the session sheet's host returns this; the menu path never does.
+    case frameUpChanged
+}
+
+/// The first-time explanation, shared by the first-time sheet (a long press) and the session
+/// sheet's first showing, so the two never drift apart.
+enum SpotlightFirstTimeCopy {
+    static var explanation: String {
+        "Only the team at \(AppInfo.appName) sees what you put up. When the week closes, the team chooses a few, and those are shown to everyone on \(AppInfo.appName), with their caption. Anyone can react to a chosen frame; comments stay with the people who follow you."
+    }
+    static let oneAWeek = "One frame a week. You can take it down until this week closes."
+}
+
+// MARK: - The sort session's sheet
+
+/// One frame posted in this sort session, in swipe order. `post` is nil until `createPost`
+/// answers (the last swipe's commit is still on the wire when the sheet opens), and `failed`
+/// marks a publish that never landed, which the sheet never shows.
+struct SpotlightSessionFrame: Identifiable, Equatable {
+    let photo: Photo
+    var post: Post?
+    /// Tags were typed into the compose sheet for this frame. A tag that failed to save still
+    /// counts: the person meant the frame to name someone.
+    let isTagged: Bool
+    var failed = false
+
+    var id: UUID { photo.id }
+}
+
+/// What the session sheet offers: the frames from this sort that can go up, in swipe order,
+/// and whether choosing one puts it up or swaps it in for the frame already up. Built once,
+/// when the last card leaves; the frames' posts land into the deck's own list afterwards.
+struct SpotlightSessionOffer: Identifiable, Equatable {
+    enum Kind: Equatable {
+        case putUp
+        /// Another frame is up; `fromDay` names the day it was posted (see
+        /// `SpotlightMenuItem.dayWord`).
+        case swap(fromDay: String)
+    }
+
+    let id = UUID()
+    let kind: Kind
+    let weekKey: String
+    let weekStartsAt: Date
+    let weekClosesAt: Date
+    let viewerId: UUID
+    /// Offered frames by photo id, in swipe order.
+    let photoIds: [UUID]
+    /// Frames from this sort left out only because they were shot before this week began.
+    let shotBeforeThisWeek: Int
+    /// The key of the week before this one, for the line that names it; nil when unreadable.
+    let previousWeekKey: String?
+    /// Set by the host from `SpotlightFirstTime` as it presents, and frozen there, so marking
+    /// the explanation seen at the tap never swaps the copy under the person reading it.
+    var firstTime = false
+
+    var isSwap: Bool { if case .swap = kind { return true } else { return false } }
+
+    /// The offer for this session's frames, or nil when there is nothing to offer or the ledger
+    /// says to stay quiet. A frame whose post has landed runs the own-post menu's own rule
+    /// (`SpotlightMenuItem.resolve`); one still posting runs the same rule on a stand-in built
+    /// from the photo, posted `now`, which never leaves this function.
+    static func make(frames: [SpotlightSessionFrame], entry: OwnSpotlightEntry?, viewerId: UUID?,
+                     ledger: SpotlightSessionLedger, now: Date = .now,
+                     calendar: Calendar = .current) -> SpotlightSessionOffer? {
+        guard let entry, let viewerId, entry.canPutUp else { return nil }
+        let ledger = ledger.forWeek(entry.weekKey)
+        // Quiet rules: nothing up, twice declined this week; a frame up, one swap ask a week.
+        if entry.postId == nil {
+            guard ledger.declines < SpotlightSessionLedger.declineLimit else { return nil }
+        } else {
+            guard !ledger.swapOffered else { return nil }
+        }
+        var kind: Kind?
+        var offered: [UUID] = []
+        var shotBefore = 0
+        for frame in frames where !frame.failed {
+            if let postId = frame.post?.id, ledger.offeredPostIds.contains(postId) { continue }
+            switch item(for: frame, entry: entry, viewerId: viewerId, now: now, calendar: calendar) {
+            case .putUp:
+                kind = kind ?? .putUp
+                offered.append(frame.id)
+            case .swap(let day):
+                kind = kind ?? .swap(fromDay: day)
+                offered.append(frame.id)
+            case .disabled(let reason) where reason == SpotlightMenuItem.notThisWeekReason:
+                // Only for being shot before the week: not a clock running ahead, and nothing
+                // else (a tag, another photographer) that would keep it out anyway.
+                if frame.photo.takenAt < entry.weekStartsAt, !frame.isTagged, frame.photo.userId == viewerId {
+                    shotBefore += 1
+                }
+            default:
+                break
+            }
+        }
+        guard let kind, !offered.isEmpty else { return nil }
+        return SpotlightSessionOffer(kind: kind, weekKey: entry.weekKey, weekStartsAt: entry.weekStartsAt,
+                                     weekClosesAt: entry.weekClosesAt, viewerId: viewerId, photoIds: offered,
+                                     shotBeforeThisWeek: shotBefore,
+                                     previousWeekKey: SpotlightWeekLabel.previousWeekKey(entry.weekKey))
+    }
+
+    /// What choosing a frame would do against `entry` as it stands: a put-up with nothing up, a
+    /// swap naming the day of the frame up, or nil when nothing may go up (a covered account,
+    /// or a frame up whose posting time is unknown, which must never be swapped out unasked).
+    static func kind(for entry: OwnSpotlightEntry, now: Date = .now,
+                     calendar: Calendar = .current) -> Kind? {
+        guard entry.canPutUp else { return nil }
+        guard entry.postId != nil else { return .putUp }
+        guard let replacedAt = entry.postCreatedAt else { return nil }
+        return .swap(fromDay: SpotlightMenuItem.dayWord(of: replacedAt, now: now, calendar: calendar))
+    }
+
+    /// The menu item this frame's post would get. A frame from this sort is never the one up
+    /// (its post is new), so there is no take-down here.
+    private static func item(for frame: SpotlightSessionFrame, entry: OwnSpotlightEntry, viewerId: UUID,
+                             now: Date, calendar: Calendar) -> SpotlightMenuItem {
+        let post = frame.post ?? Post(id: UUID(), userId: viewerId, photoId: frame.photo.id,
+                                      storagePath: frame.photo.storagePath, thumbPath: frame.photo.thumbPath,
+                                      feedPath: frame.photo.feedPath, takenAt: frame.photo.takenAt,
+                                      caption: nil, createdAt: now)
+        return SpotlightMenuItem.resolve(post: post, viewerId: viewerId, entry: entry, chosenWeekKey: nil,
+                                         isTagged: frame.isTagged,
+                                         isPhotographer: frame.photo.userId == viewerId,
+                                         now: now, calendar: calendar)
+    }
+}
+
+/// What the session sheet has already asked this week, per account, so it never nags: which
+/// posts it showed, how often "Not now" (or a pull down) answered it, and whether it has asked
+/// to swap one in. Starts over when the week does. Injectable store, like `SpotlightFirstTime`.
+struct SpotlightSessionLedger: Codable, Equatable {
+    static var store: UserDefaults = .standard
+    /// Declines, with nothing up, after which the sheet stays quiet for the rest of the week.
+    static let declineLimit = 2
+
+    var weekKey: String?
+    var offeredPostIds: Set<UUID> = []
+    var declines = 0
+    var swapOffered = false
+
+    static func key(userId: UUID) -> String { "spotlightSessionLedger.\(userId.uuidString)" }
+
+    /// The stored ledger, or a fresh one when none decodes.
+    static func load(userId: UUID) -> SpotlightSessionLedger {
+        guard let data = store.data(forKey: key(userId: userId)),
+              let ledger = try? JSONDecoder().decode(SpotlightSessionLedger.self, from: data) else {
+            return SpotlightSessionLedger()
+        }
+        return ledger
+    }
+
+    static func save(_ ledger: SpotlightSessionLedger, userId: UUID) {
+        guard let data = try? JSONEncoder().encode(ledger) else { return }
+        store.set(data, forKey: key(userId: userId))
+    }
+
+    /// This ledger if it is `weekKey`'s, else a fresh one for that week.
+    func forWeek(_ weekKey: String) -> SpotlightSessionLedger {
+        self.weekKey == weekKey ? self : SpotlightSessionLedger(weekKey: weekKey)
+    }
+
+    /// Records a sheet showing a swap, as it is shown.
+    mutating func recordSwapShown(weekKey: String) {
+        self = forWeek(weekKey)
+        swapOffered = true
+    }
+
+    /// Records a sheet as it closes: every post it showed, and a decline when the person said
+    /// no (Not now, a pull down). A put-up is not a decline, and neither is a sheet that went
+    /// because every frame it offered failed to post.
+    mutating func recordClosed(weekKey: String, shownPostIds: [UUID], declined: Bool) {
+        self = forWeek(weekKey)
+        offeredPostIds.formUnion(shownPostIds)
+        if declined { declines += 1 }
+    }
+}
+
+/// The sort deck's live session: its cards' signed URLs and the frames it posted. Observable,
+/// and read by the session sheet in its OWN body, because a sheet's content closure on the deck
+/// is only re-run for state the deck's body reads, and an emptied deck reads none of this: a
+/// post landing after the sheet opened would never reach it, and the one frame of a one-frame
+/// sheet would spin forever with its button off.
+@Observable @MainActor
+final class SortDeckSession {
+    /// Signed URLs by photo id, for the cards, the compose sheet and the session sheet.
+    var urls: [UUID: URL] = [:]
+    /// One per publish swipe, in swipe order. See `SpotlightSessionFrame`.
+    private(set) var frames: [SpotlightSessionFrame] = []
+    /// What the sheet offers now, when a tap found the frame up had changed since the offer
+    /// was made (see `SpotlightPutUpOutcome.frameUpChanged`); nil is the offer's own.
+    var kindOverride: SpotlightSessionOffer.Kind?
+    /// The sheet went because every frame it offered failed to post: not a decline.
+    var emptiedByFailures = false
+
+    /// A publish swipe, pending until its commit answers.
+    func published(_ photo: Photo, isTagged: Bool) {
+        frames.removeAll { $0.id == photo.id }
+        frames.append(SpotlightSessionFrame(photo: photo, post: nil, isTagged: isTagged))
+    }
+
+    /// Undo of a held publish: it never committed, so it leaves the session.
+    func undone(photoId: UUID) {
+        frames.removeAll { $0.id == photoId && $0.post == nil }
+    }
+
+    func landed(photoId: UUID, post: Post) {
+        guard let i = frames.firstIndex(where: { $0.id == photoId }) else { return }
+        frames[i].post = post
+    }
+
+    func failed(photoId: UUID) {
+        guard let i = frames.firstIndex(where: { $0.id == photoId }) else { return }
+        frames[i].failed = true
+    }
+
+    /// Whether any frame could go up whatever this week's entry says: posted or posting,
+    /// untagged, and the viewer's own photograph. Without one there is nothing to wait for.
+    func hasCandidate(viewerId: UUID) -> Bool {
+        frames.contains { !$0.failed && !$0.isTagged && $0.photo.userId == viewerId }
+    }
+
+    func offer(entry: OwnSpotlightEntry?, viewerId: UUID?, ledger: SpotlightSessionLedger,
+               now: Date = .now, calendar: Calendar = .current) -> SpotlightSessionOffer? {
+        SpotlightSessionOffer.make(frames: frames, entry: entry, viewerId: viewerId, ledger: ledger,
+                                   now: now, calendar: calendar)
+    }
+
+    /// The offered frames as they stand now: in the offer's order, posts filled in as they
+    /// land, failures gone.
+    func offered(_ offer: SpotlightSessionOffer) -> [SpotlightSessionFrame] {
+        offer.photoIds.compactMap { id in frames.first { $0.id == id && !$0.failed } }
+    }
+
+    /// Frames that failed to post and would otherwise have been offered (untagged, the
+    /// viewer's own, shot this week), for the line under the grid.
+    func failedCount(_ offer: SpotlightSessionOffer) -> Int {
+        frames.filter {
+            $0.failed && !$0.isTagged && $0.photo.userId == offer.viewerId
+                && $0.photo.takenAt >= offer.weekStartsAt && $0.photo.takenAt < offer.weekClosesAt
+        }.count
+    }
+
+    func kind(_ offer: SpotlightSessionOffer) -> SpotlightSessionOffer.Kind { kindOverride ?? offer.kind }
+
+    /// Whether `task` finished within `limit`. The task itself is never cancelled; only the
+    /// wait is bounded.
+    nonisolated static func finished(_ task: Task<Void, Never>, within limit: Duration) async -> Bool {
+        let (stream, continuation) = AsyncStream<Bool>.makeStream()
+        let waiter = Task { await task.value; continuation.yield(true) }
+        let timer = Task { try? await Task.sleep(for: limit); continuation.yield(false) }
+        var result = false
+        for await first in stream {
+            result = first
+            break
+        }
+        continuation.finish()
+        waiter.cancel()
+        timer.cancel()
+        return result
+    }
+}
+
+/// The session sheet's words. One place, so the copy test reads what the sheet says.
+enum SpotlightSessionCopy {
+    static func title(kind: SpotlightSessionOffer.Kind, count: Int) -> String {
+        switch (kind, count > 1) {
+        case (.putUp, false): return "Put it up for Spotlight?"
+        case (.putUp, true): return "Put one up for Spotlight?"
+        case (.swap, false): return "Swap it in for Spotlight?"
+        case (.swap, true): return "Swap one in for Spotlight?"
+        }
+    }
+
+    static func subtitle(count: Int) -> String {
+        let onlyTeam = "Only the team at \(AppInfo.appName) sees what you put up."
+        return count > 1 ? "Choose one from this sort. \(onlyTeam)" : onlyTeam
+    }
+
+    static let chooseFrame = "Choose a frame"
+    static let putUp = "Put it up"
+    static let swapIn = "Swap it in"
+    static let notNow = "Not now"
+    static let done = "Done"
+    static let chooseThisOne = "Choose this one"
+    static let tagged = "Tagged"
+
+    static func upNow(fromDay day: String) -> String { "Up now: your frame from \(day)" }
+
+    static func upNowSub(count: Int) -> String {
+        count > 1 ? "Swapping one in takes it down." : "Swapping this one in takes it down."
+    }
+
+    static func failed(count: Int) -> String {
+        count == 1
+            ? "One frame didn't post, so it isn't here. It's in your Darkroom."
+            : "Some frames didn't post, so they aren't here. They're in your Darkroom."
+    }
+
+    static func shotBefore(previousWeekKey: String, calendar: Calendar = .current) -> String {
+        "Frames shot in \(SpotlightWeekLabel.phrase(previousWeekKey, calendar: calendar)) can't go up now."
+    }
+
+    /// VoiceOver's name for a frame: "Photo you shot today at 2:14 PM".
+    static func frameLabel(takenAt: Date, now: Date = .now, calendar: Calendar = .current) -> String {
+        let day = SpotlightMenuItem.dayWord(of: takenAt, now: now, calendar: calendar)
+        return "Photo you shot \(day) at \(takenAt.formatted(date: .omitted, time: .shortened))"
     }
 }
 
