@@ -389,7 +389,7 @@ struct ShareToFeedSheet: View {
         Task {
             do {
                 let tagsSaved = try await feed.createPost(
-                    photo: photo, caption: capturedCaption, userId: uid, tags: capturedTags)
+                    photo: photo, caption: capturedCaption, userId: uid, tags: capturedTags).tagsSaved
                 if shouldWarnThatTagsDidNotSave(tagsSaved) {
                     Haptics.error()
                     // Deliberately its own string, not the legacy composer's: this flow's own

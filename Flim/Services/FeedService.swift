@@ -1554,9 +1554,12 @@ final class FeedService {
 
     /// Creates the post, then attaches `tags` if any were given.
     ///
-    /// Returns whether the tags saved: `true` once they're confirmed attached (or there were none
-    /// to attach at all), `false` on a genuine tag-insert failure the caller should surface (with
-    /// a retry via the post's own "Edit tags"), and `nil` when it was cancelled rather than failed
+    /// Returns the post as the server wrote it (the sort deck asks to put it up for Spotlight,
+    /// which needs its id and times) and whether the tags saved.
+    ///
+    /// `tagsSaved` is `true` once they're confirmed attached (or there were none to attach at
+    /// all), `false` on a genuine tag-insert failure the caller should surface (with a retry via
+    /// the post's own "Edit tags"), and `nil` when it was cancelled rather than failed
     /// (not the user's fault, so nothing to show). This never throws for the tag insert: by the
     /// time it runs the post already exists, and a failed tag insert must not make a publish that
     /// genuinely succeeded look like it failed, which is what throwing here would do to every
@@ -1567,7 +1570,7 @@ final class FeedService {
     /// error surfaced to the person who tagged them either. Mirrors `updatePostCaption` and
     /// `deletePost`'s tri-state treatment of their own writes.
     @discardableResult
-    func createPost(photo: Photo, caption: String?, userId: UUID, tags: [PendingTag] = []) async throws -> Bool? {
+    func createPost(photo: Photo, caption: String?, userId: UUID, tags: [PendingTag] = []) async throws -> CreatedPost {
         struct Insert: Encodable {
             let user_id: UUID
             let photo_id: UUID
@@ -1577,9 +1580,8 @@ final class FeedService {
             let taken_at: Date
             let caption: String?
         }
-        struct Created: Decodable { let id: UUID }
         let trimmed = caption?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let created: Created = try await supabase.from("posts").insert(Insert(
+        let created: Post = try await supabase.from("posts").insert(Insert(
             user_id: userId,
             photo_id: photo.id,
             storage_path: photo.storagePath,
@@ -1587,7 +1589,7 @@ final class FeedService {
             feed_path: photo.feedPath,
             taken_at: photo.takenAt,
             caption: (trimmed?.isEmpty ?? true) ? nil : trimmed
-        )).select("id").single().execute().value
+        )).select().single().execute().value
         // Deliberately NOT marked seen at creation. It was, briefly (2026-08-24): "born seen"
         // paired with the ledger's own-author exclusion. But a seen mark is what retention
         // clears on, so a post made before 4am vanished from its AUTHOR's own feed at the
@@ -1605,17 +1607,17 @@ final class FeedService {
         // Fire-and-forget: this must never gate the post the user just watched succeed.
         Task { await refreshOwnBadges() }
 
-        guard !tags.isEmpty else { return true }
+        guard !tags.isEmpty else { return CreatedPost(post: created, tagsSaved: true) }
         struct TagInsert: Encodable { let post_id: UUID; let tagged_user_id: UUID; let x: Double; let y: Double }
         let rows = tags.map { TagInsert(post_id: created.id, tagged_user_id: $0.user.id, x: $0.x, y: $0.y) }
         do {
             try await supabase.from("post_tags").insert(rows).execute()
         } catch {
-            guard !UserFacingError.isCancellation(error) else { return nil }
+            guard !UserFacingError.isCancellation(error) else { return CreatedPost(post: created, tagsSaved: nil) }
             Self.log.error("createPost tag insert failed: \(String(describing: error), privacy: .public)")
-            return false
+            return CreatedPost(post: created, tagsSaved: false)
         }
-        return true
+        return CreatedPost(post: created, tagsSaved: true)
     }
 
     /// Reinserts items an undo-first action removed optimistically (an undone post delete or
@@ -2868,6 +2870,13 @@ func shouldTreatAsDeleted(afterDeleting saved: Bool?) -> Bool { saved == true }
 /// failure is something to fix; a success (with or without tags) or a cancellation both mean
 /// there's nothing wrong to tell anyone about.
 func shouldWarnThatTagsDidNotSave(_ tagsSaved: Bool?) -> Bool { tagsSaved == false }
+
+/// What `FeedService.createPost` hands back: the row as written, and whether the tags saved
+/// (see `createPost` for the three values).
+struct CreatedPost {
+    let post: Post
+    let tagsSaved: Bool?
+}
 
 /// The Activity "New" watermark, per account. It lived under one global key, so a second
 /// account on the same phone inherited the first account's cutoff (audit 2026-09-24, finding 8).

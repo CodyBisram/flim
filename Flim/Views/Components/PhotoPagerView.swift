@@ -1955,7 +1955,7 @@ struct PhotoPagerView: View {
         captionFocused = false
         Task {
             do {
-                let tagsSaved = try await feed.createPost(photo: photo, caption: caption, userId: uid, tags: tags)
+                let tagsSaved = try await feed.createPost(photo: photo, caption: caption, userId: uid, tags: tags).tagsSaved
                 if shouldWarnThatTagsDidNotSave(tagsSaved) {
                     // The post itself is live, only the tags failed to attach, so this is not the
                     // "didn't reach the server" branch below: the share stands, un-marking it would

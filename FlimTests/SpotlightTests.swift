@@ -29,9 +29,11 @@ struct SpotlightTests {
                     coverPath: nil, createdAt: .distantPast)
     }
 
-    private func post(owner: UUID, createdAt: Date, id: UUID = UUID(), photoId: UUID = UUID()) -> Post {
+    /// `takenAt` defaults to the posting time: shot and posted in the same moment.
+    private func post(owner: UUID, createdAt: Date, takenAt: Date? = nil, id: UUID = UUID(),
+                      photoId: UUID = UUID()) -> Post {
         Post(id: id, userId: owner, photoId: photoId, storagePath: "p/\(id).jpg", thumbPath: nil,
-             feedPath: nil, takenAt: createdAt, caption: nil, createdAt: createdAt)
+             feedPath: nil, takenAt: takenAt ?? createdAt, caption: nil, createdAt: createdAt)
     }
 
     /// One unit per author per day, newest first, from (author, post time) pairs.
@@ -246,9 +248,55 @@ struct SpotlightTests {
             SpotlightMenuItem.resolve(post: p, viewerId: me, entry: entry(), chosenWeekKey: nil,
                                       isTagged: false, isPhotographer: true, calendar: newYork)
         }
-        #expect(item(before) == .disabled(reason: "Only this week's frames can go up"))
+        #expect(item(before) == .disabled(reason: "Only frames shot this week can go up"))
         #expect(item(atStart) == .putUp)
         #expect(item(atClose) == .hidden)
+    }
+
+    @Test("only frames shot this week: posted this week is not enough, and the bounds are half-open")
+    func menuShotThisWeek() {
+        func item(_ p: Post, _ e: OwnSpotlightEntry? = nil) -> SpotlightMenuItem {
+            SpotlightMenuItem.resolve(post: p, viewerId: me, entry: e ?? entry(), chosenWeekKey: nil,
+                                      isTagged: false, isPhotographer: true, calendar: newYork)
+        }
+        let shotLastWeek = post(owner: me, createdAt: date(9, 23, 12), takenAt: date(9, 19, 18))
+        #expect(item(shotLastWeek) == .disabled(reason: "Only frames shot this week can go up"))
+        let shotJustBefore = post(owner: me, createdAt: date(9, 21, 9), takenAt: date(9, 21, 3, 59))
+        #expect(item(shotJustBefore) == .disabled(reason: "Only frames shot this week can go up"))
+        let shotAtStart = post(owner: me, createdAt: date(9, 23, 12), takenAt: date(9, 21, 4))
+        #expect(item(shotAtStart) == .putUp)
+        let shotThisWeek = post(owner: me, createdAt: date(9, 23, 12), takenAt: date(9, 22, 20))
+        #expect(item(shotThisWeek) == .putUp)
+        // A capture stamped past the close (a clock ahead) is not this week's either.
+        let shotAfterClose = post(owner: me, createdAt: date(9, 23, 12), takenAt: date(9, 28, 4))
+        #expect(item(shotAfterClose) == .disabled(reason: "Only frames shot this week can go up"))
+        // Shot this week, another frame up: still offered as the swap.
+        #expect(SpotlightMenuItem.resolve(post: shotThisWeek, viewerId: me,
+                                          entry: entry(postId: UUID(), postCreatedAt: date(9, 22, 14)),
+                                          chosenWeekKey: nil, isTagged: false, isPhotographer: true,
+                                          now: date(9, 26, 12), calendar: newYork)
+                == .swap(fromDay: "Tuesday"))
+        // The capture rule outranks tags: untagging would not make it eligible.
+        #expect(SpotlightMenuItem.resolve(post: shotLastWeek, viewerId: me, entry: entry(), chosenWeekKey: nil,
+                                          isTagged: true, isPhotographer: true, calendar: newYork)
+                == .disabled(reason: "Only frames shot this week can go up"))
+    }
+
+    @Test("a frame already up this week can come down even when it was shot earlier")
+    func menuTakeDownShotEarlier() {
+        let upNow = post(owner: me, createdAt: date(9, 23, 12), takenAt: date(9, 18, 12))
+        #expect(SpotlightMenuItem.resolve(post: upNow, viewerId: me,
+                                          entry: entry(postId: upNow.id, postCreatedAt: upNow.createdAt),
+                                          chosenWeekKey: nil, isTagged: false, isPhotographer: true,
+                                          calendar: newYork) == .takeDown)
+        // And a closed week's waiting frame still comes down, whenever it was shot.
+        let waiting = post(owner: me, createdAt: date(9, 17, 12), takenAt: date(9, 10, 12))
+        var withPending = entry()
+        withPending.pendingEntries = [PendingSpotlightEntry(weekKey: "2026-09-14", postId: waiting.id,
+                                                            photoId: waiting.photoId)]
+        #expect(SpotlightMenuItem.resolve(post: waiting, viewerId: me, entry: withPending, chosenWeekKey: nil,
+                                          isTagged: false, isPhotographer: true, calendar: newYork)
+                == .takeDownPending(weekKey: "2026-09-14"))
     }
 
     @Test("a covered account sees no item at all")
@@ -367,7 +415,7 @@ struct SpotlightTests {
                                       isTagged: false, isPhotographer: true, calendar: newYork)
         }
         #expect(item(pending, withPending) == .takeDownPending(weekKey: "2026-09-14"))
-        #expect(item(other, withPending) == .disabled(reason: "Only this week's frames can go up"))
+        #expect(item(other, withPending) == .disabled(reason: "Only frames shot this week can go up"))
         // Consent holds even while this week allows nothing new.
         var covered = entry(canPutUp: false)
         covered.pendingWeekKey = "2026-09-14"
@@ -426,6 +474,8 @@ struct SpotlightTests {
                 == "This week closed before your frame went up.")
         #expect(SpotlightRefusal.message(refusal: "tagged", action: .putUp) == "Frames with people tagged can't go up")
         #expect(SpotlightRefusal.message(refusal: "not_photographer", action: .putUp) == "Only frames you shot can go up")
+        #expect(SpotlightRefusal.message(refusal: "not_this_week", action: .putUp)
+                == "Only frames shot this week can go up.")
         #expect(SpotlightRefusal.message(refusal: "hidden", action: .putUp) == "This frame can't go up.")
         #expect(SpotlightRefusal.message(refusal: "covered", action: .putUp) == "This frame can't go up.")
         #expect(SpotlightRefusal.message(refusal: "not_found", action: .putUp) == "This frame can't go up.")
@@ -443,17 +493,19 @@ struct SpotlightTests {
     func copyRules() {
         let lines = [SpotlightRefusal.weekClosedPutUp, SpotlightRefusal.weekClosedTakeDown,
                      SpotlightRefusal.cantGoUp, SpotlightRefusal.putUpNetwork,
-                     SpotlightMenuItem.earlierWeekReason, SpotlightTagLock.upThisWeek, SpotlightTagLock.chosen,
+                     SpotlightMenuItem.notThisWeekReason, SpotlightTagLock.upThisWeek, SpotlightTagLock.chosen,
                      SpotlightRefusal.takeDownNetwork, SpotlightRefusal.takeOutNetwork,
                      SpotlightRefusal.taggedOnSpotlight, SpotlightRefusal.gone, SpotlightRefusal.openNetwork,
                      SpotlightMenuItem.taggedReason, SpotlightMenuItem.notPhotographerReason,
                      ProfileBadgeKind.spotlight.explanation, ProfileBadgeKind.spotlight.howToEarn,
                      SpotlightCaptionLock.upThisWeek, SpotlightCaptionLock.chosen,
-                     SpotlightRefusal.captionOnSpotlight, SpotlightPostedHint.text,
+                     SpotlightRefusal.captionOnSpotlight, SpotlightRefusal.notThisWeekPutUp,
+                     SpotlightPostedAsk.prompt, SpotlightPostedAsk.button,
                      SpotlightPutUpNotice.text(postId: UUID(), replacedPostId: nil, replacedAt: nil),
                      SpotlightPutUpNotice.text(postId: UUID(), replacedPostId: UUID(), replacedAt: nil)]
         for line in lines {
             #expect(!line.contains("\u{2014}"), "\(line)")
+            #expect(!line.contains("\u{2013}"), "\(line)")
             #expect(!line.contains("!"), "\(line)")
         }
     }
@@ -698,14 +750,14 @@ struct SpotlightTests {
         }
         #expect(item(newer, withTwo) == .takeDownPending(weekKey: "2026-09-14"))
         #expect(item(older, withTwo) == .takeDownPending(weekKey: "2026-09-07"))
-        #expect(item(unrelated, withTwo) == .disabled(reason: "Only this week's frames can go up"))
+        #expect(item(unrelated, withTwo) == .disabled(reason: "Only frames shot this week can go up"))
         // Still offered inside a covered window.
         var covered = entry(canPutUp: false)
         covered.pendingEntries = withTwo.pendingEntries
         #expect(item(older, covered) == .takeDownPending(weekKey: "2026-09-07"))
         // Once the older week comes down, only the newer one is offered.
         let afterTakeDown = withTwo.clearingPending(postId: older.id)
-        #expect(item(older, afterTakeDown) == .disabled(reason: "Only this week's frames can go up"))
+        #expect(item(older, afterTakeDown) == .disabled(reason: "Only frames shot this week can go up"))
         #expect(item(newer, afterTakeDown) == .takeDownPending(weekKey: "2026-09-14"))
     }
 
@@ -752,34 +804,36 @@ struct SpotlightTests {
         #expect(SpotlightSeenMark.seen(userId: nil).isEmpty)
     }
 
-    @Test("the posted line: once per account, only for a post that could go up")
-    func postedHint() {
-        let suite = "SpotlightTests.\(UUID().uuidString)"
-        guard let defaults = UserDefaults(suiteName: suite) else {
-            Issue.record("no defaults suite")
-            return
-        }
-        defer { defaults.removePersistentDomain(forName: suite) }
-        let previous = SpotlightPostedHint.store
-        SpotlightPostedHint.store = defaults
-        defer { SpotlightPostedHint.store = previous }
-        let a = UUID(), b = UUID()
+    @Test("the sort deck asks after every post that could go up, until something is up this week")
+    func postedAsk() {
+        let a = UUID()
         let now = date(9, 23, 12)
-        func show(_ user: UUID, owner: UUID? = nil, tagged: Bool = false,
-                  entry e: OwnSpotlightEntry? = nil, at time: Date? = nil) -> Bool {
-            SpotlightPostedHint.shouldShow(userId: user, photoOwnerId: owner ?? user, isTagged: tagged,
-                                           entry: e ?? entry(), postedAt: time ?? now)
+        func ask(owner: UUID? = nil, tagged: Bool = false, entry e: OwnSpotlightEntry?? = .none,
+                 takenAt: Date? = nil, postedAt: Date? = nil) -> Bool {
+            SpotlightPostedAsk.shouldAsk(userId: a, photoOwnerId: owner ?? a, isTagged: tagged,
+                                         entry: e ?? entry(), takenAt: takenAt ?? now, postedAt: postedAt ?? now)
         }
-        #expect(show(a))
-        #expect(!show(a, owner: UUID()))
-        #expect(!show(a, tagged: true))
-        #expect(!show(a, entry: entry(canPutUp: false)))
-        #expect(!show(a, at: date(9, 28, 5)))
-        #expect(!SpotlightPostedHint.shouldShow(userId: a, photoOwnerId: a, isTagged: false, entry: nil, postedAt: now))
-        // Another frame already up still leaves this one able to swap in.
-        #expect(show(a, entry: entry(postId: UUID(), postCreatedAt: date(9, 22, 12))))
-        SpotlightPostedHint.markShown(userId: a)
-        #expect(!show(a))
-        #expect(show(b))
+        // Nothing up, own shot, untagged, shot and posted this week.
+        #expect(ask())
+        // Not once per account: the same account is asked again for the next post.
+        #expect(ask())
+        #expect(ask(takenAt: date(9, 21, 4)))
+        // Something already up this week: no ask (a swap is the menu's call).
+        #expect(!ask(entry: entry(postId: UUID(), postCreatedAt: date(9, 22, 12))))
+        // Shot before the week began, or stamped past its close.
+        #expect(!ask(takenAt: date(9, 21, 3, 59)))
+        #expect(!ask(takenAt: date(9, 19, 18)))
+        #expect(!ask(takenAt: date(9, 28, 4)))
+        // Posted outside the bounds (a stale entry).
+        #expect(!ask(postedAt: date(9, 28, 5)))
+        #expect(!ask(postedAt: date(9, 21, 3)))
+        // Someone else's photo.
+        #expect(!ask(owner: UUID()))
+        // People tagged.
+        #expect(!ask(tagged: true))
+        // A covered window.
+        #expect(!ask(entry: entry(canPutUp: false)))
+        // The entry not known yet.
+        #expect(!ask(entry: .some(nil)))
     }
 }

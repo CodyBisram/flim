@@ -32,11 +32,17 @@ struct SortDeckView: View {
     /// A post that landed, said once so the person knows where it went. Cleared by the next
     /// action or a few seconds, whichever first.
     @State private var postedNotice = false
-    /// Which posted notice the running three-second timer belongs to; see `commit`.
+    /// Which posted notice the running timer belongs to; see `commit`.
     @State private var postedNoticeId: UUID?
-    /// The posted notice also says, once per account, that the post can go up for Spotlight
-    /// (see `SpotlightPostedHint`). Cleared with the notice.
-    @State private var postedSpotlightHint = false
+    /// The post the notice asks to put up for Spotlight, when it could go up (see
+    /// `SpotlightPostedAsk`). Cleared with the notice, and by tapping "Put it up".
+    @State private var spotlightAskPost: Post?
+    /// Set by tapping "Put it up": the put-up's outcome lands in `UndoCenter`'s slot, and the
+    /// tab host that renders it sits under this full-screen cover, so the deck says it in its
+    /// own notice area instead. Cleared when that notice goes.
+    @State private var spotlightOutcomeWatched = false
+    /// The first-time Spotlight sheet, presented over the deck (see `SpotlightPutUpFlow`).
+    @State private var spotlightFirstTimePost: Post?
     /// The compose sheet, opened from the pill under the top card or a tap on the card itself.
     /// The photo the compose sheet is open for; nil is no sheet. Presented by ITEM, not by a
     /// Bool beside an optional: `.sheet(isPresented:) { if let composePhoto { ... } }` built
@@ -124,6 +130,12 @@ struct SortDeckView: View {
                 Task { await commit(p, a, caption: caption, tags: tags) }
             }
         }
+        // Hosted here, not left to the tab host under this cover: a first-timer's "Put it up"
+        // shows the Spotlight explanation sheet, which has to present over the deck.
+        .spotlightPutUpFlow(firstTimePost: $spotlightFirstTimePost, takeOutPost: .constant(nil))
+        .onChange(of: UndoCenter.shared.failureNotice) { old, new in
+            if old != nil, new == nil { spotlightOutcomeWatched = false }
+        }
         .sheet(item: $composePhoto) { composePhoto in
             SortDeckComposeSheet(photo: composePhoto, url: urls[composePhoto.id],
                                   caption: $composeCaption, tags: $composeTags) {
@@ -159,8 +171,29 @@ struct SortDeckView: View {
     /// (otherwise-blank space below the captions) regardless of whether the swipe hint line below
     /// the buttons is showing, and doesn't reach up far enough to compete with the compose pill
     /// above.
+    ///
+    /// The Spotlight ask makes the notice three lines tall, over the Keep/Delete/Post captions
+    /// (or the swipe hint) for its few seconds. It sits on the screen's own ground so it reads
+    /// as the notice rather than as text printed over text, and the layout never moves.
     @ViewBuilder private var publishErrorBanner: some View {
-        if postedNotice, publishError == nil {
+        if let outcome = spotlightOutcome, publishError == nil {
+            // The put-up's answer, in the posted notice's place: the same line the tab host's
+            // capsule would have shown.
+            Group {
+                if outcome.isConfirmation {
+                    Label(outcome.text, systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(FlimTheme.success)
+                } else {
+                    Label(outcome.text, systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(FlimTheme.error)
+                }
+            }
+            .flimType(.label)
+            .multilineTextAlignment(.center)
+            .padding(.horizontal, 24)
+            .padding(.bottom, 4)
+            .transition(.opacity)
+        } else if postedNotice, publishError == nil {
             VStack(spacing: 2) {
                 HStack(spacing: 10) {
                     Label("Posted to your page. Your followers can see it.", systemImage: "checkmark.circle.fill")
@@ -173,15 +206,22 @@ struct SortDeckView: View {
                     .flimFont(13, weight: .semibold, relativeTo: .subheadline)
                     .foregroundStyle(accent)
                 }
-                if postedSpotlightHint {
-                    Text(SpotlightPostedHint.text)
+                if let askPost = spotlightAskPost {
+                    Text(SpotlightPostedAsk.prompt)
                         .flimType(.meta)
-                        .foregroundStyle(FlimTheme.textTertiary)
+                        .foregroundStyle(FlimTheme.textSecondary)
                         .multilineTextAlignment(.center)
+                    Button(SpotlightPostedAsk.button) { putUpAsked(askPost) }
+                        .flimFont(13, weight: .semibold, relativeTo: .subheadline)
+                        .foregroundStyle(accent)
+                        .disabled(feed.spotlightWriteInFlight)
                 }
             }
             .padding(.horizontal, 24)
-            .padding(.bottom, postedSpotlightHint ? 2 : 4)
+            .padding(.top, spotlightAskPost == nil ? 0 : 6)
+            .padding(.bottom, spotlightAskPost == nil ? 4 : 2)
+            .frame(maxWidth: spotlightAskPost == nil ? nil : .infinity)
+            .background(spotlightAskPost == nil ? Color.clear : FlimTheme.bg)
             .transition(.opacity)
         }
         if let publishError {
@@ -193,6 +233,23 @@ struct SortDeckView: View {
                 .padding(.bottom, 4)
                 .transition(.opacity)
         }
+    }
+
+    /// The put-up's answer from `UndoCenter`, while the deck is watching for one.
+    private var spotlightOutcome: (text: String, isConfirmation: Bool)? {
+        guard spotlightOutcomeWatched, let notice = UndoCenter.shared.failureNotice else { return nil }
+        return (notice, UndoCenter.shared.noticeIsConfirmation)
+    }
+
+    /// "Put it up" under the posted notice: the menu's own flow, so a first-timer reads the
+    /// explanation first and the success line waits for the server. The ask goes either way;
+    /// a put-up that fails says why and stays one menu item away on the post.
+    private func putUpAsked(_ post: Post) {
+        guard !feed.spotlightWriteInFlight else { return }
+        withAnimation { spotlightAskPost = nil }
+        spotlightOutcomeWatched = true
+        SpotlightFlow.requestPutUp(post, feed: feed, userId: auth.currentUser?.id,
+                                   presentFirstTime: { spotlightFirstTimePost = $0 })
     }
 
     private func openCompose(for photo: Photo) {
@@ -329,6 +386,9 @@ struct SortDeckView: View {
                     .foregroundStyle(FlimTheme.textSecondary)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, FlimSpace.xxl)
+                    // Faded, not removed, under the Spotlight ask: removing it would move the
+                    // controls and grow the card for a few seconds.
+                    .opacity(postedNotice && spotlightAskPost != nil ? 0 : 1)
                     .transition(.opacity)
             }
         }
@@ -388,6 +448,7 @@ struct SortDeckView: View {
         guard !isTransitioning, let photo = cards.first else { return }
         isTransitioning = true
         postedNotice = false
+        spotlightAskPost = nil
         Haptics.tap()
 
         switch action {
@@ -477,25 +538,30 @@ struct SortDeckView: View {
         case .publish:
             await photoService.markSorted(photoId: photo.id)
             do {
-                let tagsSaved = try await feed.createPost(photo: photo, caption: caption, userId: uid, tags: tags)
-                // The Spotlight line rides this notice once per account, only when the post
-                // just made could go up. Judged after the post landed, never before.
-                let hint = SpotlightPostedHint.shouldShow(
+                let created = try await feed.createPost(photo: photo, caption: caption, userId: uid, tags: tags)
+                // The Spotlight ask rides this notice only when the post just made could go up,
+                // judged after the post landed, never before, on the server's own times for it.
+                let ask = SpotlightPostedAsk.shouldAsk(
                     userId: uid, photoOwnerId: photo.userId, isTagged: !tags.isEmpty,
-                    entry: feed.ownSpotlightEntry, postedAt: .now)
-                if hint { SpotlightPostedHint.markShown(userId: uid) }
-                // The timer belongs to THIS notice: a second post inside the three seconds
-                // starts its own, and the first one's expiry no longer hides it (audit A8).
+                    entry: feed.ownSpotlightEntry, takenAt: created.post.takenAt,
+                    postedAt: created.post.createdAt)
+                // The timer belongs to THIS notice: a second post while it shows starts its
+                // own, and the first one's expiry no longer hides it (audit A8).
                 let notice = UUID()
                 postedNoticeId = notice
-                postedSpotlightHint = hint
+                spotlightAskPost = ask ? created.post : nil
                 withAnimation { postedNotice = true }
                 Task {
-                    // A beat longer when there is a second line to read.
-                    try? await Task.sleep(for: .seconds(hint ? 4.5 : 3))
-                    if postedNoticeId == notice { withAnimation { postedNotice = false } }
+                    // Longer when there is a question to answer.
+                    try? await Task.sleep(for: .seconds(ask ? 6 : 3))
+                    if postedNoticeId == notice {
+                        withAnimation {
+                            postedNotice = false
+                            spotlightAskPost = nil
+                        }
+                    }
                 }
-                if shouldWarnThatTagsDidNotSave(tagsSaved) {
+                if shouldWarnThatTagsDidNotSave(created.tagsSaved) {
                     // The post itself is live, only the tags failed to attach; a genuine failure
                     // still has to speak up, same reasoning as the publish failure right below,
                     // it just isn't the same failure.
@@ -535,9 +601,11 @@ struct SortDeckView: View {
         // `?? []` preserves this view's original behavior: a fresh deck has no earlier list to
         // keep, so a failure here still just shows the (now correctly typed) empty case.
         cards = await photoService.fetchUnsorted(userId: uid) ?? []
-        // The posted notice's Spotlight line needs this week's bounds, and a cold launch
-        // straight into the deck has not visited the Feed that reads them.
-        if feed.ownSpotlightEntry == nil { Task { await feed.refreshOwnSpotlightEntry() } }
+        // The posted notice's Spotlight ask needs this week's bounds and whether anything is up
+        // yet. A cold launch straight into the deck has not visited the Feed that reads them,
+        // and one read before the week turned, or before a put-up from another phone, would
+        // ask about the wrong week or swap a frame out unasked, so it is read on every open.
+        Task { await feed.refreshOwnSpotlightEntry() }
 
         // Batched, not one at a time. `signedURLs` reuses persisted URLs and mints the misses in
         // parallel; signing them in a loop cost one sequential round trip PER PHOTO before the

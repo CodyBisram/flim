@@ -197,6 +197,10 @@ struct OwnSpotlightEntry: Decodable, Equatable {
         if let photoId, ids.contains(photoId) { return true }
         return pending.contains { ids.contains($0.photoId) }
     }
+
+    /// Whether `date` falls inside this week's bounds, start included, close excluded, the
+    /// way the server reads them.
+    func isThisWeek(_ date: Date) -> Bool { date >= weekStartsAt && date < weekClosesAt }
 }
 
 extension OwnSpotlightEntry {
@@ -331,7 +335,9 @@ enum SpotlightMenuItem: Equatable {
 
     static let taggedReason = "Frames with people tagged can't go up"
     static let notPhotographerReason = "Only frames you shot can go up"
-    static let earlierWeekReason = "Only this week's frames can go up"
+    /// One reason for both week rules: a post from an earlier week, and a frame shot before
+    /// this week began however recently it was posted.
+    static let notThisWeekReason = "Only frames shot this week can go up"
 
     /// - Parameters:
     ///   - chosenWeekKey: set when this post is one of the viewer's own published frames.
@@ -351,9 +357,14 @@ enum SpotlightMenuItem: Equatable {
         // The bounds are the server's. An earlier week's post says why it cannot go up; one
         // past the close means the entry itself is stale, so nothing is offered until it is
         // read again.
-        if post.createdAt < entry.weekStartsAt { return .disabled(reason: earlierWeekReason) }
+        if post.createdAt < entry.weekStartsAt { return .disabled(reason: notThisWeekReason) }
         guard post.createdAt < entry.weekClosesAt else { return .hidden }
+        // Already up stays removable, whenever it was shot: this week's entry may predate the
+        // capture rule, and the only way off it is the take-down.
         if entry.postId == post.id { return .takeDown }
+        // Posted this week is not enough: the frame itself has to be from this week. Before
+        // tags and the photographer, because neither can change when it was shot.
+        if !entry.isThisWeek(post.takenAt) { return .disabled(reason: notThisWeekReason) }
         if isTagged { return .disabled(reason: taggedReason) }
         if isPhotographer == false { return .disabled(reason: notPhotographerReason) }
         if entry.postId != nil {
@@ -465,6 +476,9 @@ enum SpotlightRefusal {
     static let takeOutNetwork = "Couldn't take it out. Check your connection and try again."
     static let openNetwork = "Couldn't open that photo. Check your connection and try again."
     static let taggedOnSpotlight = "Frames put up for Spotlight can't be tagged."
+    /// A put-up the server refused with `not_this_week`: the frame was shot before this week
+    /// began (the menu did not know, or the week turned while it was open).
+    static let notThisWeekPutUp = "Only frames shot this week can go up."
     /// A caption save the server refused with `in_spotlight` (the menu did not know yet).
     static let captionOnSpotlight = "Frames put up for Spotlight can't be edited."
     static let gone = "That photo isn't there anymore."
@@ -479,6 +493,7 @@ enum SpotlightRefusal {
         switch (refusal, action) {
         case ("not_found", .takeDown): return nil
         case ("week_closed", .putUp): return weekClosedPutUp
+        case ("not_this_week", .putUp): return notThisWeekPutUp
         case ("week_closed", _): return weekClosedTakeDown
         default: break
         }
@@ -636,28 +651,26 @@ enum SpotlightFirstTime {
     static func markSeen(userId: UUID) { store.set(true, forKey: key(userId: userId)) }
 }
 
-/// The one quiet line under the sort deck's "Posted to your page" banner that says a post can
-/// go up for Spotlight, once per account and only for a post that could: the account's own
-/// shot, nobody tagged, posted inside this week's bounds while the account may put anything up.
-/// Per account and injectable, like `SpotlightFirstTime`.
-enum SpotlightPostedHint {
-    static var store: UserDefaults = .standard
-    static let text = "You can put it up for Spotlight from its menu."
-
-    static func key(userId: UUID) -> String { "spotlightPostedHintShown.\(userId.uuidString)" }
-
-    static func hasShown(userId: UUID) -> Bool { store.bool(forKey: key(userId: userId)) }
-
-    static func markShown(userId: UUID) { store.set(true, forKey: key(userId: userId)) }
+/// The ask under the sort deck's "Posted to your page" notice: put the post just made up for
+/// Spotlight. Asked after every post that could go up until something is up this week, not once
+/// per account, because the deck is where a week's frames are made. Only for the account's own
+/// shot, nobody tagged, shot and posted inside this week's bounds, while the account may put
+/// anything up and nothing is up yet (swapping out a frame already chosen is the menu's call,
+/// where it names the frame it would take down).
+enum SpotlightPostedAsk {
+    static let prompt = "Put this one up for Spotlight?"
+    static let button = "Put it up"
 
     /// - Parameters:
     ///   - photoOwnerId: who shot the posted photo (`photos.user_id`).
-    ///   - entry: this week's entry; nil while unknown, which says nothing rather than guess.
-    static func shouldShow(userId: UUID, photoOwnerId: UUID, isTagged: Bool,
-                           entry: OwnSpotlightEntry?, postedAt: Date) -> Bool {
-        guard !hasShown(userId: userId), photoOwnerId == userId, !isTagged,
-              let entry, entry.canPutUp else { return false }
-        return postedAt >= entry.weekStartsAt && postedAt < entry.weekClosesAt
+    ///   - entry: this week's entry; nil while unknown, which asks nothing rather than guess.
+    ///   - takenAt: when the frame was shot.
+    ///   - postedAt: when the post landed.
+    static func shouldAsk(userId: UUID, photoOwnerId: UUID, isTagged: Bool,
+                          entry: OwnSpotlightEntry?, takenAt: Date, postedAt: Date) -> Bool {
+        guard photoOwnerId == userId, !isTagged,
+              let entry, entry.canPutUp, entry.postId == nil else { return false }
+        return entry.isThisWeek(takenAt) && entry.isThisWeek(postedAt)
     }
 }
 
