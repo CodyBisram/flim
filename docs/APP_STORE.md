@@ -136,7 +136,11 @@ without either word appearing here.
 Two rules if this is edited again: never repeat a word across name, subtitle and keywords, and do
 not add plurals of words already present. Apple handles both.
 
-## What's New (version 1.6.0), draft 2026-09-26
+## What's New (version 1.6.0), draft 2026-09-26, revised for the resubmission
+
+Revised the same night: the 1.6.0 submission is being swapped for a new build (the per-card
+feed, the notification sounds, offline notification taps, the Spotlight ask in the sort deck and
+the shot-this-week rule). The build number goes here once it exists.
 
 1.5.4 never went to the App Store, so this covers everything a person can see since 378: the 1.5.4
 draft below, folded in and updated, plus Spotlight and the invite loop. Submit build 407 (fa71b86: the one-time "Spotlight is new." line
@@ -145,11 +149,13 @@ days old, and the sign-in code boxes and delete-account hold button back to thei
 
 > **PASTE ONLY THE INDENTED BLOCK BELOW.** Everything under "Ship notes" is internal.
 
-    Spotlight. Each week, put up one frame you shot that week: open the post's menu and choose Put it up for Spotlight. Only the team at FLIM sees what you put up. When the week closes, the team chooses a few and shows them to everyone as a short strip in the feed. If yours is chosen, you get a notification, a Spotlight badge, and the frame on your page for everyone to see. You can take a frame down until the week closes, and take a chosen one out whenever you like.
+    Spotlight. Each week, put up one frame you shot that week: when you post one, FLIM asks, or open the post's menu and choose Put it up for Spotlight. Only the team at FLIM sees what you put up. When the week closes, the team chooses a few and shows them to everyone as a short strip in the feed. If yours is chosen, you get a notification, a Spotlight badge, and the frame on your page for everyone to see. You can take a frame down until the week closes, and take a chosen one out whenever you like.
 
     Your invites come back. When a friend you invited takes their first photo, FLIM tells you, and that invite is yours to give again. The link you send names you, so they know who it's from.
 
-    Your feed remembers what you've seen, on any phone. The count at the top is what's left from the last seven days. It counts down as you read, goes away when you're caught up, and tapping it takes you to the first shot you haven't seen. A dot on the Feed tab means something new, and a dot on Rolls means a roll of yours has developed.
+    Your feed remembers what you've seen, on any phone. Each day's card says how many of its shots are new, and once you've looked at the card, they're seen. When a friend adds more, that day comes back to the top. A dot on the Feed tab means something new, and a dot on Rolls means a roll of yours has developed.
+
+    FLIM has its own sounds: one when a roll develops, one for reactions, comments and follows, and one when your frame is in Spotlight.
 
     A quiet feed shows you three people you know, and why: they follow you, they're in your rolls, or you came in the same door. Follow them from right there. Joining with a code from a post or a link opens Find friends first.
 
@@ -161,7 +167,7 @@ days old, and the sign-in code boxes and delete-account hold button back to thei
 
     Report and block where it happens: press and hold a comment, or use the menu in a roll's viewer.
 
-    Fixes. Shots taken offline before this update still upload after it. The white specks in dark parts of feed photos are gone. Chapters follow your time zone. Shoot into this roll always points the camera at that roll, and a roll notification opens the roll every time. Switching accounts on one phone carries nothing from one account to the other.
+    Fixes. A notification you tap without a connection opens once you're back online. Shots taken offline before this update still upload after it. The white specks in dark parts of feed photos are gone. Chapters follow your time zone. Shoot into this roll always points the camera at that roll, and a roll notification opens the roll every time. Switching accounts on one phone carries nothing from one account to the other.
 
 ### Ship notes (internal, do NOT paste)
 
