@@ -651,8 +651,8 @@ enum SpotlightFirstTime {
     static func markSeen(userId: UUID) { store.set(true, forKey: key(userId: userId)) }
 }
 
-/// The ask under the sort deck's "Posted to your page" notice: put the post just made up for
-/// Spotlight. Asked after every post that could go up until something is up this week, not once
+/// The sort deck's ask, shown the moment a frame is swiped to post: put it up for Spotlight
+/// too. Asked for every such frame until something is up this week, not once
 /// per account, because the deck is where a week's frames are made. Only for the account's own
 /// shot, nobody tagged, shot and posted inside this week's bounds, while the account may put
 /// anything up and nothing is up yet (swapping out a frame already chosen is the menu's call,

@@ -34,9 +34,12 @@ struct SortDeckView: View {
     @State private var postedNotice = false
     /// Which posted notice the running timer belongs to; see `commit`.
     @State private var postedNoticeId: UUID?
-    /// The post the notice asks to put up for Spotlight, when it could go up (see
-    /// `SpotlightPostedAsk`). Cleared with the notice, and by tapping "Put it up".
-    @State private var spotlightAskPost: Post?
+    /// The frame just swiped to post that could go up for Spotlight (see `SpotlightPostedAsk`).
+    /// Asked at the swipe, not when the post lands: the deck holds each swipe for Undo and only
+    /// posts it at the next swipe or the close, so an ask tied to the post came one card late,
+    /// and never at all for the last card, whose post went out as the deck closed. Cleared by
+    /// the next swipe, Undo, the close, an answer, or a few seconds.
+    @State private var askPhoto: Photo?
     /// Set by tapping "Put it up": the put-up's outcome lands in `UndoCenter`'s slot, and the
     /// tab host that renders it sits under this full-screen cover, so the deck says it in its
     /// own notice area instead. Cleared when that notice goes.
@@ -101,8 +104,25 @@ struct SortDeckView: View {
             VStack(spacing: 0) {
                 header
                 if cards.isEmpty && loaded {
-                    // Nothing left to sort, return to the previous screen (no "all sorted" wall).
-                    Color.clear.onAppear { closeDeck() }
+                    if askPhoto != nil || spotlightOutcomeWatched {
+                        // The last card was a frame that could go up: stay for the ask and its
+                        // answer instead of closing under it. Ten seconds at most with nobody
+                        // answering; the timer waits while the first-time sheet is up.
+                        VStack {
+                            Spacer()
+                            publishErrorBanner
+                            Spacer()
+                        }
+                        .task(id: spotlightFirstTimePost?.id) {
+                            guard spotlightFirstTimePost == nil else { return }
+                            try? await Task.sleep(for: .seconds(10))
+                            guard !Task.isCancelled, spotlightFirstTimePost == nil else { return }
+                            closeDeck()
+                        }
+                    } else {
+                        // Nothing left to sort, return to the previous screen (no "all sorted" wall).
+                        Color.clear.onAppear { closeDeck() }
+                    }
                 } else {
                     GeometryReader { geo in
                         ZStack {
@@ -193,6 +213,24 @@ struct SortDeckView: View {
             .padding(.horizontal, 24)
             .padding(.bottom, 4)
             .transition(.opacity)
+        } else if let askPhoto, publishError == nil {
+            // The frame on hold for Undo could go up: ask now, while it is the one in mind.
+            VStack(spacing: 4) {
+                Text(SpotlightPostedAsk.prompt)
+                    .flimType(.label)
+                    .foregroundStyle(FlimTheme.textSecondary)
+                    .multilineTextAlignment(.center)
+                Button(SpotlightPostedAsk.button) { putUpAsked(askPhoto) }
+                    .flimFont(13, weight: .semibold, relativeTo: .subheadline)
+                    .foregroundStyle(accent)
+                    .disabled(feed.spotlightWriteInFlight)
+            }
+            .padding(.horizontal, 24)
+            .padding(.top, 6)
+            .padding(.bottom, 2)
+            .frame(maxWidth: .infinity)
+            .background(FlimTheme.bg)
+            .transition(.opacity)
         } else if postedNotice, publishError == nil {
             VStack(spacing: 2) {
                 HStack(spacing: 10) {
@@ -206,22 +244,9 @@ struct SortDeckView: View {
                     .flimFont(13, weight: .semibold, relativeTo: .subheadline)
                     .foregroundStyle(accent)
                 }
-                if let askPost = spotlightAskPost {
-                    Text(SpotlightPostedAsk.prompt)
-                        .flimType(.meta)
-                        .foregroundStyle(FlimTheme.textSecondary)
-                        .multilineTextAlignment(.center)
-                    Button(SpotlightPostedAsk.button) { putUpAsked(askPost) }
-                        .flimFont(13, weight: .semibold, relativeTo: .subheadline)
-                        .foregroundStyle(accent)
-                        .disabled(feed.spotlightWriteInFlight)
-                }
             }
             .padding(.horizontal, 24)
-            .padding(.top, spotlightAskPost == nil ? 0 : 6)
-            .padding(.bottom, spotlightAskPost == nil ? 4 : 2)
-            .frame(maxWidth: spotlightAskPost == nil ? nil : .infinity)
-            .background(spotlightAskPost == nil ? Color.clear : FlimTheme.bg)
+            .padding(.bottom, 4)
             .transition(.opacity)
         }
         if let publishError {
@@ -241,15 +266,24 @@ struct SortDeckView: View {
         return (notice, UndoCenter.shared.noticeIsConfirmation)
     }
 
-    /// "Put it up" under the posted notice: the menu's own flow, so a first-timer reads the
-    /// explanation first and the success line waits for the server. The ask goes either way;
-    /// a put-up that fails says why and stays one menu item away on the post.
-    private func putUpAsked(_ post: Post) {
-        guard !feed.spotlightWriteInFlight else { return }
-        withAnimation { spotlightAskPost = nil }
+    /// "Put it up" on the ask: posts the held frame now (it can no longer be undone, which is
+    /// what answering means), then runs the menu's own flow, so a first-timer reads the
+    /// explanation first and the success line waits for the server. A post or put-up that fails
+    /// says why, and the frame stays one menu item away on its post.
+    private func putUpAsked(_ photo: Photo) {
+        guard !feed.spotlightWriteInFlight, lastPhoto?.id == photo.id, lastAction == .publish else { return }
+        let caption = lastCaption, tags = lastTags
+        lastPhoto = nil; lastAction = nil; lastCaption = nil; lastTags = []
+        withAnimation { askPhoto = nil }
         spotlightOutcomeWatched = true
-        SpotlightFlow.requestPutUp(post, feed: feed, userId: auth.currentUser?.id,
-                                   presentFirstTime: { spotlightFirstTimePost = $0 })
+        Task {
+            guard let post = await commit(photo, .publish, caption: caption, tags: tags) else {
+                spotlightOutcomeWatched = false
+                return
+            }
+            SpotlightFlow.requestPutUp(post, feed: feed, userId: auth.currentUser?.id,
+                                       presentFirstTime: { spotlightFirstTimePost = $0 })
+        }
     }
 
     private func openCompose(for photo: Photo) {
@@ -388,7 +422,7 @@ struct SortDeckView: View {
                     .padding(.horizontal, FlimSpace.xxl)
                     // Faded, not removed, under the Spotlight ask: removing it would move the
                     // controls and grow the card for a few seconds.
-                    .opacity(postedNotice && spotlightAskPost != nil ? 0 : 1)
+                    .opacity(askPhoto != nil ? 0 : 1)
                     .transition(.opacity)
             }
         }
@@ -448,7 +482,7 @@ struct SortDeckView: View {
         guard !isTransitioning, let photo = cards.first else { return }
         isTransitioning = true
         postedNotice = false
-        spotlightAskPost = nil
+        askPhoto = nil
         Haptics.tap()
 
         switch action {
@@ -468,6 +502,15 @@ struct SortDeckView: View {
         lastCaption = caption
         lastTags = tags
         sortsCompleted += 1
+        if action == .publish, let uid = auth.currentUser?.id,
+           SpotlightPostedAsk.shouldAsk(userId: uid, photoOwnerId: photo.userId, isTagged: !tags.isEmpty,
+                                        entry: feed.ownSpotlightEntry, takenAt: photo.takenAt, postedAt: .now) {
+            withAnimation { askPhoto = photo }
+            Task {
+                try? await Task.sleep(for: .seconds(8))
+                if askPhoto?.id == photo.id { withAnimation { askPhoto = nil } }
+            }
+        }
 
         // Advance the deck after the card flies off.
         Task {
@@ -489,6 +532,7 @@ struct SortDeckView: View {
     private func closeDeck(then destination: PushDestination? = nil) {
         guard !closing else { return }   // auto-dismiss + button could both fire
         closing = true
+        askPhoto = nil   // closing is a no: the held frame just posts
         let p = lastPhoto, a = lastAction, caption = lastCaption, tags = lastTags
         lastPhoto = nil; lastAction = nil; lastCaption = nil; lastTags = []
         Task {
@@ -517,6 +561,7 @@ struct SortDeckView: View {
     private func undo() {
         guard let photo = lastPhoto else { return }
         Haptics.select()
+        if askPhoto?.id == photo.id { withAnimation { askPhoto = nil } }
         lastPhoto = nil
         lastAction = nil
         lastCaption = nil
@@ -529,9 +574,10 @@ struct SortDeckView: View {
 
     /// Applies a sort action to the backend. `caption`/`tags` only apply to `.publish`; the plain
     /// swipe-right/Post fast path calls this with neither, exactly as before.
+    @discardableResult
     private func commit(_ photo: Photo, _ action: SortAction, caption: String? = nil,
-                         tags: [PendingTag] = []) async {
-        guard let uid = auth.currentUser?.id else { return }
+                         tags: [PendingTag] = []) async -> Post? {
+        guard let uid = auth.currentUser?.id else { return nil }
         switch action {
         case .archive:
             await photoService.markSorted(photoId: photo.id)
@@ -539,27 +585,14 @@ struct SortDeckView: View {
             await photoService.markSorted(photoId: photo.id)
             do {
                 let created = try await feed.createPost(photo: photo, caption: caption, userId: uid, tags: tags)
-                // The Spotlight ask rides this notice only when the post just made could go up,
-                // judged after the post landed, never before, on the server's own times for it.
-                let ask = SpotlightPostedAsk.shouldAsk(
-                    userId: uid, photoOwnerId: photo.userId, isTagged: !tags.isEmpty,
-                    entry: feed.ownSpotlightEntry, takenAt: created.post.takenAt,
-                    postedAt: created.post.createdAt)
                 // The timer belongs to THIS notice: a second post while it shows starts its
                 // own, and the first one's expiry no longer hides it (audit A8).
                 let notice = UUID()
                 postedNoticeId = notice
-                spotlightAskPost = ask ? created.post : nil
                 withAnimation { postedNotice = true }
                 Task {
-                    // Longer when there is a question to answer.
-                    try? await Task.sleep(for: .seconds(ask ? 6 : 3))
-                    if postedNoticeId == notice {
-                        withAnimation {
-                            postedNotice = false
-                            spotlightAskPost = nil
-                        }
-                    }
+                    try? await Task.sleep(for: .seconds(3))
+                    if postedNoticeId == notice { withAnimation { postedNotice = false } }
                 }
                 if shouldWarnThatTagsDidNotSave(created.tagsSaved) {
                     // The post itself is live, only the tags failed to attach; a genuine failure
@@ -568,6 +601,7 @@ struct SortDeckView: View {
                     Haptics.error()
                     publishError = "Posted, but the tags didn't save. Try again from Edit tags."
                 }
+                return created.post
             } catch {
                 // The photo is already marked sorted and the card is gone, so silence here means
                 // someone believes they published something that never left the device. This is
@@ -594,6 +628,7 @@ struct SortDeckView: View {
                 }
             }
         }
+        return nil
     }
 
     private func load() async {
