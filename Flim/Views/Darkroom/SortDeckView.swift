@@ -97,9 +97,9 @@ struct SortDeckView: View {
     /// circles themselves stay different sizes.
     private static let largestCircleSize: CGFloat = 64
 
-    /// How far above `controls`' bottom edge the posted/error notice starts: inside its 30pt
-    /// bottom padding, a few points below the captions. See the overlay in `body`.
-    private static let noticeSlotHeight: CGFloat = 26
+    /// The notice row's resting height under `controls`: the blank space the deck always kept
+    /// there, which a one-line notice fits inside. See `publishErrorBanner`.
+    private static let noticeRowHeight: CGFloat = 30
 
     /// The largest 3:4 card that fits the available area.
     ///
@@ -141,18 +141,14 @@ struct SortDeckView: View {
                     if let top = cards.first {
                         composeHint(for: top)
                     }
-                    controls.overlay(alignment: .bottom) {
-                        // Pinned by its TOP edge, just under the captions: a zero-height-ish slot
-                        // inside `controls`' 30pt bottom padding, content aligned to its top, so a
-                        // notice that wraps (the posted line plus View is two lines on a 402pt
-                        // phone) grows DOWN into the blank space above the home indicator. Pinned
-                        // by its bottom edge it grew up over the Keep private / Delete captions.
+                    controls
+                    ZStack(alignment: .top) {
+                        Color.clear.frame(height: Self.noticeRowHeight)
                         publishErrorBanner
-                            // Its own height, not the slot's: proposed 26pt, a wrapping Text would
-                            // truncate to one line instead of overflowing downward.
+                            // A few points under the captions, where the notice always sat.
+                            .padding(.top, 4)
                             .fixedSize(horizontal: false, vertical: true)
                             .frame(maxWidth: .infinity)
-                            .frame(height: Self.noticeSlotHeight, alignment: .top)
                     }
                 }
             }
@@ -217,17 +213,16 @@ struct SortDeckView: View {
         .padding(.bottom, 6)
     }
 
-    /// Overlaid on `controls`, not inserted into the VStack: it used to sit between the compose
-    /// pill and `controls`, so the whole control row jumped down when a publish/delete error
-    /// appeared and back up when it cleared. Anchored to `controls`' own bottom edge rather than
-    /// to the button row itself, so it lands inside `controls`' existing 30pt trailing padding
-    /// (otherwise-blank space below the captions) regardless of whether the swipe hint line below
-    /// the buttons is showing, and doesn't reach up far enough to compete with the compose pill
-    /// above.
+    /// A real row under `controls`, top-aligned in a `noticeRowHeight` slot: the slot is the
+    /// blank space the deck always kept below the captions, so a one-line notice (the posted
+    /// line and View fit one line on every phone at the default size) appears without moving
+    /// anything. A notice that needs more (an error, a large text size) grows the row, and the
+    /// card, the flexible child above, gives up the height: nothing overlaps the captions or
+    /// runs off the bottom of a phone without a home indicator.
     @ViewBuilder private var publishErrorBanner: some View {
         if postedNotice, publishError == nil {
             HStack(spacing: 10) {
-                Label("Posted to your page. Your followers can see it.", systemImage: "checkmark.circle.fill")
+                Label("Posted. Your followers can see it.", systemImage: "checkmark.circle.fill")
                     .flimType(.label)
                     .foregroundStyle(FlimTheme.success)
                 Button("View") {
@@ -236,6 +231,7 @@ struct SortDeckView: View {
                 }
                 .flimFont(13, weight: .semibold, relativeTo: .subheadline)
                 .foregroundStyle(accent)
+                .expandTapTarget(top: 14, bottom: 14)
             }
             .padding(.horizontal, 24)
             .padding(.bottom, 4)
@@ -389,7 +385,7 @@ struct SortDeckView: View {
                     .transition(.opacity)
             }
         }
-        .padding(.bottom, 30).padding(.top, 10)
+        .padding(.top, 10)
     }
 
     /// `caption` names the action under the icon; `label` is the fuller VoiceOver phrasing.

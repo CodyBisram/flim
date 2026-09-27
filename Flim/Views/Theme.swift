@@ -324,6 +324,8 @@ extension FlimTheme {
     /// comes from the top hairline, the ambient shadow, and the dimming scrim as much as from
     /// lightness, so the fill itself only has to clear `bgElevated`, not carry the whole job.
     static let sheetSurface = Color(red: 28.0 / 255.0, green: 28.0 / 255.0, blue: 32.0 / 255.0).opacity(0.96)
+    /// `sheetSurface` without its 4% of glass, for a pinned region that content scrolls under.
+    static let sheetSurfaceSolid = Color(red: 28.0 / 255.0, green: 28.0 / 255.0, blue: 32.0 / 255.0)
 
     /// A row/section fill for content that sits ON `sheetSurface`, not on `bg`.
     ///
@@ -335,6 +337,10 @@ extension FlimTheme {
     /// `sheetSurface` alike, which is why it's the correct lift for anything drawn on the sheet
     /// layer rather than a fixed dark color tuned for one specific ground.
     static let sheetRow = Color.white.opacity(0.06)
+
+    /// `sheetRow` over `sheetSurface`, as a solid colour: an image placeholder on a sheet that
+    /// must hide what is drawn beneath it (a chosen frame's shadow) while it loads.
+    static let sheetTile = Color(red: 41.0 / 255.0, green: 41.0 / 255.0, blue: 45.0 / 255.0)
 }
 
 /// Draws `FlimTheme.sheetSurface` over `.ultraThinMaterial` as a presentation's background,

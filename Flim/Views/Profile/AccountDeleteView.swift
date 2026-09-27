@@ -27,9 +27,10 @@ struct AccountDeleteView: View {
     /// 0...1 while the button is held; reaching 1 commits. Driven by a timer while pressing,
     /// snapping back to 0 on release, so an accidental brush never gets close.
     @State private var holdProgress: Double = 0
-    /// The hold button's height: fixed, because its GeometryReader takes every point it is
-    /// offered and a `minHeight` let the Spacer above hand it half the free screen (a tall red
-    /// pill; same failure as the OTP boxes, found 2026-09-26). Scaled so a large label fits.
+    /// The hold button's least height. Its label sets the rest, never the space around it: the
+    /// fill's GeometryReader takes every point it is offered, so it sits in the button's
+    /// background, where the Spacer above cannot hand it half the free screen (a tall red pill;
+    /// same failure as the OTP boxes, found 2026-09-26).
     @ScaledMetric(relativeTo: .body) private var holdHeight: CGFloat = 54
     @State private var holdTask: Task<Void, Never>?
     @State private var isWorking = false
@@ -177,40 +178,46 @@ struct AccountDeleteView: View {
 
     /// Press and hold: the fill tracks the hold, releasing before it completes snaps back to
     /// zero. VoiceOver users get an equivalent explicit action instead of a timing gesture.
+    ///
+    /// The label sizes the pill, with `holdHeight` as its floor, so a large text size wraps the
+    /// label instead of truncating it. The fill lives in the background, where it takes the
+    /// pill's size and can never stretch it.
     private var holdButton: some View {
-        ZStack {
-            GeometryReader { proxy in
-                Rectangle()
-                    .fill(Color.red.opacity(0.32))
-                    .frame(width: proxy.size.width * holdProgress)
-                    .animation(.linear(duration: 0.06), value: holdProgress)
+        Text(holdLabel)
+            .flimFont(16, weight: .medium, relativeTo: .body)
+            .foregroundStyle(.red)
+            .multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, 24)
+            .frame(maxWidth: .infinity, minHeight: holdHeight)
+            .background(alignment: .leading) {
+                GeometryReader { proxy in
+                    Rectangle()
+                        .fill(Color.red.opacity(0.32))
+                        .frame(width: proxy.size.width * holdProgress)
+                        .animation(.linear(duration: 0.06), value: holdProgress)
+                }
             }
-            Text(holdLabel)
-                .flimFont(16, weight: .medium, relativeTo: .body)
-                .foregroundStyle(.red)
-        }
-        .frame(height: holdHeight)
-        .frame(maxWidth: .infinity)
-        .clipShape(Capsule())
-        .overlay(Capsule().strokeBorder(Color.red.opacity(0.8), lineWidth: 1))
-        .contentShape(Capsule())
-        .onLongPressGesture(minimumDuration: Self.holdDuration, maximumDistance: 60) {
-            beginHoldCommit()
-        } onPressingChanged: { pressing in
-            guard !isWorking else { return }
-            if pressing {
-                startHoldFill()
-            } else {
-                holdTask?.cancel()
-                withAnimation(.snappy(duration: 0.2)) { holdProgress = 0 }
-            }
-        }
-        .disabled(isWorking)
-        .accessibilityRepresentation {
-            Button(mode == .deleteAccount ? "Delete everything, permanently" : "Wipe all data, permanently") {
+            .clipShape(Capsule())
+            .overlay(Capsule().strokeBorder(Color.red.opacity(0.8), lineWidth: 1))
+            .contentShape(Capsule())
+            .onLongPressGesture(minimumDuration: Self.holdDuration, maximumDistance: 60) {
                 beginHoldCommit()
+            } onPressingChanged: { pressing in
+                guard !isWorking else { return }
+                if pressing {
+                    startHoldFill()
+                } else {
+                    holdTask?.cancel()
+                    withAnimation(.snappy(duration: 0.2)) { holdProgress = 0 }
+                }
             }
-        }
+            .disabled(isWorking)
+            .accessibilityRepresentation {
+                Button(mode == .deleteAccount ? "Delete everything, permanently" : "Wipe all data, permanently") {
+                    beginHoldCommit()
+                }
+            }
     }
 
     private func startHoldFill() {

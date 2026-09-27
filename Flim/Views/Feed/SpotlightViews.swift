@@ -551,6 +551,9 @@ struct SpotlightSessionSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var typeSize
+    /// Half the title's cap height, scaled with it: the badge centres on the title's first
+    /// line, so a title that wraps at a large size keeps the badge beside its first words.
+    @ScaledMetric(relativeTo: .title2) private var titleCapHalf: CGFloat = 8
     /// Read here for the Up now row's thumbnail, which can land after the sheet opens.
     @Environment(FeedService.self) private var feed
 
@@ -583,21 +586,37 @@ struct SpotlightSessionSheet: View {
         // The opening state only; the body reads the session live from here on.
         let frames = session.offered(offer)
         _selection = State(initialValue: frames.count == 1 ? frames.first?.id : nil)
-        let opensLarge = frames.count >= 7 || offer.firstTime || accessibilitySize
-        _detent = State(initialValue: opensLarge ? .large : .height(Self.estimatedHeight(count: frames.count)))
+        // Only the accessibility sizes open tall: everything else fits its content, however
+        // many frames, and scrolls under the footer only when the phone is shorter than that.
+        _detent = State(initialValue: accessibilitySize
+            ? .large
+            : .height(Self.estimatedHeight(count: frames.count, firstTime: offer.firstTime, swap: offer.isSwap)))
     }
 
     /// A first guess at the fitted height, so the sheet rises close to its size; the measured
-    /// height replaces it on the first layout.
-    private static func estimatedHeight(count: Int) -> CGFloat {
-        let chrome: CGFloat = 360
-        if count <= 1 { return chrome + 200 / FlimTheme.frameAspect }
-        let rows = CGFloat((count + 2) / 3)
-        return chrome + rows * 150
+    /// height replaces it on the first layout. Measured at the default text size on a 402pt
+    /// phone (358pt of content): the title, a two-line subtitle and the footer come to about
+    /// 275pt, and each part below adds its own.
+    private static func estimatedHeight(count: Int, firstTime: Bool, swap: Bool) -> CGFloat {
+        let contentWidth: CGFloat = 358
+        var height: CGFloat = 275
+        if firstTime { height += 110 }
+        if swap { height += 66 }
+        if count <= 1 {
+            // One frame's subtitle is a single line.
+            height += 200 / FlimTheme.frameAspect - 18
+        } else {
+            let columns = count >= 7 ? 4 : 3
+            let cell = (contentWidth - 8 * CGFloat(columns - 1)) / CGFloat(columns)
+            let rows = CGFloat((count + columns - 1) / columns)
+            height += rows * cell / FlimTheme.frameAspect + (rows - 1) * 8
+        }
+        return height
     }
 
     private var fittedDetent: PresentationDetent {
-        .height(fit.needed > 0 ? fit.needed : Self.estimatedHeight(count: frames.count))
+        .height(fit.needed > 0 ? fit.needed
+                : Self.estimatedHeight(count: frames.count, firstTime: offer.firstTime, swap: isSwap))
     }
 
     /// The offered frames as they stand now: posts filled in as they land, failures gone.
@@ -647,9 +666,10 @@ struct SpotlightSessionSheet: View {
 
     private var content: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 11) {
+            HStack(alignment: .firstTextBaseline, spacing: 11) {
                 SpotlightGlyphBadge()
-                Text(SpotlightSessionCopy.title(kind: kind, count: count))
+                    .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + titleCapHalf }
+                Text(title)
                     .flimFont(23, weight: .light, relativeTo: .title2)
                     .foregroundStyle(FlimTheme.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -657,18 +677,27 @@ struct SpotlightSessionSheet: View {
             .accessibilityElement(children: .combine)
             .accessibilityAddTraits(.isHeader)
 
-            if offer.firstTime {
-                paragraph(SpotlightFirstTimeCopy.explanation).padding(.top, 16)
-                paragraph(SpotlightFirstTimeCopy.oneAWeek).padding(.top, 10)
-            } else {
-                paragraph(SpotlightSessionCopy.subtitle(count: count)).padding(.top, 12)
+            // Once it is up, the title says so and the explanation has done its job.
+            if !isDone {
+                if offer.firstTime {
+                    paragraph(SpotlightFirstTimeCopy.explanation).padding(.top, 16)
+                    paragraph(SpotlightFirstTimeCopy.oneAWeek).padding(.top, 10)
+                } else {
+                    paragraph(SpotlightSessionCopy.subtitle(count: count)).padding(.top, 12)
+                }
             }
 
-            if case .swap(let day) = kind, !isDone {
+            // At the accessibility sizes the row follows the frames, so the frames are what
+            // the sheet opens on.
+            if case .swap(let day) = kind, !isDone, !typeSize.isAccessibilitySize {
                 upNowRow(day: day).padding(.top, 18)
             }
 
             grid.padding(.top, 18)
+
+            if case .swap(let day) = kind, !isDone, typeSize.isAccessibilitySize {
+                upNowRow(day: day).padding(.top, 18)
+            }
 
             if failedCount > 0 {
                 quietLine(SpotlightSessionCopy.failed(count: failedCount)).padding(.top, 14)
@@ -677,11 +706,21 @@ struct SpotlightSessionSheet: View {
                 quietLine(SpotlightSessionCopy.shotBefore(previousWeekKey: previous))
                     .padding(.top, failedCount > 0 ? 6 : 14)
             }
+            // At the accessibility sizes the status scrolls with the content, so the pinned
+            // footer is only the buttons.
+            if typeSize.isAccessibilitySize {
+                statusLine.padding(.top, 8)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var isDone: Bool { if case .done = phase { return true } else { return false } }
+
+    private var title: String {
+        if isDone { return isSwap ? SpotlightSessionCopy.swappedTitle : SpotlightSessionCopy.upTitle }
+        return SpotlightSessionCopy.title(kind: kind, count: count)
+    }
 
     private func paragraph(_ text: String) -> some View {
         Text(text)
@@ -700,7 +739,7 @@ struct SpotlightSessionSheet: View {
     /// The frame up now, always from an earlier sort: a row, never a tile, because it is not
     /// a choice here.
     private func upNowRow(day: String) -> some View {
-        HStack(spacing: 12) {
+        HStack(alignment: .top, spacing: 12) {
             Color.clear
                 .frame(width: 36, height: 48)
                 .overlay {
@@ -708,10 +747,10 @@ struct SpotlightSessionSheet: View {
                         CachedImage(url: upThumbURL, maxPixel: 112, cacheKey: feed.ownSpotlightThumb.path) {
                             $0.resizable().scaledToFill()
                         } placeholder: {
-                            Color.white.opacity(0.06)
+                            FlimTheme.sheetTile
                         }
                     } else {
-                        Color.white.opacity(0.06)
+                        FlimTheme.sheetTile
                     }
                 }
                 .clipShape(RoundedRectangle(cornerRadius: 6))
@@ -738,7 +777,7 @@ struct SpotlightSessionSheet: View {
                 .frame(width: 200)
                 .frame(maxWidth: .infinity)
         } else {
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: count >= 7 ? 4 : 3),
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8, alignment: .top), count: count >= 7 ? 4 : 3),
                       alignment: .leading, spacing: 8) {
                 ForEach(frames) { cell($0) }
             }
@@ -766,7 +805,7 @@ struct SpotlightSessionSheet: View {
                     .clipShape(RoundedRectangle(cornerRadius: 12))
                     .contentShape(RoundedRectangle(cornerRadius: 12))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(SessionFrameButtonStyle())
             .disabled(!isSelectable(frame))
             .opacity(dimmed ? 0.6 : 1)
             .scaleEffect(dimmed && !reduceMotion ? 0.96 : 1)
@@ -805,7 +844,8 @@ struct SpotlightSessionSheet: View {
                 CachedImage(url: session.urls[frame.photo.id], maxPixel: maxPixel, cacheKey: frame.photo.viewPath) {
                     $0.resizable().scaledToFill()
                 } placeholder: {
-                    Color.white.opacity(0.06)
+                    // Opaque: the chosen frame's shadow must not show through while it loads.
+                    FlimTheme.sheetTile
                 }
             }
     }
@@ -817,27 +857,31 @@ struct SpotlightSessionSheet: View {
         return label
     }
 
-    /// A tap chooses; a tap on the chosen frame clears it. The context menu only chooses.
+    /// A tap chooses; a tap on the chosen frame clears it, unless it is the only frame, which
+    /// stays chosen. The context menu only chooses.
     private func toggle(_ frame: SpotlightSessionFrame, choosing: Bool = false) {
         guard isSelectable(frame) else { return }
         Haptics.select()
         errorLine = nil
-        selection = (selection == frame.id && !choosing) ? nil : frame.id
+        let clears = selection == frame.id && !choosing && count > 1
+        selection = clears ? nil : frame.id
     }
 
     // MARK: Footer
 
-    /// Pinned under the scrolling content, with a hairline once the content runs under it (and
-    /// always at the sizes where it is sure to).
+    /// Pinned under the scrolling content, with a hairline only while the content runs under
+    /// it. At the accessibility sizes the status line moves into the content (see `content`).
     private var footer: some View {
         VStack(spacing: 0) {
-            if fit.needed > fit.visible + 1 || typeSize.isAccessibilitySize || offer.firstTime {
+            if fit.needed > fit.visible + 1 {
                 Rectangle()
                     .fill(Color.white.opacity(0.10))
                     .frame(height: 1)
             }
             VStack(spacing: 0) {
-                statusLine
+                if !typeSize.isAccessibilitySize {
+                    statusLine
+                }
                 primaryButton
                     .padding(.top, 10)
                 if phase == .choosing || isSending {
@@ -859,7 +903,9 @@ struct SpotlightSessionSheet: View {
             .padding(.top, 6)
             .padding(.bottom, 10)
         }
-        .background(FlimTheme.sheetSurface)
+        // Solid, not `sheetSurface` (96%): under a pinned footer the 4% let scrolled text read
+        // through the (itself translucent) disabled button at accessibility sizes.
+        .background(FlimTheme.sheetSurfaceSolid)
     }
 
     @ViewBuilder private var statusLine: some View {
@@ -871,12 +917,25 @@ struct SpotlightSessionSheet: View {
         case .choosing, .sending:
             if let errorLine {
                 status(errorLine, systemImage: "exclamationmark.triangle.fill", color: FlimTheme.error)
+            } else if let chosen, chosen.post == nil {
+                quietLine(SpotlightSessionCopy.stillPosting)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.top, 6)
+                    .transition(.opacity)
             }
         }
     }
 
+    /// Every status line is a sentence. Some refusals are shared with the menu, where they
+    /// read as a reason without a period (`SpotlightMenuItem.taggedReason`); the period is
+    /// added here, where they are shown as a line.
+    private static func sentence(_ text: String) -> String {
+        guard let last = text.last, !".?".contains(last) else { return text }
+        return text + "."
+    }
+
     private func status(_ text: String, systemImage: String, color: Color) -> some View {
-        Label(text, systemImage: systemImage)
+        Label(Self.sentence(text), systemImage: systemImage)
             .flimType(.label)
             .foregroundStyle(color)
             .fixedSize(horizontal: false, vertical: true)
@@ -943,6 +1002,16 @@ struct SpotlightSessionSheet: View {
                 }
             }
         }
+    }
+}
+
+/// A session frame's button: the label as drawn, never the system's disabled dimming. The sheet
+/// dims frames itself (`isDimmed`), and a frame that cannot be tapped for another reason (still
+/// posting, or the chosen one once it is up) must stay opaque, or the chosen frame's shadow
+/// shows through it.
+private struct SessionFrameButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
     }
 }
 

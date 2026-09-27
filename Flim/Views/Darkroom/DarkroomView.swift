@@ -986,14 +986,24 @@ Text("Darkroom")
             }
         } label: { Label("Set as profile photo", systemImage: "person.crop.circle") }
         // A frame on your page can go up for Spotlight from here too, the same item the post's
-        // own menu carries, disabled with its reason when this one cannot.
-        if let post = feed.ownPostsByPhotoId[photo.id] {
+        // own menu carries, disabled with its reason when this one cannot. Left out for a frame
+        // shot before this week, as on your own page: it would only ever say no.
+        if let post = feed.ownPostsByPhotoId[photo.id], showsSpotlightItem(for: post) {
             SpotlightMenuSection(post: post,
                                  presentFirstTime: { spotlightFirstTimePost = $0 },
                                  confirmTakeOut: { spotlightTakeOutPost = $0 })
         }
         Divider()
         Button(role: .destructive) { requestDelete([photo]) } label: { Label("Delete", systemImage: "trash") }
+    }
+
+    /// The same rule as `OwnPostSpotlightMenu.showsMenu` on your own page: a past week's frame
+    /// gets no Spotlight item; every other disabled reason still shows, greyed out.
+    private func showsSpotlightItem(for post: Post) -> Bool {
+        if case .disabled(let reason) = feed.spotlightMenuItem(for: post, viewerId: auth.currentUser?.id) {
+            return reason != SpotlightMenuItem.notThisWeekReason
+        }
+        return true
     }
 
     /// Asks which loaded frames have a post on your page, for the long-press Spotlight item.

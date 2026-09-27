@@ -1068,6 +1068,9 @@ struct SpotlightTests {
         #expect(SpotlightSessionCopy.subtitle(count: 1) == "Only the team at \(AppInfo.appName) sees what you put up.")
         #expect(SpotlightSessionCopy.subtitle(count: 2)
                 == "Choose one from this sort. Only the team at \(AppInfo.appName) sees what you put up.")
+        #expect(SpotlightSessionCopy.upTitle == "Up for Spotlight")
+        #expect(SpotlightSessionCopy.swappedTitle == "Swapped into Spotlight")
+        #expect(SpotlightSessionCopy.stillPosting == "Still posting this frame.")
         #expect(SpotlightSessionCopy.upNow(fromDay: "Tuesday") == "Up now: your frame from Tuesday")
         #expect(SpotlightSessionCopy.upNowSub(count: 1) == "Swapping this one in takes it down.")
         #expect(SpotlightSessionCopy.upNowSub(count: 4) == "Swapping one in takes it down.")
@@ -1086,6 +1089,7 @@ struct SpotlightTests {
             SpotlightSessionCopy.upNowSub(count: 1), SpotlightSessionCopy.upNowSub(count: 2),
             SpotlightSessionCopy.failed(count: 1), SpotlightSessionCopy.failed(count: 2),
             SpotlightSessionCopy.shotBefore(previousWeekKey: "2026-09-14"),
+            SpotlightSessionCopy.upTitle, SpotlightSessionCopy.swappedTitle, SpotlightSessionCopy.stillPosting,
             SpotlightFirstTimeCopy.explanation, SpotlightFirstTimeCopy.oneAWeek,
         ]
         for line in lines {

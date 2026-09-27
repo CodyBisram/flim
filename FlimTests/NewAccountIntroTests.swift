@@ -208,13 +208,16 @@ struct NewAccountIntroTests {
         #expect(NewAccountIntro.shownKey(.spotlight, userId: me) != NewAccountIntro.shownKey(.feed, userId: me))
     }
 
-    @Test("the Spotlight announcement names the team, the week and the menu, and has no banned punctuation")
+    @Test("the Spotlight announcement names the team, the week and the long press, and has no banned punctuation")
     func announcementWords() {
         let line = NewAccountIntro.Announcement.spotlight.line
-        #expect(line.contains("the team at \(AppInfo.appName)"))
+        #expect(NewAccountIntro.Announcement.spotlight.detail
+                == "Each week, put up one frame you shot that week: press and hold it and choose Put it up for Spotlight. The team at \(AppInfo.appName) chooses a few to show everyone.")
+        #expect(line.contains("The team at \(AppInfo.appName)"))
         #expect(line.contains("week"))
-        #expect(line.contains("menu"))
+        #expect(line.contains("press and hold"))
         #expect(!line.contains("\u{2014}") && !line.contains("!"))
         #expect(!line.contains("Monday"))
+        #expect(!line.lowercased().contains("picks") && !line.lowercased().contains("picked"))
     }
 }

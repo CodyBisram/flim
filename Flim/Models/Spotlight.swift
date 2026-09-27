@@ -823,6 +823,14 @@ enum SpotlightSessionCopy {
         return count > 1 ? "Choose one from this sort. \(onlyTeam)" : onlyTeam
     }
 
+    /// The title once the put-up has landed, in place of the question.
+    static let upTitle = "Up for Spotlight"
+    /// The title once a swap has landed.
+    static let swappedTitle = "Swapped into Spotlight"
+    /// Above the button while the chosen frame's post has not landed yet, so a button that
+    /// cannot be tapped says why.
+    static let stillPosting = "Still posting this frame."
+
     static let chooseFrame = "Choose a frame"
     static let putUp = "Put it up"
     static let swapIn = "Swap it in"
