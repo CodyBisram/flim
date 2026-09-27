@@ -97,6 +97,10 @@ struct SortDeckView: View {
     /// circles themselves stay different sizes.
     private static let largestCircleSize: CGFloat = 64
 
+    /// How far above `controls`' bottom edge the posted/error notice starts: inside its 30pt
+    /// bottom padding, a few points below the captions. See the overlay in `body`.
+    private static let noticeSlotHeight: CGFloat = 26
+
     /// The largest 3:4 card that fits the available area.
     ///
     /// A complete 3:4 photo still fills ~82% of the height the old full-bleed card used, so
@@ -137,7 +141,19 @@ struct SortDeckView: View {
                     if let top = cards.first {
                         composeHint(for: top)
                     }
-                    controls.overlay(alignment: .bottom) { publishErrorBanner }
+                    controls.overlay(alignment: .bottom) {
+                        // Pinned by its TOP edge, just under the captions: a zero-height-ish slot
+                        // inside `controls`' 30pt bottom padding, content aligned to its top, so a
+                        // notice that wraps (the posted line plus View is two lines on a 402pt
+                        // phone) grows DOWN into the blank space above the home indicator. Pinned
+                        // by its bottom edge it grew up over the Keep private / Delete captions.
+                        publishErrorBanner
+                            // Its own height, not the slot's: proposed 26pt, a wrapping Text would
+                            // truncate to one line instead of overflowing downward.
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: Self.noticeSlotHeight, alignment: .top)
+                    }
                 }
             }
         }
