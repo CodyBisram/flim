@@ -18,6 +18,10 @@ struct SortDeckComposeSheet: View {
     let url: URL?
     @Binding var caption: String
     @Binding var tags: [PendingTag]
+    /// Whether this frame could go up for Spotlight if nobody were tagged, decided by the deck
+    /// when the sheet opens (`SpotlightPostedAsk.offer` with no tags). With it, tagging someone
+    /// says what it costs while the choice is still open.
+    var spotlightEligibleIfUntagged = false
     /// Publishes with the current caption/tags. The sheet is dismissed by the caller's `.sheet`
     /// binding flipping to `false`, not from in here, since posting also has to fly the card off
     /// the deck underneath.
@@ -34,18 +38,27 @@ struct SortDeckComposeSheet: View {
                         .padding(.horizontal, 24)
                         .padding(.top, 12)
 
-                    Button { showTagSheet = true } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "person.crop.circle.badge.plus").font(.system(size: 14))
-                            Text(tags.isEmpty ? "Tag people" : "\(tags.count) tagged")
-                                .flimFont(14)
-                            Spacer()
-                            Image(systemName: "chevron.right").font(.system(size: 11))
-                                .foregroundStyle(.white.opacity(0.4))
+                    VStack(alignment: .leading, spacing: 8) {
+                        Button { showTagSheet = true } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "person.crop.circle.badge.plus").font(.system(size: 14))
+                                Text(tags.isEmpty ? "Tag people" : "\(tags.count) tagged")
+                                    .flimFont(14)
+                                Spacer()
+                                Image(systemName: "chevron.right").font(.system(size: 11))
+                                    .foregroundStyle(.white.opacity(0.4))
+                            }
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 14).padding(.vertical, 10)
+                            .background(Color.white.opacity(0.1), in: Capsule())
                         }
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 14).padding(.vertical, 10)
-                        .background(Color.white.opacity(0.1), in: Capsule())
+                        if !tags.isEmpty && spotlightEligibleIfUntagged {
+                            Text(SpotlightPostedAsk.taggedLine)
+                                .flimType(.meta)
+                                .foregroundStyle(FlimTheme.textTertiary)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .padding(.horizontal, 14)
+                        }
                     }
                     .padding(.horizontal, 24)
 

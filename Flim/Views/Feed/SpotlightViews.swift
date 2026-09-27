@@ -472,8 +472,31 @@ struct SpotlightShelfView: View {
 /// The first-time explanation, once per account, before the first put-up. The put-up is sent
 /// only after this sheet has gone, so its notice never lands under it.
 struct SpotlightFirstTimeSheet: View {
+    /// "Cancel" from a menu; the deck's last card, where declining also closes the deck, shows
+    /// the same content in its own sheet with "Not now" (see `SpotlightDeckLastSheet`).
+    var declineTitle = "Cancel"
     let onPutUp: () -> Void
     @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        SpotlightFirstTimeContent(declineTitle: declineTitle, onPutUp: onPutUp, onDecline: { dismiss() })
+            .padding(.horizontal, 22)
+            .padding(.top, 26)
+            .padding(.bottom, 10)
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+            .flimSheetSurface()
+    }
+}
+
+/// The first-time explanation's words and its two answers, without a presentation of its own,
+/// so the deck's last-card sheet can show it inside its own detents.
+struct SpotlightFirstTimeContent: View {
+    let declineTitle: String
+    /// The put-up is on the wire (the deck's last card): the button spins instead of closing.
+    var isWorking = false
+    let onPutUp: () -> Void
+    let onDecline: () -> Void
     /// In-flight guard: a second tap while the sheet is closing must not send twice.
     @State private var confirmed = false
 
@@ -496,16 +519,14 @@ struct SpotlightFirstTimeSheet: View {
                 .foregroundStyle(FlimTheme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 10)
-            PrimaryButton(title: "Put it up", disabled: confirmed) {
+            PrimaryButton(title: "Put it up", isLoading: isWorking, disabled: confirmed) {
                 guard !confirmed else { return }
                 confirmed = true
                 onPutUp()
             }
             .padding(.top, 24)
-            Button {
-                dismiss()
-            } label: {
-                Text("Cancel")
+            Button(action: onDecline) {
+                Text(declineTitle)
                     .flimFont(16, relativeTo: .body)
                     .foregroundStyle(FlimTheme.textSecondary)
                     .frame(maxWidth: .infinity)
@@ -513,12 +534,6 @@ struct SpotlightFirstTimeSheet: View {
             }
             .padding(.top, 4)
         }
-        .padding(.horizontal, 22)
-        .padding(.top, 26)
-        .padding(.bottom, 10)
-        .presentationDetents([.medium, .large])
-        .presentationDragIndicator(.visible)
-        .flimSheetSurface()
     }
 }
 
@@ -526,9 +541,14 @@ struct SpotlightFirstTimeSheet: View {
 /// `firstTimePost` presents the first-time sheet, and confirming sends the put-up once the
 /// sheet has dismissed; setting `takeOutPost` asks before taking a chosen frame out, which is
 /// final. Both live on the host, never inside the menu, which cannot present anything.
+///
+/// A host that has to know how the put-up ends (the sort deck, which says it in its own notice
+/// area) passes `onFirstTimeAnswer`: it hears the confirmed post, or nil for a cancel, once the
+/// sheet has gone, and sends the put-up itself.
 private struct SpotlightPutUpFlow: ViewModifier {
     @Binding var firstTimePost: Post?
     @Binding var takeOutPost: Post?
+    var onFirstTimeAnswer: ((Post?) -> Void)?
     @Environment(FeedService.self) private var feed
     @Environment(AuthService.self) private var auth
     @State private var confirmed: Post?
@@ -536,8 +556,13 @@ private struct SpotlightPutUpFlow: ViewModifier {
     func body(content: Content) -> some View {
         content
             .sheet(item: $firstTimePost, onDismiss: {
-                guard let post = confirmed else { return }
+                let post = confirmed
                 confirmed = nil
+                if let onFirstTimeAnswer {
+                    onFirstTimeAnswer(post)
+                    return
+                }
+                guard let post else { return }
                 SpotlightFlow.putUp(post, feed: feed)
             }) { post in
                 SpotlightFirstTimeSheet {
@@ -562,8 +587,10 @@ private struct SpotlightPutUpFlow: ViewModifier {
 
 extension View {
     /// See `SpotlightPutUpFlow`.
-    func spotlightPutUpFlow(firstTimePost: Binding<Post?>, takeOutPost: Binding<Post?>) -> some View {
-        modifier(SpotlightPutUpFlow(firstTimePost: firstTimePost, takeOutPost: takeOutPost))
+    func spotlightPutUpFlow(firstTimePost: Binding<Post?>, takeOutPost: Binding<Post?>,
+                            onFirstTimeAnswer: ((Post?) -> Void)? = nil) -> some View {
+        modifier(SpotlightPutUpFlow(firstTimePost: firstTimePost, takeOutPost: takeOutPost,
+                                    onFirstTimeAnswer: onFirstTimeAnswer))
     }
 }
 
@@ -572,28 +599,37 @@ extension View {
 enum SpotlightFlow {
     /// "Put it up" or "Swap it in": the first time for this account goes through the sheet;
     /// every time after goes straight to the server.
+    ///
+    /// Returns the put-up's task when it was sent, whose value is nil once it is up or the line
+    /// that says why not (see `FeedService.putUpForSpotlight`); nil when the first-time sheet was
+    /// presented instead, or nothing was sent.
+    @discardableResult
     static func requestPutUp(_ post: Post, feed: FeedService, userId: UUID?,
-                             presentFirstTime: (Post) -> Void) {
-        guard let userId, !feed.spotlightWriteInFlight else { return }
+                             presentFirstTime: (Post) -> Void) -> Task<String?, Never>? {
+        guard let userId, !feed.spotlightWriteInFlight else { return nil }
         if SpotlightFirstTime.hasSeen(userId: userId) {
-            putUp(post, feed: feed)
-        } else {
-            presentFirstTime(post)
+            return putUp(post, feed: feed)
         }
+        presentFirstTime(post)
+        return nil
     }
 
     /// The menu flips at once and the server is asked straight away; the capsule's slot says
     /// it is up only once the server has said so (see `FeedService.putUpForSpotlight`).
-    static func putUp(_ post: Post, feed: FeedService) {
-        guard !feed.spotlightWriteInFlight else { return }
+    @discardableResult
+    static func putUp(_ post: Post, feed: FeedService) -> Task<String?, Never>? {
+        guard !feed.spotlightWriteInFlight else { return nil }
         Haptics.tap()
-        Task { await feed.putUpForSpotlight(post) }
+        return Task { await feed.putUpForSpotlight(post) }
     }
 
-    static func takeDown(_ post: Post, feed: FeedService) {
-        guard !feed.spotlightWriteInFlight else { return }
+    /// Returns the take-down's task, whose value is nil once it is down or the line that says
+    /// why not; nil when nothing was sent.
+    @discardableResult
+    static func takeDown(_ post: Post, feed: FeedService) -> Task<String?, Never>? {
+        guard !feed.spotlightWriteInFlight else { return nil }
         Haptics.tap()
-        Task { await feed.takeDownFromSpotlight(post) }
+        return Task { await feed.takeDownFromSpotlight(post) }
     }
 
     static func takeOut(_ post: Post, feed: FeedService) {
@@ -665,5 +701,244 @@ struct SpotlightMenuSection: View {
     private func putUp() {
         SpotlightFlow.requestPutUp(post, feed: feed, userId: auth.currentUser?.id,
                                    presentFirstTime: presentFirstTime)
+    }
+}
+
+// MARK: - The sort deck's last card
+
+/// The Spotlight offer on the sort deck's last card, where no card is left to hold the capsule:
+/// a short sheet with the frame in it. Presented with background interaction so the deck's Undo
+/// stays live behind it (Undo dismisses it and puts the card back). "Not now" and a pull down
+/// close the deck, and the held frame posts as it would have. After a put-up it turns into the
+/// answer: "Done" closes the deck, "Take it down" takes it down and closes. A refusal shows in
+/// the error colour in the status line's place.
+struct SpotlightDeckLastSheet: View {
+    let offer: DeckSpotlightOffer
+    /// The just-posted frame, as the deck's card signed and cached it.
+    let url: URL?
+    let cacheKey: String
+    /// The frame up now, for the swap (see `FeedService.ownSpotlightThumb`).
+    let upThumbURL: URL?
+    let upThumbPath: String?
+    /// A Spotlight write is on the wire: nothing else is sent until it answers.
+    let busy: Bool
+    let onPutUp: () -> Void
+    let onNotNow: () -> Void
+    let onDone: () -> Void
+    let onTakeDown: (Post) -> Void
+
+    @Environment(\.dynamicTypeSize) private var typeSize
+    /// Captured when the sheet opens: marking the account seen on "Put it up" must not swap
+    /// the explanation for the plain ask under the spinner.
+    @State private var showsFirstTime: Bool
+    /// The content's measured height, for a detent that fits it. Seeded to a first-paint size.
+    @State private var contentHeight: CGFloat = 320
+
+    init(offer: DeckSpotlightOffer, url: URL?, cacheKey: String, upThumbURL: URL?, upThumbPath: String?,
+         firstTimeUnseen: Bool, busy: Bool, onPutUp: @escaping () -> Void, onNotNow: @escaping () -> Void,
+         onDone: @escaping () -> Void, onTakeDown: @escaping (Post) -> Void) {
+        self.offer = offer
+        self.url = url
+        self.cacheKey = cacheKey
+        self.upThumbURL = upThumbURL
+        self.upThumbPath = upThumbPath
+        self.busy = busy
+        self.onPutUp = onPutUp
+        self.onNotNow = onNotNow
+        self.onDone = onDone
+        self.onTakeDown = onTakeDown
+        _showsFirstTime = State(initialValue: firstTimeUnseen)
+    }
+
+    var body: some View {
+        ScrollView {
+            content
+                .padding(.horizontal, 22)
+                .padding(.top, 26)
+                .padding(.bottom, 10)
+                .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { contentHeight = $0 }
+        }
+        .scrollBounceBehavior(.basedOnSize)
+        // At an accessibility size it opens at the medium detent and scrolls, so the deck's
+        // header, and its Undo, stay on screen above it.
+        .presentationDetents(typeSize.isAccessibilitySize ? [.medium, .large] : [.height(contentHeight), .large])
+        .presentationDragIndicator(.visible)
+        // The deck's header stays live behind the sheet: Undo is the way back to the card.
+        .presentationBackgroundInteraction(.enabled)
+        .flimSheetSurface()
+    }
+
+    @ViewBuilder private var content: some View {
+        if case .up(let post) = offer.phase {
+            upContent(post)
+        } else if let refusal = offer.refusal {
+            refusedContent(refusal)
+        } else if showsFirstTime, offer.kind == .putUp {
+            // The explanation stands in for the plain ask only. A swap keeps its own content,
+            // which says what comes down; the first-time mark is set by its answer either way.
+            SpotlightFirstTimeContent(declineTitle: SpotlightPostedAsk.decline,
+                                      isWorking: offer.phase == .working,
+                                      onPutUp: onPutUp, onDecline: onNotNow)
+        } else {
+            switch offer.kind {
+            case .putUp: putUpContent
+            case .swap(let day): swapContent(day: day)
+            }
+        }
+    }
+
+    /// Thumbnail beside the words; above them at an accessibility size, so the words keep the
+    /// sheet's width.
+    private var headerLayout: AnyLayout {
+        typeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 16))
+            : AnyLayout(HStackLayout(alignment: .top, spacing: 16))
+    }
+
+    private var putUpContent: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            headerLayout {
+                postedThumb()
+                VStack(alignment: .leading, spacing: 8) {
+                    title(SpotlightPostedAsk.lastTitle)
+                    bodyText(SpotlightPostedAsk.lastBody)
+                }
+                .padding(.top, 2)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            answers(primary: SpotlightPostedAsk.button)
+        }
+    }
+
+    /// Both frames side by side, the week named, and what comes down said in words.
+    private func swapContent(day: String) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .top, spacing: 12) {
+                labelledThumb(frameThumb(url: upThumbURL, cacheKey: upThumbPath),
+                              label: SpotlightPostedAsk.upNow(day: day))
+                labelledThumb(postedThumb(), label: SpotlightPostedAsk.justPosted)
+            }
+            title(SpotlightPostedAsk.swapTitle)
+                .padding(.top, 18)
+            bodyText(SpotlightPostedAsk.swapBody(day: day, weekKey: offer.weekKey))
+                .padding(.top, 8)
+            answers(primary: SpotlightPostedAsk.swapButton)
+        }
+    }
+
+    private func upContent(_ post: Post) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            headerLayout {
+                postedThumb()
+                VStack(alignment: .leading, spacing: 8) {
+                    Label(SpotlightPostedAsk.upStatus, systemImage: "checkmark.circle.fill")
+                        .flimType(.label)
+                        .foregroundStyle(FlimTheme.success)
+                    // A take-down the server refused says why here; it can be tried again.
+                    if let refusal = offer.refusal {
+                        errorLine(refusal)
+                    } else {
+                        bodyText(SpotlightPostedAsk.upBody)
+                    }
+                }
+                .padding(.top, 2)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            PrimaryButton(title: SpotlightPostedAsk.done) { onDone() }
+                .padding(.top, 24)
+            secondary(SpotlightPostedAsk.takeDown, disabled: busy) { onTakeDown(post) }
+        }
+    }
+
+    /// The put-up (or the post itself) was refused: the frame is on the page, and its menu is
+    /// where it can go up again.
+    private func refusedContent(_ refusal: String) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            headerLayout {
+                postedThumb()
+                errorLine(refusal)
+                    .padding(.top, 2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            PrimaryButton(title: SpotlightPostedAsk.done) { onDone() }
+                .padding(.top, 24)
+        }
+    }
+
+    @ViewBuilder private func answers(primary: String) -> some View {
+        let working = offer.phase == .working
+        PrimaryButton(title: primary, isLoading: working, disabled: busy && !working) { onPutUp() }
+            .padding(.top, 24)
+        secondary(SpotlightPostedAsk.decline, disabled: working) { onNotNow() }
+    }
+
+    private func secondary(_ title: String, disabled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .flimFont(16, relativeTo: .body)
+                .foregroundStyle(FlimTheme.textSecondary)
+                .frame(maxWidth: .infinity)
+                .frame(minHeight: 52)
+        }
+        .disabled(disabled)
+        .padding(.top, 4)
+    }
+
+    private func title(_ text: String) -> some View {
+        Text(text)
+            .flimFont(23, weight: .light, relativeTo: .title2)
+            .foregroundStyle(FlimTheme.textPrimary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func bodyText(_ text: String) -> some View {
+        Text(text)
+            .flimType(.body)
+            .foregroundStyle(FlimTheme.textSecondary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func errorLine(_ text: String) -> some View {
+        Label(text, systemImage: "exclamationmark.triangle.fill")
+            .flimType(.label)
+            .foregroundStyle(FlimTheme.error)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    /// The just-posted frame, at the deck card's own decode size (`SortDeckView`): the card's
+    /// cached image, rather than a second download of the same file at a new size.
+    private func postedThumb() -> some View {
+        frameThumb(url: url, cacheKey: cacheKey, maxPixel: 1400)
+    }
+
+    /// A frame as chrome: 84 by 112 (3:4), never scaled with the type.
+    private func frameThumb(url: URL?, cacheKey: String?, maxPixel: CGFloat = 112) -> some View {
+        Group {
+            if url == nil && cacheKey == nil {
+                FlimTheme.loading
+            } else {
+                CachedImage(url: url, maxPixel: maxPixel, cacheKey: cacheKey) {
+                    $0.resizable().scaledToFill()
+                } placeholder: {
+                    FlimTheme.loading
+                }
+            }
+        }
+        .frame(width: 84, height: 112)
+        .clipShape(RoundedRectangle(cornerRadius: FlimRadius.photo))
+        .overlay(RoundedRectangle(cornerRadius: FlimRadius.photo).stroke(Color.white.opacity(0.1), lineWidth: 1))
+        .accessibilityHidden(true)
+    }
+
+    private func labelledThumb<Thumb: View>(_ thumb: Thumb, label: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            thumb
+            Text(label)
+                .flimType(.meta)
+                .foregroundStyle(FlimTheme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        // The frames' width at default; at an accessibility size the words take the room.
+        .frame(maxWidth: typeSize.isAccessibilitySize ? .infinity : 84, alignment: .leading)
     }
 }

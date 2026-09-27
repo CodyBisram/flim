@@ -651,29 +651,89 @@ enum SpotlightFirstTime {
     static func markSeen(userId: UUID) { store.set(true, forKey: key(userId: userId)) }
 }
 
-/// The sort deck's ask, shown the moment a frame is swiped to post: put it up for Spotlight
-/// too. Asked for every such frame until something is up this week, not once
-/// per account, because the deck is where a week's frames are made. Only for the account's own
+/// The sort deck's Spotlight offer, made the moment a frame is swiped to post: a capsule beside
+/// the compose pill, or a short sheet on the last card. Made for every frame that can go up,
+/// not once per account, because the deck is where a week's frames are made, so its absence is
+/// the answer and nothing is said for a frame that cannot go up. Only for the account's own
 /// shot, nobody tagged, shot and posted inside this week's bounds, while the account may put
-/// anything up and nothing is up yet (swapping out a frame already chosen is the menu's call,
-/// where it names the frame it would take down).
+/// anything up and the week is still open. With a frame already up it offers the swap, naming
+/// the day that frame was posted, the same words the menu uses.
 enum SpotlightPostedAsk {
-    static let prompt = "Put this one up for Spotlight?"
-    static let button = "Put it up"
-    /// Skips the ask; on the deck's last card it also closes the deck.
-    static let decline = "Not now"
+    enum Kind: Equatable {
+        case putUp
+        /// Another frame is up this week; `fromDay` is `SpotlightMenuItem.dayWord` of it.
+        case swap(fromDay: String)
+    }
 
     /// - Parameters:
     ///   - photoOwnerId: who shot the posted photo (`photos.user_id`).
-    ///   - entry: this week's entry; nil while unknown, which asks nothing rather than guess.
+    ///   - entry: this week's entry; nil while unknown, which offers nothing rather than guess.
     ///   - takenAt: when the frame was shot.
-    ///   - postedAt: when the post landed.
-    static func shouldAsk(userId: UUID, photoOwnerId: UUID, isTagged: Bool,
-                          entry: OwnSpotlightEntry?, takenAt: Date, postedAt: Date) -> Bool {
-        guard photoOwnerId == userId, !isTagged,
-              let entry, entry.canPutUp, entry.postId == nil else { return false }
-        return entry.isThisWeek(takenAt) && entry.isThisWeek(postedAt)
+    ///   - postedAt: when the post lands.
+    ///   - now: past the entry's close, the entry is stale and nothing is offered.
+    static func offer(userId: UUID, photoOwnerId: UUID, isTagged: Bool, entry: OwnSpotlightEntry?,
+                      takenAt: Date, postedAt: Date, now: Date = .now,
+                      calendar: Calendar = .current) -> Kind? {
+        guard photoOwnerId == userId, !isTagged, let entry, entry.canPutUp,
+              now < entry.weekClosesAt,
+              entry.isThisWeek(takenAt), entry.isThisWeek(postedAt) else { return nil }
+        guard entry.postId != nil else { return .putUp }
+        // Another frame is up but the entry does not say when it was posted: the swap could not
+        // name what comes down, so nothing is offered, as the menu does.
+        guard let upAt = entry.postCreatedAt else { return nil }
+        return .swap(fromDay: SpotlightMenuItem.dayWord(of: upAt, now: now, calendar: calendar))
     }
+
+    /// A frame shot before this week began that developed inside it: the one case the deck
+    /// breaks its silence for, since a Sunday-night frame may be the very one someone meant to
+    /// put up. Compares against the server's bounds only; no week math here.
+    static func developedAfterClose(takenAt: Date, developsAt: Date, entry: OwnSpotlightEntry?) -> Bool {
+        guard let entry else { return false }
+        return takenAt < entry.weekStartsAt && developsAt >= entry.weekStartsAt
+    }
+
+    // MARK: Copy
+
+    /// The compose pill's words while the capsule shares its slot.
+    static let composeShort = "Caption or tag"
+    static let putUpCapsule = "Put it up for Spotlight"
+    static func swapCapsule(day: String) -> String { "Swap in for \(day)'s" }
+    static let working = "Putting it up"
+    static let takeDown = "Take it down"
+    static let takenDown = "Taken down from Spotlight."
+    static let developedLate = "This one developed after its week closed, so it can't go up for Spotlight."
+    /// The compose sheet's line once someone is tagged on a frame that could otherwise go up.
+    static let taggedLine = "Frames with people tagged can't go up for Spotlight."
+
+    static let announcement = "Can go up for Spotlight"
+    static var putUpLabel: String {
+        "Put the frame you just posted up for Spotlight. Only the team at \(AppInfo.appName) sees it."
+    }
+    static func swapLabel(day: String) -> String {
+        "Put the frame you just posted up for Spotlight instead of your frame from \(day). Your frame from \(day) comes down."
+    }
+    static let takeDownLabel = "Take the frame you just posted down from Spotlight"
+
+    // The last card's sheet.
+    static let lastTitle = "Put it up for Spotlight?"
+    static var lastBody: String {
+        "Your last frame is on your page. Only the team at \(AppInfo.appName) sees what you put up."
+    }
+    static let button = "Put it up"
+    /// Closes the deck; the held frame posts as it would have.
+    static let decline = "Not now"
+    static func upNow(day: String) -> String { "Up now, from \(day)" }
+    static let justPosted = "Just posted"
+    static let swapTitle = "Put this one up instead?"
+    static func swapBody(day: String, weekKey: String, calendar: Calendar = .current) -> String {
+        "Your frame from \(day) is up for \(SpotlightWeekLabel.phrase(weekKey, calendar: calendar)). If this one goes up, \(day)'s comes down."
+    }
+    static let swapButton = "Put it up instead"
+    static let upStatus = "Up for Spotlight"
+    static var upBody: String {
+        "Only the team at \(AppInfo.appName) sees it. You can take it down until this week closes."
+    }
+    static let done = "Done"
 }
 
 /// Which published weeks this account has seen in the feed, for the strip's "new" pill.

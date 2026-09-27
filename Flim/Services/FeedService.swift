@@ -873,6 +873,15 @@ final class FeedService {
     /// The signed-in account's own published frames, post id to week key: what turns the menu
     /// item into "Take it out of Spotlight".
     var ownSpotlightChosen: [UUID: String] = [:]
+    /// The thumbnail of the frame up this week, for the sort deck's swap: the capsule ends on
+    /// it and the last card's sheet shows it beside the new one. The path is the cache key.
+    /// nil while nothing is up, or before `refreshOwnSpotlightThumb` has read it.
+    var ownSpotlightThumbPath: String?
+    var ownSpotlightThumbURL: URL?
+    /// The photo the thumbnail above belongs to. Read through `ownSpotlightThumb`, which shows
+    /// it only while that photo is still the one up.
+    var ownSpotlightThumbPhotoId: UUID?
+    var spotlightThumbGeneration = 0
     /// Each page's SPOTLIGHT shelf, per profile id.
     var spotlightShelves: [UUID: [SpotlightWeek]] = [:]
     /// The sheet of past weeks, paged by `week_key`.
@@ -934,6 +943,10 @@ final class FeedService {
         spotlightPastWeeksInFlight = nil
         spotlightURLs = [:]
         spotlightPhotographer = [:]
+        ownSpotlightThumbPath = nil
+        ownSpotlightThumbURL = nil
+        ownSpotlightThumbPhotoId = nil
+        spotlightThumbGeneration += 1
         spotlightTakeOutsInFlight = []
         spotlightWriteInFlight = false
         spotlightWriteGeneration += 1

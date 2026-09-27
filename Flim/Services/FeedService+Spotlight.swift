@@ -253,6 +253,54 @@ extension FeedService {
         for id in unknown { spotlightPhotographer[id] = mine.contains(id) }
     }
 
+    /// Reads and signs the thumbnail of this week's own entry (see `ownSpotlightThumbURL`).
+    /// Only the caller's own photo row, the same query shape as `ensureSpotlightPhotographer`.
+    /// Run when the deck opens and whenever the entry's photo changes; nothing up clears it. A
+    /// failed read keeps the thumbnail only when it is the same photo's.
+    func refreshOwnSpotlightThumb(userId: UUID) async {
+        spotlightThumbGeneration += 1
+        let generation = spotlightThumbGeneration
+        guard let photoId = ownSpotlightEntry?.photoId else {
+            clearOwnSpotlightThumb()
+            return
+        }
+        // Another photo's thumbnail never stands in for this one, not even while it is read.
+        if ownSpotlightThumbPhotoId != photoId { clearOwnSpotlightThumb() }
+        let epoch = AccountEpoch.current
+        struct Row: Decodable { let thumb_path: String? }
+        let rows: [Row]? = try? await supabase.from("photos").select("thumb_path")
+            .eq("id", value: photoId.uuidString)
+            .eq("user_id", value: userId.uuidString)
+            .limit(1)
+            .execute().value
+        guard AccountEpoch.isCurrent(epoch), generation == spotlightThumbGeneration else { return }
+        guard let rows else { return }
+        guard let path = rows.first?.thumb_path else {
+            clearOwnSpotlightThumb()
+            return
+        }
+        let urls = await signedURLs(for: [path])
+        guard AccountEpoch.isCurrent(epoch), generation == spotlightThumbGeneration else { return }
+        ownSpotlightThumbPhotoId = photoId
+        ownSpotlightThumbPath = path
+        ownSpotlightThumbURL = urls[path]
+    }
+
+    /// The thumbnail of the frame up now, or nothing while the one held belongs to another
+    /// photo (the entry moved and the read has not landed).
+    var ownSpotlightThumb: (url: URL?, path: String?) {
+        guard let photoId = ownSpotlightEntry?.photoId, ownSpotlightThumbPhotoId == photoId else {
+            return (nil, nil)
+        }
+        return (ownSpotlightThumbURL, ownSpotlightThumbPath)
+    }
+
+    private func clearOwnSpotlightThumb() {
+        ownSpotlightThumbPhotoId = nil
+        ownSpotlightThumbPath = nil
+        ownSpotlightThumbURL = nil
+    }
+
     /// The Spotlight item for one post's own-post menu.
     func spotlightMenuItem(for post: Post, viewerId: UUID?) -> SpotlightMenuItem {
         SpotlightMenuItem.resolve(
@@ -280,10 +328,15 @@ extension FeedService {
     /// does the capsule's slot say it is up (or say why not, with the menu flipped back). No
     /// undo window: taking a frame down is always one menu item away until the week closes.
     /// One Spotlight write at a time for the account; the menu item is disabled meanwhile.
-    func putUpForSpotlight(_ post: Post) async {
+    ///
+    /// Returns nil once the server has it up, else the line that says why not, so a caller
+    /// that cannot see the capsule's slot (the sort deck, a full-screen cover over it) can say
+    /// it in its own place.
+    @discardableResult
+    func putUpForSpotlight(_ post: Post) async -> String? {
         guard !spotlightWriteInFlight, let previous = ownSpotlightEntry else {
             Haptics.error()
-            return
+            return SpotlightRefusal.putUpNetwork
         }
         let epoch = beginSpotlightWrite()
         var optimistic = previous
@@ -296,7 +349,7 @@ extension FeedService {
         do {
             let result: SpotlightPutUpResult = try await supabase
                 .rpc("put_up_for_spotlight", params: Params(p_post_id: post.id)).single().execute().value
-            guard AccountEpoch.isCurrent(epoch) else { return }
+            guard AccountEpoch.isCurrent(epoch) else { return SpotlightRefusal.putUpNetwork }
             spotlightWriteInFlight = false
             Usage.log(.spotlightPutUp)
             ownSpotlightEntry = OwnSpotlightEntry(
@@ -312,16 +365,19 @@ extension FeedService {
                 ?? (result.replacedPostId == previous.postId ? previous.postCreatedAt : nil)
             UndoCenter.shared.showConfirmation(SpotlightPutUpNotice.text(
                 postId: post.id, replacedPostId: result.replacedPostId, replacedAt: replacedAt))
+            return nil
         } catch {
-            guard AccountEpoch.isCurrent(epoch) else { return }
+            guard AccountEpoch.isCurrent(epoch) else { return SpotlightRefusal.putUpNetwork }
             spotlightWriteInFlight = false
             ownSpotlightEntry = previous
             Haptics.error()
-            UndoCenter.shared.showNotice(SpotlightRefusal.message(
-                refusal: Self.spotlightRefusal(error), action: .putUp) ?? SpotlightRefusal.putUpNetwork)
+            let message = SpotlightRefusal.message(refusal: Self.spotlightRefusal(error), action: .putUp)
+                ?? SpotlightRefusal.putUpNetwork
+            UndoCenter.shared.showNotice(message)
             // The server may know something the menu does not (the week closed, a tag was
             // added from another phone): read it again.
             await refreshOwnSpotlightEntry()
+            return message
         }
     }
 
@@ -330,20 +386,26 @@ extension FeedService {
     /// Nothing is flushed first: with no put-up ever held in an undo window, there is nothing
     /// of Spotlight's staged for this to overtake, and flushing would commit someone else's
     /// staged action (a post just deleted) out from under its Undo.
-    func takeDownFromSpotlight(_ post: Post) async {
-        guard !spotlightWriteInFlight, let previous = ownSpotlightEntry, previous.holds(postId: post.id) else { return }
+    ///
+    /// Returns nil once it is down (or was already), else the line that says why not.
+    @discardableResult
+    func takeDownFromSpotlight(_ post: Post) async -> String? {
+        guard !spotlightWriteInFlight else { return SpotlightRefusal.takeDownNetwork }
+        guard let previous = ownSpotlightEntry, previous.holds(postId: post.id) else { return nil }
         let epoch = beginSpotlightWrite()
         ownSpotlightEntry = previous.postId == post.id ? previous.cleared : previous.clearingPending(postId: post.id)
         struct Params: Encodable { let p_post_id: UUID }
         do {
             try await supabase.rpc("withdraw_from_spotlight", params: Params(p_post_id: post.id)).execute()
-            guard AccountEpoch.isCurrent(epoch) else { return }
+            guard AccountEpoch.isCurrent(epoch) else { return SpotlightRefusal.takeDownNetwork }
             spotlightWriteInFlight = false
             Usage.log(.spotlightWithdraw)
+            return nil
         } catch {
-            guard AccountEpoch.isCurrent(epoch) else { return }
+            guard AccountEpoch.isCurrent(epoch) else { return SpotlightRefusal.takeDownNetwork }
             spotlightWriteInFlight = false
-            if let message = SpotlightRefusal.message(refusal: Self.spotlightRefusal(error), action: .takeDown) {
+            let message = SpotlightRefusal.message(refusal: Self.spotlightRefusal(error), action: .takeDown)
+            if let message {
                 ownSpotlightEntry = previous
                 Haptics.error()
                 UndoCenter.shared.showNotice(message)
@@ -351,6 +413,7 @@ extension FeedService {
             // A take-down the server cannot find is already down (no message, the cleared menu
             // stands); either way, read the server's state again.
             await refreshOwnSpotlightEntry()
+            return message
         }
     }
 
