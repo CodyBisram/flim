@@ -611,12 +611,10 @@ struct SpotlightSessionOffer: Identifiable, Equatable {
                      calendar: Calendar = .current) -> SpotlightSessionOffer? {
         guard let entry, let viewerId, entry.canPutUp else { return nil }
         let ledger = ledger.forWeek(entry.weekKey)
-        // Quiet rules: nothing up, twice declined this week; a frame up, one swap ask a week.
-        if entry.postId == nil {
-            guard ledger.declines < SpotlightSessionLedger.declineLimit else { return nil }
-        } else {
-            guard !ledger.swapOffered else { return nil }
-        }
+        // One quiet rule, frame up or not: twice declined this week. Otherwise every sort that
+        // posted something new may ask, since each post is only ever offered once (below); a
+        // frame up does not silence the week, or a better one shot on Friday could never reach it.
+        guard ledger.declines < SpotlightSessionLedger.declineLimit else { return nil }
         var kind: Kind?
         var offered: [UUID] = []
         var shotBefore = 0
@@ -673,17 +671,17 @@ struct SpotlightSessionOffer: Identifiable, Equatable {
 }
 
 /// What the session sheet has already asked this week, per account, so it never nags: which
-/// posts it showed, how often "Not now" (or a pull down) answered it, and whether it has asked
-/// to swap one in. Starts over when the week does. Injectable store, like `SpotlightFirstTime`.
+/// posts it showed (each is offered once) and how often "Not now" (or a pull down) answered it.
+/// Starts over when the week does. Injectable store, like `SpotlightFirstTime`. A ledger saved
+/// by 414 also carries `swapOffered`, which decoding now ignores.
 struct SpotlightSessionLedger: Codable, Equatable {
     static var store: UserDefaults = .standard
-    /// Declines, with nothing up, after which the sheet stays quiet for the rest of the week.
+    /// Declines after which the sheet stays quiet for the rest of the week, frame up or not.
     static let declineLimit = 2
 
     var weekKey: String?
     var offeredPostIds: Set<UUID> = []
     var declines = 0
-    var swapOffered = false
 
     static func key(userId: UUID) -> String { "spotlightSessionLedger.\(userId.uuidString)" }
 
@@ -704,12 +702,6 @@ struct SpotlightSessionLedger: Codable, Equatable {
     /// This ledger if it is `weekKey`'s, else a fresh one for that week.
     func forWeek(_ weekKey: String) -> SpotlightSessionLedger {
         self.weekKey == weekKey ? self : SpotlightSessionLedger(weekKey: weekKey)
-    }
-
-    /// Records a sheet showing a swap, as it is shown.
-    mutating func recordSwapShown(weekKey: String) {
-        self = forWeek(weekKey)
-        swapOffered = true
     }
 
     /// Records a sheet as it closes: every post it showed, and a decline when the person said

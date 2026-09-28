@@ -589,14 +589,10 @@ struct SortDeckView: View {
         }
     }
 
-    /// The sheet is on screen: only now is a swap ask spent for the week.
+    /// The sheet is on screen: only a sheet that appeared is recorded in the ledger as it closes.
     private func sessionSheetAppeared(_ offer: SpotlightSessionOffer) {
         guard shownOffer?.id != offer.id else { return }
         shownOffer = offer
-        guard offer.isSwap, let uid = auth.currentUser?.id else { return }
-        var ledger = SpotlightSessionLedger.load(userId: uid)
-        ledger.recordSwapShown(weekKey: offer.weekKey)
-        SpotlightSessionLedger.save(ledger, userId: uid)
     }
 
     /// The sheet's put-up. The first time for this account, the sheet's own copy was the

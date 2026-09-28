@@ -951,17 +951,20 @@ struct SpotlightTests {
         #expect(up.declines == 0)
     }
 
-    @Test("after a put-up, one swap ask this week, then quiet")
-    func sessionOneSwapAsk() {
+    @Test("with a frame up, every sort with new frames offers a swap, until two Not nows")
+    func sessionSwapUntilDeclined() throws {
         var ledger = SpotlightSessionLedger()
-        ledger.recordClosed(weekKey: "2026-09-21", shownPostIds: [], declined: false)
         let up = entry(postId: UUID(), postCreatedAt: date(9, 23, 14))
-        let first = offer([sessionFrame()], entry: up, ledger: ledger)
-        #expect(first?.isSwap == true)
-        ledger.recordSwapShown(weekKey: "2026-09-21")
+        let monday = sessionFrame()
+        #expect(offer([monday], entry: up, ledger: ledger)?.isSwap == true)
+        ledger.recordClosed(weekKey: "2026-09-21", shownPostIds: [try #require(monday.post?.id)], declined: false)
+        // A later sort's new frame is offered again; the frame already shown is not.
+        let friday = sessionFrame()
+        #expect(offer([monday, friday], entry: up, ledger: ledger)?.photoIds == [friday.id])
+        ledger.recordClosed(weekKey: "2026-09-21", shownPostIds: [try #require(friday.post?.id)], declined: true)
+        #expect(offer([sessionFrame()], entry: up, ledger: ledger) != nil)
+        ledger.recordClosed(weekKey: "2026-09-21", shownPostIds: [], declined: true)
         #expect(offer([sessionFrame()], entry: up, ledger: ledger) == nil)
-        // The swap ask does not quiet a week with nothing up.
-        #expect(offer([sessionFrame()], ledger: ledger) != nil)
     }
 
     @Test("posts already offered this week are skipped")
@@ -979,12 +982,11 @@ struct SpotlightTests {
         var ledger = SpotlightSessionLedger()
         ledger.recordClosed(weekKey: "2026-09-14", shownPostIds: [UUID()], declined: true)
         ledger.recordClosed(weekKey: "2026-09-14", shownPostIds: [], declined: true)
-        ledger.recordSwapShown(weekKey: "2026-09-14")
         #expect(offer([sessionFrame()], ledger: ledger) != nil)
         #expect(offer([sessionFrame()], entry: entry(postId: UUID(), postCreatedAt: date(9, 22, 14)),
                       ledger: ledger) != nil)
         let next = ledger.forWeek("2026-09-21")
-        #expect(next.declines == 0 && !next.swapOffered && next.offeredPostIds.isEmpty)
+        #expect(next.declines == 0 && next.offeredPostIds.isEmpty)
         #expect(ledger.forWeek("2026-09-14") == ledger)
     }
 
