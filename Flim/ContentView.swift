@@ -215,7 +215,11 @@ struct ContentView: View {
             reconnectRetryTask?.cancel()
             reconnectRetryTask = Task {
                 try? await Task.sleep(for: .seconds(2))
-                guard !Task.isCancelled, photos.hasFailedUploads else { return }
+                guard !Task.isCancelled else { return }
+                // A reveal finished offline is waiting on this same connection, and an app that
+                // stays open never passes through the foreground flush below.
+                rolls.flushPendingRevealCompletions()
+                guard photos.hasFailedUploads else { return }
                 await photos.retryFailedUploads()
             }
         }
@@ -255,10 +259,14 @@ struct ContentView: View {
                 // (synchronous), then the server mirror.
                 FeedSeenStore.shared.flushPersistNow()
                 Task { await FeedSeenStore.shared.flushPending() }
-                rolls.flushPendingRevealCompletions()
                 return
             }
             Task { await refreshVersionGate() }
+            // A reveal finished while offline (or killed before its RPC returned) is retried on
+            // every foreground, as `flushPendingRevealCompletions` documents. It used to run in
+            // the branch above, on the way INTO the background, where its bare tasks could be
+            // suspended mid-request and nothing retried until the next sign-in.
+            rolls.flushPendingRevealCompletions()
             // A seen-marks pull that failed at launch (offline) tries again here rather than
             // leaving this phone without the account's reads for the whole session.
             FeedSeenStore.shared.retryPullIfNeeded()

@@ -173,14 +173,51 @@ final class CameraViewModel: NSObject {
         captureGenerationLock.withLock { $0.removeValue(forKey: id) }
     }
 
+    /// What one finished capture callback may do.
+    struct CaptureCallbackOutcome: Equatable {
+        /// Hand the bytes to the capture pipeline. True whenever there are bytes.
+        let deliversPhoto: Bool
+        /// Reset `isCapturing` and the overlay, and report a failed capture. Only the capture
+        /// that currently owns the shutter may.
+        let ownsCaptureUI: Bool
+    }
+
+    /// The rule for a `didFinishProcessingPhoto` callback. The photo is ALWAYS delivered when
+    /// there is one; the generation gates only the UI writes.
+    ///
+    /// It used to gate both. The watchdog clears `isCapturing` three seconds after the tap even
+    /// when the exposure is done and only processing is still running (a dim-room flash shot),
+    /// so a second tap bumped the generation and the first shot's bytes, which arrived after the
+    /// shutter sound, were thrown away: a photo the person heard being taken, gone. Each callback
+    /// belongs to its own capture, with its own settings ID, and fires once, so delivering every
+    /// one keeps both shots and saves neither twice. Only the shutter state is shared, and the
+    /// newer capture owns it.
+    nonisolated static func captureCallbackOutcome(expectedGeneration: Int?, currentGeneration: Int,
+                                                   hasData: Bool) -> CaptureCallbackOutcome {
+        CaptureCallbackOutcome(deliversPhoto: hasData,
+                               ownsCaptureUI: expectedGeneration == nil || expectedGeneration == currentGeneration)
+    }
+
     deinit {
         sessionObserverTasks.withLock { $0.forEach { $0.cancel() } }
     }
 
     // MARK: - Setup
 
-    /// Requests camera access (if needed), then configures + starts the session. Sets
-    /// `permission` so the UI can show a "grant access" state instead of a black screen.
+    /// The Camera tab is on screen and wants frames. Called by the view synchronously, in the
+    /// same turn as its appear, BEFORE it spawns the asynchronous `start()`: a disappear that
+    /// lands while `start()` is still waiting to run (a cold launch that a push routes straight
+    /// to the Feed, or a tab switch within a beat) clears this again, and `start()` then
+    /// configures without running the session. Before this, `start()` itself was what said
+    /// "wanted", so it overrode a disappear that had already happened and the camera ran behind
+    /// the Feed with the green dot on.
+    func markSessionWanted() {
+        wantsSessionRunning = true
+    }
+
+    /// Requests camera access (if needed), then configures + starts the session, provided the tab
+    /// still wants it (`markSessionWanted`). Sets `permission` so the UI can show a "grant access"
+    /// state instead of a black screen.
     @MainActor
     func start() async {
         switch AVCaptureDevice.authorizationStatus(for: .video) {
@@ -197,6 +234,8 @@ final class CameraViewModel: NSObject {
         }
         guard permission == .authorized else { return }
         configure()
+        // The tab was left while this was pending (see `markSessionWanted`).
+        guard wantsSessionRunning else { return }
         startRunning()
     }
 
@@ -614,6 +653,13 @@ final class CameraViewModel: NSObject {
             // never actually started is one of the three explanations for that gap.
             guard let self, self.session.isRunning else { return }
             await MainActor.run {
+                // `startRunning()` blocks for a beat, and the tab can be left inside it. The stop
+                // that departure asked for found the session not yet running and did nothing, so
+                // honor it here, or the camera keeps running behind the Feed (green dot, battery).
+                guard self.wantsSessionRunning else {
+                    self.stopAfterAbandonedStart()
+                    return
+                }
                 // A tab visit that got frames back also clears a stale runtime-error state.
                 self.clearUnavailableIfRunning()
                 guard !self.hasLoggedCameraReady else { return }
@@ -634,6 +680,23 @@ final class CameraViewModel: NSObject {
         Task.detached(priority: .userInitiated) { [weak self] in
             self?.session.stopRunning()
         }
+    }
+
+    /// The stop a departure owed a start that was still in flight when it came. If the tab came
+    /// back while this stop ran, the reappearance saw a running session and started nothing, so
+    /// it is started again rather than leaving a black viewfinder.
+    private func stopAfterAbandonedStart() {
+        faceRects = []
+        let session = self.session
+        Task.detached(priority: .userInitiated) { [weak self] in
+            session.stopRunning()
+            await self?.restartIfWantedAgain()
+        }
+    }
+
+    private func restartIfWantedAgain() {
+        guard wantsSessionRunning else { return }
+        startRunning()
     }
 
     // MARK: - Capture
@@ -969,13 +1032,10 @@ extension CameraViewModel: AVCapturePhotoCaptureDelegate {
     ) {
         // Looked up (and forgotten) up front, off the main actor: this callback can arrive for a
         // capture the watchdog already gave up on and let the user re-shoot (thermal throttling,
-        // an older device, a slow capture). Without checking this, a late callback for that
-        // abandoned capture would still write `capturedData` and fire `onPhotoCapture` below,
-        // silently enqueuing and uploading a photo the user believes never happened, and would
-        // reset `isCapturing`/`flashOpacity` out from under whatever capture is genuinely in
-        // flight now. `nil` (the ID was never recorded, which `capturePhoto()` should always do
-        // before triggering a capture) fails open rather than closed: a capture is not
-        // reproducible, so an unexpected miss here must not risk dropping a real photo.
+        // an older device, a slow flash capture in a dim room). The generation decides only who
+        // owns the shutter's UI state; see `captureCallbackOutcome` for why the photo itself is
+        // delivered either way. `nil` (the ID was never recorded, which `capturePhoto()` always
+        // does before triggering a capture) fails open, as before.
         let expectedGeneration = takeCaptureGeneration(forSettingsID: photo.resolvedSettings.uniqueID)
 
         // The capture's own bytes, and nothing else done to them here.
@@ -990,19 +1050,20 @@ extension CameraViewModel: AVCapturePhotoCaptureDelegate {
         // is already passed to `enqueueCapture` by `CameraView`, and it is read there now.
         let data = photo.fileDataRepresentation()
         Task { @MainActor in
-            // Stale: the watchdog already reset `isCapturing`/`flashOpacity` and let the user
-            // shoot again, possibly already mid a NEWER capture that owns those same properties
-            // now. Touching them here, or delivering this photo, would step on that one.
-            guard expectedGeneration == nil || expectedGeneration == self.captureGeneration else { return }
-            self.isCapturing = false
-            self.flashOpacity = 0   // safety net in case the capture errored before the callbacks above fired
-            guard let data else {
-                // A genuine capture failure (hardware fault, interrupted session, no file data
-                // at all), rare, but silent otherwise: the shutter had already animated and
-                // fired its haptic as if the shot landed, with nothing to show it didn't.
-                Haptics.error()
-                return
+            let outcome = Self.captureCallbackOutcome(expectedGeneration: expectedGeneration,
+                                                      currentGeneration: self.captureGeneration,
+                                                      hasData: data != nil)
+            if outcome.ownsCaptureUI {
+                self.isCapturing = false
+                self.flashOpacity = 0   // safety net in case the capture errored before the callbacks above fired
+                if data == nil {
+                    // A genuine capture failure (hardware fault, interrupted session, no file data
+                    // at all), rare, but silent otherwise: the shutter had already animated and
+                    // fired its haptic as if the shot landed, with nothing to show it didn't.
+                    Haptics.error()
+                }
             }
+            guard outcome.deliversPhoto, let data else { return }
             self.capturedData = data
             self.onPhotoCapture?(data)
         }

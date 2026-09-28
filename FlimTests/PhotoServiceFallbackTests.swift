@@ -120,3 +120,46 @@ final class PhotoServiceFallbackTests: XCTestCase {
             existingPhotoIds: [], existingStoragePaths: [path]))
     }
 }
+
+/// `PhotoService.shouldDeleteUploadedOriginal`: after a failed row insert, the uploaded original
+/// may be removed only on a definite "no such row". Shared by the ordinary catch and the personal
+/// fallback's, which used to delete unconditionally (audit C-1, 1.6.1).
+final class UploadedOriginalCleanupTests: XCTestCase {
+    /// The insert committed and only its reply was lost: the master is what the row names.
+    func testKeepsTheOriginalWhenTheRowExists() {
+        XCTAssertFalse(PhotoService.shouldDeleteUploadedOriginal(rowExists: true))
+    }
+
+    /// The same outage that lost the reply stopped the check: unknown keeps everything, and the
+    /// retry reconciles.
+    func testKeepsTheOriginalWhenTheAnswerIsUnknown() {
+        XCTAssertFalse(PhotoService.shouldDeleteUploadedOriginal(rowExists: nil))
+    }
+
+    /// A definite absence is the only case with nothing to protect.
+    func testDeletesOnlyOnADefiniteNoRow() {
+        XCTAssertTrue(PhotoService.shouldDeleteUploadedOriginal(rowExists: false))
+    }
+}
+
+/// `PhotoService.insertingLanded`: one tile per photo, whichever path lands it (audit C-4, 1.6.1).
+final class InsertingLandedTests: XCTestCase {
+    private func photo(_ id: UUID = UUID()) -> Photo {
+        Photo(id: id, userId: UUID(), rollId: nil, storagePath: "u/\(id).jpg", thumbPath: nil, feedPath: nil,
+              takenAt: .now, developsAt: .now, isDeveloped: true, caption: nil, isSorted: true)
+    }
+
+    func testNewPhotoGoesToTheFront() {
+        let older = photo()
+        let landed = photo()
+        XCTAssertEqual(PhotoService.insertingLanded(landed, into: [older]).map(\.id), [landed.id, older.id])
+    }
+
+    /// A shot that landed twice (a replay alongside its own run) shows once, at the front.
+    func testASecondLandingOfTheSamePhotoDoesNotDuplicateIt() {
+        let a = photo(), b = photo()
+        let once = PhotoService.insertingLanded(a, into: [b])
+        let twice = PhotoService.insertingLanded(a, into: once)
+        XCTAssertEqual(twice.map(\.id), [a.id, b.id])
+    }
+}

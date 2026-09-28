@@ -396,6 +396,9 @@ struct CameraView: View {
     }
 
     private func startCameraFlow() {
+        // Now, in the appear's own turn, not inside the Task below: a disappear that lands
+        // before that Task runs must be able to cancel the start (see `markSessionWanted`).
+        camera.markSessionWanted()
         camera.flashMode = flashMode
         // Warm the Taptic Engine while the camera spins up, so the shutter's haptic fires with
         // the press instead of trailing it the first time.

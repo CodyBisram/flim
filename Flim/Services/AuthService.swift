@@ -683,9 +683,13 @@ final class AuthService {
         // mislabel the object it just uploaded.
         guard let encoded = InstantFilmProcessor.thumbnail(from: raw, longEdge: longEdge) else { return nil }
         let dest = "\(userId.uuidString.lowercased())/\(prefix)-\(UUID().uuidString.lowercased()).\(encoded.format.pathExtension)"
+        // A fresh UUID per upload and no upsert, so the object at `dest` never changes: the same
+        // year-long cache lifetime as the photos (`PhotoService.immutableCacheControl`).
         do {
             try await supabase.storage.from("photos")
-                .upload(dest, data: encoded.data, options: FileOptions(contentType: encoded.format.contentType))
+                .upload(dest, data: encoded.data,
+                        options: FileOptions(cacheControl: PhotoService.immutableCacheControl,
+                                             contentType: encoded.format.contentType))
             return dest
         } catch { return nil }
     }

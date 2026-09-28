@@ -134,6 +134,34 @@ final class PhotoService {
     // that was making rapid multi-shot capture fail and prompt a retry.
     private var pipeline: Task<Void, Never>?
 
+    /// Shots this process is working on right now, counted by id: a capture from the moment it is
+    /// enqueued until its pipeline run ends, a retried upload for the length of its attempt, and
+    /// either one's rendition leg until it clears the copies on disk.
+    /// Launch recovery reads the disk while the camera may already be shooting, and a shot taken
+    /// in that moment is on disk too; without this, recovery replayed or retried it a second time
+    /// alongside the run that already had it, so the grid showed it twice and the burst detector
+    /// grouped it with itself. Counted rather than a set because a retry can pick a record up in
+    /// the moment between its own run queueing it and that run returning. Not cleared on account
+    /// change: the runs that hold these end on their own, and they release as they do.
+    private var inFlightCaptureCounts: [UUID: Int] = [:]
+
+    var inFlightCaptureIds: Set<UUID> { Set(inFlightCaptureCounts.keys) }
+
+    /// `Cache-Control` for a photo or rendition object: one year, where Storage's default is an
+    /// hour. Every one of these paths is named by the photo's own UUID and never names different
+    /// pixels later (an upsert only ever rewrites the same shot after a lost reply), so there is
+    /// nothing a shorter lifetime protects, and each expiry cost a revalidation per viewer.
+    nonisolated static let immutableCacheControl = "31536000"
+
+    private func beginInFlight(_ id: UUID) {
+        inFlightCaptureCounts[id, default: 0] += 1
+    }
+
+    private func endInFlight(_ id: UUID) {
+        guard let count = inFlightCaptureCounts[id] else { return }
+        inFlightCaptureCounts[id] = count > 1 ? count - 1 : nil
+    }
+
     /// Drops everything cached for the previous account. Called on `flimAccountDidChange`.
     /// Clears memory only. The pending files stay on disk under their own account's folder, so
     /// signing back in returns your unsent captures instead of finding them deleted.
@@ -202,6 +230,10 @@ final class PhotoService {
         let meta = PendingCapture(id: photoId, userId: userId, rollId: rollId, capturedAt: capturedAt,
                                   stockId: stock.id, knownRevealAt: knownRevealAt,
                                   previewAspect: previewAspect)
+        // Marked in flight before the bytes can reach the disk, so launch recovery, reading the
+        // queue at the same moment, never finds this shot there without also finding it here.
+        // Released when this shot's pipeline run ends, whichever way it ends.
+        beginInFlight(photoId)
         let queueStore = captureQueueStore
         // The camera's own bytes go to disk NOW, before the decode below, so a kill during the
         // decode, crop or grade still finds the shot on the next launch. The queue holds the raw
@@ -263,6 +295,13 @@ final class PhotoService {
         pendingCaptureCount += 1
         let previous = pipeline
         pipeline = Task {
+            defer { endInFlight(photoId) }
+            // Held for this shot's whole run, its wait in line included. `captureAndUpload` takes
+            // its own, but only once the shot's turn comes: when the shot ahead of it finished and
+            // released ITS assertion, nothing was held while this one decoded and graded, so a
+            // phone locked mid-burst suspended the rest of the queue until it was opened again.
+            let keepAlive = BackgroundKeepAlive.begin("capture pipeline")
+            defer { BackgroundKeepAlive.end(keepAlive) }
             let queuedAt = ContinuousClock.now
             _ = await saved.value
             await previous?.value
@@ -579,7 +618,8 @@ final class PhotoService {
             try await supabase.storage
                 .from("photos")
                 .upload(path, data: imageData,
-                       options: FileOptions(contentType: format.contentType, upsert: true))
+                       options: FileOptions(cacheControl: Self.immutableCacheControl,
+                                            contentType: format.contentType, upsert: true))
 
             // The photo EXISTS once the full image and its row are in. The thumbnail and feed
             // renditions follow in the background and patch the row when they land.
@@ -711,7 +751,7 @@ final class PhotoService {
             }
             await MainActor.run {
                 guard AccountEpoch.isCurrent(epoch) else { return }
-                loadedPhotos.insert(inserted, at: 0)
+                loadedPhotos = Self.insertingLanded(inserted, into: loadedPhotos)
                 isUploading = false
             }
             uploadRenditions(photoId: photoId, userId: userId, imageData: imageData, gradedImage: gradedImage)
@@ -770,19 +810,39 @@ final class PhotoService {
                 DiskImageCache.saveRaw(imageData, path: path)
                 await MainActor.run {
                     guard AccountEpoch.isCurrent(epoch) else { return }
-                    loadedPhotos.insert(landed, at: 0)
+                    loadedPhotos = Self.insertingLanded(landed, into: loadedPhotos)
                     isUploading = false
                 }
                 uploadRenditions(photoId: photoId, userId: userId, imageData: imageData, gradedImage: gradedImage)
                 return landed
             }
-            if rowExists == false {
+            if Self.shouldDeleteUploadedOriginal(rowExists: rowExists) {
                 _ = try? await supabase.storage.from("photos").remove(paths: [path])
             }
 
             await queueForRetry(error, record: record, rollId: rollId, persisted: persisted, epoch: epoch)
             return nil
         }
+    }
+
+    /// Whether a capture's uploaded original may be removed from Storage after its row insert
+    /// failed. Only a definite "no such row" (`false`) earns the delete. `true` means the insert
+    /// landed and only its reply was lost, and `nil` means the question itself could not be
+    /// answered: both keep the bytes, and the retry settles it later. Shared by the ordinary
+    /// catch and the personal fallback's, which used to delete unconditionally and so could take
+    /// the master out from under a row that had committed (audit C-1, 1.6.1).
+    nonisolated static func shouldDeleteUploadedOriginal(rowExists: Bool?) -> Bool {
+        rowExists == false
+    }
+
+    /// `list` with `photo` at the front, and no other copy of it. A shot can reach the grid from
+    /// more than one path (its own run, a lost reply recovered by id, a retry), and each of them
+    /// inserts at the top; this keeps the grid to one tile per photo whichever lands second.
+    nonisolated static func insertingLanded(_ photo: Photo, into list: [Photo]) -> [Photo] {
+        var result = list
+        result.removeAll { $0.id == photo.id }
+        result.insert(photo, at: 0)
+        return result
     }
 
     /// Whether a `photos` row with this id exists: `true`/`false` from a definite answer, `nil`
@@ -860,7 +920,7 @@ final class PhotoService {
             }
             await MainActor.run {
                 guard AccountEpoch.isCurrent(epoch) else { return }
-                loadedPhotos.insert(inserted, at: 0)
+                loadedPhotos = Self.insertingLanded(inserted, into: loadedPhotos)
                 isUploading = false
                 // Told once, right here, exactly when the fallback actually lands, an incrementing
                 // counter rather than a message so a view watching for it fires again even if a
@@ -878,7 +938,31 @@ final class PhotoService {
             // itself, `is_roll_developed` never reverses, so retrying the roll again could only
             // 42501 again, and this function's own caller catches that on the very next retry,
             // same as it did this one.
-            _ = try? await supabase.storage.from("photos").remove(paths: [path])
+            //
+            // A failed insert and a lost reply look identical from here, exactly as in the
+            // ordinary catch, and this one used to delete the original unconditionally: a
+            // fallback row that committed with its reply lost was left naming nothing, and the
+            // retry then found the row, rebuilt the renditions and cleared the local copy, so the
+            // full-size photo was gone everywhere. The same rule now: ask first. The row is
+            // there, so finish this as the success it was. No answer, so keep everything and let
+            // the retry reconcile (it lands back here, and a duplicate id then reads as "there").
+            // Only a definite "no row" earns the delete.
+            let rowExists: Bool? = await Self.photoRowExists(photoId, supabase: supabase)
+            if rowExists == true, let landed: Photo = try? await supabase
+                .from("photos").select().eq("id", value: photoId.uuidString).single().execute().value {
+                DiskImageCache.saveRaw(imageData, path: path)
+                await MainActor.run {
+                    guard AccountEpoch.isCurrent(epoch) else { return }
+                    loadedPhotos = Self.insertingLanded(landed, into: loadedPhotos)
+                    isUploading = false
+                    personalFallbackCount += 1
+                }
+                uploadRenditions(photoId: photoId, userId: userId, imageData: imageData, gradedImage: gradedImage)
+                return landed
+            }
+            if Self.shouldDeleteUploadedOriginal(rowExists: rowExists) {
+                _ = try? await supabase.storage.from("photos").remove(paths: [path])
+            }
             await queueForRetry(error, record: record, rollId: rollId, persisted: persisted, epoch: epoch)
             return nil
         }
@@ -971,7 +1055,7 @@ final class PhotoService {
         let epoch = AccountEpoch.current
         let queue = captureQueueStore
         let failed = failedUploadStore
-        let (plan, entries) = await Task.detached(priority: .utility) { () -> (CaptureRecovery.Plan, [(meta: PendingCapture, hasRaw: Bool)]) in
+        let (diskPlan, entries) = await Task.detached(priority: .utility) { () -> (CaptureRecovery.Plan, [(meta: PendingCapture, hasRaw: Bool)]) in
             await queue.prune(userId: userId)
             await failed.prune(userId: userId)
             let entries = await queue.entries(userId: userId)
@@ -980,6 +1064,13 @@ final class PhotoService {
         }.value
         // The account may have changed while the disk was read; those files are not ours now.
         guard AccountEpoch.isCurrent(epoch) else { return [] }
+        // A shot this process already has in hand is not recovery's to take. The camera can
+        // shoot while the disk above is being read, and that shot is on disk too; replaying or
+        // retrying it here ran it twice. Read now, back on the main actor after the disk read,
+        // so any shot enqueued during that read is already marked. One that finished in the
+        // meantime is harmless: its files are gone (the replay then finds no bytes and skips
+        // it), or it failed and sits in `failedUploads`, which the restore below dedupes by id.
+        let plan = diskPlan.excluding(inFlightCaptureIds)
         for id in plan.dropStaleProcessed { await failed.remove(id: id, userId: userId) }
         for id in plan.dropEmpty { await queue.remove(id: id, userId: userId) }
         if !plan.replayRaw.isEmpty {
@@ -1078,9 +1169,13 @@ final class PhotoService {
     /// A kill mid-rendition therefore leaves the sidecar for `restoreFailedUploads` to find, and
     /// that path rebuilds the missing cards from it rather than surfacing a retry. Held under a
     /// background assertion so a phone locked after the shutter still finishes the two uploads.
+    /// Still in flight for launch recovery until the copies are cleared: marked before this
+    /// returns, so the capture run that called it hands over without a gap.
     private func uploadRenditions(photoId: UUID, userId: UUID, imageData: Data, gradedImage: CGImage? = nil) {
+        beginInFlight(photoId)
         Task { [weak self] in
             guard let self else { return }
+            defer { endInFlight(photoId) }
             let keepAlive = BackgroundKeepAlive.begin("renditions")
             await performRenditionUpload(photoId: photoId, userId: userId, imageData: imageData, gradedImage: gradedImage)
             await clearPersistedCopies(photoId: photoId, userId: userId)
@@ -1098,7 +1193,8 @@ final class PhotoService {
                         .upload(path, data: encoded.data,
                                // upsert: a rendition whose upload succeeded but whose reply was lost is
                                // simply overwritten with identical bytes on retry, never refused as a duplicate.
-                               options: FileOptions(contentType: encoded.format.contentType, upsert: true))) != nil {
+                               options: FileOptions(cacheControl: Self.immutableCacheControl,
+                                                    contentType: encoded.format.contentType, upsert: true))) != nil {
                         return path
                     }
                     if attempt == 0 { try? await Task.sleep(for: .seconds(3)) }
@@ -1253,7 +1349,8 @@ final class PhotoService {
         func upload(_ encoded: InstantFilmProcessor.EncodedImage, to path: String) async -> String? {
             (try? await supabase.storage.from("photos")
                 .upload(path, data: encoded.data,
-                       options: FileOptions(contentType: encoded.format.contentType, upsert: true))) != nil ? path : nil
+                       options: FileOptions(cacheControl: Self.immutableCacheControl,
+                                            contentType: encoded.format.contentType, upsert: true))) != nil ? path : nil
         }
 
         var newThumb: String?
@@ -1418,6 +1515,11 @@ final class PhotoService {
             return p
         }
         guard !pending.isEmpty else { return }
+        // In flight for launch recovery from the moment they leave `failedUploads` until each
+        // attempt below is over, so a restore reading the same records off disk meanwhile does
+        // not start a second upload of any of them.
+        for upload in pending { beginInFlight(upload.id) }
+        defer { for upload in pending { endInFlight(upload.id) } }
 
         // Checked BEFORE spending a network attempt on any of them, not just at launch: a record
         // that already exists on the server (its own earlier attempt landed everywhere, only the
@@ -1596,7 +1698,10 @@ final class PhotoService {
         }
         guard AccountEpoch.isCurrent(epoch), !toRestore.isEmpty else { return }
 
-        let known = Set(failedUploads.map(\.id))
+        // Neither a record already waiting in the pill nor one this process is uploading right
+        // now (a capture run, a retry, or its rendition leg): both would be a second upload of
+        // the same shot. Read here, with no `await` between this and the append.
+        let known = Set(failedUploads.map(\.id)).union(inFlightCaptureIds)
         let fresh = toRestore.filter { !known.contains($0.id) }
         guard !fresh.isEmpty else { return }
         failedUploads.append(contentsOf: fresh)

@@ -54,3 +54,54 @@ final class CameraPreviewTests: XCTestCase {
         XCTAssertFalse(faceRectsAreSettled([face, otherMoved], [face, other]))
     }
 }
+
+/// `CameraViewModel.captureCallbackOutcome`: a finished capture always delivers its photo, and
+/// the generation only decides which capture owns the shutter's UI state (audit C-2, 1.6.1).
+final class CaptureCallbackOutcomeTests: XCTestCase {
+
+    /// The ordinary case: the capture that owns the shutter finishes and delivers.
+    func testCurrentCaptureDeliversAndOwnsTheUI() {
+        let outcome = CameraViewModel.captureCallbackOutcome(expectedGeneration: 1, currentGeneration: 1, hasData: true)
+        XCTAssertEqual(outcome, .init(deliversPhoto: true, ownsCaptureUI: true))
+    }
+
+    /// The dropped-shot bug: the watchdog let a second tap through while the first shot was still
+    /// processing, so its callback arrives a generation late. The photo must still be delivered,
+    /// but the shutter state belongs to the newer capture and is left alone.
+    func testLateFirstShotIsDeliveredWithoutTouchingTheNewerCapturesUI() {
+        let outcome = CameraViewModel.captureCallbackOutcome(expectedGeneration: 1, currentGeneration: 2, hasData: true)
+        XCTAssertEqual(outcome, .init(deliversPhoto: true, ownsCaptureUI: false))
+    }
+
+    /// Both shots in that sequence are kept, each exactly once: one callback per capture, and
+    /// every callback with bytes delivers.
+    func testFirstAndSecondShotAreEachDeliveredOnce() {
+        var delivered: [Int] = []
+        var uiOwners: [Int] = []
+        // Tap 1 (generation 1), watchdog clears the shutter, tap 2 (generation 2), then the
+        // callbacks arrive in order.
+        let current = 2
+        for generation in [1, 2] {
+            let outcome = CameraViewModel.captureCallbackOutcome(expectedGeneration: generation,
+                                                                 currentGeneration: current, hasData: true)
+            if outcome.deliversPhoto { delivered.append(generation) }
+            if outcome.ownsCaptureUI { uiOwners.append(generation) }
+        }
+        XCTAssertEqual(delivered, [1, 2])
+        XCTAssertEqual(uiOwners, [2])
+    }
+
+    /// No bytes, nothing to deliver; the failure is reported only by the capture that owns the UI.
+    func testFailedCaptureDeliversNothing() {
+        XCTAssertEqual(CameraViewModel.captureCallbackOutcome(expectedGeneration: 3, currentGeneration: 3, hasData: false),
+                       .init(deliversPhoto: false, ownsCaptureUI: true))
+        XCTAssertEqual(CameraViewModel.captureCallbackOutcome(expectedGeneration: 2, currentGeneration: 3, hasData: false),
+                       .init(deliversPhoto: false, ownsCaptureUI: false))
+    }
+
+    /// An unrecorded settings ID fails open, as it always has: deliver, and own the UI.
+    func testUnknownGenerationFailsOpen() {
+        XCTAssertEqual(CameraViewModel.captureCallbackOutcome(expectedGeneration: nil, currentGeneration: 5, hasData: true),
+                       .init(deliversPhoto: true, ownsCaptureUI: true))
+    }
+}

@@ -147,3 +147,23 @@ struct CaptureRecoveryPlanTests {
         #expect(Set(all).count == all.count)
     }
 }
+
+/// Launch recovery must leave alone any shot this process is already carrying (audit C-4, 1.6.1).
+struct CaptureRecoveryInFlightTests {
+    @Test func inFlightShotsAppearInNoList() {
+        let replay = UUID(), retry = UUID(), stale = UUID(), empty = UUID()
+        let plan = CaptureRecovery.Plan(replayRaw: [replay, UUID()], retryProcessed: [retry],
+                                        dropStaleProcessed: [stale], dropEmpty: [empty])
+        let filtered = plan.excluding([replay, retry, stale, empty])
+        let all = filtered.replayRaw + filtered.retryProcessed + filtered.dropStaleProcessed + filtered.dropEmpty
+        #expect(Set(all).isDisjoint(with: [replay, retry, stale, empty]))
+        #expect(filtered.replayRaw.count == 1)   // the shot nobody is carrying is still recovered
+    }
+
+    @Test func nothingInFlightLeavesThePlanAlone() {
+        let plan = CaptureRecovery.Plan(replayRaw: [UUID()], retryProcessed: [UUID()],
+                                        dropStaleProcessed: [UUID()], dropEmpty: [UUID()])
+        #expect(plan.excluding([]) == plan)
+        #expect(plan.excluding([UUID()]) == plan)
+    }
+}

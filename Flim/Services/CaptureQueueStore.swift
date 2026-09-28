@@ -51,6 +51,18 @@ enum CaptureRecovery {
         var retryProcessed: [UUID] = []   // processed: straight to the upload retry
         var dropStaleProcessed: [UUID] = []   // a processed file whose manifest still says raw: raw wins
         var dropEmpty: [UUID] = []        // an entry whose bytes never landed
+
+        /// The same plan with every shot in `inFlight` left out of every list: a shot this
+        /// process is already carrying must be neither replayed, retried, nor have its files
+        /// dropped from under it (a half-written entry reads as empty, and a processed copy
+        /// written a moment before its stage flips reads as stale).
+        func excluding(_ inFlight: Set<UUID>) -> Plan {
+            guard !inFlight.isEmpty else { return self }
+            return Plan(replayRaw: replayRaw.filter { !inFlight.contains($0) },
+                        retryProcessed: retryProcessed.filter { !inFlight.contains($0) },
+                        dropStaleProcessed: dropStaleProcessed.filter { !inFlight.contains($0) },
+                        dropEmpty: dropEmpty.filter { !inFlight.contains($0) })
+        }
     }
 
     static func plan(entries: [(meta: PendingCapture, hasRaw: Bool)], processedIds: Set<UUID>) -> Plan {
