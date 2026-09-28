@@ -432,7 +432,7 @@ struct RollDetailView: View {
                                 }
                             }
                         }
-                        .refreshable {
+                        .refreshableToCompletion {
                             await reloadRoll()
                             warmGridThumbnails()   // no-op for anything already cached
                         }

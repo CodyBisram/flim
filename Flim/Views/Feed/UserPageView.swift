@@ -222,7 +222,7 @@ struct UserPageView: View {
                     .padding(.bottom, 30)
                 }
                 .ignoresSafeArea(edges: .top)   // cover bleeds up under the back/gear buttons
-                .refreshable { await load() }
+                .refreshableToCompletion { await load() }
                 // Following is what opens someone's photographs: fetch them once the follow row
                 // has LANDED, not on the optimistic flip, or the request can beat the insert
                 // and legitimately return nothing (audit A1). Unfollowing closes them again, at

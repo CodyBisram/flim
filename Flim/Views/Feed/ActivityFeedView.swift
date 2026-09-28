@@ -186,7 +186,7 @@ struct ActivityFeedView: View {
                     }
                     // Someone following a thread should not have to close and reopen the sheet
                     // to see the reply. A failed refresh keeps what is on screen.
-                    .refreshable { await load(keepingOnFailure: true) }
+                    .refreshableToCompletion { await load(keepingOnFailure: true) }
                 }
             }
             .overlay(alignment: .top) {

@@ -291,7 +291,7 @@ struct RollsView: View {
                 }
                 .padding(.bottom, 24)
             }
-            .refreshable { await load() }
+            .refreshableToCompletion { await load() }
             .onChange(of: scrollToTop) {
                 withAnimation(.snappy) { proxy.scrollTo("rollsTop", anchor: .top) }
             }

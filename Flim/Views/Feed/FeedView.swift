@@ -265,7 +265,7 @@ struct FeedView: View {
                                         .padding(.bottom, 40)
                                 }
                             }
-                            .refreshable { await reload() }
+                            .refreshableToCompletion { await reload() }
                         }
                     } else {
                         // Followed people, none of whom have ever posted: the caught-up
@@ -275,7 +275,7 @@ struct FeedView: View {
                             caughtUpBlock
                                 .padding(.top, visibleSpotlightWeeks.isEmpty ? 120 : 24)
                         }
-                        .refreshable { await reload() }
+                        .refreshableToCompletion { await reload() }
                     }
                 } else if units.isEmpty {
                     // Posts were FETCHED (feed.feed is non-empty) but every unit has cleared:
@@ -289,7 +289,7 @@ struct FeedView: View {
                         caughtUpBlock
                             .padding(.top, visibleSpotlightWeeks.isEmpty ? 120 : 24)
                     }
-                    .refreshable { await reload() }
+                    .refreshableToCompletion { await reload() }
                 } else {
                     feedList
                 }
@@ -629,7 +629,7 @@ struct FeedView: View {
                 }
                 .padding(.bottom, 24)
             }
-            .refreshable { await reload() }
+            .refreshableToCompletion { await reload() }
             // Swiping the feed puts the keyboard away (the comments sheet's composer can
             // leave one up); interactively, so it tracks the drag.
             .scrollDismissesKeyboard(.interactively)

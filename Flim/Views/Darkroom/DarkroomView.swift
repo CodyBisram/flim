@@ -624,7 +624,7 @@ Text("Darkroom")
                 } action: { _, isNearBottom in
                     if isNearBottom, monthPagingActive { Task { await loadMoreIfNeeded() } }
                 }
-                .refreshable { await reload() }
+                .refreshableToCompletion { await reload() }
                 .onAppear { scrollProxy = proxy }
                 // Consumes `pendingMonthLanding` using THIS `proxy`, the one that actually belongs
                 // to the now-mounted `.month` rung — see `pendingMonthLanding`'s own doc for the
@@ -774,7 +774,7 @@ Text("Darkroom")
             .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, y in
                 scrollOffsetY = y
             }
-            .refreshable { await reload() }
+            .refreshableToCompletion { await reload() }
             .onAppear { scrollProxy = proxy }
         }
     }
@@ -836,7 +836,7 @@ Text("Darkroom")
             .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, y in
                 scrollOffsetY = y
             }
-            .refreshable { await reload() }
+            .refreshableToCompletion { await reload() }
             .onAppear { scrollProxy = proxy }
         }
     }
@@ -885,7 +885,7 @@ Text("Darkroom")
             }
             .frame(maxWidth: .infinity, minHeight: 260)
         }
-        .refreshable { await reload() }
+        .refreshableToCompletion { await reload() }
     }
 
     /// The pagination trigger, moved OUT of `onFrameAppear`/per-frame `.task` (see below) and
