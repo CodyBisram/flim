@@ -12527,7 +12527,7 @@ BEGIN
     END IF;
 END $$;
 
--- Folded in from supabase/migrations/2026-09-25_spotlight_hardening.sql (NOT YET APPLIED to production).
+-- Folded in from supabase/migrations/2026-09-25_spotlight_hardening.sql (applied to production, confirmed 2026-09-28).
 -- Spotlight hardening (2026-09-25), after the independent audit of 1.6.0. Runs after
 -- 2026-09-25_spotlight.sql, which is applied to production; nothing here edits that file's rows.
 --
@@ -13714,8 +13714,8 @@ END;
 $$;
 REVOKE ALL ON FUNCTION public.spotlight_morning_alert(TIMESTAMPTZ) FROM PUBLIC, anon, authenticated;
 
--- Folded in from supabase/migrations/2026-09-25_invite_loop.sql (NOT YET APPLIED to production).
--- The invite loop, tightened (2026-09-25). NOT YET APPLIED.
+-- Folded in from supabase/migrations/2026-09-25_invite_loop.sql (applied to production, confirmed 2026-09-28).
+-- The invite loop, tightened (2026-09-25). Applied.
 --
 -- Two additive pieces, safe to re-run, no client change required.
 --
@@ -13783,8 +13783,8 @@ $$;
 REVOKE ALL ON FUNCTION public.invite_landing(TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.invite_landing(TEXT) TO anon, authenticated;
 
--- Folded in from supabase/migrations/2026-09-26_outreach_codes.sql (NOT YET APPLIED to production).
--- Outreach invite codes from the Pi (2026-09-26). NOT YET APPLIED.
+-- Folded in from supabase/migrations/2026-09-26_outreach_codes.sql (applied to production, confirmed 2026-09-28).
+-- Outreach invite codes from the Pi (2026-09-26). Applied.
 --
 -- The weekly outreach job (scripts/pi/outreach-weekly.sh, docs/ROUTINES.md) emails five to ten
 -- people a week, each with their own one-use invite code. The first batch, 2026-09-25, minted
