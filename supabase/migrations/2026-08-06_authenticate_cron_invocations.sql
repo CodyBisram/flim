@@ -1,4 +1,13 @@
 -- ============================================================
+-- DO NOT RE-RUN THIS FILE (added 2026-09-28, audit 1.6.1 B-1). It unschedules and reschedules
+-- its jobs with placeholder keys and no x-cron-secret header. Production's jobs have carried the
+-- real bearer and x-cron-secret since the 2026-09-09 trust batch (set by hand, not in any file),
+-- and every scheduled edge function refuses a call without that header. Running this again
+-- would leave the jobs it names answering 401, silently. It is kept as the record of what ran.
+-- To change a live job, cron.alter_job only the field that changes; see the cron block in
+-- supabase/schema.sql.
+-- ============================================================
+-- ============================================================
 -- Authenticate the scheduled Edge Function calls, so Verify JWT can be turned on
 --
 -- READ THIS BEFORE RUNNING. Doing half of it breaks every notification in the app.

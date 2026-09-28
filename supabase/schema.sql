@@ -5414,12 +5414,9 @@ CREATE TRIGGER app_release_gate_touch_updated_at
 -- supabase/migrations/2026-09-05_pg_net_vacuum_cron.sql. That file's
 -- header carries the full reasoning (why weekly, why FULL is safe from
 -- cron, why the lock is acceptable, why Sunday 09:00 UTC). Idempotent:
--- unschedule-then-schedule.
+-- cron.schedule by name updates an existing job in place (same jobid), so
+-- it is never unscheduled (it used to be unscheduled first; audit 1.6.1, B-1).
 -- ============================================================
-SELECT cron.unschedule(jobid)
-FROM cron.job
-WHERE jobname = 'flim-net-response-vacuum';
-
 SELECT cron.schedule(
     'flim-net-response-vacuum',
     '0 9 * * 0',
@@ -9415,78 +9412,111 @@ $$;
 -- bootstrap never got them even though production has run them for weeks (audit item 10,
 -- 2026-09-21: "SEVEN cron schedules live only in dated migrations"). Guarded so a Postgres image
 -- without pg_cron installed (this project's own local bootstrap image has it; a bare Postgres
--- does not) does not fail the whole file. Each job unschedules itself first, so re-running this
--- block (schema.sql is always re-applied whole, never diffed) updates the existing job in place
--- instead of erroring or duplicating. The two push jobs carry the cadences production has run
--- since 2026-08-24_disk_io_cron_hygiene.sql altered them in place (*/2 and */5), not the
+-- does not) does not fail the whole file. The two push jobs carry the cadences production has
+-- run since 2026-08-24_disk_io_cron_hygiene.sql altered them in place (*/2 and */5), not the
 -- per-minute schedules the 2026-08-06 migration first gave them.
 --
--- <SERVICE_ROLE_KEY>, <ANON_KEY> and <SWEEP_CONFIRM_TOKEN> below are placeholders, kept exactly
--- as the source migrations keep them: this file is not a place to hold a real key. After a fresh
--- apply, replace them by hand, e.g.:
+-- THE FOUR HTTP JOBS ARE SCHEDULED ONLY WHEN MISSING, AND NEVER REPLACED (audit 1.6.1, B-1).
+-- flim-social-push, flim-develop-push, flim-daily-digest and flim-storage-sweep call edge
+-- functions that refuse any request without the scheduler's secret in an x-cron-secret header
+-- (trust batch, 2026-09-09; the value is CRON_SECRET, the owner's ~/.flim-cron-secret). That
+-- secret, the bearer and the sweep's confirm token were written into production's cron.job rows
+-- by hand; they are not in Vault and must never be in this file. This block used to unschedule
+-- and reschedule every job on each run, so one routine re-apply of schema.sql replaced
+-- production's real commands with the placeholders below: social, develop, digest and sweep
+-- would all have answered 401, silently, until someone repaired four jobs by hand. Now an
+-- existing job is left exactly as it is, whatever its command holds. A job created here (a fresh
+-- environment only) is created PAUSED, because its command still holds placeholders: a paused
+-- job never fires, so a staging copy never calls production's functions with a fake key.
+--
+-- AFTER A FRESH APPLY, FILL IN AND UNPAUSE EACH OF THE FOUR BY HAND:
+--   <SERVICE_ROLE_KEY>     Dashboard, Project Settings, API keys, service_role
+--   <ANON_KEY>             the same page, anon (the sweep's gateway bearer)
+--   <CRON_SECRET>          the edge functions' CRON_SECRET secret (owner: ~/.flim-cron-secret)
+--   <SWEEP_CONFIRM_TOKEN>  sweep-orphaned-storage's confirm token
+-- e.g.
 --   SELECT cron.alter_job((SELECT jobid FROM cron.job WHERE jobname = 'flim-social-push'),
 --       command := $job$ SELECT net.http_post(url := '...', headers := jsonb_build_object(
---       'Content-Type', 'application/json', 'Authorization', 'Bearer <real key>')); $job$);
+--       'Content-Type', 'application/json', 'Authorization', 'Bearer <real key>',
+--       'x-cron-secret', '<real secret>')); $job$,
+--       active := true);
+-- To change one of these four jobs later, write a dated migration that calls cron.alter_job
+-- with only the field that changes (schedule := ...), the way 2026-08-24 moved the cadences;
+-- never unschedule and reschedule it.
+--
+-- The three jobs with no secret in them (flim-mark-developed, flim-cron-cleanup,
+-- flim-net-response-vacuum) go through cron.schedule by name, which updates an existing job in
+-- place (same jobid, same run history) and never unschedules it; their commands here are the
+-- ones production runs, so a re-apply changes nothing.
 -- ============================================================
 DO $$
 BEGIN
     IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_cron') THEN
-        PERFORM cron.unschedule('flim-social-push') WHERE EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'flim-social-push');
-        PERFORM cron.schedule('flim-social-push', '*/2 * * * *', $job$
-          SELECT net.http_post(
-            url := 'https://wxvwamwrjlrvqmuaafjv.supabase.co/functions/v1/send-social-push',
-            headers := jsonb_build_object(
-              'Content-Type', 'application/json',
-              'Authorization', 'Bearer <SERVICE_ROLE_KEY>'
-            )
-          );
-        $job$);
+        IF NOT EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'flim-social-push') THEN
+            PERFORM cron.schedule('flim-social-push', '*/2 * * * *', $job$
+              SELECT net.http_post(
+                url := 'https://wxvwamwrjlrvqmuaafjv.supabase.co/functions/v1/send-social-push',
+                headers := jsonb_build_object(
+                  'Content-Type', 'application/json',
+                  'Authorization', 'Bearer <SERVICE_ROLE_KEY>',
+                  'x-cron-secret', '<CRON_SECRET>'
+                )
+              );
+            $job$);
+            PERFORM cron.alter_job((SELECT jobid FROM cron.job WHERE jobname = 'flim-social-push'), active := false);
+        END IF;
 
-        PERFORM cron.unschedule('flim-develop-push') WHERE EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'flim-develop-push');
-        PERFORM cron.schedule('flim-develop-push', '*/5 * * * *', $job$
-          SELECT net.http_post(
-            url := 'https://wxvwamwrjlrvqmuaafjv.supabase.co/functions/v1/send-develop-push',
-            headers := jsonb_build_object(
-              'Content-Type', 'application/json',
-              'Authorization', 'Bearer <SERVICE_ROLE_KEY>'
-            )
-          );
-        $job$);
+        IF NOT EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'flim-develop-push') THEN
+            PERFORM cron.schedule('flim-develop-push', '*/5 * * * *', $job$
+              SELECT net.http_post(
+                url := 'https://wxvwamwrjlrvqmuaafjv.supabase.co/functions/v1/send-develop-push',
+                headers := jsonb_build_object(
+                  'Content-Type', 'application/json',
+                  'Authorization', 'Bearer <SERVICE_ROLE_KEY>',
+                  'x-cron-secret', '<CRON_SECRET>'
+                )
+              );
+            $job$);
+            PERFORM cron.alter_job((SELECT jobid FROM cron.job WHERE jobname = 'flim-develop-push'), active := false);
+        END IF;
 
-        PERFORM cron.unschedule('flim-daily-digest') WHERE EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'flim-daily-digest');
-        PERFORM cron.schedule('flim-daily-digest', '0 14-23,0-1 * * *', $job$
-          SELECT net.http_post(
-            url := 'https://wxvwamwrjlrvqmuaafjv.supabase.co/functions/v1/send-daily-digest',
-            headers := jsonb_build_object(
-              'Content-Type', 'application/json',
-              'Authorization', 'Bearer <SERVICE_ROLE_KEY>'
-            )
-          );
-        $job$);
+        IF NOT EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'flim-daily-digest') THEN
+            PERFORM cron.schedule('flim-daily-digest', '0 14-23,0-1 * * *', $job$
+              SELECT net.http_post(
+                url := 'https://wxvwamwrjlrvqmuaafjv.supabase.co/functions/v1/send-daily-digest',
+                headers := jsonb_build_object(
+                  'Content-Type', 'application/json',
+                  'Authorization', 'Bearer <SERVICE_ROLE_KEY>',
+                  'x-cron-secret', '<CRON_SECRET>'
+                )
+              );
+            $job$);
+            PERFORM cron.alter_job((SELECT jobid FROM cron.job WHERE jobname = 'flim-daily-digest'), active := false);
+        END IF;
 
-        PERFORM cron.unschedule('flim-storage-sweep') WHERE EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'flim-storage-sweep');
-        PERFORM cron.schedule('flim-storage-sweep', '17 9 * * *', $job$
-          SELECT net.http_post(
-            url := 'https://wxvwamwrjlrvqmuaafjv.supabase.co/functions/v1/sweep-orphaned-storage',
-            headers := jsonb_build_object(
-              'Content-Type', 'application/json',
-              'Authorization', 'Bearer <ANON_KEY>'
-            ),
-            body := jsonb_build_object(
-              'dryRun', false,
-              'confirm', '<SWEEP_CONFIRM_TOKEN>'
-            )
-          );
-        $job$);
+        IF NOT EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'flim-storage-sweep') THEN
+            PERFORM cron.schedule('flim-storage-sweep', '17 9 * * *', $job$
+              SELECT net.http_post(
+                url := 'https://wxvwamwrjlrvqmuaafjv.supabase.co/functions/v1/sweep-orphaned-storage',
+                headers := jsonb_build_object(
+                  'Content-Type', 'application/json',
+                  'Authorization', 'Bearer <ANON_KEY>',
+                  'x-cron-secret', '<CRON_SECRET>'
+                ),
+                body := jsonb_build_object(
+                  'dryRun', false,
+                  'confirm', '<SWEEP_CONFIRM_TOKEN>'
+                )
+              );
+            $job$);
+            PERFORM cron.alter_job((SELECT jobid FROM cron.job WHERE jobname = 'flim-storage-sweep'), active := false);
+        END IF;
 
-        PERFORM cron.unschedule('flim-mark-developed') WHERE EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'flim-mark-developed');
         PERFORM cron.schedule('flim-mark-developed', '*/5 * * * *', 'SELECT public.mark_developed_photos()');
 
-        PERFORM cron.unschedule('flim-cron-cleanup') WHERE EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'flim-cron-cleanup');
         PERFORM cron.schedule('flim-cron-cleanup', '20 8 * * *',
             $job$DELETE FROM cron.job_run_details WHERE end_time < now() - interval '3 days'$job$);
 
-        PERFORM cron.unschedule('flim-net-response-vacuum') WHERE EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'flim-net-response-vacuum');
         PERFORM cron.schedule('flim-net-response-vacuum', '0 9 * * 0',
             $job$VACUUM (FULL, ANALYZE) net._http_response$job$);
     END IF;
@@ -12492,7 +12522,7 @@ REVOKE ALL ON FUNCTION public.spotlight_morning_alert(TIMESTAMPTZ) FROM PUBLIC, 
 DO $$
 BEGIN
     IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_cron') THEN
-        PERFORM cron.unschedule('flim-spotlight-morning') WHERE EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'flim-spotlight-morning');
+        -- By name, in place: never unscheduled first (audit 1.6.1, B-1; see the cron block above).
         PERFORM cron.schedule('flim-spotlight-morning', '0 13,14 * * 1', 'SELECT public.spotlight_morning_alert()');
     END IF;
 END $$;
