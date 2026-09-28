@@ -39,6 +39,32 @@ struct DeliveryBatchTests {
         #expect(!counter.add(10, threshold: 25))    // back at 10
     }
 
+    @Test("the disk cache budget is 600MB, and trim holds to it by default")
+    func diskBudget() {
+        #expect(DiskImageCache.maxBytes == 600 * 1024 * 1024)
+        // Trimming every 32MB written stays well inside the budget.
+        #expect(DiskImageCache.trimEvery < DiskImageCache.maxBytes)
+    }
+
+    @Test("a download is stored once when its decode kept the source's size")
+    func sizedEntryDecision() {
+        // Same pixels as the raw bytes: the raw entry is the only copy.
+        #expect(!ImageLoader.needsSizedEntry(decodedLongEdge: 500, sourceLongEdge: 500, hasRaw: true))
+        // Genuinely smaller: the sized entry saves a re-decode of the larger source.
+        #expect(ImageLoader.needsSizedEntry(decodedLongEdge: 1200, sourceLongEdge: 4032, hasRaw: true))
+        // No raw bytes (no stable path): the sized entry is the only way back, always written.
+        #expect(ImageLoader.needsSizedEntry(decodedLongEdge: 500, sourceLongEdge: 500, hasRaw: false))
+        // Source size unknown: the safe side, written as before.
+        #expect(ImageLoader.needsSizedEntry(decodedLongEdge: 500, sourceLongEdge: nil, hasRaw: true))
+        #expect(ImageLoader.needsSizedEntry(decodedLongEdge: 500, sourceLongEdge: 0, hasRaw: true))
+    }
+
+    @Test("the image loader's session keeps no URL cache of its own")
+    func loaderSessionHasNoURLCache() {
+        #expect(ImageLoader.session.configuration.urlCache == nil)
+        #expect(ImageLoader.session !== URLSession.shared)
+    }
+
     @Test("the signed-URL store reports the expiry it stored and forgets on invalidate")
     func storeExpiry() async {
         let store = SignedURLStore()

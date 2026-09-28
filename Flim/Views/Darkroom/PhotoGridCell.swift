@@ -171,6 +171,16 @@ enum ImageCache {
         // stayed blank until you scrolled them off and back. 300MB leaves the normal working set
         // untouched while still capping the 300-entry worst case at something survivable.
         cache.totalCostLimit = 300 * 1024 * 1024
+        // Nothing here is needed while the app is in the background, and up to 300MB of decoded
+        // bitmaps left resident makes this process one of the first iOS kills to reclaim memory,
+        // which turns the next open into a cold launch. Views on screen keep their own reference
+        // to the image they show, so emptying the cache never blanks a visible photo; everything
+        // else comes back from disk (already decoded off the main thread) on the next look.
+        _ = NotificationCenter.default.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main
+        ) { _ in
+            cache.removeAllObjects()
+        }
         return cache
     }()
 
@@ -206,7 +216,11 @@ enum DiskImageCache {
             let url = file(key)
             guard let data = try? Data(contentsOf: url) else { return nil }
             touch(url)
-            return UIImage(data: data)
+            // `UIImage(data:)` alone only wraps the JPEG; the actual decode happened later, on the
+            // main thread, the first time the image was drawn, which is a hitch per tile on every
+            // cold scroll. Decoding here, in the detached task, hands the view a ready bitmap.
+            guard let image = UIImage(data: data) else { return nil }
+            return image.preparingForDisplay() ?? image
         }.value
     }
 
@@ -218,8 +232,13 @@ enum DiskImageCache {
         }
     }
 
+    /// The on-disk budget `trim` holds the cache to. The directory lives in Caches, so the system
+    /// can still purge it under storage pressure; 200MB was under a week of feed, so photos seen
+    /// a few days ago were already being downloaded again.
+    static let maxBytes = 600 * 1024 * 1024
+
     /// Bytes written since the last trim. Trimming only at launch let a long session sail past
-    /// the 200 MB target; now every `trimEvery` bytes written schedules a trim, which is cheap
+    /// the budget; now every `trimEvery` bytes written schedules a trim, which is cheap
     /// (a directory listing) and keeps the cache near its budget during the session too.
     private static let writeCounter = WriteCounter()
     static let trimEvery = 32 * 1024 * 1024
@@ -316,7 +335,7 @@ enum DiskImageCache {
     /// FIFO-by-write-time: a file that keeps getting read stays fresh and survives a trim, a file
     /// nobody has revisited since it was written ages out first, regardless of which one was
     /// downloaded earlier.
-    static func trim(maxBytes: Int = 200 * 1024 * 1024) {
+    static func trim(maxBytes: Int = DiskImageCache.maxBytes) {
         Task.detached(priority: .background) {
             let fm = FileManager.default
             let keys: [URLResourceKey] = [.contentModificationDateKey, .fileSizeKey]
@@ -441,9 +460,12 @@ struct CachedImage<Content: View, Placeholder: View>: View {
             if let cached = ImageCache.shared.object(forKey: memKey) {
                 uiImage = cached; shown = true; onDecoded?(cached.size); return
             }
-            if let disk = await DiskImageCache.load("\(key)|\(Int(maxPixel))") {
+            // Disk, then this path's raw bytes downsampled locally. The raw tier matters here, not
+            // just inside `fetch`: a download whose decode kept the source's size is stored ONCE,
+            // as raw bytes (see `ImageLoader.needsSizedEntry`), so a cold launch that checked only
+            // the sized entry would sit on the placeholder until a URL was signed.
+            if let disk = await ImageLoader.peek(cacheKey: key, maxPixel: maxPixel, scale: displayScale) {
                 guard generation == loadGeneration else { return }
-                ImageCache.set(disk, forKey: memKey)
                 uiImage = disk; shown = true; onDecoded?(disk.size); return
             }
         }
@@ -494,21 +516,56 @@ enum ImageLoader {
         }
     }
 
+    /// The loader's own session, with no `URLCache`. The shared session filed every image response
+    /// in the system URL cache too, a third copy on disk beside the sized and raw entries, and one
+    /// keyed by a signed URL whose token changes every session, so it was never read back.
+    static let session: URLSession = {
+        let config = URLSessionConfiguration.default
+        config.urlCache = nil
+        config.requestCachePolicy = .reloadIgnoringLocalCacheData
+        return URLSession(configuration: config)
+    }()
+
+    /// Whether a decode needs its own sized entry on disk beside the raw bytes.
+    ///
+    /// Every download used to be stored twice: the raw bytes under `raw|path`, and the downsampled
+    /// decode re-encoded at q0.9 under `path|size`. When the decode is no smaller than the source
+    /// (a 500px thumbnail rendition asked for at 400pt x 3), that second file is the same pixels
+    /// again, and half the cache went to duplicates. Then the raw bytes are the only copy, and
+    /// `peek` downsamples them on a hit. Nothing is keyed differently: `raw|path` still holds
+    /// exactly what `path` returned, and `path|size` is either written as before or not at all.
+    ///
+    /// Without raw bytes (no stable path) or a known source size, the sized entry is the only way
+    /// back to this image, so it is always written.
+    static func needsSizedEntry(decodedLongEdge: Int, sourceLongEdge: Int?, hasRaw: Bool) -> Bool {
+        guard hasRaw, let sourceLongEdge, sourceLongEdge > 0 else { return true }
+        return decodedLongEdge < sourceLongEdge
+    }
+
     private static func download(url: URL, maxPixel: CGFloat, scale: CGFloat, cacheKey: String?) async -> UIImage? {
-        guard let (data, response) = try? await URLSession.shared.data(from: url) else { return nil }
+        guard let (data, response) = try? await session.data(from: url) else { return nil }
         if let http = response as? HTTPURLResponse, http.statusCode == 401 || http.statusCode == 403 {
             // The signature expired or was revoked. Forget it so the next request signs a fresh
             // one, instead of every retry reusing a URL the server has already refused.
             if let cacheKey { await SignedURLStore.shared.invalidate(cacheKey) }
             return nil
         }
-        guard let image = await downsample(data: data, maxPixel: maxPixel, scale: scale) else { return nil }
+        guard let decoded = await downsample(data: data, maxPixel: maxPixel, scale: scale) else { return nil }
+        let image = decoded.image
         let memKey = (cacheKey.map { "\($0)|\(Int(maxPixel))" } ?? "\(url.absoluteString)|\(Int(maxPixel))") as NSString
         let diskKey = cacheKey.map { "\($0)|\(Int(maxPixel))" } ?? "\(url.path)|\(Int(maxPixel))"
         ImageCache.set(image, forKey: memKey)
-        DiskImageCache.save(image, key: diskKey)
         if let cacheKey { DiskImageCache.saveRaw(data, path: cacheKey) }
+        if needsSizedEntry(decodedLongEdge: longEdge(image), sourceLongEdge: decoded.sourceLongEdge,
+                           hasRaw: cacheKey != nil) {
+            DiskImageCache.save(image, key: diskKey)
+        }
         return image
+    }
+
+    private static func longEdge(_ image: UIImage) -> Int {
+        guard let cg = image.cgImage else { return 0 }
+        return max(cg.width, cg.height)
     }
 
     /// The cache-only portion of `fetch`: memory, then disk, then the same photo's raw bytes
@@ -519,22 +576,38 @@ enum ImageLoader {
     /// caller in the app.
     static func peek(url: URL, maxPixel: CGFloat, scale: CGFloat, cacheKey: String? = nil) async -> UIImage? {
         let memKeyStr = cacheKey.map { "\($0)|\(Int(maxPixel))" } ?? "\(url.absoluteString)|\(Int(maxPixel))"
-        let memKey = memKeyStr as NSString
+        let diskKey = cacheKey.map { "\($0)|\(Int(maxPixel))" } ?? "\(url.path)|\(Int(maxPixel))"
+        return await peek(memKey: memKeyStr as NSString, diskKey: diskKey, rawPath: cacheKey,
+                          maxPixel: maxPixel, scale: scale)
+    }
+
+    /// `peek` by stable path alone, for a view that has no signed URL yet. Same keys as the
+    /// URL-taking form with a `cacheKey`, so both find the same entries.
+    static func peek(cacheKey: String, maxPixel: CGFloat, scale: CGFloat) async -> UIImage? {
+        let key = "\(cacheKey)|\(Int(maxPixel))"
+        return await peek(memKey: key as NSString, diskKey: key, rawPath: cacheKey, maxPixel: maxPixel, scale: scale)
+    }
+
+    private static func peek(memKey: NSString, diskKey: String, rawPath: String?,
+                             maxPixel: CGFloat, scale: CGFloat) async -> UIImage? {
         if let cached = ImageCache.shared.object(forKey: memKey) { return cached }
 
-        let diskKey = cacheKey.map { "\($0)|\(Int(maxPixel))" } ?? "\(url.path)|\(Int(maxPixel))"
         if let disk = await DiskImageCache.load(diskKey) {
             ImageCache.set(disk, forKey: memKey)
             return disk
         }
 
-        // Before giving up, check whether these exact bytes were already downloaded for a
-        // DIFFERENT size. Only possible with a stable path; a URL-keyed entry carries a token
-        // that changes, so there'd be nothing to match on.
-        if let cacheKey, let raw = await DiskImageCache.loadRaw(path: cacheKey),
-           let image = await downsample(data: raw, maxPixel: maxPixel, scale: scale) {
+        // Before giving up, check whether these exact bytes were already downloaded, for a
+        // DIFFERENT size, or for this one when the decode kept the source's size and so was
+        // never stored separately. Only possible with a stable path; a URL-keyed entry carries a
+        // token that changes, so there'd be nothing to match on.
+        if let rawPath, let raw = await DiskImageCache.loadRaw(path: rawPath),
+           let decoded = await downsample(data: raw, maxPixel: maxPixel, scale: scale) {
+            let image = decoded.image
             ImageCache.set(image, forKey: memKey)
-            DiskImageCache.save(image, key: diskKey)
+            if needsSizedEntry(decodedLongEdge: longEdge(image), sourceLongEdge: decoded.sourceLongEdge, hasRaw: true) {
+                DiskImageCache.save(image, key: diskKey)
+            }
             return image
         }
         return nil
@@ -572,12 +645,21 @@ enum ImageLoader {
 
     /// Decodes `data` directly to a thumbnail no larger than `maxPixel` (× scale) on its longest
     /// edge, fast and low-memory, without ever fully decoding the original.
-    private static func downsample(data: Data, maxPixel: CGFloat, scale: CGFloat) async -> UIImage? {
+    /// Also reports the source's long edge in pixels, read from the header without decoding it,
+    /// so the caller can tell whether the result is actually smaller (see `needsSizedEntry`).
+    /// Nil when unknown, which the caller treats as "smaller", the safe side.
+    private static func downsample(data: Data, maxPixel: CGFloat, scale: CGFloat) async -> (image: UIImage, sourceLongEdge: Int?)? {
         await Task.detached(priority: .userInitiated) {
             let srcOptions = [kCGImageSourceShouldCache: false] as CFDictionary
             guard let source = CGImageSourceCreateWithData(data as CFData, srcOptions) else {
-                return UIImage(data: data)
+                return UIImage(data: data).map { ($0, nil) }
             }
+            let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
+            let sourceLongEdge: Int? = {
+                guard let w = props?[kCGImagePropertyPixelWidth] as? Int,
+                      let h = props?[kCGImagePropertyPixelHeight] as? Int else { return nil }
+                return max(w, h)
+            }()
             let options: [CFString: Any] = [
                 kCGImageSourceCreateThumbnailFromImageAlways: true,
                 kCGImageSourceCreateThumbnailWithTransform: true,
@@ -585,9 +667,9 @@ enum ImageLoader {
                 kCGImageSourceThumbnailMaxPixelSize: maxPixel * scale
             ]
             guard let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
-                return UIImage(data: data)
+                return UIImage(data: data).map { ($0, nil) }
             }
-            return UIImage(cgImage: cg)
+            return (UIImage(cgImage: cg), sourceLongEdge)
         }.value
     }
 }
