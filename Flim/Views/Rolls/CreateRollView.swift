@@ -72,6 +72,19 @@ struct CreateRollView: View {
                     .padding(.horizontal, 16)
                     .padding(.vertical, 16)
                     .background(Color(white: 0.1), in: RoundedRectangle(cornerRadius: 12))
+                    // Cut at the server's limit as it is typed or pasted, with the count beside
+                    // it, instead of Create greying out past 60 with nothing to say why.
+                    .onChange(of: name) { _, new in
+                        let clamped = Roll.clampedName(new)
+                        if clamped != new { name = clamped }
+                    }
+
+                Text("\(name.count)/\(Roll.maxNameLength)")
+                    .flimType(.meta)
+                    .monospacedDigit()
+                    .foregroundStyle(name.count >= Roll.maxNameLength ? FlimTheme.textSecondary : FlimTheme.textTertiary)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    .accessibilityLabel("\(name.count) of \(Roll.maxNameLength) characters")
             }
 
             if let error {
@@ -82,7 +95,7 @@ struct CreateRollView: View {
 
             Spacer()
 
-            PrimaryButton(title: "Create Roll", isLoading: isCreating, disabled: name.trimmingCharacters(in: .whitespaces).isEmpty || name.trimmingCharacters(in: .whitespaces).count > 60) {
+            PrimaryButton(title: "Create Roll", isLoading: isCreating, disabled: name.trimmingCharacters(in: .whitespaces).isEmpty) {
                 await create()
             }
         }

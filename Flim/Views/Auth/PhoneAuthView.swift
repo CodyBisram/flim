@@ -132,7 +132,9 @@ struct EmailAuthView: View {
                     .flimFont(12, relativeTo: .caption)
                     .foregroundStyle(FlimTheme.textSecondary)
 
-                TextField("", text: $inviteCode, prompt: Text("ABC123").foregroundStyle(FlimTheme.placeholder))
+                // Its own placeholder, not the roll code field's "ABC123": the two codes are
+                // different things, and the same example in both read as one code.
+                TextField("", text: $inviteCode, prompt: Text("Invite code").foregroundStyle(FlimTheme.placeholder))
                     .flimFont(24, weight: .thin, design: .monospaced, relativeTo: .title2)
                     .tracking(6)
                     .multilineTextAlignment(.center)
@@ -155,6 +157,13 @@ struct EmailAuthView: View {
                     Text(inviteError)
                         .flimFont(13, relativeTo: .subheadline)
                         .foregroundStyle(FlimTheme.error)
+                        .padding(.top, 4)
+                } else if let hint = InviteCopy.codeLengthHint(for: inviteCode) {
+                    // Send Code stays off for a half-typed code (see `canSubmit`); this says why,
+                    // the same way the join sheet does for a roll code.
+                    Text(hint)
+                        .flimFont(13, relativeTo: .subheadline)
+                        .foregroundStyle(FlimTheme.textTertiary)
                         .padding(.top, 4)
                 }
 
@@ -320,7 +329,9 @@ struct EmailAuthView: View {
             Haptics.error()
             inviteError = InviteCopy.redeemRateLimited
         } catch {
-            self.error = error.localizedDescription
+            // Our own errors already read as sentences; anything else is the server's or the
+            // network's prose, which people cannot act on. A cancelled send shows nothing.
+            self.error = (error as? AuthError)?.errorDescription ?? UserFacingError.messageIfNotCancelled(for: error)
         }
     }
 

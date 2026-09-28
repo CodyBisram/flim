@@ -55,6 +55,9 @@ struct BlockedUsersSheet: View {
                                             .padding(.horizontal, 14).padding(.vertical, 7)
                                             .background(accent, in: Capsule())
                                     }
+                                    // The pill is about 30 tall: 7 either side makes 44, well inside
+                                    // the row's own padding, so neighbouring rows never meet.
+                                    .expandTapTarget(by: 7)
                                 }
                                 .padding(.horizontal, 20).padding(.vertical, 10)
                             }

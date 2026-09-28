@@ -167,4 +167,13 @@ final class V2FoundationsTests: XCTestCase {
         XCTAssertTrue(CaptureStatus.queued(count: 1, offline: true).attention)
         XCTAssertFalse(CaptureStatus.uploaded.attention)
     }
+
+    func testCaptureStatusDetailNamesTheRollForARollShot() {
+        // A roll shot never lands in the Darkroom, so the uploaded line names the roll instead.
+        XCTAssertEqual(CaptureStatus.uploaded.detail(rollName: "Beach day"), "In Beach day until it develops.")
+        XCTAssertEqual(CaptureStatus.uploaded.detail(), "In your Darkroom, ready to sort.")
+        // The app's name comes from AppInfo, never a literal.
+        XCTAssertEqual(CaptureStatus.savedOnPhone.detail(), "Safe even if you close \(AppInfo.appName).")
+        XCTAssertEqual(CaptureStatus.notSavedYet.detail(), "Keep \(AppInfo.appName) open for a moment.")
+    }
 }

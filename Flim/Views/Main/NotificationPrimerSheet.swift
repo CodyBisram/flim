@@ -26,7 +26,9 @@ struct NotificationPrimerSheet: View {
                 .flimFont(24, weight: .light, relativeTo: .title2)
                 .foregroundStyle(.white)
                 .multilineTextAlignment(.center)
-            Text("We'll tell you when someone reacts or comments on your shots, and the moment a roll you're in develops. Nothing else.")
+            // "Nothing else." was not true: the daily digest, the sort nudge and Spotlight all
+            // send too, so the line names them in plain words instead of promising silence.
+            Text("We'll tell you when someone reacts to or comments on your shots, when a roll you're in develops, and now and then when people you follow have posted.")
                 .flimFont(15, relativeTo: .subheadline)
                 .foregroundStyle(FlimTheme.textSecondary)
                 .multilineTextAlignment(.center)

@@ -70,6 +70,8 @@ struct SortDeckView: View {
     /// else re-rendered it, seconds later. `.sheet(item:)` hands the photo to the content
     /// directly, so there is nothing to be nil.
     @State private var composePhoto: Photo?
+    /// The unsorted read failed (nil, not empty). Cleared by a retry that reads.
+    @State private var loadFailed = false
     @State private var composeCaption = ""
     @State private var composeTags: [PendingTag] = []
     /// Retired after a few sorts. A permanent hint is furniture, and stops being read.
@@ -122,7 +124,15 @@ struct SortDeckView: View {
             FlimTheme.bg.ignoresSafeArea()
             VStack(spacing: 0) {
                 header
-                if cards.isEmpty && loaded {
+                if loadFailed {
+                    // The unsorted read failed, offline most often. This used to fall through to
+                    // the empty case below and close the deck the instant it opened, as if there
+                    // were nothing to sort. The X above still closes it.
+                    ErrorState(title: "Couldn't load your shots.", message: "Check your connection.") {
+                        await load()
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if cards.isEmpty && loaded {
                     // Nothing left to sort, return to the previous screen (no "all sorted" wall),
                     // by way of the Spotlight session sheet when this sort posted a frame that
                     // can go up. See `finishSession`.
@@ -274,6 +284,9 @@ struct SortDeckView: View {
                     Image(systemName: "xmark").font(.system(size: 16, weight: .medium)).foregroundStyle(.white)
                 }
                 .accessibilityLabel("Close")
+                // The glyph is about 16pt: 14 either side makes 44, into the margin and the
+                // header's own padding, without moving it.
+                .expandTapTarget(by: 14)
                 Spacer()
                 if lastPhoto != nil {
                     Button { undo() } label: {
@@ -281,6 +294,9 @@ struct SortDeckView: View {
                             .flimFont(13, weight: .semibold)
                             .foregroundStyle(accent)
                     }
+                    // Same 44 of height as the X; the centred count between them is not a
+                    // control, so the leading side can grow too.
+                    .expandTapTarget(top: 14, leading: 10, bottom: 14, trailing: 14)
                 }
             }
         }
@@ -532,6 +548,12 @@ struct SortDeckView: View {
     private func finishSession() {
         guard !finishing, !closing else { return }
         finishing = true
+        // A new account's first sort goes straight to its first frame, with no sheet. Checked
+        // here, before `closeDeck` marks that first sort landed.
+        if NewAccountIntro.skipsSessionSheet(userId: auth.currentUser?.id, createdAt: auth.currentUser?.createdAt) {
+            closeDeck()
+            return
+        }
         // Nothing untagged of your own posted: no entry could make an offer, so nothing waits.
         guard let uid = auth.currentUser?.id, session.hasCandidate(viewerId: uid) else {
             closeDeck()
@@ -734,6 +756,15 @@ struct SortDeckView: View {
         }
     }
 
+    /// What opening the deck found. `fetchUnsorted` answers nil for a read that failed and an
+    /// empty array for a real "nothing to sort"; only the second may close the deck.
+    enum Opening: Equatable { case failed, empty, cards }
+
+    static func opening(for fetched: [Photo]?) -> Opening {
+        guard let fetched else { return .failed }
+        return fetched.isEmpty ? .empty : .cards
+    }
+
     private func load() async {
         guard let uid = auth.currentUser?.id else { loaded = true; return }
         // The session sheet needs this week's bounds and whether a frame is up. A cold launch
@@ -743,9 +774,18 @@ struct SortDeckView: View {
         if currentSpotlightEntry == nil {
             entryRead = Task { await feed.refreshOwnSpotlightEntry() }
         }
-        // `?? []` preserves this view's original behavior: a fresh deck has no earlier list to
-        // keep, so a failure here still just shows the (now correctly typed) empty case.
-        cards = await photoService.fetchUnsorted(userId: uid) ?? []
+        // A failed read is not an empty one: nil says so, and gets the failure state with Try
+        // again rather than `finishSession` closing the deck as though nothing were left.
+        // `loaded` stays false through a failure, so a retry that lands runs exactly as a first
+        // open would, and a retry that comes back empty still closes as before.
+        let fetched = await photoService.fetchUnsorted(userId: uid)
+        guard Self.opening(for: fetched) != .failed, let fetched else {
+            Haptics.error()
+            loadFailed = true
+            return
+        }
+        loadFailed = false
+        cards = fetched
 
         // Batched, not one at a time. `signedURLs` reuses persisted URLs and mints the misses in
         // parallel; signing them in a loop cost one sequential round trip PER PHOTO before the

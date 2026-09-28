@@ -171,8 +171,9 @@ enum NewAccountIntro {
 
     // MARK: - One-shot states
 
-    /// The first Darkroom (one frame at print size) shows until "Keep it here" or a post, or until
-    /// a second frame exists, whichever first. Per account.
+    /// The first Darkroom (one frame at print size) shows until a second frame exists. A post only
+    /// changes its line. Per account. Nothing sets the flag since "Keep it here" was cut; it is
+    /// still read, so an account that dismissed the state that way never gets it back.
     static func firstFrameDismissed(userId: UUID) -> Bool { store.bool(forKey: "firstFrame.dismissed.\(userId.uuidString)") }
     static func dismissFirstFrame(userId: UUID) { store.set(true, forKey: "firstFrame.dismissed.\(userId.uuidString)") }
 
@@ -180,6 +181,15 @@ enum NewAccountIntro {
     /// once, so the first frame is seen where it lives. Every later sort returns to the camera.
     static func firstSortLanded(userId: UUID) -> Bool { store.bool(forKey: "firstSort.landed.\(userId.uuidString)") }
     static func markFirstSortLanded(userId: UUID) { store.set(true, forKey: "firstSort.landed.\(userId.uuidString)") }
+
+    /// Whether the end of a sort closes the deck without the Spotlight session sheet: a new
+    /// account's first sort. That person has just met the camera, the deck and the Darkroom, and
+    /// is about to land on their first frame; a Spotlight offer on top of that is one ask too
+    /// many. Read BEFORE `closeDeck`, which is what marks the first sort landed.
+    static func skipsSessionSheet(userId: UUID?, createdAt: Date?, now: Date = .now) -> Bool {
+        guard let userId, isNewAccount(createdAt: createdAt, now: now) else { return false }
+        return !firstSortLanded(userId: userId)
+    }
 
     /// The roll-time notification ask is a real decision either way and is asked once per account.
     static func rollAskDecided(userId: UUID) -> Bool { store.bool(forKey: "rollAsk.decided.\(userId.uuidString)") }

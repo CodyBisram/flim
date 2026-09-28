@@ -85,6 +85,9 @@ struct MainTabView: View {
     /// A frame a widget tap asked for, handed to the Darkroom to open in its pager.
     @State private var openPhotoId: UUID?
     @AppStorage("hasOnboarded") private var hasOnboarded = false
+    /// The camera's first-run coach, written by its "Got it" (`CameraView.coachOverlay`). Read
+    /// here only to time the notification primer after it; see `maybeShowNotifPrimer`.
+    @AppStorage("hasSeenCameraCoach") private var hasSeenCameraCoach = false
     @AppStorage("accentColor") private var accentColor = "amber"   // re-tints on change
     /// True only once the person has genuinely decided (tapped "Turn on notifications" or "Not
     /// now"), never merely because the sheet was shown. A swipe-away leaves this false, see
@@ -285,6 +288,9 @@ struct MainTabView: View {
         // Show the soft primer once, after onboarding, with context, instead of a cold
         // system prompt on first launch (which gets denied far more often).
         .onChange(of: hasOnboarded) { _, done in if done { maybeShowNotifPrimer() } }
+        // A new person's first ask after the camera's own is the coach; the primer follows its
+        // "Got it" rather than landing on top of it a second after the camera alert.
+        .onChange(of: hasSeenCameraCoach) { _, seen in if seen { maybeShowNotifPrimer() } }
         .onAppear {
             // This view only exists once there's an authenticated, fully-resolved session (see
             // ContentView), so this is "reached the main UI", not process start. Firing here
@@ -636,7 +642,11 @@ struct MainTabView: View {
     }
 
     private func maybeShowNotifPrimer() {
-        guard hasOnboarded else { return }
+        // One ask at a time on a first run: the camera permission (onboarding), then the
+        // camera's coach, then this. Waiting on the coach touches neither the camera request nor
+        // the onboarding flag; it only moves this soft ask to the coach's "Got it". Everyone past
+        // their first run has seen the coach, so for them nothing changes.
+        guard hasOnboarded, hasSeenCameraCoach else { return }
         // Asked at start, for everyone, including brand-new accounts (owner's call, 2026-09-09:
         // the first-run canvas moved the ask to the first roll, and a day of testing showed a
         // new person can go a whole session without one). `RollDevelopAskSheet` stays as the

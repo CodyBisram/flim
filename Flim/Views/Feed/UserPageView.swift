@@ -890,6 +890,8 @@ struct UserPageView: View {
                     .padding(.horizontal, 18).padding(.vertical, 9)
                     .background(accent, in: Capsule())
             }
+            // About 34 tall: 5 either side makes 44 without changing the pill.
+            .expandTapTarget(by: 5)
             .padding(.top, 6)
         }
         .padding(.top, 40)

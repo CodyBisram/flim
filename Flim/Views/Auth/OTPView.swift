@@ -147,7 +147,8 @@ struct OTPView: View {
             startResendCooldown()
         } catch {
             Haptics.error()
-            self.error = error.localizedDescription
+            // Same rule as the sign-in screen's send: our own errors as written, raw ones never.
+            self.error = (error as? AuthError)?.errorDescription ?? UserFacingError.messageIfNotCancelled(for: error)
         }
         isResending = false
     }

@@ -103,6 +103,27 @@ struct NewAccountIntroTests {
         #expect(NewAccountIntro.rollAskDecided(userId: me))
     }
 
+    @Test("a new account's first sort ends with no Spotlight sheet; every later sort may offer it")
+    func firstSortSkipsTheSessionSheet() {
+        let defaults = UserDefaults(suiteName: "NewAccountIntroTests4.\(UUID().uuidString)")!
+        let previous = NewAccountIntro.store
+        NewAccountIntro.store = defaults
+        defer { NewAccountIntro.store = previous }
+        let me = UUID(), now = Date()
+        let brandNew = now.addingTimeInterval(-3600)
+        #expect(NewAccountIntro.skipsSessionSheet(userId: me, createdAt: brandNew, now: now))
+        // `closeDeck` marks the first sort landed; the rule has to be read before that, because
+        // afterwards it answers for the NEXT sort.
+        NewAccountIntro.markFirstSortLanded(userId: me)
+        #expect(!NewAccountIntro.skipsSessionSheet(userId: me, createdAt: brandNew, now: now))
+        // Another new account on the same phone still gets its own first sort.
+        #expect(NewAccountIntro.skipsSessionSheet(userId: UUID(), createdAt: brandNew, now: now))
+        // An account past its first days never skips, landed or not; nor does no account.
+        #expect(!NewAccountIntro.skipsSessionSheet(userId: UUID(), createdAt: now.addingTimeInterval(-30 * 86_400), now: now))
+        #expect(!NewAccountIntro.skipsSessionSheet(userId: UUID(), createdAt: nil, now: now))
+        #expect(!NewAccountIntro.skipsSessionSheet(userId: nil, createdAt: brandNew, now: now))
+    }
+
     @Test("a cohort-code arrival is offered Find friends once; a personal invite never is")
     func campaignArrivalIsOfferedDiscoverOnce() {
         let defaults = UserDefaults(suiteName: "NewAccountIntroTests3.\(UUID().uuidString)")!

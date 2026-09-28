@@ -135,6 +135,15 @@ extension Roll {
             suggested = trimmed.isEmpty ? "Day 2" : trimmed + ", day 2"
         }
         // The server refuses names over 60 characters; a long parent name gets a shorter suggestion.
-        return suggested.count <= 60 ? suggested : String(suggested.prefix(60))
+        return clampedName(suggested)
+    }
+
+    /// The longest name the server accepts.
+    static let maxNameLength = 60
+
+    /// A name cut at `maxNameLength` characters, so the field stops there instead of the Create
+    /// button greying out with no reason given once the name runs past it.
+    static func clampedName(_ name: String) -> String {
+        name.count <= maxNameLength ? name : String(name.prefix(maxNameLength))
     }
 }

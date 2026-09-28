@@ -776,7 +776,11 @@ struct FeedView: View {
                     Label("Find your friends", systemImage: "person.badge.plus")
                         .flimFont(14, weight: .medium, relativeTo: .subheadline)
                         .foregroundStyle(accent)
-                        .frame(width: 212, height: 38)
+                        // A floor, not a fixed box: 44 tall at the default size (the old 38
+                        // was under the minimum touch target), and taller as the label grows
+                        // with Dynamic Type instead of clipping inside it.
+                        .padding(.horizontal, 18).padding(.vertical, 10)
+                        .frame(minWidth: 212, minHeight: 44)
                         .overlay(Capsule().strokeBorder(accent, lineWidth: 1))
                 }
                 // Not a screen: the system share sheet carrying an invite link, which keeps
@@ -793,7 +797,8 @@ struct FeedView: View {
                         Label("Invite someone", systemImage: "paperplane")
                             .flimFont(14, weight: .medium, relativeTo: .subheadline)
                             .foregroundStyle(FlimTheme.textPrimary)
-                            .frame(width: 212, height: 38)
+                            .padding(.horizontal, 18).padding(.vertical, 10)
+                            .frame(minWidth: 212, minHeight: 44)
                             .overlay(Capsule().strokeBorder(Color.white.opacity(0.2), lineWidth: 1))
                     }
                     .simultaneousGesture(TapGesture().onEnded {

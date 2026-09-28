@@ -33,13 +33,15 @@ enum CaptureStatus: Equatable {
         }
     }
 
-    var detail: String {
+    /// `rollName` is the roll the camera is shooting into, nil for Personal. A roll shot never
+    /// lands in the Darkroom, so telling a roll shooter it did was wrong.
+    func detail(rollName: String? = nil) -> String {
         switch self {
-        case .notSavedYet: "Keep FLIM open for a moment."
-        case .savedOnPhone: "Safe even if you close FLIM."
+        case .notSavedYet: "Keep \(AppInfo.appName) open for a moment."
+        case .savedOnPhone: "Safe even if you close \(AppInfo.appName)."
         case .uploading: "Saved on this phone. Sending the copy now."
         case .queued(_, let offline): offline ? "No connection. It will send when you're back online." : "Safe here. Retry to send it now."
-        case .uploaded: "In your Darkroom, ready to sort."
+        case .uploaded: rollName.map { "In \($0) until it develops." } ?? "In your Darkroom, ready to sort."
         }
     }
 
@@ -72,6 +74,8 @@ enum CaptureStatus: Equatable {
 struct CaptureStatusChip: View {
     @Environment(\.flimAccent) private var accent
     let status: CaptureStatus
+    /// The roll being shot into, nil for Personal. See `CaptureStatus.detail(rollName:)`.
+    var rollName: String? = nil
     var onRetry: (() -> Void)? = nil
 
     private var tint: Color {
@@ -94,7 +98,7 @@ struct CaptureStatusChip: View {
                 Text(status.title)
                     .flimType(.label)
                     .foregroundStyle(.white)
-                Text(status.detail)
+                Text(status.detail(rollName: rollName))
                     .flimType(.micro)
                     .foregroundStyle(FlimTheme.textSecondary)
                     .lineLimit(2)
@@ -114,6 +118,6 @@ struct CaptureStatusChip: View {
         .overlay(RoundedRectangle(cornerRadius: FlimRadius.panel)
             .strokeBorder(status.attention ? accent.opacity(0.7) : FlimTheme.divider, lineWidth: 1))
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(status.title). \(status.detail)")
+        .accessibilityLabel("\(status.title). \(status.detail(rollName: rollName))")
     }
 }

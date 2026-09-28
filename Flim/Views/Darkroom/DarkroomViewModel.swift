@@ -136,7 +136,9 @@ final class DarkroomViewModel {
                 await prefetchURLs(photoService: photoService)
             }
         } catch {
-            await MainActor.run { self.error = error.localizedDescription }
+            // `ErrorState` shows this as is: never the raw description, and nothing at all for a
+            // fetch that was cancelled rather than failed.
+            await MainActor.run { self.error = UserFacingError.messageIfNotCancelled(for: error) }
         }
         let total = await count
         // A nil count is a failed round trip, not an empty library: keep the last known
@@ -187,7 +189,7 @@ final class DarkroomViewModel {
                 await prefetchURLs(photoService: photoService)
             }
         } catch {
-            await MainActor.run { self.error = error.localizedDescription }
+            await MainActor.run { self.error = UserFacingError.messageIfNotCancelled(for: error) }
         }
         await MainActor.run { isLoading = false }
         if refreshTask == nil { startRefreshLoop(photoService: photoService) }
@@ -205,7 +207,7 @@ final class DarkroomViewModel {
                 await prefetchURLs(photoService: photoService)
             }
         } catch {
-            await MainActor.run { self.error = error.localizedDescription }
+            await MainActor.run { self.error = UserFacingError.messageIfNotCancelled(for: error) }
         }
         await MainActor.run { isLoading = false }
     }

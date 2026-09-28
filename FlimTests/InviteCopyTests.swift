@@ -126,6 +126,14 @@ struct InviteCopyTests {
         #expect(m.railHeight > m.holeHeight)
     }
 
+    @Test("a half-typed invite code says how long a code is; empty and whole say nothing")
+    func codeLengthHint() {
+        #expect(InviteCopy.codeLengthHint(for: "") == nil)
+        #expect(InviteCopy.codeLengthHint(for: "A") == "Invite codes are 6 characters.")
+        #expect(InviteCopy.codeLengthHint(for: "ABC12") == "Invite codes are 6 characters.")
+        #expect(InviteCopy.codeLengthHint(for: "ABC123") == nil)
+    }
+
     // MARK: - The reveal's own invite
 
     @Test("the reveal offer is hidden only when the count is a genuine, known zero")

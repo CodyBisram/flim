@@ -533,6 +533,14 @@ Text("Darkroom")
         .onDisappear { vm.stopRefreshing(); anchoredJumpTask?.cancel() }
         .sheet(isPresented: $showDiscover) { DiscoverPeopleView() }
         .sheet(isPresented: $showCreateRoll) { CreateRollView() }
+        .sheet(item: $firstFramePostPhoto) { photo in
+            // No success callback: the first-frame state itself turns to its posted line.
+            ShareToFeedSheet(
+                photo: photo,
+                thumbURL: vm.signedURLCache[photo.id],
+                onPartialFailure: { flashError($0) }
+            )
+        }
         .fullScreenCover(item: $selectedPhoto) { photo in
             pager(for: photo)
         }
@@ -584,7 +592,7 @@ Text("Darkroom")
             // A brand-new account's one and only frame, at print size, with the two things you
             // can do with it and the roll introduced as the next shot. Replaces the three
             // onboarding cards' second and third card with the thing itself; see
-            // `NewAccountIntro`. Gone on "Keep it here", on a post, or when a second frame exists.
+            // `NewAccountIntro`. Gone when a second frame exists; a post only changes its line.
             firstFrameState(first)
         } else if monthScopedUnits.isEmpty, anchoredJumpTarget == nil, pendingMonthLanding == nil {
             // Spillover: photos ARE loaded (an older or newer month's rows, most often left
@@ -1210,6 +1218,8 @@ Text("Darkroom")
     }
 
     @State private var showCreateRoll = false
+    /// The first frame's "Post it": the compose sheet, presented straight from the state.
+    @State private var firstFramePostPhoto: Photo?
 
     /// The one frame the first Darkroom shows, or nil when this is not that moment: not a new
     /// account, already dismissed, more or fewer than exactly one photo anywhere, not at the
@@ -1228,6 +1238,16 @@ Text("Darkroom")
 
     private func firstFrameState(_ photo: Photo) -> some View {
         let inviter = auth.currentUser.flatMap { NewAccountIntro.inviter(for: $0.id) }
+        // `ownPostsByPhotoId` is the server's answer: `createPost` writes it only once the post
+        // has landed (the deck's or the compose sheet's), and the reload asks for it. So a post
+        // made from here reads as posted only after it succeeds, not on the compose sheet's
+        // optimistic `myPostedPhotoIds` mark. That set is the fallback only while this photo has
+        // not been asked about yet (a read still in flight, or one that failed offline).
+        let posted = feed.ownPostsByPhotoId[photo.id] != nil
+            || (!feed.ownPostsAsked.contains(photo.id) && feed.myPostedPhotoIds.contains(photo.id))
+        // The compose sheet marks the photo the moment it dismisses; until the post lands (or
+        // fails and the mark comes off), "Post it" is in flight and must not open a second one.
+        let posting = !posted && feed.myPostedPhotoIds.contains(photo.id)
         return ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 Text("TODAY · 1 FRAME")
@@ -1248,37 +1268,36 @@ Text("Darkroom")
                     .flimFont(20, weight: .light, relativeTo: .title3)
                     .foregroundStyle(.white)
                     .padding(.top, 22)
-                Text("It stays here, and only you can see it, until you post it to your page.")
+                // The frame arrives here already decided: the sort deck either posted it or kept
+                // it, and the line says which. It used to say "only you can see it" right after
+                // the deck said "Posted. Your followers can see it."
+                Text(posted
+                     ? "It's on your page now, for the people who follow you."
+                     : "Kept. Only you can see it. Post it any time from here.")
                     .flimFont(15, relativeTo: .subheadline)
                     .foregroundStyle(FlimTheme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 6)
 
-                HStack(spacing: 16) {
+                // Posted has nothing left to do. Kept gets the compose sheet itself, the same one
+                // the viewer's Post pill opens, rather than the viewer with the pill somewhere in
+                // it. The state stays either way, until a second frame exists.
+                if !posted {
                     Button {
                         Haptics.tap()
-                        // The pager carries the Post pill; the state ends here either way.
-                        if let uid = auth.currentUser?.id { NewAccountIntro.dismissFirstFrame(userId: uid) }
-                        selectedPhoto = photo
+                        firstFramePostPhoto = photo
                     } label: {
-                        Text("Post to your page")
+                        Text("Post it")
                             .flimFont(15, weight: .semibold, relativeTo: .subheadline)
                             .foregroundStyle(.black)
                             .padding(.horizontal, 22).padding(.vertical, 13)
                             .background(accent, in: Capsule())
                     }
                     .buttonStyle(.plain)
-                    Button {
-                        Haptics.tap()
-                        if let uid = auth.currentUser?.id { NewAccountIntro.dismissFirstFrame(userId: uid) }
-                    } label: {
-                        Text("Keep it here")
-                            .flimFont(14, relativeTo: .subheadline)
-                            .foregroundStyle(FlimTheme.textTertiary)
-                    }
-                    .buttonStyle(.plain)
+                    .disabled(posting)
+                    .opacity(posting ? 0.5 : 1)
+                    .padding(.top, 18)
                 }
-                .padding(.top, 18)
 
                 Rectangle()
                     .fill(LinearGradient(colors: [.clear, Color.white.opacity(0.12), Color.white.opacity(0.12), .clear],

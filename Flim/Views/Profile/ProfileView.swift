@@ -817,7 +817,8 @@ private struct EditUsernameSheet: View {
             try await auth.setUsername(username.lowercased())
             dismiss()
         } catch {
-            self.error = error.localizedDescription
+            // Same rule as sign-up's username screen: our own errors as written, raw ones never.
+            self.error = (error as? AuthError)?.errorDescription ?? UserFacingError.messageIfNotCancelled(for: error)
         }
         isSaving = false
     }

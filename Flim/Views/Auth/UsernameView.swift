@@ -87,8 +87,8 @@ struct UsernameView: View {
                 .padding(.top, 18)
 
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("PICK YOUR COLOR")
-                        .flimFont(11, weight: .medium, relativeTo: .caption).tracking(2)
+                    Text("Pick your color")
+                        .flimFont(11, weight: .medium, relativeTo: .caption)
                         .foregroundStyle(FlimTheme.textTertiary)
                     HStack(spacing: 14) {
                         ForEach(FlimAccent.allCases) { swatch in
@@ -176,7 +176,9 @@ struct UsernameView: View {
                 _ = await feed.follow(inviter.id, from: uid)
             }
         } catch {
-            self.error = error.localizedDescription
+            // "That username's taken" is ours and says what to do; a raw Postgres or network
+            // description is not, and a cancelled save shows nothing.
+            self.error = (error as? AuthError)?.errorDescription ?? UserFacingError.messageIfNotCancelled(for: error)
         }
         isSaving = false
     }

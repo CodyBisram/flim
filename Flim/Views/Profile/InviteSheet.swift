@@ -341,6 +341,15 @@ enum InviteCopy {
     /// it did nothing wrong.
     static let redeemRateLimited = "Too many attempts right now. Give it a minute and try again."
 
+    /// Said under a half-typed code instead of Send Code greying out with no reason given.
+    static let codeLength = "Invite codes are 6 characters."
+
+    /// `codeLength` while one to five characters are in; nothing for an empty field (the code is
+    /// optional) or a whole one.
+    static func codeLengthHint(for code: String) -> String? {
+        (1...5).contains(code.count) ? codeLength : nil
+    }
+
     // MARK: - The reveal's own invite
 
     /// Shown on the reveal's closing summary, after the whole roll has been watched. The peak
@@ -399,7 +408,7 @@ enum InviteCopy {
 
 extension InviteCopy {
     /// Both front-door strings, swept by the same rules as the screen's own copy.
-    static var frontDoor: [String] { [redeemFailed, redeemRateLimited] }
+    static var frontDoor: [String] { [redeemFailed, redeemRateLimited, codeLength] }
 
     /// Every user-facing string here, for the rule tests to sweep. Assembled in named steps
     /// rather than one chained expression: the whole thing together tripped the Swift

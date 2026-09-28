@@ -58,7 +58,7 @@ struct JoinRollView: View {
                     .tracking(2)
                     .foregroundStyle(FlimTheme.textTertiary)
 
-                TextField("", text: $code, prompt: Text("ABC123").foregroundStyle(FlimTheme.placeholder))
+                TextField("", text: $code, prompt: Text("Roll code").foregroundStyle(FlimTheme.placeholder))
                     .flimFont(28, weight: .thin, design: .monospaced, relativeTo: .title2)
                     .tracking(6)
                     .multilineTextAlignment(.center)

@@ -217,6 +217,8 @@ struct RollRevealView: View {
                     .foregroundStyle(FlimTheme.textPrimary)
             }
             .accessibilityLabel("Close")
+            // A 15pt glyph, 15 either side for 45: the roll name beside it is not a control.
+            .expandTapTarget(by: 15)
             Text(rollName)
                 .flimFont(17, weight: .semibold, relativeTo: .body)
                 .foregroundStyle(.white)
@@ -229,6 +231,8 @@ struct RollRevealView: View {
                     .flimFont(15, weight: .medium, relativeTo: .body)
                     .foregroundStyle(Color(white: 0.7))
             }
+            // To 44 tall at the default size, into the header's own padding.
+            .expandTapTarget(top: 13, leading: 8, bottom: 13, trailing: 16)
         }
         .padding(.horizontal, 16)
         // The design's 62 is measured from the top of a prototype phone with no safe area.

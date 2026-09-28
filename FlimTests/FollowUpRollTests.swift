@@ -73,6 +73,20 @@ struct FollowUpRollNameEdgeTests {
         let long = String(repeating: "a", count: 60)
         #expect(Roll.followUpName(after: long).count <= 60)
     }
+
+    @Test("a typed name stops at the server's 60 characters instead of greying out Create")
+    func aTypedNameIsCutAtTheLimit() {
+        #expect(Roll.maxNameLength == 60)
+        #expect(Roll.clampedName("") == "")
+        #expect(Roll.clampedName("Beach day") == "Beach day")
+        let exact = String(repeating: "b", count: 60)
+        #expect(Roll.clampedName(exact) == exact)
+        let pasted = String(repeating: "c", count: 75)
+        #expect(Roll.clampedName(pasted) == String(repeating: "c", count: 60))
+        // Counted in characters, not bytes: an emoji is one of the sixty.
+        let emoji = String(repeating: "🌊", count: 61)
+        #expect(Roll.clampedName(emoji).count == 60)
+    }
 }
 
 struct ExportEligibilityTests {

@@ -883,7 +883,9 @@ struct RollsView: View {
             await refreshFrameCounts(userId: userId)
             await refreshLiveActivities(userId: userId)
         } catch {
-            loadError = error.localizedDescription
+            // Never the raw description; a cancelled load (a pull released mid-flight) leaves
+            // whatever was on screen alone.
+            if let message = UserFacingError.messageIfNotCancelled(for: error) { loadError = message }
         }
     }
 

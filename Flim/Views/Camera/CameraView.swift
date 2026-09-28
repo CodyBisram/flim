@@ -41,6 +41,9 @@ struct CameraView: View {
     @State private var camera = CameraViewModel()
     @State private var selectedRoll: Roll? = nil
     @State private var showRollPicker = false
+    /// Set by the roll picker's "Start a roll"; read as the picker finishes dismissing.
+    @State private var startRollAfterPicker = false
+    @State private var showCreateRoll = false
     // Onboarding must request camera permission itself, in its own deliberate sequence
     // (see OnboardingView.finishOnboarding()). CameraView sits underneath the onboarding
     // fullScreenCover as tab 0, and SwiftUI still fires onAppear for content mounted behind
@@ -164,8 +167,13 @@ struct CameraView: View {
                     }
                     // Zoom floats on the feed, just above the box's rounded bottom edge.
                     .overlay(alignment: .bottom) {
+                        // The reported region covers the pills' widened touch areas too, or
+                        // tap-to-focus would claim a touch the pill should have had.
                         zoomControl
+                            .padding(Self.zoomTapInset)
                             .reportsControlRegion()
+                            .padding(EdgeInsets(top: -Self.zoomTapInset.top, leading: -Self.zoomTapInset.leading,
+                                               bottom: -Self.zoomTapInset.bottom, trailing: -Self.zoomTapInset.trailing))
                             .padding(.bottom, 14)
                     }
                     // Tips anchor to zero-size overlay probes, never to the functional views,
@@ -323,9 +331,19 @@ struct CameraView: View {
             // is never a valid camera target, however it arrives.
             if let roll = note.object as? Roll, !roll.isDeveloped { selectedRoll = roll }
         }
-        .sheet(isPresented: $showRollPicker) {
-            RollPickerSheet(rolls: rolls.rolls, selected: $selectedRoll)
+        // The picker's "Start a roll" closes the picker first and opens the create sheet once it
+        // has gone, rather than stacking one sheet on the other: CreateRollView already makes
+        // the new roll the camera's target (`.selectCameraRoll` above).
+        .sheet(isPresented: $showRollPicker, onDismiss: {
+            guard startRollAfterPicker else { return }
+            startRollAfterPicker = false
+            showCreateRoll = true
+        }) {
+            RollPickerSheet(rolls: rolls.rolls, selected: $selectedRoll) {
+                startRollAfterPicker = true
+            }
         }
+        .sheet(isPresented: $showCreateRoll) { CreateRollView() }
     }
 
     // MARK: - Selected roll persistence
@@ -461,8 +479,13 @@ struct CameraView: View {
         z.truncatingRemainder(dividingBy: 1) == 0 ? "\(Int(z))×" : String(format: "%.1f×", z)
     }
 
+    /// How far each zoom pill's touch area reaches past its 34x30 capsule: 7 up and down makes
+    /// 44 tall, and half the 10pt gap each way makes 44 wide, so neighbours meet without
+    /// overlapping. The pills look exactly as they did.
+    private static let zoomTapInset = EdgeInsets(top: 7, leading: 5, bottom: 7, trailing: 5)
+
     private var zoomControl: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 10) {
             ForEach(zoomPresets, id: \.self) { level in
                 let active = level == activeZoomPreset
                 Button {
@@ -478,6 +501,8 @@ struct CameraView: View {
                         .overlay(Capsule().stroke(Color.white.opacity(active ? 0 : 0.15), lineWidth: 1))
                 }
                 .contentShape(Capsule())
+                .expandTapTarget(top: Self.zoomTapInset.top, leading: Self.zoomTapInset.leading,
+                                 bottom: Self.zoomTapInset.bottom, trailing: Self.zoomTapInset.trailing)
                 .accessibilityLabel("\(zoomLabel(level)) zoom")
                 .accessibilityAddTraits(active ? [.isSelected] : [])
             }
@@ -596,6 +621,8 @@ struct CameraView: View {
                 }
                 .contentShape(Capsule())
                 .glassCapsule(interactive: true)
+                // 38 visible, 44 to touch: 3 either side, inside the top bar's own region.
+                .expandTapTarget(by: 3)
                 .padding(.leading, 8)
                 .accessibilityLabel("Self timer")
                 .accessibilityValue(selfTimerSeconds == 0 ? "Off" : "\(selfTimerSeconds) seconds")
@@ -605,7 +632,8 @@ struct CameraView: View {
                 // The capture's state, in words (v2): saved, uploading, queued, uploaded. The
                 // shortcut into the sort deck takes the slot once nothing is in flight.
                 if let status = captureStatus {
-                    CaptureStatusChip(status: status) {
+                    CaptureStatusChip(status: status,
+                                      rollName: selectedRoll.flatMap { $0.isDeveloped ? nil : $0.name }) {
                         Task { await photos.retryFailedUploads() }
                     }
                     .frame(maxWidth: 260, alignment: .trailing)
@@ -799,7 +827,7 @@ struct CameraView: View {
                         .font(.system(size: 38, weight: .ultraLight))
                         .foregroundStyle(accent)
 
-                    Text("Shoot now.\nSee it later.")
+                    Text("Point. Shoot. Sort.")
                         .flimFont(24, weight: .light)
                         .multilineTextAlignment(.center)
                         .foregroundStyle(.white)
@@ -807,8 +835,9 @@ struct CameraView: View {
                     // Was "about a minute", which is true of neither path: personal shots develop
                     // in zero seconds and roll shots in twelve hours. It also contradicted the
                     // onboarding card read a minute earlier, on the screen that teaches the one
-                    // mechanic the whole app is built on.
-                    Text("Tap the shutter. Your own shots land in the Darkroom straight away, ready to sort. Shots you send to a shared roll stay hidden until the whole roll develops together.")
+                    // mechanic the whole app is built on. "Shoot now. See it later." said the
+                    // same wrong thing about a personal shot, which is seen straight away.
+                    Text("Your own shots land in the Darkroom right away, to keep or post. Shots sent to a shared roll stay hidden until the roll develops.")
                         .flimFont(15)
                         .foregroundStyle(FlimTheme.textSecondary)
                         .multilineTextAlignment(.center)
@@ -930,6 +959,9 @@ private struct RollPickerSheet: View {
     @Environment(\.flimAccent) private var accent
     let rolls: [Roll]
     @Binding var selected: Roll?
+    /// "Start a roll", from the empty state. The caller opens the create sheet once this one
+    /// has dismissed.
+    var onStartRoll: () -> Void = {}
     @Environment(\.dismiss) private var dismiss
 
     /// Still-open rolls first, then rolls that developed within the last day, each group keeping
@@ -983,13 +1015,31 @@ private struct RollPickerSheet: View {
                     }
 
                     if destinations.isEmpty {
-                        Text(rolls.isEmpty
-                             ? "Start a roll in the Rolls tab to share photos with friends. They'll all develop together."
-                             : "All your rolls have developed. Start a new one in the Rolls tab to keep sharing.")
-                            .flimFont(13)
-                            .foregroundStyle(FlimTheme.textTertiary)
-                            .padding(.vertical, 8)
-                            .listRowBackground(Color.clear)
+                        // Says what a roll is and offers one right here, instead of sending the
+                        // person to another tab to find the button.
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text(rolls.isEmpty
+                                 ? "Start a roll and everyone's shots develop together."
+                                 : "All your rolls have developed. Start a new one and everyone's shots develop together.")
+                                .flimFont(13)
+                                .foregroundStyle(FlimTheme.textTertiary)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Button {
+                                Haptics.tap()
+                                onStartRoll()
+                                dismiss()
+                            } label: {
+                                Label("Start a roll", systemImage: "plus")
+                                    .flimFont(14, weight: .semibold, relativeTo: .subheadline)
+                                    .foregroundStyle(.black)
+                                    .padding(.horizontal, 18).padding(.vertical, 10)
+                                    .frame(minHeight: 44)
+                                    .background(accent, in: Capsule())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .padding(.vertical, 8)
+                        .listRowBackground(Color.clear)
                     }
                 }
                 .listStyle(.plain)

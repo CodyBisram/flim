@@ -863,6 +863,15 @@ struct SpotlightTests {
         #expect(out.count == 2)
     }
 
+    // MARK: - Opening the sort deck
+
+    @Test("a failed unsorted read is a failure, not an empty deck that closes itself")
+    func sortDeckOpeningTellsFailureFromEmpty() {
+        #expect(SortDeckView.opening(for: nil) == .failed)
+        #expect(SortDeckView.opening(for: []) == .empty)
+        #expect(SortDeckView.opening(for: [photo(owner: UUID(), takenAt: .now)]) == .cards)
+    }
+
     // MARK: - The sort session's sheet
 
     private func photo(owner: UUID, takenAt: Date, id: UUID = UUID()) -> Photo {
