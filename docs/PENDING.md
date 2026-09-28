@@ -2176,3 +2176,48 @@ Not done, or open:
   never run for real; check right after the first publish). 1 Spotlight frame put up, this week,
   none chosen.
 - Device checks: see "Feed \"new\" per card" under Waiting on device.
+
+### 1.6.1 polish, from the 2026-09-28 audit (main, MARKETING_VERSION 1.6.1)
+
+Source: `docs/AUDIT_1_6_1_POLISH_2026-09-28.md` and `docs/prompts/BUILD_1_6_1_POLISH_2026-09-28.md`.
+The feed-seen branch above was folded into main earlier; this is the rest of 1.6.1.
+
+Done on main (not yet on a device):
+- Failed reads are not empty answers: follows, followers, blocks, reactions, tags, comments (page
+  batch too), the Feed dot (A-1 to A-5, A-7, A-9 to A-13). A comment that posts stays when the
+  thread read-back fails.
+- Capture: the fallback never deletes a committed original (C-1); a slow flash shot is always kept
+  (C-2); the session stops when the tab was left mid-start and restarts after a quick return (C-3);
+  no double replay of an in-flight shot (C-4); queued shots keep background time (C-8); reveal
+  completions flush on foreground and reconnect (OPEN #64); immutable uploads cache for a year (F-14).
+- schema.sql re-applies no longer reset the four secret-bearing cron jobs (B-1). Production was
+  checked read-only: the jobs carry their header, and the Spotlight hardening, invite loop and
+  outreach code migrations are all live.
+- Image cache: decode off the main thread, no second copy of an unresized image, 600MB budget, the
+  memory cache emptied in the background, no URLCache copy (F-1, F-2, F-3, F-13, F-16).
+- Pull to refresh runs to completion everywhere (a published Spotlight week reached the feed only
+  after a relaunch).
+- First run and flows: D-1 to D-9, D-11, D-13, D-21, D-23. Copy and symbols: D-10, D-12, D-14 to
+  D-20, D-22, E-4, E-5, E-6.
+
+Deferred, with the reason:
+- E-1 app icon layers and dark/tinted variants, E-2 brand mark: need Icon Composer and the source
+  art. `owner`.
+- E-3 tab symbols, E-7 GlassIconButton, E-8 FlimToast, E-10 onward (tokens, radii, iOS 26 sheet
+  glass, widgets): a visual pass of its own, reviewed on screenshots. `queued`.
+- A-6 and A-8 (follow and reaction write revisions), C-9 to C-12, F-4 to F-12, F-15: `queued`.
+- B-2 to B-14 edge functions and SQL: one guardian pass in 1.6.2. `queued`.
+- C-5, C-6 offline launch to the cached account; B-7 earnbacks for roll and campaign codes:
+  `owner` decisions.
+- Section G product ideas: see the audit.
+
+Device checks for this batch:
+1. Fresh install: the camera prompt right after the onboarding button (now "Take a shot"), then
+   the coach, then the notification primer only after "Got it" (checklist in memory).
+2. Camera to Darkroom to Camera twice, once as fast as possible: live preview every time. Cold
+   launch from a push into Feed: no green camera dot.
+3. Dim room, flash on, two taps about 3s apart: both shots land, one tile each.
+4. Airplane mode: Follow buttons hold; comments show "Couldn't load comments." with Try again; a
+   failed comment send says so in the composer; a failed reaction says so; the sort deck shows
+   "Couldn't load your shots."; pull to refresh keeps what is on screen.
+5. Scroll the Darkroom and the feed after a cold launch: cached tiles appear with no flash.
