@@ -1251,7 +1251,7 @@ final class FeedService {
             // for whichever posts carry over, and a few stale entries cost less than every
             // reaction bar or tag chip on the new page reading as empty.
             if let fetchedReactions { reactionsByPost = fetchedReactions }
-            commentsByPost = fetchedComments
+            if let fetchedComments { commentsByPost = fetchedComments }
             if let tagRead {
                 tagsByPost = tagRead.tags
                 tagProfiles = tagRead.profiles
@@ -1259,7 +1259,7 @@ final class FeedService {
             feed = items
         } else {
             if let fetchedReactions { reactionsByPost.merge(fetchedReactions) { _, new in new } }
-            commentsByPost.merge(fetchedComments) { _, new in new }
+            if let fetchedComments { commentsByPost.merge(fetchedComments) { _, new in new } }
             applyTagRead(tagRead, requested: postIds)
             // Re-deduped against the live feed, not only `existingIds`: that snapshot
             // predates this function's awaits, and a straddle completion landing during them
@@ -1383,7 +1383,7 @@ final class FeedService {
         guard straddleRunIsCurrent(epoch: epoch, generation: generation) else { return }
 
         if let fetchedReactions { reactionsByPost.merge(fetchedReactions) { _, new in new } }
-        commentsByPost.merge(fetchedComments) { _, new in new }
+        if let fetchedComments { commentsByPost.merge(fetchedComments) { _, new in new } }
         applyTagRead(tagRead, requested: postIds)
         // Deduped against the feed AS IT IS NOW, not the snapshot from before this
         // function's awaits: anything else that appended while those were in flight would
@@ -1536,18 +1536,21 @@ final class FeedService {
         return Dictionary(grouping: rows.filter { !blockedIds.contains($0.userId) }, by: \.postId)
     }
 
-    private func batchComments(postIds: [UUID], currentUserId: UUID) async -> [UUID: [CommentInfo]] {
+    /// nil when the comments or their likes could not be read, never an empty answer: a page
+    /// whose read failed must not clear every card's comment preview (same rule as
+    /// `batchReactions` and `batchTags`).
+    private func batchComments(postIds: [UUID], currentUserId: UUID) async -> [UUID: [CommentInfo]]? {
         guard !postIds.isEmpty else { return [:] }
-        let allComments: [PostComment] = (try? await supabase.from("post_comments").select()
+        guard let allComments: [PostComment] = try? await supabase.from("post_comments").select()
             .in("post_id", values: postIds.map(\.uuidString))
-            .order("created_at", ascending: true).execute().value) ?? []
+            .order("created_at", ascending: true).execute().value else { return nil }
         // Defense-in-depth over RLS: filters stale/offline-cached rows from blocked users too.
         let comments = allComments.filter { !blockedIds.contains($0.userId) }
         guard !comments.isEmpty else { return [:] }
 
         struct LikeRow: Decodable { let comment_id: UUID; let user_id: UUID }
-        let likes: [LikeRow] = (try? await supabase.from("comment_likes").select("comment_id,user_id")
-            .in("comment_id", values: comments.map(\.id.uuidString)).execute().value) ?? []
+        guard let likes: [LikeRow] = try? await supabase.from("comment_likes").select("comment_id,user_id")
+            .in("comment_id", values: comments.map(\.id.uuidString)).execute().value else { return nil }
         let profiles = await fetchProfiles(ids: Array(Set(comments.map(\.userId))))
 
         // Group likes by comment once, rather than scanning the whole likes array per comment
