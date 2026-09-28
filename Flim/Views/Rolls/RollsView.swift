@@ -128,7 +128,7 @@ struct RollsView: View {
         }
         .overlay(alignment: .top) {
             if let toastMessage {
-                Label(toastMessage, systemImage: "exclamationmark.triangle.fill")
+                Label(toastMessage, systemImage: "exclamationmark.circle.fill")
                     .flimFont(13.5, weight: .medium, relativeTo: .subheadline)
                     .foregroundStyle(.white)
                     .padding(.horizontal, 16).padding(.vertical, 10)
@@ -217,8 +217,8 @@ struct RollsView: View {
             }
             Spacer(minLength: 8)
             Menu {
-                Button { showCreate = true } label: { Label("New roll", systemImage: "plus") }
-                Button { showJoin = true } label: { Label("Join with a code", systemImage: "person.badge.plus") }
+                Button { showCreate = true } label: { Label("Start a roll", systemImage: "plus") }
+                Button { showJoin = true } label: { Label("Join with a code", systemImage: "ticket") }
             } label: {
                 Image(systemName: "plus")
                     .font(.system(size: 16, weight: .medium))
@@ -226,7 +226,7 @@ struct RollsView: View {
                     .frame(width: 38, height: 38)
                     .glassCapsule(interactive: true)
             }
-            .accessibilityLabel("New roll or join with a code")
+            .accessibilityLabel("Start a roll or join with a code")
         }
         .padding(.horizontal, 16)
         .padding(.top, 2)
@@ -688,7 +688,7 @@ struct RollsView: View {
                 .buttonStyle(.plain)
                 Button { showJoin = true } label: {
                     HStack(spacing: 7) {
-                        Image(systemName: "person.badge.plus").font(.system(size: 14))
+                        Image(systemName: "ticket").font(.system(size: 14))
                         Text("Join with a code").flimFont(15, weight: .medium, relativeTo: .body)
                     }
                     .foregroundStyle(FlimTheme.textSecondary)

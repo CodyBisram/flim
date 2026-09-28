@@ -461,27 +461,31 @@ struct FeedView: View {
                 // signal for next time instead of silently consuming it.
                 showActivity = true
             } label: {
-                Image(systemName: unreadActivity > 0 ? "bell.badge" : "bell")
+                // One signal, the app's own: a plain bell and an accent dot, the same dot as
+                // the avatar beside it. It used to be `bell.badge` AND a red "9+" capsule, two
+                // badges on one control, in a color nothing else here uses (audit D-22, 1.6.1).
+                // The count still reads out to VoiceOver below.
+                Image(systemName: "bell")
                     .font(.system(size: 16, weight: .medium))
                     .foregroundStyle(accent)
-                    .symbolEffect(.bounce, value: unreadActivity)
-                    .frame(width: 44, height: 44)
-                    .glassCapsule(interactive: true)
+                    .flimSymbolBounce(value: unreadActivity)
                     .overlay(alignment: .topTrailing) {
                         if unreadActivity > 0 {
-                            Text(unreadActivity > 9 ? "9+" : "\(unreadActivity)")
-                                .flimFont(11, weight: .bold, relativeTo: .caption2)
-                                .foregroundStyle(.white)
-                                .padding(.horizontal, 5).padding(.vertical, 1)
-                                .background(Color.red, in: Capsule())
-                                .offset(x: 4, y: -2)
+                            Circle()
+                                .fill(accent)
+                                .frame(width: 7, height: 7)
+                                .overlay(Circle().stroke(FlimTheme.bg, lineWidth: 1.5))
+                                .offset(x: 2, y: -1)
+                                .transition(.scale.combined(with: .opacity))
                         }
                     }
+                    .frame(width: 44, height: 44)
+                    .glassCapsule(interactive: true)
             }
             .accessibilityLabel(unreadActivity > 0 ? "Activity, \(unreadActivity) new" : "Activity")
 
             Button { showDiscover = true } label: {
-                Image(systemName: "person.badge.plus")
+                Image(systemName: "person.2.badge.plus")
                     .font(.system(size: 16, weight: .medium))
                     .foregroundStyle(accent)
                     // On first run this is THE follow affordance, so the empty state glows
@@ -514,8 +518,9 @@ struct FeedView: View {
                         .overlay(Circle().stroke(accent.opacity(0.4), lineWidth: 1))
                         .overlay(alignment: .topTrailing) {
                             if feed.unseenBadgeCount > 0 {
+                                // Accent, like the bell's dot beside it: one kind of dot.
                                 Circle()
-                                    .fill(Color.red)
+                                    .fill(accent)
                                     .frame(width: 11, height: 11)
                                     .overlay(Circle().stroke(FlimTheme.bg, lineWidth: 1.5))
                             }
@@ -734,7 +739,7 @@ struct FeedView: View {
             Button {
                 NotificationCenter.default.post(name: .openCamera, object: nil)
             } label: {
-                Label("Shoot something", systemImage: "camera.aperture")
+                Label("Take a shot", systemImage: "camera.aperture")
                     .flimFont(14, weight: .medium, relativeTo: .subheadline)
                     .foregroundStyle(accent)
                     .padding(.horizontal, 20)
@@ -753,7 +758,7 @@ struct FeedView: View {
     // MARK: - First run, loading
 
     /// An account with no follows is not an account that is caught up, so none of the
-    /// caught-up block appears here: no accent mark, no "Shoot something". It states the
+    /// caught-up block appears here: no accent mark, no "Take a shot". It states the
     /// reason and offers the two things that exist. FLIM is invite-only, so there is no
     /// suggested-strangers rail, no discovery surface, and no list of people you have not
     /// followed yet: a guilt list ranks people, which this design refuses everywhere else.
@@ -770,10 +775,10 @@ struct FeedView: View {
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 46)
             VStack(spacing: 9) {
-                // One destination with the header's person-plus, not two: the button
+                // One destination with the header's people-plus, not two: the button
                 // teaches where that action lives afterwards.
                 Button { showDiscover = true } label: {
-                    Label("Find your friends", systemImage: "person.badge.plus")
+                    Label("Find your friends", systemImage: "person.2.badge.plus")
                         .flimFont(14, weight: .medium, relativeTo: .subheadline)
                         .foregroundStyle(accent)
                         // A floor, not a fixed box: 44 tall at the default size (the old 38
@@ -794,7 +799,7 @@ struct FeedView: View {
                 // never hide a working code because a lookup failed.
                 if inviteQuota != .remaining(0), let code = auth.currentUser?.inviteCode {
                     ShareLink(item: AppInfo.personalInviteMessage(code: code)) {
-                        Label("Invite someone", systemImage: "paperplane")
+                        Label("Invite someone", systemImage: "person.badge.plus")
                             .flimFont(14, weight: .medium, relativeTo: .subheadline)
                             .foregroundStyle(FlimTheme.textPrimary)
                             .padding(.horizontal, 18).padding(.vertical, 10)

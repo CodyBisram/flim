@@ -91,6 +91,8 @@ struct FeedUnitCard: View {
     /// starts from the attempted text rather than the value it never replaced.
     @State private var pendingCaptionRetry: [UUID: String] = [:]
     @State private var captionFailedToast = false
+    /// A reaction `reactToPost` rolled back: the chip is already back, the toast says why.
+    @State private var reactionFailedToast = false
     @State private var showEditTags = false
     @State private var editingTags: [PendingTag] = []
     @State private var shareItem: ShareImage?
@@ -558,7 +560,8 @@ struct FeedUnitCard: View {
                             Image(systemName: info.likedByMe ? "heart.fill" : "heart")
                                 .font(.system(size: 12))
                                 .foregroundStyle(info.likedByMe ? accent : FlimTheme.textTertiary)
-                                .symbolEffect(.bounce, value: info.likedByMe)
+                                .contentTransition(.symbolEffect(.replace))
+                                .flimSymbolBounce(value: info.likedByMe)
                                 .frame(width: 16, alignment: .trailing)
                         }
                     }
@@ -692,7 +695,9 @@ struct FeedUnitCard: View {
     @ViewBuilder
     private var toasts: some View {
         if captionFailedToast {
-            toast("Couldn't save caption. Try again.", icon: "exclamationmark.triangle.fill")
+            toast("Couldn't save caption. Try again.", icon: "exclamationmark.circle.fill")
+        } else if reactionFailedToast {
+            toast(ReactionFailure.text, icon: "exclamationmark.circle.fill")
         }
     }
 
@@ -804,8 +809,16 @@ struct FeedUnitCard: View {
             Task { try? await Task.sleep(for: .milliseconds(650)); heartBurst = false }
         }
         if !iLiked {
-            Task { await feed.reactToPost(post.id, emoji: "❤️", userId: uid) }
+            Task { await react("❤️", userId: uid) }
         }
+    }
+
+    /// The write, then the card's toast if `reactToPost` rolled it back.
+    private func react(_ emoji: String, userId: UUID) async {
+        guard await !feed.reactToPost(post.id, emoji: emoji, userId: userId) else { return }
+        withAnimation { reactionFailedToast = true }
+        try? await Task.sleep(for: .seconds(2))
+        withAnimation { reactionFailedToast = false }
     }
 
     private func likeComment(_ info: CommentInfo) {
@@ -817,7 +830,7 @@ struct FeedUnitCard: View {
     private func toggleReaction(_ emoji: String) {
         guard let uid = auth.currentUser?.id else { return }
         Haptics.tap()
-        Task { await feed.reactToPost(post.id, emoji: emoji, userId: uid) }
+        Task { await react(emoji, userId: uid) }
     }
 
     /// Resolves signed URLs for the selected frame and its neighbours, the only pages that

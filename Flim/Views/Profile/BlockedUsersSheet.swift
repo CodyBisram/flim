@@ -68,7 +68,7 @@ struct BlockedUsersSheet: View {
             }
             .overlay(alignment: .top) {
                 if unblockFailed {
-                    Label("Couldn't unblock. Check your connection and try again.", systemImage: "exclamationmark.triangle.fill")
+                    Label("Couldn't unblock. Check your connection and try again.", systemImage: "exclamationmark.circle.fill")
                         .flimFont(13, weight: .medium).foregroundStyle(.white)
                         .padding(.horizontal, 16).padding(.vertical, 10)
                         .background(.ultraThinMaterial, in: Capsule())

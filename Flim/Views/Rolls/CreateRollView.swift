@@ -36,7 +36,7 @@ struct CreateRollView: View {
                 .padding(.bottom, 40)
             }
             .navigationBarTitleDisplayMode(.inline)
-            .flimInlineTitle("New Roll")
+            .flimInlineTitle("Start a roll")
             .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -95,7 +95,7 @@ struct CreateRollView: View {
 
             Spacer()
 
-            PrimaryButton(title: "Create Roll", isLoading: isCreating, disabled: name.trimmingCharacters(in: .whitespaces).isEmpty) {
+            PrimaryButton(title: "Start a roll", isLoading: isCreating, disabled: name.trimmingCharacters(in: .whitespaces).isEmpty) {
                 await create()
             }
         }

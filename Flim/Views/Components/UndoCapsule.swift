@@ -23,7 +23,7 @@ struct UndoCapsuleHost: View {
                     if center.noticeIsConfirmation {
                         Text(notice)
                     } else {
-                        Label(notice, systemImage: "exclamationmark.triangle.fill")
+                        Label(notice, systemImage: "exclamationmark.circle.fill")
                     }
                 }
                 .flimFont(13, weight: .medium)

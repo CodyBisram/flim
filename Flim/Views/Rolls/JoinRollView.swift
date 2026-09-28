@@ -94,7 +94,7 @@ struct JoinRollView: View {
                     .padding(.bottom, 4)
             }
 
-            PrimaryButton(title: "Join Roll", isLoading: isJoining, disabled: code.count < 6) {
+            PrimaryButton(title: "Join roll", isLoading: isJoining, disabled: code.count < 6) {
                 await join()
             }
         }

@@ -443,7 +443,7 @@ struct RollDetailView: View {
         }
         .overlay(alignment: .top) {
             if let toastMessage {
-                Label(toastMessage, systemImage: toastIsError ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
+                Label(toastMessage, systemImage: toastIsError ? "exclamationmark.circle.fill" : "checkmark.circle.fill")
                     .flimFont(13, weight: .medium)
                     .foregroundStyle(.white)
                     .padding(.horizontal, 16).padding(.vertical, 10)

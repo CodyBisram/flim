@@ -191,7 +191,7 @@ struct ActivityFeedView: View {
             }
             .overlay(alignment: .top) {
                 if let toastMessage {
-                    Label(toastMessage, systemImage: "exclamationmark.triangle.fill")
+                    Label(toastMessage, systemImage: "exclamationmark.circle.fill")
                         .flimFont(13, weight: .medium, relativeTo: .subheadline)
                         .foregroundStyle(.white)
                         .padding(.horizontal, 16).padding(.vertical, 10)

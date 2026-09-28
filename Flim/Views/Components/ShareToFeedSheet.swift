@@ -477,6 +477,7 @@ struct AddPeopleSheet: View {
             Spacer()
             Image(systemName: selected ? "checkmark.circle.fill" : "circle")
                 .font(.system(size: 20))
+                .contentTransition(.symbolEffect(.replace))
                 .foregroundStyle(selected ? accent : FlimTheme.textTertiary)
         }
         .padding(.vertical, 4)

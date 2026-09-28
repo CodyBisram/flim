@@ -91,12 +91,19 @@ func emojiSearchResults(categories: [EmojiCategory], tokens: [String: [String]],
     return [EmojiPickerSection(name: "Results", emojis: sorted.map(\.emoji))]
 }
 
+/// What a screen says, in its own toast, when `FeedService.reactToPost` rolls a reaction back.
+/// The bar has already put the chip back the way it was; this says why.
+enum ReactionFailure {
+    static let text = "Couldn't send that reaction."
+}
+
 /// A reaction row: chips (with counts) in a horizontal scroll that never clips, and a "+" opens a
 /// sheet with a browsable grid of recents + the full palette, grouped into labelled sections. The
 /// order stays stable while you're looking (tapping never reshuffles it) and re-sorts
 /// reacted-to-front on the next appear.
 struct ReactionBar: View {
     @Environment(\.flimAccent) private var accent
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// A few default emojis offered up front when a photo has no reactions yet.
     var defaults: [String] = PostEmoji.all
     /// emoji → number of reactions.
@@ -291,7 +298,7 @@ struct ReactionBar: View {
             .padding(.vertical, 7)
             .background(isMine ? accent.opacity(0.28) : Color.white.opacity(0.12), in: Capsule())
             .overlay(Capsule().strokeBorder(isMine ? accent : .clear, lineWidth: 1))
-            .scaleEffect(pressed == emoji ? 1.18 : 1)               // little bounce on tap
+            .scaleEffect(pressed == emoji && !reduceMotion ? 1.18 : 1)   // little bounce on tap
         }
         .buttonStyle(.plain)
         .animation(.snappy(duration: 0.28), value: count)

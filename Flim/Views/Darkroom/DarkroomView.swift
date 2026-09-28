@@ -487,7 +487,7 @@ Text("Darkroom")
         }
         .overlay(alignment: .top) {
             if let errorToast {
-                Label(errorToast, systemImage: "exclamationmark.triangle.fill")
+                Label(errorToast, systemImage: "exclamationmark.circle.fill")
                     .flimFont(13.5, weight: .medium, relativeTo: .subheadline).foregroundStyle(.white)
                     .padding(.horizontal, 16).padding(.vertical, 10)
                     .background(.ultraThinMaterial, in: Capsule())
@@ -1338,7 +1338,7 @@ Text("Darkroom")
                         showDiscover = true
                     } label: {
                         HStack(spacing: 6) {
-                            Text(inviter.map { "See who else \($0.name) knows on FLIM" } ?? "Find people you know on FLIM")
+                            Text(inviter.map { "See who else \($0.name) knows on \(AppInfo.appName)" } ?? "Find people you know on \(AppInfo.appName)")
                             Image(systemName: "chevron.right").font(.system(size: 11, weight: .semibold))
                         }
                         .flimFont(14, weight: .medium, relativeTo: .subheadline)
@@ -1359,7 +1359,7 @@ Text("Darkroom")
             Image(systemName: "camera.aperture")
                 .font(.system(size: 40, weight: .ultraLight))
                 .foregroundStyle(accent.opacity(0.8))
-            Text("Your darkroom's empty.")
+            Text("Your Darkroom's empty.")
                 .flimFont(17, weight: .light)
                 .foregroundStyle(FlimTheme.textSecondary)
             Text("Head to the camera and take your first shot. Sort it here, then keep it or post it.")

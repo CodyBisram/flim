@@ -95,6 +95,7 @@ struct RollMembersView: View {
                         .foregroundStyle(.white)
                     Image(systemName: codeCopied ? "checkmark" : "doc.on.doc")
                         .font(.system(size: 14))
+                        .contentTransition(.symbolEffect(.replace))
                         .foregroundStyle(codeCopied ? accent : Color(white: 0.5))
                 }
             }
@@ -217,7 +218,7 @@ struct RollMembersView: View {
                 }
                 .overlay(alignment: .top) {
                     if let toastMessage {
-                        Label(toastMessage, systemImage: "exclamationmark.triangle.fill")
+                        Label(toastMessage, systemImage: "exclamationmark.circle.fill")
                             .flimFont(13.5, weight: .medium, relativeTo: .subheadline)
                             .foregroundStyle(.white)
                             .padding(.horizontal, 16).padding(.vertical, 10)

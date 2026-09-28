@@ -36,6 +36,8 @@ struct CommentsSheet: View {
     /// ambiguous whether the leading `@handle` was tapped or typed.
     @State private var replyTarget: String?
     @State private var sending = false
+    /// The last send didn't land: the draft is back in the field, and the composer says why.
+    @State private var sendFailed = false
     @State private var loaded = false
     /// The last load failed. Only shown when nothing is cached for this post: a cached thread
     /// (even an empty one, which is an answer) stays on screen instead.
@@ -144,7 +146,7 @@ struct CommentsSheet: View {
                         .flimFont(12, relativeTo: .caption).foregroundStyle(FlimTheme.textTertiary)
                     if info.comment.userId == auth.currentUser?.id {
                         Button { delete(info) } label: {
-                            Image(systemName: "xmark").font(.system(size: 10)).foregroundStyle(FlimTheme.textTertiary)
+                            Image(systemName: "trash").font(.system(size: 10)).foregroundStyle(FlimTheme.textTertiary)
                         }
                         .accessibilityLabel("Delete your comment")
                     } else {
@@ -168,7 +170,8 @@ struct CommentsSheet: View {
                     Image(systemName: info.likedByMe ? "heart.fill" : "heart")
                         .font(.system(size: 13))
                         .foregroundStyle(info.likedByMe ? accent : FlimTheme.textTertiary)
-                        .symbolEffect(.bounce, value: info.likedByMe)
+                        .contentTransition(.symbolEffect(.replace))
+                        .flimSymbolBounce(value: info.likedByMe)
                     if info.likeCount > 0 {
                         Text("\(info.likeCount)").flimFont(11, relativeTo: .caption).foregroundStyle(FlimTheme.textTertiary)
                             .contentTransition(.numericText())
@@ -214,9 +217,13 @@ struct CommentsSheet: View {
         // requested here.
         CommentComposer(draft: $draft, style: .surface, isSending: sending,
                         showsMentionSuggestions: false, replyTarget: $replyTarget,
+                        failureText: sendFailed ? CommentComposer.sendFailedText : nil,
                         focus: $focused) { send() }
             .padding(.horizontal, 16).padding(.vertical, 10)
             .background(.ultraThinMaterial)
+            .onChange(of: draft) { _, new in
+                if new.isEmpty { sendFailed = false }
+            }
     }
 
     /// The author's own line about their shot, above the thread it seeded: a whisper of a
@@ -319,6 +326,7 @@ struct CommentsSheet: View {
         let target = replyTarget
         draft = ""
         replyTarget = nil
+        sendFailed = false
         Haptics.tap()
         Task {
             sending = true
@@ -327,7 +335,9 @@ struct CommentsSheet: View {
             if !ok {
                 draft = body   // don't lose what they typed, restore and let them retry
                 replyTarget = target
+                sendFailed = true
                 Haptics.error()
+                AccessibilityNotification.Announcement(CommentComposer.sendFailedText).post()
             }
         }
     }

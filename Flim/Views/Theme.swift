@@ -251,7 +251,7 @@ struct ErrorState: View {
                 retrying = true
                 Task { await retry(); retrying = false }
             } label: {
-                Text(retrying ? "Retrying…" : "Try Again")
+                Text(retrying ? "Retrying…" : "Try again")
                     .font(.system(size: buttonSize, weight: .semibold))
                     .foregroundStyle(accent)
                     .padding(.horizontal, 22)
@@ -370,5 +370,43 @@ extension View {
     /// never copy the fill color or the hairline into a screen directly.
     func flimSheetSurface() -> some View {
         modifier(FlimSheetSurfaceModifier())
+    }
+}
+
+// MARK: - Symbol motion
+
+/// A `.bounce` that stays still under Reduce Motion. The value is swapped for a constant `nil`
+/// there rather than the effect being removed, so the view keeps its identity when the setting
+/// changes.
+private struct FlimSymbolBounceModifier<Value: Equatable>: ViewModifier {
+    let value: Value
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        content.symbolEffect(.bounce, value: reduceMotion ? nil : value)
+    }
+}
+
+/// A `.pulse` that runs only while `isActive`, and never under Reduce Motion.
+private struct FlimSymbolPulseModifier: ViewModifier {
+    let isActive: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        content.symbolEffect(.pulse, isActive: isActive && !reduceMotion)
+    }
+}
+
+extension View {
+    /// Toggles (heart, flag, copy to check, selection) swap their glyph with `.replace`, which
+    /// is a symbol swap and needs no gate. Counters and arrivals (a reaction, an upload landing)
+    /// bounce through this, which does.
+    func flimSymbolBounce<Value: Equatable>(value: Value) -> some View {
+        modifier(FlimSymbolBounceModifier(value: value))
+    }
+
+    /// Something in progress (an upload). See `FlimSymbolPulseModifier`.
+    func flimSymbolPulse(isActive: Bool = true) -> some View {
+        modifier(FlimSymbolPulseModifier(isActive: isActive))
     }
 }

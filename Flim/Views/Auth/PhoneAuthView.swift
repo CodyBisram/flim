@@ -86,7 +86,7 @@ struct EmailAuthView: View {
 
                 Spacer()
 
-                PrimaryButton(title: "Send Code", isLoading: isSending, disabled: !canSubmit) {
+                PrimaryButton(title: "Send code", isLoading: isSending, disabled: !canSubmit) {
                     await send()
                 }
             }

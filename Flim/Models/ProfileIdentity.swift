@@ -376,7 +376,7 @@ enum ProfileBadgeKind: String, CaseIterable {
         case .coverToCover:
             return "Shoot into ten different rolls before they develop."
         case .keptOne:
-            return "Let ten frames develop without sharing any of them."
+            return "Let ten frames develop without posting any of them."
         case .regular:
             return "Show up on seven different days."
         case .oneYear:

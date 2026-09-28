@@ -39,7 +39,7 @@ struct PhotoCommentsSheet: View {
                     if comments.isEmpty && loaded {
                         VStack(spacing: 8) {
                             Spacer()
-                            Image(systemName: "bubble.left.and.bubble.right")
+                            Image(systemName: "bubble.right")
                                 .font(.system(size: 28, weight: .ultraLight)).foregroundStyle(FlimTheme.textTertiary)
                             Text("No comments yet").flimFont(15, relativeTo: .body).foregroundStyle(.white)
                             Text("Start the conversation on this shot.")
@@ -88,7 +88,7 @@ struct PhotoCommentsSheet: View {
                         .flimFont(10, relativeTo: .caption).foregroundStyle(FlimTheme.textTertiary)
                     if comment.userId == auth.currentUser?.id {
                         Button { delete(comment) } label: {
-                            Image(systemName: "xmark").font(.system(size: 9)).foregroundStyle(FlimTheme.textTertiary)
+                            Image(systemName: "trash").font(.system(size: 9)).foregroundStyle(FlimTheme.textTertiary)
                         }
                         .accessibilityLabel("Delete your comment")
                         // 9 + 17.5 either side = 44, same reach as everywhere else this small.

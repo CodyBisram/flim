@@ -79,7 +79,7 @@ struct PhotoGridCell: View {
             .contentShape(Rectangle())
             .accessibilityElement()
             .accessibilityLabel(photo.isReady
-                ? "Photo\(rollName.map { " from \($0)" } ?? ""), \(photo.takenAt.formatted(date: .abbreviated, time: .omitted))\(isShared ? ", shared to your page" : "")"
+                ? "Photo\(rollName.map { " from \($0)" } ?? ""), \(photo.takenAt.formatted(date: .abbreviated, time: .omitted))\(isShared ? ", posted to your page" : "")"
                 : "Developing photo")
             .accessibilityAddTraits(photo.isReady ? .isButton : [])
     }

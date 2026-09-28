@@ -116,15 +116,16 @@ extension ChapterSummary {
         String(format: "%02d", calendar.component(.month, from: monthStart))
     }
 
-    /// "34 shared · 2 rolls", singular handled, and the roll clause dropped entirely at zero: a
+    /// "34 posted · 2 rolls", singular handled, and the roll clause dropped entirely at zero: a
     /// month built only from personal, non-roll shares (never touched a roll at all) is an
     /// entirely ordinary case, and "· 0 rolls" would read like a mistake rather than the true,
-    /// unremarkable answer. "Shared" here always means shared photos (see this type's own doc):
+    /// unremarkable answer. "Posted" here always means shared photos (see this type's own doc):
     /// this line must never be read, or extended, as counting anything still undeveloped or
-    /// unposted. Reads "shared" rather than "shots" because it sits next to the profile's own
-    /// "shared" stat elsewhere on the page; the closing card's narrative lines keep "shots".
+    /// unposted. Reads "posted" rather than "shots" because it sits next to the profile's own
+    /// "posted" stat elsewhere on the page (COPY.md's count form); the closing card's narrative
+    /// lines keep "shots".
     var statsLine: String {
-        let shots = shotCount == 1 ? "1 shared" : "\(shotCount) shared"
+        let shots = shotCount == 1 ? "1 posted" : "\(shotCount) posted"
         guard rollCount > 0 else { return shots }
         let rolls = rollCount == 1 ? "1 roll" : "\(rollCount) rolls"
         return "\(shots) · \(rolls)"

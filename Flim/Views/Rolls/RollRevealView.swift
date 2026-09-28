@@ -465,7 +465,7 @@ struct RollRevealView: View {
         HStack(spacing: 12) {
             Button { commentsPhoto = photo } label: {
                 HStack(spacing: 7) {
-                    Image(systemName: "bubble.left").font(.system(size: 14))
+                    Image(systemName: "bubble.right").font(.system(size: 14))
                     Text("Comments")
                         .flimFont(12.5, relativeTo: .footnote)
                 }
@@ -489,6 +489,7 @@ struct RollRevealView: View {
                 } label: {
                     Image(systemName: reported ? "flag.fill" : "flag")
                         .font(.system(size: 13))
+                        .contentTransition(.symbolEffect(.replace))
                         .foregroundStyle(Color(white: 0.5))
                 }
                 .buttonStyle(.plain)

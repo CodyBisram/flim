@@ -350,6 +350,7 @@ struct DarkroomFrameView: View {
             RoundedRectangle(cornerRadius: 2).fill(Color.black.opacity(isSelected ? 0.4 : 0.001))
             Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                 .font(.system(size: 12, weight: .semibold))
+                .contentTransition(.symbolEffect(.replace))
                 .foregroundStyle(isSelected ? accent : .white.opacity(0.85))
                 .padding(2)
                 .shadow(radius: 1)
@@ -361,7 +362,7 @@ struct DarkroomFrameView: View {
     /// state, developing state.
     private var accessibilityLabel: String {
         photo.isReady
-            ? "Photo\(rollName.map { " from \($0)" } ?? ""), \(photo.takenAt.formatted(date: .abbreviated, time: .omitted))\(isShared ? ", shared to your page" : "")"
+            ? "Photo\(rollName.map { " from \($0)" } ?? ""), \(photo.takenAt.formatted(date: .abbreviated, time: .omitted))\(isShared ? ", posted to your page" : "")"
             : "Developing photo"
     }
 }

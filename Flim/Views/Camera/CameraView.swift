@@ -247,7 +247,7 @@ struct CameraView: View {
                         // 42501), not why: a genuinely developed roll, a deleted one, or a
                         // membership that was removed all look identical from here, so the copy
                         // states the effect, not a cause it can't verify.
-                        Label("That roll isn't accepting shots anymore, so this one went to your deck instead.",
+                        Label("That roll isn't accepting shots anymore, so this one went to your Darkroom instead.",
                               systemImage: "checkmark.circle.fill")
                             .flimFont(12, weight: .medium)
                             .foregroundStyle(.white)
@@ -691,6 +691,7 @@ struct CameraView: View {
                     } label: {
                         Image(systemName: flashIcon)
                             .font(.system(size: 16, weight: .semibold))
+                            .contentTransition(.symbolEffect(.replace))
                             .foregroundStyle(flashMode == .off ? .white : accent)
                             .frame(width: 52, height: 52)
                     }

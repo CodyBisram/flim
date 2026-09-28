@@ -175,7 +175,7 @@ struct ChapterRecapView: View {
                         .padding(.top, 28)
 
                     if showFirstRunLine {
-                        Text("Built from what you shared this month. Anyone who can see your profile sees this too.")
+                        Text("Built from what you posted this month. Anyone who can see your profile sees this too.")
                             .flimFont(13, relativeTo: .footnote)
                             .foregroundStyle(Color(white: 0.65))
                             .multilineTextAlignment(.center)

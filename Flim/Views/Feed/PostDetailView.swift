@@ -83,9 +83,12 @@ struct PostDetailView: View {
     @State private var pendingCaptionRetry: String?
     @State private var captionFailedToast = false
     /// A comment that didn't reach the server. Mirrors `CommentsSheet.send()`'s restore
-    /// semantics (draft and reply target both come back so the send is retryable) with the
-    /// toast this screen already uses for every other failed action.
-    @State private var commentFailedToast = false
+    /// semantics (draft and reply target both come back so the send is retryable), and says so
+    /// in the composer, where the comment was written, until the next send.
+    @State private var commentSendFailed = false
+    /// A reaction that didn't land (the bar has already rolled it back): the toast this screen
+    /// uses for every other failed action.
+    @State private var reactionFailedToast = false
     /// Swipe-down-to-go-back state: only armed at the top of the scroll.
     @State private var atTop = true
     @State private var dragY: CGFloat = 0
@@ -284,13 +287,13 @@ struct PostDetailView: View {
         .spotlightPutUpFlow(firstTimePost: $spotlightFirstTimePost, takeOutPost: $spotlightTakeOutPost)
         .overlay(alignment: .top) {
             if captionFailedToast {
-                Label("Couldn't save caption. Try again.", systemImage: "exclamationmark.triangle.fill")
+                Label("Couldn't save caption. Try again.", systemImage: "exclamationmark.circle.fill")
                     .flimFont(13, weight: .medium).foregroundStyle(.white)
                     .padding(.horizontal, 16).padding(.vertical, 10)
                     .background(.ultraThinMaterial, in: Capsule())
                     .transition(.move(edge: .top).combined(with: .opacity))
-            } else if commentFailedToast {
-                Label("Couldn't send that comment. Try again.", systemImage: "exclamationmark.triangle.fill")
+            } else if reactionFailedToast {
+                Label(ReactionFailure.text, systemImage: "exclamationmark.circle.fill")
                     .flimFont(13, weight: .medium).foregroundStyle(.white)
                     .padding(.horizontal, 16).padding(.vertical, 10)
                     .background(.ultraThinMaterial, in: Capsule())
@@ -507,7 +510,15 @@ struct PostDetailView: View {
             Task { try? await Task.sleep(for: .milliseconds(650)); heartBurst = false }
         }
         guard !reactions.contains(where: { $0.emoji == "\u{2764}\u{FE0F}" && $0.userId == uid }) else { return }
-        Task { await feed.reactToPost(post.id, emoji: "\u{2764}\u{FE0F}", userId: uid) }
+        Task { await react("\u{2764}\u{FE0F}", userId: uid) }
+    }
+
+    /// The write, then the toast if `reactToPost` rolled it back.
+    private func react(_ emoji: String, userId: UUID) async {
+        guard await !feed.reactToPost(post.id, emoji: emoji, userId: userId) else { return }
+        withAnimation { reactionFailedToast = true }
+        try? await Task.sleep(for: .seconds(2))
+        withAnimation { reactionFailedToast = false }
     }
 
     private var reactionBar: some View {
@@ -536,7 +547,7 @@ struct PostDetailView: View {
                                 .flimFont(10, relativeTo: .caption).foregroundStyle(FlimTheme.textTertiary)
                             if info.comment.userId == auth.currentUser?.id {
                                 Button { delete(info) } label: {
-                                    Image(systemName: "xmark").font(.system(size: 9)).foregroundStyle(FlimTheme.textTertiary)
+                                    Image(systemName: "trash").font(.system(size: 9)).foregroundStyle(FlimTheme.textTertiary)
                                 }
                                 .accessibilityLabel("Delete your comment")
                                 // 9 + 17.5 either side = 44, same reach as everywhere else this small.
@@ -559,7 +570,8 @@ struct PostDetailView: View {
                             Image(systemName: info.likedByMe ? "heart.fill" : "heart")
                                 .font(.system(size: 13))
                                 .foregroundStyle(info.likedByMe ? accent : FlimTheme.textTertiary)
-                                .symbolEffect(.bounce, value: info.likedByMe)
+                                .contentTransition(.symbolEffect(.replace))
+                                .flimSymbolBounce(value: info.likedByMe)
                             if info.likeCount > 0 {
                                 Text("\(info.likeCount)").flimFont(10, relativeTo: .caption).foregroundStyle(FlimTheme.textTertiary)
                             }
@@ -583,7 +595,12 @@ struct PostDetailView: View {
     /// this screen, never three: the page, and the keyboard.
     private var commentInput: some View {
         CommentComposer(draft: $draft, style: .surface, isSending: sending,
-                        replyTarget: $replyTarget, focus: $commentFocused) { send() }
+                        replyTarget: $replyTarget,
+                        failureText: commentSendFailed ? CommentComposer.sendFailedText : nil,
+                        focus: $commentFocused) { send() }
+            .onChange(of: draft) { _, new in
+                if new.isEmpty { commentSendFailed = false }
+            }
             .padding(.horizontal, 16).padding(.vertical, 10)
             .background(
                 FlimTheme.bg
@@ -659,11 +676,12 @@ struct PostDetailView: View {
     }
 
     /// Same path as the feed card: `reactToPost` applies the change to the shared cache at once
-    /// and rolls it back with `Haptics.error()` if the write never lands.
+    /// and rolls it back with `Haptics.error()` if the write never lands, and this screen's toast
+    /// says so.
     private func toggle(_ emoji: String) {
         guard let uid = auth.currentUser?.id else { return }
         Haptics.tap()
-        Task { await feed.reactToPost(post.id, emoji: emoji, userId: uid) }
+        Task { await react(emoji, userId: uid) }
     }
 
     private func send() {
@@ -673,6 +691,7 @@ struct PostDetailView: View {
         draft = ""
         replyTarget = nil
         commentFocused = false
+        commentSendFailed = false
         sending = true
         Task {
             // The Bool-returning wrapper, same as `CommentsSheet.send()`: `addComment` alone
@@ -684,9 +703,9 @@ struct PostDetailView: View {
             if !ok {
                 draft = body   // don't lose what they typed, restore and let them retry
                 replyTarget = target
+                commentSendFailed = true
                 Haptics.error()
-                withAnimation { commentFailedToast = true }
-                try? await Task.sleep(for: .seconds(2)); withAnimation { commentFailedToast = false }
+                AccessibilityNotification.Announcement(CommentComposer.sendFailedText).post()
             }
         }
     }

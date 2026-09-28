@@ -81,7 +81,7 @@ struct SquareCropSheet: View {
             // where retrying is one tap away, never a modal whose only button admits it.
             .overlay(alignment: .top) {
                 if let useError {
-                    Label(useError, systemImage: "exclamationmark.triangle.fill")
+                    Label(useError, systemImage: "exclamationmark.circle.fill")
                         .flimFont(13, weight: .medium).foregroundStyle(.white)
                         .padding(.horizontal, 16).padding(.vertical, 10)
                         .background(.ultraThinMaterial, in: Capsule())

@@ -43,10 +43,10 @@ struct NotificationNudgeBanner: View {
                     .foregroundStyle(accent)
 
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("Know the moment your roll develops")
+                    Text("Know when someone replies")
                         .flimFont(14, weight: .medium, relativeTo: .subheadline)
                         .foregroundStyle(FlimTheme.textPrimary)
-                    Text("A reveal has no way to reach you without notifications.")
+                    Text("Reactions and comments on your shots, and rolls when they develop.")
                         .flimFont(12, relativeTo: .caption)
                         .foregroundStyle(FlimTheme.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)

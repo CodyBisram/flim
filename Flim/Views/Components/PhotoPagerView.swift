@@ -582,7 +582,7 @@ struct PhotoPagerView: View {
                     .padding(.top, 64)
                     .transition(.move(edge: .top).combined(with: .opacity))
             } else if let errorToast {
-                Label(errorToast, systemImage: "exclamationmark.triangle.fill")
+                Label(errorToast, systemImage: "exclamationmark.circle.fill")
                     .flimFont(14, weight: .semibold)
                     .foregroundStyle(.white)
                     .padding(.horizontal, 18)
@@ -795,6 +795,7 @@ struct PhotoPagerView: View {
                     Button { reportCurrent() } label: {
                         Image(systemName: reported ? "flag.fill" : "flag")
                             .font(.system(size: 15, weight: .medium))
+                            .contentTransition(.symbolEffect(.replace))
                             .foregroundStyle(.white)
                             .padding(12)
                             .glassCapsule(interactive: true)
@@ -1058,7 +1059,7 @@ struct PhotoPagerView: View {
                 HStack(spacing: 12) {
                     Button { commentsPhoto = photo; showComments = true } label: {
                         HStack(spacing: 7) {
-                            Image(systemName: "bubble.left").font(.system(size: 14))
+                            Image(systemName: "bubble.right").font(.system(size: 14))
                             Text(commentsRowLabel(count: currentCommentCount)).flimFont(12.5, relativeTo: .footnote)
                         }
                         .foregroundStyle(Color(white: 0.6))
@@ -1080,6 +1081,7 @@ struct PhotoPagerView: View {
                             HStack(spacing: 5) {
                                 Image(systemName: shared ? "checkmark.circle.fill" : "square.and.arrow.up")
                                     .font(.system(size: 11))
+                                    .contentTransition(.symbolEffect(.replace))
                                 Text(shared ? "Posted" : "Post")
                                     .flimFont(11, weight: .medium, relativeTo: .caption2)
                             }
@@ -2057,7 +2059,9 @@ struct PhotoPagerView: View {
             // Same call `FeedUnitCard`/`PostDetailView` make: it owns `feed.reactionsByPost`
             // (optimistic toggle, rolled back with `Haptics.error()` if the write never lands),
             // so there's no reason for this view to keep its own copy of a post's reactions.
-            Task { await feed.reactToPost(post.id, emoji: emoji, userId: uid) }
+            Task {
+                if await !feed.reactToPost(post.id, emoji: emoji, userId: uid) { flashError(ReactionFailure.text) }
+            }
             return
         }
         let mine = reactionsByPhoto[photo.id]?.contains { $0.emoji == emoji && $0.userId == uid } ?? false
@@ -2066,6 +2070,7 @@ struct PhotoPagerView: View {
             reactionsByPhoto[photo.id, default: []].removeAll { $0.emoji == emoji && $0.userId == uid }
             OptimisticToggle.shared.perform(key: key, write: { await photoService.removeReaction(photoId: photo.id, emoji: emoji, userId: uid) }) {
                 reactionsByPhoto[photo.id, default: []].append(PhotoReaction(id: UUID(), photoId: photo.id, userId: uid, emoji: emoji))
+                flashError(ReactionFailure.text)
             }
         } else {
             addPhotoReaction(emoji, on: photo, userId: uid)
@@ -2082,6 +2087,7 @@ struct PhotoPagerView: View {
         reactionsByPhoto[photo.id, default: []].append(PhotoReaction(id: UUID(), photoId: photo.id, userId: uid, emoji: emoji))
         OptimisticToggle.shared.perform(key: key, write: { await service.addReaction(photoId: photo.id, emoji: emoji, userId: uid) }) {
             reactionsByPhoto[photo.id, default: []].removeAll { $0.emoji == emoji && $0.userId == uid }
+            flashError(ReactionFailure.text)
         }
     }
 
@@ -2098,7 +2104,9 @@ struct PhotoPagerView: View {
         if let post = posts[photo.id] {
             guard !(feed.reactionsByPost[post.id]?.contains { $0.emoji == "❤️" && $0.userId == uid } ?? false) else { return }
             // Same call `FeedUnitCard`'s own double tap makes; see `toggleReaction`'s note.
-            Task { await feed.reactToPost(post.id, emoji: "❤️", userId: uid) }
+            Task {
+                if await !feed.reactToPost(post.id, emoji: "❤️", userId: uid) { flashError(ReactionFailure.text) }
+            }
             return
         }
         guard !(reactionsByPhoto[photo.id]?.contains { $0.emoji == "❤️" && $0.userId == uid } ?? false) else { return }

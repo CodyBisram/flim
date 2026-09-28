@@ -195,6 +195,7 @@ struct TagPhotoSheet: View {
         Image(systemName: tags.contains { $0.user.id == profile.id }
               ? "checkmark.circle.fill" : "circle")
             .font(.system(size: 20))
+            .contentTransition(.symbolEffect(.replace))
             .foregroundStyle(tags.contains { $0.user.id == profile.id }
                              ? accent : FlimTheme.textTertiary)
     }

@@ -59,7 +59,7 @@ final class FeedService {
     /// could land before the first, and a failure in either rolled the WHOLE post back to a
     /// snapshot taken before both, wiping the one that succeeded. Writes now queue per post, and
     /// a failure undoes only its own change.
-    private var reactionQueues: [UUID: Task<Void, Never>] = [:]
+    private var reactionQueues: [UUID: Task<Bool, Never>] = [:]
     /// The latest intent per (post, emoji, user): which tap currently owns what the screen
     /// shows. A failed write only rolls the screen back if it is still the owner; a later tap
     /// that already changed the intent wins, and the queue's later write reconciles the server.
@@ -1591,7 +1591,12 @@ final class FeedService {
     /// anything had gone wrong. `follow`/`unfollow` above have always restored on failure for
     /// exactly this reason; reactions never got the same treatment. The roll-photo equivalents
     /// happen to be safe already because they refetch afterwards, so only this path could strand.
-    func reactToPost(_ postId: UUID, emoji: String, userId: UUID) async {
+    ///
+    /// Returns false only when this tap was rolled back, the one case the screen has to say
+    /// so ("Couldn't send that reaction."): the haptic alone read as nothing having happened.
+    /// A write superseded by a later tap, or by an account change, is not a failure.
+    @discardableResult
+    func reactToPost(_ postId: UUID, emoji: String, userId: UUID) async -> Bool {
         // Decide and show the change now, on the current state, so the tap feels instant...
         var current = reactionsByPost[postId] ?? []
         let removing = current.contains { $0.emoji == emoji && $0.userId == userId }
@@ -1607,19 +1612,19 @@ final class FeedService {
         let epoch = AccountEpoch.current
 
         let previous = reactionQueues[postId]
-        let write = Task { [weak self] in
-            await previous?.value
-            guard let self, AccountEpoch.isCurrent(epoch) else { return }
+        let write = Task { [weak self] () -> Bool in
+            _ = await previous?.value
+            guard let self, AccountEpoch.isCurrent(epoch) else { return true }
             self.reactionWritesInFlight.insert(postId)
             defer { self.reactionWritesInFlight.remove(postId) }
             let landed = removing
                 ? await self.removeReaction(postId: postId, emoji: emoji, userId: userId)
                 : await self.addReaction(postId: postId, emoji: emoji, userId: userId)
-            guard !landed, AccountEpoch.isCurrent(epoch) else { return }
+            guard !landed, AccountEpoch.isCurrent(epoch) else { return true }
             // Roll back only if no later tap on this emoji has taken over the screen. Tap, untap,
             // tap: if the first add fails after the third tap, the third tap's intent stands and
             // its own write (already queued) is what reconciles the server.
-            guard self.reactionRevisions[revisionKey] == revision else { return }
+            guard self.reactionRevisions[revisionKey] == revision else { return true }
             var now = self.reactionsByPost[postId] ?? []
             if removing {
                 if !now.contains(where: { $0.emoji == emoji && $0.userId == userId }) {
@@ -1630,10 +1635,12 @@ final class FeedService {
             }
             self.reactionsByPost[postId] = now
             Haptics.error()
+            return false
         }
         reactionQueues[postId] = write
-        await write.value
+        let ok = await write.value
         if reactionQueues[postId] == write { reactionQueues[postId] = nil }
+        return ok
     }
 
     /// Re-reads reactions for posts that are on screen, so someone else's reaction appears while

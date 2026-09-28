@@ -489,6 +489,19 @@ enum SpotlightCaptionLock {
     }
 }
 
+/// The own-post menu's two ways out of Spotlight, which do different things and must never
+/// read alike. "Take it down" lifts a frame that is only up for this week's session; "Remove
+/// from Spotlight" takes a chosen frame out of the published week for good. Neither touches the
+/// post itself: it stays on the photographer's page either way. The take-out copy once said the
+/// post left the page too, which was false (audit D-12, 1.6.1).
+enum SpotlightExitCopy {
+    static let takeDown = "Take it down from Spotlight"
+    static let remove = "Remove from Spotlight"
+    static let removeConfirmTitle = "Remove from Spotlight?"
+    static let removeConfirmMessage = "It leaves Spotlight for good. The post stays on your page, and your badge stays."
+    static let removeMenuDetail = "It leaves Spotlight for good. The post stays on your page."
+}
+
 /// What the capsule says in place of "Up for Spotlight" when the server refuses, keyed by the
 /// refusal's name (`PostgrestError.message` under code P0001).
 enum SpotlightRefusal {
@@ -497,7 +510,7 @@ enum SpotlightRefusal {
     static let cantGoUp = "This frame can't go up."
     static let putUpNetwork = "Couldn't put it up. Check your connection and try again."
     static let takeDownNetwork = "Couldn't take it down. Check your connection and try again."
-    static let takeOutNetwork = "Couldn't take it out. Check your connection and try again."
+    static let takeOutNetwork = "Couldn't remove it from Spotlight. Check your connection and try again."
     static let openNetwork = "Couldn't open that photo. Check your connection and try again."
     static let taggedOnSpotlight = "Frames put up for Spotlight can't be tagged."
     /// A put-up the server refused with `not_this_week`: the frame was shot before this week

@@ -60,6 +60,12 @@ struct CommentComposer: View {
     /// and once typing started even that signal vanished. This is the source of truth instead, and
     /// drives the "Replying to…" banner below.
     @Binding var replyTarget: String?
+    /// The last send's failure, said where the comment was being written. Owned by the host,
+    /// which restores the draft alongside it and clears it on the next send. A haptic alone
+    /// read as nothing having happened.
+    var failureText: String? = nil
+    /// What every host passes as `failureText` when a send doesn't land.
+    static let sendFailedText = "Couldn't send that comment. Try again."
     var focus: FocusState<Bool>.Binding
     let onSend: () -> Void
 
@@ -107,6 +113,14 @@ struct CommentComposer: View {
                 .padding(.horizontal, style.horizontalPadding)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
+            if let failureText {
+                Label(failureText, systemImage: "exclamationmark.circle.fill")
+                    .flimFont(12, relativeTo: .caption)
+                    .foregroundStyle(FlimTheme.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, style.horizontalPadding)
+                    .transition(.opacity)
+            }
             if showsMentionSuggestions {
                 MentionSuggestions(draft: $draft)
             }
@@ -151,6 +165,7 @@ struct CommentComposer: View {
             .animation(.snappy(duration: 0.2), value: draft.isEmpty)
         }
         .animation(.snappy(duration: 0.2), value: replyTarget)
+        .animation(.snappy(duration: 0.2), value: failureText)
         // An abandoned reply (an untouched `@handle ` prefill) shouldn't outlive the tap that
         // made it: losing focus without a single character typed clears it and exits reply mode
         // with it, so the next tap into the box starts clean instead of carrying a half-finished

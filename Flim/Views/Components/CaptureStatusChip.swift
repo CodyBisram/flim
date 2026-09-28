@@ -81,19 +81,27 @@ struct CaptureStatusChip: View {
     private var tint: Color {
         switch status {
         case .uploaded, .savedOnPhone: FlimTheme.success
+        case .uploading: .white   // what the spinner it replaced was: in progress, not a warning
         default: FlimTheme.warning(accent)
         }
     }
 
+    private var isUploading: Bool {
+        if case .uploading = status { return true }
+        return false
+    }
+
     var body: some View {
         HStack(spacing: FlimSpace.m) {
-            if case .uploading = status {
-                ProgressView().tint(.white).controlSize(.mini)
-            } else {
-                Image(systemName: status.glyph)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(tint)
-            }
+            // One glyph for every state: the upload's own cloud pulses while it sends (it was a
+            // spinner, and the glyph went unused), and the check bounces when it lands. Both stay
+            // still under Reduce Motion; the title says the same thing in words.
+            Image(systemName: status.glyph)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(tint)
+                .contentTransition(.symbolEffect(.replace))
+                .flimSymbolPulse(isActive: isUploading)
+                .flimSymbolBounce(value: status == .uploaded)
             VStack(alignment: .leading, spacing: 1) {
                 Text(status.title)
                     .flimType(.label)

@@ -67,7 +67,7 @@ struct OnboardingView: View {
                             .padding(.horizontal, 40)
 
                         Button(action: openCamera) {
-                            Text("Open the camera")
+                            Text("Take a shot")
                                 .flimFont(16, weight: .semibold, relativeTo: .body)
                                 .foregroundStyle(.black)
                                 .padding(.horizontal, 28)

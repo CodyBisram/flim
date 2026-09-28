@@ -221,7 +221,7 @@ struct SpotlightWeeksSheet: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
-                        Text("Each week the team at \(AppInfo.appName) chooses a few frames from the ones people put up. To put one of yours up, open the menu on one of this week's posts.")
+                        Text("Each week the team at \(AppInfo.appName) chooses a few frames from the ones people put up. To put one of yours up, press and hold a frame you shot this week.")
                             .flimType(.body)
                             .foregroundStyle(FlimTheme.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -299,7 +299,7 @@ struct SpotlightWeeksSheet: View {
             }
             .overlay(alignment: .top) {
                 if let toast {
-                    Label(toast, systemImage: "exclamationmark.triangle.fill")
+                    Label(toast, systemImage: "exclamationmark.circle.fill")
                         .flimFont(13, weight: .medium, relativeTo: .subheadline)
                         .foregroundStyle(.white)
                         .padding(.horizontal, 16).padding(.vertical, 10)
@@ -913,10 +913,10 @@ struct SpotlightSessionSheet: View {
         case .done(let notice):
             status(notice, systemImage: "checkmark.circle.fill", color: FlimTheme.success)
         case .refused(let message):
-            status(message, systemImage: "exclamationmark.triangle.fill", color: FlimTheme.error)
+            status(message, systemImage: "exclamationmark.circle.fill", color: FlimTheme.error)
         case .choosing, .sending:
             if let errorLine {
-                status(errorLine, systemImage: "exclamationmark.triangle.fill", color: FlimTheme.error)
+                status(errorLine, systemImage: "exclamationmark.circle.fill", color: FlimTheme.error)
             } else if let chosen, chosen.post == nil {
                 quietLine(SpotlightSessionCopy.stillPosting)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -1040,15 +1040,15 @@ private struct SpotlightPutUpFlow: ViewModifier {
                 }
             }
             .confirmationDialog(
-                "Take it out of Spotlight?",
+                SpotlightExitCopy.removeConfirmTitle,
                 isPresented: Binding(get: { takeOutPost != nil },
                                      set: { if !$0 { takeOutPost = nil } }),
                 titleVisibility: .visible,
                 presenting: takeOutPost
             ) { post in
-                Button("Take it out", role: .destructive) { SpotlightFlow.takeOut(post, feed: feed) }
+                Button(SpotlightExitCopy.remove, role: .destructive) { SpotlightFlow.takeOut(post, feed: feed) }
             } message: { _ in
-                Text("It leaves the week's strip and your page, and it can't go back in. Your badge stays.")
+                Text(SpotlightExitCopy.removeConfirmMessage)
             }
     }
 }
@@ -1126,14 +1126,14 @@ struct SpotlightMenuSection: View {
             .disabled(feed.spotlightWriteInFlight)
         case .takeDown:
             Button { SpotlightFlow.takeDown(post, feed: feed) } label: {
-                Text("Take it down from Spotlight")
+                Text(SpotlightExitCopy.takeDown)
                 Text("Up for this week")
                 Image(systemName: SpotlightGlyph.systemName)
             }
             .disabled(feed.spotlightWriteInFlight)
         case .takeDownPending(let weekKey):
             Button { SpotlightFlow.takeDown(post, feed: feed) } label: {
-                Text("Take it down from Spotlight")
+                Text(SpotlightExitCopy.takeDown)
                 Text("Until the team publishes \(SpotlightWeekLabel.phrase(weekKey))")
                 Image(systemName: SpotlightGlyph.systemName)
             }
@@ -1147,8 +1147,8 @@ struct SpotlightMenuSection: View {
             .disabled(true)
         case .takeOut:
             Button(role: .destructive) { confirmTakeOut(post) } label: {
-                Text("Take it out of Spotlight")
-                Text("It leaves Spotlight and your page for good.")
+                Text(SpotlightExitCopy.remove)
+                Text(SpotlightExitCopy.removeMenuDetail)
                 Image(systemName: SpotlightGlyph.systemName)
             }
             .disabled(feed.spotlightTakeOutsInFlight.contains(post.id))

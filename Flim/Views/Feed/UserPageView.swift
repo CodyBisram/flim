@@ -543,8 +543,8 @@ struct UserPageView: View {
 
             HStack(spacing: 26) {
                 // A page you do not follow shows only the posts you are tagged in, so a count of
-                // those would read as how much this person has shared. Not known, not guessed.
-                stat(statsKnown && (isSelf || isFollowing) ? "\(sharedCount)" : "–", "shared")
+                // those would read as how much this person has posted. Not known, not guessed.
+                stat(statsKnown && (isSelf || isFollowing) ? "\(sharedCount)" : "–", "posted")
                 Button { followList = .followers } label: { stat(statsKnown ? "\(followers)" : "–", "followers") }
                 Button { followList = .following } label: { stat(statsKnown ? "\(following)" : "–", "following") }
             }
@@ -853,7 +853,7 @@ struct UserPageView: View {
                         Haptics.tap()
                         NotificationCenter.default.post(name: .openCamera, object: nil)
                     } label: {
-                        Label("Take a photo", systemImage: "camera.aperture")
+                        Label("Take a shot", systemImage: "camera.aperture")
                             .flimFont(14, weight: .medium, relativeTo: .subheadline)
                             .foregroundStyle(accent)
                             .padding(.horizontal, 20)

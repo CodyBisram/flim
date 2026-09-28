@@ -140,11 +140,11 @@ struct ProfileView: View {
                     // Primary path: posts straight to the database, so a report is captured the
                     // moment Send is tapped. The mailto link below stays too, for people who'd
                     // rather write to a person, and because Apple expects a support contact.
-                    linkRow("Send feedback", icon: "envelope") { showFeedbackSheet = true }
-                    linkRow("Email us directly", icon: "paperplane") {
+                    linkRow("Send feedback", icon: "square.and.pencil") { showFeedbackSheet = true }
+                    linkRow("Email us directly", icon: "envelope") {
                         if let url = AppInfo.feedbackMailURL { openURL(url) }
                     }
-                    linkRow("Privacy Policy", icon: "hand.raised") { openURL(AppInfo.privacyPolicyURL) }
+                    linkRow("Privacy Policy", icon: "lock.shield") { openURL(AppInfo.privacyPolicyURL) }
                     linkRow("Terms of Service", icon: "doc.text") { openURL(AppInfo.termsURL) }
                 } header: { sectionHeader("Support & Legal") }
 
@@ -177,13 +177,13 @@ struct ProfileView: View {
                     Button {
                         Task { try? await auth.signOut(); dismiss() }
                     } label: {
-                        Text("Sign Out")
+                        Text("Sign out")
                             .flimFont(15, weight: .medium, relativeTo: .body)
                             .foregroundStyle(Color(red: 1, green: 0.35, blue: 0.35))
                             .frame(maxWidth: .infinity)
                     }
                     Button { showDeletePage = true } label: {
-                        Text("Delete Account")
+                        Text("Delete account")
                             .flimFont(13, relativeTo: .subheadline)
                             .foregroundStyle(FlimTheme.textTertiary)
                             .frame(maxWidth: .infinity)
@@ -468,7 +468,7 @@ struct EditProfileView: View {
                 // Both sources go through the 1:1 cropper, so the user picks WHICH square of the
                 // photo becomes their avatar. Without it the downscaler centre-cropped, and a
                 // face that wasn't dead centre came out as a shoulder.
-                PhotoPickerSheet(title: "Profile Photo") { _ in } onPickCropped: { data in
+                PhotoPickerSheet(title: "Profile photo") { _ in } onPickCropped: { data in
                     Task {
                         // The picker dismisses either way, so silence here looks exactly like
                         // success: you pick a new photo, the sheet closes, and your old one is
@@ -486,7 +486,7 @@ struct EditProfileView: View {
                 ChapterStatsVisibilitySheet()
             }
             .sheet(isPresented: $showCoverPicker) {
-                PhotoPickerSheet(title: "Cover Photo") { path in
+                PhotoPickerSheet(title: "Cover photo") { path in
                     Task {
                         if await !auth.setCover(fromPhotoPath: path) {
                             photoError = "Couldn't update your cover photo. Check your connection and try again."
@@ -505,7 +505,7 @@ struct EditProfileView: View {
             // modal whose only button admits it.
             .overlay(alignment: .top) {
                 if let photoError {
-                    Label(photoError, systemImage: "exclamationmark.triangle.fill")
+                    Label(photoError, systemImage: "exclamationmark.circle.fill")
                         .flimFont(13, weight: .medium).foregroundStyle(.white)
                         .padding(.horizontal, 16).padding(.vertical, 10)
                         .background(.ultraThinMaterial, in: Capsule())

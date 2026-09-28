@@ -502,12 +502,30 @@ struct SpotlightTests {
                      SpotlightCaptionLock.upThisWeek, SpotlightCaptionLock.chosen,
                      SpotlightRefusal.captionOnSpotlight, SpotlightRefusal.notThisWeekPutUp,
                      SpotlightPutUpNotice.text(postId: UUID(), replacedPostId: nil, replacedAt: nil),
-                     SpotlightPutUpNotice.text(postId: UUID(), replacedPostId: UUID(), replacedAt: nil)]
+                     SpotlightPutUpNotice.text(postId: UUID(), replacedPostId: UUID(), replacedAt: nil),
+                     SpotlightExitCopy.takeDown, SpotlightExitCopy.remove,
+                     SpotlightExitCopy.removeConfirmTitle, SpotlightExitCopy.removeConfirmMessage,
+                     SpotlightExitCopy.removeMenuDetail]
         for line in lines {
             #expect(!line.contains("\u{2014}"), "\(line)")
             #expect(!line.contains("\u{2013}"), "\(line)")
             #expect(!line.contains("!"), "\(line)")
         }
+    }
+
+    /// Taking a chosen frame out of Spotlight leaves the post where it is. The copy once said
+    /// it left the photographer's page too, and read almost like "Take it down", which does
+    /// something else (audit D-12, 1.6.1).
+    @Test("removing a chosen frame is named apart from taking one down, and keeps the post")
+    func exitCopy() {
+        #expect(SpotlightExitCopy.remove == "Remove from Spotlight")
+        #expect(SpotlightExitCopy.removeConfirmMessage
+                == "It leaves Spotlight for good. The post stays on your page, and your badge stays.")
+        #expect(SpotlightExitCopy.takeDown == "Take it down from Spotlight")
+        #expect(SpotlightExitCopy.remove != SpotlightExitCopy.takeDown)
+        #expect(!SpotlightExitCopy.remove.localizedCaseInsensitiveContains("take"))
+        #expect(SpotlightExitCopy.removeMenuDetail.contains("stays on your page"))
+        #expect(SpotlightRefusal.takeOutNetwork != SpotlightRefusal.takeDownNetwork)
     }
 
     // MARK: - Push rider

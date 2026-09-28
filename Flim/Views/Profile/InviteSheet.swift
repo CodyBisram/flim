@@ -262,6 +262,7 @@ struct InviteSheet: View {
                     .foregroundStyle(FlimTheme.textSecondary)
                 Image(systemName: codeCopied ? "checkmark.circle.fill" : "doc.on.doc")
                     .font(.system(size: 13))
+                    .contentTransition(.symbolEffect(.replace))
                     .foregroundStyle(codeCopied ? accent : FlimTheme.textTertiary)
             }
         }
