@@ -898,14 +898,21 @@ struct FeedView: View {
         // waits on all three landing (`await`s in sequence, not itself parallelized in): it reads
         // `units`, not any of these, so there's no ordering requirement, it's just the natural
         // place for the function to end.
+        // The mark the count is asked against, held so the write below can tell whether
+        // Activity was opened while it was out.
+        let seenMark = lastActivitySeen
         async let avatarTask = resolveAvatarURL()
         async let unreadTask = feed.unreadActivityCount(
-            userId: uid, since: Date(timeIntervalSince1970: lastActivitySeen))
+            userId: uid, since: Date(timeIntervalSince1970: seenMark))
         async let badgeTask: Void = feed.refreshUnseenBadgeCount()
         // The own-post menu's Spotlight state: refetched on every reload.
         async let spotlightOwnTask: Void = feed.refreshOwnSpotlight(userId: uid)
         if let resolved = await avatarTask { myAvatarURL = resolved }
-        unreadActivity = await unreadTask
+        let unreadCount = await unreadTask
+        // The same watermark check `refreshUnreadActivity` makes: Activity opened during the
+        // round trip zeroed the count and moved the mark, and this answer, counted from the old
+        // mark, would light the bell again for what was just read (audit A-9, 1.6.1).
+        if AccountEpoch.isCurrent(epoch), lastActivitySeen == seenMark { unreadActivity = unreadCount }
         // After the snapshot and the unread count, from this account's own answers only.
         if AccountEpoch.isCurrent(epoch) { updateFeedDot() }
         _ = await badgeTask

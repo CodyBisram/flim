@@ -628,7 +628,13 @@ struct PostDetailView: View {
 
     private func reloadComments() async {
         guard let uid = auth.currentUser?.id else { return }
-        comments = await feed.fetchComments(postId: post.id, currentUserId: uid)
+        // A failed read keeps what is on screen, and on a first load falls back to the feed's
+        // cached thread for this post, rather than reading as "No comments yet" (audit A-4).
+        if let fresh = await feed.fetchComments(postId: post.id, currentUserId: uid) {
+            comments = fresh
+        } else if comments.isEmpty, let cached = feed.commentsByPost[post.id] {
+            comments = cached
+        }
     }
 
     private func toggleCommentLike(_ info: CommentInfo) {

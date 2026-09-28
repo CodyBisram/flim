@@ -46,6 +46,10 @@ struct UserPageView: View {
     @State private var coverURL: URL?
     @State private var followers = 0
     @State private var following = 0
+    /// In-flight guard for the header's Follow, the same one `FollowButton` has. Without it a
+    /// double tap read `isFollowing` after the first tap's optimistic flip and raced an
+    /// unfollow against the follow still in flight (audit A-11, 1.6.1).
+    @State private var followBusy = false
     /// The "shared" stat. Distinct from `posts.count`, which is zero until the grid's own fetch
     /// lands and made the whole stats row flash 0 on every open; this seeds from the session
     /// cache (see `FeedService.profileStatsCache`) and settles to the real count when posts do.
@@ -564,6 +568,7 @@ struct UserPageView: View {
                         .background(isFollowing ? Color.white.opacity(0.12) : accent, in: Capsule())
                         .overlay(Capsule().strokeBorder(isFollowing ? Color.white.opacity(0.2) : .clear, lineWidth: 1))
                 }
+                .disabled(followBusy)
                 .padding(.horizontal, 40)
                 .padding(.top, 2)
             } else if isSelf {
@@ -1063,17 +1068,26 @@ struct UserPageView: View {
     }
 
     private func toggleFollow() {
-        guard let uid = auth.currentUser?.id else { return }
+        guard let uid = auth.currentUser?.id, !followBusy else { return }
         Haptics.tap()
+        followBusy = true
+        // Read once, before the write flips it optimistically.
+        let wasFollowing = isFollowing
         Task {
             // The count only moves if the write landed: the service already reverts the BUTTON
             // on failure (via followingIds), and a count bumped unconditionally here drifted one
             // off from that reverted button until the next full load.
-            if isFollowing {
-                if await feed.unfollow(userId, from: uid) { followers = max(0, followers - 1) }
+            let landed: Bool
+            if wasFollowing {
+                landed = await feed.unfollow(userId, from: uid)
+                if landed { followers = max(0, followers - 1) }
             } else {
-                if await feed.follow(userId, from: uid) { followers += 1 }
+                landed = await feed.follow(userId, from: uid)
+                if landed { followers += 1 }
             }
+            followBusy = false
+            // The button has already reverted; say so, the way `FollowButton` does.
+            if !landed { Haptics.error() }
         }
     }
 }

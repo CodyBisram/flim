@@ -1,3 +1,4 @@
+import Testing
 import XCTest
 @testable import Flim
 
@@ -297,6 +298,26 @@ final class ActivityDestinationTests: XCTestCase {
 }
 
 // MARK: - The tab dots (2026-09-19)
+
+/// A failed `feed_unseen_count` (offline on foreground) leaves the Feed dot alone (1.6.1, A-10).
+@Suite struct TabSignalsFailedCountTests {
+    @Test func failedUnseenCountKeepsALitDot() {
+        #expect(TabSignals.feedDotAfterRefresh(unseenShots: nil, unreadActivity: 0, current: true))
+    }
+
+    @Test func failedUnseenCountDoesNotLightADarkDot() {
+        #expect(!TabSignals.feedDotAfterRefresh(unseenShots: nil, unreadActivity: 0, current: false))
+    }
+
+    @Test func failedUnseenCountStillLetsActivityLightIt() {
+        #expect(TabSignals.feedDotAfterRefresh(unseenShots: nil, unreadActivity: 2, current: false))
+    }
+
+    @Test func realAnswerDecidesOnItsOwn() {
+        #expect(!TabSignals.feedDotAfterRefresh(unseenShots: 0, unreadActivity: 0, current: true))
+        #expect(TabSignals.feedDotAfterRefresh(unseenShots: 3, unreadActivity: 0, current: false))
+    }
+}
 
 final class TabSignalsTests: XCTestCase {
     func testFeedDotLightsForUnseenPostsOrUnreadActivity() {

@@ -138,10 +138,13 @@ final class FeedSeenStore {
     /// succeeds; a failed call settles nothing and the next flush tries the batch again.
     private static func defaultPushRows(user: UUID, marks: [UUID: Date]) async -> Set<UUID> {
         struct Params: Encodable { let p_post_ids: [UUID]; let p_seen_at: [Date] }
-        let ids = Array(marks.keys)
+        // One pass over the pairs, so the two arrays line up by construction and no date has
+        // to be looked back up by id (the old `marks[$0]!`).
+        let pairs = Array(marks)
+        let ids = pairs.map(\.key)
         do {
             _ = try await supabase
-                .rpc("record_posts_seen", params: Params(p_post_ids: ids, p_seen_at: ids.map { marks[$0]! }))
+                .rpc("record_posts_seen", params: Params(p_post_ids: ids, p_seen_at: pairs.map(\.value)))
                 .execute()
             return Set(ids)
         } catch {

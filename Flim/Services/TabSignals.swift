@@ -21,6 +21,15 @@ final class TabSignals {
         unseen || unreadActivity > 0
     }
 
+    /// Pure: the dot after a refresh whose `feed_unseen_count` may have failed (`nil`). A
+    /// failure leaves the dot as it was, lit only further by activity: reading `nil` as zero
+    /// cleared the dot every time the app came to the foreground offline, while the unseen
+    /// posts were still there (audit A-10, 1.6.1).
+    nonisolated static func feedDotAfterRefresh(unseenShots: Int?, unreadActivity: Int, current: Bool) -> Bool {
+        guard let unseenShots else { return current || unreadActivity > 0 }
+        return feedDot(unseen: unseenShots > 0, unreadActivity: unreadActivity)
+    }
+
     /// Pure: any developed roll whose reveal has not been watched on this device.
     nonisolated static func rollsDot(rolls: [Roll], revealSeen: (UUID) -> Bool, now: Date = .now) -> Bool {
         rolls.contains { $0.isDeveloped(now: now) && !revealSeen($0.id) }
@@ -47,7 +56,8 @@ final class TabSignals {
         guard AccountEpoch.isCurrent(epoch) else { return }
         // A yes/no from the server's count: the feed may not be loaded yet. Once it is, the
         // feed keeps the dot in step with its own marks.
-        feedHasUnread = Self.feedDot(unseen: (shots ?? 0) > 0, unreadActivity: activity)
+        feedHasUnread = Self.feedDotAfterRefresh(unseenShots: shots, unreadActivity: activity,
+                                                 current: feedHasUnread)
         rollsHaveUnwatched = Self.rollsDot(rolls: rolls.rolls, revealSeen: {
             UserDefaults.standard.bool(forKey: "rollRevealSeen.\($0.uuidString)")
         })

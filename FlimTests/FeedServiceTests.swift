@@ -1,5 +1,90 @@
+import Testing
 import XCTest
 @testable import Flim
+
+/// A failed read is not an empty result (1.6.1, audit section A). The network reads themselves
+/// hit the live client, so these pin the one writer each read goes through: `nil` (failed)
+/// changes nothing, and an answer is applied exactly.
+@MainActor
+@Suite struct FeedServiceFailedReadTests {
+    private func tag(on postId: UUID, user: UUID = UUID()) -> PostTag {
+        PostTag(id: UUID(), postId: postId, taggedUserId: user, x: 0.5, y: 0.5)
+    }
+
+    @Test func failedFollowsReadLeavesFollowingUnchanged() {
+        let service = FeedService()
+        let friend = UUID()
+        service.followingIds = [friend]
+        service.confirmedFollowingIds = [friend]
+
+        #expect(service.applyFollowingRead(nil) == false)
+        #expect(service.followingIds == [friend])
+        #expect(service.confirmedFollowingIds == [friend])
+    }
+
+    @Test func followsReadThatLandedReplacesBothSets() {
+        let service = FeedService()
+        service.followingIds = [UUID()]
+        let fresh: Set<UUID> = [UUID(), UUID()]
+
+        #expect(service.applyFollowingRead(fresh))
+        #expect(service.followingIds == fresh)
+        #expect(service.confirmedFollowingIds == fresh)
+    }
+
+    /// A real empty answer (you unfollowed everyone) still lands; only a failure is ignored.
+    @Test func emptyFollowsAnswerIsStillAnAnswer() {
+        let service = FeedService()
+        service.followingIds = [UUID()]
+
+        #expect(service.applyFollowingRead([]))
+        #expect(service.followingIds.isEmpty)
+    }
+
+    @Test func tagsReadMissingARequestedPostClearsThatPost() {
+        let service = FeedService()
+        let untagged = UUID()
+        let stillTagged = UUID()
+        let kept = tag(on: stillTagged)
+        service.tagsByPost = [untagged: [tag(on: untagged)], stillTagged: [tag(on: stillTagged)]]
+
+        service.applyTagRead(FeedService.TagRead(tags: [stillTagged: [kept]], profiles: [:]),
+                             requested: [untagged, stillTagged])
+
+        #expect(service.tagsByPost[untagged]?.isEmpty == true)
+        #expect(service.tagsByPost[stillTagged]?.map(\.id) == [kept.id])
+        #expect(service.isTagged(kept.taggedUserId, in: stillTagged))
+    }
+
+    @Test func failedTagsReadChangesNothing() {
+        let service = FeedService()
+        let postId = UUID()
+        let existing = tag(on: postId)
+        let profile = UserProfile(id: existing.taggedUserId, username: "a", avatarPath: nil, bio: nil,
+                                  displayName: nil, coverPath: nil, createdAt: .now)
+        service.tagsByPost = [postId: [existing]]
+        service.tagProfiles = [profile.id: profile]
+
+        service.applyTagRead(nil, requested: [postId])
+
+        #expect(service.tagsByPost[postId]?.map(\.id) == [existing.id])
+        #expect(service.tagProfiles[profile.id] == profile)
+    }
+
+    /// Posts that weren't asked about are none of this read's business.
+    @Test func tagsReadLeavesPostsItWasNotAskedAbout() {
+        let service = FeedService()
+        let asked = UUID()
+        let other = UUID()
+        let otherTag = tag(on: other)
+        service.tagsByPost = [other: [otherTag]]
+
+        service.applyTagRead(FeedService.TagRead(tags: [:], profiles: [:]), requested: [asked])
+
+        #expect(service.tagsByPost[asked]?.isEmpty == true)
+        #expect(service.tagsByPost[other]?.map(\.id) == [otherTag.id])
+    }
+}
 
 /// `FeedService`'s pure cache-maintenance helpers. `FeedService` is `@MainActor`, so these tests
 /// hop to the main actor too, XCTest's async test methods handle the actor hop fine.

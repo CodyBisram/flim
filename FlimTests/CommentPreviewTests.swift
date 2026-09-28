@@ -1,3 +1,4 @@
+import Testing
 import XCTest
 @testable import Flim
 
@@ -33,5 +34,39 @@ final class CommentPreviewTests: XCTestCase {
     func testShownNeverExceedingTotalIsTheOnlyBoundaryThatMatters() {
         XCTAssertFalse(hasCommentsBeyondPreview(total: 5, shownInPreview: 5))
         XCTAssertTrue(hasCommentsBeyondPreview(total: 6, shownInPreview: 5))
+    }
+}
+
+/// `CommentsSheet.restoring`, Undo's half of blocking from a thread: a reload while the capsule
+/// was up already brought the comments back, and restoring them again duplicated `ForEach` ids.
+@MainActor
+@Suite struct CommentsSheetRestoreTests {
+    private func info(_ user: UUID, at seconds: TimeInterval) -> CommentInfo {
+        let raw = PostComment(id: UUID(), postId: UUID(), userId: user, body: "hi",
+                              createdAt: Date(timeIntervalSince1970: seconds))
+        return CommentInfo(comment: raw, author: nil, likeCount: 0, likedByMe: false)
+    }
+
+    @Test func restoringAfterAReloadDoesNotDuplicate() {
+        let blocked = UUID()
+        let other = UUID()
+        let removed = [info(blocked, at: 10), info(blocked, at: 30)]
+        let reloaded = [info(other, at: 20)] + removed
+
+        let result = CommentsSheet.restoring(removed, into: reloaded)
+
+        #expect(result.count == 3)
+        #expect(Set(result.map(\.id)).count == result.count)
+        #expect(result.map(\.comment.createdAt.timeIntervalSince1970) == [10, 20, 30])
+    }
+
+    @Test func restoringIntoTheTrimmedThreadPutsThemBackInOrder() {
+        let blocked = UUID()
+        let removed = [info(blocked, at: 30), info(blocked, at: 10)]
+        let trimmed = [info(UUID(), at: 20)]
+
+        let result = CommentsSheet.restoring(removed, into: trimmed)
+
+        #expect(result.map(\.comment.createdAt.timeIntervalSince1970) == [10, 20, 30])
     }
 }

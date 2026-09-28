@@ -37,6 +37,11 @@ struct CommentsSheet: View {
     @State private var replyTarget: String?
     @State private var sending = false
     @State private var loaded = false
+    /// The last load failed. Only shown when nothing is cached for this post: a cached thread
+    /// (even an empty one, which is an answer) stays on screen instead.
+    @State private var loadFailed = false
+    /// In-flight guard for Try again.
+    @State private var retrying = false
     @FocusState private var focused: Bool
 
     /// Closes first, then hands the id up. Presenting a profile while this sheet is still on
@@ -73,7 +78,12 @@ struct CommentsSheet: View {
                         // empty one) is an ANSWER and renders the verdict immediately. Only
                         // a post with no cache entry at all waits, and says so instead of
                         // showing a blank sheet that pops into "No comments" a beat later.
-                        if loaded || feed.commentsByPost[post.id] != nil {
+                        // A load that FAILED with nothing cached is not that verdict: "No
+                        // comments yet" over a thread with comments was the offline bug
+                        // (audit A-4, 1.6.1).
+                        if loadFailed && feed.commentsByPost[post.id] == nil {
+                            loadFailedState
+                        } else if loaded || feed.commentsByPost[post.id] != nil {
                             emptyState
                         } else {
                             VStack {
@@ -256,10 +266,51 @@ struct CommentsSheet: View {
         .frame(maxWidth: .infinity)
     }
 
-    private func reload() async {
-        guard let uid = auth.currentUser?.id else { return }
-        feed.commentsByPost[post.id] = await feed.fetchComments(postId: post.id, currentUserId: uid)
+    /// Same shape as `emptyState`, saying what actually happened, with the way back. The
+    /// composer stays below it: a comment can still be sent, and its own re-read retries.
+    private var loadFailedState: some View {
+        VStack(spacing: 6) {
+            Spacer()
+            Text("Couldn't load comments. Check your connection.")
+                .flimFont(13, relativeTo: .subheadline)
+                .foregroundStyle(FlimTheme.textTertiary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 32)
+            Button { retry() } label: {
+                Text("Try again")
+                    .flimType(.control)
+                    .foregroundStyle(accent)
+                    .frame(minHeight: 44)
+            }
+            .disabled(retrying)
+            Spacer()
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func retry() {
+        guard !retrying else { return }
+        Haptics.tap()
+        retrying = true
+        Task {
+            let ok = await reload()
+            retrying = false
+            if !ok { Haptics.error() }
+        }
+    }
+
+    /// Returns whether the read landed. A failed read leaves the cache exactly as it was
+    /// (`fetchComments` answers `nil`, never a false `[]`).
+    @discardableResult
+    private func reload() async -> Bool {
+        guard let uid = auth.currentUser?.id else { return false }
+        let epoch = AccountEpoch.current
+        let fresh = await feed.fetchComments(postId: post.id, currentUserId: uid)
+        guard AccountEpoch.isCurrent(epoch) else { return false }
+        if let fresh { feed.commentsByPost[post.id] = fresh }
+        loadFailed = fresh == nil
         loaded = true
+        return fresh != nil
     }
 
     private func send() {
@@ -334,15 +385,25 @@ struct CommentsSheet: View {
             subtitle: "Reversible in Blocked accounts",
             failureText: "Couldn't block \(handle)",
             revert: {
-                var list = feedService.commentsByPost[postId] ?? []
-                list.append(contentsOf: removed)
-                list.sort { $0.comment.createdAt < $1.comment.createdAt }
-                feedService.commentsByPost[postId] = list
+                feedService.commentsByPost[postId] = Self.restoring(
+                    removed, into: feedService.commentsByPost[postId] ?? [])
             },
             commit: {
                 await feedService.block(targetId, from: uid)
                 return feedService.isBlocked(targetId)
             })
+    }
+
+    /// Undo's half of `block`: puts the removed comments back, oldest first, skipping any the
+    /// thread already holds. A reload while the capsule was up (the thread's own re-read, a
+    /// comment sent) brings the blocked author's comments back from the server before the
+    /// block commits, and appending the saved copies on top of those handed `ForEach` the same
+    /// id twice (audit A-12, 1.6.1). Pure, so the rule is pinned by a test.
+    static func restoring(_ removed: [CommentInfo], into list: [CommentInfo]) -> [CommentInfo] {
+        let present = Set(list.map(\.id))
+        var seen = Set<UUID>()
+        let back = removed.filter { !present.contains($0.id) && seen.insert($0.id).inserted }
+        return (list + back).sorted { $0.comment.createdAt < $1.comment.createdAt }
     }
 
     /// Compact relative time, Instagram-style: now / 15m / 3h / 2d / 5w.

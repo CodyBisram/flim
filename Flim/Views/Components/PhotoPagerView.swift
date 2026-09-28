@@ -516,7 +516,8 @@ struct PhotoPagerView: View {
                 if let post = posts[target.id] {
                     Task {
                         guard let uid = auth.currentUser?.id else { return }
-                        let fetched = await feed.fetchComments(postId: post.id, currentUserId: uid)
+                        // `nil` is a failed read, not an empty thread: keep the cache.
+                        guard let fetched = await feed.fetchComments(postId: post.id, currentUserId: uid) else { return }
                         // Keyed write: lands under `post.id` regardless of whether `target` is
                         // still `current` by the time this returns, see `toggleReaction`'s note.
                         feed.commentsByPost[post.id] = fetched
@@ -2235,7 +2236,10 @@ struct PhotoPagerView: View {
                 if let post = posts[id] {
                     if let uid = auth.currentUser?.id {
                         let fetchedComments = await feed.fetchComments(postId: post.id, currentUserId: uid)
-                        if AccountEpoch.isCurrent(epoch) { feed.commentsByPost[post.id] = fetchedComments }
+                        // A failed read (`nil`) keeps the cached thread.
+                        if AccountEpoch.isCurrent(epoch), let fetchedComments {
+                            feed.commentsByPost[post.id] = fetchedComments
+                        }
                     }
                 } else {
                     let fetchedComments = await photoService.fetchPhotoComments(photoId: id, blockedIds: feed.blockedIds)
@@ -2259,7 +2263,8 @@ struct PhotoPagerView: View {
         if let post = posts[photo.id] {
             guard feed.commentsByPost[post.id] == nil, let uid = auth.currentUser?.id else { return }
             let fetched = await feed.fetchComments(postId: post.id, currentUserId: uid)
-            guard AccountEpoch.isCurrent(epoch) else { return }
+            // A failed read leaves no entry, so the next pass through the window asks again.
+            guard AccountEpoch.isCurrent(epoch), let fetched else { return }
             feed.commentsByPost[post.id] = fetched
         } else {
             guard photoCommentsByPhoto[photo.id] == nil else { return }

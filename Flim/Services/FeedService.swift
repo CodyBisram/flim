@@ -104,22 +104,45 @@ final class FeedService {
         let epoch = AccountEpoch.current
         let following = await fetchFollowingIds(userId: userId)
         guard AccountEpoch.isCurrent(epoch) else { return }
+        applyFollowingRead(following)
+    }
+
+    /// The one writer of a follows READ into `followingIds`/`confirmedFollowingIds`, shared by
+    /// `loadFollowing`, `loadFeed` and `peekFeed`. `nil` is a read that failed, and it changes
+    /// nothing: the old `?? []` turned a flaky foreground into "you follow nobody", which
+    /// flipped every Follow button, raised People You Know, paged the feed with only your own
+    /// id and could put "You don't follow anyone yet" over a full feed (audit A-1, 1.6.1).
+    /// Returns whether the read was applied, so a caller can bail out of a load it can't do
+    /// honestly without the follow graph.
+    @discardableResult
+    func applyFollowingRead(_ following: Set<UUID>?) -> Bool {
+        guard let following else { return false }
         followingIds = following
         confirmedFollowingIds = following
+        return true
     }
 
     /// Paged by `.range`, so every page is ordered on the row's unique key within this filter:
     /// with no order, Postgres may hand back rows in a different order per request, and pages
     /// past the first 1000 skip some rows and repeat others.
-    private func fetchFollowingIds(userId: UUID) async -> Set<UUID> {
+    ///
+    /// `nil` when ANY page fails. A partial set is as wrong as an empty one (the people past
+    /// the failed page would read as unfollowed), so `allPages` rethrows and nothing partial
+    /// comes back.
+    private func fetchFollowingIds(userId: UUID) async -> Set<UUID>? {
         struct Row: Decodable { let following_id: UUID }
-        let rows: [Row] = await QueryBatch.allPages { from, to in
-            (try? await supabase.from("follows").select("following_id")
-                .eq("follower_id", value: userId.uuidString)
-                .order("following_id", ascending: true)
-                .range(from: from, to: to).execute().value) ?? []
+        do {
+            let rows: [Row] = try await QueryBatch.allPages { from, to in
+                try await supabase.from("follows").select("following_id")
+                    .eq("follower_id", value: userId.uuidString)
+                    .order("following_id", ascending: true)
+                    .range(from: from, to: to).execute().value
+            }
+            return Set(rows.map(\.following_id))
+        } catch {
+            Self.log.error("fetchFollowingIds failed: \(String(describing: error), privacy: .public)")
+            return nil
         }
-        return Set(rows.map(\.following_id))
     }
 
     func isFollowing(_ id: UUID) -> Bool { followingIds.contains(id) }
@@ -130,19 +153,26 @@ final class FeedService {
         let epoch = AccountEpoch.current
         let followers = await fetchFollowerIds(userId: userId)
         guard AccountEpoch.isCurrent(epoch) else { return }
-        followerIds = followers
+        // A failed read keeps the last known set, the same rule as `applyFollowingRead`: an
+        // empty one would drop every "Follows you" badge and "Follow back" label on screen.
+        if let followers { followerIds = followers }
     }
 
-    /// Ordered on the unique key for the same reason as `fetchFollowingIds`.
-    private func fetchFollowerIds(userId: UUID) async -> Set<UUID> {
+    /// Ordered on the unique key for the same reason as `fetchFollowingIds`, and `nil` on any
+    /// failed page for the same reason too.
+    private func fetchFollowerIds(userId: UUID) async -> Set<UUID>? {
         struct Row: Decodable { let follower_id: UUID }
-        let rows: [Row] = await QueryBatch.allPages { from, to in
-            (try? await supabase.from("follows").select("follower_id")
-                .eq("following_id", value: userId.uuidString)
-                .order("follower_id", ascending: true)
-                .range(from: from, to: to).execute().value) ?? []
+        do {
+            let rows: [Row] = try await QueryBatch.allPages { from, to in
+                try await supabase.from("follows").select("follower_id")
+                    .eq("following_id", value: userId.uuidString)
+                    .order("follower_id", ascending: true)
+                    .range(from: from, to: to).execute().value
+            }
+            return Set(rows.map(\.follower_id))
+        } catch {
+            return nil
         }
-        return Set(rows.map(\.follower_id))
     }
 
     func followsMe(_ id: UUID) -> Bool { followerIds.contains(id) }
@@ -724,13 +754,23 @@ final class FeedService {
     /// `epoch` defaults to the live generation, so a caller with nothing in flight before it gets
     /// the same protection without having to think about it, while a caller mid-sequence passes
     /// the generation it captured earlier.
+    ///
+    /// A failed read keeps the last known set. `?? []` here unblocked everyone locally on a
+    /// flaky connection: every client-side block filter (the feed, comments, lists, the
+    /// Spotlight strip) fell open until the next good read (audit A-1, 1.6.1).
     func loadBlocked(userId: UUID, epoch: Int? = nil) async {
         let epoch = epoch ?? AccountEpoch.current
+        let blocked = await fetchBlockedIds(userId: userId)
+        guard AccountEpoch.isCurrent(epoch), let blocked else { return }
+        blockedIds = blocked
+    }
+
+    /// `nil` when the read failed, distinct from a real "blocks nobody".
+    private func fetchBlockedIds(userId: UUID) async -> Set<UUID>? {
         struct Row: Decodable { let blocked_id: UUID }
-        let rows: [Row] = (try? await supabase.from("blocks").select("blocked_id")
-            .eq("blocker_id", value: userId.uuidString).execute().value) ?? []
-        guard AccountEpoch.isCurrent(epoch) else { return }
-        blockedIds = Set(rows.map(\.blocked_id))
+        guard let rows: [Row] = try? await supabase.from("blocks").select("blocked_id")
+            .eq("blocker_id", value: userId.uuidString).execute().value else { return nil }
+        return Set(rows.map(\.blocked_id))
     }
 
     func isBlocked(_ id: UUID) -> Bool { blockedIds.contains(id) }
@@ -1036,12 +1076,27 @@ final class FeedService {
         // author set, or clear the newer one's loading flag; only the owner of the current
         // generation touches state.
         let generation = feedGeneration
-        defer { if generation == feedGeneration { isLoadingFeed = false } }
+        // `isLoadingMoreFeed` too: a superseded page leaves it set for the generation that
+        // replaced it (see `loadMoreFeed`'s defer), and this load normally clears it through its
+        // own replacing page. A load that bails before that page (the follows read below) must
+        // clear it here, or pagination would wait forever on a page nobody owns.
+        defer {
+            if generation == feedGeneration {
+                isLoadingFeed = false
+                isLoadingMoreFeed = false
+            }
+        }
         let epoch = AccountEpoch.current
         let following = await fetchFollowingIds(userId: currentUserId)
         guard AccountEpoch.isCurrent(epoch), generation == feedGeneration else { return }
-        followingIds = following
-        confirmedFollowingIds = following
+        // Without the follow graph there is no honest first page: the old empty set paged with
+        // only your own id and replaced a full feed with your posts alone. Bail out like a
+        // failed page does instead, so the feed on screen stays and the error says why; a
+        // cancelled read (superseded, not failed) says nothing.
+        guard applyFollowingRead(following) else {
+            if !Task.isCancelled { feedError = UserFacingError.genericMessage }
+            return
+        }
         await loadBlocked(userId: currentUserId, epoch: epoch)
         guard AccountEpoch.isCurrent(epoch), generation == feedGeneration else { return }
         // Reset pagination bookkeeping for a fresh first page, but deliberately leave `feed`
@@ -1068,9 +1123,14 @@ final class FeedService {
         // page is dropped by the generation check when it lands. Pagination still waits.
         guard hasMoreFeed, replacingFeed || !isLoadingMoreFeed else { return }
         isLoadingMoreFeed = true
-        defer { isLoadingMoreFeed = false }
         let epoch = AccountEpoch.current
         let generation = feedGeneration
+        // Cleared only by the generation that owns it. A page superseded by a refresh used to
+        // clear the REFRESH's flag as it landed, while the refresh's own page was still in
+        // flight, so a scroll to the end could start page two against a cursor the refresh was
+        // about to reset, and have it dropped (audit A-7, 1.6.1). `loadFeed`'s defer covers a
+        // refresh that bails before its page.
+        defer { if generation == feedGeneration { isLoadingMoreFeed = false } }
 
         var authorIds = Array(followingIds)
         authorIds.append(currentUserId)
@@ -1176,7 +1236,7 @@ final class FeedService {
         async let tags = batchTags(postIds: postIds)
         let fetchedReactions = await reactions
         let fetchedComments = await comments
-        let (tagMap, tagProf) = await tags
+        let tagRead = await tags
 
         // One guard covering every write below, placed after the LAST await rather than before
         // the first merge, so nothing lands from a session that has since been replaced. The
@@ -1187,16 +1247,20 @@ final class FeedService {
         if replacingFeed {
             // Replace, not merge: the previous page's caches belong to posts that are about to
             // disappear from `feed` entirely, keeping them around would just be stale memory.
-            reactionsByPost = fetchedReactions
+            // Except when a read failed (`nil`): then the old cache is the last known answer
+            // for whichever posts carry over, and a few stale entries cost less than every
+            // reaction bar or tag chip on the new page reading as empty.
+            if let fetchedReactions { reactionsByPost = fetchedReactions }
             commentsByPost = fetchedComments
-            tagsByPost = tagMap
-            tagProfiles = tagProf
+            if let tagRead {
+                tagsByPost = tagRead.tags
+                tagProfiles = tagRead.profiles
+            }
             feed = items
         } else {
-            reactionsByPost.merge(fetchedReactions) { _, new in new }
+            if let fetchedReactions { reactionsByPost.merge(fetchedReactions) { _, new in new } }
             commentsByPost.merge(fetchedComments) { _, new in new }
-            tagsByPost.merge(tagMap) { _, new in new }
-            tagProfiles.merge(tagProf) { _, new in new }
+            applyTagRead(tagRead, requested: postIds)
             // Re-deduped against the live feed, not only `existingIds`: that snapshot
             // predates this function's awaits, and a straddle completion landing during them
             // holds rows this page can also contain (they sit below the old cursor, which is
@@ -1227,15 +1291,43 @@ final class FeedService {
     /// posts, and appended them twice. On device that rendered a real day as 21 shots of
     /// ~12 photos, and the duplicate post ids scrambled the pager's identity mapping so
     /// strip taps showed the wrong photograph.
-    private var isCompletingStraddle = false
+    ///
+    /// Serialised, not skipped (audit A-5, 1.6.1). The old guard returned early when a run was
+    /// already going, so a pull-to-refresh whose own completion arrived while a paging run
+    /// from the old feed was still in flight simply never completed the NEW feed's bottom day.
+    /// A caller now waits for the run ahead of it and then runs itself, against the feed as
+    /// it is by then. The run owns `straddleRun` and clears it itself, before it finishes, so
+    /// a waiter that wakes never finds a finished task still parked there.
+    private var straddleRun: Task<Void, Never>?
+    private var straddleRunId = 0
 
     func completeStraddlingDays(currentUserId: UUID) async {
-        guard !isCompletingStraddle else { return }
-        isCompletingStraddle = true
-        defer { isCompletingStraddle = false }
+        while let running = straddleRun { await running.value }
+        straddleRunId += 1
+        let runId = straddleRunId
+        let run = Task { [weak self] in
+            guard let self else { return }
+            await self.runStraddleCompletion(currentUserId: currentUserId)
+            if self.straddleRunId == runId { self.straddleRun = nil }
+        }
+        straddleRun = run
+        await run.value
+    }
+
+    /// Whether a straddle run may still write: same account, same feed generation, and no
+    /// refresh in flight. The generation alone isn't enough, because `loadFeed` bumps it before
+    /// its page lands: a run that started in that gap captured the NEW generation while
+    /// reading the OLD feed, and would append the old feed's bottom day into the new one.
+    private func straddleRunIsCurrent(epoch: Int, generation: Int) -> Bool {
+        AccountEpoch.isCurrent(epoch) && generation == feedGeneration && !isLoadingFeed
+    }
+
+    private func runStraddleCompletion(currentUserId: UUID) async {
+        let epoch = AccountEpoch.current
+        let generation = feedGeneration
+        guard straddleRunIsCurrent(epoch: epoch, generation: generation) else { return }
         // No more pages means nothing sits below the window; every group is already whole.
         guard hasMoreFeed, let oldest = feed.map(\.post.createdAt).min() else { return }
-        let epoch = AccountEpoch.current
         let calendar = Calendar.current
         let horizonDay = FeedUnit.dayKey(for: oldest, calendar: calendar)
 
@@ -1267,6 +1359,9 @@ final class FeedService {
                 // contact sheet absorbs the rest, so a runaway day is bounded here too.
                 .limit(60)
                 .execute().value
+            // After every await, not only the last: the profile lookup below reads `feed`,
+            // which a refresh may have replaced while this query was out.
+            guard straddleRunIsCurrent(epoch: epoch, generation: generation) else { return }
             guard let extra, !extra.isEmpty else { continue }
             // The author is already on this page, so the profile is already in hand.
             guard let profile = feed.first(where: { $0.author.id == authorId })?.author else { continue }
@@ -1274,7 +1369,7 @@ final class FeedService {
                 existingIds.contains(post.id) ? nil : FeedItem(post: post, author: profile)
             })
         }
-        guard !completions.isEmpty, AccountEpoch.isCurrent(epoch) else { return }
+        guard !completions.isEmpty, straddleRunIsCurrent(epoch: epoch, generation: generation) else { return }
 
         // Same batch pass a page gets, so a completed shot has its reactions the moment it
         // can be swiped to.
@@ -1284,13 +1379,12 @@ final class FeedService {
         async let tags = batchTags(postIds: postIds)
         let fetchedReactions = await reactions
         let fetchedComments = await comments
-        let (tagMap, tagProf) = await tags
-        guard AccountEpoch.isCurrent(epoch) else { return }
+        let tagRead = await tags
+        guard straddleRunIsCurrent(epoch: epoch, generation: generation) else { return }
 
-        reactionsByPost.merge(fetchedReactions) { _, new in new }
+        if let fetchedReactions { reactionsByPost.merge(fetchedReactions) { _, new in new } }
         commentsByPost.merge(fetchedComments) { _, new in new }
-        tagsByPost.merge(tagMap) { _, new in new }
-        tagProfiles.merge(tagProf) { _, new in new }
+        applyTagRead(tagRead, requested: postIds)
         // Deduped against the feed AS IT IS NOW, not the snapshot from before this
         // function's awaits: anything else that appended while those were in flight would
         // otherwise be appended a second time here. The guard above should make this
@@ -1301,31 +1395,29 @@ final class FeedService {
     }
 
     /// Loads tags for a few posts outside a feed page (the Spotlight item's inputs, see
-    /// `loadSpotlightMenuInputs`). Merged, so a failed read changes nothing.
+    /// `loadSpotlightMenuInputs`). Applied per chunk through `applyTagRead`: a chunk that
+    /// answered sets every one of its posts, a chunk that failed changes none of them.
     func loadTags(for postIds: [UUID]) async {
         guard !postIds.isEmpty else { return }
         let epoch = AccountEpoch.current
-        var map: [UUID: [PostTag]] = [:]
-        var profs: [UUID: UserProfile] = [:]
+        var reads: [(read: TagRead?, requested: [UUID])] = []
         for chunk in postIds.chunked(into: QueryBatch.inListLimit) {
-            let (m, p) = await batchTags(postIds: chunk)
-            map.merge(m) { _, new in new }
-            profs.merge(p) { _, new in new }
+            reads.append((await batchTags(postIds: chunk), chunk))
         }
         guard AccountEpoch.isCurrent(epoch) else { return }
-        tagsByPost.merge(map) { _, new in new }
-        tagProfiles.merge(profs) { _, new in new }
+        for (read, requested) in reads { applyTagRead(read, requested: requested) }
     }
 
     /// Loads tags for a single post (e.g. a detail view opened outside the feed) into the caches.
+    /// This is the read `setTags` and `removeMyTag` finish with, so a post whose last tag was
+    /// just removed must come back as `[]`, which `applyTagRead` makes it.
     func loadTags(for postId: UUID) async {
         // Reached by simply opening a post, not by a user action on it, so it is a passive read
         // path rather than one of the accepted id-keyed mutations.
         let epoch = AccountEpoch.current
-        let (map, profs) = await batchTags(postIds: [postId])
+        let read = await batchTags(postIds: [postId])
         guard AccountEpoch.isCurrent(epoch) else { return }
-        tagsByPost.merge(map) { _, new in new }
-        tagProfiles.merge(profs) { _, new in new }
+        applyTagRead(read, requested: [postId])
     }
 
     /// Replaces a post's tags with `tags`, as a diff: only rows that actually changed are written.
@@ -1405,19 +1497,41 @@ final class FeedService {
     }
 
     /// Batch-loads photo tags + the tagged users' profiles for a page of posts.
-    private func batchTags(postIds: [UUID]) async -> ([UUID: [PostTag]], [UUID: UserProfile]) {
-        guard !postIds.isEmpty else { return ([:], [:]) }
-        let rows: [PostTag] = (try? await supabase.from("post_tags").select()
-            .in("post_id", values: postIds.map(\.uuidString)).execute().value) ?? []
-        guard !rows.isEmpty else { return ([:], [:]) }
+    /// `nil` when the read failed. A post with no tags is simply absent from `tags`, which is
+    /// why `applyTagRead` needs the ids that were asked about, not only the answer.
+    private func batchTags(postIds: [UUID]) async -> TagRead? {
+        guard !postIds.isEmpty else { return TagRead(tags: [:], profiles: [:]) }
+        guard let rows: [PostTag] = try? await supabase.from("post_tags").select()
+            .in("post_id", values: postIds.map(\.uuidString)).execute().value else { return nil }
+        guard !rows.isEmpty else { return TagRead(tags: [:], profiles: [:]) }
         let profiles = await fetchProfiles(ids: Array(Set(rows.map(\.taggedUserId))))
-        return (Dictionary(grouping: rows, by: \.postId), profiles)
+        return TagRead(tags: Dictionary(grouping: rows, by: \.postId), profiles: profiles)
     }
 
-    private func batchReactions(postIds: [UUID]) async -> [UUID: [PostReaction]] {
+    /// One tags read: the rows by post, and the tagged users' profiles for their labels.
+    struct TagRead {
+        var tags: [UUID: [PostTag]]
+        var profiles: [UUID: UserProfile]
+    }
+
+    /// The one writer of a tags READ into `tagsByPost` for posts already on screen.
+    ///
+    /// Every requested id is ASSIGNED, `[]` when the answer has no rows for it: a merge only
+    /// ever adds, so removing a post's only tag left its chip up, and Spotlight's "Put it up"
+    /// stayed disabled as tagged until the next full reload (audit A-3, 1.6.1). A failed read
+    /// (`nil`) changes nothing, so a flaky connection can't strip every chip either.
+    func applyTagRead(_ read: TagRead?, requested postIds: [UUID]) {
+        guard let read else { return }
+        for id in postIds { tagsByPost[id] = read.tags[id] ?? [] }
+        tagProfiles.merge(read.profiles) { _, new in new }
+    }
+
+    /// `nil` when the read failed, so a poll that couldn't reach the server leaves the bars as
+    /// they were rather than zeroing them (audit A-2, 1.6.1).
+    private func batchReactions(postIds: [UUID]) async -> [UUID: [PostReaction]]? {
         guard !postIds.isEmpty else { return [:] }
-        let rows: [PostReaction] = (try? await supabase.from("post_reactions").select()
-            .in("post_id", values: postIds.map(\.uuidString)).execute().value) ?? []
+        guard let rows: [PostReaction] = try? await supabase.from("post_reactions").select()
+            .in("post_id", values: postIds.map(\.uuidString)).execute().value else { return nil }
         // Defense-in-depth over RLS: filters stale/offline-cached rows from blocked users too.
         return Dictionary(grouping: rows.filter { !blockedIds.contains($0.userId) }, by: \.postId)
     }
@@ -1539,7 +1653,9 @@ final class FeedService {
         // likely to be in flight across an account switch. Keyed by post id, so a stale entry is
         // unlikely to surface under a card belonging to the new account, but writing another
         // account's reactions into shared state is exactly the thing this release is closing.
-        guard AccountEpoch.isCurrent(epoch) else { return }
+        // A failed poll (`nil`) writes nothing: assigning `[]` per post below zeroed every
+        // visible bar until the next poll landed, 8 to 20 seconds later (audit A-2, 1.6.1).
+        guard AccountEpoch.isCurrent(epoch), let fresh else { return }
         for id in wanted where !reactionWritesInFlight.contains(id) {
             // Assigned per post rather than merged, so a reaction someone REMOVED disappears.
             // `merge` would only ever add, leaving withdrawn reactions on screen forever.
@@ -1557,7 +1673,9 @@ final class FeedService {
         let epoch = AccountEpoch.current
         let created = await addComment(postId: postId, body: body, userId: userId)
         let fresh = await fetchComments(postId: postId, currentUserId: userId)
-        if AccountEpoch.isCurrent(epoch) { commentsByPost[postId] = fresh }
+        // A failed re-read keeps the cache: `nil` is not "no comments", and writing it as one
+        // emptied the thread and the card's preview (audit A-4, 1.6.1).
+        if AccountEpoch.isCurrent(epoch), let fresh { commentsByPost[postId] = fresh }
         return created != nil
     }
 
@@ -1570,8 +1688,9 @@ final class FeedService {
         let epoch = AccountEpoch.current
         let following = await fetchFollowingIds(userId: currentUserId)
         guard AccountEpoch.isCurrent(epoch) else { return [] }
-        followingIds = following
-        confirmedFollowingIds = following
+        // A failed follows read bails the same way: peeking with only your own id would find
+        // your newest post, differ from the feed's top, and raise "New posts" for nothing.
+        guard applyFollowingRead(following) else { return [] }
         await loadBlocked(userId: currentUserId, epoch: epoch)
         guard AccountEpoch.isCurrent(epoch) else { return [] }
         var authorIds = Array(followingIds)
@@ -1972,19 +2091,24 @@ final class FeedService {
 
     /// Comments for a post, each with author + like count + whether the current user liked it,
     /// ranked most-liked first (the "most relevant" order used on the feed + in the detail).
-    func fetchComments(postId: UUID, currentUserId: UUID) async -> [CommentInfo] {
-        let allComments: [PostComment] = (try? await supabase.from("post_comments").select()
+    ///
+    /// `nil` when either read failed, distinct from a real `[]`: offline, the old `?? []` put
+    /// "No comments yet" over a thread that has comments and emptied the card's preview
+    /// (audit A-4, 1.6.1). Every writer keeps its cache on `nil`. The likes read counts too,
+    /// since answering with every heart reset to zero is its own wrong answer.
+    func fetchComments(postId: UUID, currentUserId: UUID) async -> [CommentInfo]? {
+        guard let allComments: [PostComment] = try? await supabase.from("post_comments").select()
             .eq("post_id", value: postId.uuidString)
             .order("created_at", ascending: true)
-            .execute().value) ?? []
+            .execute().value else { return nil }
         // Defense-in-depth over RLS: filters stale/offline-cached rows from blocked users too.
         let comments = allComments.filter { !blockedIds.contains($0.userId) }
         guard !comments.isEmpty else { return [] }
 
         struct LikeRow: Decodable { let comment_id: UUID; let user_id: UUID }
-        let likes: [LikeRow] = (try? await supabase.from("comment_likes").select("comment_id,user_id")
+        guard let likes: [LikeRow] = try? await supabase.from("comment_likes").select("comment_id,user_id")
             .in("comment_id", values: comments.map(\.id.uuidString))
-            .execute().value) ?? []
+            .execute().value else { return nil }
         let profiles = await fetchProfiles(ids: Array(Set(comments.map(\.userId))))
 
         // Group likes by comment once (see batchComments for the same reasoning) instead of
