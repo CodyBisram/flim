@@ -1676,9 +1676,24 @@ final class FeedService {
         let epoch = AccountEpoch.current
         let created = await addComment(postId: postId, body: body, userId: userId)
         let fresh = await fetchComments(postId: postId, currentUserId: userId)
+        guard AccountEpoch.isCurrent(epoch) else { return created != nil }
         // A failed re-read keeps the cache: `nil` is not "no comments", and writing it as one
         // emptied the thread and the card's preview (audit A-4, 1.6.1).
-        if AccountEpoch.isCurrent(epoch), let fresh { commentsByPost[postId] = fresh }
+        if let fresh {
+            commentsByPost[postId] = fresh
+        } else if let created {
+            // The comment landed but the thread could not be read back. Kept as it would have
+            // read, or the person sees it vanish and types it again, posting it twice. The
+            // author comes from any comment of theirs already on screen; the next good read
+            // fills in the rest.
+            let author = commentsByPost.values.lazy.flatMap { $0 }
+                .first { $0.comment.userId == userId }?.author
+            var list = commentsByPost[postId] ?? []
+            if !list.contains(where: { $0.id == created.id }) {
+                list.append(CommentInfo(comment: created, author: author, likeCount: 0, likedByMe: false))
+                commentsByPost[postId] = list
+            }
+        }
         return created != nil
     }
 

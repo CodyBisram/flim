@@ -677,8 +677,12 @@ final class CameraViewModel: NSObject {
         // No more metadata is coming, so the last frame's rectangles would otherwise still be on
         // screen when the viewfinder comes back, hanging over a scene that has since changed.
         faceRects = []
+        let session = self.session
         Task.detached(priority: .userInitiated) { [weak self] in
-            self?.session.stopRunning()
+            session.stopRunning()
+            // A return to the tab inside this stop found the session still running and started
+            // nothing; without this the stop then lands and the viewfinder stays black.
+            await self?.restartIfWantedAgain()
         }
     }
 
