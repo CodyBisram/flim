@@ -49,6 +49,9 @@ const APNS_BUNDLE_ID = Deno.env.get("APNS_BUNDLE_ID") ?? "com.flim.app";
 const APNS_HOST = (Deno.env.get("APNS_ENVIRONMENT") ?? "sandbox") === "production"
   ? "https://api.push.apple.com"
   : "https://api.sandbox.push.apple.com";
+/// One APNs request may take this long before it is abandoned as a failed send, so a stalled
+/// connection cannot hold the run past its lease (see send-social-push).
+const APNS_TIMEOUT_MS = 10_000;
 
 /// How long between digests for one person. 20 rather than 24 so a run that drifts slightly later
 /// each day (cron jitter, a slow pass) doesn't skip a whole day by arriving 23h58m after the last.
@@ -74,10 +77,10 @@ const supabase = createClient(
 const PAGE_SIZE = 1000;
 /// `failed` is true only when a page errored, so a caller that must fail CLOSED on an unreadable
 /// table (covered_post_windows below) can tell "we saw zero rows" apart from "we couldn't read the
-/// table," the same distinction `windowsError` used to make before this paged. Callers that already
-/// treated a query error as "no rows" (device_tokens, digest_state, blocks: none of them ever
-/// checked `error` before this change) keep that behavior unchanged; `rows` is whatever was
-/// collected before the failing page, same as `data ?? []` would have been for a one-shot select.
+/// table," the same distinction `windowsError` used to make before this paged. Every caller now
+/// checks `failed` (2026-09-29): device_tokens, digest_state and blocks used to read an error as
+/// "no rows", which resent the digest every hour (digest_state) or sent it past a block (blocks).
+/// A failed read of any of them ends the run with nothing sent and nothing written.
 async function fetchAllPages<T>(
   page: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
   label: string,
@@ -338,19 +341,30 @@ async function deleteDeadToken(deviceToken: string, status: number, body: string
 
 async function sendPush(deviceToken: string, title: string, body: string): Promise<boolean> {
   const jwt = await apnsAuthToken();
-  const res = await fetch(`${APNS_HOST}/3/device/${deviceToken}`, {
-    method: "POST",
-    headers: {
-      "authorization": `bearer ${jwt}`,
-      "apns-topic": APNS_BUNDLE_ID,
-      "apns-push-type": "alert",
-      // Priority 5, not 10: a digest is not time-critical, and letting iOS deliver it on the
-      // device's own schedule is both better for battery and less likely to arrive mid-sentence.
-      "apns-priority": "5",
-    },
-    body: JSON.stringify({ aps: { alert: { title, body }, sound: "flim_social.caf" }, flim: FEED_ROUTE }),
-  });
-  const reason = res.ok ? undefined : await res.text();
+  let res: Response;
+  let reason: string | undefined;
+  try {
+    res = await fetch(`${APNS_HOST}/3/device/${deviceToken}`, {
+      method: "POST",
+      headers: {
+        "authorization": `bearer ${jwt}`,
+        "apns-topic": APNS_BUNDLE_ID,
+        "apns-push-type": "alert",
+        // Priority 5, not 10: a digest is not time-critical, and letting iOS deliver it on the
+        // device's own schedule is both better for battery and less likely to arrive mid-sentence.
+        "apns-priority": "5",
+      },
+      body: JSON.stringify({ aps: { alert: { title, body }, sound: "flim_social.caf" }, flim: FEED_ROUTE }),
+      signal: AbortSignal.timeout(APNS_TIMEOUT_MS),
+    });
+    reason = res.ok ? undefined : await res.text();
+  } catch (e) {
+    // A timeout or network error is a failed send to this one device, never the end of the run.
+    console.warn(JSON.stringify({
+      at: "apns_send", kind: "digest", ok: false, host: APNS_HOST, token8: deviceToken.slice(0, 8), error: String(e),
+    }));
+    return false;
+  }
   console.log(JSON.stringify({
     at: "apns_send", kind: "digest", ok: res.ok, status: res.status,
     host: APNS_HOST, apnsId: res.headers.get("apns-id"),
@@ -397,11 +411,14 @@ Deno.serve(async (req: Request) => {
   // account, so it pages through fetchAllPages rather than risk PostgREST's 1000-row cap silently
   // dropping devices past it, the same shape the photos-select bug (see the header on
   // fetchAllPages above) already taught this codebase once.
-  const { rows: tokenRows } = await fetchAllPages<{ user_id: string; token: string }>(
+  const { rows: tokenRows, failed: tokensFailed } = await fetchAllPages<{ user_id: string; token: string }>(
     (from, to) =>
       supabase.from("device_tokens").select("user_id, token").order("token", { ascending: true }).range(from, to),
     "device_tokens",
   );
+  // A partial device list would send to some of a person's phones and then record the digest as
+  // sent for all of them.
+  if (tokensFailed) return new Response("device_tokens read failed; no digests sent", { status: 200 });
   const tokensByUser = new Map<string, string[]>();
   for (const row of tokenRows) {
     const list = tokensByUser.get(row.user_id) ?? [];
@@ -412,12 +429,14 @@ Deno.serve(async (req: Request) => {
 
   // Same shape: one row per account that has EVER received a digest, so this grows with the whole
   // user base over time, not with anything scoped to this run.
-  const { rows: stateRows } = await fetchAllPages<{ user_id: string; last_sent_at: string }>(
+  const { rows: stateRows, failed: stateFailed } = await fetchAllPages<{ user_id: string; last_sent_at: string }>(
     (from, to) =>
       supabase.from("digest_state").select("user_id, last_sent_at").order("user_id", { ascending: true })
         .range(from, to),
     "digest_state",
   );
+  // A failed read is not "nobody has had a digest": read that way, every hourly run resent it.
+  if (stateFailed) return new Response("digest_state read failed; no digests sent", { status: 200 });
   const lastSent = new Map<string, number>(
     stateRows.map((r) => [r.user_id, new Date(r.last_sent_at).getTime()]),
   );
@@ -485,13 +504,16 @@ Deno.serve(async (req: Request) => {
 
   // Same shape again: every block system-wide, not scoped to this run's candidates, so it grows
   // with total blocks across the whole platform over time.
-  const { rows: blockRows } = await fetchAllPages<{ blocker_id: string; blocked_id: string }>(
+  const { rows: blockRows, failed: blocksFailed } = await fetchAllPages<{ blocker_id: string; blocked_id: string }>(
     (from, to) =>
       supabase.from("blocks").select("blocker_id, blocked_id")
         .order("blocker_id", { ascending: true }).order("blocked_id", { ascending: true })
         .range(from, to),
     "blocks",
   );
+  // A failed read is not "nobody is blocked": the digest would name people to someone who blocked
+  // them. Nothing is sent this run.
+  if (blocksFailed) return new Response("blocks read failed; no digests sent", { status: 200 });
   const blockPairs = new Set<string>();
   for (const b of blockRows) {
     blockPairs.add(`${b.blocker_id}|${b.blocked_id}`);

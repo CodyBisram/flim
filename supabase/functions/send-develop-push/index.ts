@@ -53,6 +53,9 @@ const APNS_BUNDLE_ID = Deno.env.get("APNS_BUNDLE_ID") ?? "com.flim.app";
 const APNS_HOST = (Deno.env.get("APNS_ENVIRONMENT") ?? "sandbox") === "production"
   ? "https://api.push.apple.com"
   : "https://api.sandbox.push.apple.com";
+// One APNs request may take this long before it is abandoned as a failed send, so a stalled
+// connection cannot hold the run past its lease (see send-social-push).
+const APNS_TIMEOUT_MS = 10_000;
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -63,19 +66,20 @@ const supabase = createClient(
 // row fetch silently dropped everything past the cap; see send-one-shot-push's `neverShot` for the
 // incident. The only query in this file with no filter narrowing it to "this run" is the full
 // `blocks` read below (loadBlockPairs), so it pages through `.range()` instead of one unbounded
-// select.
+// select. Returns null when any page errored: a partial read is not the whole table, and a
+// partial `blocks` read in particular would treat a real block as none.
 const PAGE_SIZE = 1000;
 async function fetchAllPages<T>(
   page: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
   label: string,
-): Promise<T[]> {
+): Promise<T[] | null> {
   const out: T[] = [];
   let from = 0;
   for (;;) {
     const { data, error } = await page(from, from + PAGE_SIZE - 1);
     if (error) {
       console.warn(JSON.stringify({ at: "fetch_all_pages_failed", label, from, error: error.message }));
-      break;
+      return null;
     }
     if (!data || data.length === 0) break;
     out.push(...data);
@@ -185,21 +189,33 @@ async function sendPush(
   const jwt = await apnsAuthToken();
   const payload: Record<string, unknown> = { aps: { alert: { title, body }, sound: "flim_developed.caf" } };
   if (flim) payload.flim = flim;
-  const res = await fetch(`${APNS_HOST}/3/device/${deviceToken}`, {
-    method: "POST",
-    headers: {
-      "authorization": `bearer ${jwt}`,
-      "apns-topic": APNS_BUNDLE_ID,
-      "apns-push-type": "alert",
-      "apns-priority": "10",
-    },
-    body: JSON.stringify(payload),
-  });
+  let res: Response;
+  let reason: string | undefined;
+  try {
+    res = await fetch(`${APNS_HOST}/3/device/${deviceToken}`, {
+      method: "POST",
+      headers: {
+        "authorization": `bearer ${jwt}`,
+        "apns-topic": APNS_BUNDLE_ID,
+        "apns-push-type": "alert",
+        "apns-priority": "10",
+      },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(APNS_TIMEOUT_MS),
+    });
+    // `reason` is only read on failure (Apple returns JSON like {"reason":"BadDeviceToken"}).
+    reason = res.ok ? undefined : await res.text();
+  } catch (e) {
+    // A timeout or network error is a failed send to this one device: the ledger retries it and
+    // the run carries on with everyone else.
+    console.warn(JSON.stringify({
+      at: "apns_send", ok: false, host: APNS_HOST, token8: deviceToken.slice(0, 8), error: String(e),
+    }));
+    return false;
+  }
   // Structured per-send record: `host` shows which APNs environment we hit, so a
   // sandbox/production mismatch (production TestFlight token rejected by sandbox
-  // with 400 BadDeviceToken) is visible in the logs without guesswork. `reason`
-  // is only read on failure (Apple returns JSON like {"reason":"BadDeviceToken"}).
-  const reason = res.ok ? undefined : await res.text();
+  // with 400 BadDeviceToken) is visible in the logs without guesswork.
   console.log(JSON.stringify({
     at: "apns_send",
     ok: res.ok,
@@ -221,7 +237,9 @@ async function sendPush(
 // than a list of exceptions. Loaded once per run and reused across every roll in the batch, same
 // shape as send-daily-digest's blockPairs (many recipients x many sources, unlike
 // send-social-push's single-notify()-call door).
-async function loadBlockPairs(): Promise<Set<string>> {
+// null when the read failed: the caller then sends nothing this run, because an unreadable blocks
+// table must never read as "nobody is blocked".
+async function loadBlockPairs(): Promise<Set<string> | null> {
   // Every block system-wide, not scoped to this run's recipients, so it grows with total blocks
   // across the whole platform over time; see the fetchAllPages header above.
   const rows = await fetchAllPages<{ blocker_id: string; blocked_id: string }>(
@@ -231,6 +249,7 @@ async function loadBlockPairs(): Promise<Set<string>> {
         .range(from, to),
     "blocks",
   );
+  if (rows === null) return null;
   const pairs = new Set<string>();
   for (const b of rows) {
     pairs.add(`${b.blocker_id}|${b.blocked_id}`);
@@ -272,10 +291,13 @@ Deno.serve(async (req: Request) => {
         .range(from, to),
     "photos",
   );
+  // A failed read sends and marks nothing; the next run reads again.
+  if (photos === null) return new Response("photos read failed; nothing sent");
 
   if (!photos.length) return new Response("nothing to send");
 
   const blockPairs = await loadBlockPairs();
+  if (blockPairs === null) return new Response("blocks read failed; nothing sent");
 
   // 2. Collapse the batch into one entry per roll. `shooters` = everyone who took
   //    a shot in this developed batch, used to pick each recipient's push copy
@@ -301,20 +323,33 @@ Deno.serve(async (req: Request) => {
     //    developing is not their business to hear about from someone they've
     //    cut contact with, the same way a blocked commenter's push never
     //    reaches you.
-    const { data: members } = await supabase
+    const { data: members, error: membersErr } = await supabase
       .from("roll_members")
       .select("user_id")
       .eq("roll_id", rollId);
+    // A failed read is not an empty roll: without this the photos were marked pushed and nobody
+    // was told. The roll stays unsent for the next run.
+    if (membersErr) {
+      console.warn(JSON.stringify({ at: "roll_members_read_failed", error: membersErr.message }));
+      continue;
+    }
 
     const recipientIds = (members ?? [])
       .map((m) => m.user_id as string)
       .filter((uid) => ![...g.shooters].some((shooter) => blockPairs.has(`${uid}|${shooter}`)));
 
     if (recipientIds.length) {
-      const { data: tokens } = await supabase
+      const { data: tokens, error: tokensErr } = await supabase
         .from("device_tokens")
         .select("token, user_id")
         .in("user_id", recipientIds);
+      // A failed read is not "nobody has a phone": no device counts as delivered in the ledger, so
+      // reading an error as [] lost the push for good. No ledger row is written; the roll stays
+      // unsent and the next run tries again.
+      if (tokensErr) {
+        console.warn(JSON.stringify({ at: "device_tokens_read_failed", error: tokensErr.message }));
+        continue;
+      }
 
       // One push per (roll, recipient device). Two copy variants: a shooter already
       // knows the roll finished shooting, so their push names the roll and the total
@@ -341,8 +376,13 @@ Deno.serve(async (req: Request) => {
       // marked push_sent. Before this, one lost device could either resend to everyone or
       // silently drop the rest of the roll. No device at all counts as settled, so a roll
       // whose members have no live phone cannot loop forever.
-      const { data: priorRows } = await supabase.from("push_deliveries").select("user_id, attempts, delivered")
+      const { data: priorRows, error: priorErr } = await supabase.from("push_deliveries").select("user_id, attempts, delivered")
         .eq("kind", "develop").eq("source_id", rollId);
+      // An unreadable ledger is not "nobody was told": sending now could repeat delivered pushes.
+      if (priorErr) {
+        console.warn(JSON.stringify({ at: "push_deliveries_read_failed", error: priorErr.message }));
+        continue;
+      }
       const prior = new Map<string, { attempts: number; delivered: boolean }>();
       for (const r of (priorRows ?? []) as { user_id: string; attempts: number; delivered: boolean }[]) prior.set(r.user_id, r);
       const tokensByUser = new Map<string, string[]>();

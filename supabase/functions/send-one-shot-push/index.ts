@@ -47,6 +47,9 @@ const APNS_BUNDLE_ID = Deno.env.get("APNS_BUNDLE_ID") ?? "com.flim.app";
 const APNS_HOST = (Deno.env.get("APNS_ENVIRONMENT") ?? "sandbox") === "production"
   ? "https://api.push.apple.com"
   : "https://api.sandbox.push.apple.com";
+// One APNs request may take this long before it is abandoned as a failed send (see
+// send-social-push). A stalled connection must not hang a campaign halfway through its list.
+const APNS_TIMEOUT_MS = 10_000;
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -740,19 +743,49 @@ async function firstPostCohort(): Promise<Recipient[]> {
   return out;
 }
 
+// PostgREST caps any select at 1000 rows, and a read past the cap drops the rest in silence (the
+// `neverShot` incident above). The two whole-table reads below page through `.range()` on a stable
+// order instead, and throw on an error: a failed read must never become a shorter cohort or an
+// empty claim list.
+const PAGE_SIZE = 1000;
+async function fetchAllPages<T>(
+  page: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
+  label: string,
+): Promise<T[]> {
+  const out: T[] = [];
+  let from = 0;
+  for (;;) {
+    const { data, error } = await page(from, from + PAGE_SIZE - 1);
+    if (error) throw new Error(`${label} read failed: ${error.message}`);
+    if (!data || data.length === 0) break;
+    out.push(...data);
+    if (data.length < PAGE_SIZE) break;
+    from += PAGE_SIZE;
+  }
+  return out;
+}
+
 /// Everyone with a registered device. Registering a token is the opt-in: there is no separate
 /// preference column, so nobody else is reachable and nobody else should be considered.
 async function reachableUsers(): Promise<string[]> {
-  const { data } = await supabase.from("device_tokens").select("user_id");
-  return [...new Set(((data ?? []) as { user_id: string }[]).map((r) => r.user_id))];
+  const rows = await fetchAllPages<{ user_id: string }>(
+    (from, to) =>
+      supabase.from("device_tokens").select("user_id").order("token", { ascending: true }).range(from, to),
+    "device_tokens",
+  );
+  return [...new Set(rows.map((r) => r.user_id))];
 }
 
 /// Drops anyone this campaign has already claimed, on every run including the dry one, so the dry
 /// run's count is the number that would ACTUALLY be sent rather than the cohort size.
 async function unclaimed(campaign: string, people: Recipient[]): Promise<Recipient[]> {
-  const { data } = await supabase
-    .from("one_shot_push").select("user_id").eq("campaign", campaign);
-  const already = new Set(((data ?? []) as { user_id: string }[]).map((r) => r.user_id));
+  const rows = await fetchAllPages<{ user_id: string }>(
+    (from, to) =>
+      supabase.from("one_shot_push").select("user_id").eq("campaign", campaign)
+        .order("user_id", { ascending: true }).range(from, to),
+    "one_shot_push",
+  );
+  const already = new Set(rows.map((r) => r.user_id));
   return people.filter((p) => !already.has(p.userId));
 }
 
@@ -833,22 +866,30 @@ async function deleteDeadToken(deviceToken: string, status: number, body: string
   }
 }
 
+// Returns the APNs status, or 0 when the request timed out or failed on the network: a failed
+// send to this one device, never the end of the campaign.
 async function push(token: string, title: string, body: string, route: unknown): Promise<number> {
   const jwt = await apnsAuthToken();
-  const res = await fetch(`${APNS_HOST}/3/device/${token}`, {
-    method: "POST",
-    headers: {
-      authorization: `bearer ${jwt}`,
-      "apns-topic": APNS_BUNDLE_ID,
-      "apns-push-type": "alert",
-      "apns-priority": "5",
-    },
-    body: JSON.stringify({ aps: { alert: { title, body }, sound: "flim_social.caf" }, flim: route }),
-  });
-  if (!res.ok) {
-    const reason = await res.text();
-    await deleteDeadToken(token, res.status, reason);
+  let res: Response;
+  let reason: string | undefined;
+  try {
+    res = await fetch(`${APNS_HOST}/3/device/${token}`, {
+      method: "POST",
+      headers: {
+        authorization: `bearer ${jwt}`,
+        "apns-topic": APNS_BUNDLE_ID,
+        "apns-push-type": "alert",
+        "apns-priority": "5",
+      },
+      body: JSON.stringify({ aps: { alert: { title, body }, sound: "flim_social.caf" }, flim: route }),
+      signal: AbortSignal.timeout(APNS_TIMEOUT_MS),
+    });
+    reason = res.ok ? undefined : await res.text();
+  } catch (e) {
+    console.warn(JSON.stringify({ at: "apns_send", ok: false, token8: token.slice(0, 8), error: String(e) }));
+    return 0;
   }
+  if (!res.ok) await deleteDeadToken(token, res.status, reason);
   return res.status;
 }
 
@@ -903,8 +944,11 @@ Deno.serve(async (req) => {
       .from("one_shot_push").insert({ campaign: name, user_id: person.userId });
     if (claimErr) continue;
 
-    const { data: tokens } = await supabase
+    const { data: tokens, error: tokensErr } = await supabase
       .from("device_tokens").select("token").eq("user_id", person.userId);
+    // Counted as failed, never as sent: the claim stays (a rerun skips this person, the ledger's
+    // chosen direction) and sent_at stays empty, so the ledger shows it did not go.
+    if (tokensErr) console.warn(JSON.stringify({ at: "device_tokens_read_failed", userId: person.userId, error: tokensErr.message }));
     let delivered = false;
     for (const row of (tokens ?? []) as { token: string }[]) {
       const status = await push(row.token, person.title, person.body, person.route);

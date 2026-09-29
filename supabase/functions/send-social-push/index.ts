@@ -52,6 +52,10 @@ const APNS_BUNDLE_ID = Deno.env.get("APNS_BUNDLE_ID") ?? "com.flim.app";
 const APNS_HOST = (Deno.env.get("APNS_ENVIRONMENT") ?? "sandbox") === "production"
   ? "https://api.push.apple.com"
   : "https://api.sandbox.push.apple.com";
+// One APNs request may take this long before it is abandoned as a failed send. Without a limit a
+// stalled connection held the run past its 240 s lease; one device's network error is one failed
+// device, never the end of the run.
+const APNS_TIMEOUT_MS = 10_000;
 
 // The app's name as it appears in push copy. One place, because the name has changed before
 // (Lapse, then FLIM) and may again; a rename is this line plus a deploy.
@@ -226,21 +230,33 @@ async function sendPush(
   if (body) alert.body = body;
   const payload: Record<string, unknown> = { aps: { alert, sound } };
   if (flim) payload.flim = flim;
-  const res = await fetch(`${APNS_HOST}/3/device/${deviceToken}`, {
-    method: "POST",
-    headers: {
-      "authorization": `bearer ${jwt}`,
-      "apns-topic": APNS_BUNDLE_ID,
-      "apns-push-type": "alert",
-      "apns-priority": "10",
-    },
-    body: JSON.stringify(payload),
-  });
+  let res: Response;
+  let reason: string | undefined;
+  try {
+    res = await fetch(`${APNS_HOST}/3/device/${deviceToken}`, {
+      method: "POST",
+      headers: {
+        "authorization": `bearer ${jwt}`,
+        "apns-topic": APNS_BUNDLE_ID,
+        "apns-push-type": "alert",
+        "apns-priority": "10",
+      },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(APNS_TIMEOUT_MS),
+    });
+    // `reason` is only read on failure (Apple returns JSON like {"reason":"BadDeviceToken"}).
+    reason = res.ok ? undefined : await res.text();
+  } catch (e) {
+    // A timeout or network error is a failed send to this one device: the caller records it as
+    // undelivered, the ledger retries it, and the run carries on with everyone else.
+    console.warn(JSON.stringify({
+      at: "apns_send", ok: false, host: APNS_HOST, token8: deviceToken.slice(0, 8), error: String(e),
+    }));
+    return false;
+  }
   // Structured per-send record: `host` shows which APNs environment we hit, so a
   // sandbox/production mismatch (production TestFlight token rejected by sandbox
-  // with 400 BadDeviceToken) is visible in the logs without guesswork. `reason`
-  // is only read on failure (Apple returns JSON like {"reason":"BadDeviceToken"}).
-  const reason = res.ok ? undefined : await res.text();
+  // with 400 BadDeviceToken) is visible in the logs without guesswork.
   console.log(JSON.stringify({
     at: "apns_send",
     ok: res.ok,
@@ -259,8 +275,15 @@ async function handle(userId: string): Promise<string> {
   return data?.username ? `@${data.username}` : "Someone";
 }
 
-async function tokensFor(userId: string): Promise<string[]> {
-  const { data } = await supabase.from("device_tokens").select("token").eq("user_id", userId);
+// null when the read failed. An unreadable device list is not "this person has no phone": the
+// ledger treats no device as terminal, so reading an error as [] recorded the push as delivered
+// and lost it.
+async function tokensFor(userId: string): Promise<string[] | null> {
+  const { data, error } = await supabase.from("device_tokens").select("token").eq("user_id", userId);
+  if (error) {
+    console.warn(JSON.stringify({ at: "device_tokens_read_failed", error: error.message }));
+    return null;
+  }
   return (data ?? []).map((t) => t.token);
 }
 
@@ -271,18 +294,28 @@ async function tokensFor(userId: string): Promise<string[]> {
 //     on your post, mention you, tag you, or react, and you'd still get the push, even though RLS
 //     correctly hid the content itself so tapping the notification showed you nothing. Blocking
 //     has to mean the other person can't reach you, notifications included.
+//
+//     Fails CLOSED: a read that errored counts as blocked for this run, is never cached, and puts
+//     `sourceKey` (when given) into the retry set, so the source stays unsent and the next run
+//     asks again. Reading an error as "not blocked" sent pushes to people who had blocked the
+//     sender.
 const blockCache = new Map<string, boolean>();
 
-async function blockedEitherWay(a: string, b: string): Promise<boolean> {
+async function blockedEitherWay(a: string, b: string, sourceKey?: string): Promise<boolean> {
   if (a === b) return false;
   const key = [a, b].sort().join("|");
   const cached = blockCache.get(key);
   if (cached !== undefined) return cached;
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("blocks")
     .select("blocker_id")
     .or(`and(blocker_id.eq.${a},blocked_id.eq.${b}),and(blocker_id.eq.${b},blocked_id.eq.${a})`)
     .limit(1);
+  if (error) {
+    console.warn(JSON.stringify({ at: "blocks_read_failed", error: error.message }));
+    if (sourceKey) pendingRetry.add(sourceKey);
+    return true;
+  }
   const blocked = (data ?? []).length > 0;
   blockCache.set(key, blocked);
   return blocked;
@@ -346,16 +379,28 @@ async function notify(
 ): Promise<number> {
   if (!toId || toId === fromId) return 0;
   if (outOfTime()) { if (sourceKey) pendingRetry.add(sourceKey); return 0; }   // leave it for the next run
-  if (fromId !== null && await blockedEitherWay(toId, fromId)) return 0;
+  if (fromId !== null && await blockedEitherWay(toId, fromId, sourceKey)) return 0;
   let prior = { attempts: 0, delivered: false };
   if (sourceKey) {
     const [kind, ...rest] = sourceKey.split(":");
-    const { data } = await supabase.from("push_deliveries").select("attempts, delivered")
+    const { data, error } = await supabase.from("push_deliveries").select("attempts, delivered")
       .eq("kind", kind).eq("source_id", rest.join(":")).eq("user_id", toId).maybeSingle();
+    // An unreadable ledger is not "never sent": sending now could repeat a delivered push. Leave
+    // the source for the next run.
+    if (error) {
+      console.warn(JSON.stringify({ at: "push_deliveries_read_failed", error: error.message }));
+      pendingRetry.add(sourceKey);
+      return 0;
+    }
     if (data) prior = data as { attempts: number; delivered: boolean };
     if (prior.delivered || prior.attempts >= MAX_DELIVERY_ATTEMPTS) return 0;
   }
   const tokens = await tokensFor(toId);
+  // A failed device read writes no ledger row and settles nothing: the next run tries again.
+  if (tokens === null) {
+    if (sourceKey) pendingRetry.add(sourceKey);
+    return 0;
+  }
   let sent = 0;
   for (const token of tokens) {
     if (await sendPush(token, title, body, flim, sound)) sent++;
@@ -398,10 +443,13 @@ async function ownerUserId(): Promise<string | null> {
   return ownerUserIdCache;
 }
 
-async function ownerTokens(): Promise<string[]> {
+// null when the owner's id or devices could not be read: the callers below then mark nothing, so
+// an alert or report is pushed on a later run instead of being recorded as told.
+async function ownerTokens(): Promise<string[] | null> {
   const id = await ownerUserId();
-  if (!id) return [];
-  return [...new Set(await tokensFor(id))];
+  if (!id) return null;
+  const tokens = await tokensFor(id);
+  return tokens === null ? null : [...new Set(tokens)];
 }
 
 // --- Covered posts. This function runs with the SERVICE ROLE, so RLS is bypassed entirely
@@ -810,11 +858,18 @@ Deno.serve(async (req: Request) => {
     // "also" doing the work of distinguishing this from the owner's "{name} commented": without
     // it, a thread participant would see an identical-looking push and reasonably think it was
     // their own photo that got commented on.
-    const { data: threadRows } = await supabase
+    const { data: threadRows, error: threadErr } = await supabase
       .from("post_comments")
       .select("user_id")
       .eq("post_id", c.post_id)
       .neq("user_id", c.user_id);
+    // A failed read is not an empty thread: the comment stays unsent and the next run tries the
+    // participants again. Anyone already told above is in the ledger and is not told twice.
+    if (threadErr) {
+      console.warn(JSON.stringify({ at: "comment_thread_read_failed", error: threadErr.message }));
+      pendingRetry.add(`comment:${c.id}`);
+      continue;
+    }
     const threadParticipants = new Set<string>((threadRows ?? []).map((r) => r.user_id as string));
     for (const uid of threadParticipants) {
       if (notified.has(uid)) continue;
@@ -941,7 +996,11 @@ Deno.serve(async (req: Request) => {
   const { data: reactions } = await supabase
     .from("post_reactions")
     .select("id, post_id, user_id, emoji, posts(user_id, hidden, created_at)")
-    .eq("push_sent", false);
+    .eq("push_sent", false)
+    // Oldest first, so `ids[0]` (the ledger key) is the same row on every run until it is sent.
+    // Unordered, the key could change between runs and resend with a fresh attempt count.
+    .order("created_at", { ascending: true })
+    .order("id", { ascending: true });
 
   const groups = new Map<
     string,
@@ -1069,7 +1128,10 @@ Deno.serve(async (req: Request) => {
   const { data: photoComments } = await supabase
     .from("photo_comments")
     .select("id, photo_id, user_id, body, photos(user_id, roll_id)")
-    .eq("push_sent", false);
+    .eq("push_sent", false)
+    // Oldest first: `items[0]` is the ledger key, see the post reactions poll above.
+    .order("created_at", { ascending: true })
+    .order("id", { ascending: true });
 
   const byPhoto = new Map<string, {
     ownerId?: string; rollId?: string; items: { id: string; userId: string; body: string }[];
@@ -1082,32 +1144,62 @@ Deno.serve(async (req: Request) => {
   }
 
   for (const [photoId, g] of byPhoto) {
+    // Who can still open this thread: the photo's owner and the roll's CURRENT members, the same
+    // two the "photo_comments: readable by roll members" policy allows. Someone who left the roll,
+    // or was never in it and is only @mentioned, cannot read these comments, so a push carrying
+    // the comment text to them would hand over what RLS refuses. A failed read is not an empty
+    // roll: the group is left unsent and the next run looks again.
+    const canRead = new Set<string>();
+    if (g.ownerId) canRead.add(g.ownerId);
+    if (g.rollId) {
+      const { data: mem, error: memErr } = await supabase.from("roll_members").select("user_id").eq("roll_id", g.rollId);
+      if (memErr) {
+        console.warn(JSON.stringify({ at: "roll_members_read_failed", error: memErr.message }));
+        continue;
+      }
+      for (const m of mem ?? []) canRead.add(m.user_id as string);
+    }
+
     // The thread = everyone who has ever commented on this photo, plus the owner.
-    const { data: allC } = await supabase.from("photo_comments").select("user_id").eq("photo_id", photoId);
+    const { data: allC, error: allCErr } = await supabase.from("photo_comments").select("user_id").eq("photo_id", photoId);
+    // A failed read is not an empty thread: the group stays unsent and the next run looks again.
+    if (allCErr) {
+      console.warn(JSON.stringify({ at: "photo_comment_thread_read_failed", error: allCErr.message }));
+      pendingRetry.add(`photo_comment:${g.items[0].id}`);
+      continue;
+    }
     const thread = new Set<string>((allC ?? []).map((c) => c.user_id));
     if (g.ownerId) thread.add(g.ownerId);
 
-    // People who muted this roll get nothing.
+    // People who muted this roll get nothing. A mutes read that failed is not "nobody muted":
+    // the group waits for the next run rather than reach someone who asked for quiet.
     let muted = new Set<string>();
     if (g.rollId) {
-      const { data: m } = await supabase.from("roll_notification_mutes").select("user_id").eq("roll_id", g.rollId);
+      const { data: m, error: mErr } = await supabase.from("roll_notification_mutes").select("user_id").eq("roll_id", g.rollId);
+      if (mErr) {
+        console.warn(JSON.stringify({ at: "roll_mutes_read_failed", error: mErr.message }));
+        continue;
+      }
       muted = new Set((m ?? []).map((x) => x.user_id));
     }
 
     // People @mentioned in these comments who aren't already in the thread. Mentions used to be
     // scanned on post_comments only, so an @ on a ROLL photo highlighted and linked in the app
     // and notified nobody. A mention is an explicit summons; it should reach someone whether or
-    // not they've commented on that photo before.
-    const mentioned = new Set<string>();
+    // not they've commented on that photo before, as long as they can read it. Capped at five,
+    // the same as mentions in a post comment: a comment can name any number of people.
+    let mentionAdds = 0;
     for (const it of g.items) {
-      for (const uid of await mentionedUserIds(it.body)) mentioned.add(uid);
-    }
-    for (const uid of mentioned) {
-      if (!muted.has(uid)) thread.add(uid);
+      for (const uid of await mentionedUserIds(it.body)) {
+        if (mentionAdds >= 5) break;
+        if (thread.has(uid) || muted.has(uid) || !canRead.has(uid)) continue;
+        thread.add(uid);
+        mentionAdds++;
+      }
     }
 
     for (const recipient of thread) {
-      if (muted.has(recipient)) continue;
+      if (muted.has(recipient) || !canRead.has(recipient)) continue;
       const fromOthers = g.items.filter((it) => it.userId !== recipient);  // never notify about your own
       if (fromOthers.length === 0) continue;
 
@@ -1145,7 +1237,10 @@ Deno.serve(async (req: Request) => {
   const { data: photoReactions } = await supabase
     .from("photo_reactions")
     .select("id, photo_id, user_id, emoji, photos(user_id, roll_id)")
-    .eq("push_sent", false);
+    .eq("push_sent", false)
+    // Oldest first: `ids[0]` is the ledger key, see the post reactions poll above.
+    .order("created_at", { ascending: true })
+    .order("id", { ascending: true });
 
   const rxByKey = new Map<string, {
     ownerId?: string; rollId?: string; photoId: string; reactorId: string; emojis: string[]; ids: string[];
@@ -1163,18 +1258,26 @@ Deno.serve(async (req: Request) => {
 
   // Cache roll mutes per roll so a burst of reactions across one roll doesn't re-query it.
   const mutesByRoll = new Map<string, Set<string>>();
-  async function mutedInRoll(rollId?: string): Promise<Set<string>> {
+  // null when the read failed: the reactions wait for the next run rather than reach someone who
+  // muted the roll. A failure is not cached.
+  async function mutedInRoll(rollId?: string): Promise<Set<string> | null> {
     if (!rollId) return new Set();
     const cached = mutesByRoll.get(rollId);
     if (cached) return cached;
-    const { data: m } = await supabase.from("roll_notification_mutes").select("user_id").eq("roll_id", rollId);
+    const { data: m, error: mErr } = await supabase.from("roll_notification_mutes").select("user_id").eq("roll_id", rollId);
+    if (mErr) {
+      console.warn(JSON.stringify({ at: "roll_mutes_read_failed", error: mErr.message }));
+      return null;
+    }
     const set = new Set<string>((m ?? []).map((x) => x.user_id));
     mutesByRoll.set(rollId, set);
     return set;
   }
 
   for (const g of rxByKey.values()) {
-    if (g.ownerId && g.ownerId !== g.reactorId && !(await mutedInRoll(g.rollId)).has(g.ownerId)) {
+    const rollMuted = await mutedInRoll(g.rollId);
+    if (rollMuted === null) continue;   // unreadable mutes: left unsent for the next run
+    if (g.ownerId && g.ownerId !== g.reactorId && !rollMuted.has(g.ownerId)) {
       const name = await handle(g.reactorId);
       // Same emoji treatment as the post-reactions push above: `reactionBody` shows the LAST
       // emoji in this batch only when it's safe for every FLIM user (see "Reaction emoji safety"
@@ -1220,7 +1323,10 @@ Deno.serve(async (req: Request) => {
   const { data: commentLikes } = await supabase
     .from("comment_likes")
     .select("id, comment_id, user_id, post_comments(user_id, body, post_id)")
-    .eq("push_sent", false);
+    .eq("push_sent", false)
+    // Oldest first: `ids[0]` is the ledger key, see the post reactions poll above.
+    .order("created_at", { ascending: true })
+    .order("id", { ascending: true });
 
   const likesByComment = new Map<string, {
     authorId?: string; body: string; postId?: string; likerIds: Set<string>; ids: string[];
@@ -1339,8 +1445,13 @@ Deno.serve(async (req: Request) => {
     const developed = roll.reveal_at && new Date(roll.reveal_at).getTime() <= Date.now();
     let muted = false;
     if (roll.parent_roll_id) {
-      const { data: m } = await supabase.from("roll_notification_mutes").select("user_id")
+      const { data: m, error: mErr } = await supabase.from("roll_notification_mutes").select("user_id")
         .eq("roll_id", roll.parent_roll_id).eq("user_id", inv.user_id).maybeSingle();
+      // A failed read is not "not muted": the invite stays unsent and the next run asks again.
+      if (mErr) {
+        console.warn(JSON.stringify({ at: "roll_mutes_read_failed", error: mErr.message }));
+        continue;
+      }
       muted = !!m;
     }
     if (!developed && !muted) {
@@ -1364,8 +1475,13 @@ Deno.serve(async (req: Request) => {
     .eq("push_sent", false);
   for (const e of earnbacks ?? []) {
     const key = `earnback:${e.invitee_id}`;
-    const { data: inviter } = await supabase
+    const { data: inviter, error: inviterErr } = await supabase
       .from("users").select("invite_uses_remaining").eq("id", e.inviter_id).maybeSingle();
+    // A failed read is not "no credit landed": the row stays unsent and the next run asks again.
+    if (inviterErr) {
+      console.warn(JSON.stringify({ at: "earnback_inviter_read_failed", error: inviterErr.message }));
+      continue;
+    }
     const credited = inviter && (inviter as { invite_uses_remaining: number | null }).invite_uses_remaining !== null;
     if (credited) {
       const name = await handle(e.invitee_id);
@@ -1451,12 +1567,16 @@ Deno.serve(async (req: Request) => {
     await supabase.from("spotlight_entries").update({ push_sent: true }).eq("id", e.id);
   }
 
-  const ownerPushTokens = await ownerTokens();
+  // null when the owner's devices could not be read: nothing below is marked this run, so every
+  // alert and report is pushed on a later run instead of being recorded as told.
+  const ownerTokensRead = await ownerTokens();
+  const ownerKnown = ownerTokensRead !== null;
+  const ownerPushTokens = ownerTokensRead ?? [];
 
   // Operational alerts (a scheduled function that stopped doing its job): one push each to
   // the owner, then marked. See public.ops_alerts.
   const { data: opsAlerts } = await supabase.from("ops_alerts").select("id, source, detail").eq("push_sent", false);
-  for (const a of opsAlerts ?? []) {
+  for (const a of ownerKnown ? opsAlerts ?? [] : []) {
     let ok = 0;
     for (const token of ownerPushTokens) {
       if (await sendPush(token, `${APP_NAME} ops: ${a.source}`, a.detail.slice(0, 180))) ok++;
@@ -1471,7 +1591,7 @@ Deno.serve(async (req: Request) => {
     .select("id, photo_id, reason")
     .eq("push_sent", false);
 
-  for (const r of photoReports ?? []) {
+  for (const r of ownerKnown ? photoReports ?? [] : []) {
     const body = r.reason ? `Reason: ${r.reason}` : "A photo was reported. Review in the dashboard.";
     for (const token of ownerPushTokens) {
       if (await sendPush(token, "Photo reported", body)) sent++;
@@ -1484,7 +1604,7 @@ Deno.serve(async (req: Request) => {
     .select("id, reported_id, reason")
     .eq("push_sent", false);
 
-  for (const r of userReports ?? []) {
+  for (const r of ownerKnown ? userReports ?? [] : []) {
     const who = await handle(r.reported_id);
     const body = r.reason ? `${who}: ${r.reason}` : `${who} was reported. Review in the dashboard.`;
     for (const token of ownerPushTokens) {
