@@ -450,7 +450,7 @@ enum ProfileBadgeKind: String, CaseIterable {
         case .feedback:
             return "Send feedback from your profile. When it changes \(AppInfo.appName), Cody gives you this."
         case .bugCatcher:
-            return "Report a bug from your profile. When it is fixed, Cody gives you this."
+            return "Report a bug with Send feedback on your profile. When it is fixed, Cody gives you this."
         }
     }
 }

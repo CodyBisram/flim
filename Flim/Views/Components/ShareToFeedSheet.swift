@@ -392,6 +392,7 @@ struct ShareToFeedSheet: View {
                     photo: photo, caption: capturedCaption, userId: uid, tags: capturedTags).tagsSaved
                 if shouldWarnThatTagsDidNotSave(tagsSaved) {
                     Haptics.error()
+                    ReviewPrompt.noteVisibleFailure()
                     // Deliberately its own string, not the legacy composer's: this flow's own
                     // viewer has a promoted "Tag" capsule once a shot is shared (`tagCapsule` in
                     // `PhotoPagerView`), and that's the retry path from here, not "Edit tags".

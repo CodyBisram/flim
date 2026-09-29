@@ -457,6 +457,7 @@ final class RollRevealViewModel {
             if images.isEmpty {
                 // Silence here is indistinguishable from a broken button.
                 Haptics.error()
+                ReviewPrompt.noteVisibleFailure()
                 saveAllError = "Couldn't load the photos. Check your connection."
             } else {
                 if images.count < deck.count {

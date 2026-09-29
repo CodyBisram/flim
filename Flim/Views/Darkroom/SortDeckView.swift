@@ -718,6 +718,7 @@ struct SortDeckView: View {
                     // still has to speak up, same reasoning as the publish failure right below,
                     // it just isn't the same failure.
                     Haptics.error()
+                    ReviewPrompt.noteVisibleFailure()
                     publishError = "Posted, but the tags didn't save. Try again from Edit tags."
                 }
             } catch {

@@ -104,7 +104,7 @@ struct SilverTrioBadgeTests {
         #expect(ProfileBadgeKind.bugCatcher.explanation == "You found a bug, and it got fixed. Given by Cody.")
         #expect(ProfileBadgeKind.recruiter.howToEarn == "Invite people who stay: three still shooting a month after they join.")
         #expect(ProfileBadgeKind.feedback.howToEarn == "Send feedback from your profile. When it changes \(app), Cody gives you this.")
-        #expect(ProfileBadgeKind.bugCatcher.howToEarn == "Report a bug from your profile. When it is fixed, Cody gives you this.")
+        #expect(ProfileBadgeKind.bugCatcher.howToEarn == "Report a bug with Send feedback on your profile. When it is fixed, Cody gives you this.")
     }
 
     @Test("\"Given by Cody\" is on the two hand-given badges and nowhere else")

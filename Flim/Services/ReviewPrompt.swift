@@ -79,6 +79,16 @@ enum ReviewPrompt {
     /// True only on the open that first sees the count at or past five after an open that saw
     /// it below. `previous == nil` is the first open ever measured, which only sets the baseline:
     /// an account that already had fifty reactions before this shipped has no fifth to notice.
+    /// Whether a post count just reached the tenth post. Crossing, not equality: two posts landing
+    /// back to back can both read 11 and would skip an exact match of 10. With no count seen yet
+    /// (first post since updating), only 10 or 11 counts, so someone long past it is not asked.
+    static func postMilestoneCrossed(previous: Int?, current: Int) -> Bool {
+        guard let previous else { return (postMilestone...(postMilestone + 1)).contains(current) }
+        return previous < postMilestone && current >= postMilestone
+    }
+
+    static func postsKey(userId: UUID) -> String { "reviewAsk.postsSeen.\(userId.uuidString)" }
+
     static func reactionMilestoneCrossed(previous: Int?, current: Int) -> Bool {
         guard let previous else { return false }
         return previous < reactionMilestone && current >= reactionMilestone
@@ -209,6 +219,32 @@ final class ReviewPromptCenter {
     }
 
     private(set) var pending: Pending?
+    /// Up while the keyboard is on screen. A pushed screen with a text field (a post's comment
+    /// composer, a search) is not a presentation, so the depth check alone would let the card
+    /// land over a half-typed comment.
+    private(set) var keyboardVisible = false
+
+    init() {
+        let center = NotificationCenter.default
+        center.addObserver(forName: UIResponder.keyboardWillShowNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.keyboardVisible = true }
+        }
+        center.addObserver(forName: UIResponder.keyboardWillHideNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.keyboardVisible = false }
+        }
+    }
+
+    /// The tenth-post moment, checked after each post lands. Stores the count it saw, so the
+    /// crossing is found even when two posts land back to back.
+    func checkPostMilestone(count: Int, userId: UUID, defaults: UserDefaults = .standard) {
+        let key = ReviewPrompt.postsKey(userId: userId)
+        let previous = defaults.object(forKey: key) as? Int
+        defaults.set(max(count, previous ?? 0), forKey: key)
+        if ReviewPrompt.postMilestoneCrossed(previous: previous, current: count) {
+            arm(.tenthPost, userId: userId)
+        }
+    }
+
     /// A moment that could not be asked about within this long is dropped: by then it is no
     /// longer the moment.
     static let pendingLifetime: TimeInterval = 15 * 60
@@ -282,6 +318,7 @@ struct ReviewPromptHost: ViewModifier {
             let settled = UIApplication.shared.applicationState == .active
                 && !isCameraFrontmost()
                 && ReviewPrompt.presentationDepth() == 0
+                && !center.keyboardVisible
             if !settled {
                 stillSince = nil
             } else if let since = stillSince {

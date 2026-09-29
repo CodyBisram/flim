@@ -1838,8 +1838,8 @@ final class FeedService {
         if !ReviewPrompt.askedThisVersion(userId: userId) {
             Task { [weak self] in
                 guard let self, let count = await self.ownPostCount(userId: userId),
-                      count == ReviewPrompt.postMilestone, AccountEpoch.isCurrent(epoch) else { return }
-                ReviewPromptCenter.shared.arm(.tenthPost, userId: userId)
+                      AccountEpoch.isCurrent(epoch) else { return }
+                ReviewPromptCenter.shared.checkPostMilestone(count: count, userId: userId)
             }
         }
 

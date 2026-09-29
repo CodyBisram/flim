@@ -1010,6 +1010,7 @@ struct RollDetailView: View {
                 // Every fetch failed, so no share sheet is coming. Silence here looks exactly
                 // like the menu item doing nothing at all. Inline with Retry, never a modal.
                 Haptics.error()
+                ReviewPrompt.noteVisibleFailure()
                 withAnimation { saveAllError = "Couldn't load the photos. Check your connection." }
             } else {
                 let mine = PhotoExport.eligible(vm.developedPhotos, viewer: auth.currentUser?.id, inRoll: true).count
