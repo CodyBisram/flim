@@ -508,6 +508,15 @@ private func previewBadge(_ id: String, _ kind: ProfileBadgeKind) -> ProfileBadg
     ])
 }
 
+#Preview("Flanking: the 1.6.2 silver trio (silver, no glow)") {
+    FlankPreview(badges: [
+        previewBadge("recruiter", .recruiter),
+        previewBadge("feedback", .feedback),
+        previewBadge("bug_catcher", .bugCatcher),
+        previewBadge("founding_100", .founding100),
+    ])
+}
+
 #Preview("Flanking: four badges, largest Dynamic Type, narrowest device") {
     FlankPreview(badges: [
         previewBadge("cover_to_cover", .coverToCover),   // the longest label in the catalog

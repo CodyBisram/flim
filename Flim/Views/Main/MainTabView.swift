@@ -285,6 +285,9 @@ struct MainTabView: View {
         // chances. While this view is alive, anything on disk is such a tap: a live one is
         // cleared the moment it is routed, just above.
         .modifier(HeldTapRetry(retry: routeHeldDestination))
+        // The rating prompt's tenth-post and fifth-reaction moments wait here until the host is
+        // clear: off the camera, nothing presented, still for a second. See `ReviewPrompt`.
+        .modifier(ReviewPromptHost(isCameraFrontmost: { selected == 0 }))
         // Show the soft primer once, after onboarding, with context, instead of a cold
         // system prompt on first launch (which gets denied far more often).
         .onChange(of: hasOnboarded) { _, done in if done { maybeShowNotifPrimer() } }

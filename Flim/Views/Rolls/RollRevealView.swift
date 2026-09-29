@@ -1,3 +1,4 @@
+import StoreKit
 import SwiftUI
 
 /// The roll reveal, as an event: the first time you open a roll after it develops, everyone's
@@ -41,6 +42,7 @@ struct RollRevealView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.displayScale) private var displayScale
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.requestReview) private var requestReview
 
     @State private var profileRoute: ProfileRoute?
     /// Read once, on appear, purely for the summary's own invite prompt. Fails soft to `.unknown`
@@ -139,6 +141,17 @@ struct RollRevealView: View {
         // leaves it unset, so the Ready band stays up and the roll replays from the cover.
         .onChange(of: viewModel.completed) { _, done in
             if done { onCompleted?() }
+        }
+        // The rating prompt's reveal moment: the reveal genuinely finished. Asked over the
+        // summary once its 0.3s entrance has played and a second has passed, and never if the
+        // reveal closed, a comment thread or a profile opened, or anything else was presented
+        // over it in the meantime (see `ReviewPrompt.askWhenSettled`).
+        .task(id: viewModel.completed) {
+            guard viewModel.completed else { return }
+            await ReviewPrompt.askWhenSettled(
+                .rollReveal, user: auth.currentUser, requestReview: requestReview,
+                extraDelay: .milliseconds(300)
+            ) { commentsPhoto == nil && profileRoute == nil }
         }
     }
 

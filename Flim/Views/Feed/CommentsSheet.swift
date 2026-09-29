@@ -337,6 +337,7 @@ struct CommentsSheet: View {
                 replyTarget = target
                 sendFailed = true
                 Haptics.error()
+                ReviewPrompt.noteVisibleFailure()
                 AccessibilityNotification.Announcement(CommentComposer.sendFailedText).post()
             }
         }

@@ -1031,6 +1031,8 @@ final class PhotoService {
                 ? message
                 : "\(message) This one is only held until you close \(AppInfo.appName)."
             failedUploads.append(record)
+            // The retry pill is up: no rating prompt for a day (see `ReviewPrompt`).
+            ReviewPrompt.noteVisibleFailure()
             isUploading = false
         }
         // The raw entry stays, marked `.processed` when the copy was persisted, so recovery

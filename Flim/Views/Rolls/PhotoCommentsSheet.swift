@@ -186,6 +186,7 @@ struct PhotoCommentsSheet: View {
                 draft = body   // restore instead of silently losing the comment
                 replyTarget = target
                 Haptics.error()
+                ReviewPrompt.noteVisibleFailure()
             }
         }
     }

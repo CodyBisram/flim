@@ -33,6 +33,14 @@ enum UsageEvent: String {
     case spotlightWithdraw = "spotlight_withdraw"
     case spotlightStripOpen = "spotlight_strip_open"
     case spotlightWeeksOpen = "spotlight_weeks_open"
+    // The rating prompt (1.6.2), one per moment, logged when the app asks (see `ReviewPrompt`).
+    // Whether Apple actually showed its card, or what anyone gave, is never known. The server's
+    // CHECK must list these four before they count; until it does they fail silently, like any
+    // event logged ahead of its migration.
+    case reviewAskedSpotlight = "review_asked_spotlight"
+    case reviewAskedReveal = "review_asked_reveal"
+    case reviewAskedTenthPost = "review_asked_tenth_post"
+    case reviewAskedReactions = "review_asked_reactions"
 }
 
 /// Fire-and-forget frequency/retention instrumentation, mirroring `Activation.log(_:)` exactly

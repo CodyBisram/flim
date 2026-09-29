@@ -32,6 +32,7 @@ final class OptimisticToggle {
             guard self.revisions[key] == revision else { return }
             revert()
             Haptics.error()
+            ReviewPrompt.noteVisibleFailure()
         }
         queues[key] = task
     }

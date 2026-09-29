@@ -1,3 +1,4 @@
+import StoreKit
 import SwiftUI
 import UIKit
 
@@ -96,6 +97,7 @@ struct PostDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.requestReview) private var requestReview
     @FocusState private var commentFocused: Bool
 
     private var post: Post {
@@ -363,6 +365,21 @@ struct PostDetailView: View {
         }
         .task(id: post.id) {
             await photoService.fetchSuggestedEmoji(photoIds: [post.photoId])
+        }
+        // The rating prompt's Spotlight moment: the first time you open your own chosen frame.
+        // `spotlightWeekKey` is only ever set by a Spotlight surface, and those list chosen
+        // frames alone, so an own post opened with one IS your chosen frame. Spent once the
+        // screen has sat still (or the guards refused), never by a glance that left at once.
+        .task(id: post.id) {
+            guard spotlightWeekKey != nil, isOwn else { return }
+            let key = ReviewPrompt.spotlightOpenedKey(postId: post.id)
+            guard !UserDefaults.standard.bool(forKey: key) else { return }
+            // The extra beat covers the push animation that brought this screen in.
+            let settled = await ReviewPrompt.askWhenSettled(
+                .spotlightChosen, user: auth.currentUser, requestReview: requestReview,
+                extraDelay: .milliseconds(400)
+            ) { !commentFocused && scenePhase == .active }
+            if settled { UserDefaults.standard.set(true, forKey: key) }
         }
         // A stranger who follows from the Spotlight note gets the thread once the follow has
         // landed server-side (comments are readable by followers, so asking earlier returns none).
@@ -705,6 +722,7 @@ struct PostDetailView: View {
                 replyTarget = target
                 commentSendFailed = true
                 Haptics.error()
+                ReviewPrompt.noteVisibleFailure()
                 AccessibilityNotification.Announcement(CommentComposer.sendFailedText).post()
             }
         }

@@ -465,10 +465,12 @@ private struct BadgePickerContent: View {
     /// place in the app that iterates `ProfileBadgeKind.allCases` rather than a profile's own
     /// `badges` — see the module comment on why a profile itself must never do this.
     ///
-    /// `isEarnable` is what keeps the three unreachable ones out: `founder` and `foundingCrew`
-    /// are given by hand, and `founding100`'s window is shut for anyone not already holding it.
-    /// Listing them as locked rows told most people, at length, about three things they can never
-    /// have. A collection screen should show what is still out there for YOU.
+    /// `isEarnable` is what keeps the unreachable ones out: `founder` and `foundingCrew` are given
+    /// by hand, `founding100`'s window is shut for anyone not already holding it, and `spotlight`
+    /// is the team's choice. Listing them as locked rows told most people, at length, about things
+    /// they can never have. A collection screen should show what is still out there for YOU.
+    /// `feedback` and `bugCatcher` are hand-given yet listed: anyone can send feedback or report a
+    /// bug, and their rows say so.
     private var lockedKinds: [ProfileBadgeKind] {
         let earnedIds = Set(badges.map(\.id))
         return ProfileBadgeKind.allCases
@@ -739,9 +741,10 @@ private struct BadgePickerContent: View {
 }
 
 #Preview("Locked catalog: earned above, the rest locked below") {
-    // `badgePickerPreviewBadges` holds 12 of the 22 catalog cases, so the remaining 10 (both
-    // hand-granted kinds plus the eight newest cases) render locked underneath: a real mix of
-    // selectable and not, exactly what this screen looks like for most accounts.
+    // `badgePickerPreviewBadges` holds 12 of the catalog cases, so the rest that are still
+    // earnable (including the 1.6.2 silver trio, Feedback and Bug Catcher with their "Cody gives
+    // you this" rows) render locked underneath: a real mix of selectable and not, exactly what
+    // this screen looks like for most accounts.
     BadgePickerContentPreview(badges: badgePickerPreviewBadges, initialSelection: nil)
 }
 
@@ -754,6 +757,15 @@ private struct BadgePickerContent: View {
     // "given by hand" copy, never phrased as something to go do.
     BadgePickerContentPreview(
         badges: [ProfileBadge(id: "founding_100", kind: .founding100, earnedAt: .now)],
+        initialSelection: nil
+    )
+}
+
+#Preview("1.6.2 silver trio: Recruiter earned, Feedback and Bug Catcher locked") {
+    // Recruiter sits in the earned list with its explanation; the two hand-given silvers stay in
+    // the locked list with their "Cody gives you this" instruction, never hidden like Founder.
+    BadgePickerContentPreview(
+        badges: [ProfileBadge(id: "recruiter", kind: .recruiter, earnedAt: .now)],
         initialSelection: nil
     )
 }

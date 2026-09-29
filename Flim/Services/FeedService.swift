@@ -247,6 +247,34 @@ final class FeedService {
             .execute().count
     }
 
+    /// Server-side COUNT of every post this account has made, for the rating prompt's tenth-post
+    /// moment. `nil` when the read failed, so a flaky network can never pass for a count.
+    func ownPostCount(userId: UUID) async -> Int? {
+        try? await supabase
+            .from("posts")
+            .select("id", head: true, count: .exact)
+            .eq("user_id", value: userId.uuidString)
+            .execute().count
+    }
+
+    /// Server-side COUNT of reactions other people have left on this account's work: its posts
+    /// and its roll photos, the two places a reaction can land. For the rating prompt's
+    /// fifth-reaction moment. `nil` if either read failed: half a count would record a wrong
+    /// baseline, and a missed crossing never comes back.
+    func receivedReactionCount(userId: UUID) async -> Int? {
+        guard let onPosts = try? await supabase.from("post_reactions")
+            .select("created_at, posts!inner(user_id)", head: true, count: .exact)
+            .eq("posts.user_id", value: userId.uuidString)
+            .neq("user_id", value: userId.uuidString)
+            .execute().count else { return nil }
+        guard let onPhotos = try? await supabase.from("photo_reactions")
+            .select("created_at, photos!inner(user_id)", head: true, count: .exact)
+            .eq("photos.user_id", value: userId.uuidString)
+            .neq("user_id", value: userId.uuidString)
+            .execute().count else { return nil }
+        return onPosts + onPhotos
+    }
+
     /// Pure follow-button/badge copy, pulled out of the views so the four
     /// (following, followsMe) combinations are cheap to pin with a plain unit test.
     ///
@@ -1635,6 +1663,7 @@ final class FeedService {
             }
             self.reactionsByPost[postId] = now
             Haptics.error()
+            ReviewPrompt.noteVisibleFailure()
             return false
         }
         reactionQueues[postId] = write
@@ -1803,6 +1832,16 @@ final class FeedService {
         // first time; `well_met` can only start accruing once something exists to react to).
         // Fire-and-forget: this must never gate the post the user just watched succeed.
         Task { await refreshOwnBadges() }
+        // The tenth post is one of the rating prompt's moments. Counted on the server, never
+        // from loaded pages; the ask itself waits in `ReviewPromptCenter` until whatever posted
+        // this (the sort deck, the share sheet, the pager) has gone.
+        if !ReviewPrompt.askedThisVersion(userId: userId) {
+            Task { [weak self] in
+                guard let self, let count = await self.ownPostCount(userId: userId),
+                      count == ReviewPrompt.postMilestone, AccountEpoch.isCurrent(epoch) else { return }
+                ReviewPromptCenter.shared.arm(.tenthPost, userId: userId)
+            }
+        }
 
         guard !tags.isEmpty else { return CreatedPost(post: created, tagsSaved: true) }
         struct TagInsert: Encodable { let post_id: UUID; let tagged_user_id: UUID; let x: Double; let y: Double }

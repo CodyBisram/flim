@@ -34,8 +34,8 @@ struct ProfileBadge: Identifiable, Equatable {
     let earnedAt: Date
 }
 
-/// The catalog of stamps a profile can carry, exactly the twenty-two `badge_id`s
-/// `profile_badges` can return; raw values match those strings so a row decodes straight into a
+/// The catalog of stamps a profile can carry, exactly the `badge_id`s `profile_badges` can
+/// return; raw values match those strings so a row decodes straight into a
 /// case. A case existing here does NOT mean it renders anywhere for an account that hasn't earned
 /// it — every profile-facing call site only ever iterates a profile's own `badges` array, never
 /// this `allCases`. `BadgePickerSheet` is the one deliberate exception: it iterates `allCases` to
@@ -44,7 +44,10 @@ struct ProfileBadge: Identifiable, Equatable {
 ///
 /// Most of these are earned automatically. `founder` and `foundingCrew` are granted by hand and
 /// never computed, so they arrive as a surprise rather than something you can see coming; `tier`
-/// below is what actually encodes that distinction visually, see its own comment.
+/// below is what actually encodes that distinction visually, see its own comment. `feedback` and
+/// `bugCatcher` are granted by hand too (the owner awards them from the admin dashboard through
+/// `grant_badge`), but unlike the founding pair they answer something anyone can do, so they sit
+/// on the silver rung and say how to get them; see `isEarnable`.
 ///
 /// There was a third hand-granted case, `testRoll` ("Tester"), retired in
 /// `2026-08-18_nine_more_badges.sql`. It said the same thing `foundingCrew` says, more thinly —
@@ -98,6 +101,12 @@ enum ProfileBadgeKind: String, CaseIterable {
     /// itself, never computed from use, and never listed as something to go and get: the team
     /// chooses, so there is no instruction that would be honest (see `isEarnable`).
     case spotlight = "spotlight"
+    // 1.6.2. `recruiter` is computed server-side with the other invite predicates; `feedback`
+    // and `bugCatcher` are awarded by hand from the admin dashboard. All three are silver, and
+    // none glows: the glow belongs to the founding rung alone.
+    case recruiter = "recruiter"
+    case feedback = "feedback"
+    case bugCatcher = "bug_catcher"
 
     /// A per-badge delay, in seconds, before this pill's highlight sweep starts. Only the
     /// founding rung animates, so only those three values matter. They divide the full 9.15s
@@ -118,10 +127,15 @@ enum ProfileBadgeKind: String, CaseIterable {
 
     /// Whether an account that doesn't already hold this could ever go and get it.
     ///
-    /// False for exactly three: `founder` and `foundingCrew` are handed out by a person and have
-    /// no predicate at all, and `founding100`'s window shut at the hundredth signup — if you do
-    /// not already hold it, your ordinal is past 100 and nothing you do changes that. Everything
-    /// else is reachable by ordinary use.
+    /// False for four: `founder` and `foundingCrew` are handed out by a person and have no
+    /// predicate at all, `founding100`'s window shut at the hundredth signup (if you do not
+    /// already hold it, your ordinal is past 100 and nothing you do changes that), and
+    /// `spotlight` is chosen by the team. Everything else is reachable by ordinary use.
+    ///
+    /// `feedback` and `bugCatcher` are given by hand too, yet stay TRUE here on purpose. The rule
+    /// below is about closed doors, and theirs is open: anyone can send feedback or report a bug
+    /// from their profile, and their `howToEarn` says exactly that as a real instruction, naming
+    /// who hands them out. Hiding them would hide the one honest way to get them.
     ///
     /// `BadgePickerSheet`'s locked catalog filters on this, so the collection screen only ever
     /// lists things you can actually go and earn. Showing a stranger a gold pill captioned "given
@@ -132,6 +146,8 @@ enum ProfileBadgeKind: String, CaseIterable {
         switch self {
         // `spotlight` is chosen by the team, so it is not in any locked list either.
         case .founder, .foundingCrew, .founding100, .spotlight: return false
+        // Hand-given, but an open door: see the second paragraph above.
+        case .feedback, .bugCatcher: return true
         default: return true
         }
     }
@@ -148,7 +164,9 @@ enum ProfileBadgeKind: String, CaseIterable {
         case .fullSet, .frontRow, .packedHouse, .coverToCover, .openDoor, .oneYear, .spotlight:
             return .gold
         // Real effort, but a single determined stretch rather than a campaign.
-        case .patron, .darkroom, .firstIn, .keptOne, .regular:
+        // `recruiter`, `feedback` and `bugCatcher` too: each is one real contribution, and the
+        // hand-given two stay off the founding rung, which is closed.
+        case .patron, .darkroom, .firstIn, .keptOne, .regular, .recruiter, .feedback, .bugCatcher:
             return .silver
         // You did something that needed other people.
         case .fullRoll, .rollMaker, .broughtSomeone, .wellMet, .fullHouse, .spotter, .inFrame,
@@ -201,6 +219,12 @@ enum ProfileBadgeKind: String, CaseIterable {
         case .tenFrames: return "\u{1F51F}"                     // keycap ten
         case .goodCompany: return "\u{1FAC2}"                   // people hugging
         case .spotlight: return "\u{1F526}"                     // flashlight
+        // Not the handshake the 1.6.2 plan named: `broughtSomeone` (Plus One) already has it, and
+        // two badges sharing a glyph open their swapped lines identically (see
+        // `BadgeSwapLineTests.emojiCatalog`). Busts in silhouette: the people who stayed.
+        case .recruiter: return "\u{1F465}"                     // busts in silhouette
+        case .feedback: return "\u{1F4AC}"                      // speech balloon
+        case .bugCatcher: return "\u{1F41E}"                    // lady beetle
         }
     }
 
@@ -240,6 +264,9 @@ enum ProfileBadgeKind: String, CaseIterable {
         case .tenFrames: return "Ten Frames"
         case .goodCompany: return "Good Company"
         case .spotlight: return "Spotlight"
+        case .recruiter: return "Recruiter"
+        case .feedback: return "Feedback"
+        case .bugCatcher: return "Bug Catcher"
         }
     }
 
@@ -323,6 +350,18 @@ enum ProfileBadgeKind: String, CaseIterable {
             return "Ten people follow you."
         case .spotlight:
             return "One of your frames was in Spotlight."
+        // Recruiter and Feedback are each a few words shorter than the 1.6.2 plan's table ("Three
+        // people you invited are still shooting a month later.", "Something you told us changed
+        // FLIM. Given by Cody."): as written they measured 361pt and 344pt against the 337pt the
+        // swap-in line has, see `BadgeSwapLineTests.explanationsFitOneLine`.
+        case .recruiter:
+            return "Three people you invited still shoot a month later."
+        // "Given by Cody" names the owner rather than `AppInfo.appName` on purpose: it is his
+        // thank-you. Only the two hand-given badges carry it.
+        case .feedback:
+            return "What you told us changed \(AppInfo.appName). Given by Cody."
+        case .bugCatcher:
+            return "You found a bug, and it got fixed. Given by Cody."
         }
     }
 
@@ -337,6 +376,9 @@ enum ProfileBadgeKind: String, CaseIterable {
     /// `testRoll`, and `founder` are handed out by hand (say so plainly, never phrase any of them
     /// as something to go do). A fake instruction here would send people chasing something that
     /// doesn't exist.
+    ///
+    /// `feedback` and `bugCatcher` are handed out by hand as well, but what earns them is a real
+    /// action anyone can take, so theirs IS an instruction, and it names who decides.
     var howToEarn: String {
         switch self {
         case .firstLight:
@@ -403,6 +445,12 @@ enum ProfileBadgeKind: String, CaseIterable {
             // Never shown: `isEarnable` keeps it out of the locked catalogue. Written plainly in
             // case a future surface reads it anyway: the team chooses, it cannot be farmed.
             return "Chosen by the team at \(AppInfo.appName) for Spotlight, not something you can go and get."
+        case .recruiter:
+            return "Invite people who stay: three still shooting a month after they join."
+        case .feedback:
+            return "Send feedback from your profile. When it changes \(AppInfo.appName), Cody gives you this."
+        case .bugCatcher:
+            return "Report a bug from your profile. When it is fixed, Cody gives you this."
         }
     }
 }
