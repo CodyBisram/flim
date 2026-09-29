@@ -136,6 +136,29 @@ without either word appearing here.
 Two rules if this is edited again: never repeat a word across name, subtitle and keywords, and do
 not add plurals of words already present. Apple handles both.
 
+## What's New (version 1.6.1), build 418, 2026-09-29
+
+1.6.0 (build 413) went live 2026-09-29. Most people are updating straight from 1.5.3, so this leads
+with Spotlight again, now with the end-of-sort sheet, then the flash fix and the 1.6.1 polish.
+
+> **PASTE ONLY THE INDENTED BLOCK BELOW.** Everything under "Ship notes" is internal.
+
+    Spotlight. Each week, put up one frame you shot that week, and the team at FLIM chooses a few to show everyone as a short strip in the feed. When you finish sorting, FLIM offers the frames you just posted that can go up: choose one and put it up, or swap it for the one that's already up. You can also press and hold any of this week's posts in your feed, on your page or in your Darkroom. Only the team at FLIM sees what you put up. If yours is chosen, you get a notification, a Spotlight badge, and the frame on your page for everyone to see.
+
+    Flash photos look right again. Shots with the flash in a dark room come out brighter and cleaner, with what's close to you actually lit.
+
+    The camera is quieter: a small spinner while a shot uploads, then how many you have to sort.
+
+    When something can't load or send, FLIM says so: comments, reactions, a comment that didn't post, and your shots to sort when you're offline. On a bad connection, your follows, reactions and tags stay put instead of disappearing.
+
+    Fixes. A flash photo taken while the last one is still processing is always kept. The camera turns off when you leave it and starts again every time you come back. Pull to refresh brings in everything new, including a new Spotlight. Bigger tap targets in sorting and the reveal. Clearer words throughout: "posted" instead of "shared", Take a shot, Start a roll.
+
+### Ship notes (internal, do NOT paste)
+
+Submit build 418 (1543227 plus the docs after it). After submitting, start the review watch:
+`gh workflow run asc-watch.yml -f version=1.6.1`. When it is live:
+`update app_release_gate set latest_version = '1.6.1';`
+
 ## What's New (version 1.6.0), draft 2026-09-26, revised for the resubmission
 
 Revised the same night: the 1.6.0 submission is being swapped for a new build (the per-card
