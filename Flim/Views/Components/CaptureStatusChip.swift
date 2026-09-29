@@ -12,6 +12,20 @@ enum CaptureStatus: Equatable {
     case queued(count: Int, offline: Bool)
     case uploaded
 
+    /// The in-between states of a shot on its way: shown only once they have lasted a moment
+    /// (see `CameraView.shownCaptureStatus`). On a normal connection a shot passes through both
+    /// in about a second, and a chip flipping "Saved", "Uploading", "Uploaded" that fast was
+    /// noise nobody could read. A problem (not saved, queued) and the result (uploaded) show at once.
+    var isInBetween: Bool {
+        switch self {
+        case .savedOnPhone, .uploading: true
+        case .notSavedYet, .queued, .uploaded: false
+        }
+    }
+
+    /// How long an in-between state has to last before the chip shows it.
+    static let inBetweenDelay: Duration = .milliseconds(1500)
+
     /// Pure, so the mapping is testable without a camera.
     static func derive(localSaveFailed: Bool, pendingCount: Int, isUploading: Bool,
                        failedCount: Int, connected: Bool, justUploaded: Bool) -> CaptureStatus? {
@@ -26,9 +40,9 @@ enum CaptureStatus: Equatable {
     var title: String {
         switch self {
         case .notSavedYet: "Not saved yet"
-        case .savedOnPhone: "Saved on this phone"
+        case .savedOnPhone: "Saved in \(AppInfo.appName)"
         case .uploading(let n): n > 1 ? "Uploading \(n)" : "Uploading"
-        case .queued(let n, _): n > 1 ? "\(n) queued on this phone" : "Queued on this phone"
+        case .queued(let n, _): n > 1 ? "\(n) queued in \(AppInfo.appName)" : "Queued in \(AppInfo.appName)"
         case .uploaded: "Uploaded"
         }
     }
@@ -38,8 +52,8 @@ enum CaptureStatus: Equatable {
     func detail(rollName: String? = nil) -> String {
         switch self {
         case .notSavedYet: "Keep \(AppInfo.appName) open for a moment."
-        case .savedOnPhone: "Safe even if you close \(AppInfo.appName)."
-        case .uploading: "Saved on this phone. Sending the copy now."
+        case .savedOnPhone: "Safe even if you close the app."
+        case .uploading: "Saved in \(AppInfo.appName). Sending it now."
         case .queued(_, let offline): offline ? "No connection. It will send when you're back online." : "Safe here. Retry to send it now."
         case .uploaded: rollName.map { "In \($0) until it develops." } ?? "In your Darkroom, ready to sort."
         }

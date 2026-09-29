@@ -168,12 +168,24 @@ final class V2FoundationsTests: XCTestCase {
         XCTAssertFalse(CaptureStatus.uploaded.attention)
     }
 
+    func testOnlyTheInBetweenStatesWaitBeforeShowing() {
+        // A normal shot passes through these in about a second; only a slow one should show them.
+        XCTAssertTrue(CaptureStatus.savedOnPhone.isInBetween)
+        XCTAssertTrue(CaptureStatus.uploading(count: 1).isInBetween)
+        // A problem and the result are what the person needs to see, at once.
+        XCTAssertFalse(CaptureStatus.notSavedYet.isInBetween)
+        XCTAssertFalse(CaptureStatus.queued(count: 1, offline: true).isInBetween)
+        XCTAssertFalse(CaptureStatus.uploaded.isInBetween)
+    }
+
     func testCaptureStatusDetailNamesTheRollForARollShot() {
         // A roll shot never lands in the Darkroom, so the uploaded line names the roll instead.
         XCTAssertEqual(CaptureStatus.uploaded.detail(rollName: "Beach day"), "In Beach day until it develops.")
         XCTAssertEqual(CaptureStatus.uploaded.detail(), "In your Darkroom, ready to sort.")
         // The app's name comes from AppInfo, never a literal.
-        XCTAssertEqual(CaptureStatus.savedOnPhone.detail(), "Safe even if you close \(AppInfo.appName).")
+        XCTAssertEqual(CaptureStatus.savedOnPhone.title, "Saved in \(AppInfo.appName)")
+        XCTAssertEqual(CaptureStatus.savedOnPhone.detail(), "Safe even if you close the app.")
+        XCTAssertEqual(CaptureStatus.queued(count: 2, offline: true).title, "2 queued in \(AppInfo.appName)")
         XCTAssertEqual(CaptureStatus.notSavedYet.detail(), "Keep \(AppInfo.appName) open for a moment.")
     }
 }

@@ -86,6 +86,37 @@ struct CameraView: View {
     @State private var uploadedNoticeId = UUID()
     @Environment(NetworkMonitor.self) private var network
 
+    /// What the chip shows: `captureStatus`, except that an in-between state (saved, uploading)
+    /// appears only once it has lasted `CaptureStatus.inBetweenDelay`. Until then the slot keeps
+    /// whatever it showed before (the sort shortcut, or the last "Uploaded").
+    @State private var shownCaptureStatus: CaptureStatus?
+    /// The pending delayed show, so a state that changed during the wait is not shown late.
+    @State private var inBetweenShowId: UUID?
+
+    private func captureStatusChanged(to status: CaptureStatus?) {
+        guard let status, status.isInBetween else {
+            inBetweenShowId = nil
+            withAnimation { shownCaptureStatus = status }
+            return
+        }
+        // Already showing an in-between state (a slow shot): keep it current, counts and all.
+        if shownCaptureStatus?.isInBetween == true {
+            shownCaptureStatus = status
+            return
+        }
+        guard inBetweenShowId == nil else { return }
+        let id = UUID()
+        inBetweenShowId = id
+        Task {
+            try? await Task.sleep(for: CaptureStatus.inBetweenDelay)
+            guard inBetweenShowId == id else { return }
+            inBetweenShowId = nil
+            if let current = captureStatus, current.isInBetween {
+                withAnimation { shownCaptureStatus = current }
+            }
+        }
+    }
+
     private var captureStatus: CaptureStatus? {
         CaptureStatus.derive(localSaveFailed: photos.localSaveFailed,
                              pendingCount: photos.pendingCaptureCount,
@@ -299,6 +330,7 @@ struct CameraView: View {
             countdown = nil
         }
         .onChange(of: selectedRoll) { persistSelectedRoll() }
+        .onChange(of: captureStatus, initial: true) { _, status in captureStatusChanged(to: status) }
         // `personalFallbackCount` only ever goes up, so every genuine fallback is its own change
         // even if two land back to back with identical copy. Fires for both a fresh capture that
         // raced the roll's own develop and a manual "Retry" of an item queued before it developed.
@@ -631,7 +663,7 @@ struct CameraView: View {
 
                 // The capture's state, in words (v2): saved, uploading, queued, uploaded. The
                 // shortcut into the sort deck takes the slot once nothing is in flight.
-                if let status = captureStatus {
+                if let status = shownCaptureStatus {
                     CaptureStatusChip(status: status,
                                       rollName: selectedRoll.flatMap { $0.isDeveloped ? nil : $0.name }) {
                         Task { await photos.retryFailedUploads() }
