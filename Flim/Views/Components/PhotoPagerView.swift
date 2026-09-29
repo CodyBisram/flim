@@ -1170,7 +1170,9 @@ struct PhotoPagerView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
-        .background(.ultraThinMaterial)
+        // Opaque: the caption being written is the content of this bar, not a control over
+        // the photograph, so the frame behind it must not show through the text.
+        .background(FlimTheme.surface)
     }
 
     // MARK: - Pager

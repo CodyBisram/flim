@@ -482,7 +482,9 @@ Text("Darkroom")
                 .disabled(selectedIDs.isEmpty)
                 .padding(.horizontal, 20)
                 .padding(.vertical, 10)
-                .background(.ultraThinMaterial)
+                // Opaque: the grid scrolls under this bar, and the photographs being chosen
+                // for deletion should not blur through behind the count of them.
+                .background(FlimTheme.surface)
             }
         }
         .overlay(alignment: .top) {

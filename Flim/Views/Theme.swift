@@ -133,7 +133,13 @@ enum FlimRadius {
     static let photo: CGFloat = 6
     static let control: CGFloat = 12
     static let panel: CGFloat = 14
-    static let sheet: CGFloat = 16
+    /// A bottom sheet's corner: `nil` (the system's own) on iOS 26, 16 below it. iOS 26 draws
+    /// sheet corners concentric with the display and the sheet's inset; any fixed number breaks
+    /// that. Only `flimSheetSurface()` should need this.
+    static var sheet: CGFloat? {
+        if #available(iOS 26, *) { return nil }
+        return 16
+    }
     static let viewfinder: CGFloat = 28
 }
 
@@ -318,6 +324,8 @@ extension FlimTheme {
     /// page underneath them: a sheet coming up read as a blend rather than an arrival. This is
     /// one step lighter than `bgElevated`, composited over the system material blur (see
     /// `flimSheetSurface()`) rather than replacing it, so translucency and legibility both hold.
+    /// Before iOS 26 only. On iOS 26 the same colour sits at 70% over the system's glass sheet
+    /// instead (`sheetGlassTint`).
     /// Retuned on device 2026-08-24 (owner): the spec's rgba(38,38,42) read as a light gray
     /// panel against real content, washing out the sheet's own internal dividers. The fill is
     /// as dark as it can be while still unmistakably a different ground than `bg`: separation
@@ -339,28 +347,66 @@ extension FlimTheme {
     static let sheetRow = Color.white.opacity(0.06)
 
     /// `sheetRow` over `sheetSurface`, as a solid colour: an image placeholder on a sheet that
-    /// must hide what is drawn beneath it (a chosen frame's shadow) while it loads.
+    /// must hide what is drawn beneath it (a chosen frame's shadow) while it loads, and any
+    /// opaque card or pinned bar on a sheet (an invite code, a comment composer). Solid on
+    /// purpose: on iOS 26 the sheet itself is glass, and content on it must not be glass too.
     static let sheetTile = Color(red: 41.0 / 255.0, green: 41.0 / 255.0, blue: 45.0 / 255.0)
+
+    /// iOS 26 only: the wash every sheet's content sits on, over the system's glass sheet.
+    ///
+    /// Measured on the iOS 26 simulator (2026-09-29): a partial-height glass sheet over a bright
+    /// photograph resolved to as light as rgb(65, 57, 20) behind the text. White held, but
+    /// `textTertiary` fell to about 3.4:1 there (5.1:1 on `sheetSurface`), and the photograph's
+    /// shapes read through the thread. A black wash fixed the contrast but sank the sheet to the
+    /// `bgElevated` grey its own grouped rows are drawn in, and the rows vanished into it.
+    ///
+    /// So the wash is the sheet's own colour: over dark content the sheet lands where it always
+    /// was, rows and tiles keep the contrast they were tuned against, and over a bright photograph
+    /// the 30% of glass left keeps tertiary text at AA (4.6:1 measured). Built from `sheetSurfaceSolid`, which is
+    /// opaque, so the 70% composites exactly once (never `.opacity` on `sheetSurface`, which
+    /// already carries its own).
+    static let sheetGlassTint = sheetSurfaceSolid.opacity(0.7)
 }
 
-/// Draws `FlimTheme.sheetSurface` over `.ultraThinMaterial` as a presentation's background,
-/// with a 1pt white-10% hairline at the very top edge standing in for the "struck" edge
-/// highlight in the approved spec. `.presentationBackground { ... }` is the construction that
-/// actually composites a solid-ish fill over the system blur; a plain `.presentationBackground(color)`
-/// call (the old per-screen pattern) replaces the blur outright instead of sitting on top of it.
+/// Before iOS 26: draws `FlimTheme.sheetSurface` over `.ultraThinMaterial` as a presentation's
+/// background, with a 1pt white-10% hairline at the very top edge standing in for the "struck"
+/// edge highlight in the approved spec, and a 16pt corner. `.presentationBackground { ... }` is
+/// the construction that actually composites a solid-ish fill over the system blur; a plain
+/// `.presentationBackground(color)` call (the old per-screen pattern) replaces the blur outright
+/// instead of sitting on top of it.
+///
+/// iOS 26 and later: the system's own sheet, which is Liquid Glass at a partial height, grows
+/// opaque as it reaches full height, draws its own edge, and takes corners concentric with the
+/// display. A custom presentation background removes all four, and a fixed radius breaks the
+/// last, so neither is set. The only addition is `sheetGlassTint` under the content, because
+/// bare glass over a bright photograph took the app's quieter text below AA (see the token).
+/// Under Reduce Transparency the content sits on `sheetSurfaceSolid` instead, the same ground
+/// the sheet had before iOS 26. The frame lets the wash fill a sheet whose content is shorter
+/// than the sheet; the content keeps its centered placement, as a sheet's root view has anyway.
 private struct FlimSheetSurfaceModifier: ViewModifier {
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
     func body(content: Content) -> some View {
-        content
-            .presentationBackground {
-                FlimTheme.sheetSurface
-                    .background(.ultraThinMaterial)
-                    .overlay(alignment: .top) {
-                        Rectangle()
-                            .fill(Color.white.opacity(0.10))
-                            .frame(height: 1)
-                    }
-            }
-            .presentationCornerRadius(16)
+        if #available(iOS 26, *) {
+            content
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background {
+                    (reduceTransparency ? FlimTheme.sheetSurfaceSolid : FlimTheme.sheetGlassTint)
+                        .ignoresSafeArea()
+                }
+        } else {
+            content
+                .presentationBackground {
+                    FlimTheme.sheetSurface
+                        .background(.ultraThinMaterial)
+                        .overlay(alignment: .top) {
+                            Rectangle()
+                                .fill(Color.white.opacity(0.10))
+                                .frame(height: 1)
+                        }
+                }
+                .presentationCornerRadius(FlimRadius.sheet)
+        }
     }
 }
 

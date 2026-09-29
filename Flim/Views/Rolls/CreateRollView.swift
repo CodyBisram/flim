@@ -129,7 +129,10 @@ struct CreateRollView: View {
                         .foregroundStyle(.white)
                         .padding(.vertical, 20)
                         .padding(.horizontal, 28)
-                        .glassCard(cornerRadius: 16)
+                        // The code IS the content here, not a control floating over it: an
+                        // opaque tile, never glass.
+                        .background(FlimTheme.sheetTile,
+                                    in: RoundedRectangle(cornerRadius: 16, style: .continuous))
 
                     // The hook, said the moment the roll exists: everyone's shots come back together.
                     RevealPromiseNote()

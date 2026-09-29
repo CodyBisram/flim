@@ -213,14 +213,16 @@ struct CommentsSheet: View {
     }
 
     private var composer: some View {
-        // Suggestions are placed by the body above, outside the material, so they aren't
+        // Suggestions are placed by the body above, outside the bar, so they aren't
         // requested here.
         CommentComposer(draft: $draft, style: .surface, isSending: sending,
                         showsMentionSuggestions: false, replyTarget: $replyTarget,
                         failureText: sendFailed ? CommentComposer.sendFailedText : nil,
                         focus: $focused) { send() }
             .padding(.horizontal, 16).padding(.vertical, 10)
-            .background(.ultraThinMaterial)
+            // Opaque, one step up from the sheet: what reads as the bar sitting on the keyboard.
+            // Material here would be glass on glass on iOS 26, where the sheet is already glass.
+            .background(FlimTheme.sheetTile)
             .onChange(of: draft) { _, new in
                 if new.isEmpty { sendFailed = false }
             }

@@ -143,11 +143,12 @@ struct PhotoCommentsSheet: View {
         CommentComposer(draft: $draft, style: .surface, isSending: sending,
                         replyTarget: $replyTarget, focus: $focused) { send() }
             .padding(.horizontal, 16).padding(.vertical, 10)
-            // The material is what makes this read as one bar sitting on the keyboard. Without
+            // The bar fill is what makes this read as one bar sitting on the keyboard. Without
             // it the composer's own padding renders as bare sheet surface, so the field appears
             // to float above a gap rather than being attached to the keys. `CommentsSheet` has
-            // had this since it was written; this sheet was built later and never got it.
-            .background(.ultraThinMaterial)
+            // the same bar. Opaque, not material: material here is glass on glass on iOS 26,
+            // where the sheet is already glass.
+            .background(FlimTheme.sheetTile)
     }
 
     /// Focuses the composer with `@handle ` in front, preserving whatever was already typed, and

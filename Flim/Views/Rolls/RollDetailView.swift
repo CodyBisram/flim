@@ -835,8 +835,10 @@ struct RollDetailView: View {
                     .accessibilityLabel("Dismiss")
                 }
                 .padding(.horizontal, 16).padding(.vertical, 12)
-                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
-                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.red.opacity(0.3), lineWidth: 1))
+                // Opaque, not material: this is a sentence to read over a grid of photographs,
+                // and thin material lets a bright frame behind it into the words.
+                .background(FlimTheme.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color.red.opacity(0.3), lineWidth: 1))
                 .padding(.horizontal, 16).padding(.bottom, 10)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
