@@ -107,6 +107,8 @@ const CAMPAIGNS: Record<string, () => Promise<Recipient[]>> = {
   "invites-left-preview-b": invitesLeftPreviewB,
   "update-1.6": update16Cohort,
   "update-1.6-preview": update16Preview,
+  "founding-full": foundingFullCohort,
+  "founding-full-preview": foundingFullPreview,
   "thank-you-preview": thankYouPreviewCohort,
   "thank-you": thankYouCohort,
   "thank-you-annie": thankYouAnnieCohort,
@@ -645,6 +647,35 @@ async function update16Cohort(): Promise<Recipient[]> {
     .filter((u) => u.username !== "cody" && u.username !== "applereview")
     .filter((u) => versionBelow(versionOf.get(u.id), "1.6.0"))
     .map((u) => ({ userId: u.id, title: UPDATE_16_TITLE, body: UPDATE_16_BODY, route: { t: "feed" } }));
+}
+
+// ------------------------------------------------------------
+// founding-full: the Founding 100 is full (written 2026-09-29, at 79 of 100). EMPTY until the
+// last seat is taken: `foundingSeatsLeft()` must read 0, so the scheduled caller
+// (.github/workflows/founding-full.yml) can invoke it with send=true every half hour and nothing
+// goes out until the hundredth person joins. Then it goes once, per the claim ledger, to every
+// reachable member of the first hundred (signup_ordinal 1 to 100), the owner and the review
+// account excepted. The tap opens their own page.
+
+const FOUNDING_FULL_TITLE = "The first hundred is full.";
+const FOUNDING_FULL_BODY = `You're one of the Founding 100 on ${APP_NAME}, and that badge is yours for good.`;
+
+async function foundingFullCohort(): Promise<Recipient[]> {
+  if (await foundingSeatsLeft() > 0) return [];
+  const reachable = await reachableUsers();
+  const { data, error } = await supabase
+    .from("users").select("id, username, signup_ordinal")
+    .in("id", reachable).not("signup_ordinal", "is", null).lte("signup_ordinal", 100);
+  if (error) throw new Error(`users read failed: ${error.message}`);
+  return ((data ?? []) as { id: string; username: string }[])
+    .filter((u) => u.username !== "cody" && u.username !== "applereview")
+    .map((u) => ({ userId: u.id, title: FOUNDING_FULL_TITLE, body: FOUNDING_FULL_BODY,
+                   route: { t: "profile", id: u.id } }));
+}
+
+/// The same words to the owner alone, now, whatever the seat count.
+async function foundingFullPreview(): Promise<Recipient[]> {
+  return ownerOnly(FOUNDING_FULL_TITLE, FOUNDING_FULL_BODY);
 }
 
 /// The same push to the owner alone, to read on a lock screen before anyone else gets it.
