@@ -80,42 +80,7 @@ struct CameraView: View {
     @AppStorage("developNotificationsEnabled") private var notificationsEnabled = true
     @State private var unsortedCount = 0
     @State private var showSortDeck = false
-    /// True for a few seconds after the last shot in line finished uploading, so the chip can
-    /// say "Uploaded" before the sort shortcut takes the slot back.
-    @State private var justUploaded = false
-    @State private var uploadedNoticeId = UUID()
     @Environment(NetworkMonitor.self) private var network
-
-    /// What the chip shows: `captureStatus`, except that an in-between state (saved, uploading)
-    /// appears only once it has lasted `CaptureStatus.inBetweenDelay`. Until then the slot keeps
-    /// whatever it showed before (the sort shortcut, or the last "Uploaded").
-    @State private var shownCaptureStatus: CaptureStatus?
-    /// The pending delayed show, so a state that changed during the wait is not shown late.
-    @State private var inBetweenShowId: UUID?
-
-    private func captureStatusChanged(to status: CaptureStatus?) {
-        guard let status, status.isInBetween else {
-            inBetweenShowId = nil
-            withAnimation { shownCaptureStatus = status }
-            return
-        }
-        // Already showing an in-between state (a slow shot): keep it current, counts and all.
-        if shownCaptureStatus?.isInBetween == true {
-            shownCaptureStatus = status
-            return
-        }
-        guard inBetweenShowId == nil else { return }
-        let id = UUID()
-        inBetweenShowId = id
-        Task {
-            try? await Task.sleep(for: CaptureStatus.inBetweenDelay)
-            guard inBetweenShowId == id else { return }
-            inBetweenShowId = nil
-            if let current = captureStatus, current.isInBetween {
-                withAnimation { shownCaptureStatus = current }
-            }
-        }
-    }
 
     private var captureStatus: CaptureStatus? {
         CaptureStatus.derive(localSaveFailed: photos.localSaveFailed,
@@ -123,7 +88,7 @@ struct CameraView: View {
                              isUploading: photos.isUploading,
                              failedCount: photos.failedUploads.count,
                              connected: network.isConnected,
-                             justUploaded: justUploaded)
+                             justUploaded: false)
     }
     /// A queued shot's roll finished developing before its retry could land, so it was re-saved
     /// as a personal instant into the sort deck instead of staying stuck (see
@@ -330,22 +295,9 @@ struct CameraView: View {
             countdown = nil
         }
         .onChange(of: selectedRoll) { persistSelectedRoll() }
-        .onChange(of: captureStatus, initial: true) { _, status in captureStatusChanged(to: status) }
         // `personalFallbackCount` only ever goes up, so every genuine fallback is its own change
         // even if two land back to back with identical copy. Fires for both a fresh capture that
         // raced the roll's own develop and a manual "Retry" of an item queued before it developed.
-        // "Uploaded" for three seconds once the line empties cleanly, then the slot goes back
-        // to the sort shortcut. Scoped to its own notice so a new upload cannot be cut short.
-        .onChange(of: photos.isUploading) { was, now in
-            guard was, !now, photos.pendingCaptureCount == 0, photos.failedUploads.isEmpty else { return }
-            let notice = UUID()
-            uploadedNoticeId = notice
-            withAnimation { justUploaded = true }
-            Task {
-                try? await Task.sleep(for: .seconds(3))
-                if uploadedNoticeId == notice { withAnimation { justUploaded = false } }
-            }
-        }
         .onChange(of: photos.personalFallbackCount) { _, count in
             guard count > 0 else { return }
             Haptics.success()
@@ -661,14 +613,35 @@ struct CameraView: View {
 
                 Spacer()
 
-                // The capture's state, in words (v2): saved, uploading, queued, uploaded. The
-                // shortcut into the sort deck takes the slot once nothing is in flight.
-                if let status = shownCaptureStatus {
+                // The top of the camera as it was before the v2 chip, by the owner's choice
+                // (2026-09-29): a small spinner while a shot uploads, then "N to sort". A normal
+                // shot passes through saved and uploading in about a second, and words for each
+                // step were noise nobody could read. Only the two states that need the person
+                // keep the chip: not saved yet, and queued (offline or failed, with Retry).
+                if let status = captureStatus, !status.isInBetween {
                     CaptureStatusChip(status: status,
                                       rollName: selectedRoll.flatMap { $0.isDeveloped ? nil : $0.name }) {
                         Task { await photos.retryFailedUploads() }
                     }
                     .frame(maxWidth: 260, alignment: .trailing)
+                } else if captureStatus?.isInBetween == true {
+                    // "Saving N" once more than one shot is in line, so a burst on a slow
+                    // connection reads as shots safely kept, not as a hang.
+                    HStack(spacing: 6) {
+                        ProgressView().tint(.white).controlSize(.mini)
+                        if photos.pendingCaptureCount > 1 {
+                            Text("Saving \(photos.pendingCaptureCount)")
+                                .flimFont(13, weight: .medium)
+                                .foregroundStyle(.white)
+                                .lineLimit(1).fixedSize()
+                        }
+                    }
+                    .frame(minWidth: 38, minHeight: 38)
+                    .padding(.horizontal, photos.pendingCaptureCount > 1 ? 12 : 0)
+                    .glassCapsule()
+                    .accessibilityLabel(photos.pendingCaptureCount > 1
+                        ? "Saving \(photos.pendingCaptureCount) photos, then uploading"
+                        : "Uploading")
                 } else if unsortedCount > 0 {
                     Button { showSortDeck = true } label: {
                         HStack(spacing: 5) {

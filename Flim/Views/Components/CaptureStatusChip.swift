@@ -12,19 +12,16 @@ enum CaptureStatus: Equatable {
     case queued(count: Int, offline: Bool)
     case uploaded
 
-    /// The in-between states of a shot on its way: shown only once they have lasted a moment
-    /// (see `CameraView.shownCaptureStatus`). On a normal connection a shot passes through both
-    /// in about a second, and a chip flipping "Saved", "Uploading", "Uploaded" that fast was
-    /// noise nobody could read. A problem (not saved, queued) and the result (uploaded) show at once.
+    /// The in-between states of a shot on its way. The camera shows these as a small spinner,
+    /// never in words (owner's choice, 2026-09-29): on a normal connection a shot passes through
+    /// both in about a second, and a chip flipping "Saved", "Uploading", "Uploaded" that fast was
+    /// noise nobody could read. Only a problem (not saved, queued) gets the chip.
     var isInBetween: Bool {
         switch self {
         case .savedOnPhone, .uploading: true
         case .notSavedYet, .queued, .uploaded: false
         }
     }
-
-    /// How long an in-between state has to last before the chip shows it.
-    static let inBetweenDelay: Duration = .milliseconds(1500)
 
     /// Pure, so the mapping is testable without a camera.
     static func derive(localSaveFailed: Bool, pendingCount: Int, isUploading: Bool,

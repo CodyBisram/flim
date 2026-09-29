@@ -169,7 +169,7 @@ final class V2FoundationsTests: XCTestCase {
     }
 
     func testOnlyTheInBetweenStatesWaitBeforeShowing() {
-        // A normal shot passes through these in about a second; only a slow one should show them.
+        // A normal shot passes through these in about a second: the camera shows a spinner, not words.
         XCTAssertTrue(CaptureStatus.savedOnPhone.isInBetween)
         XCTAssertTrue(CaptureStatus.uploading(count: 1).isInBetween)
         // A problem and the result are what the person needs to see, at once.
