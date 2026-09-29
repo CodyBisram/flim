@@ -19,7 +19,9 @@ import SwiftUI
 struct ProfileIdentity: Equatable {
     /// The permanent signup number, e.g. the 37th account ever created. Never edited, never
     /// reused, and rendered as quiet typography rather than a chip: see `FrameNumberLabel`.
-    var signupNumber: Int
+    /// nil for the App Review account, which holds no number and no Founding 100 seat
+    /// (2026-09-29): its page shows its badges without a number.
+    var signupNumber: Int?
     /// Only ever the badges this account has actually earned, oldest first. There is
     /// deliberately no locked/greyed state anywhere in the UI for the rest of the catalog: a
     /// visible locked badge turns a profile into a to-do list.

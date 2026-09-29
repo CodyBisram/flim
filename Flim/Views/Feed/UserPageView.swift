@@ -483,10 +483,10 @@ struct UserPageView: View {
                     ZStack {
                         Text(profile?.handle ?? "@…")
                             .flimFont(13, relativeTo: .subheadline).foregroundStyle(FlimTheme.textTertiary)
-                        if let identity {
+                        if let number = identity?.signupNumber {
                             HStack {
                                 Spacer()
-                                FrameNumberLabel(number: identity.signupNumber)
+                                FrameNumberLabel(number: number)
                             }
                         }
                     }
@@ -1004,12 +1004,11 @@ struct UserPageView: View {
         }
         // The signup number lives on the profile row itself and never depends on
         // `profile_badges`, so a profile still shows a clean number (and nothing else) if that
-        // RPC fails, e.g. offline, or before this migration is deployed. Nothing renders at all
-        // if `signupOrdinal` itself is missing (a profile row from before that column existed):
-        // see `UserProfile.signupOrdinal`.
-        if let signupNumber = profile?.signupOrdinal {
+        // RPC fails, e.g. offline. An account with no number (the App Review account, which
+        // holds no seat since 2026-09-29) still shows its badges, just without a number.
+        if profile != nil {
             identity = ProfileIdentity(
-                signupNumber: signupNumber,
+                signupNumber: profile?.signupOrdinal,
                 badges: badges
             )
         } else {
