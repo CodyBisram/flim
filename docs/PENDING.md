@@ -2177,7 +2177,7 @@ Not done, or open:
   none chosen.
 - Device checks: see "Feed \"new\" per card" under Waiting on device.
 
-### 1.6.1 polish, from the 2026-09-28 audit (main, MARKETING_VERSION 1.6.1)
+### done 2026-09-28: 1.6.1 polish from the audit (build 417, MARKETING_VERSION 1.6.1)
 
 Source: `docs/AUDIT_1_6_1_POLISH_2026-09-28.md` and `docs/prompts/BUILD_1_6_1_POLISH_2026-09-28.md`.
 The feed-seen branch above was folded into main earlier; this is the rest of 1.6.1.
@@ -2211,7 +2211,7 @@ Deferred, with the reason:
   `owner` decisions.
 - Section G product ideas: see the audit.
 
-Device checks for this batch:
+On device:
 1. Fresh install: the camera prompt right after the onboarding button (now "Take a shot"), then
    the coach, then the notification primer only after "Got it" (checklist in memory).
 2. Camera to Darkroom to Camera twice, once as fast as possible: live preview every time. Cold
