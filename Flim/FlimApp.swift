@@ -81,10 +81,11 @@ struct FlimApp: App {
                         // would see a stranger's invite code prefilled and get attributed to it.
                         // Only the sign-in screen reads this, and only a signed-out device shows
                         // that screen, so there is nothing here for a signed-in tap to do.
-                        if auth.currentUser == nil {
-                            PendingInvite.store(code)
-                            NotificationCenter.default.post(name: .openPersonalInvite, object: code)
-                        }
+                        //
+                        // Decided on the SESSION, not the profile: on a cold launch the link
+                        // lands before the profile does, so a signed-in device read as signed
+                        // out and stored it anyway. Until launch knows, the code is held.
+                        handlePersonalInvite(code)
                     } else if let code = FlimApp.routeInviteCode(from: url) {
                         // Written down AND broadcast: on a cold launch this fires before
                         // MainTabView exists, and a notification with no listener is just lost.
@@ -94,7 +95,45 @@ struct FlimApp: App {
                         Task { await auth.handle(url: url) }
                     }
                 }
+                // A personal invite that arrived before launch knew whether anyone is signed in.
+                .onChange(of: auth.isLoading) { _, _ in
+                    guard let held = heldPersonalInvite else { return }
+                    handlePersonalInvite(held)
+                }
         }
+    }
+
+    /// A personal invite link opened while launch is still deciding who is signed in, kept until
+    /// it knows. In memory only: a launch that never resolves has no sign-in screen to fill.
+    @State private var heldPersonalInvite: String?
+
+    private func handlePersonalInvite(_ code: String) {
+        switch FlimApp.personalInviteAction(isLoading: auth.isLoading, isAuthenticated: auth.isAuthenticated) {
+        case .store:
+            heldPersonalInvite = nil
+            PendingInvite.store(code)
+            NotificationCenter.default.post(name: .openPersonalInvite, object: code)
+        case .hold:
+            heldPersonalInvite = code
+        case .ignore:
+            heldPersonalInvite = nil
+        }
+    }
+
+    /// What to do with a personal invite link, given what launch knows about the session.
+    enum PersonalInviteAction: Equatable {
+        /// Signed out: prefill the sign-in screen.
+        case store
+        /// Launch has not decided yet: keep it until it has.
+        case hold
+        /// Signed in (even offline, even before the profile arrives): nothing to fill.
+        case ignore
+    }
+
+    /// Stores only when `!isLoading && !isAuthenticated`, the one state that shows sign-in.
+    static func personalInviteAction(isLoading: Bool, isAuthenticated: Bool) -> PersonalInviteAction {
+        if isLoading { return .hold }
+        return isAuthenticated ? .ignore : .store
     }
 
     /// A PERSONAL invite code from a link, i.e. the code that gets someone into the app at all.

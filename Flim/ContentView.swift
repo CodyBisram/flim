@@ -216,6 +216,10 @@ struct ContentView: View {
             reconnectRetryTask = Task {
                 try? await Task.sleep(for: .seconds(2))
                 guard !Task.isCancelled else { return }
+                // A launch the network interrupted (a cached profile on screen, or the retry
+                // state) finishes now: the token refreshes and the profile is read again. Its own
+                // task, so a slow answer never holds up the upload retry below.
+                Task { await auth.resyncIfNeeded() }
                 // A reveal finished offline is waiting on this same connection, and an app that
                 // stays open never passes through the foreground flush below.
                 rolls.flushPendingRevealCompletions()
@@ -262,6 +266,9 @@ struct ContentView: View {
                 return
             }
             Task { await refreshVersionGate() }
+            // The foreground is the other moment the network most likely came back; free when
+            // the launch already finished, see `resyncIfNeeded`.
+            Task { await auth.resyncIfNeeded() }
             // A reveal finished while offline (or killed before its RPC returned) is retried on
             // every foreground, as `flushPendingRevealCompletions` documents. It used to run in
             // the branch above, on the way INTO the background, where its bare tasks could be

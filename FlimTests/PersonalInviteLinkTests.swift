@@ -131,4 +131,22 @@ struct PersonalInviteLinkTests {
         PendingInvite.store("nope")
         #expect(PendingInvite.take() == nil)
     }
+
+    // MARK: - Who a link is stored for
+
+    @Test("signed out after launch: the link fills the sign-in screen")
+    func signedOutStores() {
+        #expect(FlimApp.personalInviteAction(isLoading: false, isAuthenticated: false) == .store)
+    }
+
+    @Test("signed in, even before the profile arrives: nothing is stored for the next person")
+    func signedInIgnores() {
+        #expect(FlimApp.personalInviteAction(isLoading: false, isAuthenticated: true) == .ignore)
+    }
+
+    @Test("launch still deciding: the link waits for the answer instead of guessing")
+    func loadingHolds() {
+        #expect(FlimApp.personalInviteAction(isLoading: true, isAuthenticated: false) == .hold)
+        #expect(FlimApp.personalInviteAction(isLoading: true, isAuthenticated: true) == .hold)
+    }
 }

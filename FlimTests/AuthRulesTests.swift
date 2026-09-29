@@ -1,5 +1,6 @@
 import Testing
 import Foundation
+import Supabase
 @testable import Flim
 
 /// Two rules that used to live inside closures, where no test could reach them.
@@ -68,5 +69,48 @@ struct AuthRulesTests {
                                                   keeping: "user-id/cover-NEW.jpg", prefix: "cover"))
         #expect(!AuthService.shouldCleanUpOldCopy("user-id/cover-OLD.jpg",
                                                   keeping: "user-id/avatar-NEW.jpg", prefix: "avatar"))
+    }
+
+    // MARK: - Unreachable versus signed out
+
+    private static let stored = UUID()
+
+    private static func apiError(status: Int, code: ErrorCode = .unknown) throws -> Auth.AuthError {
+        let url = try #require(URL(string: "https://example.invalid/auth/v1/token"))
+        let response = try #require(HTTPURLResponse(url: url, statusCode: status, httpVersion: nil, headerFields: nil))
+        return .api(message: "x", errorCode: code, underlyingData: Data(), underlyingResponse: response)
+    }
+
+    @Test("no network, a timeout or DNS keeps the stored session", arguments: [
+        URLError.Code.notConnectedToInternet, .timedOut, .cannotFindHost, .dnsLookupFailed,
+        .networkConnectionLost, .cannotConnectToHost, .dataNotAllowed,
+    ])
+    func networkFailureStaysSignedIn(code: URLError.Code) {
+        #expect(AuthService.sessionOutcome(after: URLError(code), storedUserId: Self.stored)
+                == .unreachable(Self.stored))
+    }
+
+    @Test("a server that is down keeps the stored session too")
+    func serverErrorStaysSignedIn() throws {
+        for status in [408, 500, 502, 503, 522] {
+            #expect(AuthService.sessionOutcome(after: try Self.apiError(status: status), storedUserId: Self.stored)
+                    == .unreachable(Self.stored), "\(status)")
+        }
+    }
+
+    @Test("no session is signed out, whatever the network did")
+    func missingSessionSignsOut() {
+        #expect(AuthService.sessionOutcome(after: Auth.AuthError.sessionMissing, storedUserId: Self.stored) == .signedOut)
+        #expect(AuthService.sessionOutcome(after: Auth.AuthError.sessionMissing, storedUserId: nil) == .signedOut)
+        // Offline with nothing stored is still nobody to stay signed in as.
+        #expect(AuthService.sessionOutcome(after: URLError(.notConnectedToInternet), storedUserId: nil) == .signedOut)
+    }
+
+    @Test("a server that answered and refused signs out")
+    func refusalSignsOut() throws {
+        #expect(AuthService.sessionOutcome(after: try Self.apiError(status: 400, code: .refreshTokenNotFound),
+                                           storedUserId: Self.stored) == .signedOut)
+        #expect(AuthService.sessionOutcome(after: try Self.apiError(status: 401), storedUserId: Self.stored) == .signedOut)
+        #expect(AuthService.sessionOutcome(after: CancellationError(), storedUserId: Self.stored) == .signedOut)
     }
 }

@@ -47,6 +47,14 @@ final class AuthService {
 
     private(set) var pendingEmail: String?
 
+    /// True while what is on screen was not confirmed by the server this launch: the profile came
+    /// from `ProfileCache`, or the stored session could not be refreshed because the network was
+    /// down. `resyncIfNeeded()` clears it by finishing the launch once the network answers.
+    @ObservationIgnored private var needsResync = false
+    /// Single flight for `resyncIfNeeded()`: the reconnect, the foreground and a refreshed token
+    /// can all ask at once, and one round trip answers all of them.
+    @ObservationIgnored private var isResyncing = false
+
     /// The session the caches and `currentUser` currently belong to.
     ///
     /// Compared rather than blindly bumped, so calling `noteSession` repeatedly for the same
@@ -79,21 +87,26 @@ final class AuthService {
             guard AccountEpoch.isCurrent(epoch) else { return }
             currentUser = profile
             profileUnavailable = false
+            needsResync = false
+            // Written only here, after the epoch check, so a read that finishes after a sign-out
+            // can never put the departed account back on disk.
+            if let profile { ProfileCache.save(profile) }
             reconcileAccent(with: profile)
         } catch {
             guard AccountEpoch.isCurrent(epoch) else { return }
             // Only unavailable if we have nothing to show. A cached profile from earlier in the
             // session is better than an error screen, and stays on screen.
             profileUnavailable = currentUser == nil
+            // The read could not reach the server (`fetchUserProfile` only throws URLError), so
+            // try again when the network comes back.
+            needsResync = true
         }
     }
 
     /// Retries the profile fetch after a failure, for the error state the router shows.
     func retryProfileLoad() async {
-        guard let session = try? await supabase.auth.session else { return }
-        isResolvingProfile = true
-        await refreshCurrentUser(id: session.user.id)
-        isResolvingProfile = false
+        needsResync = true
+        await resyncIfNeeded()
     }
 
     init() {
@@ -102,7 +115,29 @@ final class AuthService {
 
     // MARK: - Bootstrap
 
+    /// Launch. Two ways in, and only the SOURCE of the profile differs between them: everything
+    /// that runs once a profile is on `currentUser` (the account-change handling in ContentView,
+    /// MainTabView and its loads) is exactly what it always was.
+    ///
+    /// 1. A session is stored on the phone and this account's profile is in `ProfileCache`: paint
+    ///    it now, then refresh the token and re-read the profile behind it. No splash wait on a
+    ///    round trip whose answer almost never changes, and no network needed at all to reach the
+    ///    camera. The cache is refused for any other account (see `ProfileCache.load`).
+    /// 2. Otherwise, the session and profile are read first, as before. When that read could not
+    ///    reach the server but a session is stored, the person stays signed in on the retry state
+    ///    instead of being shown sign-in, which is what used to drop a held notification tap and
+    ///    left nothing to recover once the network came back.
     private func bootstrap() async {
+        if let stored = supabase.auth.currentSession, let cached = ProfileCache.load(for: stored.user.id) {
+            noteSession(stored.user.id)
+            isAuthenticated = true
+            currentUser = cached
+            needsResync = true
+            isLoading = false
+            Task { await resyncIfNeeded() }
+            await listenForAuthChanges()
+            return
+        }
         do {
             let session = try await supabase.auth.session
             noteSession(session.user.id)
@@ -112,10 +147,84 @@ final class AuthService {
             await refreshCurrentUser(id: session.user.id)
             isResolvingProfile = false
         } catch {
-            // No active session
+            if case .unreachable(let userId) = Self.sessionOutcome(after: error, storedUserId: supabase.auth.currentSession?.user.id) {
+                // Signed in as the stored session, unverified. With no cached profile there is
+                // nothing to show but the retry state, which keeps the account and any held tap.
+                noteSession(userId)
+                isAuthenticated = true
+                profileUnavailable = true
+                needsResync = true
+            }
+            // Otherwise there is no session to keep: sign-in.
         }
         isLoading = false
         await listenForAuthChanges()
+    }
+
+    /// What a failed session read means for the launch.
+    enum SessionOutcome: Equatable {
+        /// The server could not be asked, and this account's session is stored on the phone: stay
+        /// signed in as it and ask again when the network returns.
+        case unreachable(UUID)
+        /// There is no session to keep: none is stored, or the server answered and refused it.
+        case signedOut
+    }
+
+    /// Tells "could not reach the server" apart from "there is no session".
+    ///
+    /// Only a failure that never got an answer keeps the stored session: a URLError (no network,
+    /// a timeout, DNS, a dropped connection) or a server error status, which the Supabase client
+    /// itself treats as transient and retries. A definite refusal (the refresh token revoked or
+    /// already used, which the client reports as a missing session after deleting it) or no stored
+    /// session at all signs out, exactly as before.
+    nonisolated static func sessionOutcome(after error: Error, storedUserId: UUID?) -> SessionOutcome {
+        guard let storedUserId, isUnansweredRequest(error) else { return .signedOut }
+        return .unreachable(storedUserId)
+    }
+
+    /// Whether `error` means the request got no usable answer from the server.
+    nonisolated static func isUnansweredRequest(_ error: Error) -> Bool {
+        if error is URLError { return true }
+        if case let Auth.AuthError.api(_, _, _, response) = error {
+            return response.statusCode == 408 || response.statusCode >= 500
+        }
+        return false
+    }
+
+    /// Finishes a launch the network interrupted: refreshes the stored session and re-reads the
+    /// profile. Called on reconnect, on every return to the foreground, when the client refreshes
+    /// the token on its own, and by the retry state's button. Does nothing unless something on
+    /// screen still waits on the server, so calling it often is free.
+    func resyncIfNeeded() async {
+        guard isAuthenticated, needsResync || profileUnavailable, !isResyncing else { return }
+        isResyncing = true
+        defer { isResyncing = false }
+        let epoch = AccountEpoch.current
+        let session: Session
+        do {
+            session = try await supabase.auth.session
+        } catch {
+            guard AccountEpoch.isCurrent(epoch) else { return }
+            // Still unreachable: stay as we are and wait for the next chance. A refusal means the
+            // session this phone kept is no longer honoured, so leave the account.
+            if Self.sessionOutcome(after: error, storedUserId: supabase.auth.currentSession?.user.id) == .signedOut {
+                sessionLost()
+            }
+            return
+        }
+        guard AccountEpoch.isCurrent(epoch) else { return }
+        let userId = session.user.id
+        // A refresh cannot change who the session belongs to, but if it ever did, the profile on
+        // screen is someone else's and must go before anything else reads it.
+        if let shown = currentUser, shown.id != userId { currentUser = nil }
+        noteSession(userId)
+        let resolvingEpoch = AccountEpoch.current
+        let hadProfile = currentUser != nil
+        // With nothing on screen but the retry state, hold on the splash while this resolves, the
+        // same as launch does, so it never flashes the username screen.
+        if !hadProfile { isResolvingProfile = true }
+        await refreshCurrentUser(id: userId)
+        if !hadProfile, AccountEpoch.isCurrent(resolvingEpoch) { isResolvingProfile = false }
     }
 
     // MARK: - App Review sign-in
@@ -734,7 +843,9 @@ final class AuthService {
             currentUser = nil
             isAuthenticated = false
             pendingEmail = nil
+            needsResync = false
             noteSession(nil)
+            ProfileCache.clearAll()
             NotificationCenter.default.post(name: .flimAccountDidChange, object: nil)
         }
         // A staged undoable action (a Darkroom delete inside its window) belongs to this
@@ -796,6 +907,8 @@ final class AuthService {
         try? await supabase.auth.signOut()
         currentUser = nil
         isAuthenticated = false
+        needsResync = false
+        ProfileCache.clearAll()
         // The deleted account's tiles must not keep showing on the home screen: there is no
         // account left to own them, and a reinstall on the same device would otherwise start
         // from stale widgets rather than a clean slate.
@@ -864,26 +977,38 @@ final class AuthService {
                     isResolvingProfile = false
                 }
             case .signedOut:
-                // Fires for causes the app did not initiate too, an expired or revoked session,
-                // so it cannot rely on signOut()'s own bump.
-                noteSession(nil)
-                currentUser = nil
-                isAuthenticated = false
-                // The same departure broadcast signOut() posts, so a revoked or expired session
-                // gets the same teardown as a tapped Sign Out: caches reset, reminders and Live
-                // Activities ended, and `WidgetSync.clear()`, which only this notification's
-                // observer in ContentView calls. Before this, the home-screen widget kept showing
-                // the departed account under the sign-in screen. After a user-initiated sign-out
-                // this is the second post; every step in that observer is idempotent.
-                NotificationCenter.default.post(name: .flimAccountDidChange, object: nil)
-                // No session is left to delete the device_tokens row with, so this goes through
-                // the session-less detach. Best effort, and a no-op after a user-initiated
-                // sign-out, which already detached while its session was alive.
-                RemotePush.detachAfterSessionLoss()
+                sessionLost()
+            case .tokenRefreshed:
+                // The client refreshed the token on its own, so the server is reachable again,
+                // possibly before the path monitor says so (a captive portal clearing).
+                if needsResync { Task { await resyncIfNeeded() } }
             default:
                 break
             }
         }
+    }
+
+    /// Leaves the account after the session was lost rather than signed out of here.
+    private func sessionLost() {
+        // Fires for causes the app did not initiate too, an expired or revoked session,
+        // so it cannot rely on signOut()'s own bump.
+        noteSession(nil)
+        currentUser = nil
+        isAuthenticated = false
+        profileUnavailable = false
+        needsResync = false
+        ProfileCache.clearAll()
+        // The same departure broadcast signOut() posts, so a revoked or expired session
+        // gets the same teardown as a tapped Sign Out: caches reset, reminders and Live
+        // Activities ended, and `WidgetSync.clear()`, which only this notification's
+        // observer in ContentView calls. Before this, the home-screen widget kept showing
+        // the departed account under the sign-in screen. After a user-initiated sign-out
+        // this is the second post; every step in that observer is idempotent.
+        NotificationCenter.default.post(name: .flimAccountDidChange, object: nil)
+        // No session is left to delete the device_tokens row with, so this goes through
+        // the session-less detach. Best effort, and a no-op after a user-initiated
+        // sign-out, which already detached while its session was alive.
+        RemotePush.detachAfterSessionLoss()
     }
 
     static func randomCode(length: Int = 6) -> String {
