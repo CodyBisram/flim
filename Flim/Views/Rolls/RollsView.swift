@@ -86,31 +86,30 @@ struct RollsView: View {
         ZStack {
             FlimTheme.bg.ignoresSafeArea()
 
-            VStack(spacing: 0) {
-                header
-
-                Group {
-                    if rolls.isLoading && rolls.rolls.isEmpty {
-                        ProgressView().tint(.white)
-                    } else if let error = loadError, rolls.rolls.isEmpty {
-                        ErrorState(message: error) { await load() }
-                    } else if rolls.rolls.isEmpty {
-                        // An invitation to a follow-up roll must show even with no rolls of your
-                        // own (the old roll was deleted, or you left it after the follow-up began).
-                        ScrollView {
-                            VStack(spacing: 0) {
-                                ForEach(rolls.followUpInvites) { invited in
-                                    invitedCard(invited)
-                                }
-                                emptyState
+            // The header rides `flimTopBar`, the same as Feed's: on iOS 26 the list scrolls
+            // under it with the scroll edge effect, below 26 it stacks above as before.
+            Group {
+                if rolls.isLoading && rolls.rolls.isEmpty {
+                    ProgressView().tint(.white)
+                } else if let error = loadError, rolls.rolls.isEmpty {
+                    ErrorState(message: error) { await load() }
+                } else if rolls.rolls.isEmpty {
+                    // An invitation to a follow-up roll must show even with no rolls of your
+                    // own (the old roll was deleted, or you left it after the follow-up began).
+                    ScrollView {
+                        VStack(spacing: 0) {
+                            ForEach(rolls.followUpInvites) { invited in
+                                invitedCard(invited)
                             }
+                            emptyState
                         }
-                    } else {
-                        rollsScroll
                     }
+                } else {
+                    rollsScroll
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .flimTopBar { header }
         }
         .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { containerWidth = $0 }
         // The bands (open / ready / developed) are derived in BODY, which TimelineView ticks
@@ -215,11 +214,10 @@ struct RollsView: View {
                 Button { showCreate = true } label: { Label("Start a roll", systemImage: "plus") }
                 Button { showJoin = true } label: { Label("Join with a code", systemImage: "ticket") }
             } label: {
-                Image(systemName: "plus")
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(accent)
-                    .frame(width: 38, height: 38)
-                    .glassCapsule(interactive: true)
+                GlassIcon {
+                    Image(systemName: "plus")
+                        .foregroundStyle(accent)
+                }
             }
             .accessibilityLabel("Start a roll or join with a code")
         }

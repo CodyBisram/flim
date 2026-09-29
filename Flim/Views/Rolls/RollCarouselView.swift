@@ -138,33 +138,30 @@ struct RollCarouselView: View {
 
     private var header: some View {
         HStack {
-            Button { dismiss() } label: {
-                Image(systemName: "xmark").font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(.white).padding(12).glassCapsule(interactive: true)
+            GlassIconButton { dismiss() } label: {
+                Image(systemName: "xmark").foregroundStyle(.white)
             }
             .accessibilityLabel("Close")
             Spacer()
             Text("\(selection + 1) / \(photos.count)")
                 .flimFont(13, weight: .semibold).foregroundStyle(.white)
             Spacer()
-            Button { showComments = true } label: {
-                Image(systemName: "bubble.right").font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(.white).padding(12).glassCapsule(interactive: true)
+            GlassIconButton { showComments = true } label: {
+                Image(systemName: "bubble.right").foregroundStyle(.white)
             }
             .accessibilityLabel("Comments")
             if let cur = current, PhotoExport.eligible(cur, viewer: auth.currentUser?.id, inRoll: true) {
-            Button {
+            GlassIconButton {
                 shareCurrent()
             } label: {
                 Group {
                     if preparingShare {
                         ProgressView().tint(.white).controlSize(.small)
                     } else {
-                        Image(systemName: "square.and.arrow.up").font(.system(size: 15, weight: .medium))
+                        Image(systemName: "square.and.arrow.up")
                     }
                 }
-                .frame(width: 19, height: 19)
-                .foregroundStyle(.white).padding(12).glassCapsule(interactive: true)
+                .foregroundStyle(.white)
             }
             .disabled(preparingShare)
             .accessibilityLabel("Share this photo")

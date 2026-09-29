@@ -456,6 +456,10 @@ struct CameraView: View {
         z.truncatingRemainder(dividingBy: 1) == 0 ? "\(Int(z))×" : String(format: "%.1f×", z)
     }
 
+    /// The camera with its turn-around arrows, the system's own flip glyph, rather than the
+    /// generic two-arrow "refresh" it used to be. `TabSymbolTests` checks it resolves.
+    static let flipCameraSymbol = "camera.rotate"
+
     /// How far each zoom pill's touch area reaches past its 34x30 capsule: 7 up and down makes
     /// 44 tall, and half the 10pt gap each way makes 44 wide, so neighbours meet without
     /// overlapping. The pills look exactly as they did.
@@ -534,10 +538,10 @@ struct CameraView: View {
     }
 
     private var topBar: some View {
-        glassGroup {
+        GlassGroup(spacing: 16) {
             HStack {
                 // Roll target selector, this pill is the ONLY compressible element in the row
-                // (icons below are fixed 38x38). No .fixedSize here: that would defeat
+                // (the timer beside it is a fixed 44pt circle). No .fixedSize here: that would defeat
                 // lineLimit/truncation and let a long roll name push the whole row off-screen
                 // (regressed with a long-named roll on both a 13 and a 17 Pro Max).
                 Button { showRollPicker = true } label: {
@@ -569,7 +573,9 @@ struct CameraView: View {
                     // tertiary for the developed-roll edge case above.
                     .foregroundStyle(selectedRoll == nil ? .white : (selectedRoll?.isDeveloped == true ? FlimTheme.textTertiary : accent))
                     .padding(.horizontal, 14)
-                    .padding(.vertical, 9)
+                    .padding(.vertical, 4)
+                    // The same height as the timer's circle beside it, so the row reads as one.
+                    .frame(minHeight: GlassIconSize.regular.diameter)
                 }
                 .contentShape(Capsule())
                 .glassCapsule(interactive: true)
@@ -582,24 +588,24 @@ struct CameraView: View {
 
                 // Self-timer (Off → 3s → 10s). Minimal: dim when off, accent + value when set.
                 // (Flip and flash both live in the bottom strip beside the shutter now.)
-                Button {
+                GlassIconButton {
                     selfTimerSeconds = selfTimerSeconds == 0 ? 3 : (selfTimerSeconds == 3 ? 10 : 0)
                     Haptics.tap()
                 } label: {
-                    HStack(spacing: 3) {
-                        Image(systemName: "timer").font(.system(size: 14, weight: .semibold))
+                    // The seconds sit inside the circle beside the glyph, so the control keeps
+                    // its size whatever the setting. Capped at xLarge: past it "10" no longer
+                    // fits the fixed circle beside the glyph.
+                    HStack(spacing: 1) {
+                        Image(systemName: "timer")
                         if selfTimerSeconds > 0 {
-                            Text("\(selfTimerSeconds)").font(.system(size: 12, weight: .bold))
+                            Text("\(selfTimerSeconds)")
+                                .flimFont(11, weight: .bold, relativeTo: .caption2)
+                                .dynamicTypeSize(...DynamicTypeSize.xLarge)
+                                .fixedSize()
                         }
                     }
                     .foregroundStyle(selfTimerSeconds == 0 ? .white : accent)
-                    .frame(minWidth: 38, minHeight: 38)
-                    .padding(.horizontal, selfTimerSeconds > 0 ? 5 : 0)
                 }
-                .contentShape(Capsule())
-                .glassCapsule(interactive: true)
-                // 38 visible, 44 to touch: 3 either side, inside the top bar's own region.
-                .expandTapTarget(by: 3)
                 .padding(.leading, 8)
                 .accessibilityLabel("Self timer")
                 .accessibilityValue(selfTimerSeconds == 0 ? "Off" : "\(selfTimerSeconds) seconds")
@@ -629,7 +635,7 @@ struct CameraView: View {
                                 .lineLimit(1).fixedSize()
                         }
                     }
-                    .frame(minWidth: 38, minHeight: 38)
+                    .frame(minWidth: 44, minHeight: 44)
                     .padding(.horizontal, photos.pendingCaptureCount > 1 ? 12 : 0)
                     .glassCapsule()
                     .accessibilityLabel(photos.pendingCaptureCount > 1
@@ -667,34 +673,26 @@ struct CameraView: View {
             HStack {
                 // Flip lives here rather than the top bar: it's the most-reached-for control
                 // after the shutter, and it balances the flash on the opposite side.
-                Button {
+                GlassIconButton(size: .prominent) {
                     camera.flipCamera()
                     Haptics.tap()
                 } label: {
-                    Image(systemName: "arrow.triangle.2.circlepath")
-                        .font(.system(size: 16, weight: .semibold))
+                    Image(systemName: Self.flipCameraSymbol)
                         .foregroundStyle(.white)
-                        .frame(width: 52, height: 52)
                 }
-                .contentShape(Capsule())
-                .glassCapsule(interactive: true)
                 .accessibilityLabel("Flip camera")
 
                 Spacer()
 
                 // Hidden on the front camera (no flash), exactly as in its old top-bar spot.
                 if camera.isFlashSupported {
-                    Button {
+                    GlassIconButton(size: .prominent) {
                         cycleFlash()
                     } label: {
                         Image(systemName: flashIcon)
-                            .font(.system(size: 16, weight: .semibold))
                             .contentTransition(.symbolEffect(.replace))
                             .foregroundStyle(flashMode == .off ? .white : accent)
-                            .frame(width: 52, height: 52)
                     }
-                    .contentShape(Capsule())
-                    .glassCapsule(interactive: true)
                     .accessibilityLabel("Flash")
                     .accessibilityValue(flashMode == .off ? "Off" : (flashMode == .auto ? "Auto" : "On"))
                 }
@@ -702,19 +700,6 @@ struct CameraView: View {
             .padding(.horizontal, 44)
         }
         .frame(maxWidth: .infinity)
-    }
-
-    // MARK: - Glass grouping
-
-    /// Wraps glass children in a `GlassEffectContainer` on iOS 26 so they blend together;
-    /// a plain passthrough on older systems.
-    @ViewBuilder
-    private func glassGroup<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
-        if #available(iOS 26, *) {
-            GlassEffectContainer(spacing: 16) { content() }
-        } else {
-            content()
-        }
     }
 
     // MARK: - Camera unavailable

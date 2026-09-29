@@ -47,6 +47,13 @@ struct ContentView: View {
                 // Same idea again, for the Chapters shelf + recap: fixture months + cache-planted
                 // covers, no network, no account. See ChapterPreviewDemoHost.
                 ChapterPreviewDemoHost()
+            } else if ProcessInfo.processInfo.arguments.contains("-chromePreviewDemo") {
+                // The tab bar, the Camera controls and the Feed and Rolls headers, on the real
+                // MainTabView with fixture data and no account. See ChromePreviewDemoHost.
+                ChromePreviewDemoHost()
+            } else if ProcessInfo.processInfo.arguments.contains("-pagerPreviewDemo") {
+                // The full-screen viewer's top controls on fixture frames. See PagerPreviewDemoHost.
+                PagerPreviewDemoHost()
             } else if ProcessInfo.processInfo.arguments.contains("-chapterStatsPickerDemo") {
                 // Same idea, for the chapter-stats visibility picker. See ChapterStatsPickerDemoHost.
                 ChapterStatsPickerDemoHost()

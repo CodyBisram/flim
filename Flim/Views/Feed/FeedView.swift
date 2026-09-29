@@ -238,9 +238,9 @@ struct FeedView: View {
                     if used, let uid = auth.currentUser?.id { NewAccountIntro.markSeen(.spotlight, userId: uid) }
                 }
 
-            VStack(spacing: 0) {
-                header
-
+            // The header rides `flimTopBar`: on iOS 26 the feed scrolls under it with the
+            // system's scroll edge effect, below 26 it stacks above the content as before.
+            Group {
                 if feed.feed.isEmpty {
                     if feed.isLoadingFeed || !didLoad {
                         loadingState
@@ -294,6 +294,8 @@ struct FeedView: View {
                     feedList
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .flimTopBar { header }
         }
         .background(GeometryReader { proxy in
             Color.clear.onChange(of: proxy.size.width, initial: true) { _, width in
@@ -460,56 +462,53 @@ struct FeedView: View {
             .accessibilityLabel("Seed demo feed")
             #endif
 
-            Button {
-                // Capture the PREVIOUS visit before stamping this one, so Activity can put
-                // what you haven't looked at under "New".
-                activitySeenBefore = lastActivitySeen > 0
-                    ? Date(timeIntervalSince1970: lastActivitySeen)
-                    : nil
-                // The watermark moves only once Activity has actually shown its content (its
-                // `onLoaded`), so a failed load or a sheet dismissed mid-spinner keeps the unread
-                // signal for next time instead of silently consuming it.
-                showActivity = true
-            } label: {
-                // One signal, the app's own: a plain bell and an accent dot, the same dot as
-                // the avatar beside it. It used to be `bell.badge` AND a red "9+" capsule, two
-                // badges on one control, in a color nothing else here uses (audit D-22, 1.6.1).
-                // The count still reads out to VoiceOver, as the value below.
-                Image(systemName: "bell")
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(accent)
-                    .flimSymbolBounce(value: unreadActivity)
-                    .overlay(alignment: .topTrailing) {
-                        if unreadActivity > 0 {
-                            Circle()
-                                .fill(accent)
-                                .frame(width: 7, height: 7)
-                                .overlay(Circle().stroke(FlimTheme.bg, lineWidth: 1.5))
-                                .offset(x: 2, y: -1)
-                                .transition(.scale.combined(with: .opacity))
-                        }
+            GlassGroup(spacing: 8) {
+                HStack(spacing: 10) {
+                    GlassIconButton {
+                        // Capture the PREVIOUS visit before stamping this one, so Activity can put
+                        // what you haven't looked at under "New".
+                        activitySeenBefore = lastActivitySeen > 0
+                            ? Date(timeIntervalSince1970: lastActivitySeen)
+                            : nil
+                        // The watermark moves only once Activity has actually shown its content (its
+                        // `onLoaded`), so a failed load or a sheet dismissed mid-spinner keeps the unread
+                        // signal for next time instead of silently consuming it.
+                        showActivity = true
+                    } label: {
+                        // One signal, the app's own: a plain bell and an accent dot, the same dot as
+                        // the avatar beside it. It used to be `bell.badge` AND a red "9+" capsule, two
+                        // badges on one control, in a color nothing else here uses (audit D-22, 1.6.1).
+                        // The count still reads out to VoiceOver, as the value below.
+                        Image(systemName: "bell")
+                            .foregroundStyle(accent)
+                            .flimSymbolBounce(value: unreadActivity)
+                            .overlay(alignment: .topTrailing) {
+                                if unreadActivity > 0 {
+                                    Circle()
+                                        .fill(accent)
+                                        .frame(width: 7, height: 7)
+                                        .overlay(Circle().stroke(FlimTheme.bg, lineWidth: 1.5))
+                                        .offset(x: 2, y: -1)
+                                        .transition(.scale.combined(with: .opacity))
+                                }
+                            }
                     }
-                    .frame(width: 44, height: 44)
-                    .glassCapsule(interactive: true)
-            }
-            // The dot carries no number, so the count lives in the value: VoiceOver reads
-            // "Activity, 3 new" while the label stays the control's name.
-            .accessibilityLabel("Activity")
-            .accessibilityValue(unreadActivity > 0 ? "\(unreadActivity) new" : "")
+                    // The dot carries no number, so the count lives in the value: VoiceOver reads
+                    // "Activity, 3 new" while the label stays the control's name.
+                    .accessibilityLabel("Activity")
+                    .accessibilityValue(unreadActivity > 0 ? "\(unreadActivity) new" : "")
 
-            Button { showDiscover = true } label: {
-                Image(systemName: "person.2.badge.plus")
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(accent)
-                    // On first run this is THE follow affordance, so the empty state glows
-                    // it rather than duplicating it as a second control somewhere else; the
-                    // reader who comes back tomorrow already knows where the action lives.
-                    .shadow(color: followsNobody ? accent.opacity(0.62) : .clear, radius: 7)
-                    .frame(width: 44, height: 44)
-                    .glassCapsule(interactive: true)
-                    .expandTapTarget(by: 3)   // 38 + 3 either side = 44
+                    GlassIconButton { showDiscover = true } label: {
+                        Image(systemName: "person.2.badge.plus")
+                            .foregroundStyle(accent)
+                            // On first run this is THE follow affordance, so the empty state glows
+                            // it rather than duplicating it as a second control somewhere else; the
+                            // reader who comes back tomorrow already knows where the action lives.
+                            .shadow(color: followsNobody ? accent.opacity(0.62) : .clear, radius: 7)
+                    }
+                    .accessibilityLabel("Find friends")
+                }
             }
-            .accessibilityLabel("Find friends")
 
             // Your avatar → your own page; also where an unseen badge gets flagged.
             if let uid = auth.currentUser?.id {

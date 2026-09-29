@@ -707,27 +707,21 @@ struct PhotoPagerView: View {
         if let photo = current {
             let isOwnPhoto = photo.userId == auth.currentUser?.id
             HStack(spacing: 12) {
-                Button { close() } label: {
+                GlassIconButton { close() } label: {
                     Image(systemName: "xmark")
-                        .font(.system(size: 16, weight: .medium))
                         .foregroundStyle(.white)
-                        .padding(12)
-                        .glassCapsule(interactive: true)
                 }
                 .accessibilityLabel("Close")
                 Spacer()
                 if showsComments {
-                    Button { commentsPhoto = photo; showComments = true } label: {
+                    GlassIconButton { commentsPhoto = photo; showComments = true } label: {
                         Image(systemName: "bubble.right")
-                            .font(.system(size: 15, weight: .medium))
                             .foregroundStyle(.white)
-                            .padding(12)
-                            .glassCapsule(interactive: true)
                     }
                     .accessibilityLabel("Comments")
                 }
                 if PhotoExport.eligible(photo, viewer: auth.currentUser?.id, inRoll: showsRollRack) {   // see PhotoExport.eligible
-                Button {
+                GlassIconButton {
                     share(photo)
                 } label: {
                     Group {
@@ -735,13 +729,9 @@ struct PhotoPagerView: View {
                             ProgressView().tint(.white).controlSize(.small)
                         } else {
                             Image(systemName: "square.and.arrow.up")
-                                .font(.system(size: 15, weight: .medium))
                         }
                     }
-                    .frame(width: 19, height: 19)
                     .foregroundStyle(.white)
-                    .padding(12)
-                    .glassCapsule(interactive: true)
                 }
                 .disabled(preparingShare)
                 .accessibilityLabel(preparingShare ? "Preparing to share" : "Share photo")
@@ -770,28 +760,25 @@ struct PhotoPagerView: View {
                             requestDelete(photo)
                         } label: { Label("Delete photo", systemImage: "trash") }
                     } label: {
-                        Image(systemName: "ellipsis")
-                            .font(.system(size: 15, weight: .medium))
-                            .foregroundStyle(.white)
-                            .padding(12)
-                            .glassCapsule(interactive: true)
+                        GlassIcon {
+                            Image(systemName: "ellipsis")
+                                .foregroundStyle(.white)
+                        }
                     }
                     .accessibilityLabel("More")
                     .disabled(isDeleting)
                 } else {
                     let reported = reportedIds.contains(photo.id)
-                    Button { reportCurrent() } label: {
+                    GlassIconButton { reportCurrent() } label: {
                         Image(systemName: reported ? "flag.fill" : "flag")
-                            .font(.system(size: 15, weight: .medium))
                             .contentTransition(.symbolEffect(.replace))
                             .foregroundStyle(.white)
-                            .padding(12)
-                            .glassCapsule(interactive: true)
                     }
                     .accessibilityLabel("Report photo")
                     .disabled(reported)
                 }
             }
+            .glassGroup(spacing: 8)
             .padding(.horizontal, 20)
             .padding(.top, 60)
         }
@@ -804,12 +791,9 @@ struct PhotoPagerView: View {
     private var nightRackHeader: some View {
         if let photo = current {
             HStack(spacing: 10) {
-                Button { close() } label: {
+                GlassIconButton { close() } label: {
                     Image(systemName: "xmark")
-                        .font(.system(size: 16, weight: .medium))
                         .foregroundStyle(.white)
-                        .padding(12)
-                        .glassCapsule(interactive: true)
                 }
                 .accessibilityLabel("Close")
 
@@ -881,9 +865,10 @@ struct PhotoPagerView: View {
                     .disabled(isDeleting)
                 }
                 .padding(.horizontal, 16)
-                .padding(.vertical, 11)
+                .frame(height: GlassIconSize.regular.diameter)
                 .glassCapsule(interactive: true)
             }
+            .glassGroup(spacing: 8)
             .padding(.leading, 20)
             .padding(.trailing, 20)
             .padding(.top, 60)
@@ -992,7 +977,7 @@ struct PhotoPagerView: View {
                     .disabled(isDeleting)
                 }
                 .padding(.horizontal, 16)
-                .padding(.vertical, 11)
+                .frame(height: GlassIconSize.regular.diameter)
                 .glassCapsule(interactive: true)
             }
             .padding(.horizontal, 16)

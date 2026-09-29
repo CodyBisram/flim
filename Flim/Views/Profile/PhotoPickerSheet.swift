@@ -256,9 +256,8 @@ struct ImageViewer: View {
             }
             VStack {
                 HStack {
-                    Button { dismiss() } label: {
-                        Image(systemName: "xmark").font(.system(size: 16, weight: .medium))
-                            .foregroundStyle(.white).padding(12).glassCapsule(interactive: true)
+                    GlassIconButton { dismiss() } label: {
+                        Image(systemName: "xmark").foregroundStyle(.white)
                     }
                     .accessibilityLabel("Close")
                     Spacer()

@@ -75,6 +75,32 @@ func shouldPresentNotifPrimer(
     return osStatusIsUndetermined && !didRetryUnaskedPrimer
 }
 
+/// The four tab symbols, by base name. The tab bar draws the selected tab's symbol filled on
+/// its own, so a name that already ends in `.fill`, or one with no fill variant at all (the
+/// Camera tab's old `camera.aperture`), reads heavier or thinner than its neighbours.
+/// `TabSymbolTests` checks each one resolves on the running system.
+enum MainTabSymbol {
+    static let camera = "camera"
+    static let darkroom = "photo.stack"
+    static let rolls = "film.stack"
+    /// People, not a place: the Feed is your friends' photographs. `rectangle.stack` would make
+    /// three stacks in a row of four.
+    static let feed = "person.2"
+
+    static let all = [camera, darkroom, rolls, feed]
+}
+
+/// `.tabBarMinimizeBehavior(.onScrollDown)` on iOS 26, nothing below it.
+private struct TabBarMinimizesOnScroll: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 26, *) {
+            content.tabBarMinimizeBehavior(.onScrollDown)
+        } else {
+            content
+        }
+    }
+}
+
 struct MainTabView: View {
     @Environment(\.flimAccent) private var accent
     @State private var selected = 0
@@ -170,18 +196,19 @@ struct MainTabView: View {
     }
 
     var body: some View {
+        // Base symbol names only (`MainTabSymbol`): the tab bar fills the selected tab itself.
         TabView(selection: selection) {
-            Tab("Camera", systemImage: "camera.aperture", value: 0) {
+            Tab("Camera", systemImage: MainTabSymbol.camera, value: 0) {
                 CameraView()
             }
-            Tab("Darkroom", systemImage: "photo.stack", value: 1) {
+            Tab("Darkroom", systemImage: MainTabSymbol.darkroom, value: 1) {
                 NavigationStack {
                     DarkroomView(scrollToTop: scrollSignal[1, default: 0],
                                  openSortDeckSignal: sortDeckSignal,
                                  openPhotoId: $openPhotoId)
                 }
             }
-            Tab("Rolls", systemImage: "film.stack", value: 2) {
+            Tab("Rolls", systemImage: MainTabSymbol.rolls, value: 2) {
                 // A real path (not a plain stack) so a `reveal` push destination, and `-openRollId`
                 // in DEBUG, can push a roll's detail programmatically. RollsView declares its own
                 // `.navigationDestination(for: Roll.self)`, which this path pushes onto.
@@ -191,7 +218,7 @@ struct MainTabView: View {
                 // A dot, not a number: a developed roll whose reveal has not been watched here.
                 .badge(rollsBadge)
             }
-            Tab("Feed", systemImage: "house", value: 3) {
+            Tab("Feed", systemImage: MainTabSymbol.feed, value: 3) {
                 // Both destinations are declared INSIDE the stack, on its content, not on the
                 // NavigationStack itself. Hung on the stack they are outside the navigation
                 // hierarchy, so a value appended to `feedPath` has no destination visible from
@@ -221,6 +248,10 @@ struct MainTabView: View {
         // re-tints the moment the user picks a new accent, the static read never invalidates
         // this view, which left the old color until a relaunch.
         .tint((FlimAccent(rawValue: accentColor) ?? .amber).color)
+        // iOS 26: the bar shrinks out of the way while a list scrolls down and comes back on
+        // the way up. Nothing here changes the TabView's identity (no `.id()`, see
+        // `flim_accent_environment`); the modifier is a no-op below 26.
+        .modifier(TabBarMinimizesOnScroll())
         // The environment accent is injected at the app root (see FlimApp), so it covers the
         // auth screens too. Nothing extra is needed here.
         .overlay(alignment: .top) {
