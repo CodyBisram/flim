@@ -657,11 +657,10 @@ async function update16Cohort(): Promise<Recipient[]> {
 // reachable member of the first hundred (signup_ordinal 1 to 100), the owner and the review
 // account excepted. The tap opens their own page.
 
-// In the owner's own voice, signed in the title (his words, 2026-09-29: "something heartfelt
-// from Cody").
-const FOUNDING_FULL_TITLE = "A note from Cody";
+// In the owner's own voice, his words (2026-09-29).
+const FOUNDING_FULL_TITLE = "The founding hundred is full.";
 const FOUNDING_FULL_BODY =
-  `${APP_NAME}'s first hundred is full, and you're one of them. You showed up before there was much to see and helped make this what it is. Thank you. The badge is yours for good.`;
+  "And you're one of them. You showed up before there was much to see and helped make this what it is. Thank you, from Cody.";
 
 async function foundingFullCohort(): Promise<Recipient[]> {
   if (await foundingSeatsLeft() > 0) return [];
