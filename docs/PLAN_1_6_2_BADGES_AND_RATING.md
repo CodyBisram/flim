@@ -35,8 +35,9 @@ a hand-given badge feel personal is the line under it instead (see "Given by Cod
 ### Recruiter, precisely
 
 An invitee counts when all of these hold:
-- they joined through your personal invite (the same attribution Brought Someone, Patron and
-  Open Door use), not through a roll code or a campaign code;
+- they joined through you, however they came in: your personal invite, a campaign code
+  attributed to you, or your roll's code (the same attribution Brought Someone, Patron and Open
+  Door use);
 - their account is at least 30 days old;
 - they took at least one photo on or after their 30th day.
 
