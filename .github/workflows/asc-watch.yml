@@ -1,0 +1,59 @@
+# Watches an App Store version's review state for up to N hours (default 72) and sends the owner
+# a FLIM push on every change (supabase/functions/notify-owner). Start it when a build goes up for
+# review: `gh workflow run asc-watch.yml` (newest version) or `-f version=1.6.1`. A run lives under
+# the 6h job limit and dispatches the next one itself; `deadline` and `last_state` carry the watch
+# across runs and are not meant to be set by hand. Cancel the running run to stop it early.
+name: App Store watch
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to watch (blank: the newest)"
+        required: false
+        default: ""
+      hours:
+        description: "How long to watch"
+        required: false
+        default: "72"
+      deadline:
+        description: "Internal: epoch seconds the chain stops at"
+        required: false
+        default: ""
+      last_state:
+        description: "Internal: the state the previous run last saw"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: asc-watch
+  cancel-in-progress: true
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install --quiet "pyjwt[crypto]"
+      - name: Watch
+        working-directory: scripts
+        env:
+          ASC_KEY_ID:          ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID:       ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8:          ${{ secrets.ASC_KEY_P8 }}
+          OWNER_NOTIFY_URL:    https://wxvwamwrjlrvqmuaafjv.supabase.co/functions/v1/notify-owner
+          OWNER_NOTIFY_SECRET: ${{ secrets.OWNER_NOTIFY_SECRET }}
+          GH_TOKEN:            ${{ github.token }}
+          WATCH_VERSION:       ${{ inputs.version }}
+          WATCH_HOURS:         ${{ inputs.hours }}
+          WATCH_DEADLINE:      ${{ inputs.deadline }}
+          WATCH_LAST_STATE:    ${{ inputs.last_state }}
+        run: python3 asc_watch.py

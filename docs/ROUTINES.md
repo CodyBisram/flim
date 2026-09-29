@@ -234,3 +234,14 @@ and nothing else. The past drafts stay in `social/drafts/`; the `/social-drafts`
 callable by hand for a launch week. The Pi ran it from a systemd user timer, not a crontab line;
 `flim-social.timer` and its service were disabled and deleted on 2026-09-21, the `social` case was
 removed from the Pi's job runner, and the prompt copy on the Pi was deleted.
+
+## App Store review watch (GitHub Actions, on demand)
+
+When a build goes up for review, start `gh workflow run asc-watch.yml` (the newest version) or add
+`-f version=1.6.1`. Every 20 minutes for up to 72 hours it reads the version's state from App
+Store Connect (the pipeline's own key, repo secrets only) and sends the owner a FLIM push on each
+change: waiting, in review, approved, live, rejected. The push goes through the `notify-owner`
+edge function, which can only reach the owner's devices and needs the `OWNER_NOTIFY_SECRET`
+header (the same value is a repo secret and a function secret). It stops itself at release, at a
+rejection or at the deadline; cancel the running workflow run to stop it early. A one-off read:
+`gh workflow run asc-status.yml`.

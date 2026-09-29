@@ -52,22 +52,34 @@ def get(path, bearer):
         sys.exit(f"HTTP {error.code} on {path.split('?')[0]}: {error.read().decode()[:300]}")
 
 
-def main():
+def fetch_versions():
+    """The app's four most recent App Store versions, newest first:
+    [{"version", "build", "state", "created"}]."""
     bearer = token()
     apps = get(f"/v1/apps?filter[bundleId]={BUNDLE_ID}&fields[apps]=name", bearer)["data"]
     if not apps:
         sys.exit(f"no app with bundle id {BUNDLE_ID}")
     versions = get(f"/v1/apps/{apps[0]['id']}/appStoreVersions?limit=4"
-                   "&fields[appStoreVersions]=versionString,appStoreState,appVersionState,build"
+                   "&fields[appStoreVersions]=versionString,appStoreState,appVersionState,createdDate,build"
                    "&include=build&fields[builds]=version", bearer)
     builds = {b["id"]: b["attributes"].get("version")
               for b in versions.get("included", []) if b["type"] == "builds"}
+    rows = []
     for version in versions["data"]:
         attrs = version["attributes"]
         link = (version.get("relationships", {}).get("build") or {}).get("data")
-        build = builds.get(link["id"]) if link else None
-        state = attrs.get("appVersionState") or attrs.get("appStoreState")
-        print(f"ASC_STATUS {attrs['versionString']} build={build or '-'} state={state}")
+        rows.append({
+            "version": attrs["versionString"],
+            "build": builds.get(link["id"]) if link else None,
+            "state": attrs.get("appVersionState") or attrs.get("appStoreState"),
+            "created": attrs.get("createdDate") or "",
+        })
+    return sorted(rows, key=lambda r: r["created"], reverse=True)
+
+
+def main():
+    for row in fetch_versions():
+        print(f"ASC_STATUS {row['version']} build={row['build'] or '-'} state={row['state']}")
 
 
 if __name__ == "__main__":
