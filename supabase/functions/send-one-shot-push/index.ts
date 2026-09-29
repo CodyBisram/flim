@@ -105,6 +105,8 @@ const CAMPAIGNS: Record<string, () => Promise<Recipient[]>> = {
   "invites-left": invitesLeftCohort,
   "invites-left-preview-a": invitesLeftPreviewA,
   "invites-left-preview-b": invitesLeftPreviewB,
+  "update-1.6": update16Cohort,
+  "update-1.6-preview": update16Preview,
   "thank-you-preview": thankYouPreviewCohort,
   "thank-you": thankYouCohort,
   "thank-you-annie": thankYouAnnieCohort,
@@ -604,6 +606,50 @@ async function invitesLeftCohort(): Promise<Recipient[]> {
     });
   }
   return out;
+}
+
+// ------------------------------------------------------------
+// update-1.6: FLIM v1.6 is on the App Store (2026-09-29). To everyone reachable whose app last
+// reported a version below 1.6.0, or never reported one (builds older than the version census).
+// The tap only opens the app: no build older than 1.6 can open the App Store from a push, and it
+// does not need to, because `app_release_gate.latest_version` is 1.6.0 and the update prompt
+// shows on that launch, with its own button to the App Store.
+
+const UPDATE_16_TITLE = `${APP_NAME} v1.6 is out`;
+const UPDATE_16_BODY =
+  `Spotlight is here: put up one frame a week, and the team at ${APP_NAME} shows a few to everyone. Update to try it.`;
+
+/// "1.5.3" < "1.6.0", compared numerically part by part; anything unparseable reads as old.
+function versionBelow(version: string | null | undefined, target: string): boolean {
+  if (!version) return true;
+  const a = version.split(".").map((n) => parseInt(n, 10));
+  const b = target.split(".").map((n) => parseInt(n, 10));
+  if (a.some(Number.isNaN)) return true;
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const x = a[i] ?? 0, y = b[i] ?? 0;
+    if (x !== y) return x < y;
+  }
+  return false;
+}
+
+async function update16Cohort(): Promise<Recipient[]> {
+  const reachable = await reachableUsers();
+  const { data: versions, error } = await supabase.from("client_versions").select("user_id, version");
+  // A failed read must not read as "nobody has updated" and push everyone.
+  if (error) throw new Error(`client_versions read failed: ${error.message}`);
+  const versionOf = new Map(((versions ?? []) as { user_id: string; version: string }[])
+    .map((r) => [r.user_id, r.version]));
+  const { data: users, error: e2 } = await supabase.from("users").select("id, username").in("id", reachable);
+  if (e2) throw new Error(`users read failed: ${e2.message}`);
+  return ((users ?? []) as { id: string; username: string }[])
+    .filter((u) => u.username !== "cody" && u.username !== "applereview")
+    .filter((u) => versionBelow(versionOf.get(u.id), "1.6.0"))
+    .map((u) => ({ userId: u.id, title: UPDATE_16_TITLE, body: UPDATE_16_BODY, route: { t: "feed" } }));
+}
+
+/// The same push to the owner alone, to read on a lock screen before anyone else gets it.
+async function update16Preview(): Promise<Recipient[]> {
+  return (await ownerOnly(UPDATE_16_TITLE, UPDATE_16_BODY)).map((r) => ({ ...r, route: { t: "feed" } }));
 }
 
 /// The two bodies, to the owner alone, with sample counts, so both can be read on a lock
