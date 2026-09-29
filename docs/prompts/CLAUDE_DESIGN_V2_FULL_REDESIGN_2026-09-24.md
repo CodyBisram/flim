@@ -94,8 +94,9 @@ against Lapse's rendering, applied after a scene-adaptive exposure lift (dark sc
 before the grade, like Lapse), then warm halation bloom at 0.18 with 0.75 red warmth, a vignette
 at 0.75, and monochrome grain at 0.06 peaked in the midtones and applied at full resolution before
 the downscale so it averages into texture rather than dirt. Flash frames get a physical falloff
-put back (the ISP had flattened it) so the subject holds and the background falls toward black,
-15 to 35% of the frame under 0.04 luminance, like a real single-use camera. A shadow-peaked,
+put back (the ISP had flattened it) so the subject holds and the background falls toward black.
+(Turned off 2026-09-29: it made dark-room flash photos murky, and the "15 to 35% under 0.04"
+target it chased had no same-scene data.) A shadow-peaked,
 faintly chromatic grain was shipped as 1.5.1 and rejected by the owner on device the same day. The
 parametric fallback exists only for when the LUT fails to load. Every export carries an orange
 fourteen-segment date stamp in the lower right, like a 90s date back, and nothing else.

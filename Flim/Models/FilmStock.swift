@@ -181,25 +181,31 @@ struct FilmParams: Hashable {
     /// How hard the frame falls away from whatever the flash actually lit, applied ONLY to
     /// captures whose EXIF says the flash fired (see `InstantFilmProcessor.flashFired`). This is
     /// the exponent on the normalised illumination map, so 0 is an exact no-op (x⁰ = 1 everywhere)
-    /// and larger values drop the unlit parts of the frame further toward black while the lit
-    /// subject holds.
+    /// and larger values drop the rest of the frame further toward black relative to its
+    /// brightest region.
     ///
-    /// The defining trait of a single-use camera is direct on-camera flash: a hot subject, hard
-    /// falloff, and a background going to near-black because the light that reached it fell off
-    /// with the square of the distance. Measured on the owner's flash captures, FLIM had NONE of
-    /// it: 0.00% of pixels below 0.04 where a real disposable frame carries 15 to 35%. The falloff
-    /// physically happened at the sensor; Apple's ISP tone-mapped it back up. So this re-expands a
-    /// signal that was recorded and then flattened, rather than inventing one.
+    /// OFF (0) since 2026-09-29, with the stage kept in the processor, dormant, like `.pushed`
+    /// grain. It shipped at 1.0 from 2026-08-31 (1.5.1 through 1.6.1) and made dark-room flash
+    /// photographs murky and grey; the owner and other users saw it. Three measured reasons:
     ///
-    /// 1.0 is not a placeholder, it is the value with a meaning: at exactly 1 the multiplier IS the
-    /// normalised illumination map, so the stage puts the measured gradient back and adds no
-    /// shaping of its own. `FlashFalloffSweep` also lands it in the middle of the target window on
-    /// both real flash captures and the synthetic fixture, so the principled value and the fitted
-    /// value are the same value.
+    /// - The map reads REFLECTANCE, not flash light. It is the frame's own blurred luminance
+    ///   divided by its brightest region, so in a room with white walls the anchor is a wall, and
+    ///   anything near but dark (floor, rug, shoes, clothes) reads as "unlit". On the owner's
+    ///   entryway (`hallway-flash`) the stage multiplied the floor and dumbbells nearest the
+    ///   camera by 0.13 and the far door by 0.37: the surface the flash hit hardest was darkened
+    ///   most. It can only darken, so it cannot restore the flash hit the ISP flattened either.
+    /// - The "15 to 35% of a disposable frame below 0.04" target had no same-scene data behind
+    ///   it; nothing in `pairs/` is a disposable frame. The only same-scene flash targets FLIM has
+    ///   are Lapse's, and they sit at 1.7% (`hallway-flash`) and 4.1% (`parkview-flash`).
+    /// - With the stage off, the owner's entryway flash frame lands on the fitted target: frame
+    ///   mean 0.470 against Lapse's 0.474 (p50 0.525 against 0.521). At 1.0 it was 0.322.
     ///
-    /// Set to 0 to disable the stage entirely without touching any code, which is also the revert
-    /// path if the look is wrong on device.
-    var flashFalloff: CGFloat = 1.0
+    /// A future rebuild needs a signal that means light (the capture's exposure and brightness
+    /// metadata, or an absolute rather than peak-relative darkness test) and same-scene flash
+    /// pairs to fit it against. `FlashFalloffTests` still exercises the stage at an explicit 1.0
+    /// so it stays correct while dormant. Revert: set `FilmStock.original` back to 1.0 and restore
+    /// the `flash` look-pin row.
+    var flashFalloff: CGFloat = 0
     var monochrome: Bool
     /// Optional `.cube` 3D LUT (bundle resource name, no extension). When set and the file loads,
     /// it replaces the parametric color grade (saturation/contrast/temperature/tone-curve), grain,
@@ -271,38 +277,20 @@ struct FilmStock: Identifiable, Hashable {
             // factor it adds texture. The shipped pair is `.midtone` + `.sourceOver`.
             grainProfile: .midtone,
             bloom: 0.18, halationWarmth: 0.75,
-            // Flash falloff. Fitted, not chosen. `FlashFalloffSweep` walks this exponent across
-            // both of the owner's real flash captures and the synthetic flash fixture and reports
-            // what fraction of each frame lands under 0.04 luminance, against the 15–35% a real
-            // single-use camera frame carries and the 0.00% FLIM had. Measured 2026-08-30:
+            // Flash falloff: OFF. See `FilmParams.flashFalloff` for why. Measured 2026-09-29 on
+            // the owner's two real flash captures (upscaled to production size, gate forced open),
+            // frame mean and fraction below 0.04 luminance:
             //
-            //   k     flash (synthetic)   parkview-flash   hallway-flash
-            //   0.00  0.0006              0.0001           0.0011
-            //   0.60  0.0480              0.0794           0.0431
-            //   0.80  0.1308              0.1536           0.0477
-            //   1.00  0.2328              0.2038           0.0502   ← shipped
-            //   1.15  0.2971              0.2262           0.0518
-            //   1.30  0.3490              0.2443           0.0531
-            //   1.50  0.4041              0.2655           0.0546
-            //   2.20  0.4744              0.3191           0.0593
+            //   k     hallway-flash        parkview-flash
+            //   1.00  0.322   5.5%         0.146   25.7%   ← shipped 2026-08-31 to 2026-09-29
+            //   0.50  0.385   4.7%         0.200   10.1%
+            //   0.00  0.470   0.1%         0.294    0.1%   ← now
+            //   Lapse 0.474   1.7%         0.255    4.1%   (the target the LUT was fitted to)
             //
-            // 1.00 is the lowest value that puts BOTH scenes with a real background inside the
-            // window with margin, and it costs the least: frame mean falls 36–37% on those two and
-            // 23% on `hallway-flash`, against 40%/40%/26% at 1.15.
-            //
-            // `hallway-flash` barely moves at any strength, and that is the stage behaving
-            // correctly rather than failing: it is a narrow corridor where every surface is close
-            // to the camera, so there is no far background for the light to fall off toward. A
-            // strength that forced that scene to 15% would be darkening a fully lit frame.
-            //
-            // THE SCENE TO LOOK AT BEFORE TRUSTING THIS NUMBER is that corridor. It is the one
-            // that pays without being paid: its frame mean falls 23% (0.470 → 0.361) while its
-            // deep shadows barely move, because a luminance-keyed map cannot tell a dark OBJECT
-            // from an unlit REGION, and that room is full of dark floor. If a flash-lit wall reads
-            // grey instead of white on device, drop this to 0.80, which still lands
-            // `parkview-flash` on the bottom edge of the target window (0.154) and returns four
-            // points of the corridor's mean. It is a one-line change and nothing else moves.
-            flashFalloff: 1.0,
+            // The 2026-08-30 sweep that chose 1.0 scored against a "15 to 35% below 0.04" window
+            // that no same-scene data supports, and it already recorded the cost this comment
+            // warned about (the corridor losing 23% of its mean to dark floor read as unlit).
+            flashFalloff: 0,
             monochrome: false,
             // Color grade fitted from real (FLIM-neutral, Lapse) same-scene pairs, see
             // docs/LUTS.md + scripts/fit_lut.py. Pairs with scene-adaptive exposure in

@@ -23,11 +23,14 @@ re-propose shadow grain without a new owner ask; if it ever comes back, the doub
 mask and the composite veil are the two facts to start from.
 
 
-**Flash falloff SHIPPED 2026-08-31** (`dec7b57`). It was the single largest gap between FLIM and
-an actual disposable, and was absent rather than mistuned: flash frames had 0.00% of pixels below
-0.04 where a real disposable has 15 to 35%. Blur luminance to a coarse illumination map, apply a
-downward gamma keyed off it, gated on the EXIF flash-fired bit so it does not crush ambient night
-scenes.
+**Flash falloff TURNED OFF 2026-09-29** (shipped 2026-08-31, `dec7b57`). It made dark-room flash
+photos murky and grey, the owner and other users saw it. The map is the frame's own luminance
+over its brightest region, so it reads reflectance, not flash light: in a white-walled room the
+near dark floor the flash hit hardest was darkened most. The "15 to 35% below 0.04, like a real
+disposable" target it chased had no same-scene data behind it (Lapse's flash frames sit at 1.7%
+and 4.1%), and with the stage off the owner's entryway flash frame lands on Lapse (mean 0.470 vs
+0.474). The stage stays in the code, dormant. A rebuild needs a signal that means light and
+same-scene flash pairs.
 
 **Grain is BUILT, 2026-09-01, sitting in the working tree, pending owner sign-off on the
 previews.**

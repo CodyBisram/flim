@@ -18,6 +18,17 @@ import UniformTypeIdentifiers
 /// simulator device models, which agreed exactly.
 struct FlashFalloffTests {
 
+    /// The shipped look with the flash stage at the strength it shipped at from 2026-08-31 to
+    /// 2026-09-29. The stage is OFF in `.original` now (see `FilmParams.flashFalloff`) but kept in
+    /// the processor, dormant, so the tests that measure what it does run it here: without this
+    /// they would pass trivially, or fail, against a stage that no longer runs.
+    static let dormantStage: FilmStock = {
+        var params = FilmStock.original.params
+        params.flashFalloff = 1.0
+        return FilmStock(id: "dormant-flash-falloff", name: FilmStock.original.name,
+                         tagline: FilmStock.original.tagline, params: params)
+    }()
+
     // MARK: - Byte-identity of the non-flash path
 
     /// The non-flash scenes the gate must stay shut on.
@@ -141,11 +152,11 @@ struct FlashFalloffTests {
         #expect(Self.pixelDigest(flashInput) == Self.pixelDigest(ambientInput),
                 "the flash pair must be pixel-identical; only their metadata may differ")
 
-        let flashOut = try #require(await InstantFilmProcessor.process(flash, stock: .original))
-        let ambientOut = try #require(await InstantFilmProcessor.process(ambient, stock: .original))
+        let flashOut = try #require(await InstantFilmProcessor.process(flash, stock: Self.dormantStage))
+        let ambientOut = try #require(await InstantFilmProcessor.process(ambient, stock: Self.dormantStage))
 
         // The ambient half must be exactly what the pipeline produces with the stage forced off.
-        let stageOff = try #require(await InstantFilmProcessor.process(flash, stock: .original,
+        let stageOff = try #require(await InstantFilmProcessor.process(flash, stock: Self.dormantStage,
                                                                       flashOverride: false))
         #expect(Self.digest(ambientOut.data) == Self.digest(stageOff.data),
                 "the un-tagged half of the pair is not identical to the stage being off")
@@ -285,9 +296,9 @@ struct FlashFalloffTests {
     @Test("the grain composite, not the falloff, sets how deep the shadows land")
     func grainCompositeBoundsTheShadowDepth() async throws {
         let data = LookFixture.flash.pngData()
-        let shipped = try #require(await InstantFilmProcessor.process(data, stock: .original,
+        let shipped = try #require(await InstantFilmProcessor.process(data, stock: Self.dormantStage,
                                                                       grain: .sourceOver))
-        let unbiased = try #require(await InstantFilmProcessor.process(data, stock: .original,
+        let unbiased = try #require(await InstantFilmProcessor.process(data, stock: Self.dormantStage,
                                                                        grain: .meanPreserving))
         let shippedDeep = try #require(Self.shadowFraction(shipped.data))
         let unbiasedDeep = try #require(Self.shadowFraction(unbiased.data))
@@ -297,14 +308,28 @@ struct FlashFalloffTests {
             """)
     }
 
-    @Test("a flash frame gains the deep shadows a disposable actually has")
-    func flashFrameGainsDeepShadows() async throws {
-        // The audit's headline number: FLIM's flash frames had 0.00% of pixels below 0.04, where a
-        // real single-use camera frame carries 15-35%. This is that number, on the pinned fixture.
+    @Test("the shipped look renders a flash frame exactly as the same frame without flash")
+    func shippedFlashFrameMatchesAmbient() async throws {
+        // The stage is off (see `FilmParams.flashFalloff`), so the EXIF bit must change nothing:
+        // the pair is the same pixels, and the shipped pipeline must give the same bytes.
         let ambient = try #require(await InstantFilmProcessor.process(LookFixture.flashAmbient.pngData(),
                                                                       stock: .original))
         let flash = try #require(await InstantFilmProcessor.process(LookFixture.flash.pngData(),
                                                                     stock: .original))
+        #expect(Self.digest(flash.data) == Self.digest(ambient.data),
+                "the shipped look still treats a flash frame differently; the stage is meant to be off")
+    }
+
+    @Test("the dormant stage still does what it was built to do")
+    func flashFrameGainsDeepShadows() async throws {
+        // Run at the strength it shipped at (`dormantStage`), so the stage stays measured while it
+        // is off. The "15-35% below 0.04, like a disposable" target this was built around had no
+        // same-scene data behind it (see `FilmParams.flashFalloff`); what is pinned here is only
+        // what the stage does, for whoever rebuilds it.
+        let ambient = try #require(await InstantFilmProcessor.process(LookFixture.flashAmbient.pngData(),
+                                                                      stock: Self.dormantStage))
+        let flash = try #require(await InstantFilmProcessor.process(LookFixture.flash.pngData(),
+                                                                    stock: Self.dormantStage))
         let before = try #require(Self.shadowFraction(ambient.data))
         let after = try #require(Self.shadowFraction(flash.data))
         // The ambient half has essentially no deep shadows, and that is the shipped grain
@@ -327,13 +352,13 @@ struct FlashFalloffTests {
                 "the flash half (\(after)) is not meaningfully deeper than the ambient half (\(before))")
     }
 
-    @Test("the shipped flash strength is the value the sweep settled on")
+    @Test("the flash falloff ships off")
     func shippedStrengthIsPinned() {
-        // Pinned like every other look number, for the reason the look pin gives: a range check
-        // passes when someone nudges this, and a nudge here is a change to the product's signature
-        // frame type. Re-fit with `FlashFalloffSweep` and get the owner to look at real photos
-        // before moving it.
-        #expect(FilmStock.original.params.flashFalloff == 1.0)
+        // Off since 2026-09-29, the owner's call: at 1.0 it made dark-room flash photos murky,
+        // darkening the near, dark surfaces the flash hit hardest (see `FilmParams.flashFalloff`).
+        // Turning it back on is a change to the product's signature frame type: rebuild it on a
+        // signal that means light, fit it to same-scene pairs, and get the owner to look first.
+        #expect(FilmStock.original.params.flashFalloff == 0)
     }
 
     // MARK: - The anchor: a frame with nothing lit in it
@@ -354,8 +379,8 @@ struct FlashFalloffTests {
         let data = LookFixture.flashDark.pngData()
         #expect(InstantFilmProcessor.flashFired(in: data),
                 "this fixture only measures anything if the gate opens for it")
-        let gated = try #require(await InstantFilmProcessor.process(data, stock: .original))
-        let stageOff = try #require(await InstantFilmProcessor.process(data, stock: .original,
+        let gated = try #require(await InstantFilmProcessor.process(data, stock: Self.dormantStage))
+        let stageOff = try #require(await InstantFilmProcessor.process(data, stock: Self.dormantStage,
                                                                        flashOverride: false))
         #expect(Self.digest(gated.data) == Self.digest(stageOff.data), """
             a near-black flash frame was still reshaped by the falloff. Below             `flashAnchorThreshold` there is no lit subject to anchor to and the frame must be             handed back exactly as it arrived.

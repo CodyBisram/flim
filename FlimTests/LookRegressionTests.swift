@@ -101,11 +101,11 @@ struct LookRegressionTests {
         "daylight": LookStats(meanR: 0.42324, meanG: 0.47464, meanB: 0.44737, lumP5: 0.36078, lumP50: 0.45882, lumP95: 0.52549, meanSaturation: 0.38283, localContrast: 0.02026),
         "gamut": LookStats(meanR: 0.38223, meanG: 0.40034, meanB: 0.38638, lumP5: 0.09804, lumP50: 0.41176, lumP95: 0.76863, meanSaturation: 0.51417, localContrast: 0.01375),
         "oversize": LookStats(meanR: 0.36473, meanG: 0.33832, meanB: 0.31042, lumP5: 0.24706, lumP50: 0.34118, lumP95: 0.42745, meanSaturation: 0.14235, localContrast: 0.01027),
-        // Re-recorded 2026-09-05 after the flash map's Lanczos edge defect was fixed (see
-        // `flashFalloff`): the old row was measured with a lifted band along this fixture's black
-        // surround. Only this row moved; the real `parkview-flash` scene recorded identically,
-        // its edges are lit and had nothing for the defect to lift.
-        "flash": LookStats(meanR: 0.12244, meanG: 0.10975, meanB: 0.09822, lumP5: 0.00784, lumP50: 0.03529, lumP95: 0.56078, meanSaturation: 0.11272, localContrast: 0.00296),
+        // Re-recorded 2026-09-29 when the flash falloff was turned off (`FilmParams.flashFalloff`,
+        // owner's call after dark-room flash photos came out murky): with the stage off the flash
+        // half of the pair renders exactly as the ambient half, so this row IS `flashAmbient`'s.
+        // It was 0.12244 / 0.10975 / 0.09822 mean with the stage at 1.0.
+        "flash": LookStats(meanR: 0.24452, meanG: 0.23669, meanB: 0.21725, lumP5: 0.07843, lumP50: 0.17255, lumP95: 0.66275, meanSaturation: 0.14545, localContrast: 0.00682),
         "flashAmbient": LookStats(meanR: 0.24452, meanG: 0.23669, meanB: 0.21725, lumP5: 0.07843, lumP50: 0.17255, lumP95: 0.66275, meanSaturation: 0.14545, localContrast: 0.00682),
         // ADDED 2026-09-21 with `flashAnchorThreshold`, a fixture and a row that did not exist
         // before. Nothing else in either table moved with it: the anchor change only reaches a
@@ -283,10 +283,10 @@ struct LookRegressionTests {
         #expect(grain.evPush == 0)
         #expect(p.vignetteIntensity == 0.75)
         #expect(p.vignetteRadius == 1.7)
-        // Flash falloff, which reaches only captures whose EXIF says the flash fired. Pinned here
-        // like everything else, and additionally pinned next to its own evidence in
+        // Flash falloff, which reaches only captures whose EXIF says the flash fired. OFF since
+        // 2026-09-29 (see `FilmParams.flashFalloff`), and pinned next to its own evidence in
         // `FlashFalloffTests.shippedStrengthIsPinned`.
-        #expect(p.flashFalloff == 1.0)
+        #expect(p.flashFalloff == 0)
         #expect(p.lut == "flim")
         #expect(p.monochrome == false)
         // The parametric fallback, used only if flim.cube fails to load. Pinned too, because a

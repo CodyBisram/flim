@@ -559,7 +559,9 @@ enum InstantFilmProcessor {
             image = halation(on: image, intensity: p.bloom, warmth: p.halationWarmth, extent: extent)
         }
 
-        // 5. Flash falloff, on flash frames only. Sits here, after halation and before the
+        // 5. Flash falloff, on flash frames only. DORMANT since 2026-09-29: `.original` ships
+        // `flashFalloff = 0`, so this branch never runs (see `FilmParams.flashFalloff` for why).
+        // Sits here, after halation and before the
         // vignette, for two reasons: the pipeline invariant fixes the LUT → bloom → vignette order
         // and this must not reorder it, and putting it after halation leaves halation's INPUT
         // bit-identical to what it has always been, so the one stage that was rewritten most
@@ -678,9 +680,16 @@ enum InstantFilmProcessor {
     /// point source at the camera, so the light reaching a surface falls off with the square of
     /// its distance. That already happened when the shutter fired. What removed it was the ISP,
     /// which tone-maps a high-dynamic-range frame back toward a pleasing global exposure and in
-    /// doing so lifts the background the flash never reached. Measured across the owner's flash
-    /// captures, the result has 0.00% of its pixels below 0.04; a real single-use camera frame has
-    /// 15 to 35% there. The signal is in the file, flattened.
+    /// doing so lifts the background the flash never reached.
+    ///
+    /// DORMANT since 2026-09-29 (`.original` ships `flashFalloff = 0`). The premise above holds,
+    /// but this map does not measure it: it is the frame's own luminance, which is reflectance
+    /// times light, divided by the brightest region. In a white-walled room the anchor is a wall,
+    /// and the near dark floor the flash hit hardest read as "unlit" (multiplied by 0.13 on the
+    /// owner's entryway, the far door by 0.37). The "15 to 35% of a disposable frame below 0.04"
+    /// target it was tuned toward had no same-scene data; Lapse's same-scene flash frames sit at
+    /// 1.7% and 4.1%. Kept, tested at an explicit strength, for a rebuild on a signal that means
+    /// light.
     ///
     /// The chain, in order:
     ///
