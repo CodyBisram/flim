@@ -72,11 +72,15 @@ enum Usage {
     /// launch rather than only on version change, because `updated_at` doubling as "last seen
     /// running this version" is what makes the dashboard's number trustworthy. Same contract
     /// as `log`: fire-and-forget, never throws, safe before its migration ships.
+    ///
+    /// The phone's IANA time zone rides along (2026-09-29): the only "where are people" signal
+    /// the app keeps, the same value the Chapters RPCs already receive, coarse and permission-free.
     static func reportClientVersion() {
         Task {
             _ = try? await supabase
                 .rpc("report_client_version",
-                     params: ["p_version": AppInfo.shortVersion, "p_build": AppInfo.buildNumber])
+                     params: ["p_version": AppInfo.shortVersion, "p_build": AppInfo.buildNumber,
+                              "p_timezone": TimeZone.current.identifier])
                 .execute()
         }
     }
