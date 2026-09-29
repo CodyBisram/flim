@@ -14042,8 +14042,8 @@ $$;
 REVOKE ALL ON FUNCTION public.put_up_for_spotlight(UUID) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.put_up_for_spotlight(UUID) TO authenticated;
 
--- Folded in from supabase/migrations/2026-09-29_three_silver_badges.sql (NOT YET APPLIED to production).
--- Three silver badges (2026-09-29, for 1.6.2). NOT YET APPLIED. The owner applies it.
+-- Folded in from supabase/migrations/2026-09-29_three_silver_badges.sql (applied to production 2026-09-29).
+-- Three silver badges (2026-09-29, for 1.6.2). Applied 2026-09-29.
 --
 -- docs/PLAN_1_6_2_BADGES_AND_RATING.md, section 1: Recruiter (automatic), Feedback and Bug Catcher
 -- (awarded by the owner from the dashboard). Safe to re-run: every statement is IF NOT EXISTS,

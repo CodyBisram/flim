@@ -1,4 +1,4 @@
--- Three silver badges (2026-09-29, for 1.6.2). NOT YET APPLIED. The owner applies it.
+-- Three silver badges (2026-09-29, for 1.6.2). Applied 2026-09-29.
 --
 -- docs/PLAN_1_6_2_BADGES_AND_RATING.md, section 1: Recruiter (automatic), Feedback and Bug Catcher
 -- (awarded by the owner from the dashboard). Safe to re-run: every statement is IF NOT EXISTS,
