@@ -243,17 +243,10 @@ struct CameraView: View {
                         // 42501), not why: a genuinely developed roll, a deleted one, or a
                         // membership that was removed all look identical from here, so the copy
                         // states the effect, not a cause it can't verify.
-                        Label("That roll isn't accepting shots anymore, so this one went to your Darkroom instead.",
-                              systemImage: "checkmark.circle.fill")
-                            .flimFont(12, weight: .medium)
-                            .foregroundStyle(.white)
-                            .multilineTextAlignment(.leading)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 10)
-                            .background(.ultraThinMaterial, in: Capsule())
+                        FlimToast("That roll isn't accepting shots anymore, so this one went to your Darkroom instead.",
+                                  kind: .success)
                             .padding(.top, 10)
                             .padding(.horizontal, 24)
-                            .transition(.move(edge: .top).combined(with: .opacity))
                     }
                     Spacer()
                 }

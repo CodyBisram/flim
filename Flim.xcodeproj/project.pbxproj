@@ -73,6 +73,7 @@
 		2CC83F417EA5D7E7797DE86B /* PhotosNeedingSignedURLTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 743DC077F394FDA8492B4BD3 /* PhotosNeedingSignedURLTests.swift */; };
 		2EADA1559161227EB5E39A93 /* CaptureQueueStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0B896AB175F0632ABA6D64E /* CaptureQueueStoreTests.swift */; };
 		2EDCE64ACD1C1B9060F4B36B /* UserPageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 799578BF49AD244204751AC0 /* UserPageView.swift */; };
+		2FB452868458857E3289C03D /* FlimToast.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81D2E2A6B686741E639151E /* FlimToast.swift */; };
 		305059BC7E8376F1EA969083 /* DarkroomWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9733A56107406A4222E1AE1C /* DarkroomWidget.swift */; };
 		306C5803B9CDE4D073176B30 /* CaptureQueueStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5C10296557CE45DCC0004BB /* CaptureQueueStore.swift */; };
 		3070CADC3F21984D682B9058 /* UserFacingError.swift in Sources */ = {isa = PBXBuildFile; fileRef = E76395E2FEC6D1DFCEAC9E84 /* UserFacingError.swift */; };
@@ -654,6 +655,7 @@
 		C4E4408D99715C85F7767AC1 /* RollLiveActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RollLiveActivity.swift; sourceTree = "<group>"; };
 		C5CF40AEDBC8243F837F246F /* UndoCenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UndoCenter.swift; sourceTree = "<group>"; };
 		C70C734A3C9E58C37BDA61F9 /* QuickTagChipsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickTagChipsTests.swift; sourceTree = "<group>"; };
+		C81D2E2A6B686741E639151E /* FlimToast.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlimToast.swift; sourceTree = "<group>"; };
 		C83B56B27D38D1F33442EDBD /* WidgetSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetSnapshot.swift; sourceTree = "<group>"; };
 		C8C2F70774B76385A97528D7 /* RevealCover.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RevealCover.swift; sourceTree = "<group>"; };
 		C90BE0C5BA46C41F86085BD3 /* PhotoTagsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoTagsTests.swift; sourceTree = "<group>"; };
@@ -817,6 +819,7 @@
 				633F468E30E62ADA6EFE45C5 /* FilmStripGrid.swift */,
 				ACA8474EFFFEAB981CF14C8D /* FirstVisitLine.swift */,
 				2AEEA21FF5F282C444465D1D /* FlimFont.swift */,
+				C81D2E2A6B686741E639151E /* FlimToast.swift */,
 				0361D553ECF38F99C180ACF4 /* FollowingList.swift */,
 				9B5A93AEC9F3404C135FBFB4 /* KeyboardDismiss.swift */,
 				5AC2BCF4765864C0FBC18FD1 /* MentionSuggestions.swift */,
@@ -1628,6 +1631,7 @@
 				044E0603C382A28DB1640C3E /* FlimAccentPalette.swift in Sources */,
 				F28BA958FD55FFA0EE8BDA41 /* FlimApp.swift in Sources */,
 				7283B8423917F90243028272 /* FlimFont.swift in Sources */,
+				2FB452868458857E3289C03D /* FlimToast.swift in Sources */,
 				F184E9E2AABA6A9F4F29EE52 /* FollowingList.swift in Sources */,
 				345A88271D4B0D103B2343B7 /* FrameCredit.swift in Sources */,
 				287023347895E167ECC91920 /* Haptics.swift in Sources */,

@@ -218,12 +218,7 @@ struct RollMembersView: View {
                 }
                 .overlay(alignment: .top) {
                     if let toastMessage {
-                        Label(toastMessage, systemImage: "exclamationmark.circle.fill")
-                            .flimFont(13.5, weight: .medium, relativeTo: .subheadline)
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 16).padding(.vertical, 10)
-                            .background(.ultraThinMaterial, in: Capsule())
-                            .transition(.move(edge: .top).combined(with: .opacity))
+                        FlimToast(toastMessage, kind: .error)
                     }
                 }
             }

@@ -573,23 +573,11 @@ struct PhotoPagerView: View {
         }
         .overlay(alignment: .top) {
             if showSharedToast {
-                Label("Posted to your page", systemImage: "checkmark.circle.fill")
-                    .flimFont(14, weight: .semibold)
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 18)
-                    .padding(.vertical, 11)
-                    .background(.ultraThinMaterial, in: Capsule())
+                FlimToast("Posted to your page", kind: .success)
                     .padding(.top, 64)
-                    .transition(.move(edge: .top).combined(with: .opacity))
             } else if let errorToast {
-                Label(errorToast, systemImage: "exclamationmark.circle.fill")
-                    .flimFont(14, weight: .semibold)
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 18)
-                    .padding(.vertical, 11)
-                    .background(.ultraThinMaterial, in: Capsule())
+                FlimToast(errorToast, kind: .error)
                     .padding(.top, 64)
-                    .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
         .onChange(of: selection) { _, _ in

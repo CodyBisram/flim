@@ -225,13 +225,8 @@ struct MainTabView: View {
         // auth screens too. Nothing extra is needed here.
         .overlay(alignment: .top) {
             if !network.isConnected {
-                Label("No connection", systemImage: "wifi.slash")
-                    .flimFont(13, weight: .medium)
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 16).padding(.vertical, 9)
-                    .background(.ultraThinMaterial, in: Capsule())
+                FlimToast("No connection", kind: .info)
                     .padding(.top, 8)
-                    .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
         .animation(.easeInOut(duration: 0.3), value: network.isConnected)

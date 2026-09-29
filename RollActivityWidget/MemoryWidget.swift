@@ -133,8 +133,11 @@ private struct MemoryBackdrop: View {
     var body: some View {
         ZStack {
             if let image, let ui = WidgetImage.decode(image) {
+                // A tinted or clear Home Screen renders images in the accent by default, which
+                // turns the photograph into a monochrome silhouette of itself. It stays a print.
                 Image(uiImage: ui)
                     .resizable()
+                    .widgetAccentedRenderingMode(.fullColor)
                     .scaledToFill()
                 WidgetGrain()
             } else {

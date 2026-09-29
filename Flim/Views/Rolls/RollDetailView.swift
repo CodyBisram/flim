@@ -231,7 +231,7 @@ struct RollDetailView: View {
     /// instead of one boolean per message.
     @State private var toastMessage: String?
     @State private var toastDismiss: Task<Void, Never>?
-    @State private var toastIsError = false
+    @State private var toastKind: FlimToast.Kind = .success
     @State private var showLeaveRoll = false
     @State private var shareItem: ShareImage?
     /// The long-press Spotlight item on your own frames: its first-time sheet and take-out ask,
@@ -443,12 +443,7 @@ struct RollDetailView: View {
         }
         .overlay(alignment: .top) {
             if let toastMessage {
-                Label(toastMessage, systemImage: toastIsError ? "exclamationmark.circle.fill" : "checkmark.circle.fill")
-                    .flimFont(13, weight: .medium)
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 16).padding(.vertical, 10)
-                    .background(.ultraThinMaterial, in: Capsule())
-                    .transition(.move(edge: .top).combined(with: .opacity))
+                FlimToast(toastMessage, kind: toastKind)
             }
         }
         .navigationBarTitleDisplayMode(.inline)
@@ -658,7 +653,7 @@ struct RollDetailView: View {
                 // at. Bridge that, once, only on this path: an ordinary open of an unwatched
                 // reveal (no push involved) needs no explanation for why the roll didn't just open.
                 if awaitingPhotoId != nil {
-                    showToast(pushBridgeToastMessage(rollName: roll.name, hasComments: awaitingPhotoComments))
+                    showToast(pushBridgeToastMessage(rollName: roll.name, hasComments: awaitingPhotoComments), kind: .info)
                 }
                 showReveal = true
             }
@@ -870,7 +865,7 @@ struct RollDetailView: View {
                         dismiss()
                     } catch {
                         Haptics.error()
-                        showToast("Couldn't delete the roll. Check your connection and try again.", isError: true)
+                        showToast("Couldn't delete the roll. Check your connection and try again.", kind: .error)
                     }
                 }
             }
@@ -892,7 +887,7 @@ struct RollDetailView: View {
                         dismiss()
                     } catch {
                         Haptics.error()
-                        showToast("Couldn't leave the roll. Check your connection and try again.", isError: true)
+                        showToast("Couldn't leave the roll. Check your connection and try again.", kind: .error)
                     }
                 }
             }
@@ -1019,7 +1014,7 @@ struct RollDetailView: View {
                     // than none, but claiming "all" when it was 4 of 9 would be a lie the person
                     // only discovers later, in their camera roll, with no way to tell which four.
                     // Said in a toast alongside the sheet now, not a modal in front of it.
-                    showToast("Only \(images.count) of \(mine) photos could be loaded. Saving those now.", isError: true)
+                    showToast("Only \(images.count) of \(mine) photos could be loaded. Saving those now.", kind: .error)
                 }
                 showShareAll = true
             }
@@ -1080,7 +1075,7 @@ struct RollDetailView: View {
             // the photo is actually gone, and only then does the grid drop the cell.
             guard await photoService.deletePhoto(photo) else {
                 Haptics.error()
-                showToast("Couldn't delete that. Check your connection and try again.", isError: true)
+                showToast("Couldn't delete that. Check your connection and try again.", kind: .error)
                 return
             }
             feed.dropPost(forDeletedPhotoId: photo.id)
@@ -1173,12 +1168,12 @@ struct RollDetailView: View {
     /// the moment carries more consequence than a confirmation. A newer toast cancels the older
     /// one's pending dismiss, so a confirmation's 1.6s timer can never cut short an error that
     /// replaced it mid-flight.
-    private func showToast(_ message: String, isError: Bool = false) {
-        toastIsError = isError
+    private func showToast(_ message: String, kind: FlimToast.Kind = .success) {
+        toastKind = kind
         withAnimation { toastMessage = message }
         toastDismiss?.cancel()
         toastDismiss = Task {
-            try? await Task.sleep(for: .seconds(isError ? 3.0 : 1.6))
+            try? await Task.sleep(for: .seconds(kind == .error ? 3.0 : 1.6))
             guard !Task.isCancelled else { return }
             withAnimation { toastMessage = nil }
         }

@@ -258,11 +258,7 @@ private struct BadgePickerContent: View {
             }
             .overlay(alignment: .top) {
                 if showCapNotice {
-                    Label("Up to 2 badges. Remove one to add another.", systemImage: "exclamationmark.circle.fill")
-                        .flimFont(13, weight: .medium).foregroundStyle(.white)
-                        .padding(.horizontal, 16).padding(.vertical, 10)
-                        .background(.ultraThinMaterial, in: Capsule())
-                        .transition(.move(edge: .top).combined(with: .opacity))
+                    FlimToast("Up to 2 badges. Remove one to add another.", kind: .error)
                         .padding(.top, 6)
                 }
             }

@@ -19,19 +19,10 @@ struct UndoCapsuleHost: View {
                 capsule(for: staged)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             } else if let notice = center.failureNotice {
-                Group {
-                    if center.noticeIsConfirmation {
-                        Text(notice)
-                    } else {
-                        Label(notice, systemImage: "exclamationmark.circle.fill")
-                    }
-                }
-                .flimFont(13, weight: .medium)
-                .foregroundStyle(.white)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 16).padding(.vertical, 12)
-                .background(.ultraThinMaterial, in: Capsule())
-                .transition(.move(edge: .bottom).combined(with: .opacity))
+                // The callers buzz before they hand `UndoCenter` a notice, so the toast stays
+                // quiet rather than second-guessing their timing.
+                FlimToast(notice, kind: center.noticeIsConfirmation ? .success : .error,
+                          edge: .bottom, playsHaptic: false)
             }
         }
         .animation(.snappy(duration: 0.25), value: center.staged?.id)
@@ -58,8 +49,7 @@ struct UndoCapsuleHost: View {
                 .padding(.leading, 2)
         }
         .padding(.leading, 16).padding(.trailing, 18).padding(.vertical, 12)
-        .background(.ultraThinMaterial, in: Capsule())
-        .overlay(Capsule().strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
+        .flimToastSurface(hairline: true)
         .accessibilityElement(children: .combine)
         .accessibilityHint("Undoes this in the next few seconds")
     }

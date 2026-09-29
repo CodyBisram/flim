@@ -32,6 +32,44 @@ struct FeedPreviewDemoHost: View {
         .environment(photos)
         .environment(feed)
         .preferredColorScheme(.dark)
+        .undoCapsuleHost(bottomPadding: 40)
+        .overlay {
+            if showToastGallery { toastGallery }
+        }
+        .task { await playDemoToast() }
+    }
+
+    @State private var showToastGallery = false
+
+    /// `-demoToast <name>`: raises one of the app's real toasts a second after launch, through
+    /// the same channel the app uses, so its look can be checked without an account.
+    /// `feedNotice` is the feed's top slot, `notice` and `confirmation` the undo capsule's
+    /// slot, and `gallery` stacks one `FlimToast` of each kind.
+    private func playDemoToast() async {
+        guard let name = UserDefaults.standard.string(forKey: "demoToast") else { return }
+        try? await Task.sleep(for: .seconds(1))
+        switch name {
+        case "feedNotice":
+            NotificationCenter.default.post(name: .feedNotice, object: SpotlightRefusal.gone)
+        case "notice":
+            UndoCenter.shared.showNotice(SpotlightRefusal.putUpNetwork)
+        case "confirmation":
+            UndoCenter.shared.showConfirmation(
+                SpotlightPutUpNotice.text(postId: UUID(), replacedPostId: nil, replacedAt: nil))
+        case "gallery":
+            withAnimation { showToastGallery = true }
+        default:
+            break
+        }
+    }
+
+    private var toastGallery: some View {
+        VStack(spacing: 12) {
+            FlimToast("Posted to your page", kind: .success, playsHaptic: false)
+            FlimToast(SpotlightRefusal.putUpNetwork, kind: .error, playsHaptic: false)
+            FlimToast("No connection", kind: .info, playsHaptic: false)
+        }
+        .padding(.horizontal, 16)
     }
 }
 

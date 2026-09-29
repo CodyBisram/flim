@@ -695,18 +695,10 @@ struct FeedUnitCard: View {
     @ViewBuilder
     private var toasts: some View {
         if captionFailedToast {
-            toast("Couldn't save caption. Try again.", icon: "exclamationmark.circle.fill")
+            FlimToast("Couldn't save caption. Try again.", kind: .error)
         } else if reactionFailedToast {
-            toast(ReactionFailure.text, icon: "exclamationmark.circle.fill")
+            FlimToast(ReactionFailure.text, kind: .error)
         }
-    }
-
-    private func toast(_ text: String, icon: String) -> some View {
-        Label(text, systemImage: icon)
-            .flimFont(13.5, weight: .medium, relativeTo: .subheadline).foregroundStyle(.white)
-            .padding(.horizontal, 16).padding(.vertical, 10)
-            .background(.ultraThinMaterial, in: Capsule())
-            .transition(.move(edge: .top).combined(with: .opacity))
     }
 
     private func beginEditingTags() {

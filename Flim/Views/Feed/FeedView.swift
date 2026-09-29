@@ -313,6 +313,16 @@ struct FeedView: View {
         .onChange(of: seenStore.marksVersion) {
             if didLoad, AccountEpoch.current == loadedEpoch { updateFeedDot() }
         }
+        #if DEBUG
+        // `-feedPreviewDemo -demoUnreadActivity N`: the bell as an account with N unread sees
+        // it. The demo has no account, so the count never arrives from the server.
+        .task {
+            let demoUnread = UserDefaults.standard.integer(forKey: "demoUnreadActivity")
+            if demoUnread > 0, ProcessInfo.processInfo.arguments.contains("-feedPreviewDemo") {
+                unreadActivity = demoUnread
+            }
+        }
+        #endif
         .onReceive(NotificationCenter.default.publisher(for: .feedNotice)) { note in
             guard let text = note.object as? String else { return }
             withAnimation { feedNotice = text }
@@ -464,7 +474,7 @@ struct FeedView: View {
                 // One signal, the app's own: a plain bell and an accent dot, the same dot as
                 // the avatar beside it. It used to be `bell.badge` AND a red "9+" capsule, two
                 // badges on one control, in a color nothing else here uses (audit D-22, 1.6.1).
-                // The count still reads out to VoiceOver below.
+                // The count still reads out to VoiceOver, as the value below.
                 Image(systemName: "bell")
                     .font(.system(size: 16, weight: .medium))
                     .foregroundStyle(accent)
@@ -482,7 +492,10 @@ struct FeedView: View {
                     .frame(width: 44, height: 44)
                     .glassCapsule(interactive: true)
             }
-            .accessibilityLabel(unreadActivity > 0 ? "Activity, \(unreadActivity) new" : "Activity")
+            // The dot carries no number, so the count lives in the value: VoiceOver reads
+            // "Activity, 3 new" while the label stays the control's name.
+            .accessibilityLabel("Activity")
+            .accessibilityValue(unreadActivity > 0 ? "\(unreadActivity) new" : "")
 
             Button { showDiscover = true } label: {
                 Image(systemName: "person.2.badge.plus")
@@ -672,21 +685,13 @@ struct FeedView: View {
                     .padding(.top, 8)
                     .transition(.move(edge: .top).combined(with: .opacity))
                 } else if refreshFailedToast {
-                    Label("Couldn't refresh", systemImage: "wifi.exclamationmark")
-                        .flimFont(13.5, weight: .semibold, relativeTo: .subheadline)
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 16).padding(.vertical, 8)
-                        .background(.ultraThinMaterial, in: Capsule())
+                    FlimToast("Couldn't refresh", kind: .error)
                         .padding(.top, 8)
-                        .transition(.move(edge: .top).combined(with: .opacity))
                 } else if let feedNotice {
-                    Text(feedNotice)
-                        .flimFont(13.5, weight: .semibold, relativeTo: .subheadline)
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 16).padding(.vertical, 8)
-                        .background(.ultraThinMaterial, in: Capsule())
+                    // Every `.feedNotice` is something that didn't happen (a post that is gone,
+                    // a follow that didn't stick), the same news Activity gives as an error.
+                    FlimToast(feedNotice, kind: .error)
                         .padding(.top, 8)
-                        .transition(.move(edge: .top).combined(with: .opacity))
                 }
             }
         }

@@ -15,6 +15,19 @@ enum Haptics {
     private static let medium = UIImpactFeedbackGenerator(style: .medium)
     private static let rigid = UIImpactFeedbackGenerator(style: .rigid)
     private static let notification = UINotificationFeedbackGenerator()
+    /// System uptime of the last haptic played, of any kind. Read by `playedRecently`.
+    private static var lastPlayed: TimeInterval = -.infinity
+
+    /// Whether any haptic played in the last 0.6 seconds. `FlimToast` checks this before playing
+    /// its own: the action that raised a toast has usually just spoken (a tap, a failure's
+    /// buzz), and a second buzz on top of it reads as a stutter rather than as confirmation.
+    static var playedRecently: Bool {
+        ProcessInfo.processInfo.systemUptime - lastPlayed < 0.6
+    }
+
+    private static func stamp() {
+        lastPlayed = ProcessInfo.processInfo.systemUptime
+    }
 
     /// Warms the Taptic Engine so the first haptic of a session isn't the laggy one. Called at
     /// launch and when the camera appears (the shutter is the one place latency is obvious).
@@ -28,12 +41,14 @@ enum Haptics {
 
     /// An ordinary control: a button, a tab, a toggle, opening a sheet.
     static func tap() {
+        stamp()
         light.impactOccurred()
         light.prepare()
     }
 
     /// A firmer bump for a mode change, entering multi-select via long-press.
     static func select() {
+        stamp()
         medium.impactOccurred()
         medium.prepare()
     }
@@ -42,6 +57,7 @@ enum Haptics {
 
     /// An action completed: a post shared, a roll created or joined, an invite code accepted.
     static func success() {
+        stamp()
         notification.notificationOccurred(.success)
         notification.prepare()
     }
@@ -53,12 +69,14 @@ enum Haptics {
     /// Reversible, self-contained removals (deleting your own comment, unfollowing) stay `tap()`,
     /// a warning buzz for those would cry wolf.
     static func warning() {
+        stamp()
         notification.notificationOccurred(.warning)
         notification.prepare()
     }
 
     /// Something went wrong (a send failed, an action didn't stick).
     static func error() {
+        stamp()
         notification.notificationOccurred(.error)
         notification.prepare()
     }
@@ -67,6 +85,7 @@ enum Haptics {
 
     /// The shutter press.
     static func shutter() {
+        stamp()
         rigid.impactOccurred(intensity: 0.9)
         rigid.prepare()
     }
@@ -75,6 +94,7 @@ enum Haptics {
     /// (a soft knock, then the success chime) rather than the same buzz as any other completed
     /// action, it should feel like something ARRIVED, not merely that a request went through.
     static func reveal() {
+        stamp()
         light.impactOccurred(intensity: 0.7)
         light.prepare()
         Task {

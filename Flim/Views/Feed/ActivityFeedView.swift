@@ -191,13 +191,8 @@ struct ActivityFeedView: View {
             }
             .overlay(alignment: .top) {
                 if let toastMessage {
-                    Label(toastMessage, systemImage: "exclamationmark.circle.fill")
-                        .flimFont(13, weight: .medium, relativeTo: .subheadline)
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 16).padding(.vertical, 10)
-                        .background(.ultraThinMaterial, in: Capsule())
+                    FlimToast(toastMessage, kind: .error)
                         .padding(.top, 8)
-                        .transition(.move(edge: .top).combined(with: .opacity))
                 }
             }
             .navigationBarTitleDisplayMode(.inline)

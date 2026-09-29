@@ -289,17 +289,9 @@ struct PostDetailView: View {
         .spotlightPutUpFlow(firstTimePost: $spotlightFirstTimePost, takeOutPost: $spotlightTakeOutPost)
         .overlay(alignment: .top) {
             if captionFailedToast {
-                Label("Couldn't save caption. Try again.", systemImage: "exclamationmark.circle.fill")
-                    .flimFont(13, weight: .medium).foregroundStyle(.white)
-                    .padding(.horizontal, 16).padding(.vertical, 10)
-                    .background(.ultraThinMaterial, in: Capsule())
-                    .transition(.move(edge: .top).combined(with: .opacity))
+                FlimToast("Couldn't save caption. Try again.", kind: .error)
             } else if reactionFailedToast {
-                Label(ReactionFailure.text, systemImage: "exclamationmark.circle.fill")
-                    .flimFont(13, weight: .medium).foregroundStyle(.white)
-                    .padding(.horizontal, 16).padding(.vertical, 10)
-                    .background(.ultraThinMaterial, in: Capsule())
-                    .transition(.move(edge: .top).combined(with: .opacity))
+                FlimToast(ReactionFailure.text, kind: .error)
             }
         }
         .sheet(item: $shareItem) { SharePreviewSheet(photo: $0.image, caption: $0.caption) }
