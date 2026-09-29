@@ -2180,6 +2180,58 @@ Not done, or open:
   none chosen.
 - Device checks: see "Feed \"new\" per card" under Waiting on device.
 
+### done 2026-09-29: 1.6.2 second batch, glass pass and backend audit (not yet pushed)
+
+Source: `docs/AUDIT_1_6_1_POLISH_2026-09-28.md`, sections B, C and E. On main after 1.6.2's first
+batch (badges, rating prompt, time zone census).
+
+Done on main (not yet on a device):
+- Backend B-2 to B-14 (B-1 was done in 1.6.1): pushes fail closed on any failed read of blocks,
+  devices, the ledger, roll members, mutes or digest state; roll-photo comment pushes reach the
+  owner and current members only, @mentions capped at five; APNs calls time out at ten seconds;
+  polls ordered for stable ledger keys; the signed-out preview and landing page have their own
+  rate budgets; anon can no longer execute the auth gate; the one-shot push pages device tokens;
+  two partial indexes. B-7 (owner decision): only personal codes earn an invite back, roll and
+  campaign admissions still record who brought whom. Functions DEPLOYED 2026-09-29; migration
+  `2026-09-29_backend_audit_b2_b14.sql` for the owner.
+- B-11: the inviter comes from `get_own_inviter()` after sign-in; the preview's id is a fallback.
+  The anon preview keeps returning it until builds before this one are gone.
+- C-5, C-6, C-7: offline cold launch lands in the cached account with the camera usable, resyncs on
+  reconnect and foreground; an invite link opened while signed in is no longer stored for the next
+  sign-in.
+- Glass pass: E-3 tab symbols, E-7 GlassIconButton (44pt circles everywhere, 52 by the shutter),
+  E-8 FlimToast (17 hand-built toasts, one haptic each), E-9 bell VoiceOver value, E-14 sheet
+  radius token, E-20 system glass sheets on iOS 26 with a tint for contrast, E-21 opaque content
+  surfaces, E-22 tab bar minimizes on scroll and the Feed/Rolls headers are scroll edge bars, E-23
+  widget photos keep full color on tinted home screens, E-24 camera.rotate flip glyph.
+- Time zone on the version census (migration APPLIED 2026-09-29).
+
+Deferred, with the reason:
+- E-1 icon layers, E-2 brand mark: `owner`. E-10 to E-19 (tokens, typography, radii, spacing,
+  colors, motion, haptics): a token pass of its own. `queued`.
+- A-6, A-8, C-9 to C-12, F-4 to F-12, F-15: `queued`.
+- 25 admissions from before the B-7 migration keep the old earnback rule (via unknown).
+
+On device:
+1. iOS 26: open Comments over a bright feed photo, raise the keyboard: the composer bar sits on
+   an opaque bar attached to the keys, the sheet is system glass and the text reads clearly.
+   Decide whether the photo showing through the sheet is wanted.
+2. iOS 26: scroll the Feed and Rolls: the tab bar shrinks to the active tab, the header stays
+   as a bar the content glides under, scroll-to-top and pull to refresh still work.
+3. Camera: flip and flash are equal circles, the flip glyph is the camera-rotate symbol, the
+   self timer shows its seconds inside the circle; press feel and one haptic per press.
+4. Photo viewer: close, comments, share and more are four equal circles.
+5. Toasts: a failure buzzes once (not twice), a success chimes once, "No connection" is silent;
+   check a reaction failure, a share success and "Roll cover updated".
+6. Look back widget on a tinted Home Screen: the photo keeps its colors.
+7. Airplane mode cold launch, signed in: your own account, camera works, the shot queues; turn
+   the network back on without relaunching: it uploads and the profile refreshes. Repeat with the
+   app force-quit for over an hour first, launching from a notification tap.
+8. Sign out, then airplane mode cold launch: sign-in, not the old account.
+9. Signed in, open flim-app.com/i/<code> from Messages: nothing visible; sign out: the invite
+   field is empty. Signed out, open the same link: the code is filled in and the inviter named.
+10. Reduce Transparency on: sheets, toasts and glass buttons are solid.
+
 ### done 2026-09-28: 1.6.1 polish from the audit (build 417, MARKETING_VERSION 1.6.1)
 
 Source: `docs/AUDIT_1_6_1_POLISH_2026-09-28.md` and `docs/prompts/BUILD_1_6_1_POLISH_2026-09-28.md`.
