@@ -639,3 +639,14 @@ $function$
 ;
 
 REVOKE ALL ON FUNCTION public._ratchet_badges(UUID) FROM PUBLIC, anon, authenticated;
+
+-- 5. The rating prompt's four "asked" counters (1.6.2, ReviewPrompt): which good moment asked.
+--    A superset of the live list, so nothing already logged can fail it. The events only say the
+--    app asked; whether Apple showed the card, or what anyone gave, is never known.
+ALTER TABLE public.usage_events DROP CONSTRAINT IF EXISTS usage_events_event_check;
+ALTER TABLE public.usage_events ADD CONSTRAINT usage_events_event_check CHECK (event IN (
+    'app_open', 'photo_captured', 'post_shared', 'feed_viewed', 'reveal_watched',
+    'invite_shared_profile', 'invite_shared_feed', 'invite_shared_reveal',
+    'spotlight_put_up', 'spotlight_withdraw', 'spotlight_strip_open', 'spotlight_weeks_open',
+    'review_asked_spotlight', 'review_asked_reveal', 'review_asked_tenth_post', 'review_asked_reactions'
+));
