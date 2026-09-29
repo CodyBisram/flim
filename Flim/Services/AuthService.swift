@@ -382,7 +382,10 @@ final class AuthService {
     /// is sent. `nil` for a code the server will not currently accept, whichever reason: the RPC
     /// answers identically for a spent code and a made-up one (see `invite_preview`).
     struct InvitePreview: Decodable, Equatable {
-        let inviterId: UUID
+        /// Optional because the preview is read signed out and the server is withdrawing this id
+        /// from signed-out callers: a NULL, or no key at all, must never fail the whole preview.
+        /// After sign-in the inviter comes from `ownInviter(pending:)` instead.
+        let inviterId: UUID?
         let username: String
         let displayName: String?
         /// Set when the code is a roll's: the roll it opens, whose creator is the inviter.
@@ -410,6 +413,40 @@ final class AuthService {
             .rpc("invite_preview", params: ["p_code": normalized])
             .execute().value
         return rows?.first
+    }
+
+    /// One row of `get_own_inviter()`: who invited the signed-in account, and how.
+    struct OwnInviterRow: Decodable, Equatable {
+        let inviterId: UUID
+        /// "personal", "campaign" or "roll"; nil on a legacy row, which reads as personal unless
+        /// the preview said otherwise.
+        let via: String?
+        enum CodingKeys: String, CodingKey { case inviterId = "inviter_id", via }
+    }
+
+    /// Who invited the signed-in account, for the one-way follow a new account makes. Asked of the
+    /// server (`get_own_inviter`, pinned to the caller), because the signed-out preview no longer
+    /// carries the id. What the sign-in screen noted is the fallback, see `resolveInviter`.
+    func ownInviter(pending: PendingInviter.Entry) async -> NewAccountIntro.Inviter? {
+        let rows: [OwnInviterRow]? = try? await supabase.rpc("get_own_inviter").execute().value
+        return Self.resolveInviter(rows: rows, pending: pending)
+    }
+
+    /// The server's answer wins. With a row: its id, and `via == "campaign"` for the cohort flag,
+    /// falling back to the preview's kind when `via` is null. With no row (none, or a server
+    /// without the function yet): the preview's id when it had one, else no inviter.
+    ///
+    /// The name is the sign-in screen's, and it only travels with an id it can belong to: if the
+    /// preview named a different person than the server (an email already allowlisted by an
+    /// earlier code), it is dropped rather than put on the wrong person.
+    nonisolated static func resolveInviter(rows: [OwnInviterRow]?, pending: PendingInviter.Entry) -> NewAccountIntro.Inviter? {
+        if let row = rows?.first {
+            let isCampaign = row.via.map { $0 == "campaign" } ?? pending.isCampaign
+            let name = (pending.id == nil || pending.id == row.inviterId) ? pending.name : ""
+            return NewAccountIntro.Inviter(id: row.inviterId, name: name, isCampaign: isCampaign)
+        }
+        guard let id = pending.id else { return nil }
+        return NewAccountIntro.Inviter(id: id, name: pending.name, isCampaign: pending.isCampaign)
     }
 
     func redeemInvite(code: String, email: String) async throws -> Bool {

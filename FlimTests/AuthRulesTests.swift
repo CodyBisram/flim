@@ -113,4 +113,62 @@ struct AuthRulesTests {
         #expect(AuthService.sessionOutcome(after: try Self.apiError(status: 401), storedUserId: Self.stored) == .signedOut)
         #expect(AuthService.sessionOutcome(after: CancellationError(), storedUserId: Self.stored) == .signedOut)
     }
+
+    // MARK: - Who invited this account
+
+    private static func decodeRows(_ json: String) throws -> [AuthService.OwnInviterRow] {
+        try JSONDecoder().decode([AuthService.OwnInviterRow].self, from: Data(json.utf8))
+    }
+
+    @Test("get_own_inviter rows decode with a via, a null via, and as an empty array")
+    func ownInviterRowShapes() throws {
+        let id = UUID()
+        let present = try Self.decodeRows(#"[{"inviter_id":"\#(id.uuidString)","via":"campaign"}]"#)
+        #expect(present == [AuthService.OwnInviterRow(inviterId: id, via: "campaign")])
+        let legacy = try Self.decodeRows(#"[{"inviter_id":"\#(id.uuidString)","via":null}]"#)
+        #expect(legacy == [AuthService.OwnInviterRow(inviterId: id, via: nil)])
+        #expect(try Self.decodeRows("[]").isEmpty)
+    }
+
+    @Test("a preview without an inviter id still decodes")
+    func previewWithoutInviterId() throws {
+        for json in [#"[{"inviter_id":null,"username":"maya","display_name":null,"kind":"personal"}]"#,
+                     #"[{"username":"maya","display_name":"Maya"}]"#] {
+            let rows = try JSONDecoder().decode([AuthService.InvitePreview].self, from: Data(json.utf8))
+            #expect(rows.first?.inviterId == nil)
+            #expect(rows.first?.username == "maya")
+        }
+    }
+
+    @Test("the server's via decides the cohort flag, and a null via falls back to the preview's kind")
+    func campaignResolution() {
+        let id = UUID()
+        let personalPreview = PendingInviter.Entry(id: nil, name: "Maya", isCampaign: false)
+        let campaignPreview = PendingInviter.Entry(id: nil, name: "@cody", isCampaign: true)
+        #expect(AuthService.resolveInviter(rows: [.init(inviterId: id, via: "campaign")], pending: personalPreview)?.isCampaign == true)
+        #expect(AuthService.resolveInviter(rows: [.init(inviterId: id, via: "personal")], pending: campaignPreview)?.isCampaign == false)
+        #expect(AuthService.resolveInviter(rows: [.init(inviterId: id, via: "roll")], pending: campaignPreview)?.isCampaign == false)
+        #expect(AuthService.resolveInviter(rows: [.init(inviterId: id, via: nil)], pending: campaignPreview)?.isCampaign == true)
+        #expect(AuthService.resolveInviter(rows: [.init(inviterId: id, via: nil)], pending: personalPreview)?.isCampaign == false)
+    }
+
+    @Test("the server's inviter wins; the preview's id is used only when the server has none")
+    func inviterIdResolution() {
+        let server = UUID()
+        let previewed = UUID()
+        let withId = PendingInviter.Entry(id: previewed, name: "Maya", isCampaign: false)
+        let withoutId = PendingInviter.Entry(id: nil, name: "Maya", isCampaign: false)
+        let serverRow = [AuthService.OwnInviterRow(inviterId: server, via: "personal")]
+
+        #expect(AuthService.resolveInviter(rows: serverRow, pending: withoutId) == .init(id: server, name: "Maya"))
+        #expect(AuthService.resolveInviter(rows: [.init(inviterId: previewed, via: nil)], pending: withId)
+                == .init(id: previewed, name: "Maya"))
+        // Different people: the follow goes to the server's inviter, and the preview's name stays off them.
+        #expect(AuthService.resolveInviter(rows: serverRow, pending: withId) == .init(id: server, name: ""))
+        // No row (none, or the function not deployed yet): the preview's id, if it had one.
+        #expect(AuthService.resolveInviter(rows: [], pending: withId) == .init(id: previewed, name: "Maya"))
+        #expect(AuthService.resolveInviter(rows: nil, pending: withId) == .init(id: previewed, name: "Maya"))
+        #expect(AuthService.resolveInviter(rows: [], pending: withoutId) == nil)
+        #expect(AuthService.resolveInviter(rows: nil, pending: withoutId) == nil)
+    }
 }

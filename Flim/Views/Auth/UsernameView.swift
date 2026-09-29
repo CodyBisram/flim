@@ -171,8 +171,10 @@ struct UsernameView: View {
             // person can see, and the follow can be made by hand from the inviter's page.
             if let uid = auth.currentUser?.id,
                let email = auth.currentUser?.email ?? auth.pendingEmail,
-               let inviter = PendingInviter.take(for: email), inviter.id != uid {
-                NewAccountIntro.rememberInviter(inviter, userId: uid)
+               let pending = PendingInviter.take(for: email),
+               let inviter = await auth.ownInviter(pending: pending), inviter.id != uid {
+                // Named only when the name is known to be this person's; the follow happens either way.
+                if !inviter.name.isEmpty { NewAccountIntro.rememberInviter(inviter, userId: uid) }
                 _ = await feed.follow(inviter.id, from: uid)
             }
         } catch {

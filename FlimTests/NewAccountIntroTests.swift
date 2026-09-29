@@ -79,7 +79,11 @@ struct NewAccountIntroTests {
         let inviter = UUID()
         PendingInviter.remember(inviterId: inviter, name: "Maya", for: "Maya@Example.com")
         #expect(PendingInviter.take(for: "someone-else@example.com") == nil)
-        #expect(PendingInviter.take(for: "maya@example.com") == NewAccountIntro.Inviter(id: inviter, name: "Maya"))
+        #expect(PendingInviter.take(for: "maya@example.com") == PendingInviter.Entry(id: inviter, name: "Maya"))
+        #expect(PendingInviter.take(for: "maya@example.com") == nil)
+        // A preview without an id still leaves the name and kind for after sign-in.
+        PendingInviter.remember(inviterId: nil, name: "Maya", isCampaign: true, for: "maya@example.com")
+        #expect(PendingInviter.take(for: "maya@example.com") == PendingInviter.Entry(id: nil, name: "Maya", isCampaign: true))
         #expect(PendingInviter.take(for: "maya@example.com") == nil)
     }
 

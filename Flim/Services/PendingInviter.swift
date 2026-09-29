@@ -8,24 +8,45 @@ import Foundation
 /// username screen, the moment the new account's row exists, which is when the one-way follow
 /// (new account follows inviter) can actually be inserted. The inviter hears about it through
 /// the ordinary follow push and can follow back or not; nothing is done on their behalf.
+///
+/// The id is optional because the preview is read signed out, and the server is withdrawing the
+/// inviter's id from signed-out callers. Once the account exists, `AuthService.ownInviter` asks
+/// the server who the inviter is; the id noted here is only its fallback.
 enum PendingInviter {
     static var store: UserDefaults = .standard
     private static func key(_ email: String) -> String { "pendingInviter.\(email.lowercased())" }
 
-    static func remember(inviterId: UUID, name: String, isCampaign: Bool = false, for email: String) {
-        store.set(inviterId.uuidString, forKey: key(email))
+    /// What the sign-in screen knew about the inviter.
+    struct Entry: Equatable {
+        /// Nil when the preview did not carry it.
+        var id: UUID?
+        /// What the sign-in screen called them: display name, else "@handle".
+        var name: String
+        /// Whether the preview said the code was a cohort code.
+        var isCampaign: Bool = false
+    }
+
+    static func remember(inviterId: UUID?, name: String, isCampaign: Bool = false, for email: String) {
+        if let inviterId {
+            store.set(inviterId.uuidString, forKey: key(email))
+        } else {
+            store.removeObject(forKey: key(email))
+        }
         store.set(name, forKey: key(email) + ".name")
         store.set(isCampaign, forKey: key(email) + ".campaign")
     }
 
-    static func take(for email: String) -> NewAccountIntro.Inviter? {
+    /// Present when either the id or the name was noted: an entry written by an older build
+    /// always has both, one written from a preview without an id has only the name.
+    static func take(for email: String) -> Entry? {
         let k = key(email)
-        guard let raw = store.string(forKey: k), let id = UUID(uuidString: raw) else { return nil }
-        let name = store.string(forKey: k + ".name") ?? ""
+        let id = store.string(forKey: k).flatMap(UUID.init(uuidString:))
+        let name = store.string(forKey: k + ".name")
+        guard id != nil || name != nil else { return nil }
         let campaign = store.bool(forKey: k + ".campaign")
         store.removeObject(forKey: k)
         store.removeObject(forKey: k + ".name")
         store.removeObject(forKey: k + ".campaign")
-        return NewAccountIntro.Inviter(id: id, name: name, isCampaign: campaign)
+        return Entry(id: id, name: name ?? "", isCampaign: campaign)
     }
 }
