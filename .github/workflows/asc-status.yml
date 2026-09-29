@@ -1,0 +1,28 @@
+# Read-only: prints each recent App Store version, its build and review state
+# (WAITING_FOR_REVIEW, IN_REVIEW, PENDING_DEVELOPER_RELEASE, READY_FOR_DISTRIBUTION...).
+# Uses the same App Store Connect key as the TestFlight pipeline, which exists only as
+# repo secrets. Started on demand: `gh workflow run asc-status.yml`.
+name: App Store status
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  status:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install --quiet "pyjwt[crypto]"
+      - name: Read App Store Connect
+        env:
+          ASC_KEY_ID:    ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8:    ${{ secrets.ASC_KEY_P8 }}
+        run: python3 scripts/asc_status.py
