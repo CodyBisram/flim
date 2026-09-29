@@ -401,7 +401,8 @@
       .navitem[aria-current="true"] { border-left-color: transparent; border-bottom-color: #f59e0b; }
       .side__foot { display: none; }
       .content { padding: 16px 14px 48px; }
-      .card__actions { width: 100%; }
+      /* Wraps so a feedback entry's three buttons fit a phone. */
+      .card__actions { width: 100%; flex-wrap: wrap; }
       .btn { flex: 1; }
     }
   </style>
@@ -744,7 +745,16 @@
           dismissF.addEventListener("click", function () {
             act(c, "dismiss_feedback", { p_id: r.id });
           });
-          c = card(ft, ago(r.created_at), r.message, [dismissF]);
+          /* An entry whose author cannot be named gets no award buttons: there is
+             nobody to give the badge to. */
+          var awardsF = authorKey(r) ? AWARDS.map(function (badge) {
+            var done = awarded[authorKey(r) + ":" + badge.id] === true;
+            var b = el("button", "btn", done ? badge.name + " awarded" : "Award " + badge.name);
+            if (done) { b.disabled = true; b.setAttribute("data-awarded", "true"); }
+            b.addEventListener("click", function () { award(c, r, badge); });
+            return b;
+          }) : [];
+          c = card(ft, ago(r.created_at), r.message, awardsF.concat([dismissF]));
         }
         host.appendChild(c);
       });
@@ -1622,6 +1632,88 @@
         say($("panel-status"), "That did not go through: " + String(err.message || err).slice(0, 140), "bad");
         Array.prototype.forEach.call(cardEl.querySelectorAll("button"), function (b) { b.disabled = false; });
       }
+    }
+
+    /* Feedback and Bug Catcher are the two badges given by hand, from a feedback
+       entry, to the person who sent it. grant_badge is owner only on the server
+       and refuses any id not on its allow list, so until the three silver badges
+       migration (2026-09-29) is applied both buttons come back with "not
+       grantable", which is said on the entry in words. */
+    var AWARDS = [
+      { id: "feedback", name: "Feedback" },
+      { id: "bug_catcher", name: "Bug Catcher" }
+    ];
+    /* What this session has awarded, by author and badge, so the entry still
+       reads "awarded" after the refetch. list_feedback does not say which badges
+       an author holds, so before a tap the buttons are live; a second award is
+       harmless on the server (ON CONFLICT DO NOTHING). A grant_badge that answers
+       false, or raises "already", is read as the author already holding it. */
+    var awarded = {};
+
+    /* The author, as list_feedback names them. It returns a username rather than
+       an id, so the id is looked up at tap time from users (id and username are
+       readable to any signed in account, and username is unique). A user_id on
+       the row, if the list ever carries one, is used as is. */
+    function authorKey(r) {
+      if (r.user_id) return String(r.user_id);
+      return r.username ? "@" + r.username : null;
+    }
+    async function authorId(r) {
+      if (r.user_id) return r.user_id;
+      var res = await fetch(URL_BASE + "/rest/v1/users?select=id&username=eq." + encodeURIComponent(r.username), {
+        headers: { "apikey": ANON_KEY, "Authorization": "Bearer " + token },
+      });
+      if (res.status === 401) { signOut(); throw new Error("Session expired. Sign in again."); }
+      if (!res.ok) throw new Error(await res.text());
+      var rows = await res.json();
+      if (!Array.isArray(rows) || rows.length !== 1 || !rows[0].id) {
+        throw new Error("Could not find @" + r.username + ". They may have changed their username, so reload and try again.");
+      }
+      return rows[0].id;
+    }
+
+    function awardMessage(err) {
+      var raw = String(err && err.message || err);
+      try { return JSON.parse(raw).message || raw; } catch (e) { return raw; }
+    }
+
+    /* Mirrors act(): every button on the entry is busy while it runs, a success
+       refetches, a failure re-enables and says why. The why is also written on
+       the entry itself, since the panel status sits below a list that can be long. */
+    async function award(cardEl, r, badge) {
+      var who = r.username ? "@" + r.username : "this person";
+      if (!confirm("Give " + who + " the " + badge.name + " badge?")) return;
+      var old = cardEl.querySelector(".award__error");
+      if (old) old.remove();
+      Array.prototype.forEach.call(cardEl.querySelectorAll("button"), function (b) { b.disabled = true; });
+      var msg = null;
+      try {
+        var out = await rpc("grant_badge", { p_user_id: await authorId(r), p_badge_id: badge.id });
+        awarded[authorKey(r) + ":" + badge.id] = true;
+        if (out === false) msg = who + " already had the " + badge.name + " badge.";
+      } catch (err) {
+        var text = awardMessage(err);
+        if (/already/i.test(text)) {
+          awarded[authorKey(r) + ":" + badge.id] = true;
+          msg = who + " already had the " + badge.name + " badge.";
+        } else {
+          var readable = /not grantable/i.test(text)
+            ? "The " + badge.name + " badge cannot be given yet. The server does not know it until the"
+              + " three silver badges migration (2026-09-29) is applied."
+            : "That did not go through: " + text.slice(0, 140);
+          say($("panel-status"), readable, "bad");
+          var note = el("div", "status award__error", readable);
+          note.setAttribute("data-tone", "bad");
+          cardEl.querySelector(".card__main").appendChild(note);
+          Array.prototype.forEach.call(cardEl.querySelectorAll("button"), function (b) {
+            if (b.getAttribute("data-awarded") !== "true") b.disabled = false;
+          });
+          return;
+        }
+      }
+      say($("panel-status"), "");
+      await load();
+      if (msg) say($("panel-status"), msg);
     }
 
     /* The current open week: its key from own_spotlight_entry (one row for any
