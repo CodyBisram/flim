@@ -2202,7 +2202,7 @@ Done on main (not yet on a device):
 - Glass pass: E-3 tab symbols, E-7 GlassIconButton (44pt circles everywhere, 52 by the shutter),
   E-8 FlimToast (17 hand-built toasts, one haptic each), E-9 bell VoiceOver value, E-14 sheet
   radius token, E-20 system glass sheets on iOS 26 with a tint for contrast, E-21 opaque content
-  surfaces, E-22 tab bar minimizes on scroll and the Feed/Rolls headers are scroll edge bars, E-23
+  surfaces, E-22 Feed/Rolls headers as scroll edge bars (the tab bar minimize was rejected on device, build 422 removes it), E-23
   widget photos keep full color on tinted home screens, E-24 camera.rotate flip glyph.
 - Time zone on the version census (migration APPLIED 2026-09-29).
 - 2026-09-30 audit of the whole 1.6.2 diff (logic, glass, flows, release verification): 23 fixes
@@ -2219,8 +2219,9 @@ On device:
 1. iOS 26: open Comments over a bright feed photo, raise the keyboard: the composer bar sits on
    an opaque bar attached to the keys, the sheet is system glass and the text reads clearly.
    Decide whether the photo showing through the sheet is wanted.
-2. iOS 26: scroll the Feed and Rolls: the tab bar shrinks to the active tab, the header stays
-   as a bar the content glides under, scroll-to-top and pull to refresh still work.
+2. iOS 26: scroll the Feed and Rolls: the tab bar stays whole (the fold-to-one-tab behavior
+   on build 421 was rejected), the header stays as a bar the content glides under,
+   scroll-to-top and pull to refresh still work.
 3. Camera: flip and flash are equal circles, the flip glyph is the camera-rotate symbol, the
    self timer shows its seconds inside the circle; press feel and one haptic per press.
 4. Photo viewer: close, comments, share and more are four equal circles.

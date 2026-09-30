@@ -90,17 +90,6 @@ enum MainTabSymbol {
     static let all = [camera, darkroom, rolls, feed]
 }
 
-/// `.tabBarMinimizeBehavior(.onScrollDown)` on iOS 26, nothing below it.
-private struct TabBarMinimizesOnScroll: ViewModifier {
-    func body(content: Content) -> some View {
-        if #available(iOS 26, *) {
-            content.tabBarMinimizeBehavior(.onScrollDown)
-        } else {
-            content
-        }
-    }
-}
-
 struct MainTabView: View {
     @Environment(\.flimAccent) private var accent
     @State private var selected = 0
@@ -248,10 +237,10 @@ struct MainTabView: View {
         // re-tints the moment the user picks a new accent, the static read never invalidates
         // this view, which left the old color until a relaunch.
         .tint((FlimAccent(rawValue: accentColor) ?? .amber).color)
-        // iOS 26: the bar shrinks out of the way while a list scrolls down and comes back on
-        // the way up. Nothing here changes the TabView's identity (no `.id()`, see
-        // `flim_accent_environment`); the modifier is a no-op below 26.
-        .modifier(TabBarMinimizesOnScroll())
+        // The tab bar stays whole while a list scrolls. iOS 26's minimize-on-scroll (the four
+        // tabs folding into one) was tried on build 421 and rejected by the owner the same day:
+        // do not add `.tabBarMinimizeBehavior` back. (No `.id()` on the TabView either, see
+        // `flim_accent_environment`.)
         // The environment accent is injected at the app root (see FlimApp), so it covers the
         // auth screens too. Nothing extra is needed here.
         .overlay(alignment: .top) {
