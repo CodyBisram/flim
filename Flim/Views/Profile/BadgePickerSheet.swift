@@ -802,7 +802,7 @@ private struct BadgePickerContent: View {
 
 #Preview("1.6.2 silver trio: Recruiter earned, Feedback and Bug Catcher locked") {
     // Recruiter sits in the earned list with its explanation; the two hand-given silvers stay in
-    // the locked list with their "Cody gives you this" instruction, never hidden like Founder.
+    // the locked list with their "the team gives you this" instruction, never hidden like Founder.
     BadgePickerContentPreview(
         badges: [ProfileBadge(id: "recruiter", kind: .recruiter, earnedAt: .now)],
         initialSelection: nil

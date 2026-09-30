@@ -450,9 +450,9 @@ enum ProfileBadgeKind: String, CaseIterable {
         case .recruiter:
             return "Invite people who stay: three still shooting a month after they join."
         case .feedback:
-            return "Use Send feedback in Settings. When it changes \(AppInfo.appName), Cody gives you this."
+            return "Use Send feedback in Settings. When it changes \(AppInfo.appName), the team gives you this."
         case .bugCatcher:
-            return "Report a bug with Send feedback in Settings. When it is fixed, Cody gives you this."
+            return "Report a bug with Send feedback in Settings. When it is fixed, the team gives you this."
         }
     }
 }
