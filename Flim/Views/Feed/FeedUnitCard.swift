@@ -108,6 +108,13 @@ struct FeedUnitCard: View {
     /// go dark while you are reading them. They stay lit until the card leaves the screen;
     /// scroll back and the day reads as seen.
     @State private var newThisLook: Set<UUID> = []
+    /// When this look at the card began, so "new this look" is decided by the mark's DATE rather
+    /// than by whatever the store held at the instant the card came on screen. Marks that land
+    /// after the look began but carry an older date (the account's server copy arriving after a
+    /// reinstall, the disk copy loading a beat after the first snapshot) read as seen; only a
+    /// mark made during the look stays lit. Before this, a card that came on screen before its
+    /// marks were in read every shot as new for the whole look, and every card in the feed did.
+    @State private var lookStartedAt: Date?
     /// The part of `newThisLook` that arrived with a refresh while the card was on screen, so a
     /// catch-up can still open on it after it was marked. Shots that were new when the look
     /// began are not in here: a pull-to-refresh must not send someone who swiped through them
@@ -156,9 +163,12 @@ struct FeedUnitCard: View {
     }
 
     /// Seen, for what this card draws: a shot marked during the current look still reads as new
-    /// until the card leaves the screen. See `newThisLook`.
+    /// until the card leaves the screen. Decided by the mark's date against `lookStartedAt`
+    /// (see `FeedLook.seenBeforeLook`), not by `newThisLook`: that set is captured the instant
+    /// the card comes on screen, and marks that load a moment later with older dates must
+    /// still count as seen.
     private func isSeenOutsideThisLook(_ id: UUID) -> Bool {
-        !newThisLook.contains(id) && seenStore.isSeen(id)
+        FeedLook.seenBeforeLook(seenAt: seenStore.seenDate(id), lookStart: lookStartedAt)
     }
 
     var body: some View {
@@ -206,7 +216,11 @@ struct FeedUnitCard: View {
         // reader ever scrolled to them.
         .onScrollVisibilityChange(threshold: 0.4) { visible in
             isVisible = visible
-            if !visible { newThisLook = []; arrivedThisLook = [] }
+            if visible {
+                if lookStartedAt == nil { lookStartedAt = .now }
+            } else {
+                newThisLook = []; arrivedThisLook = []; lookStartedAt = nil
+            }
             maybeMarkReached()
         }
         // Re-checked when the gate opens, because a unit already on screen had its

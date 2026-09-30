@@ -136,6 +136,29 @@ without either word appearing here.
 Two rules if this is edited again: never repeat a word across name, subtitle and keywords, and do
 not add plurals of words already present. Apple handles both.
 
+## What's New (version 1.6.2), draft 2026-09-30, build TBD (421 expected)
+
+Submit after 1.6.1 is live. Leads with what a person can see (badges, offline, the iOS 26 look);
+the rating prompt is never mentioned (Apple's card speaks for itself, and the app's own voice
+does not talk about ratings).
+
+> **PASTE ONLY THE INDENTED BLOCK BELOW.** Everything under "Ship notes" is internal.
+
+    Three new badges. Recruiter, for when three people you invited are still shooting a month later. Feedback, when something you told us changed FLIM. Bug Catcher, when you found a bug and it got fixed. The last two are given by Cody.
+
+    FLIM works without a connection. Open it in the subway or on a plane and you land in your own account with the camera ready; your shots queue and go up on their own when you're back online, and the feed, Darkroom and rolls fill in without a relaunch.
+
+    A cleaner look on iOS 26. Sheets, buttons, toasts and the tab bar use the system's glass; the tab bar tucks away while you scroll; every floating button is the same size and shape. On iOS 18 everything stays as it was.
+
+    Fixes. Every notice in the app is one consistent capsule with its own sound. A member number is no longer shown on an account that has none. Flip camera has a clearer icon. Invite links opened while you're already signed in say so instead of doing nothing.
+
+### Ship notes (internal, do NOT paste)
+
+Submit the build that includes the 2026-09-30 audit fixes. After submitting, start the review
+watch: `gh workflow run asc-watch.yml -f version=1.6.2`. When it is live:
+`update app_release_gate set latest_version = '1.6.2';`. Hold hand-given badge awards for people
+still on 1.6.0 or 1.6.1 until they update (an unknown badge lit "New badge to see" on those builds).
+
 ## What's New (version 1.6.1), build 418, 2026-09-29
 
 1.6.0 (build 413) went live 2026-09-29. Most people are updating straight from 1.5.3, so this leads

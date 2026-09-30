@@ -1,4 +1,5 @@
 import XCTest
+import Testing
 @testable import Flim
 
 /// `FeedUnit`: the grouping rules behind the per-author feed. These pin the decisions the
@@ -298,5 +299,31 @@ final class FeedUnitTests: XCTestCase {
             calendar: calendar)[0]
         XCTAssertEqual(forty.stripOverflow, 21)
         XCTAssertEqual(forty.stripShown, 19)
+    }
+}
+
+struct FeedLookTests {
+    private let look = Date(timeIntervalSince1970: 1_790_000_000)
+
+    @Test("no mark is never seen, on screen or off")
+    func unmarked() {
+        #expect(!FeedLook.seenBeforeLook(seenAt: nil, lookStart: look))
+        #expect(!FeedLook.seenBeforeLook(seenAt: nil, lookStart: nil))
+    }
+
+    @Test("off screen, any mark counts as seen")
+    func offScreen() {
+        #expect(FeedLook.seenBeforeLook(seenAt: look.addingTimeInterval(60), lookStart: nil))
+        #expect(FeedLook.seenBeforeLook(seenAt: look.addingTimeInterval(-60), lookStart: nil))
+    }
+
+    @Test("on screen, a mark older than the look is seen and a mark made during it stays new")
+    func duringLook() {
+        // The account's copy landing after a reinstall carries the day it was really read.
+        #expect(FeedLook.seenBeforeLook(seenAt: look.addingTimeInterval(-86_400), lookStart: look))
+        #expect(FeedLook.seenBeforeLook(seenAt: look.addingTimeInterval(-0.001), lookStart: look))
+        // The card's own mark, made the instant it came on screen or after.
+        #expect(!FeedLook.seenBeforeLook(seenAt: look, lookStart: look))
+        #expect(!FeedLook.seenBeforeLook(seenAt: look.addingTimeInterval(0.5), lookStart: look))
     }
 }

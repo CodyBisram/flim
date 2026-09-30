@@ -250,3 +250,17 @@ struct FeedUnit: Identifiable, Equatable {
     /// How many frames the strip renders.
     var stripShown: Int { min(items.count, stripOverflow > 0 ? Self.stripCap : Self.stripCap + 1) }
 }
+
+/// The one rule behind a card's "N new" pill and its lit strip frames while the card is on
+/// screen: a shot is seen for this look only if its mark is OLDER than the look. A mark the card
+/// made itself (dated now, once it came on screen) stays lit until the card leaves; a mark that
+/// arrives during the look with an earlier date (the server copy after a reinstall, the disk
+/// copy loading after the first snapshot) reads as seen, because it was. Off screen (no look
+/// start) it is plain "is there a mark".
+enum FeedLook {
+    static func seenBeforeLook(seenAt: Date?, lookStart: Date?) -> Bool {
+        guard let seenAt else { return false }
+        guard let lookStart else { return true }
+        return seenAt < lookStart
+    }
+}

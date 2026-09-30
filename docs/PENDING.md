@@ -2205,6 +2205,9 @@ Done on main (not yet on a device):
   surfaces, E-22 tab bar minimizes on scroll and the Feed/Rolls headers are scroll edge bars, E-23
   widget photos keep full color on tinted home screens, E-24 camera.rotate flip glyph.
 - Time zone on the version census (migration APPLIED 2026-09-29).
+- 2026-09-30 audit of the whole 1.6.2 diff (logic, glass, flows, release verification): 23 fixes
+  plus the feed pill race (a card that came on screen before its marks were in hand read every
+  shot as new for the whole look; now decided by the mark's date, `FeedLook.seenBeforeLook`).
 
 Deferred, with the reason:
 - E-1 icon layers, E-2 brand mark: `owner`. E-10 to E-19 (tokens, typography, radii, spacing,
@@ -2231,6 +2234,14 @@ On device:
 9. Signed in, open flim-app.com/i/<code> from Messages: nothing visible; sign out: the invite
    field is empty. Signed out, open the same link: the code is filled in and the inviter named.
 10. Reduce Transparency on: sheets, toasts and glass buttons are solid.
+11. Audit fixes (2026-09-30): the badge picker's tier and NEW labels never break mid-word (Bug
+    Catcher, SILVER, NEW at default and xxxLarge); the "No connection" pill lets taps through to
+    the camera's timer and roll picker; an invite link opened while signed in shows "You're
+    already on FLIM. Invite links are for someone new."; offline, a failed reaction still buzzes;
+    a VoiceOver notice is read once; after a reveal abandoned at frame 2, no rating card.
+12. Feed pills: on a fresh launch every card you have already read shows NO "N new"; a card
+    you are reading keeps its pill until it leaves the screen; scroll it off and back and the
+    pill is gone. Also right after a reinstall (the marks come back from the account).
 
 ### done 2026-09-28: 1.6.1 polish from the audit (build 417, MARKETING_VERSION 1.6.1)
 
