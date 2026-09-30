@@ -349,6 +349,10 @@ struct PostDetailView: View {
         // post explicitly: a plain `.task` would not re-run on a reused instance, which is how
         // this screen once opened showing the PREVIOUS photo.
         .task(id: post.id) {
+            // Opened full screen (a push, Activity, a profile), the post is seen as surely as
+            // its feed card would have made it; otherwise that card later reads "1 new" for a
+            // photograph already looked at. A no-op while no account is active.
+            FeedSeenStore.shared.markSeen(post.id)
             await load()
             if focusCommentsOnAppear {
                 commentFocused = true

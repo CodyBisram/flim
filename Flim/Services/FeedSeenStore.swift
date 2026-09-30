@@ -19,10 +19,14 @@ import Observation
 /// means "posted since you last looked at this day": a friend adding three shots later brings
 /// the day back to the top reading "3 new".
 ///
-/// The timestamp exists for retention: a fully-seen unit leaves the feed at the first 04:00
-/// boundary after its last shot was reached (`FeedUnit.hasCleared`). The mark keeps its
-/// FIRST-seen date on purpose: re-reading a day must not extend its life, or a unit you keep
-/// glancing at never clears and the feed stops having an end.
+/// Nothing leaves the feed for being seen: retention clearing (`FeedUnit.hasCleared`, a
+/// fully-seen unit gone at the next 04:00) was removed on 2026-08-28, and the feed now shows
+/// whatever the fetch returned, bounded only by `FeedUnit.retentionWindow`. Seen state drives
+/// the pill, the tab dot, the caught-up seam, and where a unit opens. The timestamp is what
+/// tells a card's pill a mark from before this look (seen) from one the card made while on
+/// screen (still lit until it leaves, `FeedLook.seenBeforeLook`). The mark keeps its FIRST-seen
+/// date on purpose: re-reading a day must not re-date it, or a day read yesterday would light
+/// again as new the next time its card came on screen.
 ///
 /// Marks are ACCOUNT-SCOPED, namespaced by `activeUserId`: a device that hosts two accounts must
 /// not let one account's read of a day clear it for the other, which is the same "nothing unseen
@@ -84,6 +88,9 @@ final class FeedSeenStore {
     /// out so tests can substitute a spy instead of hitting the network. Returns whichever ids
     /// actually landed (in practice all of `marks` or none, since one upsert is one request).
     private let pushRows: (_ user: UUID, _ marks: [UUID: Date]) async -> Set<UUID>
+    /// The network read behind `pullFromServer`, factored out the same way: the account's marks,
+    /// or nil when the read failed, which leaves the pull to be retried.
+    private let pullRows: (_ user: UUID) async -> [(id: UUID, seenAt: Date)]?
 
     /// The signed-in account these marks belong to right now. Set explicitly at every place the
     /// signed-in account changes (app launch with a restored session, sign-in, sign-out, account
@@ -123,9 +130,11 @@ final class FeedSeenStore {
     private let defaults: UserDefaults
 
     init(defaults: UserDefaults = .standard,
-         pushRows: @escaping (_ user: UUID, _ marks: [UUID: Date]) async -> Set<UUID> = FeedSeenStore.defaultPushRows) {
+         pushRows: @escaping (_ user: UUID, _ marks: [UUID: Date]) async -> Set<UUID> = FeedSeenStore.defaultPushRows,
+         pullRows: @escaping (_ user: UUID) async -> [(id: UUID, seenAt: Date)]? = FeedSeenStore.defaultPullRows) {
         self.defaults = defaults
         self.pushRows = pushRows
+        self.pullRows = pullRows
     }
 
     /// Through `record_posts_seen`, not a plain upsert: `post_seen.post_id` references `posts`,
@@ -283,27 +292,38 @@ final class FeedSeenStore {
         }
     }
 
-    /// Seeds this device with the account's server copy, newest first, up to the cap. Marks
-    /// already held locally keep their own dates. Paged in thousands: PostgREST caps a request
-    /// at 1,000 rows, and a whole-account read that silently stopped there would leave the
-    /// oldest marks unseen on a new phone.
-    private func pullFromServer(for user: UUID) async {
+    /// The account's server copy, newest first, up to the cap; nil when any page failed. Paged
+    /// in thousands: PostgREST caps a request at 1,000 rows, and a whole-account read that
+    /// silently stopped there would leave the oldest marks unseen on a new phone. `post_id`
+    /// breaks ties: a backfill writes many rows with one `seen_at`, and on a non-unique order
+    /// the pages either side of a boundary can each put a different row there, so one mark
+    /// comes back twice and its neighbour never does.
+    private static func defaultPullRows(user: UUID) async -> [(id: UUID, seenAt: Date)]? {
         struct Row: Decodable { let post_id: UUID; let seen_at: Date }
         var marks: [(id: UUID, seenAt: Date)] = []
         var from = 0
-        while from < Self.cap {
+        while from < cap {
             let page: [Row]
             do {
                 page = try await supabase.from("post_seen").select("post_id, seen_at")
                     .eq("user_id", value: user.uuidString)
                     .order("seen_at", ascending: false)
+                    .order("post_id")
                     .range(from: from, to: from + 999)
                     .execute().value
-            } catch { return }
+            } catch { return nil }
             marks.append(contentsOf: page.map { ($0.post_id, $0.seen_at) })
             if page.count < 1000 { break }
             from += 1000
         }
+        return marks
+    }
+
+    /// Seeds this device with the account's server copy (`pullRows`). Marks already held
+    /// locally keep their own dates. A failed read leaves `pulledUserId` unset, so
+    /// `retryPullIfNeeded` runs it again.
+    private func pullFromServer(for user: UUID) async {
+        guard let marks = await pullRows(user) else { return }
         guard user == activeUserId else { return }
         pulledUserId = user
         // Not `seedBacklog`: these came FROM the server, so there is nothing to push back.

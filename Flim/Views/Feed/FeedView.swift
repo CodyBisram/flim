@@ -191,6 +191,10 @@ struct FeedView: View {
     /// date watermark would be the upgrade if a much longer feed ever made a later page matter.
     private func seedFeedBacklogIfNeeded() {
         guard let user = auth.currentUser else { return }
+        // The store must be this account's before anything is decided: while it is inactive it
+        // holds no marks and seeds nothing, so the decision would be made blind and the
+        // one-shot flag below burned without a seed.
+        guard seenStore.activeUserId == user.id else { return }
         let key = "feedBacklogSeeded.\(user.id.uuidString)"
         guard !UserDefaults.standard.bool(forKey: key) else { return }
 
@@ -863,11 +867,6 @@ struct FeedView: View {
 
     private func reload() async {
         guard let uid = auth.currentUser?.id else { didLoad = true; return }
-        // No card marks itself until this load's caught-up line is placed. The page can render
-        // while the Spotlight reads below are still in flight, and a card on screen marking its
-        // new shots in that gap would put the line above a card still reading "N new". Every
-        // path below reaches the decrement just before this reload's own snapshot.
-        reloadsInFlight += 1
         // Captured before the first await: several round trips sit between here and the dot
         // write below, and an account switch mid-flight must not let a stale answer light the
         // NEW account's tab dot; same pattern as `OptimisticToggle`.
@@ -879,6 +878,13 @@ struct FeedView: View {
         // The account's copy of the seen-marks goes up first, so the tab dot's server check
         // on the next foreground agrees with what this phone has already read.
         await seenStore.flushPending()
+        // No card marks itself until this load's caught-up line is placed. The page can render
+        // while the Spotlight reads below are still in flight, and a card on screen marking its
+        // new shots in that gap would put the line above a card still reading "N new". Every
+        // path below reaches the decrement just before this reload's own snapshot. Closed after
+        // the flush, not before it: the flush does not change the page, and a gate held shut
+        // through it only widened the window in which a card scrolled past went unmarked.
+        reloadsInFlight += 1
         // Beside the feed, not after it: the strip must be in hand before the first snapshot
         // below places it, or it would pop in above a feed that was already drawn.
         async let spotlightStrip: Void = feed.loadSpotlightStrip()

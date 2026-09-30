@@ -14,6 +14,7 @@ struct FeedUnitCard: View {
     @Environment(\.flimAccent) private var accent
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.displayScale) private var displayScale
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(AuthService.self) private var auth
     @Environment(FeedService.self) private var feed
     @Environment(PhotoService.self) private var photos
@@ -125,6 +126,10 @@ struct FeedUnitCard: View {
     /// arrived left that index pointing into the NEW ids, and the remap then moved the pager
     /// one frame past the shot it had just opened on. Nil until the first swipe or catch-up.
     @State private var shownPostId: UUID?
+    /// The card came on screen while marking was held shut (a reload between its start and its
+    /// snapshot). Without this, a card scrolled past in that window was never marked: by the
+    /// time the gate reopened it was off screen, and `maybeMarkReached` asks for both.
+    @State private var sawWhileGated = false
 
     init(unit: FeedUnit, width: CGFloat, opening: Int, seenStore: FeedSeenStore,
          markingEnabled: Bool, catchUpGeneration: Int, onAuthorBlocked: @escaping () -> Void) {
@@ -218,14 +223,38 @@ struct FeedUnitCard: View {
             isVisible = visible
             if visible {
                 if lookStartedAt == nil { lookStartedAt = .now }
+                // Set from a visibility event only, never from the gate closing on a card
+                // already up: the gate also closes while another tab is in front, and a card
+                // pushed off screen there was never looked at.
+                if !markingEnabled { sawWhileGated = true }
             } else {
                 newThisLook = []; arrivedThisLook = []; lookStartedAt = nil
             }
             maybeMarkReached()
         }
         // Re-checked when the gate opens, because a unit already on screen had its
-        // visibility event before marking was allowed and will not get another.
-        .onChange(of: markingEnabled) { maybeMarkReached() }
+        // visibility event before marking was allowed and will not get another. A card that
+        // was on screen while the gate was shut and has since left is marked too, as it would
+        // have been had the gate been open. The seam cannot move for it: the reload snapshots
+        // the seam and only then opens the gate, in the same synchronous step, so this mark
+        // lands under a seam already placed from what was unseen at load.
+        .onChange(of: markingEnabled) {
+            guard markingEnabled else { return }
+            if sawWhileGated, !isVisible { seenStore.markSeen(unit.items.map(\.post.id)) }
+            sawWhileGated = false
+            maybeMarkReached()
+        }
+        // A look ends when the app leaves the foreground, not only when the card scrolls away:
+        // a card left on screen used to keep its "1 new" for as long as the phone sat in a
+        // pocket, and still showed it on return. The card stays visible; coming back starts a
+        // new look, so the shots it marked last time read as seen.
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active {
+                if isVisible, lookStartedAt == nil { lookStartedAt = .now }
+            } else {
+                newThisLook = []; arrivedThisLook = []; lookStartedAt = nil
+            }
+        }
         // Membership can change under a living card (a straddle completion inserts earlier
         // captures at the front). The pager should keep showing the same PHOTOGRAPH, not the
         // same index, so the selection is remapped to follow the post it was on.

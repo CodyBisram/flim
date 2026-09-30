@@ -77,7 +77,9 @@ struct FeedSeenSeedTests {
 struct FeedSeenStoreSeedTests {
 
     private func store() -> (FeedSeenStore, UUID) {
-        let s = FeedSeenStore(defaults: UserDefaults(suiteName: "seedtest-\(UUID())")!)
+        // Offline: activating an account starts a pull, which must not be a live network read.
+        let s = FeedSeenStore(defaults: UserDefaults(suiteName: "seedtest-\(UUID())")!,
+                              pushRows: { _, _ in [] }, pullRows: { _ in [] })
         let uid = UUID()
         s.activeUserId = uid
         return (s, uid)

@@ -23,8 +23,17 @@ final class FeedSeenStoreTests: XCTestCase {
         super.tearDown()
     }
 
+    /// The account's copy as an empty page. Activating an account starts a pull, and before the
+    /// pull was injectable every activation here was a live network read that passed by luck.
+    private static let emptyPull: (UUID) async -> [(id: UUID, seenAt: Date)]? = { _ in [] }
+
+    /// A store that never touches the network: an empty pull, and a push that lands nothing.
+    private func offlineStore() -> FeedSeenStore {
+        FeedSeenStore(defaults: defaults, pushRows: { _, _ in [] }, pullRows: Self.emptyPull)
+    }
+
     func testMarksMadeUnderAccountAAreInvisibleUnderAccountB() {
-        let store = FeedSeenStore(defaults: defaults)
+        let store = offlineStore()
         let accountA = UUID()
         let accountB = UUID()
         let postId = UUID()
@@ -45,7 +54,7 @@ final class FeedSeenStoreTests: XCTestCase {
     }
 
     func testNilUserSeesNothingAndWritesNothing() {
-        let store = FeedSeenStore(defaults: defaults)
+        let store = offlineStore()
         let postId = UUID()
 
         XCTAssertNil(store.activeUserId)
@@ -69,7 +78,7 @@ final class FeedSeenStoreTests: XCTestCase {
         defaults.set([legacyIdOnly.uuidString], forKey: "feedSeenPostIds")
 
         let firstAccount = UUID()
-        let store = FeedSeenStore(defaults: defaults)
+        let store = offlineStore()
         store.activeUserId = firstAccount
 
         XCTAssertTrue(store.isSeen(legacyPostId), "the dated legacy mark should have migrated")
@@ -91,7 +100,7 @@ final class FeedSeenStoreTests: XCTestCase {
     }
 
     func testReactivationOfTheSameAccountRoundTripsItsOwnMarks() {
-        let store = FeedSeenStore(defaults: defaults)
+        let store = offlineStore()
         let account = UUID()
         let other = UUID()
         let postId = UUID()
@@ -111,7 +120,7 @@ final class FeedSeenStoreTests: XCTestCase {
                        "re-activation must not refresh the first-seen date")
 
         // A fresh instance backed by the same suite, the equivalent of a relaunch.
-        let reloaded = FeedSeenStore(defaults: defaults)
+        let reloaded = offlineStore()
         reloaded.activeUserId = account
         XCTAssertTrue(reloaded.isSeen(postId))
         XCTAssertEqual(reloaded.seenDate(postId)?.timeIntervalSince1970 ?? -1,
@@ -133,7 +142,7 @@ final class FeedSeenStoreTests: XCTestCase {
         let store = FeedSeenStore(defaults: defaults, pushRows: { user, marks in
             await spy.record(user, Set(marks.keys))
             return Set(marks.keys)   // simulate every push landing
-        })
+        }, pullRows: Self.emptyPull)
         let accountA = UUID()
         let accountB = UUID()
         let postId = UUID()
@@ -159,7 +168,7 @@ final class FeedSeenStoreTests: XCTestCase {
         let gate = Gate()
         let store = FeedSeenStore(defaults: defaults, pushRows: { _, marks in
             await gate.accept ? Set(marks.keys) : []
-        })
+        }, pullRows: Self.emptyPull)
         let account = UUID(), old = UUID(), fresh = UUID()
         store.activeUserId = account
         store.markSeen(old)
@@ -187,8 +196,9 @@ final class FeedSeenStoreTests: XCTestCase {
         let store = FeedSeenStore(defaults: defaults, pushRows: { _, marks in
             await spy.record(Set(marks.keys))
             return Set(marks.keys)
-        })
+        }, pullRows: Self.emptyPull)
         store.activeUserId = UUID()
+        await store.awaitPull()
         let alreadySeen = UUID(), seeded = UUID()
         store.markSeen(alreadySeen)
         await store.flushPending()
@@ -205,7 +215,7 @@ final class FeedSeenStoreTests: XCTestCase {
     }
 
     func testSeedingWithoutAnAccountQueuesNothing() {
-        let store = FeedSeenStore(defaults: defaults)
+        let store = offlineStore()
         XCTAssertTrue(store.seedBacklog([(id: UUID(), seenAt: Date.now)]).isEmpty)
     }
 
@@ -213,7 +223,7 @@ final class FeedSeenStoreTests: XCTestCase {
     /// Swiping through a ten-shot day cost ten writes; now a burst coalesces into one, and only
     /// fires (or is forced, as here) once.
     func testABurstOfMarksYieldsOnePersist() {
-        let store = FeedSeenStore(defaults: defaults)
+        let store = offlineStore()
         store.activeUserId = UUID()
 
         for _ in 0..<8 { store.markSeen(UUID()) }
@@ -231,7 +241,7 @@ final class FeedSeenStoreTests: XCTestCase {
     // MARK: - A whole card at once (2026-09-26)
 
     func testABatchMarkKeepsEachShotsFirstSeenDate() async throws {
-        let store = FeedSeenStore(defaults: defaults)
+        let store = offlineStore()
         store.activeUserId = UUID()
         let earlier = UUID(), later = UUID()
         store.markSeen([earlier])
@@ -245,7 +255,7 @@ final class FeedSeenStoreTests: XCTestCase {
     }
 
     func testABatchMarkCostsOneDiskWrite() {
-        let store = FeedSeenStore(defaults: defaults)
+        let store = offlineStore()
         store.activeUserId = UUID()
         store.markSeen((0..<14).map { _ in UUID() })
         XCTAssertEqual(store.diskWriteCount, 0)
@@ -263,8 +273,10 @@ final class FeedSeenStoreTests: XCTestCase {
         let store = FeedSeenStore(defaults: defaults, pushRows: { _, marks in
             await spy.record(Set(marks.keys))
             return Set(marks.keys)
-        })
+        }, pullRows: Self.emptyPull)
         store.activeUserId = UUID()
+        // Settled first: a pull landing after the push re-queues whatever the server lacked.
+        await store.awaitPull()
         let ids = (0..<7).map { _ in UUID() }
         store.markSeen(ids)
         for id in ids { XCTAssertTrue(store.isPendingSync(id)) }
@@ -278,7 +290,7 @@ final class FeedSeenStoreTests: XCTestCase {
     }
 
     func testABatchMarkWhileSignedOutIsDropped() {
-        let store = FeedSeenStore(defaults: defaults)
+        let store = offlineStore()
         let ids = [UUID(), UUID()]
         store.markSeen(ids)
         for id in ids {
@@ -288,5 +300,61 @@ final class FeedSeenStoreTests: XCTestCase {
         XCTAssertEqual(store.diskWriteCount, 0)
         store.activeUserId = UUID()
         for id in ids { XCTAssertFalse(store.isSeen(id), "a dropped mark must not surface after sign-in") }
+    }
+
+    // MARK: - The account's copy (2026-09-30)
+
+    /// A mark pulled from the account reads as seen with the date the server holds, and is not
+    /// sent back: it came from there.
+    func testAPulledMarkIsSeenWithItsOwnDateAndQueuesNothing() async {
+        actor Spy {
+            private(set) var calls = 0
+            func record() { calls += 1 }
+        }
+        let spy = Spy()
+        let postId = UUID()
+        let yesterday = Date.now.addingTimeInterval(-86400)
+        let store = FeedSeenStore(defaults: defaults, pushRows: { _, marks in
+            await spy.record()
+            return Set(marks.keys)
+        }, pullRows: { _ in [(id: postId, seenAt: yesterday)] })
+
+        store.activeUserId = UUID()
+        await store.awaitPull()
+
+        XCTAssertTrue(store.isSeen(postId))
+        XCTAssertEqual(store.seenDate(postId), yesterday, "a pulled mark keeps the account's date, not now")
+        XCTAssertFalse(store.isPendingSync(postId), "a mark that came from the account is not pushed back")
+        await store.flushPending()
+        let calls = await spy.calls
+        XCTAssertEqual(calls, 0, "nothing was queued, so nothing is sent")
+    }
+
+    /// A pull that failed (offline at launch) must not count as landed: the next
+    /// `retryPullIfNeeded` runs it again, and one that landed is not repeated.
+    func testAFailedPullIsRetriedAndALandedOneIsNot() async {
+        actor Counter {
+            private(set) var calls = 0
+            func next() -> Int { calls += 1; return calls }
+        }
+        let counter = Counter()
+        let store = FeedSeenStore(defaults: defaults, pushRows: { _, _ in [] }, pullRows: { _ in
+            await counter.next() == 1 ? nil : []   // the first read fails, later ones land
+        })
+
+        store.activeUserId = UUID()
+        await store.awaitPull()
+        var calls = await counter.calls
+        XCTAssertEqual(calls, 1)
+
+        store.retryPullIfNeeded()
+        await store.awaitPull()
+        calls = await counter.calls
+        XCTAssertEqual(calls, 2, "a failed pull leaves the account unpulled, so the retry reads again")
+
+        store.retryPullIfNeeded()
+        await store.awaitPull()
+        calls = await counter.calls
+        XCTAssertEqual(calls, 2, "once a pull has landed, a retry is a no-op")
     }
 }

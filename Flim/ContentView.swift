@@ -16,11 +16,6 @@ struct ContentView: View {
     /// Wi-Fi handoff) doesn't fire `retryFailedUploads()` once per flap.
     @State private var reconnectRetryTask: Task<Void, Never>?
 
-    /// The account the caches currently belong to. Compared against the live one so a SWITCH is
-    /// detected, not just a sign-out: signing out and straight back in as someone else is exactly
-    /// the case that leaves one person's photos and feed on another person's screen.
-    @State private var cachedAccountId: UUID?
-
     /// The `latest_version` a person already dismissed the nudge for. Compared, not a plain
     /// bool, so dismissing 1.5.0's nudge doesn't swallow a later, genuinely newer 1.6.0 nudge.
     /// See `shouldPresentVersionNudge`.
@@ -133,17 +128,14 @@ struct ContentView: View {
         // invalidates itself when the account changes. Signing out cleared the session and the
         // profile and left all of it populated.
         //
-        // `initial: true` since 2026-09-30: a launch from the cached profile (C-6) sets
-        // `currentUser` before this view has rendered once, and a plain `onChange` only sees
-        // changes after it is attached. Without it a warm relaunch activated nothing per
-        // account: the seen store stayed signed out (every card "N new", nothing marked),
-        // usage went unlogged, rolls were not restored, pending captures never came back, the
-        // device token was not reclaimed. The guard below makes the initial call a no-op when
-        // the account is already the one activated (or still nil on a cold launch).
-        .onChange(of: auth.currentUser?.id, initial: true) { _, newId in
-            guard newId != cachedAccountId else { return }
-            let previousId = cachedAccountId
-            cachedAccountId = newId
+        // Runs once per distinct account, including the one already present at first render (a
+        // launch from the cached profile, C-6, sets `currentUser` before this view draws). Without
+        // that a warm relaunch activated nothing per account: the seen store stayed signed out
+        // (every card "N new", nothing marked), usage went unlogged, rolls were not restored,
+        // pending captures never came back, the device token was not reclaimed. The activated
+        // account is held for the process, so a rebuilt scene never re-runs this for the same
+        // account. See `AccountScopeHook`.
+        .modifier(AccountScopeHook(accountId: auth.currentUser?.id) { previousId, newId in
             // Before any cache reset below: a pending undoable action belongs to the departing
             // account and its commit closure captures that account's ids, so it commits now,
             // against state that still matches it.
@@ -165,10 +157,10 @@ struct ContentView: View {
             FeedSeenStore.shared.activeUserId = newId
             Activation.activeUserId = newId
             // Develop reminders and Live Activities are scoped to a ROLL, not an account, so they
-            // outlive a sign-out. Only clear them when there WAS a previously-cached account in
-            // this session, i.e. a real switch (including straight to signed-out): the very first
-            // resolve after launch also lands here (cachedAccountId starts nil), and that one must
-            // NOT cancel the account that is simply continuing to be signed in.
+            // outlive a sign-out. Only clear them when there WAS a previously-activated account
+            // in this process, i.e. a real switch (including straight to signed-out): the very
+            // first resolve after launch also lands here (the activated account starts nil), and
+            // that one must NOT cancel the account that is simply continuing to be signed in.
             if previousId != nil {
                 Task { await NotificationService.cancelAllRollDevelopNotifications() }
                 RollLiveActivity.endAll()
@@ -197,13 +189,13 @@ struct ContentView: View {
                     await RemotePush.reclaimForCurrentAccount()
                 }
             }
-        }
+        })
         .onReceive(NotificationCenter.default.publisher(for: .flimAccountDidChange)) { _ in
-            // Sign-out posts this. currentUser goes to nil, which the onChange above also catches,
+            // Sign-out posts this. currentUser goes to nil, which the hook above also catches,
             // but the notification covers the case where sign-out fails partway and leaves the
             // profile untouched. Always an actual departure, so always clear the departing
             // account's reminders and Live Activities, not just the caches.
-            cachedAccountId = nil
+            AccountScopeHook.activatedAccountId = nil
             photos.resetForAccountChange()
             feed.resetForAccountChange()
             rolls.resetForAccountChange()
@@ -233,8 +225,14 @@ struct ContentView: View {
                 guard !Task.isCancelled else { return }
                 // A launch the network interrupted (a cached profile on screen, or the retry
                 // state) finishes now: the token refreshes and the profile is read again. Its own
-                // task, so a slow answer never holds up the upload retry below.
-                Task { await auth.resyncIfNeeded() }
+                // task, so a slow answer never holds up the upload retry below. The account's
+                // seen-marks follow it, with the fresh token: a launch offline from the cached
+                // profile never pulled them, and every card it reads would say "N new" until the
+                // next foreground.
+                Task {
+                    await auth.resyncIfNeeded()
+                    FeedSeenStore.shared.retryPullIfNeeded()
+                }
                 // A reveal finished offline is waiting on this same connection, and an app that
                 // stays open never passes through the foreground flush below.
                 rolls.flushPendingRevealCompletions()
