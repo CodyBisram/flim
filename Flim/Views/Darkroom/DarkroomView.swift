@@ -42,6 +42,7 @@ struct DarkroomView: View {
     @Environment(PhotoService.self) private var photoService
     @Environment(RollService.self) private var rolls
     @Environment(FeedService.self) private var feed
+    @Environment(NetworkMonitor.self) private var network
     /// Find friends, from the first-frame state (see below).
     @State private var showDiscover = false
     @Environment(\.displayScale) private var displayScale
@@ -525,6 +526,13 @@ Text("Darkroom")
             Task { await loadOwnPosts(refresh: false) }
         }
         .onChange(of: anchor) { _, _ in recomputeDayUnits() }
+        // A Darkroom that failed to load (a launch with no signal) loads itself when the
+        // connection comes back. Nothing happens when nothing failed.
+        .onChange(of: network.isConnected) { _, on in
+            if on, vm.error != nil, vm.photos.isEmpty, !vm.isLoading {
+                Task { await reload() }
+            }
+        }
         // The 60s develop poll only needs to run while this screen is on it, and an in-flight
         // anchored jump has no reason to keep running once nobody's watching for it to land. A
         // still-pending delete lives in `UndoCenter`, which flushes it on its own terms.
@@ -1235,7 +1243,11 @@ Text("Darkroom")
     }
 
     private func firstFrameState(_ photo: Photo) -> some View {
-        let inviter = auth.currentUser.flatMap { NewAccountIntro.inviter(for: $0.id) }
+        // A campaign code's owner (FLIMGO, SPOT26) is a stranger to whoever used it, so a
+        // campaign arrival reads the generic lines, the same as the feed's first-visit line.
+        let inviter = auth.currentUser
+            .flatMap { NewAccountIntro.inviter(for: $0.id) }
+            .flatMap { $0.isCampaign ? nil : $0 }
         // `ownPostsByPhotoId` is the server's answer: `createPost` writes it only once the post
         // has landed (the deck's or the compose sheet's), and the reload asks for it. So a post
         // made from here reads as posted only after it succeeds, not on the compose sheet's

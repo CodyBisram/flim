@@ -330,6 +330,14 @@ final class RollRevealViewModel {
     /// frame ahead of the reader stays a well until they actually reach it.
     func hasDeveloped(_ photo: Photo) -> Bool { developedFrameIds.contains(photo.id) }
 
+    /// Whether the reader got to the last frame there was to see (the last one that did not die).
+    /// A frame develops only once the reader is on it, so its develop mark says it was reached.
+    /// Done at frame 2 of 47 still completes the reveal; it is not a reveal watched to the end.
+    var reachedLastFrame: Bool {
+        guard let last = playedDeck.last(where: { !deadFrameIds.contains($0.id) }) else { return false }
+        return developedFrameIds.contains(last.id)
+    }
+
     /// The reader paged to a new frame.
     func moved(to newIndex: Int) {
         guard newIndex != index, playedDeck.indices.contains(newIndex) else { return }

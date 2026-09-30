@@ -234,8 +234,8 @@ struct CameraView: View {
                     topBar
                         .reportsControlRegion()
                     // Same top-slot toast idiom as the rest of the app (FeedView's "Reported,
-                    // thanks", PhotoPagerView's "Shared to your page"): a checkmark, not a
-                    // warning triangle, because nothing was lost, and it's told once here rather
+                    // thanks", PhotoPagerView's "Shared to your page"): a quiet info line, not a
+                    // warning, because nothing was lost, and it's told once here rather
                     // than folded into the Retry pill's own message, which only shows while
                     // something is still stuck.
                     if rollDevelopedFallbackToast {
@@ -244,7 +244,7 @@ struct CameraView: View {
                         // membership that was removed all look identical from here, so the copy
                         // states the effect, not a cause it can't verify.
                         FlimToast("That roll isn't accepting shots anymore, so this one went to your Darkroom instead.",
-                                  kind: .success)
+                                  kind: .info, alignment: .leading)
                             .padding(.top, 10)
                             .padding(.horizontal, 24)
                     }

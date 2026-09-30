@@ -370,39 +370,16 @@ private struct BadgePickerContent: View {
             HStack(spacing: 14) {
                 positionIndicator(position)
                 VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 6) {
-                        Text(badge.kind.emoji)
-                            .flimFont(13, relativeTo: .caption)
-                            .opacity(developed ? 1 : 0)
-                            .scaleEffect(developed || reduceMotion ? 1 : 1.4)
-                            .animation(reduceMotion ? .easeInOut(duration: 0.3)
-                                                    : ProfileBadgePill.spring,
-                                       value: developed)
-                        // The pill itself, in its real tier colour, so this reads as "here is
-                        // what you're choosing" rather than a name you have to already know the
-                        // meaning of; see `BadgePillLabel` and `ProfileBadgeTier`.
-                        BadgePillLabel(kind: badge.kind)
-                            .opacity(developed ? 1 : 0.4)
-                            .blur(radius: developed ? 0 : 6)
-                            .animation(.easeOut(duration: 0.7), value: developed)
-                        // The rung, in words. Colour alone carries the rank once you know the
-                        // ladder, but nothing on screen teaches it, and gold against bronze is not
-                        // a distinction everyone can see.
-                        Text(badge.kind.tier.name.uppercased())
-                            .flimFont(9, weight: .medium, relativeTo: .caption2)
-                            .tracking(1.2)
-                            .foregroundStyle(badge.kind.tier.hue(accent: accent).opacity(0.85))
-                            .opacity(developed ? 1 : 0)
-                            .animation(.easeInOut(duration: 0.4).delay(0.55), value: developed)
-                        if isNew {
-                            Text("NEW")
-                                .flimFont(9, weight: .bold, relativeTo: .caption2)
-                                .tracking(1)
-                                .foregroundStyle(.black)
-                                .padding(.horizontal, 6).padding(.vertical, 2)
-                                .background(accent, in: Capsule())
-                                .opacity(developed ? 1 : 0)
-                                .animation(.easeInOut(duration: 0.4).delay(0.55), value: developed)
+                    // One line when it fits; at large text sizes the rung and NEW move to a
+                    // second line rather than any word breaking ("FOUND ING", "NE W").
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 6) {
+                            earnedMark(badge, developed: developed)
+                            earnedRung(badge, developed: developed, isNew: isNew)
+                        }
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack(spacing: 6) { earnedMark(badge, developed: developed) }
+                            HStack(spacing: 6) { earnedRung(badge, developed: developed, isNew: isNew) }
                         }
                     }
                     // The date is gone here too, matching the profile: it was never load-bearing,
@@ -426,6 +403,54 @@ private struct BadgePickerContent: View {
         .id(badge.id)
         .accessibilityLabel(accessibilityLabel(for: badge, position: position, dropped: showsDroppedNotice, isNew: isNew))
         .accessibilityHint(mode == .custom ? (position != nil ? "Double tap to remove it" : "Double tap to add it") : "")
+    }
+
+    /// The emoji and the pill of an earned row.
+    @ViewBuilder
+    private func earnedMark(_ badge: ProfileBadge, developed: Bool) -> some View {
+        Text(badge.kind.emoji)
+            .flimFont(13, relativeTo: .caption)
+            .opacity(developed ? 1 : 0)
+            .scaleEffect(developed || reduceMotion ? 1 : 1.4)
+            .animation(reduceMotion ? .easeInOut(duration: 0.3)
+                                    : ProfileBadgePill.spring,
+                       value: developed)
+        // The pill itself, in its real tier colour, so this reads as "here is
+        // what you're choosing" rather than a name you have to already know the
+        // meaning of; see `BadgePillLabel` and `ProfileBadgeTier`.
+        BadgePillLabel(kind: badge.kind)
+            .opacity(developed ? 1 : 0.4)
+            .blur(radius: developed ? 0 : 6)
+            .animation(.easeOut(duration: 0.7), value: developed)
+    }
+
+    /// The rung in words and, for a badge not yet seen, the NEW capsule. Both keep to one line
+    /// and take the width they need, so a word never breaks.
+    @ViewBuilder
+    private func earnedRung(_ badge: ProfileBadge, developed: Bool, isNew: Bool) -> some View {
+        // The rung, in words. Colour alone carries the rank once you know the
+        // ladder, but nothing on screen teaches it, and gold against bronze is not
+        // a distinction everyone can see.
+        Text(badge.kind.tier.name.uppercased())
+            .flimFont(9, weight: .medium, relativeTo: .caption2)
+            .tracking(1.2)
+            .lineLimit(1)
+            .fixedSize()
+            .foregroundStyle(badge.kind.tier.hue(accent: accent).opacity(0.85))
+            .opacity(developed ? 1 : 0)
+            .animation(.easeInOut(duration: 0.4).delay(0.55), value: developed)
+        if isNew {
+            Text("NEW")
+                .flimFont(9, weight: .bold, relativeTo: .caption2)
+                .tracking(1)
+                .lineLimit(1)
+                .fixedSize()
+                .foregroundStyle(.black)
+                .padding(.horizontal, 6).padding(.vertical, 2)
+                .background(accent, in: Capsule())
+                .opacity(developed ? 1 : 0)
+                .animation(.easeInOut(duration: 0.4).delay(0.55), value: developed)
+        }
     }
 
     private func positionIndicator(_ position: Int?) -> some View {
@@ -523,14 +548,16 @@ private struct BadgePickerContent: View {
                 .foregroundStyle(FlimTheme.textTertiary)
                 .frame(width: 44, height: 44)
             VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 8) {
-                    Text(kind.emoji)
-                        .flimFont(13, relativeTo: .caption)
-                    BadgePillLabel(kind: kind, muted: true)
-                    Text(kind.tier.name.uppercased())
-                        .flimFont(9, weight: .medium, relativeTo: .caption2)
-                        .tracking(1.2)
-                        .foregroundStyle(kind.tier.hue(accent: accent).opacity(0.55))
+                // Same rule as the earned rows: the rung moves under the pill before it breaks.
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 8) {
+                        lockedMark(kind)
+                        lockedRung(kind)
+                    }
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 8) { lockedMark(kind) }
+                        lockedRung(kind)
+                    }
                 }
                 // `howToEarn` ONLY, not both. These rows carried the explanation above the
                 // instruction, and for most of the catalogue those are the same sentence written
@@ -553,6 +580,22 @@ private struct BadgePickerContent: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(kind.label) badge, not yet earned")
         .accessibilityHint(kind.howToEarn)
+    }
+
+    @ViewBuilder
+    private func lockedMark(_ kind: ProfileBadgeKind) -> some View {
+        Text(kind.emoji)
+            .flimFont(13, relativeTo: .caption)
+        BadgePillLabel(kind: kind, muted: true)
+    }
+
+    private func lockedRung(_ kind: ProfileBadgeKind) -> some View {
+        Text(kind.tier.name.uppercased())
+            .flimFont(9, weight: .medium, relativeTo: .caption2)
+            .tracking(1.2)
+            .lineLimit(1)
+            .fixedSize()
+            .foregroundStyle(kind.tier.hue(accent: accent).opacity(0.55))
     }
 
     // MARK: - The reveal

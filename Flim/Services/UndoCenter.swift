@@ -58,9 +58,10 @@ final class UndoCenter {
     /// The transient failure line after a commit that returned false; the capsule host
     /// renders it in the capsule's place for a beat, then it clears itself.
     private(set) var failureNotice: String?
-    /// The notice in the slot reports something that worked (`showConfirmation`), not a
-    /// failure: the host drops the warning glyph for it.
-    private(set) var noticeIsConfirmation = false
+    /// What the notice in the slot reports: a failure (`showNotice`), something that worked
+    /// (`showConfirmation`), or a plain line of information (`showInfo`). The host picks the
+    /// toast's glyph from it.
+    private(set) var noticeKind: FlimToast.Kind = .error
 
     private var expiryTask: Task<Void, Never>?
     private var noticeTask: Task<Void, Never>?
@@ -166,18 +167,24 @@ final class UndoCenter {
     /// (a Spotlight refusal names its reason; a staged `failureText` cannot). Same slot, same
     /// timing as a failed commit's notice.
     func showNotice(_ text: String) {
-        present(text, confirmation: false)
+        present(text, kind: .error)
     }
 
     /// The same slot and timing, for a plain line after a server write that landed (a
     /// Spotlight put-up says it is up). No Undo: shown only once nothing is left to undo.
     func showConfirmation(_ text: String) {
-        present(text, confirmation: true)
+        present(text, kind: .success)
     }
 
-    private func present(_ text: String, confirmation: Bool) {
+    /// The same slot and timing, for a quiet line that is neither a success nor a failure (an
+    /// invite link opened by someone already signed in).
+    func showInfo(_ text: String) {
+        present(text, kind: .info)
+    }
+
+    private func present(_ text: String, kind: FlimToast.Kind) {
         noticeTask?.cancel()
-        noticeIsConfirmation = confirmation
+        noticeKind = kind
         withAnimation { failureNotice = text }
         noticeTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(2.5))

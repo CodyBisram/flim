@@ -8,7 +8,8 @@ import SwiftUI
 /// now decides the icon and the haptic; the host decides only the words, where the capsule sits,
 /// and how long it stays.
 ///
-/// - The icon is fixed per kind, so a failure always reads as a failure at a glance.
+/// - The icon is fixed per kind, so a failure always reads as a failure at a glance. The one
+///   exception is `symbol:`, for a glyph that says more than the kind's (the offline pills).
 /// - The haptic is paired with the kind (success chimes, error buzzes, info is silent, because an
 ///   info notice arrives unprompted). It plays when the toast appears or its words change, unless
 ///   the action that raised it already played one in the same beat (`Haptics.playedRecently`),
@@ -16,7 +17,8 @@ import SwiftUI
 /// - One transition: in from its own edge with a fade, or a plain fade under Reduce Motion.
 /// - The surface is `glassCapsule()`: Liquid Glass on iOS 26, `.ultraThinMaterial` below, and an
 ///   opaque fill under Reduce Transparency on both.
-/// - VoiceOver hears the words as they appear, since a toast is never focused.
+/// - VoiceOver hears the words as they appear, since a toast is never focused, and hears the
+///   same words once even when two hosts show them together.
 ///
 /// The host still owns presentation: put it in an `if` inside an `overlay`, drive it with
 /// `withAnimation`, and dismiss it on the host's own timer.
@@ -44,26 +46,34 @@ struct FlimToast: View {
 
     let text: String
     let kind: Kind
+    /// Overrides the kind's icon where a more specific glyph reads faster at a glance (the
+    /// offline pill's `wifi.slash`). The haptic still follows the kind.
+    var symbol: String? = nil
     /// The edge the host anchors the toast to; the transition comes in from it.
     var edge: VerticalEdge = .top
     /// Off only where something else already owns the moment's haptic on its own schedule
     /// (the undo capsule's notices, whose callers buzz before `UndoCenter` shows them).
     var playsHaptic: Bool = true
+    /// Centered for the usual one-liner; a long sentence that wraps reads better leading.
+    var alignment: TextAlignment = .center
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    init(_ text: String, kind: Kind, edge: VerticalEdge = .top, playsHaptic: Bool = true) {
+    init(_ text: String, kind: Kind, symbol: String? = nil, edge: VerticalEdge = .top,
+         playsHaptic: Bool = true, alignment: TextAlignment = .center) {
         self.text = text
         self.kind = kind
+        self.symbol = symbol
         self.edge = edge
         self.playsHaptic = playsHaptic
+        self.alignment = alignment
     }
 
     var body: some View {
-        Label(text, systemImage: kind.symbol)
+        Label(text, systemImage: symbol ?? kind.symbol)
             .flimType(.label)
             .foregroundStyle(.white)
-            .multilineTextAlignment(.center)
+            .multilineTextAlignment(alignment)
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
             .flimToastSurface()
@@ -71,8 +81,21 @@ struct FlimToast: View {
             .transition(Self.transition(edge: edge, reduceMotion: reduceMotion))
             .onChange(of: text, initial: true) { _, newText in
                 if playsHaptic, !Haptics.playedRecently { kind.playHaptic() }
-                AccessibilityNotification.Announcement(newText).post()
+                Self.announce(newText)
             }
+    }
+
+    /// The text and system uptime of the last VoiceOver announcement. `UndoCapsuleHost` is
+    /// mounted in more than one place at once (the tab root and a full-screen cover), so the
+    /// same notice can appear in two or three toasts in the same beat; it is read once.
+    @MainActor private static var lastAnnouncement: (text: String, time: TimeInterval)?
+
+    @MainActor
+    private static func announce(_ text: String) {
+        let now = ProcessInfo.processInfo.systemUptime
+        if let last = lastAnnouncement, last.text == text, now - last.time < 1 { return }
+        lastAnnouncement = (text, now)
+        AccessibilityNotification.Announcement(text).post()
     }
 
     /// The one toast transition. Public so a host-built capsule on the same shell (the undo

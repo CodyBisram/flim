@@ -404,6 +404,7 @@ struct ShareToFeedSheet: View {
             } catch {
                 feed.myPostedPhotoIds.remove(photo.id)
                 Haptics.error()
+                ReviewPrompt.noteVisibleFailure()
             }
         }
     }

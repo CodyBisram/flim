@@ -100,9 +100,16 @@ enum AppInfo {
         #if DEBUG
         return false
         #else
-        guard let url = Bundle.main.appStoreReceiptURL else { return false }
-        return url.lastPathComponent != "sandboxReceipt"
+        return isAppStoreReceipt(Bundle.main.appStoreReceiptURL)
         #endif
+    }
+
+    /// The receipt-name rule behind `isAppStore`, pure so a test can pin it: TestFlight and
+    /// development installs carry a receipt named `sandboxReceipt`, a public App Store install a
+    /// production one, and an install with no receipt URL at all is not the App Store.
+    static func isAppStoreReceipt(_ url: URL?) -> Bool {
+        guard let url else { return false }
+        return url.lastPathComponent != "sandboxReceipt"
     }
 
     /// A pre-filled feedback email (Mail app), stamped with the build so bug reports self-identify.

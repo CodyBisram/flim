@@ -21,7 +21,7 @@ struct UndoCapsuleHost: View {
             } else if let notice = center.failureNotice {
                 // The callers buzz before they hand `UndoCenter` a notice, so the toast stays
                 // quiet rather than second-guessing their timing.
-                FlimToast(notice, kind: center.noticeIsConfirmation ? .success : .error,
+                FlimToast(notice, kind: center.noticeKind,
                           edge: .bottom, playsHaptic: false)
             }
         }

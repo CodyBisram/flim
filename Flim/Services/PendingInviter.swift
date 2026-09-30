@@ -39,14 +39,25 @@ enum PendingInviter {
     /// Present when either the id or the name was noted: an entry written by an older build
     /// always has both, one written from a preview without an id has only the name.
     static func take(for email: String) -> Entry? {
+        let entry = peek(for: email)
+        if entry != nil { forget(for: email) }
+        return entry
+    }
+
+    /// The entry, left in place: for a caller that consumes it only once its own work succeeded.
+    static func peek(for email: String) -> Entry? {
         let k = key(email)
         let id = store.string(forKey: k).flatMap(UUID.init(uuidString:))
         let name = store.string(forKey: k + ".name")
         guard id != nil || name != nil else { return nil }
         let campaign = store.bool(forKey: k + ".campaign")
+        return Entry(id: id, name: name ?? "", isCampaign: campaign)
+    }
+
+    static func forget(for email: String) {
+        let k = key(email)
         store.removeObject(forKey: k)
         store.removeObject(forKey: k + ".name")
         store.removeObject(forKey: k + ".campaign")
-        return Entry(id: id, name: name ?? "", isCampaign: campaign)
     }
 }

@@ -67,7 +67,7 @@ struct FeedPreviewDemoHost: View {
         VStack(spacing: 12) {
             FlimToast("Posted to your page", kind: .success, playsHaptic: false)
             FlimToast(SpotlightRefusal.putUpNetwork, kind: .error, playsHaptic: false)
-            FlimToast("No connection", kind: .info, playsHaptic: false)
+            FlimToast("No connection", kind: .info, symbol: "wifi.slash", playsHaptic: false)
         }
         .padding(.horizontal, 16)
     }

@@ -51,6 +51,19 @@ struct ProfileCacheTests {
         #expect(ProfileCache.load(for: asked, root: root) == nil)
     }
 
+    @Test("saving one account removes any other account's file")
+    func saveKeepsOnlyOneAccount() {
+        defer { ProfileCache.clearAll(root: root) }
+        let departed = profile()
+        let current = profile()
+        ProfileCache.save(departed, root: root)
+        ProfileCache.save(current, root: root)
+        #expect(ProfileCache.load(for: departed.id, root: root) == nil)
+        #expect(ProfileCache.load(for: current.id, root: root) == current)
+        let files = (try? FileManager.default.contentsOfDirectory(atPath: root.path)) ?? []
+        #expect(files == ["\(current.id.uuidString.lowercased()).json"])
+    }
+
     @Test("signing out leaves nothing behind for anyone")
     func clearedOnSignOut() {
         let first = profile()

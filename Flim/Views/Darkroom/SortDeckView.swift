@@ -726,6 +726,7 @@ struct SortDeckView: View {
                 // someone believes they published something that never left the device. This is
                 // the one action in the deck that makes a photo public; it has to speak up.
                 Haptics.error()
+                ReviewPrompt.noteVisibleFailure()
                 publishError = "Couldn't post that one. It's in your Darkroom, post it from there."
                 session.failed(photoId: photo.id)
                 // The session sheet never shows a frame that did not post; with nothing left to
@@ -749,6 +750,7 @@ struct SortDeckView: View {
                 // `performSwipe` already dropped it from `cards`; without putting it back it
                 // would just look gone for the rest of this session even though it survived.
                 Haptics.error()
+                ReviewPrompt.noteVisibleFailure()
                 publishError = "Couldn't delete that one. Check your connection and try again."
                 withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                     cards.insert(photo, at: 0)

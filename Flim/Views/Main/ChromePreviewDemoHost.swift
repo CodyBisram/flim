@@ -13,7 +13,7 @@ import UIKit
 /// none for Camera.
 ///
 /// The first-run covers (onboarding, the camera coach, the notification primer) are marked
-/// done on the way in, or they would sit over every screenshot.
+/// done on the way in, or they would sit over every screenshot, for this run only.
 struct ChromePreviewDemoHost: View {
     @Environment(FeedService.self) private var feed
     @State private var seeded = false
@@ -29,10 +29,19 @@ struct ChromePreviewDemoHost: View {
         .preferredColorScheme(.dark)
         .onAppear {
             guard !seeded else { return }
+            // The registration domain is volatile: it answers these reads for this run only and
+            // is never written to disk, so the next ordinary launch still sees its own first-run
+            // state. A persisted `false` would win over it, and reads the same as absent, so it
+            // is removed.
             let defaults = UserDefaults.standard
+            var firstRunDone: [String: Any] = [:]
             for key in ["hasOnboarded", "hasSeenCameraCoach", "didShowNotifPrimer", "didRetryUnaskedNotifPrimer"] {
-                defaults.set(true, forKey: key)
+                if defaults.object(forKey: key) != nil, !defaults.bool(forKey: key) {
+                    defaults.removeObject(forKey: key)
+                }
+                firstRunDone[key] = true
             }
+            defaults.register(defaults: firstRunDone)
             // Before `MainTabView` mounts, so `FeedView`'s first `.task` finds a loaded feed
             // and never tries to reload one for an account that is not there.
             FeedPreviewFixtures.seed(into: feed)

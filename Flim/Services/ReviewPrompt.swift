@@ -21,7 +21,7 @@ import UIKit
 ///
 /// The four moments, and where each is noticed:
 /// - `spotlightChosen`: `PostDetailView`, the first time you open your own chosen frame;
-/// - `rollReveal`: `RollRevealView`, when the reveal completes (its last frame, or Done);
+/// - `rollReveal`: `RollRevealView`, when the reveal completes with its last frame seen;
 /// - `tenthPost`: `FeedService.createPost`, when the server's count of your posts reaches ten;
 /// - `fifthReaction`: `ReviewPromptCenter.checkReactionMilestone`, on the next app open after
 ///   the fifth reaction from someone else lands.
@@ -168,6 +168,12 @@ extension ReviewPrompt {
     static func askIfAllowed(_ moment: Moment, user: AppUser?, requestReview: RequestReviewAction,
                              defaults: UserDefaults = .standard, now: Date = .now) -> Bool {
         guard let user else { return false }
+        #if !DEBUG
+        // Apple's card never shows in TestFlight, so an ask there would only spend this
+        // version's one ask and log a review_asked_* that never reached anyone. Debug builds
+        // stay askable so the flow can be walked on the simulator.
+        guard AppInfo.isAppStore else { return false }
+        #endif
         let version = AppInfo.shortVersion
         guard mayAsk(userId: user.id, accountCreatedAt: user.createdAt, appVersion: version,
                      now: now, in: defaults) else { return false }

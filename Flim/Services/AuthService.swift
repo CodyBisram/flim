@@ -52,8 +52,10 @@ final class AuthService {
     /// down. `resyncIfNeeded()` clears it by finishing the launch once the network answers.
     @ObservationIgnored private var needsResync = false
     /// Single flight for `resyncIfNeeded()`: the reconnect, the foreground and a refreshed token
-    /// can all ask at once, and one round trip answers all of them.
-    @ObservationIgnored private var isResyncing = false
+    /// can all ask at once, and one round trip answers all of them. Held as the running attempt,
+    /// not a flag, so a second caller (a Retry tap, a reconnect) waits for that attempt to finish
+    /// instead of returning at once with nothing done.
+    @ObservationIgnored private var resyncTask: Task<Void, Never>?
 
     /// The session the caches and `currentUser` currently belong to.
     ///
@@ -85,6 +87,16 @@ final class AuthService {
         do {
             let profile = try await fetchUserProfile(id: id)
             guard AccountEpoch.isCurrent(epoch) else { return }
+            // No profile, while this account's own profile is already on screen: that profile
+            // was read from the server (now or on an earlier launch), so a nil here is the server
+            // answering badly (a 5xx, a gateway's HTML page, a body that would not decode), not an
+            // account with no username. Keep it and ask again later rather than dropping to the
+            // username screen, where the person's own name would read as taken.
+            if profile == nil, currentUser?.id == id {
+                profileUnavailable = false
+                needsResync = true
+                return
+            }
             currentUser = profile
             profileUnavailable = false
             needsResync = false
@@ -172,21 +184,22 @@ final class AuthService {
 
     /// Tells "could not reach the server" apart from "there is no session".
     ///
-    /// Only a failure that never got an answer keeps the stored session: a URLError (no network,
-    /// a timeout, DNS, a dropped connection) or a server error status, which the Supabase client
-    /// itself treats as transient and retries. A definite refusal (the refresh token revoked or
-    /// already used, which the client reports as a missing session after deleting it) or no stored
-    /// session at all signs out, exactly as before.
+    /// Only a definite refusal signs out: the server answered 400, 401 or 403 (the refresh token
+    /// revoked or already used), the client reports the session missing (it deletes a session
+    /// the server refused), or no session is stored at all. Everything else keeps the stored
+    /// session and asks again later: no network, a timeout, a server error, a 429 on the token
+    /// endpoint, a captive portal answering with an HTML page that will not decode, a cancelled
+    /// read. Signing someone out over any of those loses their account for a bad connection.
     nonisolated static func sessionOutcome(after error: Error, storedUserId: UUID?) -> SessionOutcome {
-        guard let storedUserId, isUnansweredRequest(error) else { return .signedOut }
+        guard let storedUserId, !isDefiniteRefusal(error) else { return .signedOut }
         return .unreachable(storedUserId)
     }
 
-    /// Whether `error` means the request got no usable answer from the server.
-    nonisolated static func isUnansweredRequest(_ error: Error) -> Bool {
-        if error is URLError { return true }
+    /// Whether `error` means the server answered and refused this session.
+    nonisolated static func isDefiniteRefusal(_ error: Error) -> Bool {
+        if case Auth.AuthError.sessionMissing = error { return true }
         if case let Auth.AuthError.api(_, _, _, response) = error {
-            return response.statusCode == 408 || response.statusCode >= 500
+            return [400, 401, 403].contains(response.statusCode)
         }
         return false
     }
@@ -196,9 +209,23 @@ final class AuthService {
     /// the token on its own, and by the retry state's button. Does nothing unless something on
     /// screen still waits on the server, so calling it often is free.
     func resyncIfNeeded() async {
-        guard isAuthenticated, needsResync || profileUnavailable, !isResyncing else { return }
-        isResyncing = true
-        defer { isResyncing = false }
+        if let running = resyncTask {
+            await running.value
+            return
+        }
+        guard isAuthenticated, needsResync || profileUnavailable else { return }
+        // Created and stored in one synchronous step on the main actor, so no second caller can
+        // slip in between; the task clears itself when it ends.
+        let task = Task { [weak self] in
+            await self?.resync()
+            self?.resyncTask = nil
+        }
+        resyncTask = task
+        await task.value
+    }
+
+    /// One resync attempt. Only ever run through `resyncIfNeeded()`'s single flight.
+    private func resync() async {
         let epoch = AccountEpoch.current
         let session: Session
         do {
@@ -427,9 +454,16 @@ final class AuthService {
     /// Who invited the signed-in account, for the one-way follow a new account makes. Asked of the
     /// server (`get_own_inviter`, pinned to the caller), because the signed-out preview no longer
     /// carries the id. What the sign-in screen noted is the fallback, see `resolveInviter`.
-    func ownInviter(pending: PendingInviter.Entry) async -> NewAccountIntro.Inviter? {
-        let rows: [OwnInviterRow]? = try? await supabase.rpc("get_own_inviter").execute().value
-        return Self.resolveInviter(rows: rows, pending: pending)
+    ///
+    /// `answered` says whether the server replied at all, so the caller can keep what the sign-in
+    /// screen noted when it did not (the fallback is then only the preview's id, if any).
+    func ownInviter(pending: PendingInviter.Entry) async -> (inviter: NewAccountIntro.Inviter?, answered: Bool) {
+        do {
+            let rows: [OwnInviterRow] = try await supabase.rpc("get_own_inviter").execute().value
+            return (Self.resolveInviter(rows: rows, pending: pending), true)
+        } catch {
+            return (Self.resolveInviter(rows: nil, pending: pending), false)
+        }
     }
 
     /// The server's answer wins. With a row: its id, and `via == "campaign"` for the cohort flag,
@@ -438,11 +472,12 @@ final class AuthService {
     ///
     /// The name is the sign-in screen's, and it only travels with an id it can belong to: if the
     /// preview named a different person than the server (an email already allowlisted by an
-    /// earlier code), it is dropped rather than put on the wrong person.
+    /// earlier code), it is dropped rather than put on the wrong person. A preview with no id
+    /// cannot show that it matches, so its name is dropped under a server row too.
     nonisolated static func resolveInviter(rows: [OwnInviterRow]?, pending: PendingInviter.Entry) -> NewAccountIntro.Inviter? {
         if let row = rows?.first {
             let isCampaign = row.via.map { $0 == "campaign" } ?? pending.isCampaign
-            let name = (pending.id == nil || pending.id == row.inviterId) ? pending.name : ""
+            let name = pending.id == row.inviterId ? pending.name : ""
             return NewAccountIntro.Inviter(id: row.inviterId, name: name, isCampaign: isCampaign)
         }
         guard let id = pending.id else { return nil }

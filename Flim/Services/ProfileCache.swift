@@ -45,6 +45,10 @@ enum ProfileCache {
 
     /// Writes `profile` under its own id. The id comes from the profile itself, never from the
     /// caller, so a row can only ever be filed under the account it describes.
+    ///
+    /// Only one account is ever cached: any other account's file is removed on the way in, so a
+    /// departed account whose clear was missed (the app killed mid sign-out) never outlives the
+    /// next sign-in.
     static func save(_ profile: AppUser, root: URL? = defaultRoot()) {
         guard let root, let data = try? JSONEncoder().encode(profile) else { return }
         do {
@@ -55,7 +59,12 @@ enum ProfileCache {
             excluded.isExcludedFromBackup = true
             var dir = root
             try? dir.setResourceValues(excluded)
-            try data.write(to: fileURL(for: profile.id, root: root),
+            let target = fileURL(for: profile.id, root: root)
+            let others = (try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? []
+            for file in others where file.lastPathComponent != target.lastPathComponent {
+                try? FileManager.default.removeItem(at: file)
+            }
+            try data.write(to: target,
                            options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
         } catch {
             // Best effort: a missing cache only means the next launch reads the network first.

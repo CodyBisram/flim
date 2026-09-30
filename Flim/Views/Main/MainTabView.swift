@@ -256,8 +256,11 @@ struct MainTabView: View {
         // auth screens too. Nothing extra is needed here.
         .overlay(alignment: .top) {
             if !network.isConnected {
-                FlimToast("No connection", kind: .info)
+                FlimToast("No connection", kind: .info, symbol: "wifi.slash")
                     .padding(.top, 8)
+                    // It sits over the camera's self timer and roll picker; it only informs,
+                    // so taps pass through to them.
+                    .allowsHitTesting(false)
             }
         }
         .animation(.easeInOut(duration: 0.3), value: network.isConnected)

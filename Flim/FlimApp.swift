@@ -117,6 +117,8 @@ struct FlimApp: App {
             heldPersonalInvite = code
         case .ignore:
             heldPersonalInvite = nil
+            // Said once, quietly, so the tap is not met with nothing at all.
+            UndoCenter.shared.showInfo("You're already on \(AppInfo.appName). Invite links are for someone new.")
         }
     }
 

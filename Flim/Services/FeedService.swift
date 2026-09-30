@@ -559,7 +559,9 @@ final class FeedService {
         guard !badgesLocallySeen else { return [] }
         struct Row: Decodable { let badge_id: String }
         let rows: [Row] = (try? await supabase.rpc("own_unseen_badges").execute().value) ?? []
-        return Set(rows.map(\.badge_id))
+        // Only badges this build can show: one earned on a newer server would otherwise light
+        // "New badge to see" for a picker that has nothing to reveal.
+        return Set(rows.map(\.badge_id).filter { ProfileBadgeKind(rawValue: $0) != nil })
     }
 
     /// Marks every currently-unseen badge as seen for the signed-in account, and clears the tab

@@ -169,13 +169,21 @@ struct UsernameView: View {
             // The one-way follow of whoever's code let this account in, the first moment the
             // account's own row exists. Best effort and silent: a failure here costs nothing the
             // person can see, and the follow can be made by hand from the inviter's page.
+            //
+            // The server is asked whether or not the sign-in screen noted anyone: a preview that
+            // failed there must not cost the follow. What it noted is consumed only once the
+            // server has answered; if it did not, the entry stays (nothing reads it again today,
+            // this screen being the one place the follow is made).
             if let uid = auth.currentUser?.id,
-               let email = auth.currentUser?.email ?? auth.pendingEmail,
-               let pending = PendingInviter.take(for: email),
-               let inviter = await auth.ownInviter(pending: pending), inviter.id != uid {
-                // Named only when the name is known to be this person's; the follow happens either way.
-                if !inviter.name.isEmpty { NewAccountIntro.rememberInviter(inviter, userId: uid) }
-                _ = await feed.follow(inviter.id, from: uid)
+               let email = auth.currentUser?.email ?? auth.pendingEmail {
+                let pending = PendingInviter.peek(for: email) ?? PendingInviter.Entry(id: nil, name: "")
+                let answer = await auth.ownInviter(pending: pending)
+                if answer.answered { PendingInviter.forget(for: email) }
+                if let inviter = answer.inviter, inviter.id != uid {
+                    // Named only when the name is known to be this person's; the follow happens either way.
+                    if !inviter.name.isEmpty { NewAccountIntro.rememberInviter(inviter, userId: uid) }
+                    _ = await feed.follow(inviter.id, from: uid)
+                }
             }
         } catch {
             // "That username's taken" is ours and says what to do; a raw Postgres or network

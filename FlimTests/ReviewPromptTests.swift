@@ -21,6 +21,14 @@ struct ReviewPromptTests {
                                appVersion: version, lastVisibleFailure: failure, now: now)
     }
 
+    @Test("only a production receipt counts as the App Store, so TestFlight never spends the ask")
+    func appStoreReceipt() {
+        let base = URL(fileURLWithPath: "/var/mobile/Containers/Data/Application/X/StoreKit")
+        #expect(AppInfo.isAppStoreReceipt(base.appendingPathComponent("receipt")))
+        #expect(!AppInfo.isAppStoreReceipt(base.appendingPathComponent("sandboxReceipt")))
+        #expect(!AppInfo.isAppStoreReceipt(nil))
+    }
+
     @Test("an established account that was never asked may be asked")
     func baseline() {
         #expect(ask())

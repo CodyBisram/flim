@@ -21,6 +21,7 @@ struct RollsView: View {
     @Environment(RollService.self) private var rolls
     @Environment(NotificationService.self) private var notifications
     @Environment(PhotoService.self) private var photos
+    @Environment(NetworkMonitor.self) private var network
     @State private var showCreate = false
     @State private var showJoin = false
     @State private var invitedByNames: [UUID: String] = [:]
@@ -171,6 +172,13 @@ struct RollsView: View {
         .onAppear { Task { await load() } }
         .onChange(of: rolls.coverPaths) {
             Task { await resolveCovers() }
+        }
+        // Rolls that failed to load (a launch with no signal) load themselves when the
+        // connection comes back. Nothing happens when nothing failed.
+        .onChange(of: network.isConnected) { _, on in
+            if on, loadError != nil, rolls.rolls.isEmpty, !rolls.isLoading {
+                Task { await load() }
+            }
         }
         .navigationDestination(for: Roll.self) { roll in
             RollDetailView(roll: roll, pendingPhotoIntent: pendingPhotoIntent)

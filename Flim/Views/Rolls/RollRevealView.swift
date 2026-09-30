@@ -142,16 +142,17 @@ struct RollRevealView: View {
         .onChange(of: viewModel.completed) { _, done in
             if done { onCompleted?() }
         }
-        // The rating prompt's reveal moment: the reveal genuinely finished. Asked over the
+        // The rating prompt's reveal moment: the reveal genuinely finished, its last frame seen
+        // (Done tapped early completes the reveal but is not this moment). Asked over the
         // summary once its 0.3s entrance has played and a second has passed, and never if the
-        // reveal closed, a comment thread or a profile opened, or anything else was presented
-        // over it in the meantime (see `ReviewPrompt.askWhenSettled`).
+        // reveal closed, a comment thread or a profile opened, Save all is running, or anything
+        // else was presented over it in the meantime (see `ReviewPrompt.askWhenSettled`).
         .task(id: viewModel.completed) {
-            guard viewModel.completed else { return }
+            guard viewModel.completed, viewModel.reachedLastFrame else { return }
             await ReviewPrompt.askWhenSettled(
                 .rollReveal, user: auth.currentUser, requestReview: requestReview,
                 extraDelay: .milliseconds(300)
-            ) { commentsPhoto == nil && profileRoute == nil }
+            ) { commentsPhoto == nil && profileRoute == nil && !viewModel.savingAll }
         }
     }
 

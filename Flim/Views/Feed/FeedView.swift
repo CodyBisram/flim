@@ -22,6 +22,7 @@ struct FeedView: View {
     @Environment(FeedService.self) private var feed
     @Environment(TabSignals.self) private var signals
     @Environment(PhotoService.self) private var photos
+    @Environment(NetworkMonitor.self) private var network
     @Environment(\.displayScale) private var displayScale
     @Environment(\.scenePhase) private var scenePhase
 
@@ -314,6 +315,13 @@ struct FeedView: View {
         // first load, so a launch never clears a dot the server lit before the feed arrived.
         .onChange(of: seenStore.marksVersion) {
             if didLoad, AccountEpoch.current == loadedEpoch { updateFeedDot() }
+        }
+        // A feed that failed to load (a launch with no signal) loads itself when the connection
+        // comes back, rather than waiting for a Try again tap. Nothing happens when nothing failed.
+        .onChange(of: network.isConnected) { _, on in
+            if on, feed.feed.isEmpty, feed.feedError != nil, !feed.isLoadingFeed {
+                Task { await reload() }
+            }
         }
         #if DEBUG
         // `-feedPreviewDemo -demoUnreadActivity N`: the bell as an account with N unread sees
@@ -684,7 +692,7 @@ struct FeedView: View {
                     .padding(.top, 8)
                     .transition(.move(edge: .top).combined(with: .opacity))
                 } else if refreshFailedToast {
-                    FlimToast("Couldn't refresh", kind: .error)
+                    FlimToast("Couldn't refresh", kind: .error, symbol: "wifi.exclamationmark")
                         .padding(.top, 8)
                 } else if let feedNotice {
                     // Every `.feedNotice` is something that didn't happen (a post that is gone,

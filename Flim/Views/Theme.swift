@@ -267,6 +267,9 @@ struct ErrorState: View {
             .disabled(retrying)
             .padding(.top, 4)
         }
+        // A list that failed to load is a visible failure too: the rating prompt's one-day
+        // quiet follows it, the same as a failed send.
+        .onAppear { ReviewPrompt.noteVisibleFailure() }
     }
 }
 

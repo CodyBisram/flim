@@ -90,12 +90,20 @@ struct AuthRulesTests {
                 == .unreachable(Self.stored))
     }
 
-    @Test("a server that is down keeps the stored session too")
+    @Test("a server that is down or throttling keeps the stored session too")
     func serverErrorStaysSignedIn() throws {
-        for status in [408, 500, 502, 503, 522] {
+        for status in [404, 408, 429, 500, 502, 503, 522] {
             #expect(AuthService.sessionOutcome(after: try Self.apiError(status: status), storedUserId: Self.stored)
                     == .unreachable(Self.stored), "\(status)")
         }
+    }
+
+    @Test("a captive portal's HTML page and a cancelled read keep the stored session")
+    func unreadableOrCancelledStaysSignedIn() {
+        let portal = DecodingError.dataCorrupted(.init(codingPath: [], debugDescription: "HTML, not JSON"))
+        #expect(AuthService.sessionOutcome(after: portal, storedUserId: Self.stored) == .unreachable(Self.stored))
+        #expect(AuthService.sessionOutcome(after: CancellationError(), storedUserId: Self.stored)
+                == .unreachable(Self.stored))
     }
 
     @Test("no session is signed out, whatever the network did")
@@ -111,7 +119,9 @@ struct AuthRulesTests {
         #expect(AuthService.sessionOutcome(after: try Self.apiError(status: 400, code: .refreshTokenNotFound),
                                            storedUserId: Self.stored) == .signedOut)
         #expect(AuthService.sessionOutcome(after: try Self.apiError(status: 401), storedUserId: Self.stored) == .signedOut)
-        #expect(AuthService.sessionOutcome(after: CancellationError(), storedUserId: Self.stored) == .signedOut)
+        #expect(AuthService.sessionOutcome(after: try Self.apiError(status: 403), storedUserId: Self.stored) == .signedOut)
+        // Whatever the error, a session the client no longer holds is nobody to stay signed in as.
+        #expect(AuthService.sessionOutcome(after: CancellationError(), storedUserId: nil) == .signedOut)
     }
 
     // MARK: - Who invited this account
@@ -160,7 +170,9 @@ struct AuthRulesTests {
         let withoutId = PendingInviter.Entry(id: nil, name: "Maya", isCampaign: false)
         let serverRow = [AuthService.OwnInviterRow(inviterId: server, via: "personal")]
 
-        #expect(AuthService.resolveInviter(rows: serverRow, pending: withoutId) == .init(id: server, name: "Maya"))
+        // A preview with no id cannot show its name belongs to the server's inviter, so the
+        // follow still happens and the name stays off.
+        #expect(AuthService.resolveInviter(rows: serverRow, pending: withoutId) == .init(id: server, name: ""))
         #expect(AuthService.resolveInviter(rows: [.init(inviterId: previewed, via: nil)], pending: withId)
                 == .init(id: previewed, name: "Maya"))
         // Different people: the follow goes to the server's inviter, and the preview's name stays off them.
