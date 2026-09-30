@@ -132,7 +132,15 @@ struct ContentView: View {
         // Every service cache is keyed by post, photo or roll id, never by account, so none of it
         // invalidates itself when the account changes. Signing out cleared the session and the
         // profile and left all of it populated.
-        .onChange(of: auth.currentUser?.id) { _, newId in
+        //
+        // `initial: true` since 2026-09-30: a launch from the cached profile (C-6) sets
+        // `currentUser` before this view has rendered once, and a plain `onChange` only sees
+        // changes after it is attached. Without it a warm relaunch activated nothing per
+        // account: the seen store stayed signed out (every card "N new", nothing marked),
+        // usage went unlogged, rolls were not restored, pending captures never came back, the
+        // device token was not reclaimed. The guard below makes the initial call a no-op when
+        // the account is already the one activated (or still nil on a cold launch).
+        .onChange(of: auth.currentUser?.id, initial: true) { _, newId in
             guard newId != cachedAccountId else { return }
             let previousId = cachedAccountId
             cachedAccountId = newId
