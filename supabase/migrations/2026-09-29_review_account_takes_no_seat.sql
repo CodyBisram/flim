@@ -1,4 +1,4 @@
--- The App Review account takes no seat (2026-09-29, owner decision). NOT YET APPLIED. The owner
+-- The App Review account takes no seat (2026-09-29, owner decision). APPLIED 2026-09-29. The owner
 -- applies it.
 --
 -- The review login (username applereview, hidden_from_discovery) was given signup_ordinal 20 at

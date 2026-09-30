@@ -1,4 +1,4 @@
--- Where people are: the phone's time zone on the version census (2026-09-29). NOT YET APPLIED.
+-- Where people are: the phone's time zone on the version census (2026-09-29). APPLIED 2026-09-29.
 -- The owner applies it.
 --
 -- Nothing in the database says where anyone is. Apple's territory reports say which storefront an

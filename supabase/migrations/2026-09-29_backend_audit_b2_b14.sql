@@ -1,5 +1,5 @@
 -- Backend audit follow-ups, 2026-09-29 (docs/AUDIT_1_6_1_POLISH_2026-09-28.md, section B).
--- NOT YET APPLIED. The owner applies it. Idempotent: safe to re-run.
+-- APPLIED 2026-09-29 by the owner. Idempotent: safe to re-run.
 --
 -- Six pieces, each additive or a same-signature replacement. No data is transformed or deleted.
 --
