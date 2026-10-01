@@ -1,4 +1,4 @@
--- Admin dashboard batch (2026-10-01, owner ask). APPLIED 2026-10-01. The owner applies it.
+-- Admin dashboard batch (2026-10-01, owner ask). APPLIED 2026-10-01 by the owner.
 --
 -- Five owner-only RPCs for the dashboard, all SECURITY DEFINER with search_path pinned, all gated
 -- inside their own bodies by `is_owner() IS NOT TRUE` (a NULL answer refuses, the guard

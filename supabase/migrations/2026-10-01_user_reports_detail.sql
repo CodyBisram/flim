@@ -1,5 +1,5 @@
--- Reported people get the same detail as reported photos (2026-10-01, owner ask). NOT YET
--- APPLIED. The owner applies it.
+-- Reported people get the same detail as reported photos (2026-10-01, owner ask).
+-- APPLIED 2026-10-01 by the owner.
 --
 -- `list_user_reports` returned the latest reason and a count, so the dashboard could not say who
 -- reported someone. It now returns, per reported account: every open report with its reporter,
