@@ -8,11 +8,8 @@
 // reactions from one friend is a single notification, the way Lapse did it, not
 // one-per-emoji.
 //
-// Also notifies everyone ELSE already in a post's comment thread when a new comment lands
-// ("{name} also commented"), not just the post's owner: the owner's own push is suppressed by
-// `notify()`'s self-check whenever the owner is the one replying, which used to mean nobody
-// still in the conversation heard about it. Distinct copy from the owner's "{name} commented"
-// so it never reads as "your photo got commented on."
+// A comment notifies the post's owner and anyone it @mentions, not earlier commenters (owner,
+// 2026-10-01; the "{name} also commented" thread push is gone).
 //
 // Also notifies people TAGGED in a post's photo when it gets reacted to, aggregated per
 // POST rather than per reactor or per reacting person ("3 people reacted to a photo
@@ -779,16 +776,10 @@ Deno.serve(async (req: Request) => {
   // fail-closed contract.
   const coveredCtx = await loadCoveredPostContext();
 
-  // ---- Comments: one push per comment, to the post owner (never self), to anyone @mentioned,
-  //      and to everyone ELSE who already has a comment on this same post ("thread
-  //      participants"). Before this block existed, only the post's OWNER was ever told about a
-  //      new comment; someone who commented earlier and got a reply had no way to find out short
-  //      of reopening the post. Confirmed in production: ricky posted, tristan commented, ricky
-  //      replied, tristan got nothing, because `notify()` correctly self-suppresses the owner
-  //      push when the owner IS the commenter. Thread participants close that gap with their own
-  //      distinct copy, "{name} also commented", never the owner's "{name} commented": an
-  //      identical-looking push would read as "your photo got a comment" to someone whose photo
-  //      it isn't.
+  // ---- Comments: one push per comment, to the post owner (never self) and to anyone
+  //      @mentioned. Earlier commenters on the same post are not told (owner, 2026-10-01; the
+  //      "{name} also commented" thread push it replaced pinged everyone who had ever commented
+  //      whenever anyone else did). A reply that should reach someone @mentions them.
   // `hidden` is pulled through the join, same as the tagged-photo-reactions block further down,
   // so a comment (or an @mention inside one) on a post that's been auto-hidden (auto_hide_reported
   // at >=2 distinct reporters, or set_photo_hidden) never announces it. "posts: readable by
@@ -850,41 +841,9 @@ Deno.serve(async (req: Request) => {
       mentionPushes++;
       sent += await notify(uid, c.user_id, `${name} mentioned you`, preview, route, `comment:${c.id}`);
     }
-    // Thread participants: everyone who already has a comment on this same post, other than
-    // this comment's own author, and other than anyone already notified above as the owner or a
-    // mention (`notified` covers both). Read fresh per comment row rather than reused across
-    // rows, so a post with several unsent comments in the same poll always reflects the current
-    // set of commenters. Same title shape as every other push in this file (actor + verb), with
-    // "also" doing the work of distinguishing this from the owner's "{name} commented": without
-    // it, a thread participant would see an identical-looking push and reasonably think it was
-    // their own photo that got commented on.
-    const { data: threadRows, error: threadErr } = await supabase
-      .from("post_comments")
-      .select("user_id")
-      .eq("post_id", c.post_id)
-      .neq("user_id", c.user_id);
-    // A failed read is not an empty thread: the comment stays unsent and the next run tries the
-    // participants again. Anyone already told above is in the ledger and is not told twice.
-    if (threadErr) {
-      console.warn(JSON.stringify({ at: "comment_thread_read_failed", error: threadErr.message }));
-      pendingRetry.add(`comment:${c.id}`);
-      continue;
-    }
-    const threadParticipants = new Set<string>((threadRows ?? []).map((r) => r.user_id as string));
-    for (const uid of threadParticipants) {
-      if (notified.has(uid)) continue;
-      // Same covered-post leak as the mention loop above: a thread participant can be anyone who
-      // once commented, including someone outside the covered-post allowed set if the post's
-      // covered window opened after their comment landed.
-      if (ownerId && postMeta?.created_at && !coveredPostVisibleTo(coveredCtx, uid, ownerId, postMeta.created_at)) {
-        continue;
-      }
-      // A participant who has since unfollowed the author can no longer open the thread, so
-      // they are not told it continued.
-      if (ownerId && !(await postVisibleTo(uid, c.post_id, ownerId, `comment:${c.id}`))) continue;
-      notified.add(uid);
-      sent += await notify(uid, c.user_id, `${name} also commented`, preview, route, `comment:${c.id}`);
-    }
+    // Earlier commenters are NOT told (owner, 2026-10-01): a comment reaches the post's owner and
+    // anyone it @mentions, nobody else. To answer someone in a thread, @mention them. (The
+    // "{name} also commented" thread push existed 2026-09 to 2026-10-01.)
     if (settled(`comment:${c.id}`)) await supabase.from("post_comments").update({ push_sent: true }).eq("id", c.id);
   }
 
@@ -1153,8 +1112,8 @@ Deno.serve(async (req: Request) => {
     }
   }
 
-  // ---- Roll photo comments: notify the OWNER + that photo's THREAD (people who already
-  //      commented on the same photo), never the whole roll. Skip anyone who muted the roll.
+  // ---- Roll photo comments: notify the photo's OWNER and anyone @mentioned, never the whole
+  //      roll and not earlier commenters. Skip anyone who muted the roll.
   const { data: photoComments } = await supabase
     .from("photo_comments")
     .select("id, photo_id, user_id, body, photos(user_id, roll_id)")
@@ -1190,15 +1149,9 @@ Deno.serve(async (req: Request) => {
       for (const m of mem ?? []) canRead.add(m.user_id as string);
     }
 
-    // The thread = everyone who has ever commented on this photo, plus the owner.
-    const { data: allC, error: allCErr } = await supabase.from("photo_comments").select("user_id").eq("photo_id", photoId);
-    // A failed read is not an empty thread: the group stays unsent and the next run looks again.
-    if (allCErr) {
-      console.warn(JSON.stringify({ at: "photo_comment_thread_read_failed", error: allCErr.message }));
-      pendingRetry.add(`photo_comment:${g.items[0].id}`);
-      continue;
-    }
-    const thread = new Set<string>((allC ?? []).map((c) => c.user_id));
+    // Who hears about it: the photo's owner, plus anyone @mentioned below. Earlier commenters on
+    // the photo are not told (owner, 2026-10-01), the same rule as feed posts.
+    const thread = new Set<string>();
     if (g.ownerId) thread.add(g.ownerId);
 
     // People who muted this roll get nothing. A mutes read that failed is not "nobody muted":
@@ -1213,7 +1166,7 @@ Deno.serve(async (req: Request) => {
       muted = new Set((m ?? []).map((x) => x.user_id));
     }
 
-    // People @mentioned in these comments who aren't already in the thread. Mentions used to be
+    // People @mentioned in these comments, other than the owner. Mentions used to be
     // scanned on post_comments only, so an @ on a ROLL photo highlighted and linked in the app
     // and notified nobody. A mention is an explicit summons; it should reach someone whether or
     // not they've commented on that photo before, as long as they can read it. Capped at five,
